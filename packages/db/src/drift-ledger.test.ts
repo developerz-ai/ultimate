@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { appTables, checkDrift, declaredSchema, expectedSchema } from './drift';
 import { schema, table } from './drift-fixture';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 import type { SchemaDescription } from './introspect';
 import type { LedgerRow, Migration } from './migrate';
 import { isLedgerMissing } from './migrate';
@@ -64,7 +64,7 @@ describe('the schema migrations declare', () => {
   });
 });
 
-/** One `information_schema.columns` row, the shape `introspect()` reads the live schema out of. */
+/** One `information_schema.columns` row, the shape `introspectSchema()` reads the live schema out of. */
 const columnRow = (tableName: string, column: string, position = 1) => ({
   table_name: tableName,
   column_name: column,
@@ -79,7 +79,7 @@ const liveDatabase = (
   ledger: readonly LedgerRow[],
   columns: readonly ReturnType<typeof columnRow>[],
 ) =>
-  createRecordingClient()
+  recordingClient()
     .on('from x_migrations', { rows: ledger })
     .on('information_schema.columns', { rows: columns })
     // The key every snapshot here declares. A real catalog always answers this read, and a live

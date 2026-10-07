@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { action, registerActions, resetRegistry as resetActionRegistry, t } from '@ultimat3/action';
+import { action, registerActions, resetActions, t } from '@ultimat3/action';
 import {
   and,
   can,
@@ -8,7 +8,7 @@ import {
   knownPermissions,
   type Permission,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueryRegistry } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { type AdminActor, staticAuthz } from '../authz';
 import { defaultDevSources, staticDevSources } from './data';
 import type { CacheEdgeFact, MailFact, StatementLoopFact } from './facts';
@@ -18,8 +18,8 @@ import { cachePanel } from './panel-cache';
 // only admin test that registers actions or queries, but leaving them seated would still make a
 // neighbouring suite flaky the next time someone adds one.
 afterEach(() => {
-  resetActionRegistry();
-  resetQueryRegistry();
+  resetActions();
+  resetQueries();
 });
 
 /** The `can()` capabilities this file's fixture actions and queries declare. */

@@ -4,11 +4,12 @@
 // tier 4 and auth is tier 2, so the app wires mail's `send` in and auth imports nothing upward.
 
 import type { Clock } from '@ultimat3/core';
+import { timingSafeEqual } from '@ultimat3/core';
 import type { AuthVerification, VerificationStore } from './adapter';
 import { normaliseEmail } from './email';
 import { AuthError } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
-import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
+import { randomToken, sha256Hex } from './tokens';
 
 /**
  * `locale` is required, not optional: an inferred locale is how a user gets a security email

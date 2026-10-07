@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import { fakeCdpBrowser, fakeCdpLauncher } from './cdp-fake-fixture';
 import { cdpTarget } from './cdp-target';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { InterceptRules } from './intercept';
 import type { SessionSnapshot } from './session-state';
 
@@ -22,7 +22,7 @@ const openOver = async (
   rules: InterceptRules = { allowHosts: ['shop.test'] },
 ) => {
   const page = await browser.newPage();
-  return cdpTarget({ page, browser, rules, clock: testClock() });
+  return cdpTarget({ page, browser, rules, clock: testScrapeClock() });
 };
 
 describe('unit · the fake browser carries a real request event', () => {

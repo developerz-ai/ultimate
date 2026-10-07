@@ -4,13 +4,13 @@
 // the running worker's next ack silently overwrote because `SQL_ACK` had no state guard.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import { JOB_ROW_COLUMNS, SQL_ACK, SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
 import { cancelJob } from './inspect';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 afterEach(() => {
   resetJobs();
@@ -119,9 +119,9 @@ describe('cancelling a job', () => {
     });
     await driver.enqueue(enqueue('runaway'));
 
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
-      context: () => createContext({ role: 'worker' }),
+      context: () => ctxOf({ role: 'worker' }),
       visibilityTimeoutMs: 5000,
       heartbeatIntervalMs: 5,
       drainOnShutdown: false,

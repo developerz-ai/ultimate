@@ -4,7 +4,7 @@
 // `backfill-pass-ledger.test.ts` (the `x_backfills` row it writes) must drive the SAME pass — two
 // harnesses that drifted would be two passes agreeing only by construction.
 import type { Ctx, Environment } from '@ultimat3/core';
-import { assert, createContext } from '@ultimat3/core';
+import { assert, ctxOf } from '@ultimat3/core';
 import type { BatchIterator, ReadBuilder, Repo } from '@ultimat3/entity';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { BackfillInput } from './backfill';
@@ -13,7 +13,7 @@ import type { BackfillLedger } from './backfill-ledger';
 import { setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { StepRecord, StepStore } from './steps';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 /**
@@ -115,7 +115,7 @@ export const RUN_ID = 'run-backfill-1';
 /** Above the millisecond a timer can resolve, so the pacer skips every wait and nothing sleeps. */
 export const NO_WAIT_RATE = 100_000;
 
-export const ctx: Ctx = createContext();
+export const ctx: Ctx = ctxOf();
 
 /**
  * One backfill over `SEED`, driven through a real step runner rather than a worker: this file is
@@ -145,7 +145,7 @@ export const harness = (
     failOn: new Set<number>(),
     async run(runOptions = {}) {
       const runId = runOptions.runId ?? RUN_ID;
-      const runner = createStepRunner({ runId, jobName: 'backfill', store });
+      const runner = stepRunner({ runId, jobName: 'backfill', store });
       return handle.run({
         input: runOptions.input ?? {},
         step: runner.step,

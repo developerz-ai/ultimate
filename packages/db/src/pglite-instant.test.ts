@@ -3,13 +3,13 @@
 // `America/New_York` (an offset with seconds) and 1999 under UTC — reproduced before the fix.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { raw } from './sql';
 
 const PGLITE_BOOT_MS = 60_000;
 
 describe('a timestamptz read from embedded Postgres', () => {
-  const client = createPgliteClient();
+  const client = pgliteClient();
 
   afterAll(async () => {
     await client.close();

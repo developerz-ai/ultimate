@@ -6,11 +6,10 @@
  * `meta` and the prerender writes files from one answer.
  */
 
-import { type LocalePathSplit, localeSegment, localizePath, splitLocalePath } from '@ultimat3/core';
+import { type LocalePathSplit, localizePath, splitLocalePath } from '@ultimat3/core';
 import { localeConfig, routedLocales } from './context';
 import type { Locale } from './locales';
 
-export { localeSegment };
 export type LocalePrefix = LocalePathSplit;
 
 /** `/en/precios` → `{ locale: 'en', path: '/precios', isDefault: false }`, or `undefined`. */

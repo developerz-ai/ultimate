@@ -14,8 +14,8 @@ import {
 import type { DbClient, PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
 import {
   baseClient,
-  createPgliteClient,
   currentTx,
+  pgliteClient,
   pgliteDataDir,
   postgresClient,
   setDbClient,
@@ -23,7 +23,7 @@ import {
 import type { Tx } from '@ultimat3/entity';
 import type { EventBus, JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
-  createJobsFacade,
+  outboxJobsFacade,
   postgresEventBus,
   postgresJobDriver,
   postgresOutboxStore,
@@ -99,7 +99,7 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
         // Linked at boot, from the app's own migrations: PGlite cannot `create extension` one it
         // was not handed, and the schema dump's scratch replay already asks this same reader — an
         // app that replayed in the gate and failed in `x dev` was the two disagreeing.
-        createPgliteClient({
+        pgliteClient({
           dataDir: pgliteDataDir(binding.url),
           extensions: () => appExtensions(services.root),
         })
@@ -192,7 +192,7 @@ async function startJobs(
     txExecutor: () => pgExecutorFor(currentTx() ?? client),
   });
   setJobsFacade(
-    createJobsFacade({ store: outbox, driver }, () => currentTx() as unknown as Tx | undefined),
+    outboxJobsFacade({ store: outbox, driver }, () => currentTx() as unknown as Tx | undefined),
   );
   const events = postgresEventBus({ executor });
   setEventBus(events);

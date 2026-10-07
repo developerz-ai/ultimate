@@ -5,7 +5,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { postgresClient, raw, sql } from '@ultimat3/db';
 import { postgresJobDriver } from './driver-pg';
@@ -14,7 +14,7 @@ import { setWakeLive, wakeIsLive } from './enqueue-signal';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
 import { startQueueWake } from './queue-wake';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
@@ -90,12 +90,12 @@ describe.skipIf(!hasPostgres)('live · postgres · the cross-process wake', () =
         return Promise.resolve();
       },
     });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: postgresJobDriver({ executor: executorFor(workerPod) }),
       pollIntervalMs: 25,
       idlePollMaxMs: 60_000,
       heartbeatIntervalMs: 3_600_000,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
     });
     worker.start();

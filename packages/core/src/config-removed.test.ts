@@ -29,6 +29,33 @@ const CASES: readonly (readonly [string, Record<string, unknown>, string])[] = [
   ['ai.mcp.path', { ai: { mcp: { expose: true, path: '/mcp' } } }, 'defineAppMcp({ path'],
 ];
 
+/**
+ * Keys earlier majors deleted, which `section()` carried through in silence until 25.0.0. Table
+ * order, so the one-refusal test below can read `meta.removed` against it.
+ */
+const OLDER: readonly (readonly [string, string, Record<string, unknown>, string])[] = [
+  ['realtime.heartbeatMs', '4.0.0', { realtime: { heartbeatMs: 15_000 } }, 'hello reply'],
+  ['database.urlEnv', '4.0.0', { database: { urlEnv: 'DB' } }, 'DATABASE_URL'],
+  ['database.poolSize', '4.0.0', { database: { poolSize: 3 } }, 'DATABASE_POOL_MAX'],
+  ['database.schema', '4.0.0', { database: { schema: 'app' } }, 'search_path'],
+  ['pwa.installPrompt', '8.0.0', { pwa: { installPrompt: true } }, 'installController'],
+  ['auth.afterSignInPath', '8.0.0', { auth: { afterSignInPath: '/home' } }, 'sign-in route'],
+  ['ai.modelEnv', '8.0.0', { ai: { modelEnv: 'MODEL' } }, 'llm({ model })'],
+  ['cache.driver', '9.0.0', { cache: { driver: 'redis' } }, 'cache.tiers'],
+  ['cache.urlEnv', '9.0.0', { cache: { urlEnv: 'R' } }, 'REDIS_URL'],
+  ['realtime.tier', '10.0.0', { realtime: { tier: 'local-first' } }, 'channel()'],
+];
+
+describe('a key an earlier major removed', () => {
+  test.each(OLDER)('%s is refused naming %s and its replacement', (key, major, said, by) => {
+    const error = refusalOf({ name: 'myapp', ...said });
+    expect(error.code).toBe('X_CONFIG_INVALID');
+    expect(error.cause).toContain(`${key} was removed in ${major}`);
+    expect(error.fix).toContain(`delete ${key} from app.config.ts`);
+    expect(error.fix).toContain(by);
+  });
+});
+
 describe('a key 25.0.0 removed', () => {
   test.each(CASES)(
     '%s is refused with X_CONFIG_INVALID naming its replacement',
@@ -64,15 +91,12 @@ describe('a key 25.0.0 removed', () => {
   });
 
   test('the table is these keys and every row carries a replacement', () => {
-    expect(Object.keys(REMOVED_CONFIG_KEYS).sort()).toEqual([
-      'ai.mcp.path',
-      'defaultCurrency',
-      'defaultLocale',
-      'defaultTimeZone',
-      'jobs.driver',
-      'locales',
-      'theme.tokens',
-    ]);
+    expect(Object.keys(REMOVED_CONFIG_KEYS).sort()).toEqual(
+      [
+        ...['ai.mcp.path', 'defaultCurrency', 'defaultLocale', 'defaultTimeZone', 'jobs.driver'],
+        ...['locales', 'theme.tokens', ...OLDER.map(([key]) => key)],
+      ].sort(),
+    );
     for (const row of Object.values(REMOVED_CONFIG_KEYS)) {
       expect(row.removedIn).toMatch(/^\d+\.0\.0$/);
       expect(row.instead.length).toBeGreaterThan(20);

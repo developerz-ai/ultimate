@@ -3,13 +3,13 @@
 // the table as it was. The parse guard upstream is a different layer; this one cannot be talked to.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPgliteClient, raw } from '@ultimat3/db';
+import { pgliteClient, raw } from '@ultimat3/db';
 import { DEV_SQL_MAX_ROWS, readOnlySql } from './sql-runner';
 
 // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
 const PGLITE_BOOT_MS = 60_000;
 
-const client = createPgliteClient();
+const client = pgliteClient();
 
 beforeAll(async () => {
   await client.execute(raw('create table dev_probe (id integer primary key, label text)'));

@@ -6,9 +6,9 @@
 // because the only path to a 404 went through the error page, outside the app's shell.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
+import { httpPipeline } from './pipeline';
 import { html } from './response';
-import { createRouter, type Route } from './router';
+import { httpRouter, type Route } from './router';
 
 const OWN_PAGE =
   '<!doctype html><html><body><main id="shell">No such box: nope</main></body></html>';
@@ -29,8 +29,8 @@ const routes: readonly Route[] = [
 ];
 
 const pipeline = (dev = false) =>
-  createPipeline({
-    table: createRouter(routes),
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev, buildId: null }),
   });
 

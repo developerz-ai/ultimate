@@ -1,4 +1,4 @@
-// Every numeric knob `createWorker` accepts, read and REFUSED in one place — the slot table
+// Every numeric knob `jobWorker` accepts, read and REFUSED in one place — the slot table
 // included, because a queue name is data and a slot count is a bound, and both arrive from the
 // same deployment config.
 //
@@ -9,7 +9,7 @@
 // the reclaim scan asks `visibleAt <= at`, and a job whose worker died is never claimable again.
 // At-least-once becomes never, with no error and a row `x jobs ls` still prints as `running`.
 // `slice(0, NaN)` is `[]`, so a `concurrency: NaN` worker claims nothing and reports healthy.
-// Same shape as `createLimiter`'s `maxTenants` and `backfill()`'s `batch`, refused the same way.
+// Same shape as `concurrencyLimiter`'s `maxTenants` and `backfill()`'s `batch`, refused the same way.
 
 import { finiteOption } from '@ultimat3/core';
 import { DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
@@ -49,19 +49,19 @@ const slotTable =
 
 export function resolveWorkerTimings(options: WorkerNumericOptions): WorkerTimings {
   const visibilityTimeoutMs = options.visibilityTimeoutMs ?? DEFAULT_VISIBILITY_TIMEOUT_MS;
-  finiteOption('createWorker', 'visibilityTimeoutMs', visibilityTimeoutMs);
+  finiteOption('jobWorker', 'visibilityTimeoutMs', visibilityTimeoutMs);
   const pollIntervalMs = options.pollIntervalMs ?? 250;
   // `setTimeout(fn, NaN)` coerces the delay to 0, so the claim loop stops being a poll and becomes
   // a spin: one round trip to Postgres per event-loop turn, from every worker replica.
-  finiteOption('createWorker', 'pollIntervalMs', pollIntervalMs);
+  finiteOption('jobWorker', 'pollIntervalMs', pollIntervalMs);
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? Math.floor(visibilityTimeoutMs / 3);
-  finiteOption('createWorker', 'heartbeatIntervalMs', heartbeatIntervalMs);
+  finiteOption('jobWorker', 'heartbeatIntervalMs', heartbeatIntervalMs);
   const declared = options.concurrency;
-  if (typeof declared === 'number') finiteOption('createWorker', 'concurrency', declared);
+  if (typeof declared === 'number') finiteOption('jobWorker', 'concurrency', declared);
   else if (declared !== undefined) {
     // Per queue, by own key: an inherited member is not this table's to answer with either.
     for (const queue of Object.keys(declared)) {
-      finiteOption('createWorker', `concurrency.${queue}`, declared[queue] ?? DEFAULT_SLOTS);
+      finiteOption('jobWorker', `concurrency.${queue}`, declared[queue] ?? DEFAULT_SLOTS);
     }
   }
   return {

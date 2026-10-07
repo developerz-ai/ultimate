@@ -35,7 +35,7 @@ export interface RuntimeOverrides {
   readonly mail?: MailDriver;
   /**
    * Replaces the `NATS_URL` selection. Already connected when it arrives, and NOT closed by
-   * `stop()`: whoever built it owns its socket, exactly as `createServer` does not close a
+   * `stop()`: whoever built it owns its socket, exactly as `httpServer` does not close a
    * `rateLimitStore` it was handed.
    */
   readonly transport?: Transport;
@@ -53,12 +53,12 @@ export interface RuntimeOverrides {
    */
   readonly rateLimitStore?: RateLimitStore;
   /**
-   * Where regenerated ISR pages live. Omitted, `createIsrController` keeps a per-process memory
+   * Where regenerated ISR pages live. Omitted, `isrController` keeps a per-process memory
    * store — twelve replicas then hold twelve of them, and a purge tag reaches one twelfth of the
    * fleet.
    */
   readonly isrStore?: IsrStore;
-  /** Prepended to the pipeline by `createServer`, which `startRoles` never passed one. */
+  /** Prepended to the pipeline by `httpServer`, which `startRoles` never passed one. */
   readonly middleware?: readonly Middleware[];
   /**
    * Plain HTTP routes at paths no primitive projects to — `/.well-known/oauth-authorization-server`,

@@ -196,7 +196,7 @@ async function relationOf(
  * per target — two for a picked target too large for a `<select>` — whatever the page's row count
  * and however many columns point at the same target.
  */
-export async function relationsFor(
+export async function relationDataFor(
   resources: readonly AdminResource[],
   ctx: CrudCtx,
   needs: ReadonlyMap<string, RelationNeed>,

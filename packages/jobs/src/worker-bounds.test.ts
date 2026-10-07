@@ -1,17 +1,17 @@
-// Every numeric knob `createWorker` and `createOutboxRelay` accept, refused when it is not a
+// Every numeric knob `jobWorker` and `outboxRelay` accept, refused when it is not a
 // finite number. `Number(process.env.X)` on an unset variable is `NaN`, `??` guards only nullish
 // and `Math.max`/`Math.floor` PROPAGATE `NaN`, so the value reaches a lease deadline, a claim
 // limit and a timer interval intact — and every comparison against it reads false.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext, UltimateError } from '@ultimat3/core';
+import { type Ctx, ctxOf, UltimateError } from '@ultimat3/core';
 import { memoryJobDriver } from './driver-memory';
 import { resetJobs } from './job';
 import { memoryOutboxStore } from './outbox';
-import { createOutboxRelay } from './outbox-relay';
-import { createWorker } from './worker';
+import { outboxRelay } from './outbox-relay';
+import { jobWorker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 /** Every shape `Number(...)` / `parseInt` / JSON hands a config reader that no `??` can catch. */
 const NOT_A_BOUND: readonly number[] = [
@@ -35,7 +35,7 @@ describe('a worker built on a number that is not a number', () => {
     // still prints as `running`. The Postgres driver takes the same number into `visible_at`.
     for (const visibilityTimeoutMs of NOT_A_BOUND) {
       const build = (): unknown =>
-        createWorker({
+        jobWorker({
           driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
@@ -58,7 +58,7 @@ describe('a worker built on a number that is not a number', () => {
     // becomes a spin — one round trip to Postgres per event-loop turn, from every worker replica.
     for (const pollIntervalMs of NOT_A_BOUND) {
       expect(() =>
-        createWorker({
+        jobWorker({
           driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
@@ -71,7 +71,7 @@ describe('a worker built on a number that is not a number', () => {
   test('a non-finite heartbeatIntervalMs is refused', () => {
     for (const heartbeatIntervalMs of NOT_A_BOUND) {
       expect(() =>
-        createWorker({
+        jobWorker({
           driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
@@ -87,7 +87,7 @@ describe('a worker built on a number that is not a number', () => {
     // the `hive({ concurrency: NaN })` outcome, one package over.
     for (const value of NOT_A_BOUND) {
       expect(() =>
-        createWorker({
+        jobWorker({
           driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
@@ -95,7 +95,7 @@ describe('a worker built on a number that is not a number', () => {
         }),
       ).toThrow(UltimateError);
       expect(() =>
-        createWorker({
+        jobWorker({
           driver: memoryJobDriver(),
           context,
           drainOnShutdown: false,
@@ -108,7 +108,7 @@ describe('a worker built on a number that is not a number', () => {
 
   test('the ordinary worker is unchanged — the guard refuses numbers, not workers', async () => {
     // Non-vacuity: a rule that threw on everything would pass every assertion above.
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: memoryJobDriver(),
       context,
       drainOnShutdown: false,
@@ -126,7 +126,7 @@ describe('an outbox relay built on a number that is not a number', () => {
     // `setInterval(fn, NaN)` is `setInterval(fn, 0)`: the relay stops polling and starts spinning.
     for (const intervalMs of NOT_A_BOUND) {
       expect(() =>
-        createOutboxRelay({
+        outboxRelay({
           store: memoryOutboxStore(),
           driver: memoryJobDriver(),
           intervalMs,
@@ -138,7 +138,7 @@ describe('an outbox relay built on a number that is not a number', () => {
   test('a non-finite batchSize is refused, not turned into a pass that claims nothing', () => {
     for (const batchSize of NOT_A_BOUND) {
       expect(() =>
-        createOutboxRelay({
+        outboxRelay({
           store: memoryOutboxStore(),
           driver: memoryJobDriver(),
           batchSize,
@@ -148,7 +148,7 @@ describe('an outbox relay built on a number that is not a number', () => {
   });
 
   test('an ordinary relay is unchanged', async () => {
-    const relay = createOutboxRelay({
+    const relay = outboxRelay({
       store: memoryOutboxStore(),
       driver: memoryJobDriver(),
       batchSize: 10,

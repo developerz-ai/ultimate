@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { RenderMode, SpeculationConfig } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RouteNavigationMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { measureDocumentJs } from './budgets';
@@ -137,7 +137,7 @@ describe('which pages a browser may fetch early', () => {
 
 describe('the document and the policy', () => {
   const serve = (speculation: NonNullable<ReturnType<typeof rules>>) =>
-    createServer({
+    httpServer({
       routes: appRoutes({
         buildId: BUILD_ID,
         navigation: ROUTER,

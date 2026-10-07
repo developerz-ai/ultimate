@@ -1,10 +1,10 @@
 // The Anthropic provider's response half: SSE streaming, the stream-only ceiling, and message
 // parsing. The request half is `provider.test.ts`.
 import { describe, expect, test } from 'bun:test';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import {
-  AnthropicProvider,
+  anthropicProvider,
   costOf,
   parseMessage,
   requiresStreaming,
@@ -18,7 +18,7 @@ useFixtureModels();
 describe('streaming', () => {
   test('asks for an event stream and yields text as it arrives, then the assembled result', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS)),
@@ -64,7 +64,7 @@ describe('streaming', () => {
 
   test('a stream cut before message_stop fails instead of returning the partial answer', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS.slice(0, 4))),
@@ -83,12 +83,12 @@ describe('streaming', () => {
 
   test('a streamed budget is debited from the final chunk, not the estimate', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS)),
     });
-    const gateway = createGateway({ defaultModel: FIXTURE_MODEL, providers: [remote] });
+    const gateway = providerGateway({ defaultModel: FIXTURE_MODEL, providers: [remote] });
 
     const spent = await gateway.scope({ actorKey: 'actor-1' }, async () => {
       await collect(gateway.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 64 }));
@@ -109,7 +109,7 @@ describe('streaming', () => {
 describe('a completion too large for one response', () => {
   test('generate above the ceiling goes over the streaming transport and assembles the result', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () => sseResponse(STREAM_EVENTS)),
@@ -182,7 +182,7 @@ describe('response parsing', () => {
 
   test('a streamed refusal carries its details too, not just the reason', async () => {
     const calls: Call[] = [];
-    const remote = new AnthropicProvider({
+    const remote = anthropicProvider({
       models: [FIXTURE_MODEL],
       apiKey: 'k',
       fetch: fakeFetch(calls, () =>

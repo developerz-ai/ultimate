@@ -4,14 +4,14 @@
 // can answer where storing the widened value would rightly be refused.
 
 import { describe, expect, test } from 'bun:test';
-import { money } from './money';
+import { fromMinor } from './money';
 import { assertScale, MAX_MONEY_SCALE, minorAt, moneyScale, toMinor } from './scale';
 
 describe('moneyScale', () => {
   test('a value without a scale carries its currency’s own', () => {
-    expect(moneyScale(money(1299, 'EUR'))).toBe(2);
-    expect(moneyScale(money(1200, 'JPY'))).toBe(0);
-    expect(moneyScale(money(1234, 'KWD'))).toBe(3);
+    expect(moneyScale(fromMinor(1299, 'EUR'))).toBe(2);
+    expect(moneyScale(fromMinor(1200, 'JPY'))).toBe(0);
+    expect(moneyScale(fromMinor(1234, 'KWD'))).toBe(3);
   });
 
   test('an explicit scale wins, and is what makes a sub-cent amount expressible', () => {
@@ -36,11 +36,11 @@ describe('assertScale', () => {
 
 describe('minorAt', () => {
   test('widens exactly, as a bigint, so a comparison never overflows a double', () => {
-    expect(minorAt(money(1299, 'EUR'), 6)).toBe(12_990_000n);
+    expect(minorAt(fromMinor(1299, 'EUR'), 6)).toBe(12_990_000n);
     expect(minorAt({ minor: 2, currency: 'USD', scale: 6 }, 6)).toBe(2n);
-    // Past 2^53: the point of the bigint. `money()` would refuse the widened value, a
+    // Past 2^53: the point of the bigint. `fromMinor()` would refuse the widened value, a
     // comparison must not.
-    expect(minorAt(money(Number.MAX_SAFE_INTEGER, 'USD'), 6)).toBe(
+    expect(minorAt(fromMinor(Number.MAX_SAFE_INTEGER, 'USD'), 6)).toBe(
       BigInt(Number.MAX_SAFE_INTEGER) * 10_000n,
     );
   });

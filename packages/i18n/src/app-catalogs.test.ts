@@ -8,7 +8,13 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun ships no path join.
-import { APP_CATALOGS_PATH, loadAppCatalogs } from './app-catalogs';
+import { DEFAULT_LOCALE } from '@ultimat3/core';
+import {
+  APP_CATALOGS_PATH,
+  appLocaleSet,
+  loadAppCatalogs,
+  UNDECLARED_LOCALES,
+} from './app-catalogs';
 import { resetCatalogs, resetLocaleConfig } from './context';
 import { defineCatalogs } from './define-catalogs';
 
@@ -60,6 +66,16 @@ describe('loadAppCatalogs', () => {
     expect((await loadAppCatalogs(root))?.defaultLocale).toBe('fr');
   });
 
+  // The process's locale config is shared and resettable — a test's `resetLocaleConfig()`, a later
+  // `configureLocales()` — while the exported set is the declaration itself, and a cached module
+  // never runs its `defineCatalogs()` again to put the config back.
+  test('an exported set is its own answer, whatever the locale config says now', async () => {
+    const root = await app('reset-after', declaring('es'));
+    expect((await loadAppCatalogs(root))?.defaultLocale).toBe('es');
+    resetLocaleConfig();
+    expect(await loadAppCatalogs(root)).toEqual({ locales: ['es', 'en'], defaultLocale: 'es' });
+  });
+
   test('a module that declares nothing is undefined, never an inherited declaration', async () => {
     // Some earlier import in this process declared catalogs; `localeConfig()` still answers them.
     defineCatalogs({ default: 'de', locales: { de: {} } });
@@ -88,5 +104,33 @@ describe('loadAppCatalogs', () => {
   test('a module that will not import throws its own error — each caller decides', async () => {
     const root = await app('broken', "throw new TypeError('env missing');\n");
     await expect(loadAppCatalogs(root)).rejects.toThrow('env missing');
+  });
+});
+
+describe('appLocaleSet', () => {
+  // ONE answer for an app with no catalogs, so the PWA manifest, the service worker, the prerender
+  // and every `x` command name the same language for it — never `localeConfig()` read blind.
+  test('an app with no catalog module is the framework default alone', async () => {
+    expect(await appLocaleSet(join(scratch, 'nothing-here'))).toBe(UNDECLARED_LOCALES);
+    expect(UNDECLARED_LOCALES).toEqual({
+      locales: [DEFAULT_LOCALE],
+      defaultLocale: DEFAULT_LOCALE,
+    });
+  });
+
+  test('a module that declares nothing is the same answer, whatever was configured before', async () => {
+    defineCatalogs({ default: 'de', locales: { de: {} } });
+    const root = await app('silent-set', 'export const nothing = 1;\n');
+    expect(await appLocaleSet(root)).toBe(UNDECLARED_LOCALES);
+  });
+
+  test('a declaring module is its own declaration', async () => {
+    const root = await app('declared-set', declaring('es'));
+    expect(await appLocaleSet(root)).toEqual({ locales: ['es', 'en'], defaultLocale: 'es' });
+  });
+
+  test('the undeclared answer cannot be written through', () => {
+    expect(Object.isFrozen(UNDECLARED_LOCALES)).toBe(true);
+    expect(Object.isFrozen(UNDECLARED_LOCALES.locales)).toBe(true);
   });
 });

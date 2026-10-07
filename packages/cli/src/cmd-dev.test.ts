@@ -12,7 +12,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import {
-  createContext,
+  ctxOf,
   logger,
   NotImplementedError,
   resetLifecycle,
@@ -292,7 +292,7 @@ describe('unit · x dev boots the app', () => {
     logger.warn = (line: string): void => {
       lines.push(line);
     };
-    const ctx = createContext({ requestId: 'req_looped' });
+    const ctx = ctxOf({ requestId: 'req_looped' });
     try {
       runWithContext(ctx, () => {
         for (let sent = 0; sent < 6; sent += 1) {

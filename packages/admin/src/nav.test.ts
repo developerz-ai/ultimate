@@ -9,8 +9,8 @@ import {
   type AdminAuthz,
   type AdminAuthzQuery,
   type AdminDecision,
-  allowed,
-  denied,
+  adminAllowed,
+  adminDenied,
 } from './authz';
 import type { CrudCtx } from './crud';
 import { adminNav, type NavItem, visibleNav } from './nav';
@@ -46,8 +46,8 @@ function ctxFor(grant: ReadonlySet<string>): CrudCtx & { readonly asked: AdminAu
     decide(query): AdminDecision {
       asked.push(query);
       return grant.has(query.permission)
-        ? allowed(query.permission, 'probe.granted')
-        : denied(query.permission, 'probe.refused');
+        ? adminAllowed(query.permission, 'probe.granted')
+        : adminDenied(query.permission, 'probe.refused');
     },
   };
   return { actor: ACTOR, authz, audit: memoryAuditLog(), requestId: 'req_nav', asked };

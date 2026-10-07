@@ -9,10 +9,10 @@
  */
 
 import { seatLimit } from '@postly/domain';
-import { type Actor, logger, tryResolveEnvironment } from '@ultimat3/core';
+import { type Actor, logger, readCookie, tryResolveEnvironment } from '@ultimat3/core';
 import { seedId } from '@ultimat3/entity';
 import type { RequestContext, UltimateRequest } from '@ultimat3/http';
-import { configureAuthenticator, readCookie } from '@ultimat3/http';
+import { configureAuthenticator } from '@ultimat3/http';
 import { postlyActor } from '../../shared/actor';
 import type { MemberView, OrgView } from '../orgs/entity';
 

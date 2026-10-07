@@ -3,7 +3,7 @@
 // completes at all, reaches every tenant's rows, fills the one column it owns and leaves a row
 // somebody already wrote alone.
 import { db, driver, type Post } from '@postly/db';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
 import { postExcerpts } from './post-excerpts';
 
@@ -13,7 +13,7 @@ const author = '00000000-0000-4000-8000-000000000003';
 
 /** What a request is to the handle: an actor, whose org every read and write runs under. */
 const inOrg = <T>(orgId: string, run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'member', orgId }) }), run);
+  runWithContext(ctxOf({ actor: userActor({ id: 'member', orgId }) }), run);
 
 const store = (orgId: string, slug: string, excerpt = ''): Promise<Post> =>
   inOrg(orgId, () =>

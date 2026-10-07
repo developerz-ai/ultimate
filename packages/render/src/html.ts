@@ -1,8 +1,8 @@
 /**
  * HTML text and attribute serialization for the server renderer. The character table is
- * `@ultimat3/core`'s `escapeHtml`, reached from here and nowhere else in this package: a second
- * escaper is how one of them ends up missing a character, and a missing character in an attribute
- * is an injection.
+ * `@ultimat3/core`'s `escapeHtml`, imported from core by every render-* file: a second escaper is
+ * how one of them ends up missing a character, and a missing character in an attribute is an
+ * injection (`X_HELPER_COPY` refuses both a copy and a re-export).
  */
 
 import { escapeHtml, safeUrl, URL_ATTRIBUTES } from '@ultimat3/core';
@@ -25,12 +25,6 @@ export const VOID_ELEMENTS: ReadonlySet<string> = new Set([
   'track',
   'wbr',
 ]);
-
-/**
- * Re-exported, never re-implemented: one set of five characters for text AND attributes, so a
- * value is inert wherever it lands. Every render-* file escapes through this import.
- */
-export { escapeHtml };
 
 /**
  * `<script>` and `<style>` hold RAW TEXT: a character reference is not decoded inside them, so

@@ -9,8 +9,8 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and n
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { createRaster, encodeImage, isUltimateError } from '@ultimat3/core';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { blankRaster, encodeImage, isUltimateError } from '@ultimat3/core';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { ICON_SOURCE } from './icon-assets';
 import {
   loadPwaArtifacts,
@@ -32,7 +32,7 @@ const writeConfig = (body: string) => Bun.write(join(root, 'app.config.ts'), bod
 
 /** The one file the whole icon matrix derives from. `runtime-assets.test.ts`'s fixture, verbatim. */
 const writeSourceIcon = () =>
-  Bun.write(join(root, ICON_SOURCE), encodeImage(createRaster(1024, 1024, 'fixture'), 'png'));
+  Bun.write(join(root, ICON_SOURCE), encodeImage(blankRaster(1024, 1024, 'fixture'), 'png'));
 
 const COLORS =
   "{ light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' }, " +
@@ -173,7 +173,7 @@ describe('unit · the web manifest an installable app promises', () => {
     // a cast would hide a dependency on either appearing later.
     const url = new URL(`http://dev.test${WEB_MANIFEST_PATH}`);
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
     expect(response.headers.get('content-type')).toContain('application/manifest+json');
     expect(await response.text()).toBe(artifacts.body);

@@ -4,7 +4,7 @@
 // driver a test uses and the driver production uses.
 
 import type { Secret } from '@ultimat3/core';
-import { finiteCount, isSecret, revealSecret } from '@ultimat3/core';
+import { finiteCount, hostDecision, isSecret, revealSecret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
 import { awaitActionable } from './actionability';
 import { assertCaptureFraming } from './capture-clip';
@@ -12,7 +12,6 @@ import type { ScrapeClock } from './clock';
 import { deadline } from './clock';
 import type { ColorScheme } from './color-scheme';
 import { hostBlocked, secretExposed, selectorMissing } from './error-throws';
-import { hostDecision } from './hosts';
 import type {
   AccessibilityOptions,
   CaptureRequest,

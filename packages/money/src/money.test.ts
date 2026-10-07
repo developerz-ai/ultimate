@@ -4,8 +4,8 @@ import {
   equals,
   formatMoneyDebug,
   fromDecimal,
+  fromMinor,
   isMoney,
-  money,
   toDecimalNumber,
   toDecimalString,
   zero,
@@ -13,14 +13,14 @@ import {
 
 describe('money', () => {
   test('rejects a fractional minor amount with X_MONEY_NOT_INTEGER', () => {
-    expect(codeOf(() => money(12.5, 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
-    expect(codeOf(() => money(Number.NaN, 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
-    expect(money(1299, 'EUR')).toEqual({ minor: 1299, currency: 'EUR' });
+    expect(codeOf(() => fromMinor(12.5, 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
+    expect(codeOf(() => fromMinor(Number.NaN, 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
+    expect(fromMinor(1299, 'EUR')).toEqual({ minor: 1299, currency: 'EUR' });
   });
 
   test('rejects an unknown currency', () => {
-    expect(codeOf(() => money(100, 'XYZ'))).toBe('X_CURRENCY_UNKNOWN');
-    expect(codeOf(() => money(100, 'eur'))).toBe('X_CURRENCY_UNKNOWN');
+    expect(codeOf(() => fromMinor(100, 'XYZ'))).toBe('X_CURRENCY_UNKNOWN');
+    expect(codeOf(() => fromMinor(100, 'eur'))).toBe('X_CURRENCY_UNKNOWN');
   });
 });
 
@@ -57,7 +57,7 @@ describe('fromDecimal', () => {
     // holds two values one wire format cannot tell apart.
     const rounded = fromDecimal('-0.001', 'EUR', { rounding: 'down' });
     expect(Object.is(rounded.minor, -0)).toBe(false);
-    expect(Object.is(money(-0, 'EUR').minor, -0)).toBe(false);
+    expect(Object.is(fromMinor(-0, 'EUR').minor, -0)).toBe(false);
   });
 
   test('excess precision throws unless rounding is explicit', () => {
@@ -89,11 +89,11 @@ describe('fromDecimal', () => {
 
 describe('toDecimalString', () => {
   test('round-trips for 0-, 2- and 3-digit currencies', () => {
-    expect(toDecimalString(money(1299, 'EUR'))).toBe('12.99');
-    expect(toDecimalString(money(5, 'EUR'))).toBe('0.05');
-    expect(toDecimalString(money(-5, 'EUR'))).toBe('-0.05');
-    expect(toDecimalString(money(1200, 'JPY'))).toBe('1200');
-    expect(toDecimalString(money(1234, 'KWD'))).toBe('1.234');
+    expect(toDecimalString(fromMinor(1299, 'EUR'))).toBe('12.99');
+    expect(toDecimalString(fromMinor(5, 'EUR'))).toBe('0.05');
+    expect(toDecimalString(fromMinor(-5, 'EUR'))).toBe('-0.05');
+    expect(toDecimalString(fromMinor(1200, 'JPY'))).toBe('1200');
+    expect(toDecimalString(fromMinor(1234, 'KWD'))).toBe('1.234');
     expect(toDecimalString(zero('USD'))).toBe('0.00');
     for (const [value, currency] of [
       ['12.99', 'EUR'],
@@ -124,25 +124,25 @@ describe('isMoney', () => {
 
 describe('a money value at a scale of its own', () => {
   test('the constructor takes one, and omits the key at the currency’s own scale', () => {
-    expect(money(2, 'USD', 6)).toEqual({ minor: 2, currency: 'USD', scale: 6 });
+    expect(fromMinor(2, 'USD', 6)).toEqual({ minor: 2, currency: 'USD', scale: 6 });
     // Canonical: one encoding per value at the natural scale, so existing JSON is untouched.
-    expect(JSON.stringify(money(1299, 'EUR', 2))).toBe('{"minor":1299,"currency":"EUR"}');
-    expect(codeOf(() => money(2, 'USD', 2.5))).toBe('X_MONEY_SCALE_INVALID');
+    expect(JSON.stringify(fromMinor(1299, 'EUR', 2))).toBe('{"minor":1299,"currency":"EUR"}');
+    expect(codeOf(() => fromMinor(2, 'USD', 2.5))).toBe('X_MONEY_SCALE_INVALID');
   });
 
   test('equals compares the value, not the encoding', () => {
-    expect(equals(money(1299, 'EUR'), money(12_990_000, 'EUR', 6))).toBe(true);
-    expect(equals(money(1299, 'EUR'), money(12_990_001, 'EUR', 6))).toBe(false);
-    expect(equals(money(1299, 'EUR'), money(1299, 'USD'))).toBe(false);
+    expect(equals(fromMinor(1299, 'EUR'), fromMinor(12_990_000, 'EUR', 6))).toBe(true);
+    expect(equals(fromMinor(1299, 'EUR'), fromMinor(12_990_001, 'EUR', 6))).toBe(false);
+    expect(equals(fromMinor(1299, 'EUR'), fromMinor(1299, 'USD'))).toBe(false);
   });
 
   test('the decimal projections read the value’s own scale, never the currency’s', () => {
-    expect(toDecimalString(money(2, 'USD', 6))).toBe('0.000002');
-    expect(toDecimalString(money(-2, 'USD', 6))).toBe('-0.000002');
-    expect(toDecimalNumber(money(2, 'USD', 6))).toBe(0.000002);
-    expect(formatMoneyDebug(money(2, 'USD', 6))).toBe('USD 2e-6');
+    expect(toDecimalString(fromMinor(2, 'USD', 6))).toBe('0.000002');
+    expect(toDecimalString(fromMinor(-2, 'USD', 6))).toBe('-0.000002');
+    expect(toDecimalNumber(fromMinor(2, 'USD', 6))).toBe(0.000002);
+    expect(formatMoneyDebug(fromMinor(2, 'USD', 6))).toBe('USD 2e-6');
     // Unchanged for every value that carries no scale.
-    expect(formatMoneyDebug(money(1299, 'EUR'))).toBe('EUR 1299');
+    expect(formatMoneyDebug(fromMinor(1299, 'EUR'))).toBe('EUR 1299');
   });
 
   test('fromDecimal accepts the extra digits when a scale is named for them', () => {
@@ -170,11 +170,11 @@ function codeOf(run: () => unknown): string {
 
 describe('currencyOf', () => {
   test('reads the code the value carries, whatever built it and whatever its scale', () => {
-    expect(currencyOf(money(1299, 'EUR'))).toBe('EUR');
+    expect(currencyOf(fromMinor(1299, 'EUR'))).toBe('EUR');
     expect(currencyOf(zero('JPY'))).toBe('JPY');
     expect(currencyOf(fromDecimal('1.234', 'KWD'))).toBe('KWD');
     // Scale is a separate axis and must not leak into the currency.
-    expect(currencyOf(money(2, 'USD', 6))).toBe('USD');
+    expect(currencyOf(fromMinor(2, 'USD', 6))).toBe('USD');
   });
 });
 

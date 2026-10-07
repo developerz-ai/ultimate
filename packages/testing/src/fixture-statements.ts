@@ -81,7 +81,7 @@ interface ShapeTally {
  * The threshold is `@ultimat3/entity`'s `N_PLUS_ONE_THRESHOLD` and there is no knob: a loop that
  * fails a test and a loop that warns in `x dev` have to be the same loop.
  */
-export async function createTestStatements(): Promise<TestStatements> {
+export async function testStatements(): Promise<TestStatements> {
   // Imported on demand, like every other fixture factory here: a `packages/core` test that never
   // names `statements` must not load the database layer or the entity registry to run.
   const db = await import('@ultimat3/db');

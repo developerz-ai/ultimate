@@ -1,6 +1,6 @@
 // `x jobs ls|show|retry|cancel|rm|promote|pause|resume` — introspect and recover the job queue,
 // bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and MCP report identically;
-// `drain` is planned (`cmd-planned.ts`) until a durable second driver ships. CLI wiring only:
+// `drain` is planned (`cmd-planned.ts`): Postgres is the one durable driver. CLI wiring only:
 // the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
 // `jobs-table.ts`, and getting hold of the queue at all is `jobs-driver.ts` — shared with `x db`.
 
@@ -8,8 +8,6 @@ import { renderFixShellArg } from '@ultimat3/core';
 import type { JobDriver } from '@ultimat3/jobs';
 import {
   cancelJob,
-  DEFAULT_JOB_PAGE,
-  jobCursor,
   MAX_JOB_PAGE,
   pauseQueue,
   promoteJob,
@@ -18,18 +16,15 @@ import {
 } from '@ultimat3/jobs';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
-import { DRAIN_TARGETS, jobsSpec } from './cmd-jobs-spec';
+import { jobsSpec } from './cmd-jobs-spec';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, JobUnknownError, MissingPositionalError } from './errors';
-import type { DrainOutcome } from './jobs-drain';
 import { withJobDriver } from './jobs-driver';
 import {
   backfillToJson,
   deadLetterToJson,
   depthToJson,
-  drainFailureToJson,
-  drainSkipToJson,
   jobRecordToJson,
   jobTraceToJson,
   pausedToJson,
@@ -41,29 +36,7 @@ import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
 
-export { DRAIN_TARGETS, JOBS_SUBCOMMANDS } from './cmd-jobs-spec';
-
-/**
- * `memory` was on that list until 2026-09 and could not be: `memoryJobDriver()` is a `Map` in
- * THIS process, so `x jobs drain --to memory` enqueued each job into it and then `ack`ed the
- * durable row off the source. Reproduced against two real drivers — source ready 1 -> 0, target
- * ready 1, `ok: true` — and the target dies with the command. `wiki/CLI-Reference.md` said the
- * crash window "duplicates a job … instead of losing it"; this target lost every one of them.
- *
- * Refused by NAME rather than folded into the unknown-value message, for `cmd-deploy.ts`'s
- * `readMethod` reason: `--to memory` is a spelling that used to work, so a reader who types it is
- * owed the fact that it moved work into a process that is about to exit, not a list of words.
- */
-function refuseMemoryTarget(): never {
-  throw new BadFlagError({
-    flag: 'to',
-    command: 'jobs',
-    reason:
-      'memory is a Map inside this process — the drain would ack every durable row and lose the copy when the command exits',
-    // Never `x jobs drain …`: the subcommand is planned, and a fix naming it is a second error.
-    fix: 'x jobs ls --json   # the queue as it stands; memory is never a drain target',
-  });
-}
+export { JOBS_SUBCOMMANDS } from './cmd-jobs-spec';
 
 /**
  * A uuid in any spelling Postgres' `uuid` input accepts: canonical, upper-case, unhyphenated,
@@ -113,31 +86,7 @@ function refuseOversizedPage(limit: string | undefined): void {
     command: 'jobs',
     reason: `one page holds at most ${MAX_JOB_PAGE} jobs`,
     // The bound is the queue's own constant, screened like any value spliced into a command.
-    fix: `x jobs ls --limit ${renderFixShellArg(String(MAX_JOB_PAGE), '200')} --json   # then pass its data.next as --after for the page that follows`,
-  });
-}
-
-/**
- * PARKED with `drainResult` below, behind `plannedSubcommand('jobs', 'drain')` in `run`. Its one
- * target was `redis`, an `X_NOT_IMPLEMENTED` stub in `@ultimat3/jobs`, so every drain onto it
- * leased the source batch for `DRAIN_LEASE_MS`, failed each enqueue and nacked it back — five
- * minutes of a production queue no worker could claim from, for a move that could not happen.
- * 25.0.0 deleted the stub, so `DRAIN_TARGETS` is empty and every value is refused here. The body
- * stays, tested, because the day a durable driver ships re-enabling it is one `DRAIN_TARGETS`
- * entry, its builder below, deleting the planned row and one line in `run` — and the `memory`
- * refusal is the lesson that must survive that day: a target that accepts every enqueue and then
- * vanishes with the process loses every job it was handed.
- */
-export function buildDrainTarget(to: string | undefined, _env: CommandContext['env']): JobDriver {
-  if (to === 'memory') refuseMemoryTarget();
-  throw new BadFlagError({
-    flag: 'to',
-    command: 'jobs',
-    reason:
-      DRAIN_TARGETS.length === 0
-        ? 'no durable drain target ships in this build: Postgres is the only durable job driver'
-        : `expects one of: ${DRAIN_TARGETS.join(', ')}`,
-    fix: 'x jobs ls --json   # the queue as it stands; Postgres is the only durable driver, so there is nowhere to drain to',
+    fix: `x jobs ls --limit ${renderFixShellArg(String(MAX_JOB_PAGE), '200')} --json   # then pass its data.nextCursor as --after while data.hasMore is true`,
   });
 }
 
@@ -151,11 +100,9 @@ async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
     limit,
     after: flagString(ctx.args, 'after'),
   });
-  // A FULL page may have another behind it: `next` is the cursor that asks for it, and `null`
-  // says this was the last one — so a walk never has to guess from a row count.
-  const size = limit === undefined ? DEFAULT_JOB_PAGE : Number(limit);
-  const last = result.rows[result.rows.length - 1];
-  const next = last === undefined || result.rows.length < size ? null : jobCursor(last);
+  // `nextCursor` exists exactly when a row past this page does (`listJobs` asks the queue), so a
+  // full last page prints no "next page" a caller would follow to an empty one.
+  const next = result.nextCursor;
   const [paused, workers] = await Promise.all([
     driver.introspect?.pausedQueues() ?? [],
     driver.introspect?.workers() ?? [],
@@ -206,7 +153,8 @@ async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandRes
       rows: result.rows.map(jobRecordToJson),
       deadLetters: result.deadLetters.map(deadLetterToJson),
       backfills: result.backfills.map(backfillToJson),
-      next,
+      nextCursor: result.nextCursor,
+      hasMore: result.hasMore,
       pausedQueues: paused.map(pausedToJson),
       workers: workers.map(workerToJson),
     },
@@ -301,50 +249,6 @@ async function runPause(
   };
 }
 
-/**
- * A skipped candidate is not an error — a job whose `runAt` has not arrived is unclaimable by
- * design — so it carries no `X_*` finding. It still fails the command: `x jobs drain` is run to
- * empty a driver, and a partial move that exited 0 would read as "the queue is clear".
- *
- * Parked with `buildDrainTarget` (see there). Exported so a test produces a real outcome from two
- * memory drivers and renders THAT — the command path itself answers planned until a durable
- * driver exists to move anything onto.
- */
-export function drainResult(outcome: DrainOutcome): CommandResult {
-  const dryRun = outcome.dryRun;
-  const findings = outcome.failures.map((failure) => failure.finding);
-  const lines: string[] = [];
-  if (outcome.skipped.length > 0) {
-    const count = outcome.skipped.length;
-    lines.push(`  ${msg('cli.jobs.skipped', { count, from: outcome.from })}`);
-    for (const skip of outcome.skipped) {
-      lines.push(`    ${skip.id}  ${skip.name}  (${skip.queue})  ${skip.state}  ${skip.reason}`);
-    }
-  }
-  const partial = outcome.skipped.length > 0;
-  return {
-    ok: findings.length === 0 && !partial,
-    command: 'jobs',
-    summary: msg(partial ? 'cli.jobs.drainedPartial' : 'cli.jobs.drained', {
-      count: dryRun ? outcome.candidates.length : outcome.moved.length,
-      from: outcome.from,
-      to: outcome.to,
-      skipped: outcome.skipped.length,
-    }),
-    lines,
-    findings,
-    data: {
-      from: outcome.from,
-      to: outcome.to,
-      dryRun: outcome.dryRun,
-      candidates: outcome.candidates.map(jobRecordToJson),
-      moved: outcome.moved.map(jobRecordToJson),
-      skipped: outcome.skipped.map(drainSkipToJson),
-      failures: outcome.failures.map(drainFailureToJson),
-    },
-  };
-}
-
 /** The subcommands that answer a `JobTrace`. `ls`, `rm`, `promote` and the rest read rows only. */
 const TRACE_SUBCOMMANDS: ReadonlySet<string> = new Set(['show', 'retry', 'cancel']);
 
@@ -356,7 +260,7 @@ export const jobsCommand: CliCommand = {
     // BEFORE `withJobDriver`, which boots the source queue: the answer needs no server, so a box
     // whose database is down gets it rather than the boot failure of a queue never to be used —
     // and nothing is leased. `--to`/`--dry-run` stay declared so the parser lets every spelling
-    // of the subcommand reach this line instead of refusing a flag of something that exists.
+    // of the subcommand 24.x documented reach this line instead of an unknown-flag refusal.
     if (sub === 'drain') throw plannedSubcommand('jobs', 'drain');
     // A TRACE is the queue row projected through the job's own declaration — its concurrency key,
     // its retry schedule — and a declaration exists in this process only once the app is loaded.
@@ -376,7 +280,5 @@ export const jobsCommand: CliCommand = {
   },
 };
 
-export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
-export { drainJobs } from './jobs-drain';
 export type { JobsListFilter, JobsListResult } from './jobs-report';
 export { listJobs, retryJob, showJob } from './jobs-report';

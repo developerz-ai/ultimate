@@ -3,7 +3,7 @@
 // cost is a statement count, taken at the driver.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   clearRegistry,
   type Driver,
@@ -125,7 +125,7 @@ afterAll(() => {
 
 const ask = (actor: AdminActor, path: string): Promise<{ status: number; html: string }> =>
   runWithContext(
-    createContext({ actor: userActor({ id: actor.id, roles: [...(actor.roles ?? [])] }) }),
+    ctxOf({ actor: userActor({ id: actor.id, roles: [...(actor.roles ?? [])] }) }),
     async () => {
       const url = `http://localhost${path}`;
       const matched = adminRouteMatch(admin, new URL(url).pathname);

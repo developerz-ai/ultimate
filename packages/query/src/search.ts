@@ -6,12 +6,12 @@
  * syntax, and the tenant predicate is never optional.
  */
 
-import { type Ctx, finiteOption } from '@ultimat3/core';
+import { type Ctx, finiteOption, type McpExposureDeclaration } from '@ultimat3/core';
 import type { InferOutput, Shape, Simplify } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import { QueryInputInvalidError } from './errors';
 import type { QueryPolicy } from './policy-gate';
-import type { QueryCache, QueryMcp, QueryRateLimit } from './query';
+import type { QueryCache, QueryRateLimit } from './query';
 import { query, queryName } from './query';
 import type { SeekKey } from './shape';
 import type { Builder, SqlSource, SqlText } from './source';
@@ -60,7 +60,7 @@ export interface SearchDef<S extends Shape, Row extends object> {
   readonly termMax?: number;
   readonly page?: SearchPage;
   readonly cache?: QueryCache;
-  readonly mcp?: QueryMcp;
+  readonly mcp?: McpExposureDeclaration;
   readonly rateLimit?: QueryRateLimit;
 }
 

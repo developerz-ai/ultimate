@@ -8,10 +8,10 @@
 import type { NavigationSurface, SpeculationConfig } from '@ultimat3/core';
 import { DEFAULT_SPECULATION, localeSegment } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
-import { localeConfig, routedLocales } from '@ultimat3/i18n';
+import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import type { RouteDescriptor, RouteEntry } from '@ultimat3/render';
 import {
-  describeRoutes,
+  describePages,
   renderHead,
   routeEntries,
   speculationPattern,
@@ -67,15 +67,18 @@ export interface PageSpeculationInput {
   readonly client: readonly NavigationSurface[];
   readonly entries?: readonly RouteEntry[];
   readonly described?: readonly RouteDescriptor[];
-  /** The NON-default routed locales' URL segments. Read from `@ultimat3/i18n` when absent. */
-  readonly localeSegments?: readonly string[];
+  /**
+   * The NON-default routed locales' URL segments — `otherLocaleSegments(appLocaleSet)`, the set the
+   * manifest, the worker and the prerender read. Every caller passes it: no build reads the
+   * ambient locale config.
+   */
+  readonly localeSegments: readonly string[];
 }
 
-const otherLocaleSegments = (): readonly string[] => {
-  const fallback = localeSegment(localeConfig().fallback);
-  return routedLocales()
-    .map(localeSegment)
-    .filter((segment) => segment !== fallback);
+/** Every routed locale but the default, as the URL segment a prefix is spelled in. */
+export const otherLocaleSegments = (set: AppLocaleSet): readonly string[] => {
+  const fallback = localeSegment(set.defaultLocale);
+  return set.locales.map(localeSegment).filter((segment) => segment !== fallback);
 };
 
 /**
@@ -86,9 +89,9 @@ const otherLocaleSegments = (): readonly string[] => {
 export function pageSpeculation(input: PageSpeculationInput): PageSpeculation | undefined {
   if (input.config.prefetch === false) return undefined;
   const entries = input.entries ?? routeEntries();
-  const described = new Map((input.described ?? describeRoutes()).map((one) => [one.file, one]));
+  const described = new Map((input.described ?? describePages()).map((one) => [one.file, one]));
   const client = new Set<string>(input.client);
-  const segments = input.localeSegments ?? otherLocaleSegments();
+  const segments = input.localeSegments;
   const include = entries
     .filter((entry) => {
       const facts = described.get(entry.file);

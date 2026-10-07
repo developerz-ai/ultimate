@@ -5,12 +5,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createClientFlight, isSuperseded } from '@ultimat3/core';
+import { clientFlight, IDEMPOTENCY_HEADER, isSuperseded } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { type FetchLike, rpc } from './client';
-import { IDEMPOTENCY_HEADER } from './wire-headers';
 
 const POST_ID = '00000000-0000-4000-8000-0000000000aa';
 const OK = { id: POST_ID, published: true };
@@ -48,7 +47,7 @@ describe('a write never joins, and is never aborted', () => {
         });
       });
     };
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub, flight });
 
     const both = Promise.all([
@@ -76,7 +75,7 @@ describe('a write never joins, and is never aborted', () => {
         });
       });
     };
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub, flight });
 
     const pending = api.publishPost({ postId: POST_ID }).catch((caught: unknown) => caught);
@@ -100,7 +99,7 @@ describe('a retried mutation needs an idempotency key', () => {
       return Promise.resolve(new Response('gateway', { status: 503 }));
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       retry: { attempts: 5 },
       sleep: clock.sleep,
@@ -127,7 +126,7 @@ describe('a retried mutation needs an idempotency key', () => {
       );
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       sleep: clock.sleep,
       random: () => 0.5,
@@ -152,7 +151,7 @@ describe('a retried mutation needs an idempotency key', () => {
       return Promise.resolve(new Response('gateway', { status: 503 }));
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({ principal: () => 'alice', sleep: clock.sleep });
+    const flight = clientFlight({ principal: () => 'alice', sleep: clock.sleep });
     const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub, flight });
 
     await api
@@ -164,7 +163,7 @@ describe('a retried mutation needs an idempotency key', () => {
   });
 
   // `callOptions.retry ?? ONCE` read the CALL's policy or nothing, so a keyed call never saw the
-  // policy the operator declared on the flight — `createClientFlight({ retry })` was dead for writes.
+  // policy the operator declared on the flight — `clientFlight({ retry })` was dead for writes.
   test('with a key and no per-call retry, the flight`s own policy stands', async () => {
     let calls = 0;
     const fetchStub: FetchLike = () => {
@@ -174,7 +173,7 @@ describe('a retried mutation needs an idempotency key', () => {
       );
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       retry: { attempts: 3 },
       sleep: clock.sleep,

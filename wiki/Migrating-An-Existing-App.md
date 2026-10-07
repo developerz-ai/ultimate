@@ -251,18 +251,18 @@ Two vocabularies. `columns.ts` holds the **opinionated** builders — one way to
 
 ### 1.3 There is no schema-to-entity generator
 
-No command turns a live schema into `entity()` declarations `As of 2026-08`. `introspect()` from `@ultimat3/db` is public and gives the catalog as deterministically ordered, JSON-safe output — the same reader **drift detection** uses. It has exactly that one framework consumer: the `/_x` schema panel and the MCP `schema.describe` tool both answer from the **entity registry**, never from the live catalog, so what they show is what the app declared and not what the database holds.
+No command turns a live schema into `entity()` declarations `As of 2026-08`. `introspectSchema()` from `@ultimat3/db` is public and gives the catalog as deterministically ordered, JSON-safe output — the same reader **drift detection** uses. It has exactly that one framework consumer: the `/_x` schema panel and the MCP `schema.describe` tool both answer from the **entity registry**, never from the live catalog, so what they show is what the app declared and not what the database holds.
 
 ```ts
-import { introspect } from '@ultimat3/db';
+import { introspectSchema } from '@ultimat3/db';
 
-const live = await introspect();
+const live = await introspectSchema();
 // { tables: [{ schema, name, columns, primaryKey, indexes, foreignKeys }] }
 ```
 
 Use it as the input; write the entities.
 
-**App tables only, `As of 2026-08-24`.** `introspect()` excludes every relation Postgres records as extension-owned (`pg_depend`, `deptype = 'e'`) and everything that is not an ordinary or partitioned table — views, materialised views and foreign tables. `create extension pg_stat_statements` in `public` is the CNPG, RDS, Supabase and Neon default, and its view used to read as `unexpected-table` with `x db gen "add pg_stat_statements"` as the fix, so every deploy failed terminally and the fix would have written an extension's internal view into the app's migration set. Ownership rather than a name: a `pg_*` prefix rule covers that view and misses PostGIS's `spatial_ref_sys`. A table someone created **by hand** carries no such dependency and is still `unexpected-table`, which is the finding this phase is about.
+**App tables only, `As of 2026-08-24`.** `introspectSchema()` excludes every relation Postgres records as extension-owned (`pg_depend`, `deptype = 'e'`) and everything that is not an ordinary or partitioned table — views, materialised views and foreign tables. `create extension pg_stat_statements` in `public` is the CNPG, RDS, Supabase and Neon default, and its view used to read as `unexpected-table` with `x db gen "add pg_stat_statements"` as the fix, so every deploy failed terminally and the fix would have written an extension's internal view into the app's migration set. Ownership rather than a name: a `pg_*` prefix rule covers that view and misses PostGIS's `spatial_ref_sys`. A table someone created **by hand** carries no such dependency and is still `unexpected-table`, which is the finding this phase is about.
 
 ---
 
@@ -304,7 +304,7 @@ A separate Postgres **schema** is still not a third path `As of 2026-08`, for on
 
 **The `search_path` itself now works.** `connectionUrl` **merges** the operator's libpq `options` instead of assigning over them, on every role, so a `DATABASE_URL` carrying `?options=-c search_path=app` survives everywhere. The framework wins only on the setting it names — the role's `statement_timeout` bound — and every other `-c` an operator wrote is theirs.
 
-**The drift check does not follow it.** `introspect()` defaults `schema` to `'public'`, `checkDrift()` forwards a `schema` option only when it is given one, and `runMigrations` calls `checkDrift({ migrations })` with none. So the post-migrate check reads `public` whatever the session's `search_path` is: it finds none of the app's tables, and reports **every declared table as `missing-table`** whose `fix:` is `x db migrate` — the command that just ran. There is no `--schema` flag on `x db` to close it with.
+**The drift check does not follow it.** `introspectSchema()` defaults `schema` to `'public'`, `checkDrift()` forwards a `schema` option only when it is given one, and `runMigrations` calls `checkDrift({ migrations })` with none. So the post-migrate check reads `public` whatever the session's `search_path` is: it finds none of the app's tables, and reports **every declared table as `missing-table`** whose `fix:` is `x db migrate` — the command that just ran. There is no `--schema` flag on `x db` to close it with.
 
 ### Branch table
 
@@ -554,7 +554,7 @@ Verified against the code, `As of 2026-08`.
 | Gap | Detail | Do this instead |
 |---|---|---|
 | No schema baseline | every unmodelled table is `unexpected-table`, every unmodelled column is `unexpected-column`; no command snapshots the pre-existing schema as a starting point | model everything, or give Ultimate its own database |
-| No schema-to-entity generator | no command turns a live schema into `entity()` declarations. `introspect()` is public and gives the catalog as JSON | write the entities from `introspect()`'s output |
+| No schema-to-entity generator | no command turns a live schema into `entity()` declarations. `introspectSchema()` is public and gives the catalog as JSON | write the entities from `introspectSchema()`'s output |
 | Three column shapes have no builder | a naive `timestamp without time zone` (permanently), a native Postgres `enum` **type**, and `vector` | convert a naive timestamp to `timestamptz`; declare an enum column as `text()`; keep vectors in `postgresVectorStore()` |
 | A renamed column arrives under its **physical** name in a live query | `@ultimat3/realtime` rebuilds rows from physical names and cannot read `.column()` overrides across the tier boundary | do not make a renamed slice live first, or map the name in the subscriber |
 | One database globally | `db()` is a singleton | one Postgres, or a second client outside the framework |

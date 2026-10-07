@@ -101,7 +101,7 @@ export interface JobDefinition<I, R = unknown> {
    *
    * Enforced by `JobDriver.leases` — a row every replica can see — and NOT by `limits.ts`, which
    * counts one process's heap. A driver with no lease store cannot hold this cap, so
-   * `createWorker().start()` refuses to boot rather than let it pass silently
+   * `jobWorker().start()` refuses to boot rather than let it pass silently
    * (`X_JOB_CONCURRENCY_UNENFORCEABLE`): this field was declared, documented and in the manifest
    * while nothing read it, which is exactly what axiom 3 exists to prevent.
    */

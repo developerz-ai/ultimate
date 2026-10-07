@@ -55,12 +55,12 @@ const outcome = <Out>(result: {
 export const validateSync = <Out>(schema: Schema<Out>, value: unknown): ValidationOutcome<Out> => {
   const result = schema['~standard'].validate(value);
   if (result instanceof Promise) {
-    return { ok: false, issues: ['schema is async; use validate() for request bodies'] };
+    return { ok: false, issues: ['schema is async; use validateBody() for request bodies'] };
   }
   return outcome<Out>(result);
 };
 
-export const validate = async <Out>(
+export const validateBody = async <Out>(
   schema: Schema<Out>,
   value: unknown,
 ): Promise<ValidationOutcome<Out>> => outcome<Out>(await schema['~standard'].validate(value));

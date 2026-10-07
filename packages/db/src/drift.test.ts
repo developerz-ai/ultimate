@@ -3,7 +3,7 @@
 // Indexes are `drift-index.test.ts`; the ledger and the live database are `drift-ledger.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { assertNoDrift, diffSchema, driftError } from './drift';
+import { assertNoSchemaDrift, diffSchema, driftError } from './drift';
 import { schema, table } from './drift-fixture';
 import type { SchemaDescription, TableDescription } from './introspect';
 
@@ -23,7 +23,7 @@ describe('drift', () => {
 
     let thrown: unknown;
     try {
-      assertNoDrift(report);
+      assertNoSchemaDrift(report);
     } catch (error) {
       thrown = error;
     }
@@ -156,7 +156,7 @@ describe('drift', () => {
       schema(table('posts', ['title', 'id'])),
     );
     expect(report).toEqual({ ok: true, differences: [] });
-    expect(() => assertNoDrift(report)).not.toThrow();
+    expect(() => assertNoSchemaDrift(report)).not.toThrow();
   });
 
   test('driftError carries machine-readable meta for --json', () => {

@@ -8,7 +8,7 @@ import { bodyInvalid, routeNotFound } from './errors';
 import type { OverlayNotice } from './overlay';
 import { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
 import { cspHashSource } from './security-headers';
-import { createServer } from './server';
+import { httpServer } from './server';
 
 describe('wantsOverlay', () => {
   test('true when the client accepts html', () => {
@@ -255,8 +255,8 @@ describe('the overlay under the policy the same response sends', () => {
     throw routeNotFound('GET', '/missing');
   };
 
-  const serve = (): ReturnType<typeof createServer> =>
-    createServer({
+  const serve = (): ReturnType<typeof httpServer> =>
+    httpServer({
       routes: [
         { method: 'GET', path: '/boom', meta: { name: 'boom', auth: 'public' }, handler: boom },
       ],

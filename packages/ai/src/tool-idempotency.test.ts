@@ -7,11 +7,11 @@ import {
   action,
   memoryIdempotencyStore,
   registerAction,
+  resetActions,
   resetIdempotency,
-  resetRegistry,
   setIdempotencyStore,
 } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { refusal } from './bounds-fixture';
@@ -45,7 +45,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   resetIdempotency();
 });
 
@@ -58,7 +58,7 @@ describe('an idempotent action as an agent tool', () => {
       maxLength: 255,
     });
     expect(keyed?.required ?? []).not.toContain(TOOL_IDEMPOTENCY_KEY_ARG);
-    resetRegistry();
+    resetActions();
     const plain = asProjectableAction(charge(false)).inputJsonSchema;
     expect(plain?.properties).not.toHaveProperty(TOOL_IDEMPOTENCY_KEY_ARG);
   });
@@ -66,7 +66,7 @@ describe('an idempotent action as an agent tool', () => {
   test('a model retry with the same key replays the first result, the handler runs once', async () => {
     const tools = [asProjectableAction(charge(true))];
     const keyed = call({ amount: 5, [TOOL_IDEMPOTENCY_KEY_ARG]: 'retry-1' });
-    const [first, second] = await runWithContext(createContext({}), async () => [
+    const [first, second] = await runWithContext(ctxOf({}), async () => [
       await runLlmToolCall(tools, keyed, actor),
       await runLlmToolCall(tools, keyed, actor),
     ]);

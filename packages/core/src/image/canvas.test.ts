@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { composeOnto, fitBox, layOut, scaledToFit } from './canvas';
 import { parseColor } from './color';
 import { ImageUnsupportedError } from './errors';
-import { createRaster, type Raster, rasterFrom } from './raster';
+import { blankRaster, type Raster, rasterFrom } from './raster';
 
 type Rgba = readonly [number, number, number, number];
 
@@ -20,7 +20,7 @@ const codeOf = (run: () => unknown): string => {
 };
 
 const solid = (width: number, height: number, color: Rgba): Raster => {
-  const raster = createRaster(width, height, 'test');
+  const raster = blankRaster(width, height, 'test');
   for (let i = 0; i < raster.pixels.length; i += 4) {
     raster.pixels[i] = color[0];
     raster.pixels[i + 1] = color[1];

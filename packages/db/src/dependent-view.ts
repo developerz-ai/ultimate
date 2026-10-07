@@ -2,7 +2,7 @@
 // before the statement is sent — and name the view, the column and the statement that recreates it.
 //
 // **This is the honest ceiling for views, and the reason it is not in the generator.** `x db gen`
-// runs with no database open; `SchemaDescription` has no field for a view; `introspect()` reads
+// runs with no database open; `SchemaDescription` has no field for a view; `introspectSchema()` reads
 // none by construction (`app-relation.ts` excludes every non-table relation); and no `entity()` can
 // declare one. So nothing the generator reads knows a view exists, and a `GenerateOptions.views`
 // with no caller to fill it is the declared-and-never-wired defect this release exists to

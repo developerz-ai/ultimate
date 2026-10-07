@@ -24,7 +24,7 @@ const same = (a: Bucket, b: Bucket): boolean =>
  * number an author read, an OpenAPI document published and nothing enforced, which is the exact
  * failure this seam closes. Same shape as `@ultimat3/auth`'s `AuthLimiter` policy check.
  *
- * Idempotent, so both construction paths (`createServer`, and `createPipeline` under it) can apply
+ * Idempotent, so both construction paths (`httpServer`, and `httpPipeline` under it) can apply
  * it: a second pass compares each bucket against the copy the first pass registered.
  */
 /**

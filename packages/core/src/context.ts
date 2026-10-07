@@ -3,9 +3,9 @@
 // parameters — otherwise every signature in the framework grows a `ctx` argument twice.
 //
 // THERE IS EXACTLY ONE ASSERTION IN THIS FILE AND IT IS IRREDUCIBLE (`As of 2026-08-24`). It is
-// the `as Ctx` in `createContext`, and it is the LAST one: the second — over `preview` — is gone,
+// the `as Ctx` in `ctxOf`, and it is the LAST one: the second — over `preview` — is gone,
 // because `CtxFacts` gives that value an honest type, and `@ultimat3/http`'s
-// `createRequestContext` now composes this function instead of building a second context beside
+// `requestContext` now composes this function instead of building a second context beside
 // it, so that package has none at all.
 //
 // Why the last one cannot go. `Ctx extends CtxServices`, and `CtxServices` is the seam an app
@@ -20,9 +20,9 @@
 // Four alternatives were built and measured before this line was kept. Making the augmented half
 // `Partial<CtxServices>` removes the assertion and turns `ctx.posts` into `PostRepo | undefined`
 // for every app — true, and a breaking change to the documented seam. Requiring `CtxInit.services`
-// to be a `CtxServices` moves the proof to the caller and breaks every internal `createContext()`
+// to be a `CtxServices` moves the proof to the caller and breaks every internal `ctxOf()`
 // in an app's program, because an app typechecks the framework's sources through its project
-// references. A generic `createContext<S>` returns a context no framework caller can pass where a
+// references. A generic `ctxOf<S>` returns a context no framework caller can pass where a
 // `Ctx` is wanted. And an overload whose implementation signature returns the looser type compiles
 // only through TypeScript's documented bivariance hole — the same assertion, laundered.
 //
@@ -35,7 +35,7 @@ import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
 import { UltimateError } from './errors';
 import { finiteOption } from './finite-option';
-import { traceId as newTraceId, uuid } from './ids';
+import { traceId as newTraceId, uuidV7 } from './ids';
 import { type Logger, logger as rootLogger, setLoggerContextFields } from './logger';
 import { installTraceHeaders } from './outbound-headers';
 import { type Role, resolveRole } from './roles';
@@ -73,7 +73,7 @@ export interface ServiceBag {
  * against a type carrying members only the app's boot knows about: `Ctx extends CtxServices`, an
  * app augments `CtxServices` with `declare module`, and every service it declares then became a
  * REQUIRED member of every context literal in the framework. `@ultimat3/http`'s
- * `createRequestContext` stopped compiling inside `examples/dummy` for exactly that reason
+ * `requestContext` stopped compiling inside `examples/dummy` for exactly that reason
  * (`TS2739: missing posts, orgs`), while the framework's own gate — which augments nothing —
  * stayed green.
  *
@@ -157,6 +157,10 @@ const requestContext = asyncContext<Ctx>('the request context');
 
 const neverAborted = new AbortController().signal;
 
+/**
+ * The framework's default locale — the ONE declaration: `@ultimat3/i18n` imports it rather than
+ * restating it (a second `'en'` there could drift from the context's own default).
+ */
 export const DEFAULT_LOCALE = 'en';
 export const DEFAULT_TIME_ZONE = 'UTC';
 
@@ -164,9 +168,9 @@ function buildId(): string {
   return process.env['BUILD_ID'] ?? 'dev';
 }
 
-export function createContext(init: CtxInit = {}): Ctx {
+export function ctxOf(init: CtxInit = {}): Ctx {
   const clock = init.clock ?? systemClock;
-  const requestId = init.requestId ?? uuid(clock);
+  const requestId = init.requestId ?? uuidV7(clock);
   const trace = init.traceId ?? newTraceId();
   const base = init.logger ?? rootLogger;
   const explicit: ServiceBag = Object.freeze({ ...(init.services ?? {}) });
@@ -233,7 +237,7 @@ export function useContext(): Ctx {
     throw new UltimateError({
       code: 'X_NO_CONTEXT',
       cause: 'useContext() was called outside of runWithContext()',
-      fix: 'wrap the entry point in runWithContext(createContext({ ... }), fn)',
+      fix: 'wrap the entry point in runWithContext(ctxOf({ ... }), fn)',
     });
   }
   return ctx;
@@ -291,13 +295,13 @@ function composeSignal(parent: AbortSignal, patch: AbortSignal | undefined): Abo
 export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
   const parent = useContext();
   // A factory-managed service was built for the PARENT's actor; forwarding it verbatim into an
-  // impersonated child would answer every call with the parent's tenant. `createContext` below
+  // impersonated child would answer every call with the parent's tenant. `ctxOf` below
   // rebuilds every registered factory fresh against the child's own actor, so only services no
   // factory owns — a hand-built mock nothing registered — carry forward unrebuilt.
   const carried = Object.fromEntries(
     Object.entries(parent.services).filter(([name]) => !isManagedService(name)),
   );
-  const child = createContext({
+  const child = ctxOf({
     requestId: parent.requestId,
     traceId: patch.traceId ?? parent.traceId,
     actor: patch.actor ?? parent.actor,
@@ -330,7 +334,7 @@ export function useService<T>(name: string): T {
     throw new UltimateError({
       code: 'X_SERVICE_MISSING',
       cause: `"${name}" is not on ctx.services (have: ${Object.keys(ctx.services).join(', ')})`,
-      fix: `pass it in createContext({ services: { ${name} } })`,
+      fix: `pass it in ctxOf({ services: { ${name} } })`,
       meta: { name },
     });
   }

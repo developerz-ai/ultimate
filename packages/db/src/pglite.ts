@@ -175,7 +175,7 @@ async function restore(
   }
 }
 
-/** Boots one embedded Postgres. Costs seconds — `createPgliteClient` calls it exactly once. */
+/** Boots one embedded Postgres. Costs seconds — `pgliteClient` calls it exactly once. */
 export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<PgliteDriver> {
   if (options.driver !== undefined) return options.driver;
   const dataDir = options.dataDir ?? PGLITE_MEMORY;
@@ -250,7 +250,7 @@ function rowsOf(result: PgliteResult): number {
 }
 
 /** Lazily boots: constructing a client opens nothing, exactly like `postgresClient`. */
-export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
+export function pgliteClient(options: PgliteOptions = {}): PgliteClient {
   // One in-flight boot, shared. PGlite takes seconds to start, so two concurrent first queries
   // would otherwise build two instances over the same data directory and orphan one of them.
   let booting: Promise<PgliteDriver> | undefined;

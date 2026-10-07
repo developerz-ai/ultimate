@@ -4,12 +4,12 @@
 // evaluation a human does. The plaintext is shown once; only its SHA-256 is ever stored, and
 // lookup happens by the non-secret id so the secret never appears in a query, an index or a log.
 
-import { type Clock, randomHex, systemClock } from '@ultimat3/core';
+import { type Clock, randomHex, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type { ApiKeyStore, AuthApiKeyRecord, AuthUser, UserStore } from './adapter';
 import { apiKeyEnvInvalid, apiKeyInvalid, apiKeyScopeWildcard } from './errors';
 import type { PolicyActor } from './policy-bridge';
 import { actorFromApiKey, isWildcardScope } from './policy-bridge';
-import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
+import { randomToken, sha256Hex } from './tokens';
 
 export const API_KEY_NAMESPACE = 'ult';
 

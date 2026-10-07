@@ -186,7 +186,7 @@ argument, annotations). `toolFromQuery` was this function under another name and
 `isMcpExposed(primitive.mcp)` from `@ultimat3/core` where `isExposed` was.
 `src/cross-surface.test.ts` is what makes a fourth spelling a failing test rather than a note.
 
-A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an
+A hand-written tool's `policy` is a permission, evaluated through the same `guardAction()` an
 HTTP request goes through, so a tool cannot acquire a second authz path. A tool without one
 is `X_MCP_TOOL_UNSAFE` at boot, and an unmarked tool is metered as a write.
 
@@ -257,7 +257,7 @@ whitelisted key the input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boo
 
 | Field | Source | Default |
 |---|---|---|
-| `initialize.instructions` | `defineAppMcp({ instructions })` / `createMcpServer({ instructions })` — a string, or `(caller) => string \| undefined` | none; a function that throws or answers blank sends none |
+| `initialize.instructions` | `defineAppMcp({ instructions })` / `mcpServer({ instructions })` — a string, or `(caller) => string \| undefined` | none; a function that throws or answers blank sends none |
 | `title` | `mcp: { title }` · hand-written `title` | none |
 | `annotations` | `deriveAnnotations(primitive)`, then `mcp: { annotations }` key by key | query `{ readOnlyHint: true }`; action `{ readOnlyHint: false, destructiveHint: true, idempotentHint: <idempotent> }`; `openWorldHint` only when declared |
 | `outputSchema` | an action's `output` with an object root; a query's `rows` as `{ rows: [<row>] }`, or as the row itself for a `single: true` read (which answers one row or `X_NOT_FOUND`, as its route does) — `toWireOutputSchema` (from `@ultimat3/schema`) / `toRowsOutputSchema`, structure only (no bounds, patterns or `additionalProperties`: a client refuses a result that misses its schema) | none |
@@ -275,7 +275,7 @@ surface over its ceiling. Put the derivation beside the number.
 **Whose fix.** `errorAudience: 'caller'` (`defineAppMcp`'s default) renders an error's
 `callerFix` — `X_FORBIDDEN`: ask the account owner for the permission; `X_MCP_SCOPE_DENIED`: ask for
 a token with the scope; `X_INPUT_INVALID`: correct the named fields — where `fix` names something
-only the app's developer can run. `'developer'` (`createMcpServer`'s default, the dev server's)
+only the app's developer can run. `'developer'` (`mcpServer`'s default, the dev server's)
 keeps `fix`. An error whose `docs` is not the framework's one Error-Codes page — an app's
 `docs://recipes/...` — renders a fourth `docs:` line. Byte-identical to
 `UltimateError.format({ audience, docs })`.
@@ -347,7 +347,7 @@ export const mcp = defineAppMcp({
 
 ### `onAudit`: the gate's decisions, as data
 
-`createMcpServer({ onAudit })` · `defineAppMcp({ onAudit })` — the route reads its server's. One
+`mcpServer({ onAudit })` · `defineAppMcp({ onAudit })` — the route reads its server's. One
 audit PATH with a second destination: the `mcp.*` log line is written, then the same decision is
 handed on. What an action or query DID still reaches core's `setAuditSink` (`surface: 'mcp'`);
 `onAudit` carries what no `AuditRecord` can — the refusals before anything ran.
@@ -414,7 +414,7 @@ after a signing-secret rotation the same call opens a FRESH confirmation: never 
 never the old approval. The arguments are stored SEALED (`seal()`, AES-256-GCM under the app's one
 master key, purpose `MCP_CONFIRMATION_ARGUMENTS_PURPOSE`), never plaintext at rest — the person
 deciding must see what they approve, or a prompt-injected agent describes "$5 to order 17" and sends
-another. `sealKeys` points at the key in a test. `SQL_MCP_CONFIRMATIONS_TABLE` is the store's DDL; `store.purge(before)` from a
+another. `sealKeys` points at the key in a test. `SQL_MCP_CONFIRMATIONS_TABLE` is the store's DDL, imported from `@ultimat3/mcp/schema` (its one path — 25.0.0 took it off the barrel); `store.purge(before)` from a
 `task` bounds the table. A gated name the server does not project — or `tools: []` — is
 `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at boot. The gated tool carries `confirms: true`, which the meta
 catalog shows as `(confirms)`.

@@ -7,9 +7,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:te
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove.
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun exposes no path-join primitive.
-import { action, defineApi, resetRegistry as resetActions } from '@ultimat3/action';
+import { action, defineApi, resetActions } from '@ultimat3/action';
 import { can, clearPermissions } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { openApiArtifacts, openApiJson, openApiStaleness } from './app-openapi';
 
@@ -24,7 +24,7 @@ const manifest = {
 beforeAll(clearPermissions);
 
 describe('openApiJson', () => {
-  afterEach(() => resetRegistry());
+  afterEach(() => resetQueries());
 
   test('a registered read is a GET path with the page controls, beside the actions', () => {
     registerQuery(
@@ -55,11 +55,11 @@ describe('the complete document and a mount document', () => {
   // file handed out by name and never reset (`X_ACTION_PATH_DERIVED_EARLY`) — this block's premise
   // is a registry holding only what it declares, whatever ran before it in the process.
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     resetActions();
   });
   afterEach(() => {
-    resetRegistry();
+    resetQueries();
     resetActions();
   });
 

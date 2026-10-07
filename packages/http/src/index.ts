@@ -8,18 +8,9 @@
 import './error-titles';
 
 export type { PgExecutor, RenderMode } from '@ultimat3/core';
-// The wire format is `@ultimat3/core`'s and is RE-EXPORTED, never re-declared: it is one module at
-// the tier both halves can reach, because `@ultimat3/jobs` signs a delivery, this package verifies
-// one, and neither may import the other. Re-exported here so a receiver route needs one import.
-export {
-  escapeHtml,
-  isCanonicalWebhookField,
-  readCookie,
-  WEBHOOK_ID_HEADER,
-  WEBHOOK_SIGNATURE_HEADER,
-  WEBHOOK_SIGNATURE_VERSION,
-  WEBHOOK_TOPIC_HEADER,
-} from '@ultimat3/core';
+// No core VALUE is re-exported here (`X_HELPER_COPY`, `bun run flight-copies`): the webhook wire
+// format (`WEBHOOK_*`, `isCanonicalWebhookField`), `escapeHtml` and `readCookie` are imported from
+// `@ultimat3/core`, their one home, by every caller.
 export type { AppHttpConfig, BootOwnedHttpKey } from './app-config';
 export { configuredHttp, configureHttp, mergeHttpConfig, resetHttpConfig } from './app-config';
 export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
@@ -36,8 +27,8 @@ export type { ActorView, RequestContext, RequestContextInit } from './context';
 export {
   actorView,
   asCtx,
-  createRequestContext,
   elapsedMs,
+  requestContext,
   useRequestBodyBytes,
   useRequestContext,
   useRequestCookie,
@@ -50,7 +41,7 @@ export { allowedOrigin, corsHeaders, DEFAULT_CORS, originListed, preflight } fro
 export type { CsrfCheckInput, CsrfConfig, CsrfMode, CsrfVerdict } from './csrf';
 export { checkCsrf, csrfBlocked, selfOrigin } from './csrf';
 export type { Deadline } from './deadline';
-export { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
+export { resolveTimeoutMs, startDeadline } from './deadline';
 export type { ErrorFacts, ProblemDocument } from './error-facts';
 export {
   factsOf,
@@ -131,7 +122,7 @@ export { OVERLAY_STYLE } from './overlay-style';
 export type { PeerIdentity } from './peer-identity';
 export { peerIdentity } from './peer-identity';
 export type { HandleInit, Pipeline, PipelineDeps } from './pipeline';
-export { createPipeline, PIPELINE_STAGES } from './pipeline';
+export { httpPipeline, PIPELINE_STAGES } from './pipeline';
 export type { ProblemMeta, ProblemMetaDeclaration, ProblemMetaValue } from './problem-meta';
 export { MAX_PROBLEM_META_BYTES, registerProblemMeta } from './problem-meta';
 export type {
@@ -148,11 +139,11 @@ export type {
 } from './rate-limit';
 export {
   assertRateLimitScope,
-  createRateLimiter,
   DEFAULT_MAX_RATE_LIMIT_KEYS,
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   rateLimitDecision,
+  rateLimiter,
   rateLimitSpends,
   resolveRateLimitConfig,
   toBucket,
@@ -194,13 +185,13 @@ export {
   applyCacheHeaders,
   cacheControl,
   html,
-  json,
+  jsonResponse,
   NO_STORE,
   noContent,
   problem,
   redirect,
   stream,
-  text,
+  textResponse,
   withHeaders,
 } from './response';
 export type {
@@ -215,9 +206,9 @@ export type {
   RouteTable,
 } from './router';
 export {
-  createRouter,
   describeRoutes,
   HTTP_METHODS,
+  httpRouter,
   matchRoute,
 } from './router';
 export type { SecurityConfig } from './security-headers';
@@ -229,14 +220,14 @@ export type {
   UpgradeTarget,
   WebSocketMount,
 } from './server';
-export { createServer } from './server';
+export { httpServer } from './server';
 export type { DeleteCookieOptions } from './set-cookie';
 export { deleteCookie, setCookie } from './set-cookie';
 // The stage vocabulary comes from its declaration site, beside the fourteen implementations it
 // names; `PIPELINE_STAGES` — the ORDER — stays `pipeline.ts`'s.
 export type { Stage, StageDoc, StageName, StagePhase, StageRun } from './stages';
 export type { InferOutput, Schema, ValidationOutcome } from './validate';
-export { formatIssue, validate, validateSync } from './validate';
+export { formatIssue, validateBody, validateSync } from './validate';
 export type { VerifiedWebhook, WebhookVerifyOptions } from './webhook-verify';
 export {
   DEFAULT_WEBHOOK_BODY_LIMIT,

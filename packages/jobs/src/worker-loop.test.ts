@@ -4,14 +4,14 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { resetJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { setWakeLive, signalEnqueued } from './enqueue-signal';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 import type { Worker } from './worker-types';
 
 afterEach(() => {
@@ -20,7 +20,7 @@ afterEach(() => {
   setWakeLive(false);
 });
 
-const context = () => createContext({ role: 'worker', buildId: 'test' });
+const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 
 /** The preload freezes `Date`; a retry's due time needs a clock that moves with the timers. */
 const moving: Clock = {
@@ -79,7 +79,7 @@ describe('the claim loop', () => {
         }
       },
     };
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: slow,
       pollIntervalMs: 25,
       idlePollMaxMs: 60_000,
@@ -110,7 +110,7 @@ describe('the claim loop', () => {
 
   test('a wake naming a queue this worker does not serve changes nothing', async () => {
     const driver = memoryJobDriver();
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       queues: ['mail'],
       pollIntervalMs: 25,
@@ -143,7 +143,7 @@ describe('the claim loop', () => {
         else secondAt = performance.now();
       },
     });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       concurrency: 1,
       pollIntervalMs: 25,
@@ -179,7 +179,7 @@ describe('the claim loop', () => {
         return Promise.resolve();
       },
     });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       clock: moving,
       pollIntervalMs: 25,

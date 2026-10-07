@@ -4,7 +4,7 @@
 
 import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, logger, registerErrorRetry, UltimateError } from '@ultimat3/core';
+import { ctxOf, logger, registerErrorRetry, UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -80,7 +80,7 @@ async function claimOne(options: {
       workerId: 'worker-test',
     })
   )[0] as ClaimedJob;
-  const ctx: Ctx = createContext({ role: 'worker', buildId: 'test' });
+  const ctx: Ctx = ctxOf({ role: 'worker', buildId: 'test' });
   return {
     driver,
     // The attempt is the driver's number in production; fabricating it here is how a run at the
@@ -175,7 +175,7 @@ describe('a terminal error stops on the attempt it happened', () => {
       driver: spied,
       claimed,
       handle: handle as AnyJobHandle,
-      ctx: createContext({ role: 'worker', buildId: 'test' }),
+      ctx: ctxOf({ role: 'worker', buildId: 'test' }),
     });
 
     // DROPPED: settled `failed`, terminal. It was nacked with neither flag, which both drivers
@@ -278,7 +278,7 @@ describe('retry-after retries at the time the responder named', () => {
       driver: spied,
       claimed,
       handle: handle as AnyJobHandle,
-      ctx: createContext({ role: 'worker', buildId: 'test' }),
+      ctx: ctxOf({ role: 'worker', buildId: 'test' }),
     });
 
     expect(nacks[0]?.delayMs).toBe(60_000);
@@ -341,7 +341,7 @@ describe('this package classifies its own codes, and the executor acts on them',
       driver,
       claimed,
       handle: handle as AnyJobHandle,
-      ctx: createContext({ role: 'worker', buildId: 'test' }),
+      ctx: ctxOf({ role: 'worker', buildId: 'test' }),
     });
 
     expect(execution.outcome).toBe('dead-lettered');

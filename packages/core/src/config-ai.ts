@@ -15,13 +15,12 @@ export interface McpConfig {
 }
 
 /**
- * No `modelEnv`. It named the env KEY holding the model id, "so no model string is baked into the
- * image" — and its only reader was `config.ts`'s own merge, copying input to output. Nothing
- * consumed the merged value, so `modelEnv: 'ANTHROPIC_MODEL'` selected no model: `@ultimat3/ai`
- * reads env for API KEYS only, and the model is `request.model ?? DEFAULT_MODEL`, a compile-time
- * constant in `models.ts` (itself deleted in 25.0.0: an app names its own models). The exact thing
- * the key existed to prevent is what it delivered.
- * Deleted 2026-08 — pass `model` on the request, or read your own env key and pass it.
+ * No `modelEnv` (deleted in 8.0.0; refused by name since 25.0.0, `config-removed.ts`). It named the
+ * env KEY holding the model id, "so no model string is baked into the image" — and its only reader
+ * was `config.ts`'s own merge, copying input to output, so `modelEnv: 'ANTHROPIC_MODEL'` selected
+ * no model: `@ultimat3/ai` reads env for API KEYS only. There is no framework default model either
+ * (since 25.0.0): an app names the model on the prompt or on `llm({ model })` — read your own env
+ * key and pass it there.
  */
 export interface AiConfig {
   readonly mcp: McpConfig;

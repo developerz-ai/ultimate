@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { tag } from '@ultimat3/cache';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { paginate } from './pagination';
@@ -75,7 +75,7 @@ describe('the query DSL surface', () => {
 
   test('.live() delegates to toLiveQuery() — same sql shape, same policy reference', async () => {
     const target = defineTarget();
-    const ctx = createContext({ actor: readerActor });
+    const ctx = ctxOf({ actor: readerActor });
     const viaFacade = await target.live({ orgId: ORG }, { ctx, epoch: 'build-1' });
     expect(viaFacade.name).toBe(target.name);
     expect(viaFacade.policy).toBe(target.policy);
@@ -92,7 +92,7 @@ describe('the query DSL surface', () => {
     // The cursor is only reachable through the query that issued it, so the façade must bind
     // `paginate` rather than leave app code importing a projection function.
     const target = defineTarget();
-    const args = { first: 1, ctx: createContext({ actor: readerActor }) };
+    const args = { first: 1, ctx: ctxOf({ actor: readerActor }) };
     const viaFacade = await target.page({ orgId: ORG }, args);
     const direct = await paginate(target, { orgId: ORG }, args);
     expect(viaFacade.rows).toEqual(direct.rows);

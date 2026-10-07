@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { asyncRefusal } from './bounds-fixture';
-import { normalize } from './embeddings';
+import { normalizeVector } from './embeddings';
 import { type PgVectorStore, postgresVectorStore } from './pg-vector';
 import { conditionsSql, deleteSql, vectorLiteral } from './pg-vector-sql';
 import { memoryVectorStore } from './vector';
 
-const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
+const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 
 interface Harness {
   readonly client: RecordingClient;
@@ -14,7 +14,7 @@ interface Harness {
 }
 
 function harness(): Harness {
-  const client = createRecordingClient();
+  const client = recordingClient();
   return { client, store: postgresVectorStore({ name: 'docs', dimension: 4, client }) };
 }
 
@@ -34,7 +34,7 @@ describe('PgVectorStore ddl', () => {
   });
 
   test('the FTS language is the one the queries bind, not a second default', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const store = postgresVectorStore({ name: 'docs', dimension: 4, client, language: 'simple' });
     expect(store.ddl()).toContain("to_tsvector('simple', content)");
     await store.searchText('x_db_drift', 5);
@@ -192,7 +192,7 @@ describe('PgVectorStore reads', () => {
   });
 
   test('with no client the ambient db() is used, so a store joins the caller’s transaction', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     setDbClient(client);
     try {
       await postgresVectorStore({ name: 'docs', dimension: 4 }).searchText('drift', 1);

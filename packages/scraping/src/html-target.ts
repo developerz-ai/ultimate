@@ -18,7 +18,7 @@ import { parseKeyChord } from './key-chord';
 import type { PageRecording } from './recording';
 import { splitDownload } from './recording';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
-import { createRing } from './rings';
+import { boundedRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 import { EMPTY_SESSION } from './session-state';
 import type {
@@ -119,14 +119,14 @@ interface OfflineDocument {
 }
 
 export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
-  const consoleRing = createRing<ConsoleLine>();
-  const networkRing = createRing<NetworkEntry>();
+  const consoleRing = boundedRing<ConsoleLine>();
+  const networkRing = boundedRing<NetworkEntry>();
   // Built and never pushed to, deliberately: this target parses markup and executes none of it, so
   // there is no uncaught exception for it to have. It ANSWERS rather than omitting the ring —
   // `page.pageErrors()` returning `[]` here is the honest "nothing threw, and nothing could",
   // where a missing ring would be a page method that throws on two of the three drivers.
   // `driver-parity.test.ts` pins the divergence, beside the box/hit-target one it already carries.
-  const pageErrorRing = createRing<PageError>();
+  const pageErrorRing = boundedRing<PageError>();
   const overlay = new Map<string, string>();
   /**
    * One overlay per FRAME, held here rather than in the frame target, because `frames()` builds a

@@ -6,7 +6,7 @@
 // Nothing here polls or sleeps: a job becomes due only because `clock.advance()` said so.
 
 import type { Actor, Ctx } from '@ultimat3/core';
-import { assert, createContext } from '@ultimat3/core';
+import { assert, ctxOf } from '@ultimat3/core';
 import type {
   AnyJobHandle,
   EnqueueResult,
@@ -108,7 +108,7 @@ const tallyOf = (executions: readonly JobExecution[]): Record<string, StepTally>
   return steps;
 };
 
-export async function createRunJobs(): Promise<RunJobs> {
+export async function testJobs(): Promise<RunJobs> {
   const jobs = await import('@ultimat3/jobs');
   const driver: JobDriver = jobs.memoryJobDriver();
   // Captured before the overwrite: the ambient driver is process-global, so without this the
@@ -120,7 +120,7 @@ export async function createRunJobs(): Promise<RunJobs> {
   // the process's own handed back with the driver.
   const previousBus = jobs.eventBus();
   jobs.setEventBus(jobs.memoryEventBus());
-  const anonymousWorker = createContext({ role: 'worker' });
+  const anonymousWorker = ctxOf({ role: 'worker' });
   const renewals = frozenScheduler();
 
   const introspect = (): NonNullable<JobDriver['introspect']> => {
@@ -164,7 +164,7 @@ export async function createRunJobs(): Promise<RunJobs> {
    * row, no shutdown hook — the frozen clock and the test decide when a pass happens.
    */
   const round = async (ctx: Ctx): Promise<readonly JobExecution[]> => {
-    const worker = jobs.createWorker({
+    const worker = jobs.jobWorker({
       driver,
       workerId: WORKER_ID,
       queues: queues(),
@@ -198,7 +198,7 @@ export async function createRunJobs(): Promise<RunJobs> {
     const ctx =
       options.actor === undefined
         ? anonymousWorker
-        : createContext({ role: 'worker', actor: options.actor });
+        : ctxOf({ role: 'worker', actor: options.actor });
     for (let rounds = 0; rounds < MAX_ROUNDS; rounds += 1) {
       const batch = await round(ctx);
       if (batch.length === 0) return { executions: [...history], steps: tallyOf(history) };

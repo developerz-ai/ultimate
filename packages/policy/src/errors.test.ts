@@ -12,23 +12,23 @@ import {
 } from '@ultimat3/core';
 import {
   emptyClauseList,
-  forbidden,
   POLICY_ERROR_CODES,
   POLICY_ERROR_TITLES,
   permissionUnknown,
+  policyForbidden,
   policyMissing,
   roleRedefined,
 } from './errors';
 import { allow, and, can, deny, not, or } from './policy';
 
-describe('forbidden()', () => {
+describe('policyForbidden()', () => {
   test('a bare permission label keeps `x policy explain`, which resolves it', () => {
     // `knownPolicySubjects()` (cli's `policy-facts.ts`) holds every declared permission, so this
     // is the one label shape the command can answer.
-    expect(forbidden(can('post:publish').label, 'no').fix).toContain(
+    expect(policyForbidden(can('post:publish').label, 'no').fix).toContain(
       'x policy explain post:publish --json',
     );
-    expect(forbidden('org_admin:read-all', 'no').fix).toContain(
+    expect(policyForbidden('org_admin:read-all', 'no').fix).toContain(
       'x policy explain org_admin:read-all --json',
     );
   });
@@ -38,7 +38,7 @@ describe('forbidden()', () => {
     // `X_DECLARATION_UNKNOWN` — a fix line that reproduces an error instead of repairing one.
     // `x policy list --json` is what `X_DECLARATION_UNKNOWN`'s own fix says when it cannot suggest.
     const composite = and(can('post:publish'), can('org:administer'));
-    const fix = forbidden(composite.label, 'no').fix;
+    const fix = policyForbidden(composite.label, 'no').fix;
     expect(fix).toContain('x policy list --json');
     // The label is never interpolated into a command again — a `<permission>` placeholder after
     // the `#` is a shape a reader fills in, not a line they paste whole.
@@ -53,12 +53,12 @@ describe('forbidden()', () => {
     ['a named policy', 'PublishPost'],
     ['an empty label', ''],
   ])('%s is not a permission either, so it lists', (_name, label) => {
-    expect(forbidden(label, 'no').fix).toContain('x policy list --json');
+    expect(policyForbidden(label, 'no').fix).toContain('x policy list --json');
   });
 
   test('the cause still carries the whole label, however it renders', () => {
     const composite = and(can('post:publish'), can('org:administer'));
-    expect(forbidden(composite.label, 'the actor lacks post:publish').cause).toContain(
+    expect(policyForbidden(composite.label, 'the actor lacks post:publish').cause).toContain(
       'and(post:publish, org:administer)',
     );
   });
@@ -125,7 +125,7 @@ describe('emptyClauseList()', () => {
 describe('docs', () => {
   test('a constructed policy error points at the one page, never a per-code URL', () => {
     const errors = [
-      forbidden('post:publish', 'no'),
+      policyForbidden('post:publish', 'no'),
       policyMissing('publishPost'),
       roleRedefined('admin', 'a.ts', 'b.ts'),
       permissionUnknown('billing:write', ['post:publish']),

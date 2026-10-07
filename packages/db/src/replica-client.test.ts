@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { type Clock, renderThrowable } from '@ultimat3/core';
 import { db, isReservable, setDbClient } from './client';
 import { driverError } from './errors';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import { reservableOver } from './fake-reservable-fixture';
 import { replicatedClient } from './replica-client';
 import { withReplicaReads } from './replica-scope';
@@ -20,7 +20,7 @@ interface Pair {
   readonly replica: RecordingClient;
 }
 
-const pair = (): Pair => ({ primary: createRecordingClient(), replica: createRecordingClient() });
+const pair = (): Pair => ({ primary: recordingClient(), replica: recordingClient() });
 
 /** Monotonic time a test drives by hand; `now` is milliseconds since this fixture was made. */
 function fakeClock(): Clock & { advance(ms: number): void } {

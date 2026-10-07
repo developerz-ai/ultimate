@@ -10,7 +10,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   type Actor,
   type Ctx,
-  createContext,
+  ctxOf,
   defineService,
   isUltimateError,
   resetServices,
@@ -81,9 +81,7 @@ const write = (rowOrgId: string): Promise<unknown> =>
 
 /** The HTTP surface, structurally: a handler running inside `runWithContext`. */
 const overHttp = (actingOrgId: string, rowOrgId: string): Promise<string> =>
-  runWithContext(createContext({ actor: actorFor(actingOrgId) }), () =>
-    codeOf(() => write(rowOrgId)),
-  );
+  runWithContext(ctxOf({ actor: actorFor(actingOrgId) }), () => codeOf(() => write(rowOrgId)));
 
 /**
  * The job surface, structurally: the worker's own `executeJob`, with the worker's own context.
@@ -113,7 +111,7 @@ const overJob = async (handle: AnyJobHandle, input: unknown, worker?: Ctx): Prom
     claimed: claimed as ClaimedJob,
     handle,
     // What `packages/cli/src/dev-roles.ts` builds for the worker role: a context with no actor.
-    ctx: worker ?? createContext({ role: 'worker' }),
+    ctx: worker ?? ctxOf({ role: 'worker' }),
   });
   if (execution.outcome === 'completed') return 'ACCEPTED';
   return execution.error ?? execution.outcome;
@@ -128,7 +126,7 @@ afterAll(() => {
   resetJobs();
   clearRegistry();
   // The service registry is process-global, so the probe above is handed back rather than left
-  // installed on every `createContext` for the rest of the run.
+  // installed on every `ctxOf` for the rest of the run.
   resetServices();
 });
 
@@ -152,9 +150,7 @@ describe('one write, two surfaces, one verdict', () => {
     // The equality is the assertion. `ACCEPTED` here is the shipped defect.
     expect(queued).toContain(http);
     // And nothing landed: the row a job wrote is a row another tenant can read.
-    const seen = await runWithContext(createContext({ actor: actorFor(ORG_B) }), () =>
-      repo.findMany({}),
-    );
+    const seen = await runWithContext(ctxOf({ actor: actorFor(ORG_B) }), () => repo.findMany({}));
     expect(seen.rows).toHaveLength(0);
   });
 
@@ -171,9 +167,7 @@ describe('one write, two surfaces, one verdict', () => {
     });
 
     expect(await overJob(writeRow, { actingOrgId: ORG_A, rowOrgId: ORG_A })).toBe('ACCEPTED');
-    const seen = await runWithContext(createContext({ actor: actorFor(ORG_A) }), () =>
-      repo.findMany({}),
-    );
+    const seen = await runWithContext(ctxOf({ actor: actorFor(ORG_A) }), () => repo.findMany({}));
     expect(seen.rows).toHaveLength(1);
   });
 
@@ -192,7 +186,7 @@ describe('one write, two surfaces, one verdict', () => {
     // The worker is scoped to ORG_A, which is the only way this can fail for the right reason: a
     // run that INHERITED the worker's org would read ORG_A's rows and answer `ACCEPTED`, and
     // against the default org-less worker context both answers are the same refusal.
-    const worker = createContext({ role: 'worker', actor: actorFor(ORG_A) });
+    const worker = ctxOf({ role: 'worker', actor: actorFor(ORG_A) });
     expect(await overJob(sweep, {}, worker)).toContain('X_TENANCY_ACTOR_ORG_REQUIRED');
   });
 
@@ -213,7 +207,7 @@ describe('one write, two surfaces, one verdict', () => {
       },
     });
 
-    const worker = createContext({ role: 'worker', actor: actorFor(ORG_B) });
+    const worker = ctxOf({ role: 'worker', actor: actorFor(ORG_B) });
     await overJob(readService, { actingOrgId: ORG_A, rowOrgId: ORG_A }, worker);
 
     expect(captured).toBe(ORG_A);

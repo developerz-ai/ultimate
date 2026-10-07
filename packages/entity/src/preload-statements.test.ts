@@ -3,7 +3,7 @@
 // because "one statement" is a claim about SQL and only SQL can answer it.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { text, timestamp, uuid } from './columns';
 import { database } from './database';
 import { entity } from './entity';
@@ -65,7 +65,7 @@ const memberRow = (id: string) => ({
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
   // Three posts, two authors: what the preload binds is the distinct set, not the page.
   client.on('preload_stmt_posts', {

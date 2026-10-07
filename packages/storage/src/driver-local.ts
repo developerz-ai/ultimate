@@ -7,6 +7,8 @@ import {
   type Clock,
   finiteCount,
   NotImplementedError,
+  type Page,
+  pageOf,
   type ResolveEnvironmentOptions,
   renderFixShellArg,
   stringField,
@@ -18,7 +20,6 @@ import {
   DEFAULT_CONTENT_TYPE,
   etagOf,
   type ListOptions,
-  type ListPage,
   type PutOptions,
   resolveListLimit,
   type SignedUrlOptions,
@@ -344,11 +345,11 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       });
     },
 
-    async list(listOptions?: ListOptions): Promise<ListPage> {
+    async list(listOptions?: ListOptions): Promise<Page<StorageListEntry>> {
       const prefix = listOptions?.prefix ?? '';
       assertListOptions(listOptions);
       const limit = resolveListLimit(listOptions?.limit);
-      const cursor = listOptions?.cursor;
+      const cursor = listOptions?.cursor ?? undefined;
       const keys: string[] = [];
       try {
         // `dot: true`, and it is load-bearing: without it a glob matches no dot-prefixed entry, so
@@ -375,7 +376,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         }
       } catch (error) {
         // A disk nobody has written to yet has no directory: an empty listing, not an error.
-        if (isMissingFile(error)) return { objects: [], truncated: false };
+        if (isMissingFile(error)) return pageOf([], null);
         // Everything else is a refusal, and a bare `catch` reported all of them as "this disk is
         // empty" — `EACCES` on the root, `ENOTDIR` on a root that is a file, an I/O error on the
         // mount. `sweepOrphans` walks `list()`, so that swallow certified an unreadable prefix as
@@ -395,14 +396,11 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         const object = await head(key);
         if (object !== undefined) objects.push(object);
       }
-      const truncated = keys.length > page.length;
-      // `limit` is a positive integer, so a truncated page always HAS a last key: the guard is the
-      // type's and not a second condition. It used to be one, and `limit: 0` fell through it —
-      // an empty page reported as complete over a disk that was not.
-      const last = page.at(-1);
-      return truncated && last !== undefined
-        ? { objects, truncated, cursor: last }
-        : { objects, truncated: false };
+      // The cursor is minted only when a key PAST the page exists — `keys` is every match, so a
+      // full last page answers no cursor. `limit` is a positive integer, so a page with more after
+      // it always HAS a last key: the `?? null` is the type's, not a second condition. It used to
+      // be one, and `limit: 0` fell through it — an empty page reported as complete.
+      return pageOf(objects, keys.length > page.length ? (page.at(-1) ?? null) : null);
     },
 
     async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {

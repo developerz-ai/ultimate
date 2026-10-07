@@ -5,12 +5,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import { CACHE_TIERS } from '@ultimat3/core';
-import { createCdnTier } from './cdn';
-import { createLruTier } from './lru';
-import { createMemoTier } from './memo';
-import { createRedisTier } from './redis';
+import { cdnTier } from './cdn';
+import { lruTier } from './lru';
+import { memoTier } from './memo';
+import { redisTier } from './redis';
 import type { CacheTier, TierName } from './tiers';
-import { sortTiers, TIER_ORDER } from './tiers';
+import { sortTiers } from './tiers';
 
 /** A tier that does nothing but answer to a name — `sortTiers` reads nothing else. */
 const stub = (name: string): CacheTier => ({
@@ -23,22 +23,21 @@ const stub = (name: string): CacheTier => ({
 
 describe('one vocabulary for the rungs', () => {
   test('the ladder orders by the array core declares, not by a copy of it', () => {
-    // Identity, not equality: a re-typed literal that happens to match today is the shape that
-    // diverged, and `toBe` is what refuses it.
-    expect(TIER_ORDER).toBe(CACHE_TIERS);
-    expect([...TIER_ORDER]).toEqual(['request-memo', 'lru', 'redis', 'cdn']);
+    // The ladder imports core's array — no alias of it here (`X_HELPER_COPY`), so there is no
+    // second name for a re-typed literal to hide behind.
+    expect([...CACHE_TIERS]).toEqual(['request-memo', 'lru', 'redis', 'cdn']);
   });
 
   test('every tier this package ships is a name app.config.ts can select', () => {
     // The two directions together are the whole invariant: a factory whose name is not in the
     // config vocabulary is a rung no app can ask for, and a config name no factory answers to is
     // a `cache.tiers` entry that selects nothing.
-    const built = [createMemoTier(), createLruTier(), createRedisTier(), createCdnTier()];
+    const built = [memoTier(), lruTier(), redisTier(), cdnTier()];
     expect(built.map((tier) => tier.name).sort()).toEqual([...CACHE_TIERS].sort());
   });
 
   test('every name the config accepts has a place on the ladder', () => {
-    for (const name of CACHE_TIERS) expect(TIER_ORDER.indexOf(name)).toBeGreaterThanOrEqual(0);
+    for (const name of CACHE_TIERS) expect(CACHE_TIERS.indexOf(name)).toBeGreaterThanOrEqual(0);
   });
 
   test('a name the ladder does not know sorts AHEAD of the request memo, never last', () => {

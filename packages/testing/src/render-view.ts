@@ -3,7 +3,7 @@
 // them. No browser, no server, no cast: a test asserts on markup and on visible text.
 
 import type { Actor } from '@ultimat3/core';
-import { assert, createContext, runWithContext } from '@ultimat3/core';
+import { assert, ctxOf, runWithContext } from '@ultimat3/core';
 import type { IslandDirective, RouteConfig, RouteParams } from '@ultimat3/render';
 
 /** What a component rendered. */
@@ -101,7 +101,7 @@ export async function renderRoute<TData>(
   );
   const url = request.url ?? DEFAULT_URL;
   const ctx = { params: request.params ?? {}, url };
-  const islands = render.createIslandCollector({ file: url, hydrate: config.hydrate });
+  const islands = render.islandCollector({ file: url, hydrate: config.hydrate });
 
   const run = async (): Promise<RenderedRoute<TData>> => {
     const data = await render.routeDataFor(config, ctx);
@@ -114,5 +114,5 @@ export async function renderRoute<TData>(
   };
 
   if (request.actor === undefined) return run();
-  return runWithContext(createContext({ actor: request.actor }), run);
+  return runWithContext(ctxOf({ actor: request.actor }), run);
 }

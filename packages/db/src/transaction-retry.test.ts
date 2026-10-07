@@ -5,13 +5,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
 import { type DbError, driverError } from './errors';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import { withTransaction } from './transaction';
 
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

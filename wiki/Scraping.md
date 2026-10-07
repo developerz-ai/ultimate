@@ -108,7 +108,7 @@ overlay made it worse — `page.values('#password')` read back what was typed in
 `driver-parity-frames.test.ts` pins every frame verb across all three drivers, because the parity
 suite that exists to catch a CDP/offline divergence had no frame coverage at all.
 
-`screenshot`/`pdf` take **no `timeout`** — `CaptureRequest.timeout` and the port's `CaptureOptions.timeoutMs` were deleted in 4.0.0 ([Upgrading](Upgrading)). No driver had ever honoured them, and a deadline enforced above the driver would have had to race `ScrapeClock.sleep`, which under `testClock` resolves on the first microtask — so every capture in every test would have timed out. The driver's own default is the honest bound.
+`screenshot`/`pdf` take **no `timeout`** — `CaptureRequest.timeout` and the port's `CaptureOptions.timeoutMs` were deleted in 4.0.0 ([Upgrading](Upgrading)). No driver had ever honoured them, and a deadline enforced above the driver would have had to race `ScrapeClock.sleep`, which under `testScrapeClock` resolves on the first microtask — so every capture in every test would have timed out. The driver's own default is the honest bound.
 
 **`pageErrors()` is a separate stream from `console()`, and that is not tidiness.** An uncaught
 exception calls no console method, so a page whose script died can answer `console(): []` — gate on
@@ -181,7 +181,7 @@ A collapsed run is **not recorded**. Three broken runs at 2 rows would make the 
 
 Ignoring robots takes a written reason: `robots: { ignore: 'contract with the operator, ticket OPS-441' }`. A bare `false` is a decision with no author.
 
-The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through the session's own exit — the run's `egress`, else the driver's `proxy` — asked per read, because the exit is resolved inside `driver.open()` while the gate is an argument to it. An offline driver reports the run's `egress` too, so its one real request leaves the same way. A redirect is followed one hop at a time, at most `MAX_ROBOTS_REDIRECTS` (5, RFC 9309's floor), each hop asked of `allowHosts` first — a hop off the list is never requested. (`robotsFetcher` / `createRobotsGate` called with no `allowHosts` follow only a hop on the starting hostname — `http:` → `https:`, a moved path.) What the read answers decides the run, after the "access results" rules of RFC 9309 (`As of 2026-10`):
+The `/robots.txt` read is deadlined (10s), capped (500 KiB) and dialled through the session's own exit — the run's `egress`, else the driver's `proxy` — asked per read, because the exit is resolved inside `driver.open()` while the gate is an argument to it. An offline driver reports the run's `egress` too, so its one real request leaves the same way. A redirect is followed one hop at a time, at most `MAX_ROBOTS_REDIRECTS` (5, RFC 9309's floor), each hop asked of `allowHosts` first — a hop off the list is never requested. (`robotsFetcher` / `robotsGate` called with no `allowHosts` follow only a hop on the starting hostname — `http:` → `https:`, a moved path.) What the read answers decides the run, after the "access results" rules of RFC 9309 (`As of 2026-10`):
 
 | The read | Means | The gate |
 |---|---|---|
@@ -391,7 +391,7 @@ afterEach(() => resetScrapeClock());
 | Clock | Sleeping | For |
 |---|---|---|
 | `noWaitClock` | one turn of the event loop; `now()` and deadlines are real | a run that waits on something the test does — an answer it publishes, a second run it starts |
-| `testClock()` | advances virtual time | a test OF a timeout |
+| `testScrapeClock()` | advances virtual time | a test OF a timeout |
 
 A run waits on the process's clock unless its definition pins one, so the declaration under test
 carries no `clock:` written for the test's sake.

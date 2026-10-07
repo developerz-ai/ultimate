@@ -127,10 +127,10 @@ export const PLANNED_SUBCOMMANDS: readonly PlannedSubcommand[] = [
     subcommand: 'studio',
     fix: 'x dev   # then the db panel at /_x: schema, rows, and a guarded SQL console',
   },
-  // Planned until a durable SECOND driver ships. The two `--to` values, `redis` and `nats`, were
-  // `X_NOT_IMPLEMENTED` stubs on every method (both deleted in 25.0.0), so a drain leased the production batch for five
-  // minutes, failed each enqueue and nacked it back: no move, and a queue no worker could claim
-  // from meanwhile. The body is parked in `cmd-jobs.ts` (`buildDrainTarget`, `drainResult`).
+  // Planned because Postgres is the one durable job driver: there is nowhere to drain to. The two
+  // `--to` values, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs on every method, so a drain
+  // leased the production batch for five minutes, failed each enqueue and nacked it back. 25.0.0
+  // deleted both stubs and the unreachable drain body; a real second driver writes a new one.
   {
     command: 'jobs',
     subcommand: 'drain',

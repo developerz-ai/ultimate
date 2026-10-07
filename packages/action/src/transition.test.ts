@@ -8,7 +8,7 @@
 // `transition` tests hold.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, UltimateError, userActor } from '@ultimat3/core';
+import { ctxOf, UltimateError, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t, toWireSchema } from '@ultimat3/schema';
 import type { LocalTable, LocalTx } from './mutator';
@@ -18,7 +18,7 @@ const STATES = ['pending', 'paid', 'shipped'] as const;
 type State = (typeof STATES)[number];
 
 const ID = '00000000-0000-4000-8000-0000000000aa';
-const ctx = createContext({ actor: { ...userActor({ id: 'u1' }), permissions: ['order:move'] } });
+const ctx = ctxOf({ actor: { ...userActor({ id: 'u1' }), permissions: ['order:move'] } });
 
 const OrderView = t.object({ id: t.uuid, reference: t.string, status: t.enum(STATES) });
 

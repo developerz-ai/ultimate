@@ -174,7 +174,7 @@ const segmentsOf = (path: string): readonly string[] =>
     .split('/')
     .filter((segment) => segment.length > 0);
 
-export const createRouter = (routes: readonly Route[]): RouteTable => {
+export const httpRouter = (routes: readonly Route[]): RouteTable => {
   const root = node();
   for (const route of routes) {
     // Before the trie is touched: a hint that cannot be emitted is refused where it was WRITTEN,

@@ -3,7 +3,7 @@
 // read became `X_DB_STATEMENT_FAILED`, a 500.
 
 import { describe, expect, test } from 'bun:test';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
@@ -21,7 +21,7 @@ describe('a query parameter carrying %00', () => {
         return from<{ id: string; slug: string }>('posts', []).where({ slug });
       },
     }).named('postBySlug');
-    const server = createServer({
+    const server = httpServer({
       routes: [toQueryRoute(bySlug)],
       config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
       hooks: { authenticate: () => null },

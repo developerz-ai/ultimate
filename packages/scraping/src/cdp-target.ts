@@ -19,7 +19,7 @@ import { type ColorScheme, colorSchemeFeatures } from './color-scheme';
 import { browserUnreachable, pageCrashed } from './error-throws';
 import { parseKeyChord } from './key-chord';
 import type { ConsoleLine, NetworkEntry, PageError } from './rings';
-import { createRing } from './rings';
+import { boundedRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 import type {
   AxNode,
@@ -94,9 +94,9 @@ export interface CdpTargetInit extends CdpArmInit {
 }
 
 export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
-  const console_ = createRing<ConsoleLine>();
-  const network = createRing<NetworkEntry>();
-  const pageErrors = createRing<PageError>();
+  const console_ = boundedRing<ConsoleLine>();
+  const network = boundedRing<NetworkEntry>();
+  const pageErrors = boundedRing<PageError>();
   const crashed: { value: string | undefined } = { value: undefined };
   await arm(init, { network, console: console_, pageErrors, crashed });
   await armBrowser(init, network);

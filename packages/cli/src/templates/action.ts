@@ -234,7 +234,7 @@ ${
     ? `
 unitTest('the handler answers the row it found', async () => {
   const draft = { orgId, title: 'kept', price: { minor: 0, currency: 'USD' } };
-  const row = await runWithContext(createContext({ actor: writer }), () => repo.insert(draft));
+  const row = await runWithContext(ctxOf({ actor: writer }), () => repo.insert(draft));
   const answer = await target.as(writer, ${call});
   expect(answer).toEqual(${found});
 });
@@ -263,7 +263,7 @@ const actionUnitTest = (name: NameSet, feature: NameSet, shape: HandlerShape): s
   return `// ${name.camel}: its declared shape, the input it refuses, and what its handler answers — in
 // process, so all three belong to the \`unit\` step. The contract projections are next door.
 ${sortedImports([
-  ...(stores ? ["import { createContext, runWithContext } from '@ultimat3/core';"] : []),
+  ...(stores ? ["import { ctxOf, runWithContext } from '@ultimat3/core';"] : []),
   "import { testActor } from '@ultimat3/policy';",
   `import { ${testing} } from '@ultimat3/testing';`,
   ...(stores ? [`import { driver } from '${shape.dbModule}';`] : []),

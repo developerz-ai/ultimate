@@ -3,7 +3,7 @@
 // lands in the `action` column, which 25.0.0 kept. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { postgresClient, raw } from '@ultimat3/db';
 import type { AuditRecord } from './audit';
@@ -35,7 +35,7 @@ const recordNamed = (name: string): AuditRecord => ({
   primitive: 'action',
   mutator: false,
   surface: 'http',
-  ctx: createContext({ actor: userActor({ id: 'u1', orgId: 'org-1' }) }),
+  ctx: ctxOf({ actor: userActor({ id: 'u1', orgId: 'org-1' }) }),
   input: { postId: 'p1' },
   idempotencyKey: null,
   replayed: false,

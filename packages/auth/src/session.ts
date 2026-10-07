@@ -5,11 +5,11 @@
 // to them without this package importing it (same-tier packages must not depend on each other).
 
 import type { Clock } from '@ultimat3/core';
-import { readCookie, serializeSetCookie } from '@ultimat3/core';
+import { readCookie, serializeSetCookie, timingSafeEqual } from '@ultimat3/core';
 import type { AuthSession, SessionStore } from './adapter';
 import { AuthError, sessionExpired, sessionUnknown } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
-import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
+import { randomToken, sha256Hex } from './tokens';
 
 export interface SessionPolicy {
   /** Hard ceiling from creation. Never extended. */

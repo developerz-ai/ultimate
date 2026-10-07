@@ -4,11 +4,11 @@
 // is `packages/db`'s (`client.test.ts`, `pglite.test.ts`); this file pins the producer.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
-  createRecordingClient,
   type DbClient,
   type RecordingClient,
+  recordingClient,
   type SqlFragment,
   type StatementAttribution,
   setDbClient,
@@ -120,7 +120,7 @@ let recorded: RecordingClient;
 let client: DbClient;
 
 beforeEach(() => {
-  recorded = createRecordingClient();
+  recorded = recordingClient();
   client = attributing(recorded);
   pairs.length = 0;
   setDbClient(client);
@@ -141,7 +141,7 @@ afterAll(() => {
 const memberRepo = () => postgresRepo(members);
 const postRepo = () => postgresRepo(posts);
 const inRequest = <T>(work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
+  runWithContext(ctxOf({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
 
 /** One stub set every method here can be served by, so no test's setup is its own assertion. */
 const stubEverything = (): void => {

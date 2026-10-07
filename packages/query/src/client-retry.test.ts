@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createClientFlight, declaredErrorRetry, isTransientFailure } from '@ultimat3/core';
+import { clientFlight, declaredErrorRetry, isTransientFailure } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { type FetchLike, queryClient } from './client';
@@ -70,7 +70,7 @@ describe('retry, on the framework executor', () => {
       );
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       retry: { attempts: 3 },
       sleep: clock.sleep,
@@ -98,7 +98,7 @@ describe('retry, on the framework executor', () => {
     };
     const clock = recordedSleep();
     // The flight's own policy is the default — one attempt, no retry.
-    const flight = createClientFlight({ principal: () => 'alice', sleep: clock.sleep });
+    const flight = clientFlight({ principal: () => 'alice', sleep: clock.sleep });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: fetchStub,
@@ -120,7 +120,7 @@ describe('retry, on the framework executor', () => {
       );
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       retry: { attempts: 5 },
       sleep: clock.sleep,
@@ -149,7 +149,7 @@ describe('retry, on the framework executor', () => {
       return Promise.reject(thrown);
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       retry: { attempts: 5 },
       sleep: clock.sleep,
@@ -175,7 +175,7 @@ describe('retry, on the framework executor', () => {
         : Promise.resolve(new Response(ROWS));
     };
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       retry: { attempts: 3 },
       sleep: clock.sleep,
@@ -223,7 +223,7 @@ describe('the deadline and the ceiling', () => {
           reject(new DOMException('The operation was aborted.', 'AbortError'));
         });
       });
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       deadlineMs: 5_000,
       schedule: clock.schedule,
@@ -251,7 +251,7 @@ describe('the deadline and the ceiling', () => {
           resolve(new Response(ROWS));
         });
       });
-    const flight = createClientFlight({
+    const flight = clientFlight({
       principal: () => 'alice',
       limit: { maxConcurrent: 1, maxQueued: 0 },
     });

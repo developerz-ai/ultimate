@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { agentActor } from '@ultimat3/core';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { jsonResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { assertMcpSurfaceBudget, measureMcpSurface } from './surface-budget';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
@@ -26,7 +26,7 @@ const staff: McpCaller = {
 const customer: McpCaller = { ...staff, role: 'customer' };
 
 const server = () =>
-  createMcpServer({
+  mcpServer({
     tools: [tool('a'), tool('b'), tool('docs')],
     surface: (caller) => (caller.role === 'staff' ? 'meta' : 'flat'),
     groups: { things: { description: 'Things', tools: ['a', 'b'] } },
@@ -215,7 +215,7 @@ const catalogTools = catalog.flatMap((resource) => resource.tools);
 
 describe('a 65-action catalog', () => {
   const big = () =>
-    createMcpServer({
+    mcpServer({
       tools: catalogTools,
       surface: 'meta',
       groups: Object.fromEntries(

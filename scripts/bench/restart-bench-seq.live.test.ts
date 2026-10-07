@@ -7,12 +7,12 @@ import { decode } from '@ultimat3/realtime';
 import {
   AcceptBudget,
   ChannelHub,
-  createSyncNode,
   InProcessTransport,
   LiveQueryRegistry,
   RingChangeBuffer,
   SocketRegistry,
   type SyncNode,
+  syncNode,
 } from '@ultimat3/realtime/server';
 import { BENCH_CHANNEL, BENCH_ROOM, probeChange } from './restart-bench-channel';
 import { type ClientStats, newClientStats, runClient } from './restart-bench-client';
@@ -66,7 +66,7 @@ async function startNode(port: number): Promise<BenchNode> {
   const sockets = new SocketRegistry();
   const transport = new InProcessTransport();
   const hub = new ChannelHub({ transport, sockets });
-  const node: SyncNode = createSyncNode({
+  const node: SyncNode = syncNode({
     hub,
     // Every client dials from 127.0.0.1 — one anonymous principal — so the per-principal caps are
     // sized to the swarm, or the node refuses it at the upgrade and `subscribed` never comes true.

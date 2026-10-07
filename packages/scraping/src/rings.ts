@@ -107,18 +107,18 @@ export type PageErrorRing = Ring<PageError>;
  *
  * Both wrong values fail in opposite directions and neither is survivable. A NEGATIVE capacity
  * makes `while (items.length > capacity) items.shift()` spin forever on an already-empty array
- * (`0 > -1`): `createRing(-1).push(1)` never returns, and it is a synchronous loop on the worker's
+ * (`0 > -1`): `boundedRing(-1).push(1)` never returns, and it is a synchronous loop on the worker's
  * only thread, inside a `page.on('request')` handler — past `ctx.signal`, past the wedge watchdog
  * and past the job timeout, which is incident #1 in this file's header. `NaN` fails the other way:
  * the comparison is false forever, the ring is UNBOUNDED, and the OOM the bound exists to prevent
  * arrives two hours in. Zero is a ring that discards everything silently, and a fraction is a
  * bound that is not the number anybody asked for.
  */
-export function createRing<T>(capacity: number = DEFAULT_RING_CAPACITY): Ring<T> {
+export function boundedRing<T>(capacity: number = DEFAULT_RING_CAPACITY): Ring<T> {
   assert(
     Number.isSafeInteger(capacity) && capacity > 0,
     `a ring capacity must be a positive integer, got ${String(capacity)}: a negative one spins forever on push() and NaN makes the ring unbounded`,
-    `pass a positive capacity — createRing(${String(DEFAULT_RING_CAPACITY)}) — or omit it and take DEFAULT_RING_CAPACITY`,
+    `pass a positive capacity — boundedRing(${String(DEFAULT_RING_CAPACITY)}) — or omit it and take DEFAULT_RING_CAPACITY`,
   );
   const items: T[] = [];
   let dropped = 0;

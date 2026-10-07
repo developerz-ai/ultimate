@@ -13,7 +13,7 @@ import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ulti
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import {
   configureTelemetry,
-  createContext,
+  ctxOf,
   NotImplementedError,
   resetTelemetry,
   runWithContext,
@@ -367,7 +367,7 @@ describe('unit · x dev mounts the dashboard', () => {
     const input: DevDashboardInput = { ...inputFor(), traces: recorder, statements: ledger };
     configureTelemetry({ exporter: recorder.exporter });
     try {
-      runWithContext(createContext({ requestId: 'req_loop' }), () => {
+      runWithContext(ctxOf({ requestId: 'req_loop' }), () => {
         withSpan('GET /feed', (span) => {
           span.setAttributes({ 'http.request_id': 'req_loop', 'http.status_code': 200 });
         });

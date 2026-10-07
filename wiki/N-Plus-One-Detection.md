@@ -19,7 +19,7 @@ Who *raises* it is a separate question, and the answer differs by surface:
 
 | Surface | What happens at the threshold |
 |---|---|
-| `createTestStatements` (`@ultimat3/testing`) | **throws** `nPlusOne(…)` from inside `onStatement`, so the failing line is the loop's own line |
+| `testStatements` (`@ultimat3/testing`) | **throws** `nPlusOne(…)` from inside `onStatement`, so the failing line is the loop's own line |
 | `x dev` (`packages/cli/src/dev-n-plus-one.ts`) | **records a verdict and logs one warning** per request per code — it never throws, because a reporting-only observer that threw would break the app it is watching |
 | `/_x` and the browser overlay | render the recorded verdict; they raise nothing |
 
@@ -73,12 +73,12 @@ this request looped — the three shapes themselves are what the other three sur
 
 **The threshold** is 5 statements of one shape (`N_PLUS_ONE_THRESHOLD`,
 `packages/entity/src/n-plus-one.ts`), and it is the one thing the two detectors genuinely share:
-`x dev`'s ledger and `createTestStatements` both import that constant, so neither can be tuned
+`x dev`'s ledger and `testStatements` both import that constant, so neither can be tuned
 without the other moving with it.
 
 Everything else about them differs, deliberately:
 
-| | `x dev`'s ledger | `createTestStatements` |
+| | `x dev`'s ledger | `testStatements` |
 |---|---|---|
 | Counting window | one `Ctx` — a `WeakMap` keyed on the request, which dies with it | fixture creation → disposal, including statements sent outside any request |
 | At the threshold | records a verdict, logs once per request per code | throws, once per shape |
@@ -158,7 +158,7 @@ one migration per transaction, one statement at a time, inside a scope naming wh
 ## Failing the test instead of warning in a terminal nobody is watching
 
 `x dev` warns; CI is not attended. `@ultimat3/testing`'s `statements` fixture
-(`createTestStatements`, `packages/testing/src/fixture-statements.ts`) installs the identical
+(`testStatements`, `packages/testing/src/fixture-statements.ts`) installs the identical
 detector in **throw** mode for the length of one test — destructuring `statements` is the whole
 opt-in, there is no `strict: true` flag to forget:
 

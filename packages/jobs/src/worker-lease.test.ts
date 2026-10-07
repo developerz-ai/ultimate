@@ -5,14 +5,14 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { collectMetrics, createContext, frozenClock, resetMetrics } from '@ultimat3/core';
+import { collectMetrics, ctxOf, frozenClock, resetMetrics } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -93,7 +93,7 @@ afterEach(() => {
 describe('the worker renews the lease it claimed', () => {
   test('a running job is heartbeated, and the interval stops with the job', async () => {
     const parked = await parkOne(() => Promise.resolve());
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: parked.driver,
       clock: frozenClock(0),
       visibilityTimeoutMs: 5_000,
@@ -120,7 +120,7 @@ describe('the worker renews the lease it claimed', () => {
   test('renewals that stop landing past the window are reported as a lost lease', async () => {
     const clock = frozenClock(0);
     const parked = await parkOne(() => Promise.reject(new Error('connection reset')));
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: parked.driver,
       clock,
       visibilityTimeoutMs: 50,

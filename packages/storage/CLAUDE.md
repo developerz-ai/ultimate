@@ -111,21 +111,19 @@ Gotchas:
   page), so a paging caller read "complete, and there is nothing here" over a full disk, while the
   s3 disk handed `maxKeys: 0` to the provider. Core's `assert` (`X_INVARIANT`), for the reason
   `@ultimat3/seo`'s `chunk()` uses it: a bound with no code of its own is still a coded refusal.
+- **`list()` answers core's `Page<StorageListEntry>`, and no storage-local page type exists**
+  (`As of 25.0.0`; `ListPage` is deleted). Every driver builds it with core's `pageOf`, so
+  `hasMore` is derived from the cursor and cannot disagree with it. The cursor is minted only when
+  a row past the page exists — never from `rows.length === limit`, the full-last-page defect a
+  query's cursor had — and the full-last-page case is pinned on memory, local and live s3.
 - **`META_DIR` is reserved case-INSENSITIVELY** (`As of 2026-08`), exactly as `isTenantScoped`
-  folds and for the same filesystem: `.META/a.txt.json` was a legal key that writes
-  `<root>/.META/a.txt.json`, which on APFS and NTFS IS `<root>/.meta/a.txt.json` — the sidecar for
-  object `a.txt` — so a caller able to name a key rewrote another object's recorded `contentType`.
-  The whole SEGMENT is compared, never a prefix: `.metadata/a.json` is an ordinary key and stays
-  one, and `path.test.ts` pins both halves.
+  folds: on APFS/NTFS `.META/` IS `.meta/`. The whole SEGMENT is compared, never a prefix
+  (`.metadata/a.json` is an ordinary key); `path.test.ts` pins both halves.
 - **`disk(name)` resolves through a `Map`, never `config.disks[name]`**: the bracket read walked
   the prototype chain (`disk('constructor')` was the `Object` function, not `X_STORAGE_DISK_UNKNOWN`).
 - **`list()` is idempotent for an EMPTY disk and for nothing else** (`As of 2026-08`) — exactly
-  `delete()`'s rule, one call to the left, and both drivers broke it in opposite directions. The
-  local one caught EVERYTHING and answered `{ objects: [], truncated: false }`, so `EACCES` on the
-  root read as "this disk is empty"; the s3 one let a bare `S3Error` escape uncoded, with nothing
-  for the http error map to render but a 500. `sweepOrphans` walks `list()`, so the local swallow
-  was a false-erasure report a layer up. `ENOENT` (a root nobody has written to) is still an empty
-  page; everything else is `X_STORAGE_LIST_FAILED`, whose `fix` the DRIVER supplies.
+  `delete()`'s rule. `ENOENT` (a root nobody has written to) is an empty page; everything else is
+  `X_STORAGE_LIST_FAILED`, whose `fix` the DRIVER supplies.
 - **`head()` and `list()` NEVER read an object's bytes** — an unknowable etag is `''`, as on s3.
   `get()` hashes bytes it holds; `copy()` passes `hash: true`, so no sidecar records `etag: ''`.
 - **s3 `put()` with `metadata`/`cacheControl`/`retention`/`legalHold` is ONE signed PUT** (core's
@@ -228,7 +226,7 @@ Gotchas:
   held to `[A-Za-z0-9-]`: a provider's sentence may put nothing else into a `fix:`. A HEAD has no
   body, so `exists()`/`stat()` never see it. `driver-s3.live.test.ts` runs with no region on purpose.
 - The signature check runs BEFORE the expiry check. Do not reorder.
-- `timingSafeEqual` is `@ultimat3/core`'s (`signed-url.ts` imports and re-exports it) — the same
+- `timingSafeEqual` is `@ultimat3/core`'s (`signed-url.ts` imports it) — the same
   implementation `@ultimat3/auth` uses, not a second copy. Add new secret comparisons through it.
 - `verifySignedUrl` never throws, and `parseConstraints` is where that is kept: the key is decoded
   through the guarded `decodeSegment`, so a `%ZZ` in the path is `'malformed'` rather than the bare

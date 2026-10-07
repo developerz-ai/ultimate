@@ -4,11 +4,11 @@
 // are the four things pinned.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import type { Clock } from '@ultimat3/core';
-import { createLruTier } from './lru';
+import { CACHE_TIERS, type Clock } from '@ultimat3/core';
+import { lruTier } from './lru';
 import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
-import { createCacheStack, isExpired, nowMs, sortTiers, TIER_ORDER } from './tiers';
+import { cacheStack, isExpired, nowMs, sortTiers } from './tiers';
 
 // The refusal suite below resets the swallowed-failure log per test; this hands back whatever a
 // neighbouring file had recorded in it.
@@ -94,14 +94,14 @@ function refusingTier(
   };
 }
 
-describe('TIER_ORDER', () => {
+describe('CACHE_TIERS read order', () => {
   test('is request-memo, lru, redis, cdn in that order', () => {
-    expect(TIER_ORDER).toEqual(['request-memo', 'lru', 'redis', 'cdn']);
+    expect(CACHE_TIERS).toEqual(['request-memo', 'lru', 'redis', 'cdn']);
   });
 });
 
 describe('sortTiers', () => {
-  test('reorders tiers to TIER_ORDER regardless of input order', () => {
+  test('reorders tiers to CACHE_TIERS order regardless of input order', () => {
     const calls: string[] = [];
     const cdn = fakeTier('cdn', calls);
     const lru = fakeTier('lru', calls);
@@ -155,12 +155,12 @@ describe('isExpired', () => {
   });
 });
 
-describe('createCacheStack read', () => {
+describe('cacheStack read', () => {
   test('a miss on every tier calls load() once and writes the value to every tier', async () => {
     const calls: string[] = [];
     const lru = fakeTier('lru', calls);
     const redis = fakeTier('redis', calls);
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     let loads = 0;
     const value = await stack.read('k', () => {
@@ -178,7 +178,7 @@ describe('createCacheStack read', () => {
     const lru = fakeTier('lru', calls);
     const redis = seededTier('redis', calls, 'k', 'from-redis');
     const cdn = fakeTier('cdn', calls);
-    const stack = createCacheStack([cdn, redis, lru]);
+    const stack = cacheStack([cdn, redis, lru]);
 
     const value = await stack.read('k', () => Promise.resolve('should-not-load'));
 
@@ -192,7 +192,7 @@ describe('createCacheStack read', () => {
     const calls: string[] = [];
     const lru = seededTier('lru', calls, 'k', 'from-lru');
     const redis = fakeTier('redis', calls);
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     const value = await stack.read('k', () => Promise.resolve('should-not-load'));
 
@@ -201,13 +201,13 @@ describe('createCacheStack read', () => {
   });
 });
 
-describe('createCacheStack write', () => {
+describe('cacheStack write', () => {
   test('calls set() on every tier once, in tier order', async () => {
     const calls: string[] = [];
     const cdn = fakeTier('cdn', calls);
     const lru = fakeTier('lru', calls);
     const redis = fakeTier('redis', calls);
-    const stack = createCacheStack([cdn, redis, lru]);
+    const stack = cacheStack([cdn, redis, lru]);
 
     await stack.write('k', 'v');
 
@@ -215,7 +215,7 @@ describe('createCacheStack write', () => {
   });
 });
 
-describe('createCacheStack drop', () => {
+describe('cacheStack drop', () => {
   test('calls del() on every tier once, FARTHEST first', async () => {
     // Read order clears the near tiers while the far one still holds the old value, and a read
     // racing the drop promotes it straight back up into them. `invalidateTags` fans out the same
@@ -223,7 +223,7 @@ describe('createCacheStack drop', () => {
     const calls: string[] = [];
     const lru = fakeTier('lru', calls);
     const redis = fakeTier('redis', calls);
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     await stack.drop('k');
 
@@ -231,7 +231,7 @@ describe('createCacheStack drop', () => {
   });
 });
 
-describe('createCacheStack: a refusing tier never fails the business call', () => {
+describe('cacheStack: a refusing tier never fails the business call', () => {
   beforeEach(() => {
     resetTierFailures();
   });
@@ -239,8 +239,8 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
   test('an entry over the LRU byte budget still comes back from read()', async () => {
     // The real refusal this guards: `LruCache.set` throws X_CACHE_TOO_LARGE, and before the
     // guard that throw travelled straight out of `read()` as if the source had failed.
-    const lru = createLruTier({ maxBytes: 64 });
-    const stack = createCacheStack([lru]);
+    const lru = lruTier({ maxBytes: 64 });
+    const stack = cacheStack([lru]);
 
     const value = await stack.read('feed', () => Promise.resolve('x'.repeat(4096)));
 
@@ -257,7 +257,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
     const calls: string[] = [];
     const lru = refusingTier('lru', ['set'], calls);
     const redis = fakeTier('redis', calls);
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     const value = await stack.read('k', () => Promise.resolve('loaded'));
 
@@ -270,7 +270,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
     const calls: string[] = [];
     const lru = refusingTier('lru', ['get'], calls);
     const redis = seededTier('redis', calls, 'k', 'from-redis');
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     const value = await stack.read('k', () => Promise.resolve('should-not-load'));
 
@@ -282,7 +282,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
     const calls: string[] = [];
     const lru = refusingTier('lru', ['get'], calls);
     const redis = refusingTier('redis', ['get'], calls);
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     let loads = 0;
     const value = await stack.read('k', () => {
@@ -299,7 +299,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
     const calls: string[] = [];
     const lru = refusingTier('lru', ['set'], calls);
     const redis = seededTier('redis', calls, 'k', 'from-redis');
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     const value = await stack.read('k', () => Promise.resolve('should-not-load'));
 
@@ -309,7 +309,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
 
   test('load() itself still throws — it is the business read, not a tier', async () => {
     const calls: string[] = [];
-    const stack = createCacheStack([fakeTier('lru', calls)]);
+    const stack = cacheStack([fakeTier('lru', calls)]);
 
     const read = stack.read('k', () => Promise.reject(new Error('source is down')));
 
@@ -321,7 +321,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
     const calls: string[] = [];
     const lru = refusingTier('lru', ['set'], calls);
     const redis = fakeTier('redis', calls);
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     await stack.write('k', 'v');
 
@@ -333,7 +333,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
     const calls: string[] = [];
     const lru = refusingTier('lru', ['del'], calls);
     const redis = fakeTier('redis', calls);
-    const stack = createCacheStack([redis, lru]);
+    const stack = cacheStack([redis, lru]);
 
     await stack.drop('k');
 
@@ -342,13 +342,13 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
   });
 });
 
-describe('createCacheStack tiers', () => {
-  test('exposes tiers sorted to TIER_ORDER, not raw input order', () => {
+describe('cacheStack tiers', () => {
+  test('exposes tiers sorted to CACHE_TIERS order, not raw input order', () => {
     const calls: string[] = [];
     const cdn = fakeTier('cdn', calls);
     const redis = fakeTier('redis', calls);
     const lru = fakeTier('lru', calls);
-    const stack = createCacheStack([cdn, redis, lru]);
+    const stack = cacheStack([cdn, redis, lru]);
 
     expect(stack.tiers.map((t) => t.name)).toEqual(['lru', 'redis', 'cdn']);
   });
@@ -402,7 +402,7 @@ describe('read-through promotion carries the entry, not the caller options', () 
     // Re-leasing a value one second from expiry for a fresh five minutes on every read is a hot
     // key that serves stale data forever: the closer tier's copy outlives the entry it copied.
     const writes: CacheSetOptions[] = [];
-    const stack = createCacheStack(
+    const stack = cacheStack(
       [
         recordingTier('lru', writes),
         expiringTier('redis', 'k', { value: 'v', tags: [], expiresAt: 11_000 }),
@@ -416,7 +416,7 @@ describe('read-through promotion carries the entry, not the caller options', () 
 
   test('an entry a tier has not reaped yet is a miss, so `load` runs', async () => {
     const writes: CacheSetOptions[] = [];
-    const stack = createCacheStack(
+    const stack = cacheStack(
       [
         recordingTier('lru', writes),
         expiringTier('redis', 'k', { value: 'stale', tags: [], expiresAt: 9_000 }),
@@ -431,7 +431,7 @@ describe('read-through promotion carries the entry, not the caller options', () 
 
   test('a hit with no recorded expiry still promotes on the caller ttl', async () => {
     const writes: CacheSetOptions[] = [];
-    const stack = createCacheStack(
+    const stack = cacheStack(
       [recordingTier('lru', writes), expiringTier('redis', 'k', { value: 'v', tags: [] })],
       { clock: fakeClock(10_000) },
     );

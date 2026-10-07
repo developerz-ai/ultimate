@@ -21,8 +21,8 @@ import {
 } from './model-fixture';
 import { openAiProvider } from './openai-provider';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
-import { AnthropicProvider, parseMessage } from './provider';
-import { RemoteEmbedder } from './remote-embedder';
+import { anthropicProvider, parseMessage } from './provider';
+import { remoteEmbedder } from './remote-embedder';
 import type { SseFrame } from './sse';
 import { MessageStream } from './wire';
 
@@ -249,7 +249,7 @@ describe('the credential never reaches an error', () => {
         headers: { 'content-type': 'application/json' },
       });
 
-    const anthropic = new AnthropicProvider({
+    const anthropic = anthropicProvider({
       models: FIXTURE_ANTHROPIC_IDS,
       apiKey: KEY,
       fetch: fakeFetch(() => echoed(`x-api-key: ${KEY}`)),
@@ -259,7 +259,7 @@ describe('the credential never reaches an error', () => {
       models: [...FIXTURE_OPENAI_IDS],
       fetch: fakeFetch(() => echoed(`authorization: Bearer ${KEY}`)),
     });
-    const embedder = new RemoteEmbedder({
+    const embedder = remoteEmbedder({
       name: 'voyage-3',
       dimension: 2,
       apiKey: KEY,
@@ -312,7 +312,7 @@ describe("the caller's abort signal reaches the socket", () => {
     };
 
     const signal = new AbortController().signal;
-    const anthropic = new AnthropicProvider({
+    const anthropic = anthropicProvider({
       models: FIXTURE_ANTHROPIC_IDS,
       apiKey: KEY,
       fetch: recording(),
@@ -374,7 +374,7 @@ describe("the caller's abort signal reaches the socket", () => {
       init = given;
       return new Response('{}', { status: 503 });
     };
-    const anthropic = new AnthropicProvider({
+    const anthropic = anthropicProvider({
       models: FIXTURE_ANTHROPIC_IDS,
       apiKey: KEY,
       fetch: impl,
@@ -405,7 +405,7 @@ describe('a failure body is read only as far as the detail needs', () => {
         }),
         { status: 503 },
       );
-    const anthropic = new AnthropicProvider({
+    const anthropic = anthropicProvider({
       models: FIXTURE_ANTHROPIC_IDS,
       apiKey: KEY,
       fetch: fakeFetch(endless),

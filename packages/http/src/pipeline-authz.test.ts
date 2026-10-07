@@ -4,10 +4,10 @@
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import type { AuthzDecision } from './hooks';
-import { createPipeline } from './pipeline';
-import { createRateLimiter } from './rate-limit';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { rateLimiter } from './rate-limit';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const routes: readonly Route[] = [
   {
@@ -16,13 +16,13 @@ const routes: readonly Route[] = [
     // What `@ultimat3/cli`'s `dev-render.ts` writes for a page route: `meta.policy` is the
     // PERMISSION off `entry.config.policy`, which is exactly what `x policy explain` resolves.
     meta: { name: 'settings', auth: 'public', policy: 'member:self' },
-    handler: () => text('never reached'),
+    handler: () => textResponse('never reached'),
   },
   {
     method: 'GET',
     path: '/unwired',
     meta: { name: 'unwired', auth: 'public', policy: 'post:publish' },
-    handler: () => text('never reached'),
+    handler: () => textResponse('never reached'),
   },
 ];
 
@@ -31,10 +31,10 @@ const routes: readonly Route[] = [
  * carries in dev. Outside dev it carries the error's `callerFix` — the last test below.
  */
 const pipelineWith = (decision?: AuthzDecision, dev = true) =>
-  createPipeline({
-    table: createRouter(routes),
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev }),
-    limiter: createRateLimiter({
+    limiter: rateLimiter({
       config: {
         enabled: true,
         defaultBucket: 'default',

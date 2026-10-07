@@ -4,14 +4,8 @@
 // each is that driver's spelling of "refused before it happened".
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  createContext,
-  isUltimateError,
-  runWithContext,
-  serviceActor,
-  userActor,
-} from '@ultimat3/core';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { ctxOf, isUltimateError, runWithContext, serviceActor, userActor } from '@ultimat3/core';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 import { entity } from './entity';
@@ -61,7 +55,7 @@ const stub = (): void => {
 };
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
   stub();
 });
@@ -75,12 +69,12 @@ const pg = () => postgresRepo(posts);
 const memory = (seed: readonly Post[] = SEED) => memoryRepo(posts, seed);
 
 const asOrgA = <T>(work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: idAt('90'), orgId: ORG }) }), work);
+  runWithContext(ctxOf({ actor: userActor({ id: idAt('90'), orgId: ORG }) }), work);
 
 /** The one shape allowed to write across tenants, and it says so out loud. */
 const asReconciler = <T>(work: () => Promise<T>): Promise<T> =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: serviceActor({ id: idAt('91'), orgId: ORG, scopes: [CROSS_TENANT_SCOPE] }),
     }),
     () => crossTenant('nightly reconciliation writes into every org', work),
@@ -220,7 +214,7 @@ describe('a row may name the acting actor’s tenant, or none', () => {
   });
 
   test('an actor with no tenant of its own writes nothing tenant-scoped, in either driver', async () => {
-    const outcome = await runWithContext(createContext(), () =>
+    const outcome = await runWithContext(ctxOf(), () =>
       both((repo) => repo.insert(post({ id: idAt('38'), slug: 'anon' }))),
     );
     expect(outcome.memory).toBe('X_TENANCY_ACTOR_ORG_REQUIRED');

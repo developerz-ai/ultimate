@@ -76,7 +76,7 @@ Every test the scaffold and the generators write is the idiom to copy. All of th
 | an island | \`mountIsland\`, once per state its \`*.island.states.ts\` declares | \`apps/web/shared/theme-toggle.island.test.ts\` |
 | an action or a query | \`target.as(actor, input)\` — the refusal first, then what it answers | \`apps/web/api/health.test.ts\` |
 | a job, a task, a backfill | \`test('…', async ({ runJobs }) => …)\` — a worker in this process; assert on \`trace.steps\` and each run's \`outcome\` | what \`x g job\` writes |
-| a repo, a seed | as an actor, \`runWithContext(createContext({ actor }), …)\`, with \`driver.reset?.()\` after each | \`packages/db/src/seed.test.ts\` |
+| a repo, a seed | as an actor, \`runWithContext(ctxOf({ actor }), …)\`, with \`driver.reset?.()\` after each | \`packages/db/src/seed.test.ts\` |
 
 Money is the one row with no guard, deliberately: a float has no static signature a text rule can
 see, and the type already fires — measured, \`price: 19.99\` in a seed is

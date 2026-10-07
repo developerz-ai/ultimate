@@ -1,22 +1,14 @@
-// The command surface of `x jobs`: the spec, the `--to` validation, and what `run()` actually
+// The command surface of `x jobs`: the spec, the planned `drain`, and what `run()` actually
 // renders. Driven through an ambient `memoryJobDriver()` so `withJobDriver` reuses it instead of
 // booting a queue — a real driver, real claim/ack semantics, no database and no app to load.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { JobDriver } from '@ultimat3/jobs';
 import { memoryJobDriver, resetJobDriver, resetJobs } from '@ultimat3/jobs';
-import {
-  buildDrainTarget,
-  DRAIN_TARGETS,
-  drainJobs,
-  drainResult,
-  JOBS_SUBCOMMANDS,
-  jobsCommand,
-} from './cmd-jobs';
+import { JOBS_SUBCOMMANDS, jobsCommand } from './cmd-jobs';
 import { appRoot, contextFor, enqueue, runJobs } from './cmd-jobs-fixture';
 import { BadFlagError, MissingPositionalError } from './errors';
 import { msg } from './messages';
-import type { CommandResult } from './output';
 
 afterEach(() => {
   resetJobDriver();
@@ -40,7 +32,7 @@ describe('unit · x jobs spec', () => {
     expect(jobsCommand.spec.name).toBe('jobs');
     expect(jobsCommand.spec.requiresApp).toBe(true);
     expect(jobsCommand.spec.flags?.map((flag) => flag.name).sort()).toEqual(
-      ['after', 'dry-run', 'from-step', 'limit', 'name', 'queue', 'reason', 'state', 'to'].sort(),
+      ['after', 'from-step', 'limit', 'name', 'queue', 'reason', 'state'].sort(),
     );
   });
 });
@@ -271,62 +263,13 @@ describe('unit · x jobs cancel', () => {
   });
 });
 
-describe('unit · x jobs drain rendering', () => {
-  /** The command path can no longer reach an in-process target, so the outcome is produced with
-   *  two real drivers and handed to the same renderer `runDrain` uses. */
-  const rendered = async (source: JobDriver, dryRun = false): Promise<CommandResult> =>
-    drainResult(await drainJobs(source, memoryJobDriver(), dryRun));
-
-  test('a complete drain is ok and reports the moved count', async () => {
-    const driver = memoryJobDriver();
-    await enqueue(driver, 'send-email');
-
-    const result = await rendered(driver);
-
-    expect(result.ok).toBe(true);
-    expect(result.summary).toBe(
-      msg('cli.jobs.drained', { count: 1, from: 'memory', to: 'memory' }),
-    );
-    expect(result.lines).toEqual([]);
-  });
-
-  test('a partial drain fails the command and lists what was left behind', async () => {
-    const driver = memoryJobDriver();
-    await enqueue(driver, 'later-job', Date.now() + 60_000);
-
-    const result = await rendered(driver);
-
-    // A partial move that exited 0 would read as "the queue is clear". It is not.
-    expect(result.ok).toBe(false);
-    expect(result.summary).toBe(
-      msg('cli.jobs.drainedPartial', { count: 0, from: 'memory', to: 'memory', skipped: 1 }),
-    );
-    expect(result.lines?.[0]).toContain(msg('cli.jobs.skipped', { count: 1, from: 'memory' }));
-    expect(result.lines?.[1]).toContain('later-job');
-    expect((result.lines ?? []).join('\n')).not.toContain('⟦');
-  });
-
-  test('--dry-run reports the candidates and moves nothing', async () => {
-    const driver = memoryJobDriver();
-    const id = await enqueue(driver, 'send-email');
-
-    const result = await rendered(driver, true);
-
-    expect(result.ok).toBe(true);
-    expect(result.summary).toBe(
-      msg('cli.jobs.drained', { count: 1, from: 'memory', to: 'memory' }),
-    );
-    expect((await driver.introspect?.job(id))?.state).toBe('ready');
-  });
-});
-
 // The `redis` target was an `X_NOT_IMPLEMENTED` stub on every method, so a drain onto it LEASED the
 // whole batch off the production queue for `DRAIN_LEASE_MS` (5 min), failed every enqueue and
 // nacked it back — five minutes in which no source worker could claim a job, for a command that
 // could never move one. `drain` is a planned subcommand until a durable second driver ships, and
-// 25.0.0 deleted the stub: `--to redis` is now a value nothing accepts, and still the planned answer.
+// 25.0.0 deleted the stub and its `--to`/`--dry-run` flags: the parser refuses them as unknown.
 describe('unit · x jobs drain is planned', () => {
-  test('drain --to redis refuses before leasing', async () => {
+  test('drain refuses before leasing', async () => {
     const memory = memoryJobDriver();
     const id = await enqueue(memory, 'send-email');
     let claims = 0;
@@ -340,8 +283,7 @@ describe('unit · x jobs drain is planned', () => {
 
     const thrown: unknown = await runJobs(counted, {
       subcommand: 'drain',
-      flags: { to: 'redis' },
-      env: { REDIS_URL: 'redis://localhost:6379' },
+      flags: {},
     }).then(
       () => undefined,
       (error: unknown) => error,
@@ -357,19 +299,6 @@ describe('unit · x jobs drain is planned', () => {
     expect(row?.attempt).toBe(0);
   });
 
-  test('every spelling of drain gets the same planned answer, --to memory and --dry-run included', async () => {
-    for (const flags of [{ to: 'memory' }, { to: 'redis', 'dry-run': true }, {}]) {
-      const thrown: unknown = await runJobs(memoryJobDriver(), {
-        subcommand: 'drain',
-        flags,
-      }).then(
-        () => undefined,
-        (error: unknown) => error,
-      );
-      expect(thrown).toBeUltimateError('X_NOT_IMPLEMENTED');
-    }
-  });
-
   // ORDERING: the planned answer needs no server, so a box whose database is down must get it
   // rather than the boot failure of a queue the command would never have used.
   test('the planned answer arrives with no ambient driver, before any queue is booted', async () => {
@@ -378,8 +307,8 @@ describe('unit · x jobs drain is planned', () => {
       .run(
         contextFor(appRoot(), {
           subcommand: 'drain',
-          flags: { to: 'redis' },
-          env: { DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none', REDIS_URL: 'redis://x:1' },
+          flags: {},
+          env: { DATABASE_URL: 'postgres://x:y@127.0.0.1:1/none' },
         }),
       )
       .then(
@@ -396,59 +325,5 @@ describe('unit · x jobs drain is planned', () => {
       (error: unknown) => error,
     );
     expect((thrown as { fix?: string }).fix).toStartWith('x jobs ls');
-  });
-});
-
-describe('unit · x jobs drain target', () => {
-  test('an unknown or missing --to value throws X_CLI_BAD_FLAG naming the accepted values', () => {
-    expect(() => buildDrainTarget('sqs', {})).toThrow(BadFlagError);
-    expect(() => buildDrainTarget(undefined, {})).toThrow(BadFlagError);
-  });
-
-  // The bug: `--to memory` enqueued onto `memoryJobDriver()` — a Map inside THIS process — and
-  // then acked every durable row off the source. Reproduced: source ready 1 -> 0, target ready 1
-  // in a driver nothing can reach, `ok: true`, and the copy gone at exit. Held at the target
-  // builder, which is what a re-enabled drain reads `--to` through.
-  test('--to memory is refused by name, with a durable target in the fix', () => {
-    const thrown: unknown = (() => {
-      try {
-        return buildDrainTarget('memory', {});
-      } catch (error) {
-        return error;
-      }
-    })();
-
-    expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
-    expect((thrown as { cause?: string }).cause).toContain('this process');
-    // A `fix:` naming the planned `x jobs drain` would hand its reader a second error.
-    expect((thrown as { fix?: string }).fix).not.toContain('x jobs drain');
-  });
-
-  test('no target ships: the flag accepts no value, memory included', () => {
-    expect(DRAIN_TARGETS).toEqual([]);
-    expect(() => buildDrainTarget('memory', {})).toThrow(BadFlagError);
-  });
-
-  // 25.0.0 deleted the Redis jobs stub (every method threw `X_NOT_IMPLEMENTED`): `--to redis` is
-  // refused at the flag, its URL in the environment or not, and the refusal says nothing ships.
-  test('redis is refused as an unknown target, whatever the environment holds', () => {
-    for (const env of [{}, { REDIS_URL: 'redis://localhost:6379' }]) {
-      const thrown: unknown = (() => {
-        try {
-          return buildDrainTarget('redis', env);
-        } catch (error) {
-          return error;
-        }
-      })();
-      expect(thrown).toBeInstanceOf(BadFlagError);
-      expect((thrown as { cause?: string }).cause).toContain('no durable drain target ships');
-    }
-  });
-
-  // 25.0.0 deleted the NATS jobs stub: `--to nats` is a value the flag no longer accepts.
-  test('nats is refused as an unknown target', () => {
-    expect(() => buildDrainTarget('nats', { NATS_URL: 'nats://localhost:4222' })).toThrow(
-      BadFlagError,
-    );
   });
 });

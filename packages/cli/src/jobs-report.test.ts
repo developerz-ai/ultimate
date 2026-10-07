@@ -1,6 +1,6 @@
 // Flag parsing plus ls / show / retry, driven through `memoryJobDriver()` — a real driver with
 // real introspection and claim/ack/nack, so a dead letter here reached `dead` the way a pg queue
-// would. Drain has its own suite next to `jobs-drain.ts`.
+// would.
 
 import { describe, expect, test } from 'bun:test';
 import type { JobDriver, StepRecord } from '@ultimat3/jobs';

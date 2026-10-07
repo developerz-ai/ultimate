@@ -72,8 +72,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 ## Rules — numbers and limits
 
 - **Every numeric knob is refused when not FINITE** — core's `finiteOption()` (a bound) and
-  `finiteCount()` (a count, caller's minimum); `worker-options.ts` is where `createWorker` reads them.
-  **`bun run finite-bounds` is a floor, never proof**: `createLimiter`'s five numbers are screened
+  `finiteCount()` (a count, caller's minimum); `worker-options.ts` is where `jobWorker` reads them.
+  **`bun run finite-bounds` is a floor, never proof**: `concurrencyLimiter`'s five numbers are screened
   with min 0 (zero is a HARD STOP). **A row count is `finiteCount` (min 0)**; `retry.attempts` is one with min 1.
 - **`WorkerOptions.concurrency` is read by OWN key** — a queue named `constructor`
   (`worker-slots.test.ts`).
@@ -154,9 +154,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   suite (memory + real pg).
 - **A settle answers whether it landed**; a miss is `jobs.settle.unowned`, not a throw.
 - **The counter moves in the SETTLING statement** (`driver-pg-settle-sql.ts`): one-minute bucket per
-  job name; `nackOutcome()` decides what a nack adds (a shed, a suspension, a drain: nothing), and
-  `ack({ counted: false })` — `x jobs drain` — adds nothing. The scheduler leader folds tiers
-  (`rollupCounters`), at most once a bucket.
+  job name; `nackOutcome()` decides what a nack adds (a shed, a suspension, a drain: nothing).
+  The scheduler leader folds tiers (`rollupCounters`), at most once a bucket.
 - **`list()` is KEYSET** (`after: jobCursor(lastRow)`, newest first by `(created_at, id)`); the pg
   seek reads the cursor row's own `created_at` — the cursor's ms is rounded. A page past
   `MAX_JOB_PAGE` or a foreign cursor is `X_JOB_PAGE_INVALID`, never a bare invariant.

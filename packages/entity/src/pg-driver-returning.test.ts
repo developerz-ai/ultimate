@@ -5,7 +5,7 @@
 // nobody asked for, on a call whose answer is a number.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import type { EntityError } from './errors';
@@ -65,7 +65,7 @@ const ticketRow = (over: Record<string, unknown> = {}): Record<string, unknown> 
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

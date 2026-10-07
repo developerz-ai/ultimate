@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { actionabilityProblem, awaitActionable, isStable } from './actionability';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { ElementSnapshot } from './target';
 
 const element = (over: Partial<ElementSnapshot> = {}): ElementSnapshot => ({
@@ -73,7 +73,7 @@ describe('unit · what "ready" means', () => {
 
 describe('unit · the two codes are different questions', () => {
   test('an element that never appears is X_SCRAPE_SELECTOR_MISSING', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     expect(
       await codeOf(
         awaitActionable({
@@ -91,7 +91,7 @@ describe('unit · the two codes are different questions', () => {
   test('an element that is present and blocked is X_SCRAPE_NOT_ACTIONABLE', async () => {
     // The distinction is the value: "the markup changed" and "a modal is over it" are different
     // afternoons, and one timeout for both is what makes a scraper failure expensive.
-    const clock = testClock();
+    const clock = testScrapeClock();
     expect(
       await codeOf(
         awaitActionable({
@@ -107,7 +107,7 @@ describe('unit · the two codes are different questions', () => {
   });
 
   test('an element that becomes actionable is returned, and the wait is instant under a test clock', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     let polls = 0;
     const found = await awaitActionable({
       selector: '#pay',

@@ -9,8 +9,8 @@ import type { SurfaceDenial } from '@ultimat3/policy';
 // no anchor. The `https://ultimate.dev/errors/<code>` links this file built until 9.x answered
 // 404, host included, on every read this package has ever refused.
 
-/** One class, one code: core owns the cursor codec, so core owns `X_CURSOR_INVALID`. */
-export { CursorInvalidError } from '@ultimat3/core';
+// `CursorInvalidError` is core's and imported from there: core owns the cursor codec, so core
+// owns `X_CURSOR_INVALID` and its one import path.
 
 /** Titles for the framework-wide code table — every one of them owned by this package. */
 const OWNED_TITLES: Readonly<Record<string, string>> = {
@@ -77,7 +77,7 @@ function denialReason(denial: SurfaceDenial): string {
 }
 
 /**
- * An authz denial from `guard()`. The code and reason come from the policy
+ * An authz denial from `guardQuery()`. The code and reason come from the policy
  * decision — this package never invents an authz code — and the surface-shaped
  * denial rides along so a live socket can close with 4403 rather than a 403 body.
  */

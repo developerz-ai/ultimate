@@ -28,7 +28,7 @@ import { selectChangeFeed } from './changefeed-env';
 import { InProcessTransport } from './fanout';
 import { PgConnection } from './pg-connection';
 import { bunPgStream, parsePgUrl } from './pg-socket';
-import { CHANGE_SUBJECT_PREFIX, createReplicator } from './replicator';
+import { CHANGE_SUBJECT_PREFIX, changeFeedReplicator } from './replicator';
 
 const url =
   Bun.env['TEST_REPLICATION_URL'] ?? Bun.env['TEST_DATABASE_URL'] ?? Bun.env['DATABASE_URL'];
@@ -333,7 +333,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
       published.push({ subject, payload });
     });
 
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed: selection.feed,
       transport,
       lock: selection.lock,
@@ -423,7 +423,7 @@ describe.skipIf(!ready)('live · postgres logical replication', () => {
     await transport.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload) => {
       ids.push((JSON.parse(payload) as ChangeEvent).after?.['id']);
     });
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed: selection.feed,
       transport,
       lock: selection.lock,

@@ -12,6 +12,8 @@ import {
   readEntryModules,
   retiredExports,
 } from './factory-names';
+import type { Declaration } from './factory-names-declarations';
+import { FACTORY_NAME_PINS } from './factory-names-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -37,6 +39,12 @@ describe('which spellings are retired', () => {
     ['PostgresThing', 'postgresThing'],
     ['createSmtpDriver', 'smtpDriver'],
     ['createRedisDriver', 'redisDriver'],
+    ['createPgliteClient', 'pgliteClient'],
+    ['createGateway', 'gateway'],
+    ['createToastStore', 'toastStore'],
+    ['createDriver', 'driver'],
+    ['createDriverFor', 'driverFor'],
+    ['createMemorable', 'memorable'],
   ])('%s is retired, and the finding names %s', (name, canonical) => {
     expect(canonicalName(name)).toBe(canonical);
   });
@@ -45,15 +53,15 @@ describe('which spellings are retired', () => {
     'memoryJobDriver',
     'postgresAuditLog',
     'smtpMailDriver',
-    'createPgliteClient',
-    'createDriver',
-    'createDriverFor',
-    'createToastStore',
+    'pgliteClient',
+    'create',
+    'created',
+    'createdAt',
+    'creature',
     'Memorable',
     'Pglite',
     'PGLITE_MEMORY',
     'pgliteExecutor',
-    'createMemorable',
     'upgradeSchema',
   ])('%s is not', (name) => {
     // `PgDriverOptions` WOULD read as a class here: a type is excluded by the scan, not the name.
@@ -162,10 +170,155 @@ describe('what an entry module exports', () => {
     expect(findings[0]?.fix).toContain('git grep -nw memoryDriver');
   });
 
+  test('any create<Thing> value is retired, and the finding asks for a name that builds it', () => {
+    expect(flagged("export { createGateway, createdAt, type createPrompt } from './x';")).toEqual([
+      'createGateway',
+    ]);
+    const [finding] = retiredExports(entry("export { createTestClock } from './clock';"));
+    expect(finding?.fix).toContain('rename createTestClock to testClock');
+    expect(finding?.fix).toContain('const clock = testClock()');
+  });
+
   test('a rule that read nothing says so, rather than reporting a clean tree', () => {
     const findings = checkFactoryNames([entry("export { createMemoryDriver } from './x';")]);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.cause).toContain('was not among the entry modules read');
+  });
+});
+
+const declared = (
+  rows: readonly (readonly [
+    string,
+    Declaration['kind'],
+    (string | undefined)?,
+    (readonly string[])?,
+  ])[],
+): ReadonlyMap<string, Declaration> =>
+  new Map(
+    rows.map(([name, kind, returns, implemented]) => [
+      name,
+      { kind, implements: implemented ?? [], ...(returns === undefined ? {} : { returns }) },
+    ]),
+  );
+
+const pkgEntry = (
+  pkg: string,
+  text: string,
+  declarations: ReadonlyMap<string, Declaration>,
+): EntryModule => ({
+  at: `packages/${pkg}/src/index.ts`,
+  specifier: `@ultimat3/${pkg}`,
+  text,
+  declarations,
+});
+
+const jobs = pkgEntry('jobs', "export { memoryJobDriver } from './x';", declared([]));
+
+describe('a class beside a factory for the same seam', () => {
+  const ai = (text: string, rows: Parameters<typeof declared>[0]) =>
+    checkFactoryNames([jobs, pkgEntry('ai', text, declared(rows))]);
+
+  test('a class implementing what a sibling factory returns is a finding', () => {
+    const findings = ai("export { AnthropicProvider, openAiProvider } from './p';", [
+      ['AnthropicProvider', 'class', undefined, ['Provider']],
+      ['openAiProvider', 'value', 'Provider'],
+    ]);
+    expect(findings.map((one) => one.cause.split(' ')[2])).toEqual(['AnthropicProvider']);
+    expect(findings[0]?.cause).toContain('openAiProvider() returns Provider');
+    expect(findings[0]?.fix).toContain('rename AnthropicProvider to anthropicProvider');
+    expect(findings[0]?.fix).toContain('export type { AnthropicProvider }');
+  });
+
+  test('a factory returning the class itself is a finding too', () => {
+    const findings = ai("export { McpServer, mcpServer } from './s';", [
+      ['McpServer', 'class'],
+      ['mcpServer', 'value', 'McpServer'],
+    ]);
+    expect(findings.map((one) => one.cause.split(' ')[2])).toEqual(['McpServer']);
+  });
+
+  test('a class whose seam no factory returns is clean, as is the class exported as a type', () => {
+    expect(
+      ai("export { NatsTransport, selectTransport, type HashEmbedder, hashEmbedder } from './t';", [
+        ['NatsTransport', 'class', undefined, ['Transport']],
+        ['selectTransport', 'value', 'TransportSelection'],
+        ['HashEmbedder', 'class', undefined, ['Embedder']],
+        ['hashEmbedder', 'value', 'Embedder'],
+      ]),
+    ).toEqual([]);
+  });
+
+  test('an error class is not a seam: instanceof is its API and extends its declaration', () => {
+    expect(
+      ai("export { UltimateError, toUltimateError } from './e';", [
+        ['UltimateError', 'class'],
+        ['toUltimateError', 'value', 'UltimateError'],
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('one value name, one package', () => {
+  test('a name two packages each DECLARE is a finding at both, whatever its spelling', () => {
+    const findings = checkFactoryNames([
+      jobs,
+      pkgEntry('ui', "export { formatBytes } from './f';", declared([['formatBytes', 'value']])),
+      pkgEntry('core', "export { formatBytes } from './b';", declared([['formatBytes', 'value']])),
+    ]);
+    expect(findings.map((one) => one.at)).toEqual([
+      'packages/core/src/index.ts',
+      'packages/ui/src/index.ts',
+    ]);
+    expect(findings[0]?.cause).toContain('@ultimat3/core and @ultimat3/ui both export formatBytes');
+  });
+
+  test('a re-export of another package’s binding is not a second meaning — not this rule’s', () => {
+    expect(
+      checkFactoryNames([
+        jobs,
+        pkgEntry('core', "export { ANY_HOST } from './hosts';", declared([['ANY_HOST', 'value']])),
+        pkgEntry('scraping', "export { ANY_HOST } from './hosts';", declared([])),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('pins', () => {
+  const two = [
+    jobs,
+    pkgEntry('db', "export { createBranch } from './branch';", declared([])),
+  ] as const;
+
+  test('an exception or a debt silences exactly its own finding', () => {
+    expect(checkFactoryNames(two)).toHaveLength(1);
+    const pins = { exceptions: { '@ultimat3/db createBranch': 'a verb' }, owed: {} };
+    expect(checkFactoryNames(two, pins)).toEqual([]);
+    expect(
+      checkFactoryNames(two, { exceptions: {}, owed: { '@ultimat3/db createBranch': 'db' } }),
+    ).toEqual([]);
+  });
+
+  test('a pin that matches no finding is itself a finding, so the list only shrinks', () => {
+    const findings = checkFactoryNames([jobs], {
+      exceptions: {},
+      owed: { '@ultimat3/db createBranch': 'db renames it' },
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.cause).toContain('@ultimat3/db createBranch');
+    expect(findings[0]?.cause).toContain('matches no finding');
+  });
+
+  test('a collision is pinned by its names and packages, so a third package re-opens it', () => {
+    const shared = (pkgs: readonly string[]) =>
+      checkFactoryNames(
+        [
+          jobs,
+          ...pkgs.map((pkg) => pkgEntry(pkg, 'export const t = 1;', declared([['t', 'value']]))),
+        ],
+        { exceptions: {}, owed: { '@ultimat3/i18n + @ultimat3/schema t': 'i18n renames' } },
+      );
+    expect(shared(['i18n', 'schema'])).toEqual([]);
+    expect(shared(['i18n', 'schema', 'mail']).length).toBeGreaterThan(0);
   });
 });
 
@@ -179,10 +332,13 @@ describe('the real tree', () => {
     expect(entries.find((one) => one.at === 'packages/admin/src/audit-schema.ts')?.specifier).toBe(
       '@ultimat3/admin/schema',
     );
+    // Declarations are read per package, not per entry: the class and collision rules need them.
+    const ai = entries.find((one) => one.at === 'packages/ai/src/index.ts');
+    expect(ai?.declarations?.get('openAiProvider')?.returns).toBe('Provider');
   });
 
-  test('no public entry exports a retired spelling: create(Memory|Pg|Postgres)X, pgX, a Memory/Pg class, create*Driver', async () => {
-    const findings = checkFactoryNames(await readEntryModules(repoRoot()));
+  test('no public entry exports a retired spelling, a class beside its factory or a shared name', async () => {
+    const findings = checkFactoryNames(await readEntryModules(repoRoot()), FACTORY_NAME_PINS);
     expect(findings.map((finding) => `${finding.at}: ${finding.cause.split(' ')[2]}`)).toEqual([]);
   });
 });

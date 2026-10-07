@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { boolean, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
 import { entity } from './entity';
@@ -76,7 +76,7 @@ const ROW: Invoice = {
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 
@@ -283,7 +283,7 @@ describe('composition', () => {
    * transaction below was opened on the ambient client, not on the shard (`tx.origin`).
    */
   test('a repo pinned to its own client refuses a transaction opened on another one', async () => {
-    const shard = createRecordingClient();
+    const shard = recordingClient();
     const pinned = postgresRepo(invoices, { client: shard });
 
     // Outside a transaction it is exactly the repository it always was, on its own client.
@@ -309,7 +309,7 @@ describe('composition', () => {
    * reservation. It joins — which is also what lets a seed dry run roll a pinned driver back.
    */
   test('a repo pinned to the client the transaction was opened on joins it', async () => {
-    const shard = createRecordingClient();
+    const shard = recordingClient();
     shard.on('insert into', { rows: [physical()] });
     const pinned = postgresRepo(invoices, { client: shard });
 
@@ -325,7 +325,7 @@ describe('composition', () => {
   });
 
   test('the refusal names the seam that does join a transaction', async () => {
-    const shard = createRecordingClient();
+    const shard = recordingClient();
     const error = await postgresTransactor()
       .run(async () => postgresRepo(invoices, { client: shard }).count({ orgId: ORG }))
       .then(
@@ -367,7 +367,7 @@ describe('postgresRepo() jitPreload config', () => {
         { id: OTHER_ORG, slug: 'theirs' },
       ],
     });
-    await runWithContext(createContext({ actor: userActor({ id: ID, orgId: ORG }) }), async () => {
+    await runWithContext(ctxOf({ actor: userActor({ id: ID, orgId: ORG }) }), async () => {
       const page = await postgresRepo(invoices, { jitPreload }).findMany({ orgId: ORG, limit: 2 });
       // A `for … of` awaits between iterations, so no two of these share a microtask: only the
       // page they came from can batch them.

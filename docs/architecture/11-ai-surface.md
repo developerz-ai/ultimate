@@ -11,7 +11,7 @@ An action is not "also exposed over MCP". There is one invocation core; HTTP and
 export function invoke(target: AnyAction, raw: unknown, options: InvokeOptions = {}) {
   const def = defOf(target);                                 // private store, this module only
   const input = await validateInput(def.input, raw, name);   // X_INPUT_INVALID
-  guard(def.policy, { actor: actorOf(ctx), input, ctx, action: name }, options.surface);
+  guardAction(def.policy, { actor: actorOf(ctx), input, ctx, action: name }, options.surface);
   const out = await def.handle({ input, ctx });              // policy's own code on denial
   return validateOutput(def.output, out, name);              // X_OUTPUT_INVALID
 }
@@ -218,8 +218,8 @@ accounting un-bypassable: a stray `fetch` is the only way around it, and there i
 
 | Step | Detail |
 |---|---|
-| resolve the model | `resolveModel('gateway', request.model, defaultModel)` ([`model-resolve.ts`](../../packages/ai/src/model-resolve.ts)) — the first one declared. Neither declared: `X_AI_MODEL_UNRESOLVED`, naming the declaration, the prompt and `createGateway({ defaultModel })` — the framework has no model of its own (25.0.0). An id the app never `registerModel`-ed is `X_AI_MODEL_UNKNOWN` at the estimate, before the reservation |
-| read the cache | `cacheKeyFor(resolved)` — core's `fingerprint` over model, system, messages, `maxTokens`, `effort`, `thinking`, each tool **whole** (name, description, `input_schema`), stop sequences. A key that ignored `effort` or `system` would serve one prompt's answer for another, and one over tool names alone served an answer shaped for an old `output` schema — every `llm()` tool is `respond` |
+| resolve the model | `resolveModel('gateway', request.model, defaultModel)` ([`model-resolve.ts`](../../packages/ai/src/model-resolve.ts)) — the first one declared. Neither declared: `X_AI_MODEL_UNRESOLVED`, naming the declaration, the prompt and `providerGateway({ defaultModel })` — the framework has no model of its own (25.0.0). An id the app never `registerModel`-ed is `X_AI_MODEL_UNKNOWN` at the estimate, before the reservation |
+| read the cache | `promptCacheKey(resolved)` — core's `fingerprint` over model, system, messages, `maxTokens`, `effort`, `thinking`, each tool **whole** (name, description, `input_schema`), stop sequences. A key that ignored `effort` or `system` would serve one prompt's answer for another, and one over tool names alone served an answer shaped for an old `output` schema — every `llm()` tool is `respond` |
 | a hit costs nothing, so it is **not debited** | |
 | `reserve(estimateSpend(resolved))` | tokens **and** money, against the worst case, **before** the provider is reached — on the ambient ledger, or `callLedger({})` when no scope is open (a raw call has no caller to key) |
 | `attempt(model, …)` | every provider that serves this model, each retried on a retryable failure |

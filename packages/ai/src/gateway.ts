@@ -40,7 +40,7 @@ export interface GatewayCache {
 
 /**
  * A gateway's retry budget. NOT core's `RetryPolicy`, and deliberately still its own declaration:
- * these three field names are what an app writes in `createGateway({ retry })`, so renaming them
+ * these three field names are what an app writes in `providerGateway({ retry })`, so renaming them
  * onto `base`/`max`/`jitter` would break every caller for no behaviour. What WAS a duplicate is the
  * arithmetic, and that is gone — `backoffMs` is core's `backoffDelay` with this shape mapped onto
  * it, so there is one curve in the framework and one place a jitter bug can live.
@@ -53,12 +53,16 @@ export interface RetryPolicy {
   readonly maxDelayMs: number;
 }
 
-export const DEFAULT_RETRY: RetryPolicy = { attempts: 3, baseDelayMs: 500, maxDelayMs: 8_000 };
+export const DEFAULT_GATEWAY_RETRY: RetryPolicy = {
+  attempts: 3,
+  baseDelayMs: 500,
+  maxDelayMs: 8_000,
+};
 
 /** The one code `attempt` may collect into. Every other coded refusal is the caller's answer. */
 const PROVIDER_UNAVAILABLE = 'X_AI_PROVIDER_UNAVAILABLE';
 
-export interface CreateGatewayInput {
+export interface ProviderGatewayInput {
   /** Tried in order for a given model. First provider that lists the model wins. */
   readonly providers: readonly Provider[];
   readonly budget?: BudgetLimits;
@@ -79,7 +83,7 @@ export interface CreateGatewayInput {
 
 export interface Gateway {
   /**
-   * The model a call with none declared runs on — `createGateway({ defaultModel })`. Read by
+   * The model a call with none declared runs on — `providerGateway({ defaultModel })`. Read by
    * `llm()` and `agent()` after the declaration and its prompt, so the app's choice is the one
    * fallback; absent, a call naming no model is refused (`X_AI_MODEL_UNRESOLVED`) — never routed to
    * a vendor the framework picked.
@@ -100,12 +104,12 @@ export interface Gateway {
   callLedger(keys: BudgetKeys): BudgetLedger;
 }
 
-export function createGateway(input: CreateGatewayInput): Gateway {
+export function providerGateway(input: ProviderGatewayInput): Gateway {
   return new GatewayImpl(input);
 }
 
 class GatewayImpl implements Gateway {
-  private readonly config: CreateGatewayInput;
+  private readonly config: ProviderGatewayInput;
   private readonly retry: RetryPolicy;
   private readonly sleep: (ms: number) => Promise<void>;
   /** Left `undefined` rather than defaulted, so `backoffDelay` owns the one fallback to `Math.random`. */
@@ -115,9 +119,9 @@ class GatewayImpl implements Gateway {
     return this.config.defaultModel;
   }
 
-  constructor(config: CreateGatewayInput) {
+  constructor(config: ProviderGatewayInput) {
     this.config = config;
-    this.retry = config.retry ?? DEFAULT_RETRY;
+    this.retry = config.retry ?? DEFAULT_GATEWAY_RETRY;
     // `attempts` is the retry loop's only exit condition and nothing screened it: `attempt <= NaN`
     // is false on the first comparison, so `attempt()` calls no provider at all and raises
     // `X_AI_PROVIDER_UNAVAILABLE` with an EMPTY attempt list — measured, "no provider could serve
@@ -126,17 +130,17 @@ class GatewayImpl implements Gateway {
     // `baseDelayMs` and `maxDelayMs` are deliberately not screened here: `backoffDelay` refuses a
     // non-finite one already, and a NEGATIVE base is clamped to a zero wait on purpose
     // (`gateway-backoff.test.ts` pins it), which a count check here would start refusing.
-    finiteCount('createGateway', 'retry.attempts', this.retry.attempts, 1);
+    finiteCount('gateway', 'retry.attempts', this.retry.attempts, 1);
     // Screened here, under the config's own key, rather than by the ledger `callLedger` builds:
-    // that refused on the first CALL and named `the AI budget`, not the `createGateway` to edit.
-    if (config.budget !== undefined) assertFiniteLimits(config.budget, 'createGateway', 'budget.');
+    // that refused on the first CALL and named `the AI budget`, not the `gateway` to edit.
+    if (config.budget !== undefined) assertFiniteLimits(config.budget, 'gateway', 'budget.');
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = config.random;
   }
 
   /**
    * `budget` held with no scope open. It was enforced ONLY inside `scope()`, which nothing in the
-   * framework calls — so `createGateway({ budget: { request: 100 } })` capped no call any app made.
+   * framework calls — so `providerGateway({ budget: { request: 100 } })` capped no call any app made.
    * A raw `generate` / `stream` outside any scope passes no keys: it has no caller to count.
    */
   callLedger(keys: BudgetKeys): BudgetLedger {
@@ -162,7 +166,7 @@ class GatewayImpl implements Gateway {
     const model = resolveModel('gateway', request.model, this.config.defaultModel);
     const resolved: GenerateRequest = { ...request, model, maxTokens: ceilingOf(request) };
 
-    const cacheKey = cacheKeyFor(resolved);
+    const cacheKey = promptCacheKey(resolved);
     const cached = await this.config.cache?.get(cacheKey);
     if (cached !== undefined) {
       // A cache hit costs nothing, so it is deliberately NOT debited from the budget.
@@ -402,7 +406,7 @@ export function isRetryable(error: unknown): boolean {
  * after the schema changed. Core's `fingerprint`, so key order never splits one request in two and
  * the width is the one every other sharing key in the framework has.
  */
-export function cacheKeyFor(request: GenerateRequest): string {
+export function promptCacheKey(request: GenerateRequest): string {
   return fingerprint({
     model: request.model,
     system: request.system ?? '',

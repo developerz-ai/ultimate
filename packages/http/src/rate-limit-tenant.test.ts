@@ -10,16 +10,16 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const routes: readonly Route[] = [
   {
     method: 'GET',
     path: '/posts',
     meta: { name: 'posts.list', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
 ];
 
@@ -27,9 +27,9 @@ const actor = (id: string, orgId: string): Actor =>
   ({ kind: 'user', id, orgId, roles: [], scopes: [] }) as unknown as Actor;
 
 /** A generous per-actor bucket and a tight tenant one: only the tenant cap can refuse here. */
-const pipelineFor = (who: () => Actor): ReturnType<typeof createPipeline> =>
-  createPipeline({
-    table: createRouter(routes),
+const pipelineFor = (who: () => Actor): ReturnType<typeof httpPipeline> =>
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({
       dev: false,
       buildId: null,
@@ -74,8 +74,8 @@ describe('the tenant bucket is spent beside the actor bucket', () => {
   });
 
   test('with no tenant bucket declared nothing changes for the same traffic', async () => {
-    const pipeline = createPipeline({
-      table: createRouter(routes),
+    const pipeline = httpPipeline({
+      table: httpRouter(routes),
       config: defineHttpConfig({
         dev: false,
         buildId: null,

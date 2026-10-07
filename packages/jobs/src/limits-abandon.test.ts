@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Clock, Ctx } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
-import { createLimiter } from './limits';
+import { concurrencyLimiter } from './limits';
 import { createAdmission } from './worker-admit';
 import type { FleetSlots, SlotGrant } from './worker-fleet-slots';
 
@@ -25,7 +25,10 @@ function fakeClock(): Clock & { advance(ms: number): void } {
 
 describe('a lease abandoned before its run started', () => {
   test('pops its own rate stamp: three sheds leave the whole window', () => {
-    const limiter = createLimiter({ ratePerTenant: { limit: 3, windowMs: 60_000 } }, fakeClock());
+    const limiter = concurrencyLimiter(
+      { ratePerTenant: { limit: 3, windowMs: 60_000 } },
+      fakeClock(),
+    );
     for (let shed = 0; shed < 3; shed += 1) limiter.tryAcquire(KEY)?.abandon();
     expect(limiter.snapshot().tracked.rateWindows).toBe(0);
     for (let start = 0; start < 3; start += 1) limiter.tryAcquire(KEY)?.release();
@@ -35,7 +38,7 @@ describe('a lease abandoned before its run started', () => {
 
   test('a run that STARTED keeps its stamp, and release() after abandon() frees nothing twice', () => {
     const clock = fakeClock();
-    const limiter = createLimiter(
+    const limiter = concurrencyLimiter(
       { global: 2, ratePerTenant: { limit: 2, windowMs: 1_000 } },
       clock,
     );
@@ -55,7 +58,10 @@ describe('a lease abandoned before its run started', () => {
   });
 
   test('takes ITS stamp and not a neighbour taken in the same millisecond', () => {
-    const limiter = createLimiter({ ratePerTenant: { limit: 2, windowMs: 1_000 } }, fakeClock());
+    const limiter = concurrencyLimiter(
+      { ratePerTenant: { limit: 2, windowMs: 1_000 } },
+      fakeClock(),
+    );
     const a = limiter.tryAcquire(KEY);
     const b = limiter.tryAcquire(KEY);
     b?.abandon();
@@ -69,7 +75,10 @@ const claimed = (id: string): ClaimedJob =>
   ({ id, name: 'capped', queue: 'default', tenantId: 'org-1', attempt: 1, claim: 1 }) as ClaimedJob;
 
 function admission(grants: (SlotGrant | Error)[]) {
-  const limiter = createLimiter({ ratePerTenant: { limit: 1, windowMs: 60_000 } }, fakeClock());
+  const limiter = concurrencyLimiter(
+    { ratePerTenant: { limit: 1, windowMs: 60_000 } },
+    fakeClock(),
+  );
   const driver = { name: 'fake', nack: () => Promise.resolve(true) } as unknown as JobDriver;
   const fleetSlots: FleetSlots = {
     acquire() {

@@ -3,6 +3,7 @@ import type { Actor, ActorInit } from './actor';
 import {
   actorFact,
   actorLabel,
+  actorOf,
   actorOrigin,
   agentActor,
   anonymousActor,
@@ -13,7 +14,7 @@ import {
   userActor,
   withFacts,
 } from './actor';
-import { createContext, runWithContext, useContext, withChildContext } from './context';
+import { ctxOf, runWithContext, useContext, withChildContext } from './context';
 import { impersonate } from './impersonate';
 
 /**
@@ -35,6 +36,16 @@ describe('actor', () => {
     expect(hasScope(actor, 'post:read')).toBe(true);
     expect(actorLabel(actor)).toBe('user:ada@acme');
     expect(isAnonymous(anonymousActor())).toBe(true);
+  });
+
+  // Policy's "nobody" is `null` — the value that turns a missing session into X_UNAUTHENTICATED —
+  // and every surface (action, query, MCP, a page) reaches it through this one mapping.
+  test('actorOf hands a policy null for the anonymous actor and the actor itself otherwise', () => {
+    const ada = userActor({ id: 'ada' });
+    const robot = serviceActor({ id: 'cron' });
+    expect(actorOf({ actor: anonymousActor() })).toBeNull();
+    expect(actorOf({ actor: ada })).toBe(ada);
+    expect(actorOf({ actor: robot })).toBe(robot);
   });
 });
 
@@ -82,7 +93,7 @@ describe('actor facts', () => {
 
   test('facts ride the context, so every surface reads the one actor', () => {
     const actor = withFacts(userActor({ id: 'ada' }), { tier: 'paid' });
-    runWithContext(createContext({ actor }), () => {
+    runWithContext(ctxOf({ actor }), () => {
       const read = (): 'free' | 'paid' | undefined => actorFact(useContext().actor, 'tier');
       expect(read()).toBe('paid');
       // Impersonation replaces the actor, so it replaces the facts — never leaks the parent's.
@@ -157,7 +168,7 @@ describe('direct grants', () => {
   test('impersonation carries the grants of the actor being impersonated, not the caller’s', () => {
     const support = serviceActor({ id: 'eng-7', permissions: ['support:read'] });
     const customer = userActor({ id: 'cust-99', permissions: ['post:publish'] });
-    const seen = runWithContext(createContext({ actor: support }), () =>
+    const seen = runWithContext(ctxOf({ actor: support }), () =>
       impersonate(customer, 'ticket 4821', () => useContext().actor),
     );
     expect(seen.permissions).toEqual(['post:publish']);

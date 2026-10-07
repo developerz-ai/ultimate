@@ -4,9 +4,10 @@
 // configs are pure data and live in `oauth-registry.ts`: importing this file performs no network
 // I/O and reads no env.
 
+import { timingSafeEqual } from '@ultimat3/core';
 import { oauthStateInvalid } from './oauth-errors';
 import { providerFor } from './oauth-registry';
-import { base64Url, randomToken, sha256Bytes, timingSafeEqual } from './tokens';
+import { base64Url, randomToken, sha256Bytes } from './tokens';
 
 export interface OAuthProvider {
   readonly id: string;
@@ -63,7 +64,7 @@ export function pkceChallenge(verifier: string): string {
   return base64Url(sha256Bytes(verifier));
 }
 
-export function createPkce(): PkcePair {
+export function pkcePair(): PkcePair {
   // 32 random bytes -> 43 base64url chars, the RFC's minimum verifier length.
   const verifier = randomToken(32);
   return { verifier, challenge: pkceChallenge(verifier), method: 'S256' };
@@ -88,7 +89,7 @@ export interface BeginOAuthInput {
 
 export function beginOAuth(input: BeginOAuthInput): OAuthHandshake {
   const provider = providerFor(input.provider);
-  const pkce = createPkce();
+  const pkce = pkcePair();
   const state = randomToken(16);
   const nonce = randomToken(16);
   const url = new URL(provider.authorizeUrl);

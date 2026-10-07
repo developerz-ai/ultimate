@@ -6,7 +6,7 @@
 // what argon2id costs is MEMORY — 19 MiB per hash at the OWASP floor. The only remaining backstop
 // was `http.maxInflight` (1000), i.e. roughly 19 GB of arenas queued on one box.
 
-import { createFlightGate } from '@ultimat3/core';
+import { flightGate } from '@ultimat3/core';
 import { kdfOverloaded } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
 
@@ -43,7 +43,7 @@ export interface KdfGate {
  * The declared return type stays `KdfGate` rather than core's `FlightGate`: `active` and `queued`
  * are observations no caller here has ever had, and widening a public signature is not a refactor.
  */
-export function createKdfGate(limits: KdfLimits = DEFAULT_KDF_LIMITS): KdfGate {
+export function boundedKdfGate(limits: KdfLimits = DEFAULT_KDF_LIMITS): KdfGate {
   // Screened at the CONSTRUCTOR, because this pair WEDGES rather than fails: core asks
   // `active < maxConcurrent` and then `waiters.length >= maxQueued`, and both are false for `NaN`,
   // so every hash on the box parks in a queue with no bound and nothing to release it — login
@@ -66,12 +66,12 @@ export function createKdfGate(limits: KdfLimits = DEFAULT_KDF_LIMITS): KdfGate {
     '`waiters.length >= NaN` is false, so the queue this gate exists to bound has no bound at all',
     0,
   );
-  return createFlightGate(limits, {
+  return flightGate(limits, {
     overflow: (state) => kdfOverloaded(state.active, state.queued),
   });
 }
 
-let gate = createKdfGate();
+let gate = boundedKdfGate();
 
 /** The process-wide gate every `hashPassword`/`verifyPassword` passes through. */
 export const kdfGate = (): KdfGate => gate;
@@ -83,10 +83,10 @@ export const kdfGate = (): KdfGate => gate;
  * runs on a 512 MiB PaaS dyno and a 64 GiB node.
  */
 export function configureKdfGate(limits: KdfLimits): void {
-  gate = createKdfGate(limits);
+  gate = boundedKdfGate(limits);
 }
 
 /** Back to the shipped defaults. Tests that call `configureKdfGate` must call this in cleanup. */
 export function resetKdfGate(): void {
-  gate = createKdfGate();
+  gate = boundedKdfGate();
 }

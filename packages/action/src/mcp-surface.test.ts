@@ -4,8 +4,8 @@
 // `invoke(target, input, { surface: 'mcp' })` — so that call is what is asserted here.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, isMcpExposed, runWithContext, userActor } from '@ultimat3/core';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { ctxOf, isMcpExposed, runWithContext, userActor } from '@ultimat3/core';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action, describeAction } from './action';
@@ -17,9 +17,9 @@ const Output = t.object({ id: t.uuid, published: t.boolean });
 const POST_ID = '00000000-0000-4000-8000-0000000000aa';
 
 /** No actor: core's anonymous actor is what an unauthenticated request carries. */
-const anonymous = createContext({});
+const anonymous = ctxOf({});
 const editorActor = { ...userActor({ id: 'u1' }), permissions: ['post:publish'] };
-const editor = createContext({ actor: editorActor });
+const editor = ctxOf({ actor: editorActor });
 
 function defineCounted() {
   const seen: unknown[] = [];
@@ -38,7 +38,7 @@ function defineCounted() {
 function requestFor(path: string, body: unknown) {
   const url = new URL(`https://app.test${path}`);
   const config = defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } });
-  const rctx = createRequestContext({ url, method: 'POST', role: 'web', config });
+  const rctx = requestContext({ url, method: 'POST', role: 'web', config });
   const raw = new Request(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

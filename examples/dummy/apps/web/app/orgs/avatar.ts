@@ -105,15 +105,14 @@ export async function signedAvatarUrl(orgId: OrgId, memberId: MemberId): Promise
   const driver = disk();
   const prefix = attachmentPrefix(orgId, avatarTarget(memberId));
   let current: StorageListEntry | undefined;
-  let cursor: string | undefined;
+  let cursor: string | null = null;
 
   do {
     const page = await driver.list({ prefix, cursor });
-    current = newest(current === undefined ? page.objects : [current, ...page.objects]);
-    // A truncated page with no cursor is a driver that cannot continue: stop, rather than ask
-    // for the same first page forever.
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor !== undefined);
+    current = newest(current === undefined ? page.rows : [current, ...page.rows]);
+    // `nextCursor` is null exactly on the last page — the one page shape says so.
+    cursor = page.nextCursor;
+  } while (cursor !== null);
 
   if (current === undefined) return null;
   return driver.signedUrl(current.key, { method: 'GET', expiresInMs: AVATAR_URL_TTL_MS });

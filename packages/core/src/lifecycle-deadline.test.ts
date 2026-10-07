@@ -14,7 +14,7 @@ import {
   onShutdown,
   resetLifecycle,
 } from './lifecycle';
-import { createLogger } from './logger';
+import { structuredLogger } from './logger';
 
 // Lifecycle state is process-global, and any suite that boots a server calls `markReady()` — so
 // this resets on the way IN as well as out, or the first assertion reads another file's process.
@@ -44,7 +44,7 @@ describe('the drain deadline', () => {
     const stuck = deferred();
     configureLifecycle({
       deadlineMs: 10,
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
     markReady();
     expect(drainDeadlineMs()).toBe(10);
@@ -77,7 +77,7 @@ describe('the drain deadline', () => {
     const stuck = deferred();
     configureLifecycle({
       deadlineMs: 10,
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
     let rejectLate!: (error: unknown) => void;
     const late = new Promise<void>((_resolve, reject) => {
@@ -100,7 +100,7 @@ describe('the drain deadline', () => {
     const stuck = deferred();
     configureLifecycle({
       deadlineMs: 30,
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
 
     onShutdown('spends-it', () => stuck.promise, { phase: 'accept' });
@@ -138,7 +138,7 @@ describe('the drain deadline', () => {
     const entered = deferred();
     const release = deferred();
     configureLifecycle({
-      logger: createLogger({ level: 'info', writer: () => undefined }),
+      logger: structuredLogger({ level: 'info', writer: () => undefined }),
     });
     markReady();
     // 25s, the literal, because no stopwatch in a test can tell 25s from unbounded — so the value

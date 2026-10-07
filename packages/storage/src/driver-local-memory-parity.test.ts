@@ -122,7 +122,7 @@ describe('lastModified under an injected clock', () => {
       const answers = async (key: string): Promise<readonly (string | undefined)[]> => [
         (await disk.stat(key))?.lastModified?.toISOString(),
         (await disk.get(key)).object.lastModified?.toISOString(),
-        (await disk.list({ prefix: key })).objects[0]?.lastModified?.toISOString(),
+        (await disk.list({ prefix: key })).rows[0]?.lastModified?.toISOString(),
       ];
       expect([
         name,

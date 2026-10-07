@@ -1,4 +1,4 @@
-// Every numeric option `createSyncNode` accepts, refused where the node is BUILT — not inside a
+// Every numeric option `syncNode` accepts, refused where the node is BUILT — not inside a
 // callback the runtime invokes per connection.
 //
 // Failure case first, and the failure is the timing rather than the missing check. `SyncSocket`
@@ -6,7 +6,7 @@
 // runs synchronously inside `server.upgrade` — so a node built with `maxBufferedBytes: NaN` boots
 // clean, answers `/healthz` and `/readyz`, reports `ready`, and then throws `X_INVARIANT` out of
 // every upgrade for the life of the process, holding zero sockets. Measured before the fix:
-// `createSyncNode` threw? false; the first upgrade threw `X_INVARIANT`; sockets held = 0. A
+// `syncNode` threw? false; the first upgrade threw `X_INVARIANT`; sockets held = 0. A
 // misconfiguration that fails at boot is a rollback; one that fails per connection is an outage
 // whose cause is one stack frame inside the runtime.
 //
@@ -25,10 +25,10 @@ import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry, type WsLike } from './socket';
 import { GrantBook, type SyncGrant } from './sync-auth';
 import {
-  createSyncNode,
   type SyncNode,
   type SyncNodeOptions,
   type SyncWs,
+  syncNode,
   type UpgradeTarget,
   type WsData,
 } from './sync-node';
@@ -67,7 +67,7 @@ function nodeWith(extra: Partial<SyncNodeOptions>): () => SyncNode {
   return function build(): SyncNode {
     const sockets = new SocketRegistry();
     const transport = new InProcessTransport();
-    return createSyncNode({
+    return syncNode({
       hub: new ChannelHub({ transport, sockets }),
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       transport,
@@ -94,7 +94,7 @@ function upgradeTarget(node: SyncNode): UpgradeTarget {
 
 describe('a sync node built on a ceiling that is not a number', () => {
   for (const option of SOCKET_CEILINGS) {
-    test(`a non-finite ${option} is refused by createSyncNode, not by every upgrade`, () => {
+    test(`a non-finite ${option} is refused by syncNode, not by every upgrade`, () => {
       for (const value of NOT_A_CEILING) {
         expect(nodeWith({ [option]: value })).toThrow(UltimateError);
       }
@@ -114,7 +114,7 @@ describe('a sync node built on a ceiling that is not a number', () => {
   });
 
   test('a finite node still boots and still upgrades — the screen refuses numbers, not nodes', async () => {
-    // Non-vacuity: a `createSyncNode` that threw on everything would satisfy every case above,
+    // Non-vacuity: a `syncNode` that threw on everything would satisfy every case above,
     // and so would one that never built a socket.
     const node = nodeWith({
       maxBufferedBytes: 4096,
@@ -162,7 +162,7 @@ describe('a grant on an upgrade that never opens a socket', () => {
         throw new UltimateError({
           code: 'X_INVARIANT',
           cause: 'the socket refused its own ceiling',
-          fix: 'pass a finite ceiling to createSyncNode',
+          fix: 'pass a finite ceiling to syncNode',
         });
       },
       requestIP: () => null,

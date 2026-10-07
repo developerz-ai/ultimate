@@ -1,9 +1,9 @@
 // `bodyBytes()` and `useRequestBodyBytes()`: the exact body, for a signature over the raw bytes.
 // Split from `request.test.ts` at its line ceiling; the build and capture helpers are its own.
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfigInput } from './config';
-import { asCtx, createRequestContext, useRequestBodyBytes } from './context';
+import { asCtx, requestContext, useRequestBodyBytes } from './context';
 import { HttpError } from './errors';
 import { UltimateRequest } from './request';
 
@@ -14,7 +14,7 @@ const build = (
 ) => {
   const url = new URL(urlString);
   const config = defineHttpConfig({ rateLimit: { scope: 'process' }, ...configInput });
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url,
     method: (requestInit.method ?? 'GET').toString(),
     role: 'web',
@@ -95,8 +95,6 @@ describe('bodyBytes() — the exact bytes, one read', () => {
   });
 
   test('useRequestBodyBytes() off a request (a job, a task) is X_NO_REQUEST', () => {
-    expect(() => runWithContext(createContext({}), () => useRequestBodyBytes())).toThrow(
-      /X_NO_REQUEST/,
-    );
+    expect(() => runWithContext(ctxOf({}), () => useRequestBodyBytes())).toThrow(/X_NO_REQUEST/);
   });
 });

@@ -191,10 +191,10 @@ export function setFrozenClock(now: string | number): void {
 }
 
 /** Run `body` with the clock frozen at `now`, then restore whatever was there before. */
-export async function frozenClock<T>(now: string, body: () => T | Promise<T>): Promise<T> {
+export async function withFrozenClock<T>(now: string, body: () => T | Promise<T>): Promise<T> {
   // Resolved before `previous` is spent: a refusal here must not run the body and must not leave
   // the outer instant behind a `finally` that restores something already overwritten.
-  const at = instantMs('frozenClock', now);
+  const at = instantMs('withFrozenClock', now);
   const previous = frozenAt;
   frozenAt = at;
   // Both moves announced, as `setFrozenClock` announces one: the frozen scheduler renews leases on

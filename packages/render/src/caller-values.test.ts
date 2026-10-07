@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { asset } from './asset';
 import { clearDeclaredIslands } from './island';
-import { createIslandCollector } from './island-collector';
+import { islandCollector } from './island-collector';
 import { clearRoutes, registerRoute } from './registry';
 import { enumeratePrerender, fillPath, renderStatic } from './render-static';
 import { collectStream, holeMarker, renderStreamHtml } from './render-stream';
@@ -102,7 +102,7 @@ describe('prerender() hands back data, never a crash in the build', () => {
 
 describe('the other doors', () => {
   test('an island resolver answering a non-string is X_ISLAND_INVALID', () => {
-    const collector = createIslandCollector({
+    const collector = islandCollector({
       file: 'apps/web/site/pricing/page.tsx',
       hydrate: 'idle',
       resolve: () => 1n as never,

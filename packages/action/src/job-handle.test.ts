@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -18,8 +18,8 @@ const POST_ID = '00000000-0000-4000-8000-0000000000aa';
 const OTHER_ID = '00000000-0000-4000-8000-0000000000bb';
 
 const editorActor = { ...userActor({ id: 'u1' }), permissions: ['post:publish'] };
-const editor = createContext({ actor: editorActor });
-const anonymous = createContext({});
+const editor = ctxOf({ actor: editorActor });
+const anonymous = ctxOf({});
 
 const publishPost = () =>
   action({

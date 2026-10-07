@@ -17,7 +17,7 @@ import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import type { CronResolver, Scheduler } from './scheduler';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
 import type { TaskHandle } from './task';
 import { resetTasks, task } from './task';
@@ -158,7 +158,7 @@ async function armed(
   clock: Clock & { advance(ms: number): void },
   leader?: LeaderElection,
 ): Promise<Scheduler> {
-  const scheduler = createScheduler({
+  const scheduler = jobScheduler({
     driver,
     clock,
     cron: everySecond,
@@ -195,7 +195,7 @@ describe('the scheduler runs one dispatch round at a time', () => {
   test('the timer loop re-arms on the round it finished, never on a fixed period', async () => {
     const gated = gatedDriver();
     const clock = fakeClock(T0);
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: gated.driver,
       clock,
       cron: everySecond,
@@ -275,7 +275,7 @@ describe('the scheduler drains before the lock goes back', () => {
       tz: 'UTC',
       enqueue: () => [[sendDigest, {}]],
     });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: gated.driver,
       clock,
       cron: everySecond,
@@ -329,7 +329,7 @@ describe('a round that fails says what to do about it', () => {
       ...memoryJobDriver(),
       enqueue: () => Promise.reject(unavailable),
     };
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: failing,
       clock,
       cron: everySecond,
@@ -366,7 +366,7 @@ describe('a round that fails says what to do about it', () => {
       ...memoryJobDriver(),
       enqueue: () => Promise.reject(new Error('socket hang up')),
     };
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: failing,
       clock,
       cron: everySecond,
@@ -394,7 +394,7 @@ describe('a round that fails says what to do about it', () => {
 
 describe('the scheduler holds its two shutdown hooks, and only while it runs', () => {
   test('start registers the pair, stop hands both back, a restart still holds one pair', async () => {
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: memoryJobDriver(),
       tasks: [nightly],
       tickIntervalMs: 60_000,
@@ -414,7 +414,7 @@ describe('the scheduler holds its two shutdown hooks, and only while it runs', (
   });
 
   test('drainOnShutdown: false registers nothing to leak', async () => {
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: memoryJobDriver(),
       tasks: [nightly],
       tickIntervalMs: 60_000,

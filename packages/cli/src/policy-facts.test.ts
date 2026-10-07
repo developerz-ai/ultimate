@@ -3,7 +3,7 @@
 // would prove nothing about whether `explainPolicy` reads the app's own policy objects.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerActions, resetRegistry as resetActions, t } from '@ultimat3/action';
+import { action, registerActions, resetActions, t } from '@ultimat3/action';
 import type { Policy } from '@ultimat3/policy';
 import {
   can,
@@ -12,7 +12,7 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { resetRegistry as resetQueries } from '@ultimat3/query';
+import { resetQueries } from '@ultimat3/query';
 import { explainPolicy, knownPolicySubjects, listPolicy } from './policy-facts';
 import { registerPolicyFixture } from './policy-fixture';
 

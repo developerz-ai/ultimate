@@ -5,7 +5,7 @@
 import { ConfigInvalidError } from '@ultimat3/core';
 
 /**
- * The sync node's own path (`createSyncNode`'s default in `@ultimat3/realtime`). Same origin by
+ * The sync node's own path (`syncNode`'s default in `@ultimat3/realtime`). Same origin by
  * default because every rung already serves it there: `x dev` and a combined-role container mount
  * the node on the web port, and `docker/helm`'s ingress routes `/_x/sync` to the `sync` service.
  */

@@ -7,9 +7,10 @@
 
 import type { Ctx } from '@ultimat3/core';
 import {
+  actorOf,
   anonymousActor,
   assert,
-  createContext,
+  ctxOf,
   finiteOption,
   logger,
   runWithContext,
@@ -31,7 +32,7 @@ import {
   readThrough,
 } from './cache';
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
-import { actorOf, guard, guardBeforeInput } from './policy-gate';
+import { guardQuery, guardQueryBeforeInput } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
 import { spendReadLimit } from './rate-limit-gate';
 import type { SqlSource } from './source';
@@ -164,7 +165,7 @@ function asActor<T>(options: QueryOptions, run: (ctx: Ctx) => Promise<T>): Promi
   const inChild = (): Promise<T> => run(useContext());
   const base = options.ctx ?? tryUseContext();
   return base === undefined
-    ? runWithContext(createContext(patch), inChild)
+    ? runWithContext(ctxOf(patch), inChild)
     : runWithContext(base, () => withChildContext(patch, inChild));
 }
 
@@ -264,7 +265,7 @@ async function buildSource(
   // they send learns nothing about this read's input schema from an `X_INPUT_INVALID`.
   if (unenforced === undefined) {
     try {
-      guardBeforeInput(
+      guardQueryBeforeInput(
         def.policy,
         { actor: actorOf(ctx), ctx, query: name },
         options.surface ?? 'server',
@@ -292,7 +293,7 @@ async function buildSource(
   const input = await validate(def.input, raw, name);
   if (trace !== null) trace.input = input;
   if (unenforced === undefined) {
-    guard(
+    guardQuery(
       def.policy,
       { actor: actorOf(ctx), input, ctx, query: name },
       options.surface ?? 'server',

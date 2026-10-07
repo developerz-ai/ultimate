@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isDeterminismInstalled, seededRandom } from './determinism';
-import { createTestNetwork } from './fixture-network';
+import { testNetwork } from './fixture-network';
 import type { AppOptions, BootedApp, HarnessDeps } from './harness';
 import { bootApp, describeApp, testApp } from './harness';
 import {
@@ -343,7 +343,7 @@ describe(testName('unit', 'a boot that throws'), () => {
 // outer state on the process-global gate, so it has to run where nothing later reads it.
 describe(testName('unit', 'a boot restores the network gate it found, never clears it'), () => {
   test('an outer mock, allow-list and offline state all survive a nested bootApp', async () => {
-    const network = createTestNetwork();
+    const network = testNetwork();
     try {
       mockJson('https://outer.test/ping', { pong: true });
       allowHost(`127.0.0.1:${CLOSED_PORT}`);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { escapeHtml as coreEscapeHtml } from '@ultimat3/core';
-import { attributePair, escapeHtml, renderAttributes, styleValue } from './html';
+import { escapeHtml } from '@ultimat3/core';
+import { attributePair, renderAttributes, styleValue } from './html';
 
 describe('escaping', () => {
   test('text escapes every character that can open a tag or close a quote', () => {
@@ -17,12 +17,8 @@ describe('escaping', () => {
     expect(escapeHtml('" onload="alert(1)')).toBe('&quot; onload=&quot;alert(1)');
   });
 
-  // Identity, not equivalence: two functions that agree today are exactly how one of them ends up
-  // missing a character. `@ultimat3/core` owns the one table and this package re-exports it, so
-  // re-introducing a local copy fails here rather than in a pentest.
-  test("the escaper is core's own function, never a second copy", () => {
-    expect(escapeHtml).toBe(coreEscapeHtml);
-  });
+  // A second escaper — a table or a replace chain writing `&amp;` — is refused by
+  // `bun run flight-copies` (`X_HELPER_COPY`), and a re-export of core's by the same command.
 });
 
 describe('attributePair', () => {

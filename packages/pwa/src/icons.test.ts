@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createRaster, decodeImage, encodeImage, probeImage } from '@ultimat3/core';
+import { blankRaster, decodeImage, encodeImage, probeImage } from '@ultimat3/core';
 import { PwaIconMissingError } from './errors';
 import {
   appleTouchLinks,
@@ -28,7 +28,7 @@ const BACKGROUND_RGBA: Rgba = [15, 42, 68, 255];
  * would pass the geometry assertions even if the scaler centred the artwork wrongly.
  */
 function sourceIcon(size = 1024): Uint8Array {
-  const raster = createRaster(size, size, 'test source icon');
+  const raster = blankRaster(size, size, 'test source icon');
   const from = size / 4;
   const to = size - from;
   for (let y = 0; y < size; y += 1) {

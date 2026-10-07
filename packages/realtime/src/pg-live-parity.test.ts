@@ -15,7 +15,7 @@ import type { Row } from './json';
 import { entityRow } from './pg-entity-row';
 import { insert, POSTS_OID, relation, update } from './pg-replication-fixture';
 import { PgOutputDecoder } from './pgoutput';
-import { createReplicator } from './replicator';
+import { changeFeedReplicator } from './replicator';
 import { parseEnvelope } from './replicator-envelope';
 
 const TIMESTAMPTZ = 1184;
@@ -172,7 +172,7 @@ test('an edit keeps its place after the row crosses the replicator bus as text',
   const transport = new InProcessTransport();
   await transport.subscribe('x.change.>', (payload) => void wire.push(payload));
   const feed = memoryChangeFeed();
-  const replicator = createReplicator({
+  const replicator = changeFeedReplicator({
     feed,
     transport,
     lock: memoryAdvisoryLock('x:replicator:parity'),

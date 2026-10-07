@@ -48,7 +48,7 @@ message disappears is your decision ([Configuration](Configuration)).
 
 ## Channels, the inbox, and at-least-once
 
-- `channel(name, fn)` delivers per recipient; `bulkChannel(name, fn)` makes **one** call for the
+- `deliveryChannel(name, fn)` delivers per recipient; `bulkChannel(name, fn)` makes **one** call for the
   whole audience (a Slack post, a webhook) and cannot take a digest (`X_NOTIFY_DIGEST_UNSUPPORTED`).
   `inAppChannel()` and `mailChannel({ mailer })` ship; `mailer` is structural, so [Mail](Mail) plugs
   in without an import.

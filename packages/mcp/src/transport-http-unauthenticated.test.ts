@@ -6,10 +6,10 @@
 import { describe, expect, test } from 'bun:test';
 import { agentActor, frozenClock, isUltimateError } from '@ultimat3/core';
 import { memoryRateLimitStore, type RateLimitStore } from '@ultimat3/http';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { MCP_UNAUTHENTICATED_LIMIT, mcpHttpRoute } from './transport-http';
 
-const server = createMcpServer();
+const server = mcpServer();
 const GOOD = 'good-token';
 
 /** A route whose `resolveToken` counts its calls, accepting exactly `GOOD`. */

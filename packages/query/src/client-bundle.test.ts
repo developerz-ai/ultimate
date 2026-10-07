@@ -41,11 +41,12 @@ async function build(minify: boolean): Promise<{ modules: string[]; bytes: numbe
   return { modules: modules.sort(), bytes: output.size };
 }
 
+/** Any schema module is a table, except the one-symbol `error-brand.ts` `UltimateError` brands with. */
 const isTitlesTable = (module: string): boolean =>
   module === 'core/src/core-error-codes.ts' ||
   module === 'core/src/schema-error-codes.ts' ||
   module === 'query/src/errors.ts' ||
-  module.startsWith('schema/src/');
+  (module.startsWith('schema/src/') && module !== 'schema/src/error-brand.ts');
 
 describe('@ultimat3/query/client in a browser', () => {
   test('reaches no titles table', async () => {

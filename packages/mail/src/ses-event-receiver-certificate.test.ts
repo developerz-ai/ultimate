@@ -16,7 +16,7 @@ import {
   snsSigner,
   TOPIC_ARN,
 } from './delivery-event-fixture';
-import { createSesEventReceiver } from './ses-event-receiver';
+import { sesEventReceiver } from './ses-event-receiver';
 
 let signer: SnsSigner;
 beforeAll(async () => {
@@ -31,7 +31,7 @@ const notFound = new TypeError('HTTP 404');
 
 function receiver() {
   const fetched: string[] = [];
-  const instance = createSesEventReceiver({
+  const instance = sesEventReceiver({
     topicArns: [TOPIC_ARN],
     clock,
     fetchCertificate: async (url) => {
@@ -51,7 +51,7 @@ async function refusal(promise: Promise<unknown>): Promise<UltimateError> {
   return expect.unreachable('expected the receiver to refuse with an UltimateError');
 }
 
-describe('createSesEventReceiver — one certificate fetch per pinned URL', () => {
+describe('sesEventReceiver — one certificate fetch per pinned URL', () => {
   test('50 aliases of the pinned URL are refused and force no fetch', async () => {
     const signed = await sesNotification(signer, SES_BOUNCE);
     const { instance, fetched } = receiver();
@@ -82,7 +82,7 @@ describe('createSesEventReceiver — one certificate fetch per pinned URL', () =
   test('concurrent messages naming one URL share one download', async () => {
     const message = await sesNotification(signer, SES_DELIVERY);
     let calls = 0;
-    const instance = createSesEventReceiver({
+    const instance = sesEventReceiver({
       topicArns: [TOPIC_ARN],
       clock,
       fetchCertificate: async () => {
@@ -102,7 +102,7 @@ describe('createSesEventReceiver — one certificate fetch per pinned URL', () =
     const message = await sesNotification(signer, SES_DELIVERY);
     const clock = frozenClock('2026-10-06T12:01:00.000Z');
     let calls = 0;
-    const instance = createSesEventReceiver({
+    const instance = sesEventReceiver({
       topicArns: [TOPIC_ARN],
       clock,
       fetchCertificate: async () => {
@@ -125,13 +125,13 @@ describe('createSesEventReceiver — one certificate fetch per pinned URL', () =
   });
 });
 
-describe('createSesEventReceiver — a flood of valid-looking certificate URLs', () => {
+describe('sesEventReceiver — a flood of valid-looking certificate URLs', () => {
   const hexPath = (index: number): string =>
     `https://sns.us-west-2.amazonaws.com/SimpleNotificationService-${index.toString(16).padStart(32, '0')}.pem`;
 
   function flooded() {
     const fetched: string[] = [];
-    const instance = createSesEventReceiver({
+    const instance = sesEventReceiver({
       topicArns: [TOPIC_ARN],
       clock,
       fetchCertificate: async (url) => {

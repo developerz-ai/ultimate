@@ -70,7 +70,7 @@ export const tenancyUnscoped = (
         : `${entityName}.${operation}() was checked against a plan with no org predicate, though the acting actor's tenant is ${renderValue(actorOrg)} — a plan is verified here, never rewritten, so the tenant had to be on it already`,
     fix:
       actorOrg === undefined
-        ? `run it inside runWithContext(createContext({ actor: userActor({ id, orgId }) }), fn) — the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`
+        ? `run it inside runWithContext(ctxOf({ actor: userActor({ id, orgId }) }), fn) — the actor's org scopes the plan — or name the tenant: ${entityName}.${operation}({ orgId }), which orgScoped(plan, orgId) is the plan-level form of`
         : `build the plan with scopedPlan('${entityName}', tenantColumn, '${operation}', plan) — it applies the actor's tenant — or add the predicate first: orgScoped(plan, ${asLiteral(actorOrg, "'<org>'")})`,
   });
 
@@ -159,7 +159,7 @@ export const crossTenantDenied = (init: {
   new EntityError({
     code: 'X_TENANCY_CROSS_DENIED',
     cause: `crossTenant(${JSON.stringify(init.reason)}) was entered by ${init.actor}, which does not carry the ${JSON.stringify(init.scope)} scope`,
-    fix: `grant the capability where the actor is minted — serviceActor({ id: 'reconciler', scopes: ['${init.scope}'] }) — and run the sweep inside runWithContext(createContext({ actor }), fn); an ordinary request scopes to its own tenant instead and needs no crossTenant()`,
+    fix: `grant the capability where the actor is minted — serviceActor({ id: 'reconciler', scopes: ['${init.scope}'] }) — and run the sweep inside runWithContext(ctxOf({ actor }), fn); an ordinary request scopes to its own tenant instead and needs no crossTenant()`,
   });
 
 /**

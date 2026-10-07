@@ -17,7 +17,7 @@ import {
   onShutdown,
   resetLifecycle,
 } from './lifecycle';
-import { createLogger } from './logger';
+import { structuredLogger } from './logger';
 
 beforeEach(() => {
   resetLifecycle();
@@ -81,7 +81,7 @@ describe('the drain a non-numeric budget produced', () => {
   test('never happens: work still finishes and the close hook still runs', async () => {
     const lines: string[] = [];
     configureLifecycle({
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
     try {
       configureLifecycle({ deadlineMs: Number.NaN });

@@ -17,8 +17,7 @@ const BUCKET = `${COUNTER_BUCKET_MS}, date_trunc('minute', now())`;
  * that claimed it again is the SAME one: its id did not change, only the claim's ordinal did.
  * `returning` is how the caller learns whether its settle landed.
  *
- * $1 id, $2 worker, $3 the attempt's duration in ms, $4 the claim, $5 whether it is counted — a
- * row `x jobs drain` moved is `done` here and is not a completed run.
+ * $1 id, $2 worker, $3 the attempt's duration in ms, $4 the claim.
  */
 export const SQL_ACK = `
 with settled as (
@@ -28,7 +27,7 @@ with settled as (
   returning name
 ), counted as (
   insert into x_job_counters (job, bucket_ms, bucket_start, done, duration_ms)
-  select name, ${BUCKET}, 1, $3::bigint from settled where $5::boolean
+  select name, ${BUCKET}, 1, $3::bigint from settled
   on conflict (job, bucket_ms, bucket_start) do update
      set done        = x_job_counters.done + 1,
          duration_ms = x_job_counters.duration_ms + excluded.duration_ms

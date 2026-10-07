@@ -27,7 +27,7 @@ function socketCeiling(value: number | undefined): number {
   if (Number.isSafeInteger(max) && max >= 1) return max;
   throw new ConfigInvalidError({
     cause: `maxSocketsPerActor (realtime.maxSocketsPerActor) must be a whole number of at least 1, not ${String(max)} — 0 refuses every upgrade, and a fraction or a NaN is a cap no count ever reaches`,
-    fix: `createSyncNode({ maxSocketsPerActor: ${String(DEFAULT_MAX_SOCKETS_PER_ACTOR)} })   # or realtime: { maxSocketsPerActor: ${String(DEFAULT_MAX_SOCKETS_PER_ACTOR)} } in app.config.ts`,
+    fix: `syncNode({ maxSocketsPerActor: ${String(DEFAULT_MAX_SOCKETS_PER_ACTOR)} })   # or realtime: { maxSocketsPerActor: ${String(DEFAULT_MAX_SOCKETS_PER_ACTOR)} } in app.config.ts`,
     meta: { key: 'realtime.maxSocketsPerActor', value: max },
   });
 }

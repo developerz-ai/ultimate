@@ -9,11 +9,11 @@
 // be comparable — which they never are.
 
 import { finiteCount, finiteOption } from '@ultimat3/core';
-import { cosine, tokenize } from './embeddings';
+import { cosine, wordTokens } from './embeddings';
 import { VectorDimMismatchError } from './errors';
 import {
   assertTenantRead,
-  NO_TENANT,
+  NO_VECTOR_TENANT,
   narrowScope,
   scopeAdmits,
   UNBOUND,
@@ -140,7 +140,7 @@ export class MemoryVectorStore implements VectorStore {
   }
 
   async upsert(records: readonly VectorRecord[]): Promise<void> {
-    const tenant = this.scope.tenant ?? NO_TENANT;
+    const tenant = this.scope.tenant ?? NO_VECTOR_TENANT;
     for (const record of records) {
       this.assertDimension(record.vector.length);
       this.records.set(storageKey(tenant, record.id), { ...record, tenant });
@@ -225,9 +225,9 @@ export class MemoryVectorStore implements VectorStore {
   private lexical(query: string, width: number, filter?: MetadataFilter): readonly Scored[] {
     const candidates = this.candidates(filter);
     if (candidates.length === 0) return [];
-    const docs = candidates.map((record) => ({ record, tokens: tokenize(record.text) }));
+    const docs = candidates.map((record) => ({ record, tokens: wordTokens(record.text) }));
     const avgLength = docs.reduce((sum, d) => sum + d.tokens.length, 0) / docs.length;
-    const terms = [...new Set(tokenize(query))];
+    const terms = [...new Set(wordTokens(query))];
 
     return docs
       .map(({ record, tokens }) => {

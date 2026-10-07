@@ -8,13 +8,13 @@
 // check that skips unless someone exports a URL is a check nobody runs.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createPgliteClient, raw, sql } from '@ultimat3/db';
+import { pgliteClient, raw, sql } from '@ultimat3/db';
 import { applyFrameworkSchema, frameworkTableNames } from './framework-schema';
 
 describe('the framework schema, applied to the real embedded database', () => {
   // A WASM compile plus an initdb, against bun's 5s default — a hang detector, not a budget.
   const PGLITE_BOOT_MS = 60_000;
-  const client = createPgliteClient();
+  const client = pgliteClient();
   const apply = (): Promise<readonly string[]> =>
     applyFrameworkSchema((statement) => client.execute(raw(statement)));
 

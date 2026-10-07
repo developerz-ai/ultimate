@@ -23,12 +23,12 @@ import { HttpError, serverNotStarted } from './errors';
 import { disclosesHealthDetail } from './health-disclosure';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
-import { createPipeline, type Pipeline } from './pipeline';
-import { createRateLimiter, type RateLimitStore } from './rate-limit';
+import { httpPipeline, type Pipeline } from './pipeline';
+import { type RateLimitStore, rateLimiter } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
 import { adoptRateLimitStore } from './rate-limit-installed';
-import { json } from './response';
-import { createRouter, describeRoutes, type Route, type RouteDescription } from './router';
+import { jsonResponse } from './response';
+import { describeRoutes, httpRouter, type Route, type RouteDescription } from './router';
 
 /**
  * Beside its one caller rather than in `errors.ts`, which is at the 500-line ceiling — the
@@ -37,7 +37,7 @@ import { createRouter, describeRoutes, type Route, type RouteDescription } from 
  * A websocket mount and something already answering its path. Same code as two routes claiming
  * one, because it is the same fact: one path, two declarations, and the framework picks — Bun's
  * native route table is matched BEFORE `fetch`, so the route wins and the upgrade never reaches
- * the mount. Refused at `createServer`, not discovered as a socket that will not open.
+ * the mount. Refused at `httpServer`, not discovered as a socket that will not open.
  */
 const websocketPathTaken = (path: string, answered: string): HttpError =>
   new HttpError({
@@ -65,7 +65,7 @@ export interface ServerOptions {
    * Where the rate limiter keeps its counters. Omitted means `memoryRateLimitStore()`, which is
    * one process' worth of state — correct for dev and tests, and N × every configured number for
    * N replicas. An app that runs more than one process declares `rateLimit.scope: 'shared'` and
-   * passes a store that says the same, or `createServer` refuses here.
+   * passes a store that says the same, or `httpServer` refuses here.
    */
   readonly rateLimitStore?: RateLimitStore;
   /**
@@ -158,7 +158,7 @@ const BODY_POLL_MS = 5;
 
 const roleFromEnv = (): Role => (Bun.env['ROLE'] ?? 'web') as Role;
 
-export const createServer = (options: ServerOptions): ServerHandle => {
+export const httpServer = (options: ServerOptions): ServerHandle => {
   // The store this server is handed is also the one actions and queries spend their declared
   // `rateLimit:` from — adopted BEFORE the pipeline, whose boot check reads it, and never over a
   // store the boot already chose (`keepChosen`). Given back on `stop()`, or by ANY refusal from
@@ -178,16 +178,16 @@ export const createServer = (options: ServerOptions): ServerHandle => {
 
 const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHandle => {
   const role = options.role ?? roleFromEnv();
-  const table = createRouter(options.routes);
-  // Merged here as well as in `createPipeline`, and for the store's sake: the limiter below is
+  const table = httpRouter(options.routes);
+  // Merged here as well as in `httpPipeline`, and for the store's sake: the limiter below is
   // built from `config.rateLimit`, so a table without the routes' own buckets would resolve a
   // declared name to `default` — the very hole this closes. `withRouteBuckets` is idempotent, so
   // the pipeline's second pass changes nothing. `handle.config` is the merged one for the same
   // reason: `server.config.rateLimit.buckets` has to be what the limiter runs on.
   const config = withRouteBuckets(options.config ?? defineHttpConfig(), table.routes);
   // The store feeds the limiter seam `PipelineDeps` already had, rather than becoming a second
-  // one: the bucket maths stays in `createRateLimiter`, so every driver agrees on the numbers.
-  const pipeline = createPipeline({
+  // one: the bucket maths stays in `rateLimiter`, so every driver agrees on the numbers.
+  const pipeline = httpPipeline({
     table,
     config,
     ...(options.hooks === undefined ? {} : { hooks: options.hooks }),
@@ -195,7 +195,7 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
     ...(options.rateLimitStore === undefined
       ? {}
       : {
-          limiter: createRateLimiter({ config: config.rateLimit, store: options.rateLimitStore }),
+          limiter: rateLimiter({ config: config.rateLimit, store: options.rateLimitStore }),
         }),
   });
 
@@ -223,7 +223,7 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
    * peer `healthDetailPeers` lists: these two paths answer outside the pipeline, unauthenticated.
    */
   const healthResponse = (payload: HealthPayload, request: Request, socket: BunServer): Response =>
-    json(
+    jsonResponse(
       healthBody(
         payload.body,
         role,

@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   actorLabel,
-  createContext,
+  ctxOf,
   hasScope,
   isAnonymous,
   runWithContext,
@@ -168,11 +168,11 @@ describe('testActor mints an actor core’s own helpers can read', () => {
     expect(actorLabel(actor)).toBe('user:u1@org-1');
   });
 
-  // The type is the assertion: `actor` was `Actor | null`, which `createContext` refuses, so every
+  // The type is the assertion: `actor` was `Actor | null`, which `ctxOf` refuses, so every
   // fixture that built a context reached for core's `userActor` and a test file held two idioms.
   test('its actor is never null, so a context is built from it with no narrowing', () => {
     const { actor } = testActor('member', { orgId: 'org-1' });
-    const seen = runWithContext(createContext({ actor }), () => useContext().actor);
+    const seen = runWithContext(ctxOf({ actor }), () => useContext().actor);
     expect(seen).toBe(actor);
   });
 });

@@ -6,9 +6,6 @@
  * re-exported here; a consumer still needs one import, and now it names the real type.
  */
 export type { OfflineStrategy, RenderMode } from '@ultimat3/core';
-// Moved to `@ultimat3/core` (one formatter, `b`/`kb`/`mb`/`gb`); still named here because a service
-// worker's size report is what a caller of this package prints.
-export { formatBytes } from '@ultimat3/core';
 export {
   backgroundSyncSource,
   registerBackgroundSyncSource,
@@ -19,7 +16,7 @@ export {
   CAPABILITIES,
   CAPABILITY_SW_MARKERS,
   enabledCapabilities,
-  isEnabled,
+  hasCapability,
   resolveCapabilities,
 } from './capabilities';
 export type { PwaErrorCode } from './errors';
@@ -65,7 +62,7 @@ export type {
   IosGuidance,
   ReadSignal,
 } from './install';
-export { createInstallController, iosInstallGuidance } from './install';
+export { installController, iosInstallGuidance } from './install';
 export type {
   DisplayMode,
   FileHandler,
@@ -141,10 +138,7 @@ export type {
   SkewState,
 } from './version-skew';
 export {
-  APP_UPDATE_AVAILABLE,
   assertBuildId,
-  BUILD_ID_HEADER,
-  BUILD_ID_META,
   buildId,
   cacheNamespace,
   detectSkew,

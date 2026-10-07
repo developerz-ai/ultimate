@@ -19,12 +19,6 @@ import './error-titles';
  * here is `X_HELPER_COPY`.
  */
 export type { ClientFlight, ClientRetry, PgExecutor } from '@ultimat3/core';
-/**
- * `toBucket` is `@ultimat3/http`'s — http owns `Bucket` and the limiter maths, and `action` and
- * `query` are the same tier, so a copy in either is a second answer for the other. Re-exported
- * here, not re-implemented, so an action file still reaches it through one import.
- */
-export { toBucket } from '@ultimat3/http';
 /** Re-exported so an `action` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
@@ -40,7 +34,6 @@ export type {
   ActionRowArgs,
   AnyAction,
   InvokeOptions,
-  McpAnnotationHints,
   McpDescriptorMeta,
 } from './action';
 export { action, describeAction, isAction } from './action';
@@ -120,8 +113,6 @@ export {
 } from './errors-http';
 export type { OpenApiOperation } from './http';
 export {
-  BUILD_ID_HEADER,
-  IDEMPOTENCY_HEADER,
   operationTagOf,
   REPLAYED_HEADER,
   toOpenApiOperation,
@@ -192,7 +183,7 @@ export type {
 } from './mutator';
 export { custom, isMutator, mutator } from './mutator';
 export type { ActionPath } from './naming';
-export { derivePath, inputSchemaName, outputSchemaName, pluralize } from './naming';
+export { derivePath, inputSchemaName, outputSchemaName } from './naming';
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';
 export { buildOpenApi, serializeOpenApi } from './openapi';
 export {
@@ -208,19 +199,12 @@ export {
 export { explainActionPathMiss } from './path-style-miss';
 export type { ActionPolicy, PolicySubject, Surface } from './policy-gate';
 /**
- * `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on.
- * `admitsAnonymous` is `@ultimat3/policy`'s, re-exported here beside them: it is what `toRoute`
- * derives `meta.auth` from, so a plain `route` sets that field from the same walk rather than
- * re-reading the root combinator.
+ * The one authz gate, named after what it guards. The display label (`policyCapability`), what a
+ * report MATCHES on (`policyPermissions`) and what `toRoute` derives `meta.auth` from
+ * (`admitsAnonymous`) are `@ultimat3/policy`'s, and the anonymous → `null` mapping (`actorOf`) is
+ * `@ultimat3/core`'s — imported from there, so `query` reads the same walk through one import path.
  */
-export {
-  actorOf,
-  admitsAnonymous,
-  guard,
-  guardBeforeInput,
-  policyCapability,
-  policyPermissions,
-} from './policy-gate';
+export { guardAction, guardActionBeforeInput } from './policy-gate';
 export {
   actionHttpPath,
   configureActionPathStyle,
@@ -229,7 +213,7 @@ export {
   listActions,
   registerAction,
   registerActions,
-  resetRegistry,
+  resetActions,
 } from './registry';
 export { requestDeadlineMs } from './request-deadline';
 /**

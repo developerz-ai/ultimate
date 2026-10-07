@@ -13,7 +13,7 @@ import {
   withStatementAttribution,
 } from '@ultimat3/db';
 import { clearRegistry, entity, N_PLUS_ONE_THRESHOLD, text, uuid } from '@ultimat3/entity';
-import { createTestStatements, type TestStatements } from './fixture-statements';
+import { type TestStatements, testStatements } from './fixture-statements';
 
 const TEST_URL = 'postgres://app@127.0.0.1:5432/ultimate_test';
 
@@ -64,7 +64,7 @@ async function loop(times: number, statements: TestStatements): Promise<void> {
 describe('unit · the loop fails at the statement that crossed the threshold', () => {
   test('the first statements resolve and the one past the threshold rejects', async () => {
     const pool = installFakeSql();
-    using statements = await createTestStatements();
+    using statements = await testStatements();
     const client = postgresClient({ url: TEST_URL });
     const one = (): Promise<unknown> =>
       client.query(sql`select "id" from "n1s_members" where "id" = ${1}`);
@@ -83,7 +83,7 @@ describe('unit · the loop fails at the statement that crossed the threshold', (
 
   test('a loop declared with expectedQueryLoop runs to the end', async () => {
     installFakeSql();
-    using statements = await createTestStatements();
+    using statements = await testStatements();
 
     const error = await rejection(() =>
       expectedQueryLoop('one lookup per row is optimal here', () =>
@@ -97,7 +97,7 @@ describe('unit · the loop fails at the statement that crossed the threshold', (
 
   test('an attributed loop is reported as the repository call, not as its SQL', async () => {
     installFakeSql();
-    using statements = await createTestStatements();
+    using statements = await testStatements();
 
     const error = await rejection(() =>
       withStatementAttribution('n1s_members', 'findById', () =>
@@ -111,7 +111,7 @@ describe('unit · the loop fails at the statement that crossed the threshold', (
 
   test('a hand-written loop names its own text, since no chain compiled it', async () => {
     installFakeSql();
-    using statements = await createTestStatements();
+    using statements = await testStatements();
 
     const error = await rejection(() => loop(N_PLUS_ONE_THRESHOLD, statements));
 
@@ -144,7 +144,7 @@ describe('unit · the fix is the one the schema already declared', () => {
 
   test('a repeated findById on a referenced entity earns the preload that ends it', async () => {
     installFakeSql();
-    using statements = await createTestStatements();
+    using statements = await testStatements();
 
     const error = await rejection(() =>
       withStatementAttribution('n1s_members', 'findById', () =>
@@ -157,7 +157,7 @@ describe('unit · the fix is the one the schema already declared', () => {
 
   test('an entity nothing references falls back to the in form of its own statement', async () => {
     installFakeSql();
-    using statements = await createTestStatements();
+    using statements = await testStatements();
 
     const error = await rejection(() =>
       withStatementAttribution('n1s_posts', 'findById', () =>

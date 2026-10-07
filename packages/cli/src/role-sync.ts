@@ -2,7 +2,7 @@
 // Split from `role-start.ts` because it is the one role with an authenticator, a presence registry
 // and a listener of its own — and because that file is the boot's index, not its detail.
 
-import { createContext, logger, type RealtimeConfig, UltimateError } from '@ultimat3/core';
+import { ctxOf, logger, type RealtimeConfig, UltimateError } from '@ultimat3/core';
 import {
   clientAddress,
   configuredHttp,
@@ -14,13 +14,13 @@ import { listQueries } from '@ultimat3/query';
 import type { SyncNode, SyncWs } from '@ultimat3/realtime/server';
 import {
   ChannelHub,
-  createSyncNode,
   LiveQueryRegistry,
   listenSyncNode,
   liveQueryDefinition,
   PresenceRegistry,
   RingChangeBuffer,
   SocketRegistry,
+  syncNode,
 } from '@ultimat3/realtime/server';
 import { neighbouringPort, PORT_RANGE, portPairAfter } from './flag-number';
 import { portFree } from './port-probe';
@@ -183,7 +183,7 @@ export function registerLiveQueries(options: StartRolesOptions): LiveQueryRegist
     // row you may not see" is the leak the gate exists to prevent.
     onRowDenied: (event) => logger.debug('live.rows_denied', { ...event }),
   });
-  const ctx = createContext({ role: 'sync', buildId: options.buildId });
+  const ctx = ctxOf({ role: 'sync', buildId: options.buildId });
   // The position a snapshot claims: the newest change this node had received when the read began.
   // The read then holds at least that change, so claiming it is true, and every later change is
   // above it. Unwired, every snapshot claimed `''` and a read that landed after any fan-out was
@@ -283,7 +283,7 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
   const authenticate = options.overrides?.syncAuthenticate ?? syncAuthenticator(options.buildId);
   const registry = registerLiveQueries(options);
   const origins = syncOriginsFrom(options.env);
-  const node = createSyncNode({
+  const node = syncNode({
     hub,
     registry,
     transport: options.runtime.transport,

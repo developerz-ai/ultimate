@@ -23,7 +23,7 @@ import type {
   UiShotInput,
   UiShotResult,
 } from '@ultimat3/mcp';
-import { describeRoutes } from '@ultimat3/render';
+import { describePages } from '@ultimat3/render';
 import { appBrowser } from './browser-launcher';
 import type { ShotDriver } from './browser-launcher-port';
 import { DEFAULT_PAGE_TIMEOUT_MS } from './cdp-shot-clock';
@@ -127,7 +127,7 @@ export function uiCapabilities(input: UiHostInput): UiCapabilities {
   // The same choice `x shot` makes from the environment: `PUPPETEER_EXECUTABLE_PATH`, a
   // provider's CDP URL, or the launcher's own discovery.
   const browser = () => shotBrowserChoice({ cdpFlag: undefined, browserFlag: undefined, env });
-  const routes = input.routes ?? describeRoutes;
+  const routes = input.routes ?? describePages;
   // One browser per call, sized to the call: the injected driver in a test, `appBrowser` otherwise.
   const driverFor = async (viewport: UiShotInput['viewport']): Promise<ShotDriver> => {
     if (input.driver !== undefined) return input.driver(viewport);

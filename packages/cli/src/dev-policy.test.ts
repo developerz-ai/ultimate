@@ -3,7 +3,7 @@
 // instead of from `@ultimat3/policy` — a second authz, disagreeing with the request path.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { action, registerActions, resetRegistry as resetActions, t } from '@ultimat3/action';
+import { action, registerActions, resetActions, t } from '@ultimat3/action';
 import {
   allow,
   can,
@@ -12,7 +12,7 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { devActors, devPolicyGates, devPolicyMatrix } from './dev-policy';
 
 afterEach(() => {

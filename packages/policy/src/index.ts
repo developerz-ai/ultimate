@@ -13,13 +13,13 @@ export type { PolicyErrorCode } from './errors';
 export {
   denialError,
   emptyClauseList,
-  forbidden,
   POLICY_BORROWED_ERROR_CODES,
   POLICY_ERROR_CODES,
   POLICY_ERROR_TITLES,
   PolicyDenialError,
   PolicyError,
   permissionUnknown,
+  policyForbidden,
   policyMissing,
   roleRedefined,
 } from './errors';
@@ -59,7 +59,18 @@ export type {
   Recorder,
   TraceEntry,
 } from './policy';
-export { ALLOWED, allow, and, can, denied, deny, not, or, policyPermissions } from './policy';
+export {
+  ALLOWED,
+  allow,
+  and,
+  can,
+  denied,
+  deny,
+  not,
+  or,
+  policyCapability,
+  policyPermissions,
+} from './policy';
 export { admitsAnonymous } from './policy-anonymous';
 export type { PreInputArgs } from './pre-input';
 export { decideBeforeInput, enforceBeforeInput } from './pre-input';

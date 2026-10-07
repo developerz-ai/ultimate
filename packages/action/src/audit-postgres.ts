@@ -6,7 +6,7 @@
  */
 
 import type { Actor, PgExecutor } from '@ultimat3/core';
-import { uuid } from '@ultimat3/core';
+import { uuidV7 } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { auditableInput } from './audit-input';
 
@@ -117,7 +117,7 @@ export interface PostgresAuditSink extends AuditSink {
  * `Bun.sql` does not satisfy `PgExecutor` — `Bun.sql.query` is `undefined`; see that interface.
  *
  * What is written is an ALLOW-LIST of the facts the framework itself owns, never the `Ctx`. That
- * is not tidiness: `createContext` spreads every installed service onto the context object, and on
+ * is not tidiness: `ctxOf` spreads every installed service onto the context object, and on
  * an HTTP surface the value is a `RequestContext` carrying the request's own `Authorization` and
  * `Cookie` headers — so a projection that walked it would write an app's database clients and its
  * caller's credentials into an audit table. An app that wants more columns writes its own
@@ -132,7 +132,7 @@ export function postgresAuditSink(options: PostgresAuditSinkOptions): PostgresAu
       const onBehalfOf = onBehalfOfOf(actor);
       const input = auditableInput(record.input);
       await exec.query(SQL_AUDIT_INSERT, [
-        uuid(),
+        uuidV7(),
         at === null ? null : at.toISOString(),
         // `name`, into the column the seam named before reads were audited: renaming it is a data
         // migration for every installed table, and the value it holds is the same.

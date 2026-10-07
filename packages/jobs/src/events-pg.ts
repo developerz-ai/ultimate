@@ -7,7 +7,7 @@
 // resumes at 12:00:30 must still see an event published at 12:00:10.
 
 import type { PgExecutor } from '@ultimat3/core';
-import { finiteOption, logger, uuid } from '@ultimat3/core';
+import { finiteOption, logger, uuidV7 } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs } from './clock';
 import {
@@ -67,7 +67,7 @@ export function postgresEventBus(options: PgEventBusOptions): EventBus {
     },
 
     async publish(name, payload, publishOptions = {}) {
-      const id = uuid();
+      const id = uuidV7();
       const ttlMs =
         publishOptions.ttl === undefined
           ? defaultTtlMs

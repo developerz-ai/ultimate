@@ -5,7 +5,7 @@
 // (issue #489). A requested theme is therefore stored as the visitor's CHOICE, on the page's origin,
 // before the boot reads it: the picture is then what a visitor who chose that theme sees.
 
-import { THEME_STORAGE_KEY } from '@ultimat3/render';
+import { THEME_STORAGE_KEY } from '@ultimat3/core';
 import type { ShotColorScheme } from './browser-launcher-port';
 import { BadFlagError } from './errors';
 

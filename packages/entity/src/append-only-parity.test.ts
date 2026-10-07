@@ -4,13 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import {
-  createPgliteClient,
-  generateMigration,
-  raw,
-  setDbClient,
-  statementsOf,
-} from '@ultimat3/db';
+import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { APPEND_ONLY_CODE } from './append-only-errors';
 import { integer, text, uuid } from './columns';
 import { type Driver, database, memoryDriver } from './database';
@@ -30,7 +24,7 @@ const ledger = entity('aop_ledger', {
 });
 
 const ENTITIES = { ledger };
-const client = createPgliteClient();
+const client = pgliteClient();
 const ID = '00000000-0000-7000-8000-000000000001';
 
 beforeAll(async () => {

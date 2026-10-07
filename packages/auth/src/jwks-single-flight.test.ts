@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Scheduler } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
-import { createJwksClient } from './jwks';
+import { jwksClient } from './jwks';
 
 const NOW = new Date('2026-08-16T12:00:00.000Z');
 
@@ -86,7 +86,7 @@ describe('the JWKS refresh is single-flighted', () => {
   test('N concurrent cold callers issue ONE outbound request', async () => {
     const clock = frozenClock(NOW);
     const served = heldFetch();
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -113,7 +113,7 @@ describe('the JWKS refresh is single-flighted', () => {
   test('a caller joins the refresh in the slot; the next generation starts only once it is free', async () => {
     const clock = frozenClock(NOW);
     const served = heldFetch();
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -155,7 +155,7 @@ describe('the JWKS refresh is single-flighted', () => {
   test('a REJECTED refresh clears the slot, so one IdP outage is not cached for ever', async () => {
     const clock = frozenClock(NOW);
     const served = heldFetch();
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -188,7 +188,7 @@ describe('a wedged refresh does not hold the slot for ever', () => {
     const clock = frozenClock(NOW);
     const served = heldFetch();
     const timer = controlledTimer();
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -205,7 +205,7 @@ describe('a wedged refresh does not hold the slot for ever', () => {
     const clock = frozenClock(NOW);
     const served = heldFetch();
     const timer = controlledTimer();
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -268,7 +268,7 @@ describe('a refresh the client gave up on cannot overwrite a newer key set', () 
     const clock = frozenClock(NOW);
     const served = heldFetch();
     const timer = controlledTimer();
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,

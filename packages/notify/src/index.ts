@@ -16,7 +16,7 @@ export type {
   DeliveryArgs,
   NotifyChannel,
 } from './channel';
-export { bulkChannel, channel, isBulkChannel } from './channel';
+export { bulkChannel, deliveryChannel, isBulkChannel } from './channel';
 export type { InAppChannelOptions } from './channel-in-app';
 export { IN_APP_CHANNEL, inAppChannel } from './channel-in-app';
 export type { MailChannelOptions, Mailer, NotifyMail } from './channel-mail';

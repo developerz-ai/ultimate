@@ -5,7 +5,7 @@
 // notification slot lasts until rows are aged out of it — which makes "one per slot" exact.
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { JobDriver } from './driver';
 import { postgresJobDriver } from './driver-pg';
@@ -21,14 +21,14 @@ import { setWakeLive, wakeIsLive } from './enqueue-signal';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
 import { postgresOutboxStore } from './outbox-pg';
-import { createOutboxRelay } from './outbox-relay';
+import { outboxRelay } from './outbox-relay';
 import type { QueueWake } from './queue-wake';
 import { startQueueWake } from './queue-wake';
 import { postgresSchedulerState } from './scheduler-pg';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 import type { Worker } from './worker-types';
 
-const context = () => createContext({ role: 'worker', buildId: 'test' });
+const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
 /** Well under one backed-off wait, well over a round trip on a loaded machine. */
@@ -99,7 +99,7 @@ const enqueue = (
 
 /** A worker on its own driver, started, and idled until its wait is past `ms`. */
 async function idleWorker(ms: number, idlePollMaxMs = 60_000): Promise<Worker> {
-  const worker = createWorker({
+  const worker = jobWorker({
     driver: postgresJobDriver({ executor: pg.executor }),
     pollIntervalMs: FLOOR_MS,
     idlePollMaxMs,
@@ -319,7 +319,7 @@ describe('the loops it wakes', () => {
       executor: pg.executor,
       txExecutor: () => pg.executor,
     });
-    const relay = createOutboxRelay({
+    const relay = outboxRelay({
       store: relayStore,
       driver,
       intervalMs: FLOOR_MS,

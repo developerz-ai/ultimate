@@ -84,7 +84,7 @@ export function moneyNotInteger(minor: number, currency: string): MoneyError {
 }
 
 /**
- * Three arrivals reach `money()` with an unusable `minor`, and each needs its own instruction.
+ * Three arrivals reach `fromMinor()` with an unusable `minor`, and each needs its own instruction.
  * One line answered all three — `fromDecimal('<minor>', '<ccy>')` — and it raised THIS code back
  * at the reader for every value past the currency's own digits, which is the anti-pattern
  * `currencyDeclarationInvalid` below already names; for `1e21` it read `fromDecimal('1e+21', …)`,
@@ -104,7 +104,7 @@ function notIntegerFix(minor: number, currency: string): string {
   // Safe to interpolate un-escaped, and only here: `PLAIN_DECIMAL` has just proved the spelling is
   // digits, one dot and one leading `-`, so it closes no literal `renderFixLiteral` would escape.
   const spelling = String(minor);
-  const rounded = `money(Math.round(${spelling}), ${code})`;
+  const rounded = `fromMinor(Math.round(${spelling}), ${code})`;
   if (!PLAIN_DECIMAL.test(spelling)) {
     return `${rounded} — the value counts minor units, and that is the whole one nearest it`;
   }
@@ -182,7 +182,7 @@ export function scaleInvalid(scale: number): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_SCALE_INVALID',
     cause: `a money scale must be a whole number of decimal places between 0 and ${MAX_MONEY_SCALE}, got ${String(scale)}`,
-    fix: `use a scale in range — money(minor, currency, 6) for micros, or omit it for the currency's own minor unit`,
+    fix: `use a scale in range — fromMinor(minor, currency, 6) for micros, or omit it for the currency's own minor unit`,
   });
 }
 

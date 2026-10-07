@@ -14,9 +14,9 @@ import { appRoutes, devHooks, loadApp } from '@ultimat3/cli';
 import type { Pipeline } from '@ultimat3/http';
 import {
   configuredAuthenticator,
-  createPipeline,
-  createRouter,
   defineHttpConfig,
+  httpPipeline,
+  httpRouter,
 } from '@ultimat3/http';
 import { beforeAll, contractTest, expect } from '@ultimat3/testing';
 
@@ -54,8 +54,8 @@ beforeAll(async () => {
   // and defines every role. Nothing below reaches into the app to wire anything by hand — a test
   // that wired the authenticator itself would pass with production still unwired.
   await loadApp(ROOT);
-  pipeline = createPipeline({
-    table: createRouter([...listActions().map(toRoute), ...appRoutes({ buildId: 'test' })]),
+  pipeline = httpPipeline({
+    table: httpRouter([...listActions().map(toRoute), ...appRoutes({ buildId: 'test' })]),
     hooks: devHooks(),
     // One process, said out loud: `defineHttpConfig` refuses to guess where the limiter keeps its
     // counters, and this pipeline is a single in-test server with nothing to share them with.

@@ -6,14 +6,15 @@
  *
  * `audit: true` wraps that path, it never forks it: `execute` is the same body either way, and
  * the audited branch only observes it. Wrapping rather than hooking is what lets a DENIED attempt
- * be recorded at all — `guard` throws before `handle`, so nothing an app writes around its own
+ * be recorded at all — `guardAction` throws before `handle`, so nothing an app writes around its own
  * handler could ever see one.
  */
 
 import type { Ctx } from '@ultimat3/core';
 import {
+  actorOf,
   anonymousActor,
-  createContext,
+  ctxOf,
   isUltimateError,
   runWithContext,
   tryUseContext,
@@ -34,7 +35,7 @@ import { bustAfterCommit } from './cache-gate';
 import { ActionForeignError, ActionUnregisteredError } from './errors';
 import { getIdempotencyStore, withIdempotency } from './idempotency';
 import { idempotencyKeyFor } from './idempotency-key';
-import { actorOf, guard, guardBeforeInput } from './policy-gate';
+import { guardAction, guardActionBeforeInput } from './policy-gate';
 import { spendActionLimit, withCallerAddress, withJobFrame } from './rate-limit-gate';
 import { parsedOrNothing, validateInput, validateOutput } from './validate';
 
@@ -106,7 +107,7 @@ function invokeAs(target: AnyAction, raw: unknown, options: InvokeOptions): Prom
   const run = (): Promise<unknown> => core(target, raw, useContext(), options);
   const base = options.ctx ?? tryUseContext();
   return base === undefined
-    ? runWithContext(createContext(patch), run)
+    ? runWithContext(ctxOf(patch), run)
     : runWithContext(base, () => withChildContext(patch, run));
 }
 
@@ -174,7 +175,7 @@ async function core(
 /**
  * The span covers the WHOLE invocation, not just `handle`. Wrapping the handler alone reported
  * 40ms for an action whose p99 was 2s, because `def.row()` — the loader a row-level policy needs
- * — ran outside it, along with the input parse and `guard()`. The 1.96s was inside no span at
+ * — ran outside it, along with the input parse and `guardAction()`. The 1.96s was inside no span at
  * all, so the only reading available was "framework overhead" and the only fix was hand
  * instrumentation. One span, one extent, and the attributes that make it answerable.
  *
@@ -230,9 +231,9 @@ async function perform(
   const surface = options.surface ?? 'server';
   // Who is asking is decided before what they sent is read: a caller the policy refuses whatever
   // the input is gets 403/401 here, not a 400 whose issues describe this action's input schema.
-  // Only the actor half runs — a predicate over `input` or `row` waits for `guard` below.
+  // Only the actor half runs — a predicate over `input` or `row` waits for `guardAction` below.
   try {
-    guardBeforeInput(def.policy, { actor: actorOf(ctx), ctx, action: name }, surface);
+    guardActionBeforeInput(def.policy, { actor: actorOf(ctx), ctx, action: name }, surface);
   } catch (denial) {
     // The audit record still names what was attempted — the denial is already decided, so parsing
     // now tells the CALLER nothing, and an unparseable payload is a record with no input.
@@ -241,7 +242,7 @@ async function perform(
   }
   // The ONE place a declared `rateLimit:` is spent, so every surface draws on the same bucket.
   // HERE — after the actor half (a refused caller learns that, not a 429), BEFORE the parse, the
-  // row load and `guard`: spent later, a flood of invalid input (400) or row-denied calls (403)
+  // row load and `guardAction`: spent later, a flood of invalid input (400) or row-denied calls (403)
   // was never refused, and every 429 had already paid for a row load.
   const spend = (): Promise<void> =>
     spendActionLimit(name, def.rateLimit, ctx, {
@@ -274,7 +275,7 @@ async function perform(
   // action with no loader hands the rule `null` — unchanged, and never a silent allow,
   // because a rule that reads `row` has to decide what `null` means.
   const row = def.row === undefined ? null : ((await def.row({ input, ctx })) ?? null);
-  guard(def.policy, { actor: actorOf(ctx), input, row, ctx, action: name }, surface);
+  guardAction(def.policy, { actor: actorOf(ctx), input, row, ctx, action: name }, surface);
 
   // Output parsing sits inside `run` so a replayed idempotent response is the parsed value too —
   // one shape on the wire, first call and every retry. No span of its own: `execute` above holds

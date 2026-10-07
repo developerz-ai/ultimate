@@ -8,9 +8,9 @@
 // `pg-replication.live.test.ts` for the one-line container.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { clearRegistry, entity, entityForTable, text } from '@ultimat3/entity';
-import { from, type QueryPolicy, query, registerQuery, resetRegistry, t } from '@ultimat3/query';
+import { from, type QueryPolicy, query, registerQuery, resetQueries, t } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, type PgLogicalReplicationFeed, postgresChangeFeed } from './changefeed';
 import type { Row } from './json';
@@ -52,7 +52,7 @@ if (entityForTable(TABLE) === undefined) {
 // File scope, so a skipped suite still unregisters what its module body registered.
 afterAll(() => {
   clearRegistry();
-  resetRegistry();
+  resetQueries();
 });
 
 const connect = async (): Promise<PgConnection> => {
@@ -127,7 +127,7 @@ describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () 
       `INSERT INTO ${TABLE} VALUES ('a', 'o1', 'published', 'A'), ('b', 'o1', 'draft', 'B'), ('c', 'o1', 'draft', 'C')`,
     );
 
-    resetRegistry();
+    resetQueries();
     const target = registerQuery(
       'publishedPosts',
       query({
@@ -152,7 +152,7 @@ describe.skipIf(!ready)('live · a keyed table on REPLICA IDENTITY DEFAULT', () 
     );
     const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
     registry.register(
-      liveQueryDefinition(target, { ctx: createContext({ role: 'sync', buildId: 'build-1' }) }),
+      liveQueryDefinition(target, { ctx: ctxOf({ role: 'sync', buildId: 'build-1' }) }),
     );
     const socket = new SyncSocket({
       ws,

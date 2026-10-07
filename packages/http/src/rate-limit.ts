@@ -1,6 +1,6 @@
 // Token-bucket rate limiting. The store is an interface so the same limiter runs in-memory in
 // dev/tests and against a shared tier in a multi-replica deployment — installed through
-// `createServer({ rateLimitStore })`, and refused at boot when its scope cannot keep the app's
+// `httpServer({ rateLimitStore })`, and refused at boot when its scope cannot keep the app's
 // declaration; the bucket maths lives here so every driver agrees on the numbers.
 import { type Clock, systemClock } from '@ultimat3/core';
 import { httpCountInvalid } from './errors';
@@ -394,8 +394,8 @@ export interface RateLimiter {
   /**
    * The table this limiter resolves a bucket NAME against. Declared, never inferred — the same
    * rule as `RateLimitStore.scope` and `@ultimat3/auth`'s `AuthLimiter.policy`, and for the same
-   * reason: `createRateLimiter` closes over its config, so nothing outside can see which buckets
-   * it actually holds. `createPipeline` compares this against the buckets the ROUTES declare, and
+   * reason: `rateLimiter` closes over its config, so nothing outside can see which buckets
+   * it actually holds. `httpPipeline` compares this against the buckets the ROUTES declare, and
    * an unknown name is refused instead of falling through `bucketFor` to `default`.
    *
    * Optional only so an existing external implementation still type-checks; an absent table
@@ -410,7 +410,7 @@ export interface RateLimiter {
   assert(key: string, bucketName: string, cost?: number): Promise<RateLimitDecision>;
 }
 
-export const createRateLimiter = (options: {
+export const rateLimiter = (options: {
   config: RateLimitConfig;
   store?: RateLimitStore;
   /**
@@ -418,7 +418,7 @@ export const createRateLimiter = (options: {
    * BOTH production call sites (`server.ts`, `pipeline.ts`) build their limiter without an
    * override — so the limiter that actually throttles requests could not be frozen by any test,
    * while `@ultimat3/auth`'s credential limiter has taken an injected `Clock` since it shipped.
-   * Defaulted rather than required, the same shape as `createRequestContext`'s `init.clock`;
+   * Defaulted rather than required, the same shape as `requestContext`'s `init.clock`;
    * `PipelineDeps.limiter` stays the one seam for handing the pipeline a limiter of your own,
    * because a second `clock` beside it would be a second way to set one number.
    */

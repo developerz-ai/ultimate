@@ -7,22 +7,22 @@
 // something every `x dev` in a team should do to the same server by simply starting.
 
 import type { Role } from '@ultimat3/core';
-import { createContext, isRole, logger, markReady, ROLES } from '@ultimat3/core';
+import { ctxOf, isRole, logger, markReady, ROLES } from '@ultimat3/core';
 import type { RateLimitStore, Route, ServerHandle, WebSocketMount } from '@ultimat3/http';
 import {
   adoptRateLimitStore,
   configuredAuthenticator,
   configuredHttp,
-  createServer,
   defineHttpConfig,
+  httpServer,
   mergeHttpConfig,
 } from '@ultimat3/http';
 import type { OutboxRelay } from '@ultimat3/jobs';
 import {
-  createOutboxRelay,
-  createScheduler,
-  createWorker,
   jobDriver,
+  jobScheduler,
+  jobWorker,
+  outboxRelay,
   postgresLeaseLeader,
   postgresSchedulerState,
 } from '@ultimat3/jobs';
@@ -150,7 +150,7 @@ function warnIfProcessScoped(store: RateLimitStore): void {
  *
  * One expression, one answer, in the order `RuntimeOverrides` documents — an override REPLACES the
  * resolved default rather than sitting beside it. `undefined` is reachable only from a hand-built
- * runtime, which is `createServer`'s per-process memory store and `scope: 'process'` below.
+ * runtime, which is `httpServer`'s per-process memory store and `scope: 'process'` below.
  */
 function rateLimitStoreFor(options: StartRolesOptions): RateLimitStore | undefined {
   const supplied = options.overrides?.rateLimitStore;
@@ -166,7 +166,7 @@ function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): S
   const binding = options.http ?? DEV_BINDING;
   const hops = trustedHopsFromEnv(options.env);
   const store = rateLimitStoreFor(options);
-  return createServer({
+  return httpServer({
     routes: options.routes,
     role: 'web',
     ...(mount === undefined ? {} : { websocket: mount }),
@@ -177,7 +177,7 @@ function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): S
         ? {}
         : { errorPage: errorPageHook(options.root, { perRequest: binding.dev }) }),
     }),
-    // Both seams `createServer` already had and `startRoles` passed neither of, so an app's own
+    // Both seams `httpServer` already had and `startRoles` passed neither of, so an app's own
     // middleware could not reach the pipeline any process the framework boots actually runs.
     ...(options.overrides?.middleware === undefined
       ? {}
@@ -232,7 +232,7 @@ function startWeb(options: StartRolesOptions, mount?: WebSocketMount<SyncWs>): S
  * `startServices` captures the drivers it built; `loadApp` imports the app's modules after it, and
  * a module calling `setJobDriver()` at import time moves the ambient slot and leaves the capture
  * alone. From here on the two are indistinguishable at every call site: `handle.enqueue()` reads
- * the ambient one, `createWorker` claims from the captured one, and `/_x` reads the ambient one —
+ * the ambient one, `jobWorker` claims from the captured one, and `/_x` reads the ambient one —
  * so the dashboard agrees with the enqueue side and disagrees with reality.
  *
  * Refused, not reconciled. Reading through the accessor would make the split invisible instead of
@@ -317,9 +317,9 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     if (sync !== null) releaseSync = sync.stop;
 
     const worker = selected.includes('worker')
-      ? createWorker({
+      ? jobWorker({
           driver: options.runtime.jobs,
-          context: () => createContext({ role: 'worker', buildId: options.buildId }),
+          context: () => ctxOf({ role: 'worker', buildId: options.buildId }),
           ...workerOptionsFor(options.runtime.workerConfig),
         })
       : null;
@@ -337,7 +337,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // collapses a repeat only while the first job is still live. A deployment with no `worker` has
     // no one to run the jobs either way.
     const relay: OutboxRelay | null = selected.includes('worker')
-      ? createOutboxRelay({ store: options.runtime.outbox, driver: options.runtime.jobs })
+      ? outboxRelay({ store: options.runtime.outbox, driver: options.runtime.jobs })
       : null;
     relay?.start();
     // Returned, not called-and-discarded: `stop()` waits out the pass in flight, and an unawaited
@@ -361,7 +361,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // package is actually handed.
     const executor = pgExecutorFor(options.runtime.db);
     const scheduler = selected.includes('scheduler')
-      ? createScheduler({
+      ? jobScheduler({
           driver: options.runtime.jobs,
           state: postgresSchedulerState(executor),
           leader: postgresLeaseLeader({ executor }),

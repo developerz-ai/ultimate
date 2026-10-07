@@ -8,10 +8,10 @@ import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { createRateLimiter } from './rate-limit';
-import { json } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { rateLimiter } from './rate-limit';
+import { jsonResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 beforeEach(() => {
   configureLocales({ supported: ['en', 'es', 'de'], fallback: 'en' });
@@ -25,14 +25,14 @@ const route: Route = {
   method: 'GET',
   path: '/me',
   meta: { name: 'me', auth: 'public' },
-  handler: (_request, ctx) => json({ locale: ctx.locale, tz: ctx.tz }),
+  handler: (_request, ctx) => jsonResponse({ locale: ctx.locale, tz: ctx.tz }),
 };
 
 function serve(actor: Actor | null, headers: Record<string, string>): Promise<Response> {
-  return createPipeline({
-    table: createRouter([route]),
+  return httpPipeline({
+    table: httpRouter([route]),
     config,
-    limiter: createRateLimiter({
+    limiter: rateLimiter({
       config: {
         enabled: false,
         defaultBucket: 'default',

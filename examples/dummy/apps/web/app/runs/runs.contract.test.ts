@@ -10,7 +10,7 @@
 import { driver } from '@postly/db';
 import { derivePath } from '@ultimat3/action';
 import { apiMountRoutes } from '@ultimat3/cli';
-import { createServer, defineHttpConfig, mountedPath } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, mountedPath } from '@ultimat3/http';
 import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, beforeEach, expect, test } from '@ultimat3/testing';
@@ -36,7 +36,7 @@ afterEach(() => {
 
 /** The mount the app declared, built by the function both boots build it with. */
 const mountedServer = () =>
-  createServer({
+  httpServer({
     routes: apiMountRoutes(),
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     // A session, to prove the mount ignores it: only the bearer token authenticates here.

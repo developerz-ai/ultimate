@@ -4,7 +4,7 @@
 // process. `context()` was moved above the heartbeat for exactly that reason; this is the rest.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext } from '@ultimat3/core';
+import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -14,7 +14,7 @@ import type { IntervalScheduler } from './renewal-timer';
 import type { FleetSlots } from './worker-fleet-slots';
 import { runClaimedJob } from './worker-run';
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {

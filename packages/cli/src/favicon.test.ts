@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { probeImage } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { FAVICON_PATH, FAVICON_SOURCE, faviconRoute } from './favicon';
 
 let root = '';
@@ -20,7 +20,7 @@ let root = '';
 const call = async (route: Route): Promise<Response> => {
   const url = new URL(`http://dev.test${FAVICON_PATH}`);
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-  const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+  const ctx = requestContext({ url, method: 'GET', role: 'web', config });
   return route.handler(new UltimateRequest(new Request(url), ctx), ctx);
 };
 

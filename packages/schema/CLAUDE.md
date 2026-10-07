@@ -60,8 +60,8 @@ is the whole edit `As of 2026-08-27`** — the title and its `terminal` retry cl
 derived from this set, where they used to be a hand-kept duplicate in core plus a hand-written
 retry list a fifth code would have been silently missing from.
 
-`ERROR_DOCS_URL` in `errors.ts` is the third deliberate tier-0 duplicate, beside `singleLine` and
-`ULTIMATE_ERROR_BRAND` — one URL, spelled out, because `SchemaError` cannot import
+`ERROR_DOCS_URL` in `errors.ts` is the second deliberate tier-0 duplicate, beside `singleLine` —
+one URL, spelled out, because `SchemaError` cannot import
 `@ultimat3/core`'s constant. There is no per-code URL anywhere in the framework: codes live in
 `wiki/Error-Codes.md` as table ROWS and a table row has no anchor, so
 `https://ultimate.dev/errors/<code>` was a 404 on every error and was deleted `As of 2026-08-23`. Change it
@@ -70,9 +70,11 @@ here and in `packages/core/src/error-codes.ts` in the same edit. **It is pinned 
 `UltimateError`'s, which was the one copy with no mechanical check at all and the one that decides
 where every schema refusal sends its reader.
 
-**These three are the whole of the duplication that remains, and the edge does not reach them.**
-`core -> schema` was declared 2026-08-27 and collapsed five copies on the CORE side; `singleLine`,
-`ERROR_DOCS_URL` and `ULTIMATE_ERROR_BRAND` go the other way, and `schema -> core` stays forbidden
+**These two are the whole of the duplication that remains, and the edge does not reach them.**
+`core -> schema` was declared 2026-08-27 and collapsed five copies on the CORE side, and
+`ULTIMATE_ERROR_BRAND` in 25.0.0 — declared HERE once, imported by core's `errors.ts`, because one
+value name has one declaring package (`scripts/factory-names.ts`). `singleLine` and
+`ERROR_DOCS_URL` go the other way, and `schema -> core` stays forbidden
 on its merits — `t` is in every bundle graph an app has, so a dependency here is a dependency
 everywhere.
 

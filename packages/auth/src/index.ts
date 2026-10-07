@@ -78,11 +78,12 @@ export {
   AuthError,
   accountLocked,
   apiKeyInvalid,
+  authForbidden,
   authLimiterNotShared,
   authLimiterPolicyMismatch,
+  authUnauthenticated,
   authUniqueViolation,
   authWriteFailed,
-  forbidden,
   kdfOverloaded,
   mfaRequiredUnenforceable,
   mfaSecretInvalid,
@@ -90,7 +91,6 @@ export {
   passwordWeak,
   sessionExpired,
   sessionUnknown,
-  unauthenticated,
 } from './errors';
 export { currentActor, requireActor } from './guards';
 export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
@@ -108,15 +108,15 @@ export type {
   JwtHeader,
 } from './jwks';
 export {
-  createJwksClient,
   decodeJwtHeader,
+  jwksClient,
   providerJwks,
   verifyJwtSignature,
 } from './jwks';
 export type { KdfGate, KdfLimits } from './kdf-gate';
 export {
+  boundedKdfGate,
   configureKdfGate,
-  createKdfGate,
   kdfGate,
 } from './kdf-gate';
 export type { AuthLimiterFactory } from './limiter-install';
@@ -136,7 +136,6 @@ export type {
 export {
   base32Decode,
   base32Encode,
-  createTotpReplayGuard,
   DEFAULT_MAX_TOTP_SUBJECTS,
   enrolTotp,
   generateRecoveryCodes,
@@ -146,6 +145,7 @@ export {
   TOTP_DRIFT_STEPS,
   TOTP_STEP_SECONDS,
   totpCode,
+  totpReplayGuard,
   totpStep,
   verifyTotp,
 } from './mfa';
@@ -174,7 +174,7 @@ export type {
   OAuthProviderId,
   PkcePair,
 } from './oauth';
-export { assertOAuthCallback, beginOAuth, createPkce } from './oauth';
+export { assertOAuthCallback, beginOAuth, pkcePair } from './oauth';
 export {
   APPLE_PROVIDER,
   BUILTIN_OAUTH_PROVIDER_IDS,
@@ -284,7 +284,7 @@ export type {
 export {
   accountKey,
   assertAuthLimiterPolicy,
-  createAuthLimiter,
+  authLimiter,
   DEFAULT_AUTH_RATE_LIMIT,
   DEFAULT_MAX_AUTH_LIMIT_KEYS,
   ipKey,
@@ -342,7 +342,6 @@ export {
 export {
   randomToken,
   sha256Hex,
-  timingSafeEqual,
 } from './tokens';
 export type {
   ConsumeVerificationInput,

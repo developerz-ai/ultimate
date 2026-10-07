@@ -6,7 +6,7 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, UltimateError } from '@ultimat3/core';
+import { ctxOf, UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -66,7 +66,7 @@ async function runOnce(attempts: number, attempt: number, thrown: unknown) {
       workerId: 'w',
     })
   )[0] as ClaimedJob;
-  const ctx: Ctx = createContext({ role: 'worker', buildId: 'test' });
+  const ctx: Ctx = ctxOf({ role: 'worker', buildId: 'test' });
   const execution = await executeJob({
     driver,
     claimed: { ...claimed, attempt },

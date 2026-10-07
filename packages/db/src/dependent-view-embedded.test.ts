@@ -4,13 +4,13 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { refuseDependentViews } from './dependent-view';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { raw } from './sql';
 import { statementsOf } from './statement-split';
 
 describe('refuseDependentViews · the real embedded database', () => {
   const PGLITE_BOOT_MS = 30_000;
-  const client = createPgliteClient();
+  const client = pgliteClient();
   const apply = async (script: string): Promise<void> => {
     for (const statement of statementsOf(script)) await client.execute(raw(statement));
   };

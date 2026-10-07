@@ -5,7 +5,8 @@
 // `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
 
 import { BODY_MAX } from '@social-media-clone/domain';
-import { action, actorOf, t } from '@ultimat3/action';
+import { action, t } from '@ultimat3/action';
+import { actorOf } from '@ultimat3/core';
 import * as notifications from '../notifications/repo';
 import { messageSend } from './policy';
 import * as repo from './repo';

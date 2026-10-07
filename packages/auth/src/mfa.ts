@@ -4,11 +4,11 @@
 // and single-use, so a database dump is not a permanent MFA bypass; consuming one is the
 // adapter's (`consumeRecoveryCode`), because single-use has to be one atomic step.
 
-import { finiteCount } from '@ultimat3/core';
+import { finiteCount, timingSafeEqual } from '@ultimat3/core';
 import type { Auth } from './auth';
 import { mfaSecretInvalid } from './errors';
 import { assertFiniteAuthCount } from './policy-numbers';
-import { randomBytes, sha256Hex, timingSafeEqual } from './tokens';
+import { randomBytes, sha256Hex } from './tokens';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
@@ -196,7 +196,7 @@ export interface TotpReplayGuard {
   remember(subject: string, step: number, at: Date): void;
 }
 
-/** What `createTotpReplayGuard` returns: the interface, plus the bound it keeps, observable. */
+/** What `totpReplayGuard` returns: the interface, plus the bound it keeps, observable. */
 export interface MemoryTotpReplayGuard extends TotpReplayGuard {
   readonly size: number;
 }
@@ -245,9 +245,9 @@ const newestStep = (steps: ReadonlySet<number>): number => {
  * is *forgotten*, not evicted: `verifyTotp` only ever offers a step within ±drift of now, so that
  * entry answers exactly as a missing one and dropping it changes no decision. Only if forgetting
  * is not enough does the cap evict live state, furthest from the live window first — the shape
- * `createAuthLimiter` evicts by, where a live lockout is the last bucket to go.
+ * `authLimiter` evicts by, where a live lockout is the last bucket to go.
  */
-export function createTotpReplayGuard(
+export function totpReplayGuard(
   drift: number = TOTP_DRIFT_STEPS,
   maxSubjects: number = DEFAULT_MAX_TOTP_SUBJECTS,
 ): MemoryTotpReplayGuard {

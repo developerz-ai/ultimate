@@ -88,12 +88,12 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
 
   afterAll(async () => {
     if (target === undefined) return;
-    let cursor: string | undefined;
+    let cursor: string | null = null;
     do {
       const page = await disk.list({ prefix: `${PREFIX}/`, limit: 100, cursor });
-      for (const entry of page.objects) await disk.delete(entry.key);
-      cursor = page.cursor;
-    } while (cursor !== undefined);
+      for (const entry of page.rows) await disk.delete(entry.key);
+      cursor = page.nextCursor;
+    } while (cursor !== null);
     release();
   });
 
@@ -177,21 +177,35 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
 
     const seen: string[] = [];
     let pages = 0;
-    let cursor: string | undefined;
+    let cursor: string | null = null;
     do {
       const page = await disk.list({ prefix: at('p/'), limit: 2, cursor });
-      expect(page.objects.length).toBeLessThanOrEqual(2);
-      for (const entry of page.objects) {
+      expect(page.rows.length).toBeLessThanOrEqual(2);
+      for (const entry of page.rows) {
         seen.push(entry.key);
         expect(entry.size).toBe(3);
       }
-      expect(page.truncated).toBe(page.cursor !== undefined);
-      cursor = page.cursor;
+      expect(page.hasMore).toBe(page.nextCursor !== null);
+      cursor = page.nextCursor;
       pages += 1;
-    } while (cursor !== undefined && pages < 10);
+    } while (cursor !== null && pages < 10);
 
     expect(seen.sort()).toEqual(names.map(at));
     expect(pages).toBe(3);
+
+    // A FULL last page — four keys at two a page — ends on the second page, not a third, empty
+    // one: the provider's `IsTruncated: false` is the answer, never the row count.
+    const even = names.slice(0, 4).map(at);
+    await disk.delete(at('p/5'));
+    const first = await disk.list({ prefix: at('p/'), limit: 2 });
+    const last = await disk.list({ prefix: at('p/'), limit: 2, cursor: first.nextCursor });
+    expect([...first.rows, ...last.rows].map((entry) => entry.key).sort()).toEqual(even);
+    expect([first.hasMore, last.rows.length, last.nextCursor, last.hasMore]).toEqual([
+      true,
+      2,
+      null,
+      false,
+    ]);
   });
 
   test('a presigned GET serves the bytes, and a changed signature is refused', async () => {

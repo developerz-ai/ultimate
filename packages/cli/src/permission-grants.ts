@@ -7,7 +7,7 @@ import { listActions } from '@ultimat3/action';
 import type { Policy } from '@ultimat3/policy';
 import { roleDefinitions, rolesGranting } from '@ultimat3/policy';
 import { listQueries } from '@ultimat3/query';
-import { describeRoutes, routeEntries } from '@ultimat3/render';
+import { describePages, routeEntries } from '@ultimat3/render';
 import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
 
@@ -46,12 +46,12 @@ export function requirements(): readonly UngrantedRequirement[] {
   // A route a package MOUNTED — the admin's — is in no file and so in no `routeEntries()` row. Its
   // screen decides on every permission of the mount, not only the coarse gate its route config
   // carries, so each one is a requirement: a hand-written entity nobody granted `<table>:read`
-  // for was a green gate and a 403 on its first open. `describeRoutes()` is memoized by the
+  // for was a green gate and a 403 on its first open. `describePages()` is memoized by the
   // registry, so this loop reads a list every other step already built.
   // One requirement per permission per mount, naming the first route that asks it: `posts:write`
   // gates the create form and the edit form, and one missing grant is one finding.
   const asked = new Map<string, { permission: string; by: string; first: string; more: number }>();
-  for (const route of describeRoutes()) {
+  for (const route of describePages()) {
     if (route.mount === undefined) continue;
     for (const permission of route.mount.permissions) {
       const key = `${route.mount.by} ${permission}`;

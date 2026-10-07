@@ -5,12 +5,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { json } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const echo: Route['handler'] = (_request, ctx) =>
-  json({ locale: ctx.locale, path: ctx.url.pathname });
+  jsonResponse({ locale: ctx.locale, path: ctx.url.pathname });
 
 const routes: readonly Route[] = [
   {
@@ -18,7 +18,7 @@ const routes: readonly Route[] = [
     path: '/precios',
     meta: { name: 'site:precios', auth: 'public', localeSource: 'path' },
     handler: (_request, ctx) => {
-      const response = json({ locale: ctx.locale, path: ctx.url.pathname });
+      const response = jsonResponse({ locale: ctx.locale, path: ctx.url.pathname });
       response.headers.set('cache-control', 'public, max-age=0, must-revalidate');
       return response;
     },
@@ -41,7 +41,7 @@ const config = defineHttpConfig({
 beforeAll(() => configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' }));
 afterAll(() => resetLocaleConfig());
 
-const pipeline = () => createPipeline({ table: createRouter(routes), config, hooks: {} });
+const pipeline = () => httpPipeline({ table: httpRouter(routes), config, hooks: {} });
 
 const get = (path: string, headers: Record<string, string> = {}, method = 'GET') =>
   pipeline().handle(new Request(`http://localhost${path}`, { headers, method }), { role: 'web' });

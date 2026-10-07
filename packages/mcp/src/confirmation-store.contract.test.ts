@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { uuid } from '@ultimat3/core';
+import { uuidV7 } from '@ultimat3/core';
 import { postgresConfirmationStore } from './confirmation-postgres';
 import { SQL_MCP_CONFIRMATIONS_TABLE } from './confirmation-schema';
 import type { McpConfirmationDraft, McpConfirmationStore } from './confirmation-store';
@@ -15,7 +15,7 @@ const T0 = Date.parse('2026-10-06T09:00:00.000Z');
 const at = (seconds: number): Date => new Date(T0 + seconds * 1000);
 
 const draft = (over: Partial<McpConfirmationDraft> = {}): McpConfirmationDraft => ({
-  id: uuid(),
+  id: uuidV7(),
   actorId: 'agent-1',
   orgId: 'org-1',
   tool: 'refundOrder',
@@ -73,8 +73,8 @@ function contract(name: string, fresh: () => Promise<McpConfirmationStore>): voi
     test('decide refuses a row past its expiry, and an unknown id', async () => {
       const { row } = await store.open(draft());
       expect(await store.decide(row.id, 'approved', 'user-9', at(600))).toBeUndefined();
-      expect(await store.decide(uuid(), 'approved', 'user-9', at(1))).toBeUndefined();
-      expect(await store.get(uuid())).toBeUndefined();
+      expect(await store.decide(uuidV7(), 'approved', 'user-9', at(1))).toBeUndefined();
+      expect(await store.get(uuidV7())).toBeUndefined();
     });
 
     test('consume takes a row exactly once, and a consumed row frees the call for a new one', async () => {

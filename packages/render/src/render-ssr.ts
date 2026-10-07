@@ -5,6 +5,7 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
+import { BUILD_ID_HEADER } from '@ultimat3/core';
 import { cacheControl } from '@ultimat3/http';
 import { finiteStatus } from './finite-status';
 import type { RouteEntry } from './registry';
@@ -81,6 +82,6 @@ export function ssrHeaders(
           ? PRIVATE_NO_STORE
           : 'public, max-age=0, s-maxage=30, stale-while-revalidate=300',
     vary: [...vary].sort().join(', '),
-    'x-ultimate-build': options.buildId,
+    [BUILD_ID_HEADER]: options.buildId,
   };
 }

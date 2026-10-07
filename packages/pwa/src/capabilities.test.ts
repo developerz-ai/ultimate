@@ -9,7 +9,7 @@ import {
   CAPABILITY_MANIFEST_KEYS,
   CAPABILITY_SW_MARKERS,
   enabledCapabilities,
-  isEnabled,
+  hasCapability,
   resolveCapabilities,
 } from './capabilities';
 
@@ -27,9 +27,9 @@ describe('resolveCapabilities', () => {
     const flags = { push: 1, badging: 'yes', backgroundSync: true } as unknown as CapabilityFlags;
     const resolved = resolveCapabilities(flags);
 
-    expect(isEnabled(resolved, 'push')).toBe(false);
-    expect(isEnabled(resolved, 'badging')).toBe(false);
-    expect(isEnabled(resolved, 'backgroundSync')).toBe(true);
+    expect(hasCapability(resolved, 'push')).toBe(false);
+    expect(hasCapability(resolved, 'badging')).toBe(false);
+    expect(hasCapability(resolved, 'backgroundSync')).toBe(true);
   });
 
   test('enabledCapabilities lists exactly the ones that are on, in declaration order', () => {

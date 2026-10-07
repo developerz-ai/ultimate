@@ -4,15 +4,15 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
-  createLruTier,
   declareTags,
   isolateDeclaredTags,
   isolateTiers,
+  lruTier,
   registerTier,
   resetTiers,
   tag,
 } from '@ultimat3/cache';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { allow, testActor } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { cacheKeyFor, readAuthority } from './cache';
@@ -35,7 +35,7 @@ beforeEach(() => {
   restore?.();
   restore = isolateTiers();
   resetTiers();
-  registerTier(createLruTier());
+  registerTier(lruTier());
 });
 
 afterAll(() => {
@@ -82,11 +82,8 @@ describe('the authority a cached read was answered under', () => {
     return { target, counts };
   }
 
-  const asOrg = (
-    id: string,
-    orgId?: string,
-  ): { readonly ctx: ReturnType<typeof createContext> } => ({
-    ctx: createContext({ actor: userActor(orgId === undefined ? { id } : { id, orgId }) }),
+  const asOrg = (id: string, orgId?: string): { readonly ctx: ReturnType<typeof ctxOf> } => ({
+    ctx: ctxOf({ actor: userActor(orgId === undefined ? { id } : { id, orgId }) }),
   });
 
   test('an org-b actor is never served the org-a entry', async () => {

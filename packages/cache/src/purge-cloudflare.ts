@@ -3,6 +3,7 @@
 // tags ARE Ultimate's wire tags, so a `Cache-Tag` response header and an `invalidates: [tag.post]`
 // name the same string — the alternative, purging by URL, would need a route list nobody keeps.
 
+import { isRetryableStatus } from '@ultimat3/core';
 import type { PurgeDriver } from './cdn';
 import { CachePurgeFailedError } from './errors';
 import type { PurgeFetch } from './purge-http';
@@ -13,7 +14,6 @@ import {
   defaultPurgeFetch,
   detailFrom,
   isRecord,
-  isRetryableStatus,
   purgeBody,
   purgePost,
   requireCredential,

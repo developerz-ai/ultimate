@@ -89,11 +89,11 @@ export interface Scheduler {
   nextRunFor(handle: TaskHandle, from?: Date): Date;
 }
 
-export function createScheduler(options: SchedulerOptions): Scheduler {
+export function jobScheduler(options: SchedulerOptions): Scheduler {
   const schedulerState = options.state ?? memorySchedulerState();
   const resolveCron = options.cron ?? defaultCronResolver;
   const tickIntervalMs = finiteOption(
-    'createScheduler',
+    'jobScheduler',
     'tickIntervalMs',
     options.tickIntervalMs ?? 1_000,
   );

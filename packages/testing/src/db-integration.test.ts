@@ -1,8 +1,8 @@
 // The first tests in the repo that touch a real, network Postgres. Everywhere else, `db()` is
-// stood in for with `createRecordingClient()` or the embedded PGlite driver — nothing has ever
+// stood in for with `recordingClient()` or the embedded PGlite driver — nothing has ever
 // proven that client.ts/introspect.ts/branch.ts hold up against an actual server. This file wires
 // them onto `template-db.ts`'s clone path: acquire a real worker database, exercise the driver,
-// introspect the schema it produced, then branch and drop it exactly the way `x db branch` would.
+// introspectSchema the schema it produced, then branch and drop it exactly the way `x db branch` would.
 //
 // Skips entirely when no admin URL is configured — the CI `postgres` service container sets
 // `TEST_DATABASE_URL`; a laptop with nothing installed just skips this file, same as
@@ -14,7 +14,7 @@ import {
   createBranch,
   dropBranch,
   ensureReadOnlyRole,
-  introspect,
+  introspectSchema,
   listBranches,
   type PostgresClient,
   postgresClient,
@@ -214,8 +214,8 @@ describe.skipIf(!hasPostgres)('live · postgres', () => {
     }
   });
 
-  test('introspect reads the live schema out of information_schema and pg_catalog', async () => {
-    const schema = await introspect({ client });
+  test('introspectSchema reads the live schema out of information_schema and pg_catalog', async () => {
+    const schema = await introspectSchema({ client });
 
     const widgets = schema.tables.find((table) => table.name === 'widgets');
     expect(widgets).toBeDefined();

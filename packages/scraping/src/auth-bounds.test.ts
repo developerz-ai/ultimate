@@ -9,14 +9,14 @@
 // `maxAge`. A screen alone cannot reach the second, which is why the comparison fails closed.
 
 import { describe, expect, test } from 'bun:test';
-import { createLogger, isUltimateError, renderThrowable } from '@ultimat3/core';
+import { isUltimateError, renderThrowable, structuredLogger } from '@ultimat3/core';
 import type { AuthPlanInput, ScrapeAuth } from './auth';
 import { restorableSession } from './auth';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { memorySessionStore, type SessionState } from './session-state';
 
-const silent = createLogger({ writer: () => undefined });
-const clock = testClock(new Date('2026-08-18T00:00:00.000Z'));
+const silent = structuredLogger({ writer: () => undefined });
+const clock = testScrapeClock(new Date('2026-08-18T00:00:00.000Z'));
 
 const NOT_A_BOUND: readonly number[] = [
   Number.NaN,

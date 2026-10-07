@@ -7,7 +7,7 @@ import type { ChangeEvent, ChangeFeed, ChangeFeedStartOptions } from './changefe
 import { formatLsn } from './changefeed';
 import type { Transport } from './fanout';
 import { InProcessTransport } from './fanout';
-import { createReplicator, STOP_DEADLINE_MS } from './replicator';
+import { changeFeedReplicator, STOP_DEADLINE_MS } from './replicator';
 import type { Scheduler } from './thundering-herd';
 
 const turns = async (count = 100): Promise<void> => {
@@ -147,7 +147,7 @@ const rig = (transport: Transport = new InProcessTransport()) => {
     abandonLock();
   };
   const timers = manual();
-  const replicator = createReplicator({
+  const replicator = changeFeedReplicator({
     feed,
     lock,
     transport,

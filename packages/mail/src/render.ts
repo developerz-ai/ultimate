@@ -3,8 +3,8 @@
 // out of the HTML, so it never rots. Styling is inlined from the layout's tokens because most
 // clients drop <style>; the dark-mode block is the one exception, for clients that honour it.
 
-import { escapeHtml } from '@ultimat3/core';
-import { directionOf, type TranslateVars, type Translator, translatorFor } from '@ultimat3/i18n';
+import { directionOf, escapeHtml } from '@ultimat3/core';
+import { type TranslateVars, type Translator, translatorFor } from '@ultimat3/i18n';
 import type { CalloutTone, MailBlock, MailTemplate } from './blocks';
 // The renderer depends on the strings it renders. This is the only module that resolves a `mail.*`
 // key, and `catalog.ts` installs them at ITS module scope — so importing it here is what makes
@@ -14,7 +14,7 @@ import type { CalloutTone, MailBlock, MailTemplate } from './blocks';
 // `registerMailCatalog()` themselves — the exact shape of issue #249.
 import './catalog';
 import { layoutUnknown, textMissing } from './errors';
-import { safeUrl, styleAttr } from './html';
+import { safeMailHref, styleAttr } from './html';
 import { layoutFor, registeredLayouts, token } from './layout';
 
 /** What the renderer needs from a mail. `MailDefinition` adds the input schema on top. */
@@ -76,7 +76,8 @@ export function renderMail<I>(
   });
 
   const tail = [...footer];
-  if (unsubscribe !== undefined) tail.push(`${unsubscribe.label}: ${safeUrl(unsubscribe.url)}`);
+  if (unsubscribe !== undefined)
+    tail.push(`${unsubscribe.label}: ${safeMailHref(unsubscribe.url)}`);
   const text = tail.length === 0 ? bodyText : `${bodyText}\n\n--\n${tail.join('\n')}`;
 
   return { subject, preheader, html, text };
@@ -93,7 +94,7 @@ export function textOf(list: readonly MailBlock[], t: Translator): string {
         lines.push(t(block.key, block.vars));
         break;
       case 'button':
-        lines.push(`${t(block.key, block.vars)}: ${safeUrl(block.href)}`);
+        lines.push(`${t(block.key, block.vars)}: ${safeMailHref(block.href)}`);
         break;
       case 'detail':
         lines.push(`${t(block.key)}: ${block.value}`);
@@ -163,7 +164,7 @@ function htmlOf(block: MailBlock, t: Translator): string {
     case 'paragraph':
       return `<p data-x="p" ${PARAGRAPH_STYLE}>${escapeHtml(t(block.key, block.vars))}</p>`;
     case 'button': {
-      const href = escapeHtml(safeUrl(block.href));
+      const href = escapeHtml(safeMailHref(block.href));
       const label = escapeHtml(t(block.key, block.vars));
       const anchor = `<a data-x="btn" href="${href}" ${BUTTON_LINK_STYLE}>${label}</a>`;
       return `<table ${TABLE_ATTRS}><tr><td>${anchor}</td></tr></table>`;

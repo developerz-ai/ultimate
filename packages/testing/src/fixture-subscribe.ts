@@ -13,7 +13,7 @@ import type { LiveReplicator } from '@ultimat3/realtime/server';
 import { startLiveReplicator } from '@ultimat3/realtime/server';
 import type { LiveFeed, LiveFeedPatch, LiveTarget } from './fixture-drivers';
 import type { LiveConnection, LiveNodeHandle } from './live-node';
-import { createLiveNode } from './live-node';
+import { liveNode } from './live-node';
 
 interface Row {
   readonly id: string;
@@ -60,7 +60,7 @@ export interface SubscribeDriver {
  */
 export async function subscribeDriver(): Promise<SubscribeDriver> {
   const realtime = await import('@ultimat3/realtime');
-  const node = await createLiveNode();
+  const node = await liveNode();
   const replicator = await startLiveReplicator({ registry: node.registry });
   const connections: LiveConnection[] = [];
   let sid = 0;

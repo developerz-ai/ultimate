@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
+import { ctxOf, resetAuditSink, setAuditSink, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -17,7 +17,7 @@ import { memoryIdempotencyStore } from './idempotency-memory';
 import * as surface from './index';
 import { invoke } from './invoke';
 import { mutator } from './mutator';
-import { resetRegistry } from './registry';
+import { resetActions } from './registry';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -25,8 +25,8 @@ const POST_ID = '00000000-0000-4000-8000-0000000000aa';
 
 const editorActor = { ...userActor({ id: 'u1' }), permissions: ['post:publish'] };
 const readerActor = userActor({ id: 'u2' });
-const editor = createContext({ actor: editorActor });
-const reader = createContext({ actor: readerActor });
+const editor = ctxOf({ actor: editorActor });
+const reader = ctxOf({ actor: readerActor });
 
 const publishPost = (audit = true) =>
   mutator({
@@ -48,7 +48,7 @@ const refusingSink = (): AuditSink => ({
 });
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   resetAuditSink();
 });
 

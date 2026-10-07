@@ -64,6 +64,11 @@ export interface HashEmbedderInput {
   readonly dimension?: number;
 }
 
+/** The hashing embedder — the one way to build one; the class is a type only. */
+export function hashEmbedder(input: HashEmbedderInput = {}): HashEmbedder {
+  return new HashEmbedder(input);
+}
+
 /**
  * Deterministic bag-of-words hashing embedder. Not semantic — two paraphrases share no
  * vocabulary and land far apart — but it IS stable, dependency-free, and fast, which is
@@ -87,19 +92,19 @@ export class HashEmbedder implements Embedder {
 
   private one(text: string): Float32Array {
     const vector = new Float32Array(this.dimension);
-    for (const token of tokenize(text)) {
+    for (const token of wordTokens(text)) {
       const slot = hashOf(token) % this.dimension;
       // Signed accumulation: without it every vector is non-negative and cosine
       // similarity compresses into a narrow band where nothing ranks apart.
       const sign = hashOf(`${token}#sign`) % 2 === 0 ? 1 : -1;
       vector[slot] = (vector[slot] ?? 0) + sign;
     }
-    return normalize(vector);
+    return normalizeVector(vector);
   }
 }
 
 /** Lowercased word tokens. Punctuation is dropped; digits are kept (versions, ids). */
-export function tokenize(text: string): readonly string[] {
+export function wordTokens(text: string): readonly string[] {
   return text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 }
 
@@ -113,7 +118,7 @@ function hashOf(text: string): number {
 }
 
 /** L2 normalise in place, so every embedder hands a store unit vectors whatever its scale. */
-export function normalize(vector: Float32Array): Float32Array {
+export function normalizeVector(vector: Float32Array): Float32Array {
   let sum = 0;
   for (const value of vector) sum += value * value;
   if (sum === 0) return vector;

@@ -12,8 +12,8 @@ import {
   type AdminAuthz,
   type AdminAuthzQuery,
   type AdminDecision,
-  allowed,
-  denied,
+  adminAllowed,
+  adminDenied,
 } from './authz';
 import type { CrudCtx } from './crud';
 import type { AdminRouteRequest, AdminRouteResponse } from './screen-frame';
@@ -52,8 +52,8 @@ function recordingAuthz(grant: ReadonlySet<string>): AdminAuthz & {
     decide(query): AdminDecision {
       asked.push(query);
       return grant.has(query.permission)
-        ? allowed(query.permission, 'probe.granted')
-        : denied(query.permission, 'probe.no-ops-grant');
+        ? adminAllowed(query.permission, 'probe.granted')
+        : adminDenied(query.permission, 'probe.no-ops-grant');
     },
   };
 }
@@ -175,7 +175,7 @@ describe('the refusal’s two halves, on their own', () => {
       () =>
         AdminPageDenied({
           titleKey: 'admin.ops.title',
-          decision: denied('billing:write', 'admin.policy.not-granted'),
+          decision: adminDenied('billing:write', 'admin.policy.not-granted'),
         }),
       {},
       'apps/admin/app/admin/page.tsx',
@@ -185,7 +185,7 @@ describe('the refusal’s two halves, on their own', () => {
 
   test('auditRefusal writes one denied entry keyed on the path it was given', async () => {
     const ctx = ctxFor(recordingAuthz(new Set()));
-    await auditRefusal(ctx, '/back-office/posts/new', denied('admin:write', 'probe.reason'));
+    await auditRefusal(ctx, '/back-office/posts/new', adminDenied('admin:write', 'probe.reason'));
     expect(
       (await ctx.audit.entries()).map((entry) => [entry.entity, entry.outcome, entry.reason]),
     ).toEqual([['/back-office/posts/new', 'denied', 'probe.reason']]);

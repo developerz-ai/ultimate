@@ -6,7 +6,7 @@
  * The view types are imported **as types only**, exactly like `shared/client.ts` imports `Api`: no
  * module-graph edge exists from `shared/` to a feature's implementation, so `shared/` stays a leaf
  * and `site/` keeps its 0kb baseline. The contract lives here; each feature's `service.ts`
- * implements it and is installed once with `createContext({ services })` at boot.
+ * implements it and is installed once with `ctxOf({ services })` at boot.
  *
  * Every method speaks the feature's own view type. A service that invented a second row shape
  * would be a second schema to keep in step with the entity — the drift this file exists to avoid.

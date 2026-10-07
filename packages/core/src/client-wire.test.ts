@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CODE, problemOf, retryForStatus, traceHeaders } from './client-wire';
-import { createContext, runWithContext } from './context';
+import { ctxOf, runWithContext } from './context';
 import { parseTraceparent, withSpan } from './telemetry';
 
 describe('traceHeaders', () => {
@@ -26,7 +26,7 @@ describe('traceHeaders', () => {
   test('an INCOMPLETE context sends nothing rather than a header every collector drops', () => {
     // `currentSpanContext()` answers a request context with an empty `spanId`, which renders
     // `00-<trace>--01`. Half a header is worse than none: it is dropped AND it costs the preflight.
-    const sent = runWithContext(createContext(), () => traceHeaders());
+    const sent = runWithContext(ctxOf(), () => traceHeaders());
     expect(sent).toEqual({});
   });
 });

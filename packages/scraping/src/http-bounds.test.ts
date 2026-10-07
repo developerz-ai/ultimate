@@ -10,10 +10,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { httpOverFetch } from './http';
 import type { NetworkEntry } from './rings';
-import { createRing } from './rings';
+import { boundedRing } from './rings';
 import { EMPTY_SESSION } from './session-state';
 
 const NOT_A_BOUND: readonly number[] = [
@@ -35,10 +35,10 @@ async function refusal(run: () => Promise<unknown>): Promise<{ code: string; cau
 /** Counts what reached the network, which is the assertion every test here really makes. */
 const transport = (timeoutMs = 1_000) => {
   const calls: string[] = [];
-  const network = createRing<NetworkEntry>();
+  const network = boundedRing<NetworkEntry>();
   const http = httpOverFetch({
     rules: { allowHosts: ['api.test'] },
-    clock: testClock(),
+    clock: testScrapeClock(),
     timeoutMs,
     network,
     session: () => Promise.resolve(EMPTY_SESSION),

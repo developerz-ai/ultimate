@@ -14,7 +14,7 @@ import {
   registerReadinessCheck,
   resetLifecycle,
 } from './lifecycle';
-import { createLogger } from './logger';
+import { structuredLogger } from './logger';
 
 // Lifecycle state is process-global, and any suite that boots a server calls `markReady()` — so
 // this resets on the way IN as well as out, or the first assertion reads another file's process.
@@ -34,7 +34,7 @@ describe('the logger is an injection seam', () => {
     // caller (`holdUntilShutdown`'s `await drain()` among them), and on Bun the unhandled
     // rejection ends the process mid-drain, with the pool still open.
     const fallback: string[] = [];
-    const base = createLogger({ level: 'info', writer: (line) => fallback.push(line) });
+    const base = structuredLogger({ level: 'info', writer: (line) => fallback.push(line) });
     configureLifecycle({
       logger: {
         ...base,
@@ -66,7 +66,7 @@ describe('the logger is an injection seam', () => {
     // dies there replaced the readiness answer with a throw — the probe 500s and the pod is
     // killed by the outage it was reporting on.
     const fallback: string[] = [];
-    const base = createLogger({ level: 'warn', writer: (line) => fallback.push(line) });
+    const base = structuredLogger({ level: 'warn', writer: (line) => fallback.push(line) });
     configureLifecycle({
       logger: {
         ...base,

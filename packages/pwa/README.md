@@ -5,7 +5,7 @@ whole thesis: a hand-written service worker encodes routing decisions a second t
 the second copy is the one nobody updates.
 
 ```ts
-const { source, precache, warnings } = generateServiceWorker(describeRoutes(), config, buildId);
+const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);
 ```
 
 ## Render mode → runtime strategy
@@ -41,7 +41,7 @@ and the app dies with a blank screen and no error anyone can act on.
 | Mechanism | Rule |
 |---|---|
 | Build id | immutable per deploy, derived from the commit sha; `X_BUILD_ID_MISSING` if absent |
-| Client → server | every SW-proxied request carries `x-ultimate-build` |
+| Client → server | every SW-proxied request carries `x-ultimate-build` — `@ultimat3/core`'s `BUILD_ID_HEADER` |
 | Retention | `retentionPlan(deploys, keep)` keeps the last N deploys' assets alive (default 3) |
 | Stale client | gets `AppUpdateAvailable`, never a 404 |
 | Forced reload | none. This package never navigates a client — the app decides what to do with the message |
@@ -118,7 +118,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `requireOfflineFallback` | the mandatory offline route |
 | `backgroundSyncSource`, `registerBackgroundSyncSource` | the Background Sync trigger. No retry policy: the handler rejects and the PLATFORM reschedules it |
 | `renderPushPayload`, `pushSource`, `subscribeSource` | Web Push, per-locale bodies |
-| `createInstallController`, `iosInstallGuidance` | install prompt, never on first paint |
+| `installController`, `iosInstallGuidance` | install prompt, never on first paint |
 | `PwaStrategyExhaustedError` and the other `errors.ts` classes | the codes this package throws, catchable by an app |
 
 ## Notes

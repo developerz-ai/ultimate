@@ -4,7 +4,7 @@
  * compile error in a Solid component — not a 404 at runtime.
  *
  * `ClientFlight` is a TYPE here and never a value: the fence, the retry loop and the deadline are
- * `@ultimat3/core`'s `client-flight.ts`, so a caller that never calls `createClientFlight` does
+ * `@ultimat3/core`'s `client-flight.ts`, so a caller that never calls `clientFlight` does
  * not pay a byte for any of them — an `import type` is erased and the value import would not be.
  * Dedup is deliberately unreachable from this file — a mutation may never join another mutation,
  * and the way that is guaranteed is that `keyFor` is never called here.
@@ -24,6 +24,7 @@ import type {
 } from '@ultimat3/core';
 import {
   actionPath,
+  BUILD_ID_HEADER,
   clientTransport,
   FRAMEWORK_CODE,
   isJsonObject,
@@ -33,7 +34,6 @@ import {
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
 import { ContractDriftError, RemoteActionError } from './errors';
-import { BUILD_ID_HEADER } from './wire-headers';
 import { issuesFromWire } from './wire-issues';
 
 /**
@@ -80,7 +80,7 @@ export interface ClientOptions {
   readonly buildId?: string;
   readonly headers?: Readonly<Record<string, string>>;
   /**
-   * Opt-in flight control — `createClientFlight({ … })`. Absent, a call is one dispatch and
+   * Opt-in flight control — `clientFlight({ … })`. Absent, a call is one dispatch and
    * nothing else, which is what every caller written before this option existed already gets.
    */
   readonly flight?: ClientFlight;

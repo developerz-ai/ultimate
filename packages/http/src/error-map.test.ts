@@ -11,9 +11,9 @@ import { toProblem } from './error-facts';
 import { ERROR_STATUS, ERROR_STATUS_SLICES } from './error-map';
 import { declaredStatusFor, statusFor } from './error-status';
 import { HTTP_ERROR_CODES } from './errors';
-import { createPipeline } from './pipeline';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 describe('error -> status', () => {
   test('every code this package can throw has a row', () => {
@@ -309,13 +309,13 @@ describe('a currency this process has no row for', () => {
       method: 'GET',
       path: '/ok',
       meta: { name: 'ok', auth: 'public' },
-      handler: () => text('ok'),
+      handler: () => textResponse('ok'),
     },
   ];
 
   const pipeline = () =>
-    createPipeline({
-      table: createRouter(routes),
+    httpPipeline({
+      table: httpRouter(routes),
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
       hooks: {},
     });

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
 import { fixProblem } from './error-contract';
 import type { IslandBundle } from './island-bundle';
@@ -32,8 +32,8 @@ const config = defineRoute({
   meta: () => ({ title: 'Counter', description: 'one island' }),
 });
 
-const serve = (bundle: IslandBundle): ReturnType<typeof createServer> =>
-  createServer({
+const serve = (bundle: IslandBundle): ReturnType<typeof httpServer> =>
+  httpServer({
     routes: [
       ...islandRoutes(() => bundle),
       ...appRoutes({

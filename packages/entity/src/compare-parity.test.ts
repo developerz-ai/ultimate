@@ -4,13 +4,7 @@
 // `@ultimat3/query`'s matcher calls it too, so a row it gets wrong is wrong on three surfaces.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  createPgliteClient,
-  generateMigration,
-  raw,
-  setDbClient,
-  statementsOf,
-} from '@ultimat3/db';
+import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { integer, text, uuid } from './columns';
 import { bigint, decimal } from './columns-data';
 import { database, memoryDriver } from './database';
@@ -35,7 +29,7 @@ const ledger = entity('cp_ledger', {
 
 const ENTITIES = { ledger };
 type Db = ReturnType<typeof database<typeof ENTITIES>>;
-const client = createPgliteClient();
+const client = pgliteClient();
 
 /** Hex LETTERS, so an id has a case to change; text order and numeric order differ on every pair. */
 const idAt = (hex: string): string => `00000000-0000-7000-8000-0000000000${hex}`;

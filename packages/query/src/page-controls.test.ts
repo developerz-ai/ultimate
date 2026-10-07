@@ -4,7 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { MAX_PAGE_SIZE, pageControlsOf } from './page-controls';
+import { MAX_PAGE_SIZE } from '@ultimat3/entity';
+import { pageControlsOf } from './page-controls';
 
 const refusal = (values: Parameters<typeof pageControlsOf>[1]): string => {
   try {

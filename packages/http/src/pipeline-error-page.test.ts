@@ -3,14 +3,19 @@
 // Ultimate app until 10.x. The overlay stays the dev answer; these pin which is which.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const SECRET = 'connect ECONNREFUSED 10.0.0.7:5432 as postgres/hunter2';
 
 const routes: readonly Route[] = [
-  { method: 'GET', path: '/ok', meta: { name: 'ok', auth: 'public' }, handler: () => text('ok') },
+  {
+    method: 'GET',
+    path: '/ok',
+    meta: { name: 'ok', auth: 'public' },
+    handler: () => textResponse('ok'),
+  },
   {
     method: 'GET',
     path: '/boom',
@@ -24,8 +29,8 @@ const routes: readonly Route[] = [
 const pipelineWith = (
   options: { dev?: boolean; errorPage?: (status: number) => string | undefined } = {},
 ) =>
-  createPipeline({
-    table: createRouter(routes),
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({
       rateLimit: { scope: 'process' },
       dev: options.dev ?? false,

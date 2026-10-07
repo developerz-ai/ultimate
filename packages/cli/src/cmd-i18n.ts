@@ -185,7 +185,7 @@ async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult>
   const path = catalogPath(locale);
   const app = await loadApp(root);
   const catalogs = await loadCatalogs(root);
-  const from = resolveDefaultLocale(app.defaultLocale, catalogs);
+  const from = resolveDefaultLocale(app.locales.defaultLocale, catalogs);
   const seeded = seedCatalog(from === undefined ? {} : (catalogs[from] ?? {}));
   await writeNewCatalog(join(root, path), locale, serializeCatalog(seeded));
   // The second half of adding a locale, and without it this command SHIPPED A RED GATE: the file
@@ -259,7 +259,7 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
   }
 
   const app = await loadApp(root);
-  const from = resolveDefaultLocale(app.defaultLocale, catalogs);
+  const from = resolveDefaultLocale(app.locales.defaultLocale, catalogs);
   // `from === locale` is the default locale asked to sync itself, and `undefined` is an app with
   // no resolvable default at all — one branch, because both have no catalog to merge from.
   // A real merge copies the default locale's strings MARKED (`seedCatalog`, as `x i18n add` does):

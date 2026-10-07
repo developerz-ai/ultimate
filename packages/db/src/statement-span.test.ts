@@ -8,7 +8,7 @@ import type { ReadableSpan } from '@ultimat3/core';
 import { configureTelemetry, memoryExporter, resetTelemetry, withSpan } from '@ultimat3/core';
 import { postgresClient } from './client';
 import { setStatementObserver } from './observe';
-import { createPgliteClient, type PgliteDriver } from './pglite';
+import { type PgliteDriver, pgliteClient } from './pglite';
 import { sql } from './sql';
 import { statementSpanName, withStatementSpan } from './statement-span';
 
@@ -112,7 +112,7 @@ describe('unit · the funnels open exactly one per statement', () => {
     const exporter = traced();
     setStatementObserver({ onStatement: () => undefined });
 
-    await createPgliteClient({ driver: fakeDriver() }).query(sql`select id from posts`);
+    await pgliteClient({ driver: fakeDriver() }).query(sql`select id from posts`);
 
     expect(exporter.spans.map((span) => span.name)).toEqual(['db.select']);
     expect(exporter.spans[0]?.attributes['db.statement']).toBe('select id from posts');
@@ -125,7 +125,7 @@ describe('unit · the funnels open exactly one per statement', () => {
     installFakeSql();
 
     await postgresClient({ url: TEST_URL }).query(sql`select 1`);
-    await createPgliteClient({ driver: fakeDriver() }).query(sql`select 1`);
+    await pgliteClient({ driver: fakeDriver() }).query(sql`select 1`);
 
     expect(exporter.spans).toEqual([]);
   });

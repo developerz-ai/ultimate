@@ -52,7 +52,7 @@ export type RowProvider<TRow> =
 
 /**
  * In-memory reference source. `from<Post>('posts', rows).where({ orgId }).orderBy('createdAt')`
- * generates real SQL text for `explain()` while executing against the provided rows.
+ * generates real SQL text for `explainQuery()` while executing against the provided rows.
  */
 export function from<TRow extends object>(entity: string, rows: RowProvider<TRow>): Builder<TRow> {
   return new Builder<TRow>(entity, rows, [], [], null, null, []);
@@ -74,7 +74,7 @@ export class Builder<TRow extends object> implements SqlSource<TRow> {
   /**
    * One equality filter per key, and the clauses come out in **lexical key order** — not the order
    * the object literal was typed in. The generated text is something callers compare across runs:
-   * `explain()` prints it, `LiveQuery.sqlText` caches it, and tests pin it. Reordering two keys in
+   * `explainQuery()` prints it, `LiveQuery.sqlText` caches it, and tests pin it. Reordering two keys in
    * a call site must not rewrite the statement.
    */
   where(equals: Readonly<Record<string, unknown>>): Builder<TRow> {

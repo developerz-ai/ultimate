@@ -1,6 +1,6 @@
 // Every test here goes through `pipeline.handle` — the real lifecycle, the real ALS scope, the
 // real span. That is the point: each of these defects shipped BECAUSE the tests around it built
-// a context by hand (core's `createContext`) or asserted on a response and never on the span, so
+// a context by hand (core's `ctxOf`) or asserted on a response and never on the span, so
 // the pipeline's own answer was the one thing nothing exercised.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
@@ -18,9 +18,9 @@ import {
   useService,
 } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfigInput } from './config';
-import { createPipeline } from './pipeline';
-import { json, text } from './response';
-import { createRouter, type HttpMethod, type Route, type RouteHandler } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse, textResponse } from './response';
+import { type HttpMethod, httpRouter, type Route, type RouteHandler } from './router';
 
 const TRACEPARENT = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 const TRACE_ID = '4bf92f3577b34da6a3ce929d0e0e4736';
@@ -30,8 +30,8 @@ const routeWith = (handler: RouteHandler, method: HttpMethod = 'GET'): readonly 
 ];
 
 const pipelineFor = (handler: RouteHandler, input: HttpConfigInput = {}, method?: HttpMethod) =>
-  createPipeline({
-    table: createRouter(routeWith(handler, method)),
+  httpPipeline({
+    table: httpRouter(routeWith(handler, method)),
     config: defineHttpConfig({
       rateLimit: { scope: 'process' },
       dev: false,
@@ -42,7 +42,7 @@ const pipelineFor = (handler: RouteHandler, input: HttpConfigInput = {}, method?
   });
 
 const call = (
-  pipeline: ReturnType<typeof createPipeline>,
+  pipeline: ReturnType<typeof httpPipeline>,
   init: RequestInit = {},
 ): Promise<Response> =>
   pipeline.handle(new Request('http://app.test/probe', init), { role: 'web' });
@@ -52,7 +52,7 @@ const call = (
 // audited action served over HTTP, and the audit trail the flag was turned on for stayed empty.
 describe('the ambient context is core Ctx, in full', () => {
   test('ctx.now() answers a Date instead of throwing "not a function"', async () => {
-    const pipeline = pipelineFor(() => json({ at: useContext().now().toISOString() }));
+    const pipeline = pipelineFor(() => jsonResponse({ at: useContext().now().toISOString() }));
     const response = await call(pipeline);
     expect(response.status).toBe(200);
     const body = (await response.json()) as { at: string };
@@ -62,7 +62,7 @@ describe('the ambient context is core Ctx, in full', () => {
   test('throwIfAborted() reads a live signal instead of TypeError on undefined', async () => {
     const pipeline = pipelineFor(() => {
       throwIfAborted();
-      return text('not aborted');
+      return textResponse('not aborted');
     });
     expect(await (await call(pipeline)).text()).toBe('not aborted');
   });
@@ -70,7 +70,7 @@ describe('the ambient context is core Ctx, in full', () => {
   test('useService() raises its own X_SERVICE_MISSING, not a TypeError', async () => {
     const pipeline = pipelineFor(() => {
       useService('mailer');
-      return text('unreachable');
+      return textResponse('unreachable');
     });
     const body = (await (await call(pipeline)).json()) as { code: string };
     expect(body.code).toBe('X_SERVICE_MISSING');
@@ -78,7 +78,10 @@ describe('the ambient context is core Ctx, in full', () => {
 
   test('ctx.logger and ctx.clock are real, not undefined', async () => {
     const pipeline = pipelineFor(() =>
-      json({ logger: typeof useContext().logger.info, clock: typeof useContext().clock.now }),
+      jsonResponse({
+        logger: typeof useContext().logger.info,
+        clock: typeof useContext().clock.now,
+      }),
     );
     expect(await (await call(pipeline)).json()).toEqual({ logger: 'function', clock: 'function' });
   });
@@ -88,7 +91,7 @@ describe('the ambient context is core Ctx, in full', () => {
   // every `ctx.buildId` reader in the framework saw.
   test('ctx.buildId is the process build; the client claim is request.buildId', async () => {
     const pipeline = pipelineFor(
-      (request, ctx) => json({ ctx: ctx.buildId, client: request.buildId }),
+      (request, ctx) => jsonResponse({ ctx: ctx.buildId, client: request.buildId }),
       { buildId: 'server-7' },
     );
     const response = await call(pipeline, { headers: { 'x-ultimate-build': 'server-7' } });
@@ -115,7 +118,7 @@ describe('the root span', () => {
   // parent — logs and traces naming two different trace ids for one request.
   test('adopts an inbound traceparent as its parent, on the same trace', async () => {
     const response = await call(
-      pipelineFor(() => text('ok')),
+      pipelineFor(() => textResponse('ok')),
       {
         headers: { traceparent: TRACEPARENT },
       },
@@ -126,7 +129,7 @@ describe('the root span', () => {
   });
 
   test('with no inbound trace the span id is 32 hex, and the header agrees with it', async () => {
-    const response = await call(pipelineFor(() => text('ok')));
+    const response = await call(pipelineFor(() => textResponse('ok')));
     expect(spanOf().context.traceId).toMatch(/^[0-9a-f]{32}$/);
     expect(response.headers.get('x-trace-id')).toBe(spanOf().context.traceId);
     expect(spanOf().parentSpanId).toBeUndefined();
@@ -139,7 +142,7 @@ describe('the root span', () => {
     const response = await call(
       pipelineFor(() => {
         seen = useContext().traceId;
-        return text('ok');
+        return textResponse('ok');
       }),
       { headers: { traceparent: TRACEPARENT } },
     );
@@ -155,7 +158,7 @@ describe('the request deadline', () => {
     const pipeline = pipelineFor(
       async () => {
         await new Promise<void>(() => undefined);
-        return text('never');
+        return textResponse('never');
       },
       { requestTimeoutMs: 20 },
     );
@@ -170,7 +173,7 @@ describe('the request deadline', () => {
         const ctx = useContext();
         await Bun.sleep(40);
         throwIfAborted(ctx);
-        return text('never');
+        return textResponse('never');
       },
       { requestTimeoutMs: 15 },
     );
@@ -188,7 +191,7 @@ describe('the request deadline', () => {
         await new Promise<void>((resolve) => {
           ctx.signal.addEventListener('abort', () => resolve());
         });
-        return text('late');
+        return textResponse('late');
       },
       { requestTimeoutMs: 15 },
     );
@@ -198,7 +201,7 @@ describe('the request deadline', () => {
   });
 
   test('a fast handler is untouched', async () => {
-    const pipeline = pipelineFor(() => text('quick'), { requestTimeoutMs: 1_000 });
+    const pipeline = pipelineFor(() => textResponse('quick'), { requestTimeoutMs: 1_000 });
     expect(await (await call(pipeline)).text()).toBe('quick');
   });
 
@@ -206,7 +209,7 @@ describe('the request deadline', () => {
     const pipeline = pipelineFor(
       async () => {
         await Bun.sleep(20);
-        return text('slow but served');
+        return textResponse('slow but served');
       },
       { requestTimeoutMs: 0 },
     );
@@ -226,7 +229,7 @@ describe('the admit stage', () => {
   // 7,690 requests failed a helm upgrade with X_DRAINING, every one arriving on a kept-alive
   // connection inside the readiness grace — the window that exists so such requests are answered.
   test('serves a request that arrives while draining, and closes its connection', async () => {
-    const pipeline = pipelineFor(() => text('ok'));
+    const pipeline = pipelineFor(() => textResponse('ok'));
     configureLifecycle({ readinessGraceMs: 200 });
     markReady();
     const drained = drain('SIGTERM');
@@ -238,7 +241,7 @@ describe('the admit stage', () => {
   });
 
   test('answers 503 with Retry-After once the process has stopped', async () => {
-    const pipeline = pipelineFor(() => text('ok'));
+    const pipeline = pipelineFor(() => textResponse('ok'));
     markReady();
     await drain('test');
     const response = await call(pipeline);
@@ -254,7 +257,7 @@ describe('the admit stage', () => {
     const pipeline = pipelineFor(
       () => {
         reached = true;
-        return text('ok');
+        return textResponse('ok');
       },
       { maxInflight: 1 },
     );
@@ -271,12 +274,12 @@ describe('the admit stage', () => {
   });
 
   test('under the ceiling nothing is shed', async () => {
-    const pipeline = pipelineFor(() => text('ok'), { maxInflight: 10 });
+    const pipeline = pipelineFor(() => textResponse('ok'), { maxInflight: 10 });
     expect((await call(pipeline)).status).toBe(200);
   });
 
   test('maxInflight: 0 disables the ceiling', async () => {
-    const pipeline = pipelineFor(() => text('ok'), { maxInflight: 0 });
+    const pipeline = pipelineFor(() => textResponse('ok'), { maxInflight: 0 });
     const held = [beginWork(), beginWork(), beginWork()];
     try {
       expect((await call(pipeline)).status).toBe(200);
@@ -289,7 +292,7 @@ describe('the admit stage', () => {
 // --- H6: the caller behind a proxy ------------------------------------------------------------
 describe('the proxy-aware request', () => {
   test('the forwarded client address reaches ctx.ip, not the proxy address', async () => {
-    const pipeline = pipelineFor((_request, ctx) => json({ ip: ctx.ip }), {
+    const pipeline = pipelineFor((_request, ctx) => jsonResponse({ ip: ctx.ip }), {
       trustProxy: true,
       trustedProxyHops: 1,
     });
@@ -301,7 +304,7 @@ describe('the proxy-aware request', () => {
   });
 
   test('untrusted, the header is ignored and the socket address stands', async () => {
-    const pipeline = pipelineFor((_request, ctx) => json({ ip: ctx.ip }));
+    const pipeline = pipelineFor((_request, ctx) => jsonResponse({ ip: ctx.ip }));
     const response = await pipeline.handle(
       new Request('http://app.test/probe', { headers: { 'x-forwarded-for': '203.0.113.9' } }),
       { role: 'web', ip: '10.42.0.7' },
@@ -312,7 +315,10 @@ describe('the proxy-aware request', () => {
   // HSTS is emitted only when https is AFFIRMED, and behind a TLS-terminating ingress the
   // internal hop is plain http — so the two-year policy went out on no request at all.
   test('x-forwarded-proto: https is what finally emits HSTS', async () => {
-    const pipeline = pipelineFor(() => text('ok'), { trustProxy: true, trustedProxyHops: 1 });
+    const pipeline = pipelineFor(() => textResponse('ok'), {
+      trustProxy: true,
+      trustedProxyHops: 1,
+    });
     expect((await call(pipeline)).headers.get('strict-transport-security')).toBeNull();
     const behindTls = await call(pipeline, { headers: { 'x-forwarded-proto': 'https' } });
     expect(behindTls.headers.get('strict-transport-security')).toContain('max-age=');
@@ -322,7 +328,7 @@ describe('the proxy-aware request', () => {
 // --- H7: CSRF ---------------------------------------------------------------------------------
 describe('the csrf stage', () => {
   const post = (init: RequestInit, input: HttpConfigInput = {}) =>
-    pipelineFor(() => text('written'), input, 'POST').handle(
+    pipelineFor(() => textResponse('written'), input, 'POST').handle(
       new Request('http://app.test/probe', { method: 'POST', ...init }),
       { role: 'web' },
     );
@@ -358,14 +364,14 @@ describe('the csrf stage', () => {
   // Slice 11 k: `curl -X POST` against `x dev` carries neither header, and the fix it got named a
   // token dev does not have. From a loopback address the fix names the header that proves it.
   test('a local caller with neither header is told the one header that proves same-origin', async () => {
-    const local = await pipelineFor(() => text('written'), {}, 'POST').handle(
+    const local = await pipelineFor(() => textResponse('written'), {}, 'POST').handle(
       new Request('http://localhost:3000/probe', { method: 'POST' }),
       { role: 'web', ip: '127.0.0.1' },
     );
     const body = (await local.json()) as { code: string; fix: string };
     expect(body.code).toBe('X_CSRF_BLOCKED');
     expect(body.fix).toStartWith("curl -H 'sec-fetch-site: same-origin'");
-    const remote = await pipelineFor(() => text('written'), {}, 'POST').handle(
+    const remote = await pipelineFor(() => textResponse('written'), {}, 'POST').handle(
       new Request('http://app.test/probe', { method: 'POST' }),
       { role: 'web', ip: '203.0.113.9' },
     );
@@ -413,7 +419,7 @@ describe('a throwable whose code is a name on Object.prototype', () => {
 // pool slot and a vendor connection held for a caller that is gone.
 describe('a caller that goes away', () => {
   const abortable = (): {
-    pipeline: ReturnType<typeof createPipeline>;
+    pipeline: ReturnType<typeof httpPipeline>;
     client: AbortController;
   } => {
     const client = new AbortController();
@@ -423,7 +429,7 @@ describe('a caller that goes away', () => {
       client.abort();
       await Bun.sleep(0);
       throwIfAborted();
-      return json({ finished: true });
+      return jsonResponse({ finished: true });
     });
     return { pipeline, client };
   };
@@ -445,7 +451,7 @@ describe('a caller that goes away', () => {
         client.abort();
         await Bun.sleep(0);
         throwIfAborted();
-        return json({ finished: true });
+        return jsonResponse({ finished: true });
       },
       { requestTimeoutMs: 0 },
     );

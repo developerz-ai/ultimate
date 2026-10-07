@@ -5,7 +5,7 @@
 
 import { allocationInvalid, currencyMismatch, currencyRequired } from './errors';
 import { factorFraction } from './factor';
-import { type Money, money } from './money';
+import { fromMinor, type Money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
 import { commonScale, minorAt, toMinor } from './scale';
 
@@ -22,7 +22,7 @@ export function assertSameCurrency(left: Money, right: Money): string {
 export function add(left: Money, right: Money): Money {
   const currency = assertSameCurrency(left, right);
   const scale = commonScale(left, right);
-  return money(
+  return fromMinor(
     toMinor(minorAt(left, scale) + minorAt(right, scale), scale, currency),
     currency,
     scale,
@@ -32,7 +32,7 @@ export function add(left: Money, right: Money): Money {
 export function subtract(left: Money, right: Money): Money {
   const currency = assertSameCurrency(left, right);
   const scale = commonScale(left, right);
-  return money(
+  return fromMinor(
     toMinor(minorAt(left, scale) - minorAt(right, scale), scale, currency),
     currency,
     scale,
@@ -43,7 +43,7 @@ export function subtract(left: Money, right: Money): Money {
  * Every addend must share one currency; an empty list needs an explicit currency.
  *
  * A stated currency the first addend contradicts is `X_CURRENCY_MISMATCH`, not a silent win for
- * the list: `sum([money(1, 'EUR')], 'USD')` used to answer `{ minor: 1, currency: 'EUR' }`, so a
+ * the list: `sum([fromMinor(1, 'EUR')], 'USD')` used to answer `{ minor: 1, currency: 'EUR' }`, so a
  * caller who wrote down USD received EUR and nothing refused — the exact failure this file's
  * header exists to rule out, in the one entry point that treated its currency as a fallback rather
  * than as an assertion.
@@ -55,7 +55,7 @@ export function sum(amounts: readonly Money[], currency?: string): Money {
   }
   const base = first ?? currency;
   if (base === undefined) throw currencyRequired('sum([])');
-  return amounts.reduce((total, amount) => add(total, amount), money(0, base));
+  return amounts.reduce((total, amount) => add(total, amount), fromMinor(0, base));
 }
 
 /**
@@ -73,7 +73,7 @@ export function multiply(
 ): Money {
   const ratio = factorFraction(factor);
   // Scale-preserving: a fee on a micro-priced amount stays a micro-priced amount.
-  return money(
+  return fromMinor(
     roundRatio(BigInt(amount.minor) * ratio.numerator, ratio.denominator, mode),
     amount.currency,
     amount.scale,
@@ -94,7 +94,7 @@ export function divide(
     throw allocationInvalid('cannot divide money by zero — use allocate() to split a total');
   }
   const ratio = factorFraction(divisor);
-  return money(
+  return fromMinor(
     roundRatio(BigInt(amount.minor) * ratio.denominator, ratio.numerator, mode),
     amount.currency,
     amount.scale,
@@ -102,11 +102,11 @@ export function divide(
 }
 
 export function negate(amount: Money): Money {
-  return money(-amount.minor, amount.currency, amount.scale);
+  return fromMinor(-amount.minor, amount.currency, amount.scale);
 }
 
 export function absolute(amount: Money): Money {
-  return money(Math.abs(amount.minor), amount.currency, amount.scale);
+  return fromMinor(Math.abs(amount.minor), amount.currency, amount.scale);
 }
 
 /**

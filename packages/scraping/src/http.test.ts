@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/schema';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { httpOverFetch } from './http';
 import type { NetworkEntry } from './rings';
-import { createRing } from './rings';
+import { boundedRing } from './rings';
 import type { ScrapeSecrets } from './secrets';
-import { createSecretBag, SECRET_PLACEHOLDER } from './secrets';
+import { SECRET_PLACEHOLDER, secretBag } from './secrets';
 import { EMPTY_SESSION } from './session-state';
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
@@ -29,10 +29,10 @@ const transport = (
   secrets?: ScrapeSecrets,
 ) => {
   const calls: Call[] = [];
-  const network = createRing<NetworkEntry>();
+  const network = boundedRing<NetworkEntry>();
   const http = httpOverFetch({
     rules: { allowHosts },
-    clock: testClock(),
+    clock: testScrapeClock(),
     timeoutMs: 1_000,
     network,
     secrets,
@@ -198,9 +198,9 @@ describe('unit · the response body is bounded by BYTES, not only by time', () =
   const withBody = (body: string | ReadableStream<Uint8Array>, headers?: Headers) =>
     httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
       timeoutMs: 1_000,
-      network: createRing<NetworkEntry>(),
+      network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
       fetch: () =>
         Promise.resolve(
@@ -237,9 +237,9 @@ describe('unit · the response body is bounded by BYTES, not only by time', () =
     });
     const http = httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
       timeoutMs: 1_000,
-      network: createRing<NetworkEntry>(),
+      network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
       fetch: () => Promise.resolve(new Response(endless, { status: 200 })),
     });
@@ -253,9 +253,9 @@ describe('unit · response headers are data, not a prototype the site can reach'
   const withHeaders = (headers: Headers) =>
     httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
       timeoutMs: 1_000,
-      network: createRing<NetworkEntry>(),
+      network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
       fetch: () => Promise.resolve(new Response('{}', { status: 200, headers })),
     });
@@ -312,7 +312,7 @@ describe('unit · the site`s own body never carries a secret into an error', () 
       { status: 401, body: `{"error":"wrong password: ${SECRET}"}` },
       EMPTY_SESSION,
       ['api.test'],
-      createSecretBag(['SHOP_PASSWORD'], () => SECRET),
+      secretBag(['SHOP_PASSWORD'], () => SECRET),
     );
     const response = await http.request('https://api.test/login');
     const cause = await causeOf(response.parse(t.object({ ok: t.boolean })));
@@ -335,9 +335,9 @@ describe("unit · a caller's header wins over the session's whatever its case", 
     const seen: Headers[] = [];
     const http = httpOverFetch({
       rules: { allowHosts: ['api.test'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
       timeoutMs: 1_000,
-      network: createRing<NetworkEntry>(),
+      network: boundedRing<NetworkEntry>(),
       session: () => Promise.resolve(session),
       fetch: (_url, init) => {
         seen.push(new Headers(init.headers));

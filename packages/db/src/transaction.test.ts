@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type DbClient, setDbClient } from './client';
 import { dbUnavailable } from './errors';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import { reservableOver } from './fake-reservable-fixture';
 import { sql } from './sql';
 import { currentTx, withTransaction } from './transaction';
@@ -11,7 +11,7 @@ import { beginStatement } from './transaction-options';
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 
@@ -321,7 +321,7 @@ describe('tx.origin', () => {
     // sends its writes to that shard's pool while the BEGIN sits on a connection this scope
     // reserved, so the write commits immediately and survives the rollback. `origin` is the
     // comparison that turns the refusal into the case working.
-    const shard = createRecordingClient();
+    const shard = recordingClient();
     const { client: pinned, pins } = reservableOver(shard);
 
     const seen = await withTransaction(async (tx) => tx.origin, { client: pinned });

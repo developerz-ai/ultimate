@@ -6,6 +6,7 @@
 
 import {
   anonymousActor,
+  BUILD_ID_HEADER,
   inflightCount,
   isAnonymous,
   isDraining,
@@ -48,7 +49,7 @@ import type { UltimateRequest } from './request';
 import { addVary, problem, redirect } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
 import { responseSecurityHeaders } from './security-headers';
-import { validate } from './validate';
+import { validateBody } from './validate';
 
 export type StageName =
   | 'request-id'
@@ -173,12 +174,12 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       const answered = preflight(request.raw, config.cors);
       if (answered !== undefined) return answered;
 
-      ctx.clientBuildId = request.header(config.buildIdHeader);
+      ctx.clientBuildId = request.header(BUILD_ID_HEADER);
       // Stamped BEFORE the assertion, so the refusal carries it too. A skew answer that
       // withholds the server's own id tells a client it is stale without telling it what to
       // become — and the one caller that can act on that, the service worker holding the
       // stale id, then has no way to tell this 409 from any other.
-      if (config.buildId !== null) ctx.headers.set(config.buildIdHeader, config.buildId);
+      if (config.buildId !== null) ctx.headers.set(BUILD_ID_HEADER, config.buildId);
       request.assertBuild();
 
       // A `/<locale>/` prefix is stripped BEFORE the match, never by middleware: middleware wraps
@@ -273,7 +274,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
     body: async (request, ctx) => {
       const schema = ctx.route?.meta.input;
       if (schema === undefined) return undefined;
-      const outcome = await validate(schema, await request.bodyRaw());
+      const outcome = await validateBody(schema, await request.bodyRaw());
       if (!outcome.ok) throw bodyInvalid(ctx.url.pathname, outcome.issues);
       ctx.input = outcome.value;
       return undefined;

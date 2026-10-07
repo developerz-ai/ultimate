@@ -7,23 +7,10 @@
 // bypasses `defineApi`'s own result — the ambiguity axiom 1 exists to refuse.
 import './register';
 
-// The wire format, RE-EXPORTED from `@ultimat3/core` and never re-declared: it is one module at
-// the tier both halves can reach, because this package signs a delivery, `@ultimat3/http` verifies
-// one, and neither may import the other. Re-exported here so a `job` file needs one import rather
-// than two — the same reason `t` is re-exported above.
-export type { PgExecutor, WebhookMacInput, WebhookSigningInput } from '@ultimat3/core';
-export {
-  isCanonicalWebhookField,
-  WEBHOOK_FIELD_MAX,
-  WEBHOOK_ID_HEADER,
-  WEBHOOK_SIGNATURE_HEADER,
-  WEBHOOK_SIGNATURE_VERSION,
-  WEBHOOK_TOPIC_HEADER,
-  webhookHeaders,
-  webhookMac,
-  webhookSignature,
-  webhookSigningString,
-} from '@ultimat3/core';
+// The webhook wire format (`WEBHOOK_*`, `webhookSignature`, `webhookMac`, …) is `@ultimat3/core`'s
+// and imported from there: one module at the tier this package (the signer) and `@ultimat3/http`
+// (the verifier) both reach, with one import path — never re-exported here (`X_HELPER_COPY`).
+export type { PgExecutor } from '@ultimat3/core';
 /** Re-exported so a `job`/`task` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
@@ -73,7 +60,7 @@ export {
   pendingBackfills,
 } from './backfill-pending';
 export type { Pacer, PacerOptions } from './backfill-rate';
-export { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+export { backfillPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 export type { BackfillCount, BackfillDeclaration, BackfillOrigin } from './backfill-registry';
 // `stampBackfill` is deliberately absent, for the reason `registerJob` is: a second way to make a
 // handle claim it is a backfill would let a plain `job()` inherit the pending diff and the gate.
@@ -258,7 +245,7 @@ export type {
   LimitSnapshot,
   RateLimit,
 } from './limits';
-export { createLimiter, NO_TENANT, tenantKeyFrom } from './limits';
+export { concurrencyLimiter, NO_TENANT, tenantKeyFrom } from './limits';
 export {
   queueDeadJobs,
   queueOldestReady,
@@ -275,10 +262,10 @@ export type {
   OutboxStore,
 } from './outbox';
 export {
-  createJobsFacade,
   enqueueInTx,
   jobsFacade,
   memoryOutboxStore,
+  outboxJobsFacade,
   resetJobsFacade,
   setJobsFacade,
 } from './outbox';
@@ -288,7 +275,7 @@ export { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox-lease';
 export type { PgOutboxOptions } from './outbox-pg';
 export { postgresOutboxStore } from './outbox-pg';
 export type { OutboxRelay, RelayOptions } from './outbox-relay';
-export { createOutboxRelay } from './outbox-relay';
+export { outboxRelay } from './outbox-relay';
 export type { ProgressFn } from './progress';
 export type {
   PurgeDefinition,
@@ -304,7 +291,7 @@ export type { IntervalScheduler } from './renewal-timer';
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, isFinalAttempt, nextRetry, retrySchedule } from './retry';
 export type { JobRetryDecision, JobStopReason } from './retry-classification';
-export { classifyThrown, failureForRow, nextRetryForError } from './retry-classification';
+export { failureForRow, nextRetryForError } from './retry-classification';
 export type {
   CronResolver,
   DispatchedOccurrence,
@@ -313,7 +300,7 @@ export type {
 } from './scheduler';
 export {
   COUNTER_ROLLUP_INTERVAL_MS,
-  createScheduler,
+  jobScheduler,
   PAUSE_RECHECK_MS,
 } from './scheduler';
 export type { LeaderElection } from './scheduler-leader';
@@ -343,12 +330,12 @@ export type {
   WaitForEventOptions,
 } from './steps';
 export {
-  createStepRunner,
   isStepStatus,
   isStepSuspension,
   MAX_TRACE_NAMES,
   STEP_STATUSES,
   StepSuspension,
+  stepRunner,
 } from './steps';
 export { memoryStepStore } from './steps-memory';
 export type {
@@ -391,4 +378,4 @@ export {
 export type { MemoryWebhookLedger, WebhookAttempt, WebhookLedger } from './webhook-ledger';
 export { DEFAULT_MAX_WEBHOOK_ATTEMPTS, memoryWebhookLedger } from './webhook-ledger';
 export type { Worker, WorkerOptions, WorkerStats } from './worker';
-export { createWorker } from './worker';
+export { jobWorker } from './worker';

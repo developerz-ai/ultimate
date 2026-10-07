@@ -4,14 +4,14 @@
  * every post page answered 500 while every contract test stayed green — only the e2e step saw it.
  */
 
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { toQueryRoute } from '@ultimat3/query';
 import { expect, test } from '@ultimat3/testing';
 import { postById } from './live';
 
 test('a member reads one of their org’s posts, with its comments', async ({ seed, actorFor }) => {
   const { ada, post } = await seed('dev').pick({ ada: 'member:ada', post: 'post:tenancy' });
-  const server = createServer({
+  const server = httpServer({
     routes: [toQueryRoute(postById)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => actorFor(ada) },

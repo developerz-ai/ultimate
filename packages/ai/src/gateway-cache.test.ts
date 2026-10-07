@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { memoryBudgetStore } from './budget';
-import { EchoProvider } from './echo-provider';
-import { cacheKeyFor, createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { promptCacheKey, providerGateway } from './gateway';
 import { useFixtureModels } from './model-fixture';
 import type { GenerateRequest } from './provider';
 import type { LlmTool } from './tools';
@@ -27,10 +27,10 @@ const base: GenerateRequest = {
   maxTokens: 64,
 };
 
-describe('cacheKeyFor', () => {
+describe('promptCacheKey', () => {
   test('two requests differing only in the respond schema do not share a key', () => {
-    const before = cacheKeyFor({ ...base, tools: [respond({ summary: { type: 'string' } })] });
-    const after = cacheKeyFor({
+    const before = promptCacheKey({ ...base, tools: [respond({ summary: { type: 'string' } })] });
+    const after = promptCacheKey({
       ...base,
       tools: [respond({ summary: { type: 'string' }, tags: { type: 'array' } })],
     });
@@ -39,20 +39,20 @@ describe('cacheKeyFor', () => {
 
   test('a tool description is part of what the answer is', () => {
     const tool = respond({ summary: { type: 'string' } });
-    expect(cacheKeyFor({ ...base, tools: [tool] })).not.toBe(
-      cacheKeyFor({ ...base, tools: [{ ...tool, description: 'answer tersely' }] }),
+    expect(promptCacheKey({ ...base, tools: [tool] })).not.toBe(
+      promptCacheKey({ ...base, tools: [{ ...tool, description: 'answer tersely' }] }),
     );
   });
 
   test('the key is core’s fingerprint: fixed width, and blind to key order', () => {
-    const key = cacheKeyFor(base);
+    const key = promptCacheKey(base);
     expect(key).toMatch(/^[0-9a-f]{16}$/);
     const reordered: GenerateRequest = {
       maxTokens: 64,
       messages: [{ content: 'summarise', role: 'user' }],
       model: 'claude-opus-5',
     };
-    expect(cacheKeyFor(reordered)).toBe(key);
+    expect(promptCacheKey(reordered)).toBe(key);
   });
 });
 
@@ -60,8 +60,8 @@ describe('a cache that cannot write', () => {
   test('the paid answer still reaches the caller, billed once', async () => {
     const store = memoryBudgetStore();
     let calls = 0;
-    const echo = new EchoProvider();
-    const gateway = createGateway({
+    const echo = echoProvider();
+    const gateway = providerGateway({
       providers: [
         {
           name: 'counting',

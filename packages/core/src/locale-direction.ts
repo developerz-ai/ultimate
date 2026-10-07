@@ -2,7 +2,7 @@
 // requests, which is why it is tier 0 rather than `@ultimat3/i18n`'s: `@ultimat3/ui`'s provider
 // reflects `dir` onto `<html>` from the locale it was handed, and reaching the i18n barrel for
 // that one function put the whole framework catalog into every browser chunk with a `UiProvider`
-// in it (issue #490). i18n re-exports these under the same names, so no caller moved.
+// in it (issue #490). Import them from `@ultimat3/core`: i18n's re-export was deleted in 25.0.0.
 
 export type Direction = 'ltr' | 'rtl';
 

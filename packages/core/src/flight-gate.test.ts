@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, UltimateError } from './errors';
-import { createFlightGate } from './flight-gate';
+import { flightGate } from './flight-gate';
 
 interface Deferred {
   readonly promise: Promise<void>;
@@ -33,16 +33,16 @@ const tracker = (): {
   };
 };
 
-describe('createFlightGate', () => {
+describe('flightGate', () => {
   test('runs work straight through below the ceiling', async () => {
-    const gate = createFlightGate({ maxConcurrent: 2, maxQueued: 2 });
+    const gate = flightGate({ maxConcurrent: 2, maxQueued: 2 });
     expect(await gate.run(async () => 'answer')).toBe('answer');
     expect(gate.active).toBe(0);
     expect(gate.queued).toBe(0);
   });
 
   test('never runs more than maxConcurrent at once', async () => {
-    const gate = createFlightGate({ maxConcurrent: 2, maxQueued: 8 });
+    const gate = flightGate({ maxConcurrent: 2, maxQueued: 8 });
     const gates = [deferred(), deferred(), deferred(), deferred()];
     const track = tracker();
     const runs = gates.map((one) => gate.run(track.wrap(one.promise)));
@@ -56,7 +56,7 @@ describe('createFlightGate', () => {
   });
 
   test('a woken waiter HOLDS the slot it was handed, so a later arrival still waits', async () => {
-    const gate = createFlightGate({ maxConcurrent: 1, maxQueued: 8 });
+    const gate = flightGate({ maxConcurrent: 1, maxQueued: 8 });
     const track = tracker();
     const first = deferred();
     const waiting = deferred();
@@ -83,7 +83,7 @@ describe('createFlightGate', () => {
   });
 
   test('refuses past maxQueued instead of growing the queue', async () => {
-    const gate = createFlightGate({ maxConcurrent: 1, maxQueued: 1 });
+    const gate = flightGate({ maxConcurrent: 1, maxQueued: 1 });
     const held = deferred();
     const first = gate.run(async () => {
       await held.promise;
@@ -111,7 +111,7 @@ describe('createFlightGate', () => {
   });
 
   test('an injected overflow refusal replaces the default, so a package keeps its own code', async () => {
-    const gate = createFlightGate(
+    const gate = flightGate(
       { maxConcurrent: 1, maxQueued: 0 },
       {
         overflow: (state) =>
@@ -132,7 +132,7 @@ describe('createFlightGate', () => {
   });
 
   test('releases the slot when work throws', async () => {
-    const gate = createFlightGate({ maxConcurrent: 1, maxQueued: 1 });
+    const gate = flightGate({ maxConcurrent: 1, maxQueued: 1 });
     await expect(
       gate.run(async () => {
         throw new UltimateError({
@@ -147,7 +147,7 @@ describe('createFlightGate', () => {
   });
 
   test('a subject names what is bounded in the refusal', async () => {
-    const gate = createFlightGate({ maxConcurrent: 1, maxQueued: 0 }, { subject: 'argon2 hashes' });
+    const gate = flightGate({ maxConcurrent: 1, maxQueued: 0 }, { subject: 'argon2 hashes' });
     const held = deferred();
     const first = gate.run(async () => {
       await held.promise;
@@ -170,7 +170,7 @@ describe('unit · a gate limit that is not a count is refused at construction', 
     // `active < NaN` and `waiters.length >= NaN` are both false, so every caller parked in a queue
     // with no bound and nothing to release it.
     try {
-      createFlightGate(limits);
+      flightGate(limits);
       expect.unreachable();
     } catch (error) {
       expect((error as UltimateError).code).toBe('X_INVARIANT');
@@ -179,7 +179,7 @@ describe('unit · a gate limit that is not a count is refused at construction', 
   });
 
   test('a gate with no slot refuses instead of queueing for one that never frees', async () => {
-    const gate = createFlightGate({ maxConcurrent: 0, maxQueued: 4 });
+    const gate = flightGate({ maxConcurrent: 0, maxQueued: 4 });
     let ran = false;
     try {
       await gate.run(async () => {

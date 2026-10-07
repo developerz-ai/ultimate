@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { AuthError } from './errors';
-import { createJwksClient } from './jwks';
+import { jwksClient } from './jwks';
 
 const clock = frozenClock(new Date('2026-08-16T12:00:00.000Z'));
 
@@ -55,7 +55,7 @@ describe('a key set with no importable key', () => {
   test.each(UNUSABLE)('%s keeps the keys already cached', async (_name, unusable) => {
     const good = JSON.stringify({ keys: [await publicJwk('live')] });
     const source = scripted([good, unusable]);
-    const client = createJwksClient({
+    const client = jwksClient({
       provider: 'google',
       jwksUri: 'https://issuer.example/jwks',
       fetch: source.fetch,
@@ -78,7 +78,7 @@ describe('a key set with no importable key', () => {
       JSON.stringify({ keys: [] }),
       JSON.stringify({ keys: [await publicJwk('live')] }),
     ]);
-    const client = createJwksClient({
+    const client = jwksClient({
       provider: 'google',
       jwksUri: 'https://issuer.example/jwks',
       fetch: source.fetch,

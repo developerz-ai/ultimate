@@ -9,9 +9,9 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
-import { createLogger } from '@ultimat3/core';
+import { structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { ScrapeDriver, ScrapeSession } from './driver';
 import { localBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
@@ -58,9 +58,9 @@ const drivers = (): readonly (readonly [string, ScrapeDriver])[] => [
 const open = (driver: ScrapeDriver): Promise<ScrapeSession> =>
   driver.open({
     name: 'search',
-    logger: createLogger({ writer: () => undefined }),
+    logger: structuredLogger({ writer: () => undefined }),
     rules: { allowHosts: ['shop.test'] },
-    clock: testClock(),
+    clock: testScrapeClock(),
     timeoutMs: 5_000,
   });
 

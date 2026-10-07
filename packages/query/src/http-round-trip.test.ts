@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -42,7 +42,7 @@ const echo = query({
 }).named('echo');
 
 function clientFor(target: AnyQuery): FetchLike {
-  const server = createServer({
+  const server = httpServer({
     routes: [toQueryRoute(target)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => reader },

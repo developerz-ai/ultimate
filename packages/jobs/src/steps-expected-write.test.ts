@@ -18,7 +18,7 @@ import { postgresClient, setStatementObserver } from '@ultimat3/db';
 import { postgresJobDriver } from './driver-pg';
 import { SQL_STEP_LIST, SQL_STEP_PUT } from './driver-pg-sql';
 import { JobTimeoutError } from './errors';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 
 const TEST_URL = 'postgres://app@127.0.0.1:5432/ultimate_test';
 
@@ -63,7 +63,7 @@ describe('the step write and the N+1 detector', () => {
     const driver = postgresJobDriver({
       executor: executorOver(postgresClient({ url: TEST_URL })),
     });
-    const runner = createStepRunner({ runId: 'run-n1', jobName: 'fiveSteps', store: driver.steps });
+    const runner = stepRunner({ runId: 'run-n1', jobName: 'fiveSteps', store: driver.steps });
 
     // Five completions — the threshold — and one failure, which is written on the way out.
     for (const name of ['a', 'b', 'c', 'd', 'e']) {

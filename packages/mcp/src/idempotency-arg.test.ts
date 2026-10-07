@@ -8,11 +8,11 @@ import {
   action,
   memoryIdempotencyStore,
   registerAction,
-  resetRegistry as resetActions,
+  resetActions,
   resetIdempotency,
   setIdempotencyStore,
 } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -31,7 +31,7 @@ const caller: McpCaller = {
   scopes: new Set<string>(),
 };
 
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
 let runs = 0;
 let seen: unknown[] = [];

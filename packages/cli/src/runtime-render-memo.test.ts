@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, setRedirect } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { appRoutes } from './runtime-render';
 
@@ -31,7 +31,7 @@ function staticPage(file: string, load: () => Promise<{ readonly n: number }>): 
 }
 
 const serve = (memoStatic: boolean) =>
-  createServer({
+  httpServer({
     routes: appRoutes({ buildId: BUILD_ID, memoStatic }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

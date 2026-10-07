@@ -85,7 +85,7 @@ const BYTE_UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as c
 const BYTE_STEP = 1000;
 
 /** A size a human reads, in the viewer's locale — never a hand-built "1.2 MB" string. */
-export function formatBytes(bytes: number, locale: string): string {
+export function formatFileSize(bytes: number, locale: string): string {
   const safe = Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
   let value = safe;
   let index = 0;

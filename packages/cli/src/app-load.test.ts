@@ -1,6 +1,6 @@
 // Coverage for the facts `loadApp` projects out of the framework's own registries rather than out
-// of the app's source: the default locale is `@ultimat3/i18n`'s `localeConfig()`, and a module that
-// will not import is a finding keyed by its app-root-relative path.
+// of the app's source: the locales are `@ultimat3/i18n`'s `loadAppCatalogs` answer, and a module
+// that will not import is a finding keyed by its app-root-relative path.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: `node:` and not Bun: Bun has no API for a temporary directory (`mkdtempSync` + `tmpdir`) and
@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { LocaleConfig } from '@ultimat3/i18n';
 import { configureLocales, localeConfig } from '@ultimat3/i18n';
+import { UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
 import { appModulePaths, loadApp, sortModulePaths } from './app-load';
 import { toPosix } from './posix-path';
 
@@ -29,18 +30,35 @@ afterEach(() => {
 });
 
 describe('unit · loadApp', () => {
-  test("defaultLocale is the framework's own answer, not a constant", async () => {
+  // `loadAppCatalogs` is the one reader: `localeConfig()` read blind answered whatever an earlier
+  // import in the process had configured, for an app root that declares nothing at all.
+  test('an app that declares no catalogs is the undeclared answer, never the ambient config', async () => {
     const dir = tempRoot('x-app-load-locale-');
     const before: LocaleConfig = { ...localeConfig() };
     try {
-      // What `defineCatalogs({ default: 'pt' })` does on its way through the import loop. Called
-      // directly because a fixture under /tmp cannot resolve `@ultimat3/*` to run it for real.
-      configureLocales({ fallback: 'pt' });
-      expect((await loadApp(dir)).defaultLocale).toBe('pt');
+      configureLocales({ supported: ['pt', 'en'], fallback: 'pt' });
+      expect((await loadApp(dir)).locales).toBe(UNDECLARED_LOCALES);
     } finally {
       configureLocales(before);
     }
-    expect((await loadApp(dir)).defaultLocale).toBe(before.fallback);
+  });
+
+  test('an app that declares catalogs is its own declaration, read once at load', async () => {
+    const dir = tempRoot('x-app-load-declared-');
+    // By absolute path: a module under the OS temp dir cannot resolve `@ultimat3/i18n`.
+    const i18n = JSON.stringify(join(import.meta.dir, '../../i18n/src/index.ts'));
+    await Bun.write(
+      join(dir, 'packages/i18n/src/index.ts'),
+      `import { defineCatalogs } from ${i18n};\nexport const catalogs = defineCatalogs({ default: 'es', locales: { es: {}, en: {} } });\n`,
+    );
+    const before: LocaleConfig = { ...localeConfig() };
+    try {
+      const app = await loadApp(dir);
+      expect(app.findings).toEqual([]);
+      expect(app.locales).toEqual({ locales: ['es', 'en'], defaultLocale: 'es' });
+    } finally {
+      configureLocales(before);
+    }
   });
 
   // Reproduced: an app under `~/dev/node_modules-experiments/myapp` loaded ZERO modules, because

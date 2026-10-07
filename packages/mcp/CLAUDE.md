@@ -85,8 +85,7 @@ import. The CLI wires it.
   `Object.prototype` supplies a value for `constructor`, `toString`, `hasOwnProperty` and
   `__proto__` on every plain object — so the index read answered "declared" for four names no
   schema declares, and `validate-args.ts` accepted them past an `additionalProperties: false` that
-  forbids them and then dropped them. Third instance of the class in the framework, after
-  `@ultimat3/i18n`'s catalog lookup and `@ultimat3/schema`'s `coerce`. Its twin: a validated key
+  forbids them and then dropped them. Its twin: a validated key
   lands on the result through `Object.defineProperty`, because `out[key] = v` for `__proto__` runs
   the setter on `Object.prototype` and re-prototypes the record instead of adding a key.
 - **The RESOURCE surface owes the same three outcomes as the tool surface.** `resources/list` and
@@ -115,7 +114,7 @@ import. The CLI wires it.
   type is its `WireJsonSchema`, which `wire.ts` names `JsonSchema`; `validate-args-subset.test.ts`
   asserts every published keyword is one this server enforces, at any depth.
 - **A hand-written app tool parses its own input**, in the slot `invoke` puts it: parse, then
-  `guard()`, then `handle`. A projected action re-parses inside `invoke`; `app-tool.ts` had no second
+  `guardAction()`, then `handle`. A projected action re-parses inside `invoke`; `app-tool.ts` had no second
   parse, so `handle` was handed whatever the wire subset let through — typed `InferOutput<TInput>`,
   past the policy. One code either way, `X_INPUT_INVALID`, built from `@ultimat3/action`'s own
   `InputInvalidError`.
@@ -180,7 +179,7 @@ import. The CLI wires it.
   with no export name is `X_ACTION_UNREGISTERED` rather than a tool called `''`, which no
   `tools/call` and no `scopes:` entry could ever address.
 - **This package NAMES a tool, never derives one**: `primitive.name`, verbatim from
-  `projectable.ts` (no `McpExposure.name` since 25.0.0, `type-pins.ts`). `x-ultimate.mcpTool` and
+  `projectable.ts`; core's `McpExposureDeclaration` is the one block, no `name` (`type-pins.ts`). `x-ultimate.mcpTool` and
   `ActionDescriptor.mcp.tool` owe the same string (`cross-surface.test.ts`).
 - **`toolFrom` is THE tool projection** (O-tool, 25.0.0), over a real action/query or a
   `ProjectablePrimitive`; `toolListEntry(toolFrom(x))` deep-equals the `tools/list` entry.
@@ -196,7 +195,7 @@ import. The CLI wires it.
 - The **projection** invents no `scope` — `toolFrom` cannot know what a token means.
   `defineAppMcp`'s `scopes:` may attach one afterward, as a capability of the CONNECTION; that
   is not a second authz path, because the scope gate decides before the policy runs and never
-  reads the input. A hand-written app tool is the same: its `policy` reaches `guard()` from
+  reads the input. A hand-written app tool is the same: its `policy` reaches `guardAction()` from
   `@ultimat3/action`, which is the one authz path that reads the input — never a second check
   written for MCP.
 - **A URI is taken once.** `ResourceRegistry.register` throws `X_MCP_RESOURCE_DUPLICATE` on a

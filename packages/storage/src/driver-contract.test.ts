@@ -77,7 +77,7 @@ describe('a key that is a prefix of another key', () => {
     );
     expect(textOf((await local.get('d/e')).bytes)).toBe('nested');
     expect(await local.exists('d')).toBe(false);
-    expect((await local.list()).objects.map((object) => object.key)).toEqual(['a', 'd/e']);
+    expect((await local.list()).rows.map((object) => object.key)).toEqual(['a', 'd/e']);
   });
 
   test('the refusal names the key in the way and a call that lists it', async () => {
@@ -120,7 +120,7 @@ describe('a key that is a prefix of another key', () => {
       'X_STORAGE_KEY_CONFLICT',
     );
     expect(await local.exists('a.json/b')).toBe(false);
-    expect((await local.list()).objects.map((object) => object.key)).toEqual(['a']);
+    expect((await local.list()).rows.map((object) => object.key)).toEqual(['a']);
   });
 
   test('reading the half that is not there is "absent" on every disk', async () => {
@@ -207,7 +207,7 @@ describe('a provider that reports no lastModified is "unknown", never 1970', () 
   test('the s3 listing and stat carry no lastModified at all', async () => {
     fake.listResult = { contents: [{ key: 'org/o1/pending/u.png', size: 1 }] };
     fake.store.set('org/o1/pending/u.png', { bytes: bytesOf('x') });
-    const listed = (await s3.list({ prefix: 'org/o1/pending/' })).objects[0];
+    const listed = (await s3.list({ prefix: 'org/o1/pending/' })).rows[0];
     expect(listed).toBeDefined();
     expect(listed && 'lastModified' in listed).toBe(false);
     const stat = await s3.stat('org/o1/pending/u.png');

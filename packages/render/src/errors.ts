@@ -109,7 +109,7 @@ export class RouteMetaMissingError extends UltimateError {
 /**
  * The route table holds descriptors, never declarations. `defineRoute` is the one normalizer, so
  * a raw declaration reaching the registry means `budget` and `meta` are whatever the author wrote
- * — and every reader downstream (`describeRoutes`, `sw.js`, the sitemap) assumes they are not.
+ * — and every reader downstream (`describePages`, `sw.js`, the sitemap) assumes they are not.
  */
 export class RouteUnnormalizedError extends UltimateError {
   static readonly code = 'X_ROUTE_UNNORMALIZED' as const;

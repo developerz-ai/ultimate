@@ -3,11 +3,10 @@
 // runtime installed — the state the package is actually published in.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, directionOf, runWithContext } from '@ultimat3/core';
 import {
+  catalogTranslator,
   configureLocales,
-  createTranslator,
-  directionOf,
   isMiss,
   type Locale,
   localeConfig,
@@ -95,11 +94,11 @@ describe('fallbackTranslator', () => {
   });
 
   // The spelling changed and the behaviour must not have: this used to be
-  // `createTranslator({}, locale)`, and every member is held against that call so the local
+  // `catalogTranslator({}, locale)`, and every member is held against that call so the local
   // translator cannot drift from the one it replaced (issue #490).
   test('answers exactly what an empty i18n catalog answers, member for member', () => {
     const local = fallbackTranslator('fr');
-    const empty = createTranslator({}, 'fr');
+    const empty = catalogTranslator({}, 'fr');
     for (const key of ['some.unknown.key', 'items', 'constructor', '__proto__', '']) {
       expect(local(key)).toBe(empty(key));
       expect(local(key, { count: 2 })).toBe(empty(key, { count: 2 }));
@@ -152,9 +151,7 @@ describe('ambientUiContext', () => {
     configureLocales({ fallback: 'en' as Locale });
     configureTime({ defaultZone: 'Europe/Berlin' as TimeZone });
 
-    const ctx = runWithContext(createContext({ locale: 'ar', tz: 'Asia/Tokyo' }), () =>
-      ambientUiContext(),
-    );
+    const ctx = runWithContext(ctxOf({ locale: 'ar', tz: 'Asia/Tokyo' }), () => ambientUiContext());
 
     expect(ctx.timeZone).toBe('Asia/Tokyo' as TimeZone);
     expect(ctx.locale).toBe('ar' as Locale);

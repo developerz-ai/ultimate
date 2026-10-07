@@ -12,7 +12,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | Better Auth | binds through `AuthAdapter`. It is an adapter, never a dependency. |
 | Errors | `AuthError` from `errors.ts`; never `throw new Error` |
 | Time | take a `Clock`. No `Date.now()` anywhere in this package. |
-| Secrets | compare with `timingSafeEqual` (from `@ultimat3/core`, re-exported off `tokens.ts` — same implementation `@ultimat3/storage` uses); store `sha256Hex`. Never `===` on a secret. |
+| Secrets | compare with `timingSafeEqual` (imported from `@ultimat3/core` — never re-exported here, same implementation `@ultimat3/storage` uses); store `sha256Hex`. Never `===` on a secret. |
 
 ## Non-negotiables
 
@@ -63,7 +63,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   the pool is the host's.
 - **`configureAuthLimiters` is the HOST's install point and takes a FACTORY**, called with the
   RESOLVED policy once per bucket; the comparison still runs on what comes back. Precedence:
-  `config.limiter` → the installed factory → `createAuthLimiter`. `installedAuthLimiter` and
+  `config.limiter` → the installed factory → `authLimiter`. `installedAuthLimiter` and
   `installedLimiterCount()` are NOT in `src/index.ts`. `purgeAuthLimits()` sweeps only the
   **widest** window among the built limiters (retained one per `windowMs` in a `Map`), on the
   limiter's own clock. `AuthLimiter.purgeExpired` is optional.
@@ -142,8 +142,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   changed underneath is `skipped` — and `x doctor` counts what is left. Whether a value is sealed is
   `isSealed`'s to say, never a `like` in an adapter (`listUsersWithMfaSecret` returns them all).
 - **`providerJwks` memoises only the DEFAULT client**; a caller supplying options gets its own.
-- **A JWKS refresh is single-flighted through core's `createSingleFlight` with
-  `deadlineMs = timeoutMs * 2`**; eviction frees the key, never the work, and a `createFence`
+- **A JWKS refresh is single-flighted through core's `singleFlight` with
+  `deadlineMs = timeoutMs * 2`**; eviction frees the key, never the work, and a `generationFence`
   generation check (read, never `guard`) stops a superseded refresh overwriting the cache.
   `schedule` is injectable.
 - **A success clears the ACCOUNT bucket and nothing else** — clearing the address bucket made the
@@ -179,7 +179,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   (`createSession` clamps both, so they only shorten), and the rotated cookie's `Max-Age` is
   `remainingMaxAgeSeconds` — `session-rotation.test.ts` pins both adapters.
 - **Every argon2 call goes through `kdfGate()`** — width 8, queue 64, `X_OVERLOADED` past it
-  (borrowed from http, in `AUTH_BORROWED_ERROR_CODES`). The pool is core's `createFlightGate`, the
+  (borrowed from http, in `AUTH_BORROWED_ERROR_CODES`). The pool is core's `flightGate`, the
   refusal auth's own through core's `overflow:` seam. `configureKdfGate()` is the ONE install point
   and deliberately not a `defineAuth` key.
 - **MFA's second leg is `completeMfa(auth, challenge, code)`** (`mfa-challenge.ts`). `login()`
@@ -198,7 +198,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - **A TOTP secret that decodes to zero bytes is NO key**: `verifyTotp` returns the generic failure
   (`{ ok: false, step: null }`), `totpCode` and `enrolTotp` throw `X_MFA_SECRET_INVALID`. The secret
   never reaches `cause:`/`fix:`. No length floor beyond one byte.
-- **`createTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
+- **`totpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
   whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
   evict by newest spent step ascending, least-recently-seen tie-break. `maxSubjects` is normalised
   first (`boundedSubjects`): anything not a positive finite integer takes the default.
@@ -241,7 +241,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `errors.ts` | the codes this package owns and borrows, their titles, the one `registerErrorCodes()` call, `AuthError`, and every non-OAuth factory |
 | `oauth-errors.ts` | the OAuth refusals more than one OAuth module raises, and `restartAt`. A refusal with one thrower lives beside it; declares no code and registers nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
-| `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it — core's `createFlightGate` with auth's own refusal injected |
+| `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it — core's `flightGate` with auth's own refusal injected |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
 | `sign-out.ts` | `signOutHeaders({ session? })` — the expired session cookie plus `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. A PWA's offline cache does not survive a sign-out, by decision (a cached private page IS the previous principal's data); the page boot's rescope wipe is the second line. Secure contexts only |

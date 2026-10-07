@@ -99,7 +99,7 @@ describe('stat(), list() and copy() queue behind a key’s writer', () => {
 
     const whole = [large.byteLength, etagOf(large), 'text/large'];
     expect([stat?.size, stat?.etag, stat?.contentType]).toEqual(whole);
-    const listed = page.objects[0];
+    const listed = page.rows[0];
     expect([listed?.size, listed?.etag, listed?.contentType]).toEqual(whole);
     expect([copied.size, copied.etag, copied.contentType]).toEqual(whole);
   });
@@ -109,7 +109,7 @@ describe('what a put() stages never becomes an object', () => {
   test('nothing but the key is listed, and the staging directory is empty afterwards', async () => {
     await disk.put('org/o1/a.txt', bytesOf('one'));
     await disk.copy('org/o1/a.txt', 'org/o1/b.txt');
-    expect((await disk.list()).objects.map((object) => object.key)).toEqual([
+    expect((await disk.list()).rows.map((object) => object.key)).toEqual([
       'org/o1/a.txt',
       'org/o1/b.txt',
     ]);

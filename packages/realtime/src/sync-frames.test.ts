@@ -13,7 +13,7 @@ import type { Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
-import { ackRefOf, createFrameRouter } from './sync-frames';
+import { ackRefOf, frameRouter } from './sync-frames';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 class FakeWs implements WsLike {
@@ -87,7 +87,7 @@ function rig(
     maxBufferedBytes: 1_024,
   });
   sockets.add(socket);
-  const route = createFrameRouter({
+  const route = frameRouter({
     hub: new ChannelHub({ transport, sockets }),
     registry,
     buildId: 'build-1',
@@ -169,7 +169,7 @@ describe('a hello names the build the client is on', () => {
     const ws = new FakeWs();
     const socket = new SyncSocket({ ws, id: 'sock-1', clientBuildId, serverBuildId, actor: alice });
     sockets.add(socket);
-    const route = createFrameRouter({
+    const route = frameRouter({
       hub: new ChannelHub({ transport, sockets }),
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       buildId: serverBuildId,

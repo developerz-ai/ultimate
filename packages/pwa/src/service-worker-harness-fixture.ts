@@ -6,6 +6,7 @@
  */
 
 import { expect } from 'bun:test';
+import { BUILD_ID_HEADER } from '@ultimat3/core';
 import type { ServiceWorkerConfig } from './service-worker';
 
 export const config: ServiceWorkerConfig = {
@@ -119,7 +120,7 @@ export function swHarness() {
     // as a broken worker rather than a broken harness.
     const url = typeof request === 'string' ? new URL(request, SW_ORIGIN).href : request.url;
     fetched.push(url);
-    stamps.push(typeof request === 'string' ? null : request.headers.get('x-ultimate-build'));
+    stamps.push(typeof request === 'string' ? null : request.headers.get(BUILD_ID_HEADER));
     if (slow) {
       inFlight += 1;
       maxInFlight = Math.max(maxInFlight, inFlight);

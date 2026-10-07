@@ -8,10 +8,10 @@
  * update check does not fire on a no-op deploy.
  */
 
-import { CLIENT_SCOPE_HEADER } from '@ultimat3/core';
+import { APP_UPDATE_MESSAGE, BUILD_ID_HEADER, CLIENT_SCOPE_HEADER } from '@ultimat3/core';
 import { backgroundSyncSource } from './background-sync';
 import type { CapabilityFlags, ResolvedCapabilities } from './capabilities';
-import { isEnabled, resolveCapabilities } from './capabilities';
+import { hasCapability, resolveCapabilities } from './capabilities';
 import { SwScopeInvalidError } from './errors';
 import type { OfflineConfig } from './offline-fallback';
 import { offlineFallbackSource, requireOfflineFallback } from './offline-fallback';
@@ -30,12 +30,7 @@ import type { RouteRule } from './route-rules';
 import { assetRules, routeRules } from './route-rules';
 import type { PwaRoute } from './strategies';
 import { NETWORK_SOURCE, STRATEGY_FN_NAMES, STRATEGY_SOURCE } from './strategies';
-import {
-  APP_UPDATE_AVAILABLE,
-  assertBuildId,
-  BUILD_ID_HEADER,
-  cacheNamespace,
-} from './version-skew';
+import { assertBuildId, cacheNamespace } from './version-skew';
 
 export interface ServiceWorkerConfig {
   readonly scope?: string;
@@ -162,13 +157,13 @@ export function generateServiceWorker(
     INSTALL_BLOCK,
     activateBlock(),
     fetchBlock(fallback.personalPages),
-    messageBlock(isEnabled(capabilities, 'backgroundSync')),
+    messageBlock(hasCapability(capabilities, 'backgroundSync')),
   ];
 
-  if (isEnabled(capabilities, 'push') && config.vapid !== undefined) {
-    blocks.push(pushSource({ badging: isEnabled(capabilities, 'badging') }));
+  if (hasCapability(capabilities, 'push') && config.vapid !== undefined) {
+    blocks.push(pushSource({ badging: hasCapability(capabilities, 'badging') }));
   }
-  if (isEnabled(capabilities, 'backgroundSync')) {
+  if (hasCapability(capabilities, 'backgroundSync')) {
     blocks.push(backgroundSyncSource());
   }
 
@@ -300,7 +295,7 @@ self.addEventListener('activate',(event)=>{
     // the fetch handler answers from it (net) — start-up is off every navigation's critical path.
     try{if(self.registration&&self.registration.navigationPreload)await self.registration.navigationPreload.enable()}catch(e){}
     const cs=await self.clients.matchAll({type:'window'});
-    for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:BUILD_ID});
+    for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_MESSAGE)},to:BUILD_ID});
     // NOT part of this waitUntil: a fetch event waits for the worker to finish ACTIVATING, so a
     // warm-up that copies a streamed page's whole body in here held every request of the tab it
     // just claimed — /feed's own reads included — until that body had ended. Kicked off, never
@@ -391,7 +386,7 @@ function seenBuild(res){
   const server=res.headers.get(BUILD_HEADER);
   if(SKEWED||server===null||server===BUILD_ID)return;
   SKEWED=true;
-  self.clients.matchAll({type:'window'}).then((cs)=>{for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:server})}).catch(()=>{});
+  self.clients.matchAll({type:'window'}).then((cs)=>{for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_MESSAGE)},to:server})}).catch(()=>{});
 }
 function withBuild(headers){
   const h=new Headers(headers);
@@ -410,7 +405,7 @@ async function healSkew(req,res){
   // Answering the request for real is what breaks that loop.
   SKEWED=true;
   const cs=await self.clients.matchAll({type:'window'});
-  for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_AVAILABLE)},to:server});
+  for(const c of cs)c.postMessage({type:${JSON.stringify(APP_UPDATE_MESSAGE)},to:server});
   return fetch(new Request(req,{headers:withBuild(req.headers)}));
 }`.trim();
 }

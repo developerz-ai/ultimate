@@ -4,7 +4,7 @@
 // signal belongs to one bundle's solid-js, so everything here is a plain read plus a listener.
 // Read-only: the socket carries no writes (`useMutation` is HTTP).
 
-import { type Clock, finiteOption, systemClock, uuid } from '@ultimat3/core/page';
+import { type Clock, finiteOption, systemClock, uuidV7 } from '@ultimat3/core/page';
 import {
   ChannelBook,
   type ChannelHandlers,
@@ -235,7 +235,7 @@ export class LiveClient {
     query: LiveQueryRef,
     input: JsonValue,
   ): LiveHandle<R> {
-    const sid = uuid();
+    const sid = uuidV7();
     const listeners = new Set<() => void>();
     const registration: Registration = {
       sid,

@@ -12,7 +12,7 @@ import type {
   ChannelSubscribeTarget,
   ReplayGapFrame,
 } from './channel-wire';
-import { isJsonObject, type JsonObject } from './json';
+import { isParsedJsonObject, type JsonObject } from './json';
 import { fail, list, num, object, str } from './wire-read';
 import { FRAME_LIMITS, PROTOCOL_VERSION } from './wire-version';
 
@@ -77,7 +77,7 @@ export function channelTarget(value: JsonObject): ChannelSubscribeTarget {
 }
 
 function sinceOf(value: unknown): ChannelSince {
-  if (!isJsonObject(value)) throw fail('channel since must be an object');
+  if (!isParsedJsonObject(value)) throw fail('channel since must be an object');
   const seq = num(value, 'seq');
   if (!Number.isInteger(seq) || seq < 0) throw fail('channel since.seq must be a whole number');
   return { epoch: str(value, 'epoch'), seq };
@@ -85,11 +85,11 @@ function sinceOf(value: unknown): ChannelSince {
 
 /** type → key → row. Every row an object, and the whole frame under the snapshot row ceiling. */
 function adoptOf(value: unknown): ChannelAdopt {
-  if (!isJsonObject(value)) throw fail('records.adopt must be an object');
+  if (!isParsedJsonObject(value)) throw fail('records.adopt must be an object');
   let total = 0;
   const out = bare<Readonly<Record<string, Row>>>();
   for (const [type, keyed] of Object.entries(value)) {
-    if (!isJsonObject(keyed)) throw fail(`records.adopt.${type} must be an object`);
+    if (!isParsedJsonObject(keyed)) throw fail(`records.adopt.${type} must be an object`);
     const rows = bare<Row>();
     for (const [key, row] of Object.entries(keyed)) {
       total += 1;
@@ -104,7 +104,7 @@ function adoptOf(value: unknown): ChannelAdopt {
 }
 
 function removeOf(value: unknown): ChannelRemove {
-  if (!isJsonObject(value)) throw fail('records.remove must be an object');
+  if (!isParsedJsonObject(value)) throw fail('records.remove must be an object');
   const out = bare<readonly string[]>();
   for (const type of Object.keys(value)) {
     out[type] = list(value, type, FRAME_LIMITS.rows, `records.remove.${type}`).map((key) => {

@@ -8,7 +8,7 @@ import type { Money } from '@ultimat3/money';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
 
 /**
- * A model id. A plain `string`, deliberately: the routing seam (`Provider`, `createGateway`) has
+ * A model id. A plain `string`, deliberately: the routing seam (`Provider`, `gateway`) has
  * always been open, and a closed union over it made a company's own model untypeable.
  *
  * What replaces the union as the guard is `modelSpec()`: an id the app never registered is

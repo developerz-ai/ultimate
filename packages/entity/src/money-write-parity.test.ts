@@ -4,7 +4,7 @@
 // so it can say WHEN the narrowing happened and not only that it had by the time the row landed.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { money, text, uuid } from './columns';
 import { entity } from './entity';
 import { invariant } from './invariants';
@@ -55,7 +55,7 @@ const stored = { id: ID, reference: 'INV-1', total_minor: '129900', total_curren
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

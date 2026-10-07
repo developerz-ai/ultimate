@@ -15,7 +15,7 @@ import { Button } from './Button';
 import { Toast, type ToastPlacement, ToastRegion } from './Toast';
 
 export interface ToasterProps {
-  /** The queue. One per app — `createToastStore()` in the island that mounts this. */
+  /** The queue. One per app — `toastStore()` in the island that mounts this. */
   store: ToastStore;
   /** Already-translated landmark name, e.g. "Notifications". */
   label: string;

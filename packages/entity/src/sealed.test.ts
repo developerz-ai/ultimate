@@ -4,7 +4,7 @@
 // equality cannot see it. Each cost is a refusal or a documented edit, never a silent leak.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createLogger, isUltimateError, UltimateError } from '@ultimat3/core';
+import { isUltimateError, structuredLogger, UltimateError } from '@ultimat3/core';
 import { text, uuid } from './columns';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -79,7 +79,7 @@ describe('unit · a sealed property is server-only', () => {
   test('a log line and an error carrying the row carry no secret', async () => {
     const row = await seed(`${LOOKUP_CANARY}-d`);
     const lines: string[] = [];
-    const log = createLogger({ level: 'info', writer: (line) => lines.push(line) });
+    const log = structuredLogger({ level: 'info', writer: (line) => lines.push(line) });
     log.info('vault.read', { row, rows: [row] });
     expect(lines).toHaveLength(1);
     expect(lines.join('\n')).toContain('primary');

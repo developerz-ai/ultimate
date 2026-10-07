@@ -4,11 +4,11 @@ import { HttpError } from './errors';
 import {
   assertRateLimitScope,
   type Bucket,
-  createRateLimiter,
   DEFAULT_MAX_RATE_LIMIT_KEYS,
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   type RateLimitConfig,
+  rateLimiter,
   rateLimitSpends,
   resolveRateLimitConfig,
   TENANT_SCOPE,
@@ -16,7 +16,7 @@ import {
 } from './rate-limit';
 
 const limiterAt = (clock: FrozenClock, capacity: number, refillPerSecond: number) =>
-  createRateLimiter({
+  rateLimiter({
     config: {
       enabled: true,
       defaultBucket: 'default',
@@ -28,7 +28,7 @@ const limiterAt = (clock: FrozenClock, capacity: number, refillPerSecond: number
   });
 
 /**
- * The production path — `createServer` and `createPipeline` both build their limiter here — read
+ * The production path — `httpServer` and `httpPipeline` both build their limiter here — read
  * `Date.now()` until 2026-08-19, so no test clock could reach the bucket maths that decides
  * whether a caller is throttled. `@ultimat3/auth`'s credential limiter has taken an injected
  * `Clock` since it shipped; this is the same rule on the same tier.
@@ -36,7 +36,7 @@ const limiterAt = (clock: FrozenClock, capacity: number, refillPerSecond: number
 describe('the clock is injected, never ambient', () => {
   test('refill is decided by the injected clock and by nothing else', async () => {
     const clock = frozenClock(0);
-    const limiter = createRateLimiter({
+    const limiter = rateLimiter({
       config: {
         enabled: true,
         defaultBucket: 'default',
@@ -62,7 +62,7 @@ describe('the clock is injected, never ambient', () => {
 
   test('the reset header counts from the injected clock too', async () => {
     const clock = frozenClock(0);
-    const limiter = createRateLimiter({
+    const limiter = rateLimiter({
       config: {
         enabled: true,
         defaultBucket: 'default',
@@ -248,22 +248,22 @@ describe('scope is declared, and checked once', () => {
 
   test('the memory store is per-process, and says so', () => {
     expect(memoryRateLimitStore().scope).toBe('process');
-    expect(createRateLimiter({ config: PROCESS }).scope).toBe('process');
+    expect(rateLimiter({ config: PROCESS }).scope).toBe('process');
   });
 
   test('a limiter carries its store scope up, so the check reads one value', () => {
     const shared = { ...memoryRateLimitStore(), scope: 'shared' as const };
-    expect(createRateLimiter({ config: PROCESS, store: shared }).scope).toBe('shared');
+    expect(rateLimiter({ config: PROCESS, store: shared }).scope).toBe('shared');
   });
 
   test("the default declaration accepts the per-process store — that is what 'process' means", () => {
-    const limiter = createRateLimiter({ config: PROCESS });
+    const limiter = rateLimiter({ config: PROCESS });
     expect(() => assertRateLimitScope(PROCESS, limiter)).not.toThrow();
   });
 
   test('a shared declaration refuses a per-process limiter, with the fix in the error', () => {
     const declared = config({ scope: 'shared' });
-    const limiter = createRateLimiter({ config: declared });
+    const limiter = rateLimiter({ config: declared });
     expect(() => assertRateLimitScope(declared, limiter)).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
     let thrown: unknown;
     try {
@@ -283,7 +283,7 @@ describe('scope is declared, and checked once', () => {
     const declared = config({ scope: 'shared' });
     const store = { ...memoryRateLimitStore(), scope: 'shared' as const };
     expect(() =>
-      assertRateLimitScope(declared, createRateLimiter({ config: declared, store })),
+      assertRateLimitScope(declared, rateLimiter({ config: declared, store })),
     ).not.toThrow();
   });
 
@@ -292,9 +292,9 @@ describe('scope is declared, and checked once', () => {
   test('a shared declaration with the limiter disabled is refused', () => {
     const declared = config({ scope: 'shared', enabled: false });
     const store = { ...memoryRateLimitStore(), scope: 'shared' as const };
-    expect(() =>
-      assertRateLimitScope(declared, createRateLimiter({ config: declared, store })),
-    ).toThrow(/X_RATE_LIMIT_NOT_SHARED/);
+    expect(() => assertRateLimitScope(declared, rateLimiter({ config: declared, store }))).toThrow(
+      /X_RATE_LIMIT_NOT_SHARED/,
+    );
   });
 });
 
@@ -445,7 +445,7 @@ describe('toBucket', () => {
 
 describe('the bucket table is indexed, never walked up the prototype chain', () => {
   const limiterOver = (buckets: Record<string, Bucket>, defaultBucket = 'default') =>
-    createRateLimiter({
+    rateLimiter({
       config: { enabled: true, defaultBucket, tenantBucket: null, scope: 'process', buckets },
     });
 

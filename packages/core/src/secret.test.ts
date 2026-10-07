@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
 import { UltimateError } from './errors';
-import { createLogger } from './logger';
+import { structuredLogger } from './logger';
 import { isSecret, REDACTED, revealOptionalSecret, revealSecret, secret } from './secret';
 
 const DSN = 'postgres://user:hunter2@db.internal/app';
@@ -29,7 +29,7 @@ describe('secret', () => {
 
   test('the logger redacts a secret under a key nobody listed', () => {
     const lines: Record<string, unknown>[] = [];
-    const logger = createLogger({
+    const logger = structuredLogger({
       level: 'info',
       clock: frozenClock('2026-08-11T00:00:00.000Z'),
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),

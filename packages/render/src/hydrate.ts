@@ -6,8 +6,8 @@
  */
 
 import type { HydrateStrategy } from '@ultimat3/core';
-import { HYDRATE_STRATEGIES } from '@ultimat3/core';
-import { escapeHtml, escapeJsonContent } from './html';
+import { escapeHtml, HYDRATE_STRATEGIES } from '@ultimat3/core';
+import { escapeJsonContent } from './html';
 import { ISLAND_HOLD_ATTRIBUTES, RUNTIME_HOLD } from './island-hold';
 
 export interface IslandDirective {

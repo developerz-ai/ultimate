@@ -7,7 +7,7 @@ import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan, declaredChecks } from './check-ddl';
 import { alterColumnInPlace } from './column-alter';
 import { defaultExpression } from './column-default';
-import { isDestructive } from './destructive';
+import { isDestructiveMigration } from './destructive';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
@@ -397,7 +397,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   const id = `${migrationStamp(options.now ?? systemClock.now())}_${slugify(options.name)}`;
   // At the TOP of `up`, so what is MISSING is the first thing read — and a line comment, so it is
   // noise to every reader that matters: `statementsOf` drops a chunk of comments alone,
-  // `stripSqlNoise` blanks it before `isDestructive` looks for a verb, and the server ignores it.
+  // `stripSqlNoise` blanks it before `isDestructiveMigration` looks for a verb, and the server ignores it.
   //
   // Never onto an EMPTY diff. `@ultimat3/cli`'s `generateAppMigration` reads `up.trim().length` as
   // "nothing changed" and re-records the hash sidecar instead of writing a file; a comment there
@@ -420,7 +420,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     // ends have been retyped back, which is every other statement in the script.
     down: [...preAlters.down, ...plan.down].reverse().join('\n'),
     snapshot: snapshotOf(options.entities, replicaIdentityFullAfter(replicaIdentity)),
-    destructive: isDestructive(up),
+    destructive: isDestructiveMigration(up),
     unrendered,
   };
 }

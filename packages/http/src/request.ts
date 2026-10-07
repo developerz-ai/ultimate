@@ -7,7 +7,7 @@ import { readCookie, readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bodyInvalid, buildSkew } from './errors';
 import type { Schema } from './validate';
-import { validate, validateSync } from './validate';
+import { validateBody, validateSync } from './validate';
 
 export type QueryValues = Readonly<Record<string, string | readonly string[]>>;
 
@@ -152,7 +152,7 @@ export class UltimateRequest {
   }
 
   async body<Out>(schema: Schema<Out>): Promise<Out> {
-    const outcome = await validate(schema, await this.bodyRaw());
+    const outcome = await validateBody(schema, await this.bodyRaw());
     if (!outcome.ok) throw bodyInvalid(this.pathname, outcome.issues);
     return outcome.value;
   }

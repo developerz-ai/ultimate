@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { AuthError } from './errors';
 import { verifyIdToken } from './id-token';
-import { createJwksClient, decodeJwtHeader, verifyJwtSignature } from './jwks';
+import { decodeJwtHeader, jwksClient, verifyJwtSignature } from './jwks';
 import { registerOAuthProvider } from './oauth-registry';
 import { base64Url } from './tokens';
 
@@ -84,7 +84,7 @@ describe('verifyJwtSignature', () => {
     const real = await rsaKeyPair();
     const attacker = await rsaKeyPair();
     const served = keySet([await publicJwk(real, 'k1')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       fetch: served.fetch,
@@ -101,7 +101,7 @@ describe('verifyJwtSignature', () => {
   test('a payload edited after signing no longer verifies', async () => {
     const pair = await rsaKeyPair();
     const served = keySet([await publicJwk(pair, 'k1')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       fetch: served.fetch,
@@ -116,7 +116,7 @@ describe('verifyJwtSignature', () => {
   test('ES256 verifies, so an Apple-shaped key set is not a special case', async () => {
     const pair = await ecKeyPair();
     const served = keySet([await publicJwk(pair, 'ec1')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       fetch: served.fetch,
@@ -152,7 +152,7 @@ describe('the JWKS cache', () => {
     const second = await rsaKeyPair();
     let jwks = [await publicJwk(first, 'k1')];
     let calls = 0;
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -190,7 +190,7 @@ describe('the JWKS cache', () => {
     const real = await rsaKeyPair();
     const attacker = await rsaKeyPair();
     const served = keySet([await publicJwk(real, 'k1')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       fetch: served.fetch,
@@ -213,7 +213,7 @@ describe('the JWKS cache', () => {
   test('a kid nothing in the set matches is a coded refusal, not a crash', async () => {
     const pair = await rsaKeyPair();
     const served = keySet([await publicJwk(pair, 'k1')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       fetch: served.fetch,
@@ -224,7 +224,7 @@ describe('the JWKS cache', () => {
   });
 
   test('an unreachable key set is X_OAUTH_EXCHANGE_FAILED, with the curl that reproduces it', async () => {
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -268,7 +268,7 @@ describe('verifyIdToken through a key set', () => {
     const real = await rsaKeyPair();
     const attacker = await rsaKeyPair();
     const served = keySet([await publicJwk(real, 'k1')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: OP.id,
       jwksUri: OP.jwksUri ?? '',
       fetch: served.fetch,
@@ -325,7 +325,7 @@ describe('a key set the process cannot reach at all', () => {
   // signal firing, so there is no `response.ok` to read and the naked rejection would escape
   // every coded path in this package.
   test('a rejected fetch is X_OAUTH_EXCHANGE_FAILED carrying the runtime message', async () => {
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -341,7 +341,7 @@ describe('a key set the process cannot reach at all', () => {
   });
 
   test('a rejection that is not an Error still gets a sentence, never [object Object]', async () => {
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -367,7 +367,7 @@ describe('a token with no kid', () => {
     const jwk = await publicJwk(pair, 'k1');
     delete jwk['kid'];
     const served = keySet([{ ...(await publicJwk(pair, 'k1')) }]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -389,7 +389,7 @@ describe('a token with no kid', () => {
     const first = await rsaKeyPair();
     const second = await rsaKeyPair();
     const served = keySet([await publicJwk(first, 'k1'), await publicJwk(second, 'k2')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -411,7 +411,7 @@ describe('a token with no kid', () => {
     const rsa = await rsaKeyPair();
     const ec = await ecKeyPair();
     const served = keySet([await publicJwk(rsa, 'k1'), await publicJwk(ec, 'k2')]);
-    const keys = createJwksClient({
+    const keys = jwksClient({
       provider: 'test-op',
       jwksUri: 'https://op.test/jwks',
       clock,
@@ -453,9 +453,7 @@ describe('the jwks client screens both of its numbers', () => {
   test.each([Number.NaN, Number.POSITIVE_INFINITY, 0, -1, 1.5])(
     'refuses ttlMs %p, naming it',
     (ttlMs) => {
-      const rendered = codeOf(() =>
-        createJwksClient({ provider: 'test-op', jwksUri: JWKS_URI, ttlMs }),
-      );
+      const rendered = codeOf(() => jwksClient({ provider: 'test-op', jwksUri: JWKS_URI, ttlMs }));
       expect(rendered).toContain('X_CONFIG_INVALID');
       expect(rendered).toContain('ttlMs');
     },
@@ -465,7 +463,7 @@ describe('the jwks client screens both of its numbers', () => {
     'refuses timeoutMs %p, naming it',
     (timeoutMs) => {
       const rendered = codeOf(() =>
-        createJwksClient({ provider: 'test-op', jwksUri: JWKS_URI, timeoutMs }),
+        jwksClient({ provider: 'test-op', jwksUri: JWKS_URI, timeoutMs }),
       );
       expect(rendered).toContain('X_CONFIG_INVALID');
       expect(rendered).toContain('timeoutMs');
@@ -474,7 +472,7 @@ describe('the jwks client screens both of its numbers', () => {
 
   test('real numbers still build a client', () => {
     expect(
-      typeof createJwksClient({
+      typeof jwksClient({
         provider: 'test-op',
         jwksUri: JWKS_URI,
         ttlMs: 60_000,

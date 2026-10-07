@@ -3,18 +3,18 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { AdminActor, AdminAuthz, AdminAuthzQuery } from './authz';
-import { allowed, decideAll, expandPermissions, isAllowed } from './authz';
+import { adminAllowed, decideAll, expandPermissions, isAllowed } from './authz';
 
 const actor: AdminActor = { id: 'u_1', roles: ['owner'] };
 
 /** Grants everything, so a refusal in these tests can only have come from `decideAll` itself. */
 const permissive: AdminAuthz = {
-  decide: (query: AdminAuthzQuery) => allowed(query.permission, 'test.granted'),
+  decide: (query: AdminAuthzQuery) => adminAllowed(query.permission, 'test.granted'),
 };
 
 describe('an empty permission list is a gate nobody wrote', () => {
   /**
-   * `const last = permissions[permissions.length - 1] ?? ''` then `allowed(last, …)` answered
+   * `const last = permissions[permissions.length - 1] ?? ''` then `adminAllowed(last, …)` answered
    * ALLOWED for `[]`, with an empty string as the permission it claimed to have checked. Reachable:
    * `visibleNav` passes an author's `item.permissions` straight through, so a nav item declaring
    * `permissions: []` rendered for every actor, anonymous included. `pages.ts` already refuses an

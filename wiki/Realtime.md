@@ -12,11 +12,11 @@ rather than a convention — the barrels are disjoint, and a test asserts it.
 | Entry | Holds | Reaches |
 |---|---|---|
 | `@ultimat3/realtime` | `useQuery`, `useRecord`, `useMutation`, `useConnection`, `installRealtime`, `hasPageSocket`, `RecordStore`, `channel()` and `topic()`, the offline queue, the wire protocol, cursors | an island, a browser bundle |
-| `@ultimat3/realtime/server` | `createSyncNode`, `ChannelHub`, `SocketRegistry`, `LiveQueryRegistry`, `NatsTransport`, `openNatsClient`, the replicator, the change feed, pg replication | a `sync` node, a worker, `server.ts` |
+| `@ultimat3/realtime/server` | `syncNode`, `ChannelHub`, `SocketRegistry`, `LiveQueryRegistry`, `NatsTransport`, `openNatsClient`, the replicator, the change feed, pg replication | a `sync` node, a worker, `server.ts` |
 
 ```ts
 import { useQuery } from '@ultimat3/realtime';             // island
-import { createSyncNode } from '@ultimat3/realtime/server'; // sync node
+import { syncNode } from '@ultimat3/realtime/server'; // sync node
 ```
 
 A server render is not a missing install. With no DOM, every read hook answers `pending` with no subscription, and `useMutation()` refuses with `X_LIVE_SERVER_RENDER`. `hasPageSocket()` answers `false` there, every time, so it is **not** a guard that makes a page-body read safe: a browser-only read in code no island imports is `X_LIVE_ROUTE_NO_ISLAND` at the `budgets` step, `hasPageSocket()` included. In a **browser**, a hook in a bundle that never called `installRealtime()` is `X_REALTIME_UNINSTALLED`.
@@ -399,7 +399,7 @@ bun run scripts/bench/restart-bench.ts --clients 10000 --probe-interval-ms 200 \
 | Setup | Value |
 |---|---|
 | Clients | real WebSocket connections, split across client-shard OS processes — 50,000 over 10, 10,000 over 8 |
-| Server | **one** `sync` node (the shipped `createSyncNode`) in its own process, over `InProcessTransport` |
+| Server | **one** `sync` node (the shipped `syncNode`) in its own process, over `InProcessTransport` |
 | Admission | the shipped `AcceptBudget` at its defaults — 500/s, burst 2000 |
 | Kill | `SIGKILL`, no drain, **no `reconnect` frame** — recovery is driven only by each client's own `backoffDelay` |
 | Readiness | read from the server's own socket count, never the load generator's self-report |
@@ -477,7 +477,7 @@ So the drain is **server-directed**:
 | Property | Effect |
 |---|---|
 | Per-client `afterMs`, jittered over a window | reconnects arrive spread out, not as a spike |
-| The window is `createSyncNode({ drainSpreadMs })`, default 30s | each socket draws its own delay inside it (`drainPlan`) |
+| The window is `syncNode({ drainSpreadMs })`, default 30s | each socket draws its own delay inside it (`drainPlan`) |
 | The resume point is the client's own cursor | on reopen the client sends `hello`, then one `subscribe` per live query carrying that query's cursor, and re-announces each channel from its own; the node replays from its change buffer when the cursor is inside it, one snapshot when not (`live-resume.ts`) |
 | Clients redistribute | the LB places them across remaining nodes; no sticky session to honour |
 | Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter |

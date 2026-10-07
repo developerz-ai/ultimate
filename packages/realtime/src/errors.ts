@@ -189,7 +189,7 @@ export class FrameRateLimitError extends RealtimeError {
     super({
       code: 'X_FRAME_RATE_LIMIT',
       cause: `socket ${args.socketId} exceeded ${args.perSecond} frames per second`,
-      fix: 'batch subscribes into one frame per subscription and retry after the delay, or raise maxFramesPerSecond where createSyncNode() is called',
+      fix: 'batch subscribes into one frame per subscription and retry after the delay, or raise maxFramesPerSecond where syncNode() is called',
     });
   }
 }
@@ -326,7 +326,7 @@ export class SocketUnauthenticatedError extends RealtimeError {
     super({
       code: 'X_SOCKET_UNAUTHENTICATED',
       cause: `the websocket upgrade was refused: ${args.reason}`,
-      fix: 'send the credential createSyncNode({ authenticate }) reads on the upgrade request, or return an anonymous Actor from it to admit this socket',
+      fix: 'send the credential syncNode({ authenticate }) reads on the upgrade request, or return an anonymous Actor from it to admit this socket',
     });
   }
 }
@@ -345,7 +345,7 @@ export class SocketLimitError extends RealtimeError {
     super({
       code: 'X_SOCKET_LIMIT',
       cause: `${args.principal} already holds ${args.limit} sockets on this sync node — the per-principal cap${network ? ' (an anonymous network gets 8 x realtime.maxSocketsPerActor)' : ''}`,
-      fix: `defineConfig({ realtime: { maxSocketsPerActor: ${perActor * 2} } })   # in app.config.ts — or maxSocketsPerActor on createSyncNode({…}) where a host builds its own; or close other tabs of this app`,
+      fix: `defineConfig({ realtime: { maxSocketsPerActor: ${perActor * 2} } })   # in app.config.ts — or maxSocketsPerActor on syncNode({…}) where a host builds its own; or close other tabs of this app`,
     });
   }
 }
@@ -371,7 +371,7 @@ export class SocketOriginRefusedError extends RealtimeError {
     super({
       code: 'X_SOCKET_ORIGIN_REFUSED',
       cause: `the websocket upgrade was refused: ${args.reason} — asked from ${asked ?? 'an origin that cannot be rendered'}; this node admits ${list}`,
-      fix: `export APP_URL=${asked ?? 'https://www.example.com'}   # on the sync role, and only when that is the origin your pages are served on (or createSyncNode({ allowedOrigins }))`,
+      fix: `export APP_URL=${asked ?? 'https://www.example.com'}   # on the sync role, and only when that is the origin your pages are served on (or syncNode({ allowedOrigins }))`,
     });
   }
 }

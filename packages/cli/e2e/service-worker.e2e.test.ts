@@ -38,6 +38,7 @@ const BUILD_ID = 'sw-e2e-build';
 const pwa: PwaArtifacts = {
   body: '{}',
   head: '',
+  locales: { routed: ['en'], fallback: 'en' },
   manifests: [],
   headFor: () => '',
   offline: {

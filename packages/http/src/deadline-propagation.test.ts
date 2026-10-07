@@ -11,9 +11,9 @@
 import { describe, expect, test } from 'bun:test';
 import { REQUEST_TIMEOUT_HEADER, traceHeaders, useContext } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { json } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const routes: readonly Route[] = [
   {
@@ -22,13 +22,13 @@ const routes: readonly Route[] = [
     meta: { name: 'hop', auth: 'public' },
     // Exactly what `@ultimat3/action`'s `postOnce` puts on an outbound request, from inside a
     // handler — the ambient context is the only thing either one reads.
-    handler: () => json({ outbound: traceHeaders(), deadlineAt: useContext().deadlineAt }),
+    handler: () => jsonResponse({ outbound: traceHeaders(), deadlineAt: useContext().deadlineAt }),
   },
 ];
 
-const pipelineWith = (requestTimeoutMs: number): ReturnType<typeof createPipeline> =>
-  createPipeline({
-    table: createRouter(routes),
+const pipelineWith = (requestTimeoutMs: number): ReturnType<typeof httpPipeline> =>
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({
       dev: false,
       buildId: null,

@@ -4,10 +4,10 @@
 // dead-lettered it. What is proven: it goes back with the jobs behind it, uncounted.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { ClaimedJob, JobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
-import { createLimiter } from './limits';
+import { concurrencyLimiter } from './limits';
 import { createAdmission } from './worker-admit';
 import type { FleetSlots, SlotGrant } from './worker-fleet-slots';
 
@@ -73,7 +73,7 @@ async function admitRejects(
 describe('a shed whose nack fails hands the job back with the rest', () => {
   test('over the in-process cap', async () => {
     const { driver, claimed, rows } = await claimedPair();
-    const limiter = createLimiter({ ratePerTenant: { limit: 1, windowMs: 60_000 } });
+    const limiter = concurrencyLimiter({ ratePerTenant: { limit: 1, windowMs: 60_000 } });
     // The tenant's whole window, spent, so the admission below is shed over the cap.
     limiter.tryAcquire({ queue: 'default' });
     const admit = createAdmission({
@@ -82,7 +82,7 @@ describe('a shed whose nack fails hands the job back with the rest', () => {
       fleetSlots: slots({ outcome: 'granted' }),
       workerId: 'w1',
       pollIntervalMs: 25,
-      context: () => createContext(),
+      context: () => ctxOf(),
     });
 
     await admitRejects(admit, claimed);
@@ -97,11 +97,11 @@ describe('a shed whose nack fails hands the job back with the rest', () => {
     const { driver, claimed, rows } = await claimedPair();
     const admit = createAdmission({
       driver,
-      limiter: createLimiter({}),
+      limiter: concurrencyLimiter({}),
       fleetSlots: slots({ outcome: 'wait', limit: 1, key: undefined }),
       workerId: 'w1',
       pollIntervalMs: 25,
-      context: () => createContext(),
+      context: () => ctxOf(),
     });
 
     await admitRejects(admit, claimed);

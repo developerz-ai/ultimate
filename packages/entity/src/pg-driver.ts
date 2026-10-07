@@ -66,7 +66,7 @@ import { taggedWrite } from './write-tag';
 export interface PostgresDriverOptions {
   /**
    * Pin a client. Left out, every call resolves `db()` — the ambient pool, or the open
-   * transaction when one is in scope. Tests pass `createRecordingClient()` here or install one
+   * transaction when one is in scope. Tests pass `recordingClient()` here or install one
    * globally with `setDbClient()`.
    */
   readonly client?: DbClient | undefined;

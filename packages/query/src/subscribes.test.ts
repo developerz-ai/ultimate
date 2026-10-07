@@ -4,12 +4,12 @@
 // wrong table while leaving the right one unpatchable, so the cross-check is the half under test.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toLiveQuery } from './live';
 import { describeQuery, query } from './query';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
 
 interface Post {
@@ -19,7 +19,7 @@ interface Post {
 }
 
 const ORG = '00000000-0000-4000-8000-000000000001';
-const member = createContext({ actor: { ...userActor({ id: 'u1' }), permissions: ['feed:read'] } });
+const member = ctxOf({ actor: { ...userActor({ id: 'u1' }), permissions: ['feed:read'] } });
 const posts: readonly Post[] = [{ id: 'a', orgId: ORG, createdAt: 10 }];
 
 /** `subscribes` is spread so the "declares nothing" case is the SAME query minus one key. */
@@ -43,7 +43,7 @@ const thrownBy = (run: () => unknown): unknown => {
 
 describe('unit · a live read declares the relations it subscribes to', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
   });
 
   test('the declaration reaches the descriptor verbatim', () => {
@@ -81,7 +81,7 @@ describe('unit · a live read declares the relations it subscribes to', () => {
 
 describe('unit · a declaration that disagrees with the read is refused', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
   });
 
   test('the resolved relation missing from the declaration refuses at subscribe', async () => {

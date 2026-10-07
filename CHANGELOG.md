@@ -28,7 +28,8 @@ package's first step to apps bringing their own models and providers. Sweep 11 i
 every file earlier waves had not reached: 36 proven defects fixed, and the guards that let some
 of them through tightened. Sweep 11b fixes a fourth wave's 25 more, 11c a fifth's 14. Sweep 12a is
 the major's cut: one spelling per factory, one MCP projection, one page shape, no model chosen for
-an app, and every key and re-export a deprecation promised to remove, removed. Every breaking entry
+an app, and every key and re-export a deprecation promised to remove, removed; sweep 12a2 closes
+it: a closed `app.config.ts`, one locale reader, no re-exported value, one name per meaning. Every breaking entry
 under Changed has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `24.x → 25.0.0` section, in
 the same order. No legacy path, no codemod, no shim: a break is a build error or an `X_*` error
@@ -41,9 +42,9 @@ that names the rewrite.
 - admin: an `AdminAction` marked `readonly: true` is gated on `admin:read`, and `destructive` still
   wins. Admin MCP tools carry real scopes (`admin:read` / `admin:write` / `admin:destroy`), enforced by
   the MCP scope gate (`X_MCP_SCOPE_DENIED`); `adminMcp({ actor })` may return `tokenScopes`.
-- ai: `createGateway({ defaultModel })` is read by `llm()` and `agent()` before any built-in default,
-  and `describeAgents()` reports the model a call would use, with `AgentFact.modelFrom`
-  (`declaration` / `prompt` / `gateway` / `built-in-default`).
+- ai: `providerGateway({ defaultModel })` is read by `llm()` and `agent()` after the declaration's
+  and the prompt's model, and `describeAgents()` reports the model a call would use, with
+  `AgentFact.modelFrom` (`declaration` / `prompt` / `gateway`, `null` where nothing names one).
 - admin: an action declaring `matching` always needs `admin:write`, even with `readonly`, because it
   changes every row a list matches.
 - mail: `selectMailDriver` refuses a `retainMime.maxBytes` above the ceiling before choosing a
@@ -60,7 +61,7 @@ that names the rewrite.
   Memory and Postgres stores (`x_mcp_confirmations`, applied at boot from `@ultimat3/mcp/schema`).
   Codes `X_MCP_CONFIRMATION_PENDING` (409), `_EXPIRED` (410), `_REJECTED` (403), `_DECIDED` (409),
   `_UNKNOWN` (404), `_CONTESTED` (503), `_ARGUMENTS_MISMATCH` (409), `_TOOL_UNKNOWN`.
-- mcp: `createMcpServer` / `defineAppMcp({ onAudit })` receive every gate decision and refused token
+- mcp: `mcpServer` / `defineAppMcp({ onAudit })` receive every gate decision and refused token
   as an `McpAuditEvent`, after its log line; a hook that throws changes no answer. A refused token
   now logs `mcp.auth.<reason>` at `warn`.
 - http, mcp: `resolveToken(token, facts)` and the bearer mount's resolver receive frozen
@@ -69,7 +70,7 @@ that names the rewrite.
 - mail: `sesMailDriver` — SES v2 `SendEmail` with the raw MIME, SigV4-signed by core, SES error
   types mapped onto `X_MAIL_SEND_FAILED` retry classes, selected by `SES_REGION`. `retainMime` on
   SMTP and SES keeps the exact sent bytes (256 KiB default cap, digest-only above it).
-- mail: `createSesEventReceiver` and `createResendEventReceiver` (`@ultimat3/mail/events`) normalise
+- mail: `sesEventReceiver` and `resendEventReceiver` (`@ultimat3/mail/events`) normalise
   SNS (signature v1/v2, a required topic allow-list, a pinned certificate host) and Svix-signed Resend
   webhooks into one `DeliveryEvent`. Codes `X_MAIL_EVENT_UNVERIFIED` (401), `X_MAIL_EVENT_INVALID`
   (400), `X_MAIL_EVENT_PROVIDER_UNREACHABLE` (503).
@@ -239,7 +240,7 @@ that names the rewrite.
   (default 16; an anonymous network gets 8× that, 128, so an office behind one NAT still reaches a
   public live page); the next upgrade is `429` with the new `X_SOCKET_LIMIT`. Anonymous principals for
   both caps are keyed by network: IPv4 exact, IPv6 by its /64, IPv4-mapped as IPv4, so rotating
-  through a /64 buys nothing. New `createSyncNode({ maxSocketsPerActor })`,
+  through a /64 buys nothing. New `syncNode({ maxSocketsPerActor })`,
   `DEFAULT_MAX_SOCKETS_PER_ACTOR`, and core's `addressNetwork()`.
 - `cli`, `db`, `entity`, `testing`, `storage`: every `fix:` line that splices a value into a shell
   command screens it first (island names and directories, migration and table names, entity names,
@@ -267,7 +268,12 @@ Every package.
 
 Tier 0 — core.
 
-- **BREAKING — (#2) seven deleted `app.config.ts` keys are refused by name.** `locales`,
+- **BREAKING — (#2) `app.config.ts` is a closed shape: a key it does not declare is refused, and
+  every deleted key is refused by name.** `defineConfig` answers `X_CONFIG_INVALID` for an
+  undeclared key at any depth and in any layer, naming its path and the nearest real key (`drian is
+  not an app.config.ts key — did you mean drain?`); 24.x merged it and read nothing
+  (`packages/core/src/config-keys.ts`). Seven keys lead the by-name table:
+  `locales`,
   `defaultLocale`, `defaultTimeZone`, `defaultCurrency` and `theme.tokens` are gone from
   `AppConfig` and `AppConfigInput`, and `jobs.driver` (deleted in 5.0.0, ignored in silence since)
   joins them: a layer that still writes one is `X_CONFIG_INVALID` naming the key and its
@@ -280,6 +286,11 @@ Tier 0 — core.
   `{ expose }`, and every MCP endpoint, #0 included, mounts at its own `defineAppMcp({ path })`
   (default `/mcp`) in `apps/<app>/mcp.ts` — in 24.x #0 mounted at `ai.mcp.path` while its RFC 9728
   metadata and its 401 named the `defineAppMcp` path. Moving a non-default path there is the edit.
+  Ten keys earlier majors deleted, merged in silence since, join the table with their
+  replacement: `realtime.heartbeatMs`, `database.urlEnv`, `database.poolSize`, `database.schema`
+  (4.0.0); `pwa.installPrompt`, `auth.afterSignInPath`, `ai.modelEnv` (8.0.0); `cache.driver`,
+  `cache.urlEnv` (9.0.0); `realtime.tier` (10.0.0) — `REMOVED_CONFIG_KEYS` in
+  `packages/core/src/config-removed.ts`, whose `fix:` names the line that replaces each.
 - **BREAKING — (#3) `assertEnvExample`, `EnvExampleDriftError` and `resolveSpeculation` are removed.**
   The `.env.example` check is `checkEnvExample` (findings, no throw), and the gate runs it as
   `x verify --only manifest`. Speculation rules are `defineConfig({ navigation: { speculation } })`.
@@ -287,17 +298,55 @@ Tier 0 — core.
   `normalizeAuditRecord` / `NormalizedAuditRecord`: read `record.name` and `record.primitive`. A
   sink or test that builds a record writes both. The durable sink still files `name` in the
   `x_audit.action` column; no DDL changed.
-- **BREAKING — (#5) the deprecation helpers are imported from `@ultimat3/core` only.**
+- **BREAKING — (#5) no package re-exports another package's value: import it from the one that
+  declares it.** The deprecation helpers led:
   `@ultimat3/action` and `@ultimat3/query` no longer re-export `Deprecation`, `DeprecationField`,
   `DeprecationRender`, `recordDeprecatedCall` or `renderDeprecation`. The same holds for
-  `createClientFlight`, `DEFAULT_CLIENT_RETRY`, `isSuperseded`, `isTransientFailure` and
-  `getAuditSink` / `setAuditSink` / `resetAuditSink`: values from `@ultimat3/core` only, and
-  `action` / `query` re-export their types alone. TS2305 at each import; change the module
-  specifier.
+  `createClientFlight` (now `clientFlight`, #6), `DEFAULT_CLIENT_RETRY`, `isSuperseded`,
+  `isTransientFailure` and `getAuditSink` / `setAuditSink` / `resetAuditSink`: values from
+  `@ultimat3/core` only, and `action` / `query` re-export their types alone. The rest, by the
+  package that dropped them — import each from `@ultimat3/core` unless the line says otherwise:
+  - `action`: `BUILD_ID_HEADER`, `IDEMPOTENCY_HEADER`, `pluralize`, `actorOf`; `toBucket` →
+    `@ultimat3/http`; `admitsAnonymous`, `policyPermissions`, `policyCapability` →
+    `@ultimat3/policy`.
+  - `query`: `CursorInvalidError`, `actorOf`; `derivePath` → core's `queryPath`; `MAX_PAGE_SIZE` →
+    `@ultimat3/entity`; `admitsAnonymous`, `policyPermissions`, `policyCapability` →
+    `@ultimat3/policy`.
+  - `http`: `escapeHtml`, `readCookie`, `REQUEST_TIMEOUT_HEADER`, `isCanonicalWebhookField`,
+    `WEBHOOK_ID_HEADER`, `WEBHOOK_SIGNATURE_HEADER`, `WEBHOOK_SIGNATURE_VERSION`,
+    `WEBHOOK_TOPIC_HEADER`.
+  - `jobs`: `WEBHOOK_FIELD_MAX`, `webhookHeaders`, `webhookMac`, `webhookSignature`,
+    `webhookSigningString`, the types `WebhookMacInput` / `WebhookSigningInput`, `classifyThrown`.
+  - `flags`: `fnv1a`. `time`: `localeInvalid`. `auth`, `storage`: `timingSafeEqual`.
+  - `i18n`: `DEFAULT_LOCALE`, `directionOf`, `isRtl`, `localeSegment`; `FRAMEWORK_CATALOG_LOCALE` →
+    `DEFAULT_LOCALE`. `mail`: `escapeHtml`; `MAIL_CATALOG_LOCALE` → `DEFAULT_LOCALE`. `ai`:
+    `MAX_SEMANTIC_CACHE_SCOPES` → `MAX_CACHED_FORMATTERS`.
+  - `cache`: `createSingleFlight` and the types `FlightJoin` / `SingleFlight` → core's
+    `singleFlight` (#6); `TIER_ORDER` → `CACHE_TIERS`.
+  - `render`: `formatBytes`, `RENDER_MODES`, `HYDRATE_STRATEGIES`, `OFFLINE_STRATEGIES`,
+    `THEME_STORAGE_KEY`, `CLIENT_PATH_STYLE_META`, `CLIENT_PERSIST_META`, `CLIENT_SCOPE_META`,
+    `CLIENT_BUILD_META`, `CLIENT_SYNC_META`, `CLIENT_SYNC_WORKER_META`; `NAVIGATION_HEADER`,
+    `NAVIGATION_SURFACE_HEADER`, `NAVIGATION_SCOPE_HEADER`, `NAVIGATION_LOCATION_HEADER` →
+    `CLIENT_NAVIGATION_HEADER`, `CLIENT_NAVIGATION_SURFACE_HEADER`,
+    `CLIENT_NAVIGATION_SCOPE_HEADER`, `CLIENT_NAVIGATION_LOCATION_HEADER`; `tagKeys` →
+    `@ultimat3/cache`.
+  - `pwa`: `formatBytes`, `BUILD_ID_HEADER`; `BUILD_ID_META` → `CLIENT_BUILD_META`;
+    `APP_UPDATE_AVAILABLE` → `APP_UPDATE_MESSAGE`. `ui`: `THEME_STORAGE_KEY`.
+  - `admin`: `REDACTED`; `ADMIN_AUDIT_TABLE`, `SQL_ADMIN_AUDIT_TABLE` → `@ultimat3/admin/schema`.
+  - `realtime`: `isJsonObject`.
+  - `scraping`: `ANY_HOST`, `hostDecision`, `hostMatches`, the types `HostRule` / `HostDecision`;
+    `DEFAULT_CONTENT_TYPE` → `@ultimat3/storage`; `throwIfAborted(signal)` is gone — call
+    `signal.throwIfAborted()`.
+
+  Every value keeps its meaning. Core gains `BUILD_ID_HEADER`, `THEME_STORAGE_KEY` and `actorOf`,
+  the three that were declared below it. TS2305 at each import; change the module specifier. The
+  repository's guard is `bun run flight-copies` (`X_HELPER_COPY`), reading
+  `scripts/lib/core-reexports.ts`.
 
 Tier 1 and up — one spelling per factory.
 
-- **BREAKING — (#6) every memory and Postgres factory is `memoryX` / `postgresX`.** 24.x shipped
+- **BREAKING — (#6) one spelling per factory: `memoryX` / `postgresX`, and `<what it builds>()`
+  for everything else — never `create<Thing>`.** 24.x shipped
   `createMemory*`, `createPg*`, `pgSchedulerState` and `createPostgresClient` beside `memory*` /
   `postgres*`. In `db`: `createPostgresClient` → `postgresClient`. In `cache`:
   `createMemorySemanticCache` → `memorySemanticCache`. In `jobs`: `createMemoryDriver` →
@@ -326,19 +375,71 @@ Tier 1 and up — one spelling per factory.
   imported or `new`-ed as a value. The repository's guard is `bun run factory-names`
   (`X_FACTORY_NAME_SPELLING`): it refuses a `create(Memory|Pg|Postgres)X` or `pgX` export, a
   PascalCase `(In)Memory|Pg|Postgres` value export, a `create<Vendor>Driver`, and one factory name
-  exported by two packages.
+  exported by two packages. The same rule, for every other factory — a `create<Thing>` export is
+  renamed for what it builds, and a class beside its factory is a type only:
+  - `auth`: `createAuthLimiter` → `authLimiter`, `createJwksClient` → `jwksClient`, `createKdfGate`
+    → `boundedKdfGate`, `createPkce` → `pkcePair`, `createTotpReplayGuard` → `totpReplayGuard`.
+  - `cache`: `createCacheStack` → `cacheStack`, `createCdnTier` → `cdnTier`, `createLruTier` →
+    `lruTier`, `createMemoTier` → `memoTier`, `createRedisTier` → `redisTier`.
+  - `core`: `createClientFlight` → `clientFlight`, `createContext` → `ctxOf`, `createFence` →
+    `generationFence`, `createFlightGate` → `flightGate`, `createLogger` → `structuredLogger`,
+    `createRaster` → `blankRaster`, `createSingleFlight` → `singleFlight`.
+  - `db`: `createPgliteClient` → `pgliteClient`, `createRecordingClient` → `recordingClient`.
+  - `http`: `createPipeline` → `httpPipeline`, `createRateLimiter` → `rateLimiter`,
+    `createRequestContext` → `requestContext`, `createRouter` → `httpRouter`, `createServer` →
+    `httpServer`.
+  - `i18n`: `createTranslator` → `catalogTranslator`.
+  - `jobs`: `createJobsFacade` → `outboxJobsFacade`, `createLimiter` → `concurrencyLimiter`,
+    `createOutboxRelay` → `outboxRelay`, `createPacer` → `backfillPacer`, `createScheduler` →
+    `jobScheduler`, `createStepRunner` → `stepRunner`, `createWorker` → `jobWorker`.
+  - `realtime`: `createOutbox` → `localOutbox`, `createSyncNode` → `syncNode`;
+    `@ultimat3/realtime/server`: `createEntry` → `queryEntry`, `createFrameRouter` → `frameRouter`,
+    `createReplicator` → `changeFeedReplicator`.
+  - `mcp`: `createDevServer` → `devMcpServer`, `createMcpServer` → `mcpServer`; `McpServer` is a
+    type only.
+  - `pwa`: `createInstallController` → `installController`. `render`: `createIslandCollector` →
+    `islandCollector`, `createIsrController` → `isrController`.
+  - `ai`: `new AnthropicProvider(…)`, `new EchoProvider(…)`, `new HashEmbedder(…)`,
+    `new RemoteEmbedder(…)` → `anthropicProvider(…)`, `echoProvider(…)`, `hashEmbedder(…)`,
+    `remoteEmbedder(…)`; `createGateway` / `CreateGatewayInput` → `providerGateway` /
+    `ProviderGatewayInput`; `BudgetLedger` is a type only — a ledger is the gateway's
+    (`gateway.callLedger(keys)`, `gateway.scope(…)`).
+  - `ui`: `createFocusTrap` → `focusTrap`, `createFormBinding` → `formBinding`,
+    `createRovingTabindex` → `rovingTabindex`, `createToastStore` → `toastStore`.
+  - `testing`: `createTestClock` → `testClock`, `createTestMail` → `testMail`, `createTestNetwork`
+    → `testNetwork`, `createTestStatements` → `testStatements`, `createRunJobs` → `testJobs`,
+    `createLiveNode` → `liveNode`, `createTemplateSql` → `templateSql`.
+  - `scraping`: `createArtifactWriter` → `artifactWriter`, `createPacer` → `scrapePacer`,
+    `createPrompt` → `scrapePrompt`, `createRing` → `boundedRing`, `createRobotsGate` →
+    `robotsGate`, `createSecretBag` → `secretBag`, `createUsageMeter` → `usageMeter`.
+  - `query`: `Builder` is a type only — `from(…)` builds one.
+
+  `mail/events`' receivers, new in this release, ship as `resendEventReceiver` /
+  `sesEventReceiver`. Three verbs keep `create`, pinned in `scripts/factory-names-pins.ts`:
+  `@ultimat3/db`'s `createBranch`, `@ultimat3/auth`'s `createSession`, `create-ultimate`'s
+  `createApp`. Same arguments, same return types, no alias.
 
 Tier 2 — entity, http.
 
-- **BREAKING — (#7) `@ultimat3/entity` no longer exports `Page`.** `findMany` and `.page()` answer
+- **BREAKING — (#7) `Page` is core's alone: `@ultimat3/entity`'s `Page` and `@ultimat3/storage`'s
+  `ListPage` are removed.** `findMany` and `.page()` answer
   `@ultimat3/core`'s `Page` (re-exported as a type by `@ultimat3/query`), so a `findMany` page now
   carries `hasMore` too. Import `Page` from core, or drop the annotation. A hand-written `Repo`
   builds its page with `pageOf(rows, nextCursor)`; a `{ rows, nextCursor }` literal is TS2741 /
-  TS2322.
-- **BREAKING — (#8) `http.drainTimeoutMs` is removed.** `drain: { deadlineMs }` in `app.config.ts` is
+  TS2322. `StorageDriver.list()` answers `Page<StorageListEntry>`: `objects` → `rows`, `truncated`
+  → `hasMore`, `cursor` → `nextCursor` (`null` on the last page, never absent), and
+  `ListOptions.cursor` takes `page.nextCursor` as it is. A custom driver returns
+  `pageOf(entries, nextCursor)`. `x jobs ls --json` pages the same way: `data.next` →
+  `data.nextCursor` plus `data.hasMore` — and a full last page no longer hands out a cursor to an
+  empty one.
+- **BREAKING — (#8) `http.drainTimeoutMs` and `http.buildIdHeader` are removed.** `drain: { deadlineMs }` in `app.config.ts` is
   the one drain budget, on every role. `configureHttp({ drainTimeoutMs })` or
   `defineHttpConfig({ drainTimeoutMs })` is `X_CONFIG_INVALID` naming `drain.deadlineMs` — checked
   by key, so a spread or plain JS caller is refused too; a typed caller is a compile error first.
+  `buildIdHeader` is refused the same way, naming `BUILD_ID_HEADER`: the build-id header is core's
+  `x-ultimate-build`, the one the typed client, the service worker and `DEFAULT_CORS` send, so a
+  renamed one was a server listening for a header no client sent — skew detection off in silence.
+  Delete the key.
 - **BREAKING — (#9) `bearerMount` claims `<prefix>/*rest`.** It returns one catch-all route per
   method, so an app wildcard at that same path is `X_ROUTE_CONFLICT` at registration. The 405 with
   `Allow` under a mount is gone. Move the app's wildcard off the mount prefix.
@@ -384,7 +485,7 @@ Tier 3 — action, query, jobs, realtime.
 - **BREAKING — (#15) the NATS and Redis job driver stubs are deleted.** `createNatsDriver`,
   `NatsDriverOptions`, `createRedisDriver` and `RedisDriverOptions` are gone; every method threw
   `X_NOT_IMPLEMENTED`. Postgres is the durable driver. `x jobs drain` stays planned
-  (`X_NOT_IMPLEMENTED`), and its `--to` accepts no value.
+  (`X_NOT_IMPLEMENTED`), and takes neither `--to` nor `--dry-run`: either is `X_CLI_BAD_FLAG`.
 - **BREAKING — (#16) `WebhookLedger` requires `isDisabled(endpointId)`.** `webhook()` asks it before
   every socket, so a disabled endpoint receives nothing. A custom ledger adds the method.
 - **BREAKING — (#17) `ChangeEvent.write` is required** (`string | null`). A custom change feed that
@@ -392,9 +493,14 @@ Tier 3 — action, query, jobs, realtime.
 
 Tier 4 — mcp, manifest, notify, ai, ui.
 
-- **BREAKING — (#18) `McpExposure.name` is removed.** A tool is named by its primitive, nothing else.
-  A hand-built primitive handed to `toolFrom` with `mcp: { name: 'alias' }` takes the alias
-  as its own `name`.
+- **BREAKING — (#18) one MCP block, `@ultimat3/core`'s `McpExposureDeclaration`; `McpExposure` and
+  its `name` are removed.** A tool is named by its primitive, nothing else. A hand-built primitive
+  handed to `toolFrom` with `mcp: { name: 'alias' }` takes the alias as its own `name`. The block's
+  types are core's alone: `McpExposure` (`mcp`), `QueryMcp`, `QueryMcpAnnotations`,
+  `QueryListParams`, `QueryListFilterOp` (`query`) and `McpAnnotationHints` (`action`) are removed —
+  import `McpExposureDeclaration`, `McpAnnotationHints`, `McpListParams` and `McpListFilterOp` from
+  `@ultimat3/core`. An action's block is `ActionMcp` = `Omit<McpExposureDeclaration,
+  'listParams'>`: a list whitelist is a query's. TS2305 at each import.
 - **BREAKING — (#19) a `defineAppMcp({ scopes })` map names every projected tool.** One it leaves out
   fails the boot with `X_MCP_SCOPE_UNCOVERED`, including tools added through `include: 'exposed'`
   and hand-written ones such as `whoami`. List each under a scope.
@@ -403,16 +509,16 @@ Tier 4 — mcp, manifest, notify, ai, ui.
 - **BREAKING — (#21) `DigestAppend` requires `appender`** (the fan-out passes `runId:recipient`). A
   custom `DigestStore` keys its replay on it.
 - **BREAKING — (#22) no model is chosen for an app.** `DEFAULT_MODEL` is removed: a call resolves its
-  model from the declaration's `model`, its prompt's, or `createGateway({ defaultModel })`, and a
-  call that names none is the new `X_AI_MODEL_UNRESOLVED` naming the three. `EchoProvider` has no
+  model from the declaration's `model`, its prompt's, or `providerGateway({ defaultModel })`, and a
+  call that names none is the new `X_AI_MODEL_UNRESOLVED` naming the three. `echoProvider()` has no
   model of its own either: pass `model`. `describeAgents()` answers `model: null, modelFrom: null`
   where nothing names one (`'built-in-default'` is gone). The deprecation log `ai.deprecation` and
   the counter `ai_deprecated_fallbacks_total` go with it. A provider called directly
-  (`AnthropicProvider`, `openAiProvider`) has no default model either: it runs `request.model`, and
+  (`anthropicProvider`, `openAiProvider`) has no default model either: it runs `request.model`, and
   a request without one is `X_AI_MODEL_UNRESOLVED` — one resolver, `resolveModel` in
   `packages/ai/src/model-resolve.ts`, on every site.
-- **BREAKING — (#23) a provider serves the models the app lists.** `AnthropicProvider` requires
-  `models` (`new AnthropicProvider({ models: [id] })`, an empty list `X_AI_REQUEST_INVALID`), and
+- **BREAKING — (#23) a provider serves the models the app lists.** `anthropicProvider` requires
+  `models` (`anthropicProvider({ models: [id] })`, an empty list `X_AI_REQUEST_INVALID`), and
   `ANTHROPIC_MODEL_IDS` and `OPENAI_MODEL_IDS` are removed: `openAiProvider({ models })` takes the
   app's ids.
 - **BREAKING — (#24) the framework registers no model.** Every built-in catalogue row is
@@ -444,8 +550,49 @@ Tier 4 again — ai, after the cut.
   `contentHash` is `@ultimat3/render/server`'s byte hash. Same argument, same answer, no alias.
   TS2305 at each import from `@ultimat3/ai`.
 
+After the cut — one name, one meaning; jobs.
+
+- **BREAKING — (#32) a value name means one thing across the framework.** Where two packages
+  exported one name for two things, each is renamed for what it is:
+  - `auth`: `forbidden` → `authForbidden`, `unauthenticated` → `authUnauthenticated`. `policy`:
+    `forbidden` → `policyForbidden`.
+  - `http`: `json` → `jsonResponse`, `text` → `textResponse`, `validate` → `validateBody`.
+  - `money`: `money()` → `fromMinor()`. `pwa`: `isEnabled` → `hasCapability`. `render`:
+    `describeRoutes` → `describePages`. `notify`: `channel` → `deliveryChannel`.
+  - `action`: `guard` → `guardAction`, `guardBeforeInput` → `guardActionBeforeInput`,
+    `resetRegistry` → `resetActions`. `query`: `guard` → `guardQuery`, `guardBeforeInput` →
+    `guardQueryBeforeInput`, `resetRegistry` → `resetQueries`, `explain` → `explainQuery`.
+  - `admin`: `actorLabel` → `adminActorLabel`, `allowed` → `adminAllowed`, `denied` →
+    `adminDenied`, `relationsFor` → `relationDataFor`.
+  - `core`: `invariant` → `assertCoded` (`InvariantOptions` → `AssertCodedOptions`), `uuid` →
+    `uuidV7`.
+  - `ai`: `cacheKeyFor` → `promptCacheKey`, `DEFAULT_RETRY` → `DEFAULT_GATEWAY_RETRY`,
+    `NO_TENANT` → `NO_VECTOR_TENANT`, `chunk` → `chunkDocument`, `normalize` → `normalizeVector`,
+    `tokenize` → `wordTokens`.
+  - `db`: `introspect` → `introspectSchema`, `isDestructive` → `isDestructiveMigration`,
+    `assertNoDrift` → `assertNoSchemaDrift`. `mail`: `safeUrl` → `safeMailHref`.
+  - `ui`: `formatBytes` → `formatFileSize`, `resetIdCounter` → `resetUseIdCounter`, `srcsetFor` →
+    `variantSrcset`.
+  - `testing`: `frozenClock(now, body)` → `withFrozenClock(now, body)`. `scraping`: `testClock` →
+    `testScrapeClock`, `sessionExpired` → `scrapeSessionExpired` — `@ultimat3/testing`'s
+    `testClock` is the former `createTestClock` (#6), a different clock.
+
+  Same arguments, same answers, no alias; TS2305 / TS2724 at each import. `ULTIMATE_ERROR_BRAND` is
+  declared once, in `@ultimat3/schema`; core re-exports that binding. One pair stays on purpose:
+  `@ultimat3/i18n`'s `t('key')` and `@ultimat3/schema`'s `t` never meet in one file, pinned with
+  its measurement in `scripts/factory-names-pins.ts`. The guard is `bun run factory-names`
+  (`X_FACTORY_NAME_SPELLING`), which refuses one value name declared by two packages.
+- **BREAKING — (#33) `AckOptions.counted` is removed: every ack counts.** Its one writer was the
+  `x jobs drain` body #15 deleted; `counted: false` settled a row and wrote no history. A custom
+  `JobDriver.ack` stops reading it, and a caller that still passes it is TS2353.
+
 Not breaking.
 
+- Locales have one reader, `appLocaleSet(root)` from `@ultimat3/i18n/app-catalogs`, beside
+  `UNDECLARED_LOCALES`: the PWA manifest, the service worker, the prerender, the speculation rules,
+  the sitemap and every `x` command read the app's declared catalogs, and an app that declares
+  none is `en` alone on every one of them. Before, the manifest said `en` off its own literal while
+  the worker and the prerender could inherit an earlier import's declaration.
 - `registry-audit`: the fix for a package behind on npm depends on whether its release tag is on the
   remote (tag, push, `gh release create --verify-tag`), and dispatches the workflow only when it is.
 - Repo tooling hardened by sweep 11c's audit:
@@ -550,7 +697,7 @@ Not breaking.
   already default. Set `destructive: false` on a hand-registered read tool to keep it in the read
   bucket.
 - `http`: one installed rate-limit store, which actions and queries spend from: a stack of frames,
-  each adopter releasing only its own. `createServer` adopts the store it is handed and releases it
+  each adopter releasing only its own. `httpServer` adopts the store it is handed and releases it
   on `stop()` or on any boot refusal. `X_RATE_LIMIT_NOT_SHARED` now also covers that store. New
   exports: `installRateLimitStore`, `installedRateLimitStore`, `adoptRateLimitStore`,
   `resetRateLimitStore`, `assertInstalledRateLimitScope`, `rateLimitHeaders`, `publishRateLimit`.
@@ -595,6 +742,8 @@ Not breaking.
 
 ### Fixed
 
+- cli: `x jobs ls` asks the queue whether a row exists past the page it prints, so a full last page
+  no longer offers `--after <cursor>` to an empty one (`packages/cli/src/jobs-report.ts`).
 - ai: an in-app agent's tool for an `idempotent: true` action carries the reserved
   `idempotencyKey` argument, as the MCP tool does, and the key reaches `invoke`
   (`packages/ai/src/tool-idempotency.ts`). 24.x dropped it, so an action an external agent could
@@ -632,7 +781,7 @@ Not breaking.
   `wiki/Configuration.md` states are now checked against `configDefaults()`.
 - **ai (security):** a `costPerCall: { minor: NaN }` budget switched the per-call money ceiling off,
   and `derive()` with `NaN` widened a stricter gateway ceiling. `NaN`, `Infinity` and negatives are
-  now refused (`X_INVARIANT`) at `createGateway`, `BudgetLedger`, `derive`, and under
+  now refused (`X_INVARIANT`) at `providerGateway`, the budget ledger, `derive`, and under
   `budget.costPerCall.minor` in `llm()`, `agent()` and `hive()`.
 - render: `navigate()` with `hops: NaN` followed redirects without end; `hops` is now screened.
 - schema: string builtins and `t.record` keys refuse a lone UTF-16 surrogate, as `t.json()` did. It

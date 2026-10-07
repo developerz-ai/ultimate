@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createClientFlight, type FlightPlan } from './client-flight';
+import { clientFlight, type FlightPlan } from './client-flight';
 import { UltimateError } from './errors';
 
 /** Every wait the loop asked for, recorded and answered instantly. */
@@ -66,7 +66,7 @@ describe('retry, on the framework executor', () => {
   test('a declared-retryable failure is sent again on backoffDelay’s curve, exactly', async () => {
     const plan = flaky(2, gateway);
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       retry: { attempts: 3 },
       sleep: clock.sleep,
       random: () => 0.5,
@@ -82,7 +82,7 @@ describe('retry, on the framework executor', () => {
     const thrown = new RangeError('a foreign value');
     const plan = flaky(9, () => thrown);
     const clock = recordedSleep();
-    const flight = createClientFlight({ retry: { attempts: 5 }, sleep: clock.sleep });
+    const flight = clientFlight({ retry: { attempts: 5 }, sleep: clock.sleep });
 
     const outcome = await flight.run(plan).catch((caught: unknown) => caught);
 
@@ -96,7 +96,7 @@ describe('retry, on the framework executor', () => {
   test('a dispatch that produced no response at all IS sent again', async () => {
     const plan = flaky(1, () => new TypeError('Failed to fetch'));
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       retry: { attempts: 3 },
       sleep: clock.sleep,
       random: () => 0,
@@ -109,7 +109,7 @@ describe('retry, on the framework executor', () => {
   test('the plan’s own policy overrides the flight’s', async () => {
     const plan = { ...flaky(1, gateway), retry: { attempts: 2 } };
     const clock = recordedSleep();
-    const flight = createClientFlight({ retry: { attempts: 1 }, sleep: clock.sleep });
+    const flight = clientFlight({ retry: { attempts: 1 }, sleep: clock.sleep });
 
     expect(await flight.run(plan)).toBe('rows');
   });
@@ -117,7 +117,7 @@ describe('retry, on the framework executor', () => {
   test('an app may supply its own predicate, and neither default then applies', async () => {
     const plan = flaky(1, () => new RangeError('foreign'));
     const clock = recordedSleep();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       retry: { attempts: 2 },
       sleep: clock.sleep,
       random: () => 0,
@@ -133,7 +133,7 @@ describe('retry, on the framework executor', () => {
   test('a classified plan never sends a bare TypeError again', async () => {
     const bug = new TypeError('a hook broke');
     const plan = { ...flaky(1, () => bug), classified: true };
-    const flight = createClientFlight({ retry: { attempts: 3 }, sleep: recordedSleep().sleep });
+    const flight = clientFlight({ retry: { attempts: 3 }, sleep: recordedSleep().sleep });
 
     expect(await flight.run(plan).catch((caught: unknown) => caught)).toBe(bug);
     expect(plan.calls()).toBe(1);
@@ -141,7 +141,7 @@ describe('retry, on the framework executor', () => {
 
   test("on a classified plan, the app's own predicate still decides", async () => {
     const plan = { ...flaky(1, () => new TypeError('foreign')), classified: true };
-    const flight = createClientFlight({
+    const flight = clientFlight({
       retry: { attempts: 2 },
       sleep: recordedSleep().sleep,
       random: () => 0,
@@ -166,7 +166,7 @@ describe('the deadline', () => {
           });
         }),
     };
-    const flight = createClientFlight({ deadlineMs: 5_000, schedule: clock.schedule });
+    const flight = clientFlight({ deadlineMs: 5_000, schedule: clock.schedule });
 
     const pending = flight.run(plan).catch((caught: unknown) => caught);
     await Promise.resolve();
@@ -194,7 +194,7 @@ describe('the deadline', () => {
         });
       },
     };
-    const flight = createClientFlight({ deadlineMs: 5_000, schedule: clock.schedule });
+    const flight = clientFlight({ deadlineMs: 5_000, schedule: clock.schedule });
 
     const pending = flight.run(plan);
     await Promise.resolve();
@@ -219,7 +219,7 @@ describe('the concurrency ceiling', () => {
           });
         }),
     };
-    const flight = createClientFlight({ limit: { maxConcurrent: 1, maxQueued: 0 } });
+    const flight = clientFlight({ limit: { maxConcurrent: 1, maxQueued: 0 } });
 
     const first = flight.run(plan);
     expect(flight.active).toBe(1);
@@ -233,7 +233,7 @@ describe('the concurrency ceiling', () => {
   });
 
   test('with no limit declared there is no gate, and both counters read 0', async () => {
-    const flight = createClientFlight({});
+    const flight = clientFlight({});
     expect(flight.active).toBe(0);
     expect(flight.queued).toBe(0);
     expect(
@@ -262,7 +262,7 @@ describe('the wait between attempts', () => {
         return Promise.reject(gateway());
       },
     };
-    const flight = createClientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
+    const flight = clientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
 
     const pending = flight.run(plan).catch((caught: unknown) => caught);
     await reachTheWait();
@@ -286,7 +286,7 @@ describe('the wait between attempts', () => {
         return Promise.reject(gateway());
       },
     };
-    const flight = createClientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
+    const flight = clientFlight({ retry: { attempts: 2 }, schedule: clock.schedule });
 
     const pending = flight.run(plan).catch((caught: unknown) => caught);
     await reachTheWait();
@@ -300,7 +300,7 @@ describe('the wait between attempts', () => {
 
   test('the gate slot is free during the wait, so another call proceeds instead of being refused', async () => {
     const clock = manualClock();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       retry: { attempts: 2 },
       schedule: clock.schedule,
       limit: { maxConcurrent: 1, maxQueued: 0 },
@@ -350,7 +350,7 @@ describe('a retry attempt queued at the gate', () => {
 
   async function queuedBehind(signal?: AbortSignal) {
     const clock = manualClock();
-    const flight = createClientFlight({
+    const flight = clientFlight({
       retry: { attempts: 2 },
       schedule: clock.schedule,
       limit: { maxConcurrent: 1, maxQueued: 1 },

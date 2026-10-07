@@ -17,8 +17,8 @@ import {
   type AdminAuthz,
   type AdminDecision,
   type AdminSubject,
-  allowed,
-  denied,
+  adminAllowed,
+  adminDenied,
   impliersOf,
 } from './authz';
 import { ADMIN_PERMISSIONS } from './permissions';
@@ -52,7 +52,7 @@ function readDecision(permission: string, result: unknown): AdminDecision {
   const verdict = result === true || bag.allowed === true;
   const reason = typeof inner.reason === 'string' ? inner.reason : 'admin.policy.evaluated';
   const trace = Array.isArray(bag.trace) ? bag.trace.map((line) => String(line)) : [];
-  return verdict ? allowed(permission, reason, trace) : denied(permission, reason, trace);
+  return verdict ? adminAllowed(permission, reason, trace) : adminDenied(permission, reason, trace);
 }
 
 /** `resource:verb` — the only shape `can()` takes. Anything else is denied, never thrown. */
@@ -104,7 +104,7 @@ export function roleAuthz(): AdminAuthz {
       // Asked BEFORE `can()`, which throws on a name the registry lacks: a decision is an answer,
       // and an undeclared permission is a refusal with its fix, never a 500 out of a nav render.
       if (!isPermission(permission) || !isKnownPermission(permission)) {
-        return denied(permission, 'admin.policy.missing', [
+        return adminDenied(permission, 'admin.policy.missing', [
           `"${permission}" is not a declared resource:verb permission`,
           `fix: definePermissions(['${permission}']), then grant it to a role in defineRoles()`,
         ]);
@@ -118,7 +118,7 @@ export function roleAuthz(): AdminAuthz {
       for (const implier of impliersOf(permission)) {
         const carried = evaluated(implier, can(implier as KnownPermission), actor, subject);
         if (carried.allowed) {
-          return allowed(permission, carried.reason, [
+          return adminAllowed(permission, carried.reason, [
             ...carried.trace,
             `${permission} is implied by ${implier}`,
           ]);
@@ -157,7 +157,7 @@ export function policyAuthz(input: PolicyAuthzInput): AdminAuthz {
     decide({ permission, actor, subject }): AdminDecision {
       const policy = input.policies[permission];
       if (policy === undefined) {
-        return denied(permission, 'admin.policy.missing', [
+        return adminDenied(permission, 'admin.policy.missing', [
           `no policy registered for "${permission}"`,
           `fix: definePermissions({ '${permission}': … }) or can('${permission}') on the action`,
         ]);

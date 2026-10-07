@@ -35,7 +35,6 @@ export {
 } from '../error-reporter-sentry';
 export type { LogFields, Logger, LoggerOptions, LogLevel } from '../logger';
 export {
-  createLogger,
   isRedactedKey,
   LOG_LEVELS,
   logger,
@@ -43,6 +42,7 @@ export {
   redactKeys,
   setLoggerContextFields,
   setLogStream,
+  structuredLogger,
 } from '../logger';
 export type {
   Counter,

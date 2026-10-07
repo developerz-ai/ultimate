@@ -10,7 +10,7 @@
 // which names were asked for, whether `--write` was passed, and what `x_migrations` says.
 
 import type { Environment } from '@ultimat3/core';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { db, isLedgerMissing, readLedger } from '@ultimat3/db';
 import type {
   BackfillDeclaration,
@@ -218,7 +218,7 @@ async function remainingFor(declaration: BackfillDeclaration): Promise<number | 
   const count = handle === undefined ? undefined : backfillOrigin(handle)?.count;
   if (count === undefined) return null;
   try {
-    return await count({ ctx: createContext({ role: 'migrate' }) });
+    return await count({ ctx: ctxOf({ role: 'migrate' }) });
   } catch {
     return null;
   }

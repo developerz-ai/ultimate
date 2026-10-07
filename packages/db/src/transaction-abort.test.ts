@@ -4,7 +4,7 @@
 // recording client aborts nothing; `transaction.live.test.ts` asks Postgres 17 the same questions.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
 
@@ -23,7 +23,7 @@ const caught = (work: Promise<unknown>): Promise<Caught | undefined> =>
 
 describe('a transaction the server aborted', () => {
   const PGLITE_BOOT_MS = 30_000;
-  const client = createPgliteClient();
+  const client = pgliteClient();
   const ids = async (): Promise<readonly number[]> =>
     (await client.query<{ id: number }>(sql`select id from abort_rows order by id`)).map(
       (row) => row.id,

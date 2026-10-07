@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   configureCursorSigning,
-  createContext,
+  ctxOf,
   encodeCursor,
   UltimateError,
   userActor,
@@ -12,7 +12,7 @@ import { serializeSortValue } from './cursor-value';
 import { paginate } from './pagination';
 import { describeQuery, isQuery, queryHash } from './query';
 import { runQuery } from './read';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import type { SearchChain } from './search';
 import { search } from './search';
 
@@ -66,15 +66,15 @@ const chainFor = (recorded: Recorded, rows: readonly Post[] = ROWS): SearchChain
 };
 
 const reader = { ...userActor({ id: 'u1' }), permissions: ['search:read'] };
-const ctx = createContext({ actor: reader });
+const ctx = ctxOf({ actor: reader });
 
 beforeEach(() => {
-  resetRegistry();
+  resetQueries();
   configureCursorSigning('test-secret');
 });
 
 afterEach(() => {
-  resetRegistry();
+  resetQueries();
 });
 
 describe('search()', () => {

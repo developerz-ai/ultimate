@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toRoute } from './http';
@@ -30,7 +30,7 @@ const likePost = mutator({
 }).named('likePost');
 
 const post = (key: string): Promise<Response> =>
-  createServer({ routes: [toRoute(likePost)], config: oneProcess() }).fetch(
+  httpServer({ routes: [toRoute(likePost)], config: oneProcess() }).fetch(
     new Request('http://dev.test/api/posts/like', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': key },

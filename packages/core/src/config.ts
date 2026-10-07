@@ -13,6 +13,7 @@ import { BASE_FIX, CACHE_TIER_FIX } from './config-fixes';
 import { type DrainConfig, type HealthConfig, readinessModeIssue } from './config-health';
 import type { IslandsConfig, IslandsSectionInput } from './config-islands';
 import { islandsIssues, mergeIslands } from './config-islands';
+import { refuseUnknownKeys } from './config-keys';
 import { type MailConfig, type MailSectionInput, mailIssues, mergeMail } from './config-mail';
 import { type Input, lastSaid, layered } from './config-merge';
 import type { NavigationConfig, NavigationSectionInput } from './config-navigation';
@@ -134,7 +135,7 @@ export interface DatabaseConfig {
  */
 export interface CacheConfig {
   readonly defaultTtlMs: number;
-  /** Order is fixed by `TIER_ORDER`; listing order here selects rungs, it does not rank them. */
+  /** Order is fixed by `CACHE_TIERS`; listing order here selects rungs, it does not rank them. */
   readonly tiers: readonly CacheTierName[];
 }
 
@@ -448,6 +449,8 @@ export function defineConfig(
   // `navigation` is left out: `config-navigation.ts` carries a wrong shape through AS WRITTEN and
   // refuses it in its own words, with the surfaces it accepts.
   const reference = { ...merge(input.name, []), navigation: undefined };
+  // Closed BEFORE shape: a typo'd section (`drian: null`) is the wrong name, not the wrong kind.
+  refuseUnknownKeys(reference, layers);
   for (const layer of layers) shapeIssues(reference, layer, issues);
   if (issues.length > 0) {
     throw new ConfigInvalidError({ cause: issues.join('; '), fix: BASE_FIX, meta: { issues } });

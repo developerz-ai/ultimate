@@ -7,7 +7,7 @@
 // redoing them and the two never race each other for the same row.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext, frozenClock } from '@ultimat3/core';
+import { type Ctx, ctxOf, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type {
   ClaimedJob,
@@ -19,7 +19,7 @@ import type {
 } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -31,7 +31,7 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
   };
 }
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
   for (let i = 0; i < 600; i += 1) {
@@ -163,7 +163,7 @@ describe('N real workers, one killed mid-flight, under load', () => {
     chaosJobIds.add(chaosTwo.id);
 
     const workers = Array.from({ length: 3 }, () =>
-      createWorker({
+      jobWorker({
         driver: chaos.driver,
         context,
         clock,

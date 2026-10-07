@@ -2,23 +2,23 @@
 // a refused credential is never presented twice.
 
 import { describe, expect, test } from 'bun:test';
-import { createLogger } from '@ultimat3/core';
+import { structuredLogger } from '@ultimat3/core';
 import type { AuthPlanInput, PromptHandler, ScrapeAuth } from './auth';
-import { createPrompt, ensureAuthenticated, markRefused, restorableSession } from './auth';
-import { testClock } from './clock';
+import { ensureAuthenticated, markRefused, restorableSession, scrapePrompt } from './auth';
+import { testScrapeClock } from './clock';
 import { fakePage } from './driver-fake';
 import type { ScrapePage } from './page';
-import { createSecretBag, redactSecrets } from './secrets';
+import { redactSecrets, secretBag } from './secrets';
 import { memorySessionStore, type SessionState } from './session-state';
 
-const silent = createLogger({ writer: () => undefined });
-const clock = testClock(new Date('2026-08-18T00:00:00.000Z'));
+const silent = structuredLogger({ writer: () => undefined });
+const clock = testScrapeClock(new Date('2026-08-18T00:00:00.000Z'));
 
 /** What a run was queued with: handed to the prompt handler verbatim. */
 const INPUT = { connectionId: 'conn-1' };
 
 const promptOver = (handler: PromptHandler | undefined, page: ScrapePage) =>
-  createPrompt({ scrape: 'bank', handler, input: INPUT, page, runId: 'run-1', clock });
+  scrapePrompt({ scrape: 'bank', handler, input: INPUT, page, runId: 'run-1', clock });
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
   try {
@@ -95,7 +95,7 @@ describe('unit · validate decides, and an invalid session is burned before the 
       runId: 'run-1',
       page,
       restored: stored(),
-      secrets: createSecretBag([]),
+      secrets: secretBag([]),
       prompt: promptOver(undefined, page),
     });
     expect(loggedIn).toBe(false);
@@ -119,7 +119,7 @@ describe('unit · validate decides, and an invalid session is burned before the 
       runId: 'run-1',
       page,
       restored: stored(),
-      secrets: createSecretBag([]),
+      secrets: secretBag([]),
       prompt: promptOver(undefined, page),
     });
     expect(loggedIn).toBe(true);
@@ -182,9 +182,9 @@ describe('unit · the 2FA prompt', () => {
   });
 
   test('an answer is concealed in the run secret set and counted, before the body has it', async () => {
-    const secrets = createSecretBag([]);
+    const secrets = secretBag([]);
     let answered = 0;
-    const prompt = createPrompt({
+    const prompt = scrapePrompt({
       scrape: 'bank',
       handler: () => '482913',
       input: INPUT,

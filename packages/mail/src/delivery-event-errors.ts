@@ -42,11 +42,11 @@ const RESEND_FIXES: ReadonlyMap<DeliveryRefusal, string> = new Map<DeliveryRefus
   ],
   [
     'signature',
-    "createResendEventReceiver({ secret: env.RESEND_WEBHOOK_SECRET }) — with this endpoint's whsec_ signing secret from https://resend.com/webhooks",
+    "resendEventReceiver({ secret: env.RESEND_WEBHOOK_SECRET }) — with this endpoint's whsec_ signing secret from https://resend.com/webhooks",
   ],
   [
     'stale',
-    'createResendEventReceiver({ secret, toleranceMs: 600_000 }) — or sync this host clock: timedatectl set-ntp true',
+    'resendEventReceiver({ secret, toleranceMs: 600_000 }) — or sync this host clock: timedatectl set-ntp true',
   ],
 ]);
 
@@ -61,11 +61,11 @@ const SES_FIXES: ReadonlyMap<DeliveryRefusal, string> = new Map<DeliveryRefusal,
   ],
   [
     'stale',
-    'createSesEventReceiver({ topicArns, toleranceMs: 7_200_000 }) — or sync this host clock: timedatectl set-ntp true',
+    'sesEventReceiver({ topicArns, toleranceMs: 7_200_000 }) — or sync this host clock: timedatectl set-ntp true',
   ],
   [
     'topic',
-    'aws sns list-topics — then, only if the topic is yours, createSesEventReceiver({ topicArns: [<your topic arn>] })',
+    'aws sns list-topics — then, only if the topic is yours, sesEventReceiver({ topicArns: [<your topic arn>] })',
   ],
   [
     'certificate-url',
@@ -124,8 +124,8 @@ export const deliveryEventInvalid = (
     fix:
       problem === 'too-large'
         ? provider === 'ses'
-          ? 'createSesEventReceiver({ topicArns, maxBytes: 2_097_152 }) — only if SNS really sends more'
-          : 'createResendEventReceiver({ secret, maxBytes: 2_097_152 }) — only if Resend really sends more'
+          ? 'sesEventReceiver({ topicArns, maxBytes: 2_097_152 }) — only if SNS really sends more'
+          : 'resendEventReceiver({ secret, maxBytes: 2_097_152 }) — only if Resend really sends more'
         : provider === 'ses'
           ? 'aws sns list-subscriptions-by-topic --topic-arn <your topic arn> — only SNS should be posting to this route'
           : "curl -sS https://api.resend.com/webhooks -H 'Authorization: Bearer <RESEND_API_KEY>' — only Resend should be posting to this route",

@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { QueryDef } from './query';
 import { isQuery, query, runQuery, sourceFor } from './query';
-import { describeQueries, registerQueries, registerQuery, resetRegistry } from './registry';
+import { describeQueries, registerQueries, registerQuery, resetQueries } from './registry';
 import { from } from './source';
-import { explain } from './sql';
+import { explainQuery } from './sql';
 
 interface Post {
   readonly id: string;
@@ -17,8 +17,8 @@ interface Post {
 const ORG = '00000000-0000-4000-8000-000000000001';
 const Input = t.object({ orgId: t.uuid });
 const readerActor = { ...userActor({ id: 'u1' }), permissions: ['feed:read'] };
-const member = createContext({ actor: readerActor });
-const anonymous = createContext({});
+const member = ctxOf({ actor: readerActor });
+const anonymous = ctxOf({});
 
 const posts: readonly Post[] = [
   { id: 'a', orgId: ORG, createdAt: 10 },
@@ -70,7 +70,7 @@ function defineCounted(hold?: Promise<void>) {
 
 describe('query', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
   });
 
   test('the declaration is lifted onto the query and `sql` is not reachable', () => {
@@ -181,7 +181,7 @@ describe('query', () => {
 
   test('explain exposes the generated SQL so an agent can self-correct', async () => {
     const feed = registerQuery('orgFeed', defineFeed());
-    const explained = await explain(feed, { orgId: ORG }, member);
+    const explained = await explainQuery(feed, { orgId: ORG }, member);
     expect(explained.sql).toBe(
       'select * from "posts" where "orgId" = $1 order by "createdAt" asc nulls last limit 50',
     );
@@ -228,7 +228,7 @@ describe('cache.ttlMs is judged at declaration', () => {
 describe('a query with no cache block', () => {
   test('is read once however many times one request asks', async () => {
     const { target, counts } = defineCounted();
-    const ctx = createContext({ actor: readerActor });
+    const ctx = ctxOf({ actor: readerActor });
 
     const first = await runQuery(target, { orgId: ORG }, { ctx });
     const second = await runQuery(target, { orgId: ORG }, { ctx });
@@ -243,7 +243,7 @@ describe('a query with no cache block', () => {
   test('is read once by a second reader that arrives while the first read is in flight', async () => {
     const hold = deferred();
     const { target, counts, entered } = defineCounted(hold.promise);
-    const ctx = createContext({ actor: readerActor });
+    const ctx = ctxOf({ actor: readerActor });
 
     const first = runQuery(target, { orgId: ORG }, { ctx });
     await entered;
@@ -256,19 +256,19 @@ describe('a query with no cache block', () => {
 
   test('is read again for a different input, and for another request', async () => {
     const { target, counts } = defineCounted();
-    const ctx = createContext({ actor: readerActor });
+    const ctx = ctxOf({ actor: readerActor });
     const other = '00000000-0000-4000-8000-000000000002';
 
     await runQuery(target, { orgId: ORG }, { ctx });
     await runQuery(target, { orgId: other }, { ctx });
-    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: readerActor }) });
+    await runQuery(target, { orgId: ORG }, { ctx: ctxOf({ actor: readerActor }) });
 
     expect(counts.executed).toBe(3);
   });
 
   test('is read again when the caller asks for it fresh', async () => {
     const { target, counts } = defineCounted();
-    const ctx = createContext({ actor: readerActor });
+    const ctx = ctxOf({ actor: readerActor });
 
     await runQuery(target, { orgId: ORG }, { ctx });
     await runQuery(target, { orgId: ORG }, { ctx, fresh: true });
@@ -283,7 +283,7 @@ describe('a query with no cache block', () => {
       policy: can('feed:read'),
       sql: () => from('rows', async () => [...rows]),
     }).named('writtenFeed');
-    const ctx = createContext({ actor: readerActor });
+    const ctx = ctxOf({ actor: readerActor });
 
     await runQuery(target, { orgId: ORG }, { ctx });
     rows.push({ id: 'b', orgId: ORG });
@@ -343,7 +343,7 @@ describe('NULL parity: recorded SQL, in-memory rows and IS NULL semantics agree'
           return softRows;
         }).where({ orgId: ORG, deletedAt: null }),
     }).named('softDeleteFeed');
-    const ctx = createContext({ actor: readerActor });
+    const ctx = ctxOf({ actor: readerActor });
 
     const [first, second] = await Promise.all([
       runQuery(target, { orgId: ORG }, { ctx }),

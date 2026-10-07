@@ -29,7 +29,7 @@ import { toPrompts } from './resources';
 import type { McpScopes } from './scopes';
 import { withScopes } from './scopes';
 import type { CreateMcpServerInput } from './server';
-import { createMcpServer, type McpServer } from './server';
+import { type McpServer, mcpServer } from './server';
 import type { McpInstructions } from './server-voice';
 import type { McpRateLimits, McpRouteDescriptor, ResolvedToken } from './transport-http';
 import { mcpHttpRoute } from './transport-http';
@@ -252,7 +252,7 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     errorAudience: input.errorAudience ?? 'caller',
     ...(input.onAudit === undefined ? {} : { onAudit: input.onAudit }),
   };
-  const server = createMcpServer(config);
+  const server = mcpServer(config);
 
   const resolveToken = input.resolveToken;
   const route =

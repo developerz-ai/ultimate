@@ -14,7 +14,7 @@ import {
   text,
   uuid,
 } from '@ultimat3/entity';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { frameworkSources } from '@ultimat3/manifest';
 import {
   defineRoles,
@@ -23,7 +23,7 @@ import {
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
-import { describeRoutes, routeEntries } from '@ultimat3/render';
+import { describePages, routeEntries } from '@ultimat3/render';
 import { ADMIN_MOUNT_FILE, adminMountRoutes } from './runtime-admin';
 
 // After `@ultimat3/render/server` installed its `.tsx` loader, exactly as `loadApp` orders it for
@@ -69,7 +69,7 @@ afterAll(() => {
 });
 
 const serve = (actor: Actor | null) =>
-  createServer({
+  httpServer({
     routes: adminMountRoutes({ buildId: BUILD_ID }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
@@ -105,8 +105,8 @@ describe('unit · the admin mount', () => {
   // Define once, project everywhere: the routes `defineAdmin()` derives are in the framework's one
   // route list and in the manifest — as mounted routes with their permissions, never as a page
   // file — and the manifest records what each resource's list answers.
-  test('the declared admin is in describeRoutes() and in the manifest, with no page file pretended', () => {
-    const listed = describeRoutes().filter((route) => route.mount?.by === 'defineAdmin');
+  test('the declared admin is in describePages() and in the manifest, with no page file pretended', () => {
+    const listed = describePages().filter((route) => route.mount?.by === 'defineAdmin');
     expect(listed.map((route) => route.path)).toContain('/admin/cli_admin_parts/:id/edit');
     expect(listed.find((route) => route.path === '/admin/cli_admin_parts')).toMatchObject({
       file: ADMIN_MOUNT_FILE,
@@ -182,7 +182,7 @@ describe('unit · the admin mount', () => {
 
   test("a screen carries the app's brand after its stylesheet, and none without one", async () => {
     const brand = '<style>:root{--color-accent:1 2 3}</style>';
-    const branded = createServer({
+    const branded = httpServer({
       routes: adminMountRoutes({ buildId: BUILD_ID, brandHead: brand }),
       role: 'web',
       config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

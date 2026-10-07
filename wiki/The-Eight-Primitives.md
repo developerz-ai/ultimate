@@ -38,7 +38,7 @@ A primitive's surfaces are methods **on the primitive**, never free functions ta
 | `mutator` | everything `action` has, plus `.local()` `.server()` `.conflict` `.describeMutator()` |
 | `query` | `.as()` `.live()` `.client()` `.describe()`, plus `.input` `.policy` `.cache` `.mcp` `.isLive`. `sql` is not among them |
 | `job` | `.enqueue()` `.as()` `.describe()`, plus `.parse()` and `.idempotencyKeyFor()` |
-| `route` | a normalized descriptor rather than methods — `meta()` always awaits, `budget` is always an object. A route declares no behaviour to project; `describeRoutes()` is the one route list |
+| `route` | a normalized descriptor rather than methods — `meta()` always awaits, `budget` is always an object. A route declares no behaviour to project; `describePages()` is the one route list |
 | `task` | `.entries()` `.enqueue()` `.describe()` |
 
 The declaration lives in a private store inside the package that runs it, and nothing exports a reader for it. So there is one execution path and one authz path structurally, not by convention: a hand-rolled look-alike carrying the right `kind` is `X_ACTION_FOREIGN` / `X_QUERY_FOREIGN`, never a registered primitive. Registration stamps the export name **in place**, so `import { publishPost }` is the object that projects once the app has booted — there is no second, differently-named twin to remember.

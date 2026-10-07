@@ -4,7 +4,7 @@
 
 import { proveSameOrigin, renderFixShellArg, UltimateError } from '@ultimat3/core';
 import type { UltimateRequest } from '@ultimat3/http';
-import { csrfBlocked, HttpError, json as jsonResponse, selfOrigin } from '@ultimat3/http';
+import { csrfBlocked, HttpError, jsonResponse, selfOrigin } from '@ultimat3/http';
 import { t } from '@ultimat3/schema';
 import { isLoopbackHostname } from './loopback-host';
 

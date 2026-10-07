@@ -3,7 +3,7 @@
 // on PGlite, as `adapter-parity-identity.test.ts` does — a real `array_remove`, a real row lock.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createPgliteClient, raw } from '@ultimat3/db';
+import { pgliteClient, raw } from '@ultimat3/db';
 import type { AuthAdapter } from './adapter';
 import { postgresAuthAdapter } from './builtin-adapter';
 import { memoryAuthAdapter } from './memory-adapter';
@@ -11,7 +11,7 @@ import { openTotpSecret, saveTotpSecret, sealMfaSecrets } from './mfa-secret';
 import { AUTH_TABLES } from './tables';
 
 const PGLITE_BOOT_MS = 30_000;
-const client = createPgliteClient();
+const client = pgliteClient();
 
 const ADA = '00000000-0000-7000-8000-000000000401';
 const GRACE = '00000000-0000-7000-8000-000000000402';

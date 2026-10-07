@@ -20,7 +20,7 @@ import {
   loadingHints,
   reservedRatio,
   sourceSetsFor,
-  srcsetFor,
+  variantSrcset,
 } from './image-source';
 
 /**
@@ -77,7 +77,7 @@ export function Image(props: ImageBaseProps & ImageDimensions): JSX.Element {
       style={{ '--image-ratio': ratio() }}
       src={src()}
       alt={props.alt}
-      srcset={srcsetFor(props.variants)}
+      srcset={variantSrcset(props.variants)}
       sizes={props.sizes}
       width={box()?.width}
       height={box()?.height}

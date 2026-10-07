@@ -106,7 +106,7 @@ export const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue
     const currency = value['currency'];
     const scale = value['scale'];
     const issues: StandardIssue[] = [];
-    // Safe, not merely whole: `money()` and `entity`'s `parseMinor` both demand a safe integer, so
+    // Safe, not merely whole: `fromMinor()` and `entity`'s `parseMinor` both demand a safe integer, so
     // `Number.isInteger` here let 2^53 through the boundary as a 200 and failed at the row write
     // as a 500 — the same value refused twice, once with a field path and once without.
     if (typeof minor !== 'number' || !Number.isSafeInteger(minor)) {

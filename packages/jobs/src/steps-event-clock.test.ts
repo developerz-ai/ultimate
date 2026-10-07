@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import { memoryEventBus } from './events';
 import type { EventLookup, StepStore } from './steps';
-import { createStepRunner, isStepSuspension } from './steps';
+import { isStepSuspension, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 const T0 = 1_790_000_000_000;
@@ -36,7 +36,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
     const worker = fakeClock(T0 + SKEW_MS);
     const events = memoryEventBus({ clock: database });
     const attempt = (): Promise<unknown> =>
-      createStepRunner({
+      stepRunner({
         runId: 'run-skew',
         jobName: 'awaitOtp',
         store,
@@ -62,7 +62,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
     await events.publish('otp.entered', { code: 'stale' });
     database.advance(1_000);
 
-    const outcome = await createStepRunner({
+    const outcome = await stepRunner({
       runId: 'run-behind',
       jobName: 'awaitOtp',
       store,
@@ -87,7 +87,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
       },
     };
     for (let poll = 0; poll < 3; poll += 1) {
-      await createStepRunner({ runId: 'run-poll', jobName: 'j', store, clock: worker, events })
+      await stepRunner({ runId: 'run-poll', jobName: 'j', store, clock: worker, events })
         .step.waitForEvent('otp', 'otp.entered', { timeout: '1h' })
         .catch((error: unknown) => error);
       database.advance(30_000);
@@ -99,7 +99,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
 
   test('with no bus at all the runner clock is the only one there is', async () => {
     const worker = fakeClock(T0 + SKEW_MS);
-    await createStepRunner({ runId: 'run-none', jobName: 'j', store, clock: worker })
+    await stepRunner({ runId: 'run-none', jobName: 'j', store, clock: worker })
       .step.waitForEvent('otp', 'otp.entered', { timeout: '1h' })
       .catch((error: unknown) => error);
     expect((await store.get('run-none', 'otp'))?.startedAt).toBe(T0 + SKEW_MS);
@@ -118,7 +118,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
       },
     };
     const attempt = (required = false): Promise<unknown> =>
-      createStepRunner({ runId: 'run-early', jobName: 'awaitOtp', store, clock: worker, events })
+      stepRunner({ runId: 'run-early', jobName: 'awaitOtp', store, clock: worker, events })
         .step.waitForEvent('otp', 'otp.entered', { timeout: '10s', required })
         .catch((error: unknown) => error);
 
@@ -144,7 +144,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
     const worker = fakeClock(T0 + SKEW_MS);
     const events = memoryEventBus({ clock: database });
     const attempt = (): Promise<unknown> =>
-      createStepRunner({ runId: 'run-late', jobName: 'awaitOtp', store, clock: worker, events })
+      stepRunner({ runId: 'run-late', jobName: 'awaitOtp', store, clock: worker, events })
         .step.waitForEvent('otp', 'otp.entered', { timeout: '10s' })
         .catch((error: unknown) => error);
 

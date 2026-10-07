@@ -9,7 +9,7 @@ import { beforeAll, expect, test } from 'bun:test';
 // Side-effect import: `defineCatalogs()` runs on the way through, and without it every `t()` here
 // renders ⟦key⟧ — which the last assertion is what checks for.
 import '@social-media-clone/i18n';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { routeDataFor } from '@ultimat3/render';
 import { renderComponent } from '@ultimat3/render/server';
 
@@ -23,7 +23,7 @@ beforeAll(async () => {
 
 test('unit · an anonymous render produces the empty state, not a thrown renderer', async () => {
   const url = 'http://localhost/messages';
-  const html = await runWithContext(createContext({ tz: 'UTC', locale: 'en' }), async () => {
+  const html = await runWithContext(ctxOf({ tz: 'UTC', locale: 'en' }), async () => {
     // The route's own `load`, through the one resolver every render mode uses.
     const data = await routeDataFor(page.config, { params: {}, url });
     return renderComponent(() => page.Page({ data, url }), {}, FILE);

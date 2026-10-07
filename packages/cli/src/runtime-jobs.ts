@@ -1,6 +1,6 @@
 // `jobs.queues`, `jobs.concurrency` and `jobs.visibilityTimeoutMs`, read out of the app's own
 // `app.config.ts` for the `worker` role, out of the config `startServices` loads once. Until 22.0.0
-// `createWorker` was called with none of them, so a `mail` queue ran nothing.
+// `jobWorker` was called with none of them, so a `mail` queue ran nothing.
 
 import type { AppConfig } from '@ultimat3/core';
 import { registeredJobs, type WorkerOptions } from '@ultimat3/jobs';
@@ -30,7 +30,7 @@ export function workerConfigOf(config: AppConfig | undefined): WorkerConfig {
  * on. The union and not the list, decided 2026-09-23: `x new` and the deployed demo configure
  * `['<app>-default']` while a `job()` naming no queue lands on `default`, so obeying the list alone
  * would leave every such job queued for ever — the silent direction. `undefined` when both are
- * empty, which is `createWorker`'s own `['default']`.
+ * empty, which is `jobWorker`'s own `['default']`.
  */
 export function workerQueuesFor(
   configured: readonly string[],
@@ -43,7 +43,7 @@ export function workerQueuesFor(
 type WorkerConfigOptions = Pick<WorkerOptions, 'queues' | 'concurrency' | 'visibilityTimeoutMs'>;
 
 /**
- * The `createWorker` options the config supplies, read at START so every job the app registered
+ * The `jobWorker` options the config supplies, read at START so every job the app registered
  * on import is counted. A key the config leaves unset is omitted, never passed as `undefined`, so
  * the worker's own default applies (`exactOptionalPropertyTypes`).
  */

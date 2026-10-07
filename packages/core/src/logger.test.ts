@@ -13,11 +13,11 @@ import { type Clock, frozenClock } from './clock';
 import { ERROR_DOCS_URL } from './error-codes';
 import { UltimateError } from './errors';
 import type { LogLevel } from './logger';
-import { createLogger, LOG_LEVELS, REDACTED, setLogSink, setLogStream } from './logger';
+import { LOG_LEVELS, REDACTED, setLogSink, setLogStream, structuredLogger } from './logger';
 
 function capture(level: 'trace' | 'info' = 'info') {
   const lines: Record<string, unknown>[] = [];
-  const logger = createLogger({
+  const logger = structuredLogger({
     level,
     clock: frozenClock('2026-07-26T10:00:00.000Z'),
     writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
@@ -63,7 +63,7 @@ describe('logger', () => {
     // describes — `lifecycle.ts` logs the value a shutdown hook threw, so a throw here means
     // SIGTERM hangs.
     const lines: Record<string, unknown>[] = [];
-    const logger = createLogger({
+    const logger = structuredLogger({
       level: 'info',
       clock: frozenClock('not-a-date'),
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
@@ -85,7 +85,7 @@ describe('logger', () => {
       },
       monotonic: () => 0,
     };
-    const logger = createLogger({
+    const logger = structuredLogger({
       level: 'info',
       clock: hostile,
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
@@ -94,7 +94,7 @@ describe('logger', () => {
     expect(lines[0]).toEqual({ ts: 'an invalid Date', level: 'error', msg: 'drain hook threw' });
 
     const notADate = { now: () => 0, monotonic: () => 0 } as unknown as Clock;
-    const second = createLogger({
+    const second = structuredLogger({
       level: 'info',
       clock: notADate,
       writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
@@ -119,7 +119,7 @@ describe('logger', () => {
   test('a level that is not a level is refused, never a logger that emits everything', () => {
     const lines: string[] = [];
     const build = (): unknown =>
-      createLogger({
+      structuredLogger({
         level: 'verbose' as LogLevel,
         writer: (line) => lines.push(line),
       });
@@ -130,7 +130,7 @@ describe('logger', () => {
   });
 
   // The same typo through the OTHER door. `LOG_LEVEL=verbose` fell back to `info` in silence, so
-  // an operator who asked for more got less and nothing said so, while `createLogger({ level })`
+  // an operator who asked for more got less and nothing said so, while `structuredLogger({ level })`
   // refused the identical value.
   describe('LOG_LEVEL', () => {
     const previous = process.env['LOG_LEVEL'];
@@ -142,7 +142,7 @@ describe('logger', () => {
     test.each(['verbose', 'DEBUG', ' warn'])('%p is refused, naming the variable', (value) => {
       process.env['LOG_LEVEL'] = value;
       try {
-        createLogger();
+        structuredLogger();
         expect.unreachable();
       } catch (error) {
         expect((error as { code?: string }).code).toBe('X_INVARIANT');
@@ -152,16 +152,16 @@ describe('logger', () => {
 
     test('a declared level is honoured, and unset or EMPTY is info', () => {
       process.env['LOG_LEVEL'] = 'warn';
-      expect(createLogger().level).toBe('warn');
+      expect(structuredLogger().level).toBe('warn');
       process.env['LOG_LEVEL'] = '';
-      expect(createLogger().level).toBe('info');
+      expect(structuredLogger().level).toBe('info');
       delete process.env['LOG_LEVEL'];
-      expect(createLogger().level).toBe('info');
+      expect(structuredLogger().level).toBe('info');
     });
 
     test('an explicit level never reads the variable at all', () => {
       process.env['LOG_LEVEL'] = 'verbose';
-      expect(createLogger({ level: 'error' }).level).toBe('error');
+      expect(structuredLogger({ level: 'error' }).level).toBe('error');
     });
   });
 
@@ -174,7 +174,7 @@ describe('logger', () => {
 
   test('every declared level still builds a logger', () => {
     for (const level of LOG_LEVELS) {
-      expect(createLogger({ level, writer: () => undefined }).level).toBe(level);
+      expect(structuredLogger({ level, writer: () => undefined }).level).toBe(level);
     }
   });
 
@@ -263,7 +263,10 @@ describe('logger · the sink', () => {
     const got: [string, string][] = [];
     const previous = setLogSink((line, level) => got.push([level, line]));
     try {
-      const log = createLogger({ level: 'info', clock: frozenClock('2026-07-26T10:00:00.000Z') });
+      const log = structuredLogger({
+        level: 'info',
+        clock: frozenClock('2026-07-26T10:00:00.000Z'),
+      });
       log.debug('below the level: never written, sink or not');
       log.info('to the sink');
       log.error('errors too');
@@ -280,7 +283,7 @@ describe('logger · the sink', () => {
     const own: string[] = [];
     const previous = setLogSink((line) => sunk.push(line));
     try {
-      createLogger({ level: 'info', writer: (line) => own.push(line) }).info('mine');
+      structuredLogger({ level: 'info', writer: (line) => own.push(line) }).info('mine');
     } finally {
       setLogSink(previous);
     }
@@ -307,7 +310,10 @@ describe('logger · the default writer', () => {
     // The streams themselves are the subject here, so the test preload's sink is lifted.
     const sink = setLogSink(undefined);
     try {
-      const log = createLogger({ level: 'info', clock: frozenClock('2026-07-26T10:00:00.000Z') });
+      const log = structuredLogger({
+        level: 'info',
+        clock: frozenClock('2026-07-26T10:00:00.000Z'),
+      });
       log.info('ultimate migrate applied');
       log.error('ultimate migrate failed');
     } finally {
@@ -340,7 +346,7 @@ describe('logger · the default writer', () => {
 /**
  * The defect a server-side test cannot see, because the runtime it runs in has the binding.
  *
- * `logger` at the foot of `logger.ts` is `createLogger()` at MODULE INIT, and `envLevel()` read a
+ * `logger` at the foot of `logger.ts` is `structuredLogger()` at MODULE INIT, and `envLevel()` read a
  * bare `process.env['LOG_LEVEL']`. `@ultimat3/core`'s barrel is what every other package imports,
  * `@ultimat3/realtime`'s `channel.ts` calls `logger.warn`, and so the shaker keeps `logger` in the
  * chunk of any island that reaches a live subscription. Measured on ai-maxxing's session console

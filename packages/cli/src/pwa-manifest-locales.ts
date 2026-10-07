@@ -3,6 +3,7 @@
 // routed locale from this; the `pwa` block is read structurally, for `colorsOf`'s reason there.
 
 import { localeSegment, localizePath } from '@ultimat3/core';
+import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import type {
   ManifestIcon,
   ManifestScreenshot,
@@ -23,15 +24,14 @@ const strings = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
 
 /**
- * `locales` and `defaultLocale`, read off `loadAppCatalogs`'s answer (`@ultimat3/i18n/app-catalogs`). The manifest's `lang` was the
- * generator's hardcoded `'en'` for an `es-co` app (notificado.co, 22.3.2). An app with no catalog
- * module is the framework's own default, `en`.
+ * The manifests' locales, off `appLocaleSet`'s answer (`@ultimat3/i18n/app-catalogs`) — an app
+ * with no catalogs is `UNDECLARED_LOCALES`, the framework default alone. The manifest's `lang` was
+ * the generator's hardcoded `'en'` for an `es-co` app (notificado.co, 22.3.2). Deduplicated by URL
+ * segment, the unit a locale prefix is spelled in.
  */
-export function appLocales(config: Record<string, unknown>): AppLocales {
-  const declared = strings(config['locales']);
-  const named = config['defaultLocale'];
-  const fallback = typeof named === 'string' && named !== '' ? named : (declared[0] ?? 'en');
-  const others = declared.filter((locale) => localeSegment(locale) !== localeSegment(fallback));
+export function appLocales(set: AppLocaleSet): AppLocales {
+  const fallback = set.defaultLocale;
+  const others = set.locales.filter((locale) => localeSegment(locale) !== localeSegment(fallback));
   return { routed: [fallback, ...others], fallback };
 }
 

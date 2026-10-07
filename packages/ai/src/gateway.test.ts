@@ -4,16 +4,16 @@
 
 import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
-import { EchoProvider } from './echo-provider';
+import { echoProvider } from './echo-provider';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
 
-const echo = new EchoProvider();
+const echo = echoProvider();
 
 describe('routing and retries', () => {
   test('a retryable failure falls through to a healthy provider', async () => {
@@ -28,7 +28,7 @@ describe('routing and retries', () => {
         throw new Error('unused');
       },
     };
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [flaky, echo],
       retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
@@ -55,7 +55,7 @@ describe('routing and retries', () => {
         throw new Error('unused');
       },
     };
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [broken],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
@@ -92,7 +92,7 @@ describe('routing and retries', () => {
         yield* echo.stream(request);
       },
     };
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [flaky, healthy],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
@@ -112,7 +112,7 @@ describe('routing and retries', () => {
     expect(fellOver).toBe(false);
   });
 
-  // A `Provider` is an APP's object — `createGateway({ defaultModel: FIXTURE_MODEL,  providers })` takes whatever it is handed —
+  // A `Provider` is an APP's object — `providerGateway({ defaultModel: FIXTURE_MODEL,  providers })` takes whatever it is handed —
   // so the value it rejects with is one the framework did not build. Both reads in the retry loop
   // run on it: `isRetryable` indexes it, and the failure line renders it. A throw from either
   // replaces `X_AI_PROVIDER_UNAVAILABLE` with a bare TypeError raised inside the catch block.
@@ -142,7 +142,7 @@ describe('routing and retries', () => {
           throw new Error('unused');
         },
       };
-      const gateway = createGateway({
+      const gateway = providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [rude],
         retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
@@ -173,7 +173,7 @@ describe('routing and retries', () => {
       stream: (request) => echo.stream(request),
     };
     const store = new Map<string, string>();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [counting],
       cache: { get: (k) => store.get(k), set: (k, v) => void store.set(k, v) },
@@ -196,7 +196,7 @@ describe('routing and retries', () => {
       stream: (request) => echo.stream(request),
     };
     const store = new Map<string, string>();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [refusing],
       cache: { get: (k) => store.get(k), set: (k, v) => void store.set(k, v) },
@@ -229,7 +229,7 @@ describe('a local refusal reaches the caller with its own code', () => {
   });
 
   test('generate answers X_AI_KEY_MISSING, the same code stream answers', async () => {
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [localRefusal()],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
@@ -281,7 +281,7 @@ describe('a local refusal reaches the caller with its own code', () => {
         throw new AiKeyMissingError({ provider: 'anthropic', envVar: 'ANTHROPIC_API_KEY' });
       },
     };
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [counting],
       retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
@@ -323,7 +323,7 @@ describe('a local refusal reaches the caller with its own code', () => {
       },
       stream: (request) => echo.stream(request),
     };
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [down, healthy],
       retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
@@ -368,7 +368,7 @@ describe('the gateway screens its own bounds', () => {
   test('retry.attempts is refused when the gateway is built, not on the first failure', () => {
     for (const attempts of [...NOT_A_BOUND, 0]) {
       const error = refusal(() =>
-        createGateway({
+        providerGateway({
           defaultModel: FIXTURE_MODEL,
           providers: [echo],
           retry: { attempts, baseDelayMs: 0, maxDelayMs: 0 },
@@ -376,13 +376,13 @@ describe('the gateway screens its own bounds', () => {
       );
       expect(error.code).toBe('X_INVARIANT');
       expect(error.cause).toContain('retry.attempts');
-      expect(error.fix).toContain('createGateway');
+      expect(error.fix).toContain('gateway');
     }
   });
 
   test('a completion ceiling that is not a count never reaches a provider', async () => {
     const { provider, calls } = counting();
-    const gateway = createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] });
+    const gateway = providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] });
     for (const maxTokens of [...NOT_A_BOUND, 0]) {
       const error = await asyncRefusal(() =>
         gateway.generate({ messages: [{ role: 'user', content: 'ping' }], maxTokens }),
@@ -403,7 +403,7 @@ describe('the gateway screens its own bounds', () => {
 
   test('an honest gateway still answers — the non-vacuity half', async () => {
     const { provider, calls } = counting();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [provider],
       retry: { attempts: 1, baseDelayMs: 0, maxDelayMs: 0 },

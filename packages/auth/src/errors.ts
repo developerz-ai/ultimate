@@ -117,14 +117,14 @@ export class AuthError extends UltimateError {
  * `authenticate()` returns the anonymous actor for a missing cookie rather than throwing, which
  * is correct — and is exactly why the failure surfaces here, one layer later, instead of there.
  */
-export const unauthenticated = (surface: string): AuthError =>
+export const authUnauthenticated = (surface: string): AuthError =>
   new AuthError({
     code: 'X_UNAUTHENTICATED',
     cause: `${surface} needs an actor but ctx.actor is anonymous`,
     fix: 'send the __Host-x_session cookie with this request, and resolve it once at the boundary: authenticate(auth, readSessionCookie(request, auth.sessions.policy))',
   });
 
-export const forbidden = (surface: string, reason: string): AuthError =>
+export const authForbidden = (surface: string, reason: string): AuthError =>
   new AuthError({
     code: 'X_FORBIDDEN',
     cause: `${surface} denied: ${reason}`,

@@ -5,18 +5,18 @@
 import { describe, expect, test } from 'bun:test';
 import type { NetworkEntry } from './rings';
 import {
-  createRing,
+  boundedRing,
   DEFAULT_RING_CAPACITY,
   MAX_PAGE_ERROR_CHARS,
   pageErrorEntry,
   RESOURCE_TYPES,
 } from './rings';
 
-describe('unit · createRing', () => {
+describe('unit · boundedRing', () => {
   test('it keeps the NEWEST entries and counts what it dropped', () => {
     // Newest, because the lines an author reads after a failure are the ones nearest to it — and
     // `dropped` is the honest "you are not seeing it all", which a silent truncation is not.
-    const ring = createRing<number>(3);
+    const ring = boundedRing<number>(3);
     for (const value of [1, 2, 3, 4, 5]) ring.push(value);
     expect(ring.entries()).toEqual([3, 4, 5]);
     expect(ring.dropped).toBe(2);
@@ -24,14 +24,14 @@ describe('unit · createRing', () => {
   });
 
   test('under capacity nothing is dropped', () => {
-    const ring = createRing<number>(3);
+    const ring = boundedRing<number>(3);
     ring.push(1);
     expect(ring.entries()).toEqual([1]);
     expect(ring.dropped).toBe(0);
   });
 
   test('entries() is a COPY — a caller holding the ring`s array would watch it mutate', () => {
-    const ring = createRing<number>(3);
+    const ring = boundedRing<number>(3);
     ring.push(1);
     const snapshot = ring.entries();
     ring.push(2);
@@ -41,7 +41,7 @@ describe('unit · createRing', () => {
 
   test('clear() empties the ring AND resets the drop count', () => {
     // A `dropped` that survived a clear would report the previous page's losses against this one.
-    const ring = createRing<NetworkEntry>(1);
+    const ring = boundedRing<NetworkEntry>(1);
     ring.push({ method: 'GET', url: 'https://shop.test/a', resourceType: 'document', at: 1 });
     ring.push({ method: 'GET', url: 'https://shop.test/b', resourceType: 'document', at: 2 });
     expect(ring.dropped).toBe(1);
@@ -58,7 +58,7 @@ describe('unit · createRing', () => {
   });
 
   test('the default capacity is a bound, not unlimited', () => {
-    const ring = createRing<number>();
+    const ring = boundedRing<number>();
     expect(ring.capacity).toBe(DEFAULT_RING_CAPACITY);
     for (let index = 0; index <= DEFAULT_RING_CAPACITY; index += 1) ring.push(index);
     expect(ring.entries()).toHaveLength(DEFAULT_RING_CAPACITY);
@@ -115,7 +115,7 @@ describe('unit · RESOURCE_TYPES', () => {
 /**
  * A capacity that cannot be one is REFUSED at construction, and the reason is the shape of the
  * failure it replaces: `while (items.length > capacity) items.shift()` with a negative capacity
- * shifts an already-empty array forever, because `0 > -1` stays true. `createRing(-1).push(1)`
+ * shifts an already-empty array forever, because `0 > -1` stays true. `boundedRing(-1).push(1)`
  * never returned — measured, killed at `timeout 5`, exit 124.
  *
  * A hang there is past `ctx.signal`, past the wedge watchdog and past the job timeout: it is a
@@ -137,23 +137,23 @@ describe('unit · a capacity that cannot bound anything is refused, never accept
   };
 
   test('a negative capacity is refused at construction, not hung on at the first push', () => {
-    expect(codeOf(() => createRing<number>(-1))).toBe('X_INVARIANT');
+    expect(codeOf(() => boundedRing<number>(-1))).toBe('X_INVARIANT');
   });
 
   test('a zero capacity is refused — a ring that can hold nothing is a silent discard', () => {
-    expect(codeOf(() => createRing<number>(0))).toBe('X_INVARIANT');
+    expect(codeOf(() => boundedRing<number>(0))).toBe('X_INVARIANT');
   });
 
   test('NaN is refused, because it makes the ring UNBOUNDED rather than small', () => {
-    expect(codeOf(() => createRing<number>(Number.NaN))).toBe('X_INVARIANT');
+    expect(codeOf(() => boundedRing<number>(Number.NaN))).toBe('X_INVARIANT');
   });
 
   test('a fraction is refused — the bound would not be the number that was asked for', () => {
-    expect(codeOf(() => createRing<number>(1.5))).toBe('X_INVARIANT');
+    expect(codeOf(() => boundedRing<number>(1.5))).toBe('X_INVARIANT');
   });
 
   test('omitted is still DEFAULT_RING_CAPACITY, and a positive integer is still honoured', () => {
-    expect(createRing<number>().capacity).toBe(DEFAULT_RING_CAPACITY);
-    expect(createRing<number>(1).capacity).toBe(1);
+    expect(boundedRing<number>().capacity).toBe(DEFAULT_RING_CAPACITY);
+    expect(boundedRing<number>(1).capacity).toBe(1);
   });
 });

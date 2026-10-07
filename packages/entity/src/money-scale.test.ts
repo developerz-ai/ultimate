@@ -5,7 +5,7 @@
 
 import { afterAll, beforeEach, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { money, text, uuid } from './columns';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
@@ -28,7 +28,7 @@ const ID = '00000000-0000-7000-8000-000000000001';
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

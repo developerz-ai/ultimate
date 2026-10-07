@@ -7,7 +7,7 @@
 // 1. `defaultClient()` is the one place db composes `replicatedClient(primary, replica)` from
 //    `DATABASE_REPLICA_URL`, and it runs only from `baseClient()` — "the client an app installed
 //    none for". Every process the framework boots installs one: `runtime-queue.ts` calls
-//    `setDbClient(createPgliteClient(…) | postgresClient({ url }))`, so `defaultClient()` was
+//    `setDbClient(pgliteClient(…) | postgresClient({ url }))`, so `defaultClient()` was
 //    unreachable from `x dev`, from `apps/web/server.ts` and from every container role.
 // 2. Routing needs an OPEN scope as well as a configured replica, and nothing opened one.
 //

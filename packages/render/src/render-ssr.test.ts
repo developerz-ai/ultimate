@@ -4,7 +4,7 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { clearRoutes, registerRoute } from './registry';
 import type { SsrRenderInput } from './render-ssr';
 import { renderSsr, ssrHeaders } from './render-ssr';
@@ -31,7 +31,7 @@ function ssrInput(file: string, policy?: RouteGuard): SsrRenderInput {
     entry: ssrRoute(file, policy),
     params: {},
     url: new URL('https://example.com/pricing'),
-    ctx: createContext({}),
+    ctx: ctxOf({}),
   };
 }
 

@@ -4,7 +4,7 @@
 // diagnostic over.
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
-import { describeRoutes } from '@ultimat3/render';
+import { describePages } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { APP_CONFIG_FILE } from './app-root';
 import type { Finding } from './output';
@@ -47,7 +47,7 @@ export interface OfflineFallbackFact {
  * below already refuses `--surface app`, so the check and the remedy disagreed about one code.
  *
  * Residual, and NOT closed by this: a `site/` route declaring `render: 'ssr'` is not prerendered
- * either. `NavigableRoute` carries no render mode, and `describeRoutes()` has one — the narrower
+ * either. `NavigableRoute` carries no render mode, and `describePages()` has one — the narrower
  * check belongs with it.
  */
 const NAVIGABLE: ReadonlySet<string> = new Set(['site']);
@@ -107,7 +107,7 @@ export function offlineFallbackFinding(fact: OfflineFallbackFact): Finding | und
 /**
  * The fact, read off a real app root. Both halves come from the framework's own answers — the
  * config through `loadPwaArtifacts` (the one reader of that file) and the routes through
- * `describeRoutes()` (the projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all
+ * `describePages()` (the projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all
  * built from), so this check and the service worker cannot disagree about which routes exist.
  */
 export async function offlineFallbackProbe(root: string): Promise<OfflineFallbackFact> {
@@ -118,6 +118,6 @@ export async function offlineFallbackProbe(root: string): Promise<OfflineFallbac
     routes:
       app.findings.length > 0
         ? undefined
-        : describeRoutes().map((route) => ({ path: route.path, surface: route.surface })),
+        : describePages().map((route) => ({ path: route.path, surface: route.surface })),
   };
 }

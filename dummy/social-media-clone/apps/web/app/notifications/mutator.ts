@@ -4,7 +4,8 @@
 //
 // `t` comes from @ultimat3/action, not @ultimat3/schema: a mutator file imports one package.
 
-import { actorOf, mutator, t } from '@ultimat3/action';
+import { mutator, t } from '@ultimat3/action';
+import { actorOf } from '@ultimat3/core';
 import { notificationMarkRead } from './policy';
 import * as repo from './repo';
 

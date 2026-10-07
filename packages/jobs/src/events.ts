@@ -3,7 +3,7 @@
 // 12:00:10, so a fire-and-forget emitter would silently strand every waiting run.
 
 import type { Clock } from '@ultimat3/core';
-import { finiteOption, logger, systemClock, uuid } from '@ultimat3/core';
+import { finiteOption, logger, systemClock, uuidV7 } from '@ultimat3/core';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
 import type { PurgeTarget } from './purge';
@@ -83,7 +83,7 @@ export function memoryEventBus(options: MemoryEventBusOptions = {}): EventBus {
       purgeExpired();
       const at = nowMs(clock);
       const event: JobEvent = {
-        id: uuid(),
+        id: uuidV7(),
         name,
         payload,
         publishedAt: at,

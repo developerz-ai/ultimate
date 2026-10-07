@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { derivePath, inputSchemaName, pluralize } from './naming';
+import { pluralize } from '@ultimat3/core';
+import { derivePath, inputSchemaName } from './naming';
 
 describe('action name -> route path', () => {
   const cases: readonly [string, string][] = [

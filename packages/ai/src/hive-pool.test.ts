@@ -7,13 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import {
-  createContext,
-  createLogger,
-  runWithContext,
-  UltimateError,
-  userActor,
-} from '@ultimat3/core';
+import { ctxOf, runWithContext, structuredLogger, UltimateError, userActor } from '@ultimat3/core';
 import { HIDDEN_MEMBER_CAUSE, runPool } from './hive-pool';
 import type { HiveMember } from './hive-result';
 import { SKIPPED_ABORTED, SKIPPED_NO_INPUT } from './hive-result';
@@ -24,7 +18,7 @@ function pooled<I, O>(
   onMemberError: 'abort' | 'collect',
   member: (payload: I, ctx: Ctx) => Promise<O>,
 ): Promise<readonly HiveMember<O>[]> {
-  const ctx = createContext({ actor: userActor({ id: 'user-7' }) });
+  const ctx = ctxOf({ actor: userActor({ id: 'user-7' }) });
   return runWithContext(ctx, () =>
     runPool<I, O>({
       inputs,
@@ -88,9 +82,9 @@ describe('a member failure discloses only what the caller may read', () => {
     thrown: unknown,
   ): Promise<{ members: readonly HiveMember<string>[]; log: string }> {
     const lines: string[] = [];
-    const ctx = createContext({
+    const ctx = ctxOf({
       actor: userActor({ id: 'user-7' }),
-      logger: createLogger({ level: 'error', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'error', writer: (line) => lines.push(line) }),
     });
     return runWithContext(ctx, async () => {
       const members = await runPool<number, string>({

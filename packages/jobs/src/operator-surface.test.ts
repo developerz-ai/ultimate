@@ -23,7 +23,7 @@ import {
 import { operatorScopeScenarios } from './operator-surface-scope-fixture';
 import { operatorSettleScenarios } from './operator-surface-settle-fixture';
 import { createProgressReporter } from './progress';
-import { COUNTER_ROLLUP_INTERVAL_MS, createScheduler, PAUSE_RECHECK_MS } from './scheduler';
+import { COUNTER_ROLLUP_INTERVAL_MS, jobScheduler, PAUSE_RECHECK_MS } from './scheduler';
 import { resetTasks, task } from './task';
 
 const clock = frozenClock('2026-10-01T00:00:30.000Z');
@@ -121,7 +121,7 @@ describe('counter buckets age into wider ones', () => {
         },
       },
     };
-    const scheduler = createScheduler({ driver: counting, clock, tasks: [] });
+    const scheduler = jobScheduler({ driver: counting, clock, tasks: [] });
 
     await scheduler.tick();
     await scheduler.tick();
@@ -258,7 +258,7 @@ describe('a paused task', () => {
     });
     const everyHour = (_cron: string, options: { from: Date }): Date =>
       new Date(Math.floor(options.from.getTime() / 3_600_000) * 3_600_000 + 3_600_000);
-    const scheduler = createScheduler({ driver, clock, cron: everyHour, tasks: [hourly] });
+    const scheduler = jobScheduler({ driver, clock, cron: everyHour, tasks: [hourly] });
     await scheduler.tick();
 
     await operator.pauseTask('operator-hourly');

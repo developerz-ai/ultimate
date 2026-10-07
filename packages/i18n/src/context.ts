@@ -7,20 +7,15 @@ import {
   assertLocale,
   cachedFormatter,
   canonicalLocale,
+  DEFAULT_LOCALE,
+  type Direction,
+  directionOf,
   readCookie,
   tryUseContext,
 } from '@ultimat3/core';
 import { type Catalog, mergeCatalogs } from './catalog';
-import {
-  DEFAULT_LOCALE,
-  type Direction,
-  directionOf,
-  type Locale,
-  negotiateLocale,
-  normalizeLocale,
-  SUPPORTED_LOCALES,
-} from './locales';
-import { createTranslator, type TranslateVars, type Translator } from './translator';
+import { type Locale, negotiateLocale, normalizeLocale, SUPPORTED_LOCALES } from './locales';
+import { catalogTranslator, type TranslateVars, type Translator } from './translator';
 
 /** The cookie an explicit language switcher writes. */
 export const LOCALE_COOKIE = 'x_locale';
@@ -162,7 +157,7 @@ export function localeCookieOf(cookieHeader?: string | null): string | undefined
 /**
  * Ambient locale for the in-flight request; the configured fallback outside one.
  *
- * The store is **`Ctx.locale`**, core's own declared field, so `createContext({ locale })` and
+ * The store is **`Ctx.locale`**, core's own declared field, so `ctxOf({ locale })` and
  * `withChildContext({ locale })` are the only writers and this package publishes no second one.
  * `@ultimat3/time`'s `currentTimeZone()` is the same shape over `Ctx.tz`, deliberately.
  */
@@ -298,10 +293,10 @@ export function catalogFor(locale: Locale): Catalog {
 export function translatorFor<TCatalog = Catalog>(locale: Locale): Translator<TCatalog> {
   const key = translatorKey(locale);
   // Resolved BEFORE the memo, so what lands under `key` is the catalog that key stands for and
-  // not whichever spelling asked first. The caller's own tag reaches `createTranslator` either
+  // not whichever spelling asked first. The caller's own tag reaches `catalogTranslator` either
   // way — the catalog is chosen by locale, the formatting by what the caller actually sent.
   const translator = cachedFormatter(translators, key, () =>
-    createTranslator(catalogFor(registeredUnder(locale, key) ?? locale), locale),
+    catalogTranslator(catalogFor(registeredUnder(locale, key) ?? locale), locale),
   );
   // One cast, one place. `TCatalog` narrows the key parameter and nothing else, so the memoized
   // object already is the right value — the registry cannot be keyed by an app's catalog type.

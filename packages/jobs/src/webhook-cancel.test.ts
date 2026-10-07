@@ -6,7 +6,7 @@
 // which re-POSTs the same event on every deploy.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, isUltimateError, UltimateError } from '@ultimat3/core';
+import { ctxOf, isUltimateError, UltimateError } from '@ultimat3/core';
 import type { ClaimedJob } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { JobDrainedError } from './errors';
@@ -84,7 +84,7 @@ async function queued(options: { readonly timeout?: string; readonly fetch: Webh
         driver,
         claimed: claimed as ClaimedJob,
         handle: handle as AnyJobHandle,
-        ctx: createContext({ role: 'worker', buildId: 'test', signal }),
+        ctx: ctxOf({ role: 'worker', buildId: 'test', signal }),
       }),
     row: () => driver.introspect?.job((claimed as ClaimedJob).id),
   };
@@ -135,7 +135,7 @@ describe('a delivery is cancelled with its attempt', () => {
 
     let thrown: unknown;
     try {
-      await one.run(1, createContext({ signal: cancel.signal }));
+      await one.run(1, ctxOf({ signal: cancel.signal }));
     } catch (error) {
       thrown = error;
     }
@@ -152,9 +152,7 @@ describe('a delivery is cancelled with its attempt', () => {
     const cancel = new AbortController();
     cancel.abort();
 
-    expect(await codeOf(() => one.run(1, createContext({ signal: cancel.signal })))).toBe(
-      'X_ABORTED',
-    );
+    expect(await codeOf(() => one.run(1, ctxOf({ signal: cancel.signal })))).toBe('X_ABORTED');
     expect(one.sent).toHaveLength(0);
     expect(one.ledger.attempts()).toHaveLength(0);
   });

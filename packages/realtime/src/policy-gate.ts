@@ -1,6 +1,6 @@
-// The single seam between realtime and authz. It goes through `@ultimat3/query`'s `guard`, which
-// is itself the only point of contact with `@ultimat3/policy` — one authz system, never two, and
-// realtime does not get its own opinion about what a decision means.
+// The single seam between realtime and authz. It goes through `@ultimat3/query`'s `guardQuery`,
+// which is itself the only point of contact with `@ultimat3/policy` — one authz system, never two,
+// and realtime does not get its own opinion about what a decision means.
 //
 // The row gate turns a denial into "not visible" instead of an error: a row that fails an actor's
 // policy is dropped, never sent. That is the rule from the live-query pipeline, implemented once.
@@ -8,7 +8,7 @@
 // database is down" are different facts and one of them has to page someone.
 
 import type { Actor, Ctx } from '@ultimat3/core';
-import { guard, QueryDeniedError, type QueryPolicy, type QuerySubject } from '@ultimat3/query';
+import { guardQuery, QueryDeniedError, type QueryPolicy, type QuerySubject } from '@ultimat3/query';
 import type { JsonValue, Row } from './json';
 
 export interface GateOptions {
@@ -25,7 +25,7 @@ export function authorizeWithPolicy(
   return async (args) => {
     // No row exists yet at subscribe time; `null` says so rather than leaving the predicate
     // to infer it from an absent field.
-    guard(policy, subjectOf(options, args.actor, args.input, null), 'live');
+    guardQuery(policy, subjectOf(options, args.actor, args.input, null), 'live');
   };
 }
 
@@ -40,10 +40,10 @@ export function visibleWithPolicy<R extends Row = Row>(
 ): (args: { actor: Actor | null; row: R; input: JsonValue }) => Promise<boolean> {
   return async (args) => {
     try {
-      guard(policy, subjectOf(options, args.actor, args.input, args.row), 'live');
+      guardQuery(policy, subjectOf(options, args.actor, args.input, args.row), 'live');
       return true;
     } catch (error) {
-      // `guard` throws `QueryDeniedError` for a decision and for nothing else, so that class is
+      // `guardQuery` throws `QueryDeniedError` for a decision and for nothing else, so that class is
       // the whole of "not visible". A rule that reached for a row and timed out throws something
       // else, and answering `false` to it would report an outage as a permission change: the rows
       // leave the subscriber's screen, `live.rows_denied` counts the drop, and no error reaches

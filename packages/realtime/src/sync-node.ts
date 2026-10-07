@@ -10,7 +10,7 @@ import {
   markReady,
   reportError,
   systemClock,
-  uuid,
+  uuidV7,
 } from '@ultimat3/core';
 import type { Topic } from './channel';
 import { ChannelSids } from './channel-sids';
@@ -27,7 +27,7 @@ import { idleSweepPeriodMs } from './socket-idle';
 import { actorChangeHandler } from './sync-actor-change';
 import { GrantBook, sweepGrants } from './sync-auth';
 import { changeHandler, reconnectHandler } from './sync-bus-handlers';
-import { ackRefOf, createFrameRouter } from './sync-frames';
+import { ackRefOf, frameRouter } from './sync-frames';
 import {
   clientHeartbeatMs,
   drainGraceMs,
@@ -52,7 +52,7 @@ export type { SyncNode, SyncNodeOptions, SyncWs } from './sync-node-contract';
 /** Declared with the upgrade that builds it — this file only ever reads one. */
 export type { UpgradeTarget, WsData } from './sync-upgrade';
 
-export function createSyncNode(options: SyncNodeOptions): SyncNode {
+export function syncNode(options: SyncNodeOptions): SyncNode {
   const sockets =
     options.sockets ??
     new SocketRegistry({
@@ -229,7 +229,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     });
   };
 
-  const routeFrame = createFrameRouter({
+  const routeFrame = frameRouter({
     hub: options.hub,
     registry: options.registry,
     buildId: options.buildId,
@@ -278,7 +278,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       // is that every policy on this node is about to be asked about `null`.
       logger.warn('sync node has no authenticator: every socket is anonymous', {
         buildId: options.buildId,
-        fix: 'pass authenticate to createSyncNode({ authenticate })',
+        fix: 'pass authenticate to syncNode({ authenticate })',
       });
     }
     ready = true;
@@ -343,7 +343,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           // is parked inside `authenticate`, which is the whole reason they are functions.
           ready: () => ready,
           socketCount: () => sockets.count,
-          newSocketId: () => uuid(),
+          newSocketId: () => uuidV7(),
           authenticate: options.authenticate,
           allowedOrigins: options.allowedOrigins,
           admitReachedOrigin: options.admitReachedOrigin,

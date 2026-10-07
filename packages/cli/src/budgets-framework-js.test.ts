@@ -61,6 +61,7 @@ describe("unit · the framework-injected runtime is not the app's JS", () => {
     },
     backgroundSync: false,
     push: false,
+    locales: { routed: ['en'], fallback: 'en' },
   };
 
   const withRegistration = async (): Promise<string> => {

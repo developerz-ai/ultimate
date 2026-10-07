@@ -13,8 +13,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { memberId as toMemberId, orgId as toOrgId } from '@postly/domain';
-import { frozenClock } from '@ultimat3/core';
-import type { ListOptions, ListPage, StorageDriver } from '@ultimat3/storage';
+import type { Page } from '@ultimat3/core';
+import { frozenClock, pageOf } from '@ultimat3/core';
+import type { ListOptions, StorageDriver, StorageListEntry } from '@ultimat3/storage';
 import {
   attachmentKey,
   defineStorage,
@@ -114,7 +115,7 @@ describe('the upload grant', () => {
       await codeOf(mintAvatarGrant({ orgId: ORG, memberId: MEMBER, request: huge, clock })),
     ).toBe('X_STORAGE_TOO_LARGE');
 
-    expect((await disk().list({ prefix: `org/${ORG}/` })).objects).toEqual([]);
+    expect((await disk().list({ prefix: `org/${ORG}/` })).rows).toEqual([]);
   });
 });
 
@@ -154,13 +155,11 @@ describe('the rendered avatar', () => {
     const inner = disk();
     const paged: StorageDriver = {
       ...inner,
-      async list(options?: ListOptions): Promise<ListPage> {
-        const all = await inner.list({ ...options, cursor: undefined });
-        const from = options?.cursor === undefined ? 0 : Number(options.cursor);
+      async list(options?: ListOptions): Promise<Page<StorageListEntry>> {
+        const all = await inner.list({ ...options, cursor: null });
+        const from = typeof options?.cursor === 'string' ? Number(options.cursor) : 0;
         const next = from + 1;
-        return next < all.objects.length
-          ? { objects: all.objects.slice(from, next), truncated: true, cursor: String(next) }
-          : { objects: all.objects.slice(from, next), truncated: false };
+        return pageOf(all.rows.slice(from, next), next < all.rows.length ? String(next) : null);
       },
     };
     resetStorage();
@@ -178,12 +177,12 @@ describe('the rendered avatar', () => {
     const inner = disk();
     const undated: StorageDriver = {
       ...inner,
-      async list(options?: ListOptions): Promise<ListPage> {
+      async list(options?: ListOptions): Promise<Page<StorageListEntry>> {
         const page = await inner.list(options);
-        return {
-          ...page,
-          objects: page.objects.map(({ lastModified: _unreported, ...entry }) => entry),
-        };
+        return pageOf(
+          page.rows.map(({ lastModified: _unreported, ...entry }) => entry),
+          page.nextCursor,
+        );
       },
     };
     resetStorage();

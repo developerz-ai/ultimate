@@ -266,8 +266,8 @@ describe('startServices', () => {
         FASTLY_SERVICE_ID: 'svc_1',
       });
       try {
-        // The two that need no external state are always registered — `createMemoTier` and
-        // `createLruTier` had zero callers before this boot did, so every cached read was
+        // The two that need no external state are always registered — `memoTier` and
+        // `lruTier` had zero callers before this boot did, so every cached read was
         // recomputed on every replica. `cdn` joins them only for a real edge.
         expect(registeredTiers().map((tier) => tier.name)).toEqual(['request-memo', 'lru', 'cdn']);
         expect(runtime.purge.name).toBe('fastly');

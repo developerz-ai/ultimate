@@ -4,7 +4,7 @@
 
 import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, json, NO_STORE } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
 import { SITEMAP_PARTS_DIR } from '@ultimat3/seo';
 import { quoteArg } from './shell-quote';
 import { NO_SITE_SETTINGS, publicOrigin, type SiteSettings } from './site-config';
@@ -125,7 +125,7 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
           );
         }
         const index = new URL(SITEMAP_PATH, originOf(options, request)).href;
-        const missing = json(
+        const missing = jsonResponse(
           {
             ok: false,
             error: {

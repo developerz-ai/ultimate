@@ -3,7 +3,6 @@
 // until #390. Beside `pwa-artifacts.ts` and not inside it: that file needs a root and a config
 // file, this one needs a booted app and a finished build.
 
-import { localeConfig, routedLocales } from '@ultimat3/i18n';
 import type { PrecacheManifest } from '@ultimat3/pwa';
 import { generateServiceWorker } from '@ultimat3/pwa';
 import type { RouteDescriptor } from '@ultimat3/render';
@@ -12,7 +11,7 @@ import { ISLAND_BASE_PATH } from './island-bundle';
 import { msg } from './messages';
 import type { PwaArtifacts } from './pwa-artifacts';
 import type { StyleBundle } from './style-bundle';
-import type { RenderedDocument, RoutedLocales } from './sw-precache-plan';
+import type { RenderedDocument } from './sw-precache-plan';
 import { localePrefixes, precacheAssets, pwaRoutes } from './sw-precache-plan';
 
 export type { RenderedDocument, RoutedLocales } from './sw-precache-plan';
@@ -73,11 +72,6 @@ export interface ServiceWorkerInput {
    * offline reload that cannot load the boot restores no record and shows the old count.
    */
   readonly scripts?: readonly { readonly url: string; readonly bytes: number }[];
-  /**
-   * The routed locales, default first. Absent, `@ultimat3/i18n`'s own — the answer the server routes
-   * with, set once the app's catalogs are loaded, which every caller has done by now.
-   */
-  readonly locales?: RoutedLocales;
 }
 
 /**
@@ -157,7 +151,9 @@ export function serviceWorkerArtifacts(
   // Absent when this pass did not render the fallback (no route serves it — `x doctor` reports
   // that as `X_PWA_NO_OFFLINE_FALLBACK`), and then `@ultimat3/pwa` falls back to the build id.
   const fallbackDocument = documents.get(fallback);
-  const locales = input.locales ?? { routed: routedLocales(), fallback: localeConfig().fallback };
+  // The set the manifests were built from (`PwaArtifacts.locales`), never the ambient locale
+  // config: one answer, so a locale an installed manifest names is always one the worker prefixes.
+  const locales = pwa.locales;
   const output = generateServiceWorker(
     pwaRoutes(input.routes, documents, locales),
     {

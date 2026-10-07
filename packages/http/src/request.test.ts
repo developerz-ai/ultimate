@@ -7,7 +7,7 @@ import { localeConfig } from '@ultimat3/i18n';
 import { t } from '@ultimat3/schema';
 import { timeConfig } from '@ultimat3/time';
 import { defineHttpConfig, type HttpConfigInput } from './config';
-import { createRequestContext } from './context';
+import { requestContext } from './context';
 import { HttpError } from './errors';
 import { UltimateRequest } from './request';
 
@@ -19,7 +19,7 @@ const build = (
 ) => {
   const url = new URL(urlString);
   const config = defineHttpConfig({ rateLimit: { scope: 'process' }, ...configInput });
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url,
     method: (requestInit.method ?? 'GET').toString(),
     role: 'web',
@@ -72,12 +72,12 @@ describe('getters', () => {
     expect(req.buildId).toBeNull();
   });
 
-  test('method is uppercased, matching what createRequestContext already normalised', () => {
+  test('method is uppercased, matching what requestContext already normalised', () => {
     const url = new URL('https://example.com/x');
     const config = defineHttpConfig({
       rateLimit: { scope: 'process' },
     });
-    const ctx = createRequestContext({ url, method: 'get', role: 'web', config });
+    const ctx = requestContext({ url, method: 'get', role: 'web', config });
     const req = new UltimateRequest(new Request(url), ctx);
     expect(req.method).toBe('GET');
   });

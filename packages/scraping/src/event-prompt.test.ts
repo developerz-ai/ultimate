@@ -3,7 +3,7 @@
 // is advancing, so a five-minute wait is a few microtasks and nothing reads a wall clock.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, createLogger, seal } from '@ultimat3/core';
+import { ctxOf, seal, structuredLogger } from '@ultimat3/core';
 import type { EventBus, JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { memoryEventBus } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
@@ -11,7 +11,7 @@ import type { PromptRequest } from './auth';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike } from './cdp-port';
 import type { TestScrapeClock } from './clock';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { localBrowser } from './driver-cdp';
 import {
   answerPrompt,
@@ -33,7 +33,7 @@ interface Harness {
 }
 
 const harness = (): Harness => {
-  const clock = testClock(new Date('2026-10-01T00:00:00.000Z'));
+  const clock = testScrapeClock(new Date('2026-10-01T00:00:00.000Z'));
   const bus = memoryEventBus({ clock });
   let calls = 0;
   return {
@@ -102,7 +102,7 @@ describe('unit · eventPrompt answers from the bus', () => {
   // while the human who did answer watched the run fail.
   test('"asked at" is read from the BUS: a worker clock 30 s ahead still takes the answer', async () => {
     const h = harness();
-    const ahead = testClock(new Date(h.clock.now().getTime() + 30_000));
+    const ahead = testScrapeClock(new Date(h.clock.now().getTime() + 30_000));
     const handler = eventPrompt({ timeout: 300_000, bus: h.bus, keySource: KEYS });
     const answer = await handler(
       h.request({ clock: ahead }, async (call) => {
@@ -126,7 +126,7 @@ describe('unit · eventPrompt answers from the bus', () => {
     const h = harness();
     await answerPrompt({ runId: 'run-1', index: 1, answer: 'stale', bus: h.bus, keySource: KEYS });
     h.clock.advance(1);
-    const behind = testClock(new Date(h.clock.now().getTime() - 30_000));
+    const behind = testScrapeClock(new Date(h.clock.now().getTime() - 30_000));
     const handler = eventPrompt({ timeout: 5_000, bus: h.bus, keySource: KEYS });
     const thrown = await failure(handler(h.request({ clock: behind })));
     // On the worker's clock the stale answer is "after" the ask. On the bus's it is not.
@@ -323,7 +323,7 @@ describe('unit · the session stays open across the wait', () => {
   // a text message, and `watchdog.idleMs` of silence is what `X_SCRAPE_WEDGED` means.
   test('a wait far longer than the wedge budget is answered, with the browser never killed', async () => {
     const WEDGE_MS = 30_000;
-    const clock = testClock(new Date('2026-10-01T00:00:00.000Z'));
+    const clock = testScrapeClock(new Date('2026-10-01T00:00:00.000Z'));
     const memory = memoryEventBus({ clock });
     const startedAt = clock.monotonic();
     let looks = 0;
@@ -363,7 +363,7 @@ describe('unit · the session stays open across the wait', () => {
       step: {
         run: <T>(_name: string, fn: () => Promise<T> | T) => Promise.resolve(fn()),
       } as unknown as StepApi,
-      ctx: createContext({ logger: createLogger({ writer: () => undefined }) }),
+      ctx: ctxOf({ logger: structuredLogger({ writer: () => undefined }) }),
       attempt: 1,
       finalAttempt: false,
       progress: () => undefined,

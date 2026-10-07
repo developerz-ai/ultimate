@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { UltimateError, userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { allow, and, can, or } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -62,7 +62,7 @@ function feed(evaluations: { count: number }) {
 const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
 
 function serve(target: AnyQuery, actor: Actor | null) {
-  return createServer({
+  return httpServer({
     routes: [toQueryRoute(target)],
     config: oneProcess(),
     // No `authorize` hook, on purpose: a query route must not need one. Wiring a second opinion
@@ -236,7 +236,7 @@ describe('a query read over the pipeline', () => {
         throw new TypeError('sql is not a function');
       },
     }).named('brokenFeed');
-    const server = createServer({ routes: [toQueryRoute(broken)], config: oneProcess() });
+    const server = httpServer({ routes: [toQueryRoute(broken)], config: oneProcess() });
     const response = await server.fetch(
       new Request(`http://dev.test/_x/query/broken-feed?orgId=${ORG}`),
     );
@@ -427,7 +427,7 @@ describe('a query error reaches the error-map stage', () => {
   }).named('brokenFeed');
 
   const get = (onError: (error: unknown) => void, accept: string) =>
-    createServer({
+    httpServer({
       routes: [toQueryRoute(failing)],
       config: oneProcess(),
       hooks: { onError, authenticate: () => reader('u-1') },

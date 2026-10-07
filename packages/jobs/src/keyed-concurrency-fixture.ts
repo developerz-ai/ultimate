@@ -5,7 +5,7 @@
 
 import { expect, test } from 'bun:test';
 import type { Clock, Ctx } from '@ultimat3/core';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { KeyedConcurrency } from './concurrency';
 import type { JobDriver, JobRecord } from './driver';
@@ -14,7 +14,7 @@ import { job } from './job';
 import { jobLeaseKey } from './leases';
 import type { RetryPolicy } from './retry';
 import type { Worker } from './worker';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 export interface KeyedHarness {
   /** The ONE store both workers of a scenario share, empty at the start of each test. */
@@ -32,7 +32,7 @@ export interface AccountInput {
 /** How long a claim and a slot live. Short, because the pg harness can only wait it out. */
 export const TTL_MS = 30_000;
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 export function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -125,7 +125,7 @@ export function accountJob(options: {
 }
 
 export function workerOn(harness: KeyedHarness, driver: JobDriver, workerId: string): Worker {
-  return createWorker({
+  return jobWorker({
     driver,
     workerId,
     // One slot each, so two workers claiming "at the same instant" take one run apiece.

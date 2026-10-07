@@ -6,8 +6,8 @@ import { describe, expect, test } from 'bun:test';
 import { NOT_A_BOUND, refusal } from './bounds-fixture';
 import type { BudgetStore } from './budget';
 import { memoryBudgetStore } from './budget';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { Provider, StreamChunk } from './provider';
 import { costOf, totalTokens } from './provider';
@@ -15,7 +15,7 @@ import { costOf, totalTokens } from './provider';
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
 
-const echo = new EchoProvider();
+const echo = echoProvider();
 
 describe('budgets refuse rather than truncate', () => {
   test('a request past the per-request budget throws before the provider is called', async () => {
@@ -30,7 +30,7 @@ describe('budgets refuse rather than truncate', () => {
       stream: (request) => echo.stream(request),
     };
 
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [counting],
       budget: { request: 100 },
@@ -49,7 +49,7 @@ describe('budgets refuse rather than truncate', () => {
 
   test('actor spend accumulates across calls until the actor budget refuses', async () => {
     const store = memoryBudgetStore();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [echo],
       budget: { actor: 400 },
@@ -74,7 +74,7 @@ describe('budgets refuse rather than truncate', () => {
   });
 
   test('a budget-free call still reports cost in integer minor units', async () => {
-    const gateway = createGateway({ defaultModel: FIXTURE_MODEL, providers: [echo] });
+    const gateway = providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echo] });
     const result = await gateway.generate({
       messages: [{ role: 'user', content: 'hello world' }],
       maxTokens: 32,
@@ -128,7 +128,7 @@ describe('a stream that never reaches a provider releases its reservation', () =
     stream: (request) => echo.stream(request),
   };
 
-  const drain = async (gateway: ReturnType<typeof createGateway>): Promise<void> => {
+  const drain = async (gateway: ReturnType<typeof providerGateway>): Promise<void> => {
     for await (const _chunk of gateway.stream({
       model: 'claude-opus-5',
       messages: [{ role: 'user', content: 'x'.repeat(2_000) }],
@@ -140,7 +140,7 @@ describe('a stream that never reaches a provider releases its reservation', () =
 
   test('a model no configured provider serves leaves the org counter untouched', async () => {
     const store = memoryBudgetStore();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [haikuOnly],
       budget: { org: 20_000 },
@@ -158,7 +158,7 @@ describe('a stream that never reaches a provider releases its reservation', () =
 
   test('the same misconfiguration does not poison a later call the gateway CAN serve', async () => {
     const store = memoryBudgetStore();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [haikuOnly],
       budget: { org: 20_000 },
@@ -221,7 +221,7 @@ describe('a stream that never reaches a provider releases its reservation', () =
       },
     };
 
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [flaky],
       budget: { org: 50_000 },
@@ -243,11 +243,11 @@ describe('a stream that never reaches a provider releases its reservation', () =
 
 // The gateway's `budget` was first screened by the ledger `callLedger` builds — on the first CALL,
 // under the ledger's subject. Refused at construction instead, under the key the config wrote.
-describe('createGateway refuses a budget that cannot hold', () => {
+describe('gateway refuses a budget that cannot hold', () => {
   test('a costPerCall or token ceiling that is not a whole count fails construction', () => {
     for (const value of [...NOT_A_BOUND, -1]) {
       const money = refusal(() =>
-        createGateway({
+        providerGateway({
           defaultModel: FIXTURE_MODEL,
           providers: [echo],
           budget: { costPerCall: { minor: value, currency: 'USD' } },
@@ -255,14 +255,14 @@ describe('createGateway refuses a budget that cannot hold', () => {
       );
       expect(money.code).toBe('X_INVARIANT');
       expect(money.cause).toContain('budget.costPerCall.minor');
-      expect(money.fix).toContain('createGateway');
+      expect(money.fix).toContain('gateway');
       const tokens = refusal(() =>
-        createGateway({ defaultModel: FIXTURE_MODEL, providers: [echo], budget: { org: value } }),
+        providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echo], budget: { org: value } }),
       );
       expect(tokens.cause).toContain('budget.org');
     }
     expect(() =>
-      createGateway({
+      providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [echo],
         budget: { costPerCall: { minor: 0, currency: 'USD' } },

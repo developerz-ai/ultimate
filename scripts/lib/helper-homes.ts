@@ -1,9 +1,10 @@
 // The helpers that live in exactly one module, and the SHAPE of a second implementation of each —
-// or of a second import path: a re-export of a core helper from another package. Every row replaced
+// plus `core-reexports.ts`'s second import PATH: any core value republished elsewhere. Every row replaced
 // copies that had already drifted — four HTML escape sets, three cookie readers, four
 // `PgExecutor`s — and is enforced by `bun run flight-copies` (`X_HELPER_COPY`).
 
 import { maskLiterals, stripComments } from '../../packages/core/src/source-mask';
+import { coreReexportViolations } from './core-reexports';
 import type { Finding } from './log';
 import { lineOf } from './source-scan';
 
@@ -25,8 +26,6 @@ export interface HelperHome {
   readonly home: string;
   /** Offsets of every copy in a file — each rule decides which view it reads. */
   readonly find: (views: Views) => readonly number[];
-  /** A copy is a second IMPLEMENTATION (the default) or a second import PATH — a re-export. */
-  readonly copy?: 're-export';
 }
 
 const offsets = (text: string, pattern: RegExp): number[] =>
@@ -53,45 +52,6 @@ const AMP_WRITTEN = /[:,]\s*(['"`])&amp;\1/g;
 /** The `PgExecutor` method DECLARED (`;`), never implemented (`{`) — a test fake is the latter. */
 const PG_EXECUTOR_METHOD =
   /\bquery\s*<\s*\w+\s*>\s*\(\s*\w+\s*:\s*string\s*,\s*\w+\s*:\s*readonly\s+unknown\s*\[\s*\]\s*\)\s*:\s*Promise\s*<\s*readonly\s+\w+\s*\[\s*\]\s*>\s*;/g;
-
-/** `export { … } from '@ultimat3/core'` — the stripped view, because the specifier is a string. */
-const CORE_REEXPORT = /\bexport\s*\{([^}]*)\}\s*from\s*(['"])@ultimat3\/core\2/g;
-
-/**
- * Offsets of `helper` as a VALUE inside a re-export of `@ultimat3/core` — `type helper` is a type,
- * and `helper as other` is still the helper. Only the package specifier counts: core's own barrel
- * re-exports from relative paths, which is the one home publishing its helper.
- */
-const coreReexport =
-  (helper: string) =>
-  ({ stripped }: Views): number[] => {
-    const found: number[] = [];
-    for (const match of stripped.matchAll(CORE_REEXPORT)) {
-      const list = match[1] ?? '';
-      const start = match.index + match[0].indexOf('{') + 1;
-      for (const spec of list.matchAll(/[^,]+/g)) {
-        const name = /^\s*(type\s+)?([\w$]+)/.exec(spec[0]);
-        if (name === null || name[1] !== undefined || name[2] !== helper) continue;
-        found.push(start + spec.index + spec[0].indexOf(helper));
-      }
-    }
-    return found;
-  };
-
-/**
- * The core VALUES `@ultimat3/action` and `@ultimat3/query` used to re-export "so no import moves":
- * client flight (one pipeline, `client-flight.ts`), the fence's reader, and the one audit-sink
- * slot. A re-export is a second import path for one value, which is axiom 1's tax on every reader.
- */
-const CORE_REEXPORTED: readonly (readonly [helper: string, home: string])[] = [
-  ['createClientFlight', 'packages/core/src/client-flight.ts'],
-  ['DEFAULT_CLIENT_RETRY', 'packages/core/src/client-flight.ts'],
-  ['isTransientFailure', 'packages/core/src/client-flight.ts'],
-  ['isSuperseded', 'packages/core/src/generation-fence.ts'],
-  ['getAuditSink', 'packages/core/src/audit.ts'],
-  ['setAuditSink', 'packages/core/src/audit.ts'],
-  ['resetAuditSink', 'packages/core/src/audit.ts'],
-];
 
 export const HELPER_HOMES: readonly HelperHome[] = [
   { helper: 'fnv1a', home: 'packages/core/src/fnv1a.ts', find: fnvConstants },
@@ -153,34 +113,26 @@ export const HELPER_HOMES: readonly HelperHome[] = [
       ...offsets(stripped, /`@\$\{\s*Math\s*\.\s*floor\s*\(/g),
     ],
   },
-  ...CORE_REEXPORTED.map(
-    ([helper, home]): HelperHome => ({
-      helper,
-      home,
-      find: coreReexport(helper),
-      copy: 're-export',
-    }),
-  ),
+  {
+    helper: 'BUILD_ID_HEADER',
+    home: 'packages/core/src/page-meta.ts',
+    // `stripped`: the defect is the string. Four modules spelled it and `@ultimat3/http` made it
+    // configurable besides, so a server could listen for a header no client of it sent. The meta
+    // is the same spelling by construction (`BUILD_ID_HEADER = CLIENT_BUILD_META`), so one literal.
+    find: ({ stripped }) => offsets(stripped, /(['"`])x-ultimate-build\1/g),
+  },
 ];
 
 const finding = (file: HelperSource, rule: HelperHome, index: number): Finding => {
   const from = rule.home.startsWith('packages/core/')
     ? '@ultimat3/core'
     : '@ultimat3/render/server';
-  const line = lineOf(file.text, index);
-  return rule.copy === 're-export'
-    ? {
-        code: 'X_HELPER_COPY',
-        cause: `${file.at}:${line} is a second ${rule.helper} — a re-export of ${from}'s, so one value has two import paths; ${rule.home} is its one home`,
-        fix: `import { ${rule.helper} } from '${from}' at every caller and delete the re-export in ${file.at}`,
-        at: file.at,
-      }
-    : {
-        code: 'X_HELPER_COPY',
-        cause: `${file.at}:${line} is a second ${rule.helper} — ${rule.home} is its one implementation, and copies of it had already drifted apart`,
-        fix: `import { ${rule.helper} } from '${from}' and delete the local implementation in ${file.at}`,
-        at: file.at,
-      };
+  return {
+    code: 'X_HELPER_COPY',
+    cause: `${file.at}:${lineOf(file.text, index)} is a second ${rule.helper} — ${rule.home} is its one implementation, and copies of it had already drifted apart`,
+    fix: `import { ${rule.helper} } from '${from}' and delete the local implementation in ${file.at}`,
+    at: file.at,
+  };
 };
 
 /**
@@ -196,5 +148,8 @@ export function checkHelperHomes(file: HelperSource): readonly Finding[] {
     const found = rule.find(views);
     if (found.length > 0) hits.push({ rule, index: Math.min(...found) });
   }
-  return hits.sort((a, b) => a.index - b.index).map((hit) => finding(file, hit.rule, hit.index));
+  return [
+    ...hits.sort((a, b) => a.index - b.index).map((hit) => finding(file, hit.rule, hit.index)),
+    ...coreReexportViolations(file),
+  ];
 }

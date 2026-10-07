@@ -265,8 +265,10 @@ export interface RenderResult {
 /**
  * Route descriptors carry tags in `@ultimat3/cache`'s wire form (`post`, `post:123`), the
  * same strings every cache tier speaks. Render never invents a key convention of its own.
+ * Declaration order is kept — unlike `@ultimat3/cache`'s `tagKeys`, the sorted identity form —
+ * so the name says which list this is, and it stays out of the public barrel.
  */
-export function tagKeys(tags: readonly CacheTag[] | undefined): readonly string[] {
+export function routeTagKeys(tags: readonly CacheTag[] | undefined): readonly string[] {
   return tags === undefined ? [] : serializeTags(tags);
 }
 

@@ -1,6 +1,6 @@
 // The static build, once per routed locale: the default at the export root, every other locale
 // under `<locale>/`, each document in its own `<html lang>` with an absolute hreflang cluster. The
-// bug this closes: `createContext()` defaulted the build's locale to core's `en`, so a Spanish-
+// bug this closes: `ctxOf()` defaulted the build's locale to core's `en`, so a Spanish-
 // default site shipped `index.html` as `lang="en"` while the served process answered Spanish.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -43,9 +43,25 @@ afterEach(async () => {
 
 const read = (out: string, file: string) => Bun.file(join(out, file)).text();
 
+/**
+ * What an app writes: `defineCatalogs()` in its catalog module, which `loadApp` reads back through
+ * `@ultimat3/i18n`'s one reader. The `configureLocales` beside it is that call's side effect on the
+ * process: `import()` caches by path, so from the second test on the module never runs again, and
+ * the renderer's own `t()` and hreflang read the process's config.
+ */
+const declareLocales = async (): Promise<void> => {
+  await Bun.write(
+    join(ROOT, 'packages/i18n/src/index.ts'),
+    "import { defineCatalogs } from '@ultimat3/i18n';\n" +
+      "export const catalogs = defineCatalogs({ default: 'es-co', locales: { 'es-co': {}, en: {} } });\n",
+  );
+  configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+};
+
 describe('prerender per locale — refusals', () => {
   test('an app that declared no locales writes no locale directories', async () => {
     registerRoute({ file: 'apps/web/site/page.tsx', config: page });
+    await Bun.write(join(ROOT, 'packages/i18n/src/index.ts'), 'export const nothing = 1;\n');
     const out = join(ROOT, 'static');
     const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
     expect(report.pages.map((p) => p.file)).toEqual(['index.html']);
@@ -53,7 +69,7 @@ describe('prerender per locale — refusals', () => {
   });
 
   test('the default locale is never written under its own prefix', async () => {
-    configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+    await declareLocales();
     registerRoute({ file: 'apps/web/site/page.tsx', config: page });
     const out = join(ROOT, 'static');
     await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
@@ -63,7 +79,7 @@ describe('prerender per locale — refusals', () => {
 
 describe('prerender per locale', () => {
   test('index.html is lang="es-co" and en/index.html is lang="en"', async () => {
-    configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+    await declareLocales();
     registerRoute({ file: 'apps/web/site/page.tsx', config: page });
     registerRoute({ file: 'apps/web/site/precios/page.tsx', config: page });
     const out = join(ROOT, 'static');
@@ -85,7 +101,7 @@ describe('prerender per locale', () => {
   });
 
   test('each document carries an absolute canonical and the full hreflang cluster', async () => {
-    configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+    await declareLocales();
     registerRoute({ file: 'apps/web/site/precios/page.tsx', config: page });
     const out = join(ROOT, 'static');
     await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { THEME_STORAGE_KEY } from '@ultimat3/core';
 import { UI_ERROR_CODES } from '../errors';
 import {
   browserThemeEnv,
@@ -11,7 +12,6 @@ import {
   THEME_ATTRIBUTE,
   THEME_DEFAULT_ATTRIBUTE,
   THEME_MEDIA_QUERY,
-  THEME_STORAGE_KEY,
   type Theme,
   type ThemeEnv,
   toggleTheme,

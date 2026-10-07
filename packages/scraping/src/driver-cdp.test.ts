@@ -5,11 +5,11 @@
 // the attempt with nobody holding a handle to it.
 
 import { describe, expect, test } from 'bun:test';
-import { createLogger } from '@ultimat3/core';
+import { structuredLogger } from '@ultimat3/core';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { SessionInit } from './driver';
 import { localBrowser, remoteBrowser } from './driver-cdp';
 
@@ -58,9 +58,9 @@ const brokenLauncher = (broken: Broken): CdpLauncherLike & { readonly closes: ()
 
 const init = (over: Partial<SessionInit> = {}): SessionInit => ({
   name: 'orders',
-  logger: createLogger({ writer: () => undefined }),
+  logger: structuredLogger({ writer: () => undefined }),
   rules: { allowHosts: ['shop.test'] },
-  clock: testClock(),
+  clock: testScrapeClock(),
   timeoutMs: 1_000,
   ...over,
 });

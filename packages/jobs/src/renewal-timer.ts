@@ -20,7 +20,7 @@ export interface RenewalTimer {
 
 /**
  * Calls `tick` every `intervalMs` until the canceller it returns runs. The seam a lease, a fleet
- * slot and a registry row renew through: `createWorker({ schedule })` hands one in, and the
+ * slot and a registry row renew through: `jobWorker({ schedule })` hands one in, and the
  * `runJobs` fixture's is driven by the frozen clock, so a test renews when time passes and never
  * on the wall clock.
  */

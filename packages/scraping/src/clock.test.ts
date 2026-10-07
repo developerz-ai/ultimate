@@ -4,7 +4,7 @@
 // only noticed the abort when its timer expired would wait out every one of them.
 
 import { describe, expect, test } from 'bun:test';
-import { deadline, systemScrapeClock, testClock, throwIfAborted } from './clock';
+import { deadline, systemScrapeClock, testScrapeClock } from './clock';
 
 describe('unit · systemScrapeClock', () => {
   test('now() is a Date and monotonic() never goes backwards', () => {
@@ -46,28 +46,27 @@ describe('unit · systemScrapeClock', () => {
   });
 });
 
-describe('unit · throwIfAborted', () => {
-  test('it throws the reason unwrapped, and does nothing at all while live', () => {
-    const live = new AbortController();
-    expect(() => throwIfAborted(live.signal)).not.toThrow();
-
+describe('unit · an aborted sleep', () => {
+  test('it rejects with the reason unwrapped, on both clocks', async () => {
     const reason = { code: 'X_ABORTED' };
     const dead = new AbortController();
     dead.abort(reason);
-    let thrown: unknown;
-    try {
-      throwIfAborted(dead.signal);
-    } catch (error) {
-      thrown = error;
-    }
     // The reason OBJECT, not a copy and not a wrapper: callers read `.code` off it.
-    expect(thrown).toBe(reason);
+    for (const clock of [systemScrapeClock, testScrapeClock()]) {
+      let thrown: unknown;
+      try {
+        await clock.sleep(60_000, dead.signal);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBe(reason);
+    }
   });
 });
 
 describe('unit · testClock', () => {
   test('sleeping IS advancing, so a 30-second poll finishes on the next microtask', async () => {
-    const clock = testClock(1_000);
+    const clock = testScrapeClock(1_000);
     expect(clock.now().getTime()).toBe(1_000);
     expect(clock.monotonic()).toBe(0);
 
@@ -78,15 +77,15 @@ describe('unit · testClock', () => {
   });
 
   test('it accepts a Date as well as an epoch', () => {
-    expect(testClock(new Date('2026-01-01T00:00:00.000Z')).now().toISOString()).toBe(
+    expect(testScrapeClock(new Date('2026-01-01T00:00:00.000Z')).now().toISOString()).toBe(
       '2026-01-01T00:00:00.000Z',
     );
     // The default is the epoch, which is what makes every recorded `at` in this package a 0.
-    expect(testClock().now().getTime()).toBe(0);
+    expect(testScrapeClock().now().getTime()).toBe(0);
   });
 
   test('a slept signal still throws — a cancelled run must not keep polling under a test clock', async () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     const controller = new AbortController();
     const reason = new Error('cancelled');
     controller.abort(reason);
@@ -98,7 +97,7 @@ describe('unit · testClock', () => {
 
 describe('unit · deadline', () => {
   test('it is read from ONE clock, so an advancing clock burns it down to zero and no further', () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     const budget = deadline(clock, 1_000);
     expect(budget.totalMs).toBe(1_000);
     expect(budget.remainingMs()).toBe(1_000);
@@ -119,7 +118,7 @@ describe('unit · deadline', () => {
   });
 
   test('a budget started later is not affected by time that passed before it', () => {
-    const clock = testClock();
+    const clock = testScrapeClock();
     clock.advance(10_000);
     expect(deadline(clock, 1_000).remainingMs()).toBe(1_000);
   });

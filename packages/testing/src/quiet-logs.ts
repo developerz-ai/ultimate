@@ -11,7 +11,7 @@
 // line collected nothing and failed for an environment variable. The level is therefore pinned at
 // `info` for the one moment core loads, and what the author named decides what is PRINTED.
 //
-// A test that asserts on log output hands `createLogger({ level, writer })` its own writer, or
+// A test that asserts on log output hands `structuredLogger({ level, writer })` its own writer, or
 // installs its own `setLogSink` and restores the previous one. Never `process.stdout`.
 
 import type { LogLevel } from '@ultimat3/core';

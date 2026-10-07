@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { diffRows, memoryAuditLog, REDACTED } from './audit';
+import { REDACTED } from '@ultimat3/core';
+import { diffRows, memoryAuditLog } from './audit';
 
 describe('diffRows', () => {
   test('records only what changed, before and after', () => {

@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpPageLike } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { pageOverTarget } from './page-over-target';
 
 const SCROLL = 'scrollIntoView';
@@ -58,10 +58,10 @@ const pageOver = async (page: CdpPageLike) => {
     page,
     browser,
     rules: { allowHosts: ['shop.test'] },
-    clock: testClock(),
+    clock: testScrapeClock(),
   });
   return pageOverTarget(target, {
-    clock: testClock(),
+    clock: testScrapeClock(),
     allowHosts: ['shop.test'],
     defaultTimeoutMs: 1_000,
   });

@@ -167,7 +167,7 @@ const verdictOf = (answer: RobotsAnswer, agent: string): Verdict => {
  * again, so a run behind a flaky CDN recovers the moment the file answers instead of failing for
  * the rest of the run — and an origin cannot shed its own rules by answering 503 once.
  */
-export function createRobotsGate(init: RobotsGateInit): RobotsGate {
+export function robotsGate(init: RobotsGateInit): RobotsGate {
   if (init.policy !== 'obey') {
     return { assertAllowed: () => Promise.resolve(), ignoredBecause: init.policy.ignore };
   }

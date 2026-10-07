@@ -2,7 +2,7 @@
 //
 // Its own file because the outcome is not "the read fails" — it is that the read fails SILENTLY
 // and the gate reads the failure as permission. `robotsFetcher` answers `undefined` for a deadline,
-// a 404 and an over-cap body alike, and `createRobotsGate` turns `undefined` into `{ rules: [] }`,
+// a 404 and an over-cap body alike, and `robotsGate` turns `undefined` into `{ rules: [] }`,
 // which allows every path on the origin. So a `NaN` timeoutMs — `AbortSignal.timeout(NaN)` throws
 // a bare `TypeError`, caught by the gate's own `.catch` — switches robots off for the whole run
 // with no error, no log line and a green report. `scrape-run.ts` feeds this the run's page
@@ -11,7 +11,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
 import type { ScrapeFetch } from './http';
-import { createRobotsGate } from './robots';
+import { robotsGate } from './robots';
 import { robotsFetcher } from './robots-fetch';
 
 const NOT_A_BOUND: readonly number[] = [
@@ -68,13 +68,13 @@ describe('unit · the robots read, bounded', () => {
   // never names `robotsFetcher` still gets the refusal at the moment the gate is constructed —
   // which is `runScrape`, before `driver.open()` and before a single byte leaves.
   test('the gate refuses at construction rather than allowing every path at read time', () => {
-    const error = refusal(() => createRobotsGate({ policy: 'obey', timeoutMs: Number.NaN }));
+    const error = refusal(() => robotsGate({ policy: 'obey', timeoutMs: Number.NaN }));
     expect(error.code).toBe('X_INVARIANT');
     expect(error.cause).toContain('timeoutMs');
   });
 
   test('an ignored policy builds no fetcher, so its bounds are nobody’s business', () => {
-    const gate = createRobotsGate({ policy: { ignore: 'our own account' }, timeoutMs: Number.NaN });
+    const gate = robotsGate({ policy: { ignore: 'our own account' }, timeoutMs: Number.NaN });
     expect(gate.ignoredBecause).toBe('our own account');
   });
 });

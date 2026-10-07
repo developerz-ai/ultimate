@@ -52,23 +52,23 @@ export interface OutboxRelay {
  * At-least-once by construction: publish, THEN mark published. A crash between the two
  * re-publishes, which the idempotency key collapses — the opposite order would lose jobs.
  */
-export function createOutboxRelay(options: RelayOptions): OutboxRelay {
+export function outboxRelay(options: RelayOptions): OutboxRelay {
   const batchSize = options.batchSize ?? 100;
   const intervalMs = options.intervalMs ?? 200;
   // Refused, never clamped — `worker-options.ts` carries the reason. `setInterval(fn, NaN)` reads
   // the delay as 0 and `claim(NaN)` slices `(0, NaN)`: a relay that spins and publishes nothing.
   assert(
     Number.isSafeInteger(batchSize) && batchSize >= 1,
-    `createOutboxRelay batchSize is ${String(batchSize)} — a batch is a whole number of staged rows, at least one`,
-    'pass a finite batchSize to createOutboxRelay(...), or omit it for the default 100',
+    `outboxRelay batchSize is ${String(batchSize)} — a batch is a whole number of staged rows, at least one`,
+    'pass a finite batchSize to outboxRelay(...), or omit it for the default 100',
   );
   assert(
     Number.isFinite(intervalMs) && intervalMs >= 0,
-    `createOutboxRelay intervalMs is ${String(intervalMs)}, which a timer reads as 0 — the relay would spin, not poll`,
-    'pass a finite intervalMs to createOutboxRelay(...), or omit it for the default 200',
+    `outboxRelay intervalMs is ${String(intervalMs)}, which a timer reads as 0 — the relay would spin, not poll`,
+    'pass a finite intervalMs to outboxRelay(...), or omit it for the default 200',
   );
   const backoff = createIdleBackoff({
-    subject: 'createOutboxRelay',
+    subject: 'outboxRelay',
     floorMs: intervalMs,
     ...(options.idlePollMaxMs === undefined ? {} : { ceilingMs: options.idlePollMaxMs }),
   });

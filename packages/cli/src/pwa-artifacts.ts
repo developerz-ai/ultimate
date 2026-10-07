@@ -21,7 +21,7 @@ import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
 import { escapeHtml, localeSegment } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
-import { loadAppCatalogs } from '@ultimat3/i18n/app-catalogs';
+import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import {
   appleTouchLinks,
   generateWebManifest,
@@ -80,6 +80,11 @@ export interface PwaArtifacts {
   readonly offline: PwaOfflineConfig;
   readonly backgroundSync: boolean;
   readonly push: boolean;
+  /**
+   * The routed locales the manifests above were built from, default first — `appLocaleSet`'s one
+   * answer, carried here so the service worker prefixes exactly the locales the manifests name.
+   */
+  readonly locales: AppLocales;
 }
 
 /** The `pwa` block, as much of it as this file needs, or `undefined` when the app declares none. */
@@ -109,7 +114,7 @@ async function loadInstallable(root: string): Promise<InstallableApp | undefined
     name: pwa.name,
     colors: pwa.colors,
     block: { ...pwa },
-    locales: appLocales({ ...(await loadAppCatalogs(root)) }),
+    locales: appLocales(await appLocaleSet(root)),
     offline: pwa.offline,
     backgroundSync: pwa.backgroundSync,
     push: pwa.push,
@@ -162,6 +167,7 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
     offline: app.offline,
     backgroundSync: app.backgroundSync,
     push: app.push,
+    locales: app.locales,
     body: primary.body,
     head: primary.head,
     manifests,

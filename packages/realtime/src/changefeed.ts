@@ -180,7 +180,7 @@ export class InMemoryChangeFeed implements ChangeFeed {
     // The lane chains on a SETTLED shadow, never on `result` — `window-lock.ts` solves the same
     // problem the same way. Chained on the live tail, one rejected link poisoned every link behind
     // it: later changes rejected with the FIRST error, the handler was never called again and
-    // `lastLsn()` froze. Reachable on any single-node deployment, because `createReplicator`'s
+    // `lastLsn()` froze. Reachable on any single-node deployment, because `changeFeedReplicator`'s
     // `onChange` awaits `transport.publish(...)` and a closed `InProcessTransport` refuses — one
     // transient publish failure ended change delivery for the life of the process. The rejection
     // still reaches the caller that pushed THAT event, and only it; `stop()` awaits the shadow, so
@@ -236,7 +236,7 @@ export class PgLogicalReplicationFeed implements ChangeFeed {
       throw new ReplicationFailedError({
         stage: 'preflight',
         detail: 'the feed was given an empty entity list, so no change could ever match',
-        fix: 'pass the entities the publication covers: new PgLogicalReplicationFeed({ entities: [...] })',
+        fix: 'pass the entities the publication covers: postgresChangeFeed({ entities: [...] })',
       });
     }
     this.#stream = new PgReplicationStream(options);

@@ -2,15 +2,15 @@
 // authentication alone: an authorization decision belongs to `@ultimat3/policy` and nowhere else.
 
 import { describe, expect, test } from 'bun:test';
-import { assert, createContext, runWithContext, userActor } from '@ultimat3/core';
+import { assert, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { AuthError } from './errors';
 import * as guards from './guards';
 import { currentActor, requireActor } from './guards';
 
-const asAnonymous = <T>(fn: () => T): T => runWithContext(createContext(), fn);
+const asAnonymous = <T>(fn: () => T): T => runWithContext(ctxOf(), fn);
 
 const asUser = <T>(roles: readonly string[], scopes: readonly string[], fn: () => T): T =>
-  runWithContext(createContext({ actor: userActor({ id: 'user-1', roles, scopes }) }), fn);
+  runWithContext(ctxOf({ actor: userActor({ id: 'user-1', roles, scopes }) }), fn);
 
 const caught = (fn: () => unknown): AuthError => {
   let thrown: unknown;

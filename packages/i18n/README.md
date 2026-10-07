@@ -106,9 +106,14 @@ app renders into your own catalog — that is the one path, and it is the same m
 | Export | What |
 |---|---|
 | `APP_CATALOGS_PATH` | `'packages/i18n/src/index.ts'`, where `x new` writes the app's `defineCatalogs()` |
-| `loadAppCatalogs(root)` | imports that module and answers `{ locales, defaultLocale }` (default first), or `undefined` when no `defineCatalogs()` was declared — never the ambient `localeConfig()` read blind. A module that throws rejects with its own error |
+| `loadAppCatalogs(root)` | imports that module and answers `{ locales, defaultLocale }` (default first), or `undefined` when no `defineCatalogs()` was declared — never the ambient `localeConfig()` read blind. An exported set answers for itself, whatever the locale config says by then. A module that throws rejects with its own error |
+| `appLocaleSet(root)` | the same answer, with `UNDECLARED_LOCALES` for an app that declared nothing — what every consumer that needs *a* locale asks |
+| `UNDECLARED_LOCALES` | `{ locales: ['en'], defaultLocale: 'en' }`, frozen: the one answer for an app with no catalogs, so the PWA manifest, the service worker, the prerender and every `x` command agree |
+| `AppLocaleSet` | the type of both answers |
 
-The one reader the CLI (pwa manifest, `x shot`, `x g`) and `@ultimat3/testing`'s e2e preload share.
+The one reader the CLI (`loadApp`'s `locales`, the pwa manifest and service worker, the static export, `x shot`, `x g`, `x i18n`) and `@ultimat3/testing`'s e2e preload share. `@ultimat3/testing` asks `loadAppCatalogs` deliberately: an app that declared nothing pins no browser language rather than a guessed one.
+
+`DEFAULT_LOCALE`, `directionOf` and `isRtl` are `@ultimat3/core`'s since 25.0.0 — import them from there. The barrel still re-exports the three until `@ultimat3/mail` and `@ultimat3/ui` move (marked `PENDING` in `src/index.ts`); `Direction` stays a type re-export, because `LocaleResolution.direction` names it.
 
 ## Enforcement
 

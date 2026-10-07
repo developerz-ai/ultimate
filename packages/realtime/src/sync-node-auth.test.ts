@@ -18,13 +18,7 @@ import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { CLOSE, SocketRegistry, type WsLike } from './socket';
 import type { SyncGrant } from './sync-auth';
-import {
-  createSyncNode,
-  type SyncNode,
-  type SyncWs,
-  type UpgradeTarget,
-  type WsData,
-} from './sync-node';
+import { type SyncNode, type SyncWs, syncNode, type UpgradeTarget, type WsData } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 /** The tenant's feed: the upgrade's actor decides it, through the channel's own policy. */
@@ -134,7 +128,7 @@ function nodeWith(
   const hub = new ChannelHub({ transport, sockets });
   const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
   registry.register(ownFeed);
-  const node = createSyncNode({
+  const node = syncNode({
     hub,
     registry,
     transport,
@@ -173,7 +167,7 @@ describe('the sync node authenticates an upgrade', () => {
     expect(server.data).toBeNull();
     const body = (await response?.json()) as { error: { code: string; fix: string } };
     expect(body.error.code).toBe('X_SOCKET_UNAUTHENTICATED');
-    expect(body.error.fix).toContain('createSyncNode');
+    expect(body.error.fix).toContain('syncNode');
     await node.stop();
   });
 

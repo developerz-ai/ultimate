@@ -110,14 +110,14 @@ Closing 50,000 sockets at once means 50,000 simultaneous reconnects, all resubsc
 | Property | Effect |
 |---|---|
 | Per-client `afterMs`, jittered over a window | reconnects arrive spread out, not as a spike |
-| The window is `createSyncNode({ drainSpreadMs })`, default 30 s | each socket draws its own delay inside it (`drainPlan`) |
+| The window is `syncNode({ drainSpreadMs })`, default 30 s | each socket draws its own delay inside it (`drainPlan`) |
 | The resume point is the **client's**, not the frame's | the frame carries no cursor. On reopen the client sends `hello`, then one `subscribe` per live query carrying that query's own cursor, and re-announces every channel from its own; the node replays from its change buffer when the cursor is inside it and serves one snapshot when it is not (`live-resume.ts`) |
 | Clients redistribute | the LB places them across remaining nodes; no sticky session to honour |
 | Client-side backoff is a floor, not the mechanism | a client that loses the socket without a frame still backs off exponentially with jitter; one that got a frame waits its `afterMs` instead |
 
 **`sync` takes both shutdown phases, and they answer different questions** `As of 2026-08`. The `accept` phase calls `stopAccepting()`: `/readyz` flips to 503 and an upgrade arriving anyway is shed with `retry-after-ms`, while every socket the node already holds keeps its patch stream — sockets are untouched and no `reconnect` frame has been sent yet. The `close` phase is the drain below, then `stop()`. Registered with no phase, the whole thing landed in `close`, and until that last phase ran the node went on upgrading new websockets onto a process that was going away.
 
-There is no `realtime.drain` config key — the spread window is `createSyncNode({ drainSpreadMs })`, default 30s, and the grace is `drain({ graceMs })`, default 5s ([Configuration](Configuration)). The reconnect benchmark that gated topology now exists: 50,000 sockets, a `SIGKILL`ed `sync` node with **no** drain and no `reconnect` frame — all 50,000 reconnected on their own backoff, 49,981 received a channel patch inside the window at p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path. That is time to the first patch on the reconnected socket — reachability, not consistency — and it is the floor this section's frame is meant to beat. Measured on **one** node ([Realtime](Realtime)).
+There is no `realtime.drain` config key — the spread window is `syncNode({ drainSpreadMs })`, default 30s, and the grace is `drain({ graceMs })`, default 5s ([Configuration](Configuration)). The reconnect benchmark that gated topology now exists: 50,000 sockets, a `SIGKILL`ed `sync` node with **no** drain and no `reconnect` frame — all 50,000 reconnected on their own backoff, 49,981 received a channel patch inside the window at p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path. That is time to the first patch on the reconnected socket — reachability, not consistency — and it is the floor this section's frame is meant to beat. Measured on **one** node ([Realtime](Realtime)).
 
 ## `x build`
 

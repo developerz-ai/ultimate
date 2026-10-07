@@ -15,7 +15,7 @@ import { LiveQueryRegistry } from './live-query';
 import { OPEN_POLICY } from './policy-fake-fixture';
 import { PresenceRegistry } from './presence';
 import { SocketRegistry } from './socket';
-import { createSyncNode, type SyncWs, type WsData } from './sync-node';
+import { type SyncWs, syncNode, type WsData } from './sync-node';
 import { encode, PROTOCOL_VERSION } from './sync-protocol';
 
 const BUILD_ID = 'build-1';
@@ -98,7 +98,7 @@ describe('drain() waits out the presence leaves it started', () => {
       clock,
       ttlMs: 30_000,
     });
-    const node = createSyncNode({
+    const node = syncNode({
       hub,
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       transport: bus,

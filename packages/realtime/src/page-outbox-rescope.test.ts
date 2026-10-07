@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { rescope } from '@ultimat3/core';
 import { type LocalStore, memoryLocalStore } from './local-store-idb';
 import type { OutboxEntry } from './page-outbox';
-import { createOutbox } from './page-outbox';
+import { localOutbox } from './page-outbox';
 
 afterEach(() => {
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.client'));
@@ -56,7 +56,7 @@ describe('a write issued under one principal', () => {
     rescope('u1');
     const flush = gate();
     const sent: string[] = [];
-    const outbox = createOutbox({
+    const outbox = localOutbox({
       local,
       overlays: () => undefined,
       beforeEnqueue: () => flush.wait(),
@@ -100,7 +100,7 @@ describe('a write issued under one principal', () => {
       wipeOthers: (keep) => inner.wipeOthers(keep),
     };
     rescope('u1');
-    const outbox = createOutbox({ local, overlays: () => undefined, send: async () => ({}) });
+    const outbox = localOutbox({ local, overlays: () => undefined, send: async () => ({}) });
     await outbox.ready;
     hold = true;
     rescope('u2');
@@ -147,7 +147,7 @@ describe('the single-flight slot across a principal change', () => {
     rescope('u1');
     const parked = gate();
     const sent: string[] = [];
-    const outbox = createOutbox({
+    const outbox = localOutbox({
       local,
       overlays: () => undefined,
       send: async (queued) => {
@@ -193,7 +193,7 @@ describe('a disk that refuses', () => {
     };
     rescope('u1');
     const sent: string[] = [];
-    const outbox = createOutbox({
+    const outbox = localOutbox({
       local,
       overlays: () => undefined,
       warn: (error) => warned.push(error),
@@ -231,7 +231,7 @@ describe('a disk that refuses', () => {
       wipeOthers: (keep) => inner.wipeOthers(keep),
     };
     const sent: string[] = [];
-    const outbox = createOutbox({
+    const outbox = localOutbox({
       local,
       principal: () => 'u1',
       overlays: () => undefined,

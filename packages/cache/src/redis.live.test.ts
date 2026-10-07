@@ -9,12 +9,12 @@
 //   TEST_REDIS_URL=redis://localhost:6379 bun test packages/cache/src/redis.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createLruTier } from './lru';
+import { lruTier } from './lru';
 import type { RedisLike } from './redis';
-import { createRedisTier, REDIS_INVALIDATE_SCRIPT } from './redis';
+import { REDIS_INVALIDATE_SCRIPT, redisTier } from './redis';
 import { tag } from './tags';
 import type { CacheTier } from './tiers';
-import { createCacheStack } from './tiers';
+import { cacheStack } from './tiers';
 
 const url = Bun.env['TEST_REDIS_URL'];
 const hasRedis = typeof url === 'string' && url.length > 0;
@@ -45,7 +45,7 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
   };
 
   const tierOn = (client: RedisLike) =>
-    createRedisTier({ client, prefix: PREFIX, buildId: null, rng: () => 0 });
+    redisTier({ client, prefix: PREFIX, buildId: null, rng: () => 0 });
 
   afterAll(async () => {
     // `KEYS` is what this package refuses to ship as an invalidation path; over a namespace this
@@ -127,7 +127,7 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
         return await client.send(command, args);
       },
     };
-    const tier = createRedisTier({ client: racing, prefix: PREFIX, buildId: null, rng: () => 0 });
+    const tier = redisTier({ client: racing, prefix: PREFIX, buildId: null, rng: () => 0 });
 
     await tier.set('raced', 'v', { ttlMs: 60_000, tags: [tag('raced')] });
 
@@ -194,7 +194,7 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
       // row-tagged key to the COLLECTION bucket and read that bucket back on a row bust, so
       // `row-2` came out of `SMEMBERS` and was deleted — while the LRU one rung closer kept it.
       // Every single-row write emptied the shared tier for that entity, silently and per node.
-      const lru = createLruTier({ rng: () => 0 });
+      const lru = lruTier({ rng: () => 0 });
       const redis = tierOn(raw());
       await seed(lru, 'liverow');
       await seed(redis, 'liverow');
@@ -210,7 +210,7 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
     test('a COLLECTION bust leaves the same keys in the LRU and in a real Redis', async () => {
       // The other direction, and the reason the entity index is a SECOND bucket rather than a
       // narrowing of the collection tag's: a collection bust must still reach every row.
-      const lru = createLruTier({ rng: () => 0 });
+      const lru = lruTier({ rng: () => 0 });
       const redis = tierOn(raw());
       await seed(lru, 'livecoll');
       await seed(redis, 'livecoll');
@@ -227,7 +227,7 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
     // `redis-fence.test.ts` proves the interleavings on the recording fake. What only a server
     // can say is that the generation is a LEASED key two separate connections both read.
     test('a bust on one connection withdraws a fill another connection had in flight', async () => {
-      const replicaA = createCacheStack([createLruTier({ rng: () => 0 }), tierOn(raw())]);
+      const replicaA = cacheStack([lruTier({ rng: () => 0 }), tierOn(raw())]);
       const replicaB = tierOn(raw());
       let release: (value: string) => void = () => undefined;
       const gate = new Promise<string>((resolve) => {

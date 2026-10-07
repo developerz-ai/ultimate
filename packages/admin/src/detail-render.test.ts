@@ -5,7 +5,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AuditEntry } from './audit';
-import { type AdminActor, type AdminAuthz, type AdminDecision, allowed, denied } from './authz';
+import {
+  type AdminActor,
+  type AdminAuthz,
+  type AdminDecision,
+  adminAllowed,
+  adminDenied,
+} from './authz';
 import type { AdminField } from './fields';
 import {
   byComponent,
@@ -90,7 +96,7 @@ const ACTOR: AdminActor = { id: 'u_1', roles: ['editor'], orgId: 'org_1' };
 
 /** Never asked in the states below; a call here would mean a view decided something itself. */
 const refuseAll: AdminAuthz = {
-  decide: (query): AdminDecision => denied(query.permission, 'probe.refused'),
+  decide: (query): AdminDecision => adminDenied(query.permission, 'probe.refused'),
 };
 
 const entry = (over: Partial<AuditEntry> = {}): AuditEntry => ({
@@ -224,7 +230,7 @@ describe('the action bar is handed this row as its subject', () => {
       decide(query): AdminDecision {
         asked.push(query.permission);
         subjects.push(query.subject);
-        return allowed(query.permission, 'probe.granted');
+        return adminAllowed(query.permission, 'probe.granted');
       },
     };
     const withAction = {

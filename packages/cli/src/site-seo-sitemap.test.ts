@@ -29,6 +29,19 @@ const route = (file: string, patch: Partial<RouteConfig> = {}): void => {
 
 const BASE = 'https://notificado.co';
 const ROOT = processRoot(join(import.meta.dir, '..', '.site-seo-sitemap-fixture'));
+/**
+ * What an app writes: `defineCatalogs()` in its catalog module, which `siteSeo` reads through
+ * `@ultimat3/i18n`'s one reader — the ambient `configureLocales` beside it is the renderer's.
+ */
+const declareLocales = async (): Promise<void> => {
+  await Bun.write(
+    join(ROOT, 'packages/i18n/src/index.ts'),
+    "import { defineCatalogs } from '@ultimat3/i18n';\n" +
+      "export const catalogs = defineCatalogs({ default: 'es-co', locales: { 'es-co': {}, en: {} } });\n",
+  );
+  configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+};
+
 const locs = (xml: string) => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
 const lastmods = (xml: string) =>
   [...xml.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map((m) => m[1]);
@@ -96,7 +109,7 @@ describe('seo.sitemap.extra', () => {
   });
 
   test('listed per routed locale, with the hreflang cluster a site/ page gets', async () => {
-    configureLocales({ supported: ['es-co', 'en'], fallback: 'es-co' });
+    await declareLocales();
     route('apps/web/app/verificar/page.tsx');
     const xml = await sitemapOf(['/verificar']);
     expect(locs(xml).sort()).toEqual([`${BASE}/en/verificar`, `${BASE}/verificar`]);

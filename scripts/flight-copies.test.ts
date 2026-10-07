@@ -12,6 +12,11 @@ import {
   flightCopyResult,
   readSources,
 } from './flight-copies';
+import {
+  CORE_REEXPORT_EXEMPT,
+  CORE_REEXPORT_PENDING,
+  coreReexportKeys,
+} from './lib/core-reexports';
 import { render } from './lib/log';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -92,6 +97,14 @@ describe('this repository', () => {
   test('and refuses a second implementation of a one-home helper through the same entry', () => {
     const copy = "const T = { '&': '&amp;', '<': '&lt;' };\n";
     expect(codes(file('packages/x/src/escape.ts', copy))).toEqual(['X_HELPER_COPY']);
+  });
+
+  // A pending core re-export is a debt with an owner, and it is green only while it is real: the
+  // change that deletes the re-export must delete its pin too, or the list outlives what it tracks.
+  test('and every pinned core re-export is still in the tree', async () => {
+    const found = new Set((await readSources(ROOT)).flatMap(coreReexportKeys));
+    const pins = [...CORE_REEXPORT_EXEMPT.keys(), ...CORE_REEXPORT_PENDING.keys()];
+    expect(pins.filter((pin) => !found.has(pin))).toEqual([]);
   });
 
   test('and the scan really walked shipped source, skipping tests', async () => {

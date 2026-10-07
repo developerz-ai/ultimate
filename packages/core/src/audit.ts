@@ -67,7 +67,7 @@ export interface AuditRecord {
    * keeps is precisely the convention four apps modelled four ways.
    *
    * **A sink that PERSISTS must project it** (`@ultimat3/action`'s `postgresAuditSink` is the
-   * shipped allow-list): `createContext` spreads every installed service onto this object and an
+   * shipped allow-list): `ctxOf` spreads every installed service onto this object and an
    * HTTP surface's value carries the caller's `Authorization` and `Cookie`.
    */
   readonly ctx: Ctx;

@@ -1,4 +1,4 @@
-// The `worker` role's public contract: what `createWorker` takes, what it hands back, and what
+// The `worker` role's public contract: what `jobWorker` takes, what it hands back, and what
 // `stats()` reports. Apart from `worker.ts` because that file's job is the claim loop and the
 // drain, and a contract three files import should not sit under 500 lines of loop.
 

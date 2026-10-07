@@ -11,7 +11,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { Page } from '@ultimat3/core';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
@@ -127,7 +127,7 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
    * tenant predicate would show up as an extra bind.
    */
   const inRequestFor = <T>(orgId: string, work: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: userActor({ id: 'live-reader', orgId }) }), work);
+    runWithContext(ctxOf({ actor: userActor({ id: 'live-reader', orgId }) }), work);
 
   /** A page walk asserts over a whole tenant, so each one needs a tenant nobody else wrote to. */
   const newOrg = async (slug: string): Promise<string> =>

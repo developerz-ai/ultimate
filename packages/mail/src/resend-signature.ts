@@ -34,7 +34,7 @@ export function svixSecretBytes(secret: string): Uint8Array<ArrayBuffer> {
     throw new ConfigInvalidError({
       cause:
         'the Resend webhook secret is not a whsec_<base64> signing secret of at least 16 bytes',
-      fix: "createResendEventReceiver({ secret: env.RESEND_WEBHOOK_SECRET }) — with the endpoint's whsec_ signing secret from https://resend.com/webhooks",
+      fix: "resendEventReceiver({ secret: env.RESEND_WEBHOOK_SECRET }) — with the endpoint's whsec_ signing secret from https://resend.com/webhooks",
     });
   }
   return bytes;

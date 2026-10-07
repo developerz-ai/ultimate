@@ -4,13 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import {
-  createPgliteClient,
-  type DbClient,
-  driverError,
-  raw,
-  type SqlFragment,
-} from '@ultimat3/db';
+import { type DbClient, driverError, pgliteClient, raw, type SqlFragment } from '@ultimat3/db';
 import type { AuthAdapter, CreateUserInput } from './adapter';
 import { postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
@@ -20,7 +14,7 @@ import { AUTH_TABLES } from './tables';
 const PGLITE_BOOT_MS = 30_000;
 const REDEEMED_AT = new Date('2031-03-04T05:06:07.000Z');
 const clock = frozenClock(REDEEMED_AT);
-const client = createPgliteClient();
+const client = pgliteClient();
 
 const ADA = '00000000-0000-7000-8000-000000000301';
 const GRACE = '00000000-0000-7000-8000-000000000302';

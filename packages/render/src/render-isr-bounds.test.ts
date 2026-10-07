@@ -3,7 +3,7 @@
 // cap or a TTL arrives non-finite, and nothing here touches tag invalidation or key derivation.
 
 import { describe, expect, test } from 'bun:test';
-import { createIsrController } from './render-isr';
+import { isrController } from './render-isr';
 import { memoryIsrStore } from './render-isr-store';
 
 /**
@@ -37,7 +37,7 @@ describe('a non-finite bound is refused, not propagated', () => {
       ttlMs: Number.NaN,
       stale: false,
     };
-    const controller = createIsrController({
+    const controller = isrController({
       buildId: 'b1',
       now: () => 1_000,
       routes: () => [],

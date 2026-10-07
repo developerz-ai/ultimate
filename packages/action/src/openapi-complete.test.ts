@@ -9,12 +9,12 @@ import { defineApi } from './define-api';
 import { toRoute } from './http';
 import { buildOpenApi } from './openapi';
 import { completeOpenApi, mountOpenApi } from './openapi-complete';
-import { listActions, resetRegistry } from './registry';
+import { listActions, resetActions } from './registry';
 
 const Out = t.object({ ok: t.boolean });
 
 beforeEach(() => {
-  resetRegistry();
+  resetActions();
   defineApi({
     actions: {
       createCase: action({
@@ -46,7 +46,7 @@ beforeEach(() => {
     http: { pathStyle: 'readable' },
   });
 });
-afterEach(() => resetRegistry());
+afterEach(() => resetActions());
 
 type Op = {
   responses: Record<string, { headers?: Record<string, unknown> }>;

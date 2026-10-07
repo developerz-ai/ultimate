@@ -6,9 +6,9 @@
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import type { OverlayNotice } from './overlay';
-import { createPipeline } from './pipeline';
-import { json, text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse, textResponse } from './response';
+import { httpRouter, type Route } from './router';
 import type { Schema } from './validate';
 
 const titleSchema: Schema<{ title: string }> = {
@@ -31,37 +31,37 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/public',
     meta: { name: 'public', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'GET',
     path: '/private',
     meta: { name: 'private', auth: 'required' },
-    handler: (_request, ctx) => json({ locale: ctx.locale, tz: ctx.tz }),
+    handler: (_request, ctx) => jsonResponse({ locale: ctx.locale, tz: ctx.tz }),
   },
   {
     method: 'POST',
     path: '/posts',
     meta: { name: 'posts.create', auth: 'public', input: titleSchema },
-    handler: (_request, ctx) => json({ input: ctx.input }),
+    handler: (_request, ctx) => jsonResponse({ input: ctx.input }),
   },
   {
     method: 'GET',
     path: '/guarded',
     meta: { name: 'guarded', auth: 'public', policy: 'post:publish' },
-    handler: () => text('never reached'),
+    handler: () => textResponse('never reached'),
   },
   {
     method: 'GET',
     path: '/self-guarded',
     meta: { name: 'self-guarded', auth: 'public', policy: 'post:publish', enforcedBy: 'handler' },
-    handler: () => text('the handler decided'),
+    handler: () => textResponse('the handler decided'),
   },
   {
     method: 'GET',
     path: '/posts/:id',
     meta: { name: 'posts.show', auth: 'public' },
-    handler: () => text('one post'),
+    handler: () => textResponse('one post'),
   },
   {
     method: 'GET',
@@ -99,8 +99,8 @@ describe('devNotices is consulted on the overlay path and nowhere else', () => {
       calls += 1;
       return found ?? [];
     };
-    const pipeline = createPipeline({
-      table: createRouter(routes),
+    const pipeline = httpPipeline({
+      table: httpRouter(routes),
       config: defineHttpConfig({
         rateLimit: { scope: 'process' },
         dev: options.dev,

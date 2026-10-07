@@ -8,6 +8,7 @@
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { renderFixShellArg } from '@ultimat3/core';
+import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import { IDLE_HYDRATE_TIMEOUT_MS } from '@ultimat3/render';
 import { requireAppRoot } from './app-root';
 import { appBrowser } from './browser-launcher';
@@ -39,12 +40,7 @@ import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
 import { shotBrowserChoice } from './shot-browser';
 import { readCookieFlag, type ShotCookiePair, shotCookies } from './shot-cookie';
-import {
-  acceptLanguageHeaders,
-  loadShotLocales,
-  localizedShotPath,
-  readLocaleFlag,
-} from './shot-locale';
+import { acceptLanguageHeaders, localizedShotPath, readLocaleFlag } from './shot-locale';
 import type { BootDevServer, ShotServer } from './shot-server';
 import { allowHostsFrom, devServerFor, SHOT_DIR } from './shot-server';
 import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
@@ -379,7 +375,7 @@ export const shotCommand: CliCommand = {
     const matrix = flagBool(ctx.args, 'matrix');
     const cookies = readCookieFlag(flagString(ctx.args, 'cookie'));
     const viewports = parseViewports(flagString(ctx.args, 'viewport'));
-    const app = await loadShotLocales(root);
+    const app = await appLocaleSet(root);
     const locale = readLocaleFlag(flagString(ctx.args, 'locale'), app);
     // Every ambiguous pair refused BY NAME, before a value is read: a reader who typed two
     // subjects has a belief about which one runs, and half of them would be wrong.

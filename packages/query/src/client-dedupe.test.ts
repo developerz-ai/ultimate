@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createClientFlight, isSuperseded } from '@ultimat3/core';
+import { clientFlight, isSuperseded } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { type FetchLike, queryClient } from './client';
@@ -72,7 +72,7 @@ function abortRejection(): unknown {
 describe('dedup, on reads only', () => {
   test('two concurrent identical reads are ONE dispatch, and each gets its own body', async () => {
     const wire = held();
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -96,7 +96,7 @@ describe('dedup, on reads only', () => {
   test('a key that is only the URL is not enough: a principal change never joins', async () => {
     const wire = held();
     let who = 'alice';
-    const flight = createClientFlight({ principal: () => who });
+    const flight = clientFlight({ principal: () => who });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -114,7 +114,7 @@ describe('dedup, on reads only', () => {
 
   test('no principal, no dedup — naming who is asking is what turns it on', async () => {
     const wire = held();
-    const flight = createClientFlight({});
+    const flight = clientFlight({});
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -131,7 +131,7 @@ describe('dedup, on reads only', () => {
 
   test('`fresh: true` refuses to join a dispatch that left before the change did', async () => {
     const wire = held();
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -148,7 +148,7 @@ describe('dedup, on reads only', () => {
 
   test('a caller-supplied signal disqualifies the read from sharing entirely', async () => {
     const wire = held();
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -167,7 +167,7 @@ describe('dedup, on reads only', () => {
 
   test("one caller's abort does not cancel another caller's read", async () => {
     const wire = held();
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -190,7 +190,7 @@ describe('dedup, on reads only', () => {
 describe('the generation fence', () => {
   test('a fenced read is distinguishable from a failed one, and the socket is closed', async () => {
     const wire = held();
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -210,7 +210,7 @@ describe('the generation fence', () => {
 
   test('a read issued AFTER the bump is answered normally', async () => {
     const wire = held();
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,
@@ -227,7 +227,7 @@ describe('the generation fence', () => {
 
   test('a read holding its own signal is never aborted by a fence', async () => {
     const wire = held();
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const client = queryClient<typeof queries>({
       baseUrl: 'https://app.test',
       fetch: wire.fetch,

@@ -44,12 +44,12 @@ export {
   DESTRUCTIVE_MARKER,
   destructiveStatements,
   hasDestructiveMarker,
-  isDestructive,
+  isDestructiveMigration,
 } from './destructive';
 export type { DriftDifference, DriftKind, DriftOptions, DriftReport } from './drift';
 export {
   appTables,
-  assertNoDrift,
+  assertNoSchemaDrift,
   checkDrift,
   declaredSchema,
   diffSchema,
@@ -83,7 +83,7 @@ export {
 } from './errors';
 export { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
 export type { RecordedStatement, RecordingClient, StubResponse } from './fake';
-export { createRecordingClient } from './fake';
+export { recordingClient } from './fake';
 export type { GeneratedMigration, GenerateOptions } from './generate';
 export { generateMigration, migrationStamp, slugify, snapshotOf } from './generate';
 export type { IndexMethod } from './index-method';
@@ -103,7 +103,7 @@ export type {
   SchemaDescription,
   TableDescription,
 } from './introspect';
-export { buildSchema, findTable, introspect } from './introspect';
+export { buildSchema, findTable, introspectSchema } from './introspect';
 export {
   constraintNameFor,
   declaredIndexes,
@@ -157,12 +157,12 @@ export type {
   PgliteResult,
 } from './pglite';
 export {
-  createPgliteClient,
   loadPgliteDriver,
   PGLITE_FIX,
   PGLITE_MEMORY,
   PGLITE_MISSING,
   PGLITE_PACKAGE,
+  pgliteClient,
   pgliteDataDir,
 } from './pglite';
 export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';

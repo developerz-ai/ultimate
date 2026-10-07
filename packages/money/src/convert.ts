@@ -8,7 +8,7 @@ import { type Clock, systemClock } from '@ultimat3/core';
 import { assertCurrency, exponentOf } from './currency';
 import { rateMissing } from './errors';
 import { type Fraction, factorFraction } from './factor';
-import { type Money, money } from './money';
+import { fromMinor, type Money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
 import { moneyScale } from './scale';
 
@@ -46,7 +46,7 @@ export interface ConvertOptions {
 }
 
 /**
- * `convert(money(1000,'USD'), 'EUR', { rate: 0.92, ... })`.
+ * `convert(fromMinor(1000,'USD'), 'EUR', { rate: 0.92, ... })`.
  * Scales across differing minor-unit exponents (USD 2 → JPY 0) instead of assuming both
  * sides have cents, and **preserves the amount's own `scale`**: a micro-priced amount stays
  * micro-priced in the target currency, exactly as `multiply` and `divide` keep theirs.
@@ -85,7 +85,7 @@ export function convert(
   const converted = roundRatio(numerator, denominator, options.rounding ?? DEFAULT_ROUNDING);
 
   return {
-    amount: money(converted, target, resultScale),
+    amount: fromMinor(converted, target, resultScale),
     source: amount,
     rate: rate.rate,
     at: rate.at.toISOString(),

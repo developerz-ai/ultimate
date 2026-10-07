@@ -5,15 +5,15 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { asyncRefusal, refusal } from './bounds-fixture';
-import { EchoProvider } from './echo-provider';
+import { echoProvider } from './echo-provider';
 import { LlmRefusedError } from './errors';
 import type { AiFetch } from './fetch-seam';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { llm } from './llm';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { modelForCall, resolveModel } from './model-resolve';
@@ -21,14 +21,14 @@ import { moreCapableThan, registerModel } from './models';
 import { openAiProvider } from './openai-provider';
 import { definePrompt } from './prompt';
 import type { Provider } from './provider';
-import { AnthropicProvider, costOf } from './provider';
+import { anthropicProvider, costOf } from './provider';
 import { configureAi } from './runtime';
 
 useFixtureModels();
 
 const Input = t.object({ id: t.string });
 const Output = t.object({ answer: t.string });
-const ctx = () => createContext({});
+const ctx = () => ctxOf({});
 
 let seq = 0;
 const prompt = (model?: string) => {
@@ -45,7 +45,7 @@ const prompt = (model?: string) => {
 function namesTheThreePlaces(fix: string): void {
   expect(fix).toContain('model: modelId on the llm()/agent() declaration');
   expect(fix).toContain('definePrompt');
-  expect(fix).toContain('createGateway({ …, defaultModel: modelId })');
+  expect(fix).toContain('providerGateway({ …, defaultModel: modelId })');
   // No vendor: the fix is the app's shape, never an id the framework would choose.
   expect(fix).not.toMatch(/claude-|gpt-/);
 }
@@ -53,7 +53,7 @@ function namesTheThreePlaces(fix: string): void {
 /** A provider that records whether it was ever asked: a refusal must come before it. */
 function spy(): { provider: Provider; asked: () => number } {
   let asked = 0;
-  const echo = new EchoProvider();
+  const echo = echoProvider();
   return {
     provider: {
       name: 'spy',
@@ -101,7 +101,7 @@ describe('no vendor id is reachable unless the app registered it', () => {
 
   test('a gateway call on an unregistered id is refused before the budget or the provider', async () => {
     const { provider, asked } = spy();
-    const gateway = createGateway({ providers: [provider], budget: { request: 1_000_000 } });
+    const gateway = providerGateway({ providers: [provider], budget: { request: 1_000_000 } });
     const error = await asyncRefusal(() =>
       gateway.generate({ model: 'acme-unregistered', messages: [], maxTokens: 8 }),
     );
@@ -126,7 +126,7 @@ describe('a call that names no model is refused, naming the three places', () =>
 
   test('llm() under a gateway with no defaultModel, on a prompt with none', async () => {
     const { provider, asked } = spy();
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: providerGateway({ providers: [provider] }) });
     const unchosen = llm({
       input: Input,
       output: Output,
@@ -142,7 +142,7 @@ describe('a call that names no model is refused, naming the three places', () =>
 
   test('agent() the same way', async () => {
     const { provider, asked } = spy();
-    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    configureAi({ gateway: providerGateway({ providers: [provider] }) });
     const unchosen = agent({
       input: Input,
       output: Output,
@@ -158,7 +158,7 @@ describe('a call that names no model is refused, naming the three places', () =>
   });
 
   test("a prompt's model needs no gateway default, and the gateway's answers when nothing else does", () => {
-    configureAi({ gateway: createGateway({ providers: [], defaultModel: FIXTURE_MODEL }) });
+    configureAi({ gateway: providerGateway({ providers: [], defaultModel: FIXTURE_MODEL }) });
     expect(modelForCall('llm', 'p@1', undefined, 'claude-haiku-4-5')).toBe('claude-haiku-4-5');
     expect(modelForCall('llm', 'p@1', undefined, undefined)).toBe(FIXTURE_MODEL);
   });
@@ -166,7 +166,7 @@ describe('a call that names no model is refused, naming the three places', () =>
 
 describe('the providers choose no model either', () => {
   test('EchoProvider has no id of its own: a direct call naming none is refused', async () => {
-    const echo = new EchoProvider();
+    const echo = echoProvider();
     const error = await asyncRefusal(() => echo.generate({ messages: [], maxTokens: 8 }));
     expect(error.code).toBe('X_AI_MODEL_UNRESOLVED');
     const answered = await echo.generate({ model: FIXTURE_MODEL, messages: [], maxTokens: 8 });
@@ -183,8 +183,8 @@ describe('the providers choose no model either', () => {
       return new Response('{}', { status: 200 });
     };
     const providers: readonly Provider[] = [
-      new EchoProvider(),
-      new AnthropicProvider({ apiKey: 'k', models: [FIXTURE_MODEL], fetch }),
+      echoProvider(),
+      anthropicProvider({ apiKey: 'k', models: [FIXTURE_MODEL], fetch }),
       openAiProvider({ apiKey: 'k', models: ['gpt-5.6-sol'], fetch }),
     ];
     for (const provider of providers) {
@@ -207,19 +207,19 @@ describe('the providers choose no model either', () => {
   });
 
   test("AnthropicProvider serves the app's list, and an empty one is refused at construction", () => {
-    expect(new AnthropicProvider({ models: ['acme-claude'] }).models).toEqual(['acme-claude']);
-    const error = refusal(() => new AnthropicProvider({ models: [] }));
+    expect(anthropicProvider({ models: ['acme-claude'] }).models).toEqual(['acme-claude']);
+    const error = refusal(() => anthropicProvider({ models: [] }));
     expect(error.code).toBe('X_AI_REQUEST_INVALID');
-    expect(error.fix).toContain('new AnthropicProvider({ models:');
+    expect(error.fix).toContain('anthropicProvider({ models:');
   });
 
   // Plain JS, or a cast, reaches the constructor with no argument at all: that is the same boot
   // mistake as an empty list and must get the same coded refusal, never a TypeError on `.models`.
-  test('a provider constructed with no config at all gets the coded empty-list refusal', () => {
-    const construct = AnthropicProvider as unknown as new () => Provider;
-    const anthropic = refusal(() => new construct());
+  test('a provider built with no config at all gets the coded empty-list refusal', () => {
+    const build = anthropicProvider as unknown as () => Provider;
+    const anthropic = refusal(() => build());
     expect(anthropic.code).toBe('X_AI_REQUEST_INVALID');
-    expect(anthropic.fix).toContain('new AnthropicProvider({ models:');
+    expect(anthropic.fix).toContain('anthropicProvider({ models:');
     const openAi = refusal(() => (openAiProvider as unknown as () => Provider)());
     expect(openAi.code).toBe('X_AI_REQUEST_INVALID');
     expect(openAi.fix).toContain('openAiProvider({ …, models:');

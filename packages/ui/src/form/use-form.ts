@@ -1,11 +1,11 @@
-// The reactive shell over `createFormBinding`, and the whole of what it adds: the state lands in a
+// The reactive shell over `formBinding`, and the whole of what it adds: the state lands in a
 // signal, so a `<Field error={form.errorFor('title')}>` re-renders when a submit answers.
 //
 // Reactivity goes through `solid()` like every other read in this package — a component that
 // imported solid-js directly would make @ultimat3/ui depend on a runtime it deliberately does not.
 
 import { solid } from '../theme/solid-adapter';
-import { createFormBinding, type FormBinding, type FormBindingOptions } from './form-binding';
+import { type FormBinding, type FormBindingOptions, formBinding } from './form-binding';
 import {
   errorOf,
   type FormState,
@@ -24,7 +24,7 @@ export function useForm<TValues, TResult>(
 ): FormBinding<TValues, TResult> {
   const runtime = solid();
   const [state, setState] = runtime.createSignal<FormState<TResult>>(IDLE_FORM_STATE);
-  const binding = createFormBinding<TValues, TResult>({
+  const binding = formBinding<TValues, TResult>({
     ...options,
     onState: (next) => {
       options.onState?.(next);

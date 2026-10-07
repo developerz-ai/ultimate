@@ -10,10 +10,10 @@ import {
   metadataUrlFor,
   protectedResourceMetadata,
 } from './oauth-metadata';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import { mcpHttpRoute } from './transport-http';
 
-const server = createMcpServer({ tools: [], resources: [], prompts: [] });
+const server = mcpServer({ tools: [], resources: [], prompts: [] });
 const OAUTH = { authorizationServers: ['https://www.example.com'], resourceName: 'Example' };
 
 const post = (headers: Record<string, string> = {}): Request =>

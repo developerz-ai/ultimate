@@ -11,7 +11,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheSetOptions, CacheTag, CacheTier } from '@ultimat3/cache';
 import { isolateTiers, registerTier, resetTiers } from '@ultimat3/cache';
-import { createContext, frozenClock } from '@ultimat3/core';
+import { ctxOf, frozenClock } from '@ultimat3/core';
 import { readFresh, readOnce, readThrough, requestMemo } from './cache';
 
 interface Written {
@@ -86,8 +86,8 @@ afterAll(() => {
 
 describe('requestMemo', () => {
   test('is one map per ctx, the same one on every call', () => {
-    const a = createContext({});
-    const b = createContext({});
+    const a = ctxOf({});
+    const b = ctxOf({});
 
     expect(requestMemo(a)).toBe(requestMemo(a));
     expect(requestMemo(a)).not.toBe(requestMemo(b));
@@ -96,7 +96,7 @@ describe('requestMemo', () => {
 
 describe('readOnce', () => {
   test('runs the source once for two reads that race in the same tick, tier untouched', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     const source = gate();
     let calls = 0;
     const run = async (): Promise<string> => {
@@ -118,7 +118,7 @@ describe('readOnce', () => {
   });
 
   test('answers a later read in the same request from the memo', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<string> => {
       calls += 1;
@@ -138,13 +138,13 @@ describe('readOnce', () => {
       return 'rows';
     };
 
-    await readOnce(createContext({}), 'k', run);
-    await readOnce(createContext({}), 'k', run);
+    await readOnce(ctxOf({}), 'k', run);
+    await readOnce(ctxOf({}), 'k', run);
     expect(calls).toBe(2);
   });
 
   test('keeps two keys apart inside one request', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<number> => {
       calls += 1;
@@ -156,7 +156,7 @@ describe('readOnce', () => {
   });
 
   test('memoizes a result that is legitimately undefined', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<undefined> => {
       calls += 1;
@@ -169,7 +169,7 @@ describe('readOnce', () => {
   });
 
   test('does not memoize a rejection: the next read in the request retries', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<string> => {
       calls += 1;
@@ -186,7 +186,7 @@ describe('readOnce', () => {
   // A `run` that throws before it ever returns a promise leaves nothing to join, so the memo must
   // not be holding a key either — the next read has to start the work over.
   test('memoizes nothing when the read throws synchronously', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     const run = (): Promise<string> => {
       throw new Error('boom');
     };
@@ -198,7 +198,7 @@ describe('readOnce', () => {
 
 describe('readThrough', () => {
   test('runs the source once for two reads that race in the same tick', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     const source = gate();
     let calls = 0;
     const run = async (): Promise<string> => {
@@ -218,7 +218,7 @@ describe('readThrough', () => {
   });
 
   test('asks the tier once however many readers arrive while the read is in flight', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     const source = gate();
     const run = async (): Promise<string> => {
       await source.wait;
@@ -233,7 +233,7 @@ describe('readThrough', () => {
   });
 
   test('answers a later read in the same request from the memo', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<string> => {
       calls += 1;
@@ -250,7 +250,7 @@ describe('readThrough', () => {
   // fall through to the tier every time. The memo holds the promise, and a promise is never
   // undefined.
   test('memoizes a result that is legitimately undefined', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<undefined> => {
       calls += 1;
@@ -266,13 +266,13 @@ describe('readThrough', () => {
   test('keys the memo by ctx, so another request reads for itself', async () => {
     const run = async (): Promise<string> => 'rows';
 
-    expect(await readThrough(createContext({}), 'k', null, run)).toBe('rows');
-    expect(await readThrough(createContext({}), 'k', null, run)).toBe('rows');
+    expect(await readThrough(ctxOf({}), 'k', null, run)).toBe('rows');
+    expect(await readThrough(ctxOf({}), 'k', null, run)).toBe('rows');
     expect(tier.gets).toBe(2);
   });
 
   test('keeps two keys apart inside one request', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<number> => {
       calls += 1;
@@ -286,7 +286,7 @@ describe('readThrough', () => {
 
   test('serves a tier hit without touching the source, and does not write it back', async () => {
     await tier.set('k', 'cached');
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<string> => {
       calls += 1;
@@ -304,8 +304,8 @@ describe('readThrough', () => {
   test('hands the tier a relative lease, or none at all', async () => {
     const run = async (): Promise<string> => 'rows';
 
-    await readThrough(createContext({}), 'ttl', 60_000, run);
-    await readThrough(createContext({}), 'forever', null, run);
+    await readThrough(ctxOf({}), 'ttl', 60_000, run);
+    await readThrough(ctxOf({}), 'forever', null, run);
 
     const [ttl, forever] = tier.writes;
     expect(ttl).toEqual({ value: 'rows', ttlMs: 60_000, tags: [] });
@@ -316,7 +316,7 @@ describe('readThrough', () => {
   // The read path reads no clock at all now. `read-tier.test.ts` is where a frozen clock is
   // driven end to end through a real tier; this only pins that nothing here re-derives one.
   test('reads no clock of its own, so an injected one cannot be bypassed', async () => {
-    const ctx = createContext({ clock: frozenClock(1_000) });
+    const ctx = ctxOf({ clock: frozenClock(1_000) });
 
     await readThrough(ctx, 'k', 60_000, async () => 'rows');
 
@@ -324,7 +324,7 @@ describe('readThrough', () => {
   });
 
   test('fails every reader that joined the read, having run the source once', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     const source = gate();
     let calls = 0;
     const run = async (): Promise<string> => {
@@ -346,7 +346,7 @@ describe('readThrough', () => {
   });
 
   test('does not memoize a rejection: the next read in the request retries', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<string> => {
       calls += 1;
@@ -363,7 +363,7 @@ describe('readThrough', () => {
 
 describe('readFresh', () => {
   test('runs even when the memo already holds an answer', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<number> => {
       calls += 1;
@@ -376,7 +376,7 @@ describe('readFresh', () => {
   });
 
   test('replaces the memo, so the next plain read of the key joins it', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     let calls = 0;
     const run = async (): Promise<number> => {
       calls += 1;
@@ -392,7 +392,7 @@ describe('readFresh', () => {
   });
 
   test('leaves the earlier answer standing when it rejects', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     const run = async (): Promise<string> => 'rows';
     const boom = async (): Promise<string> => {
       throw new Error('boom');
@@ -408,7 +408,7 @@ describe('readFresh', () => {
   });
 
   test('does not evict a fresh read that replaced it while it was in flight', async () => {
-    const ctx = createContext({});
+    const ctx = ctxOf({});
     const source = gate();
     const slow = async (): Promise<string> => {
       await source.wait;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { FRAMEWORK_CATALOG, placeholdersOf, registerCatalog, resetCatalogs } from '@ultimat3/i18n';
 import { ERROR_STATUS } from './error-map';
 import {
@@ -175,7 +175,7 @@ describe('every visible label is a catalog key', () => {
 
   test.each([404, 403, 500, 503])('a %p page in German shows no English label', (status) => {
     registerCatalog('de', marked);
-    const page = runWithContext(createContext({ locale: 'de' }), () =>
+    const page = runWithContext(ctxOf({ locale: 'de' }), () =>
       renderErrorPage(input({ status, code: 'X_SOMETHING', requestId: 'req-7', locale: 'de' })),
     );
     const own = new Set([String(status), 'X_SOMETHING', 'req-7', BRAND]);

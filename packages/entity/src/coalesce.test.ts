@@ -3,19 +3,8 @@
 // lookup the statement WAS, so a batch can never answer with rows its caller's own could not.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  createContext,
-  runWithContext,
-  serviceActor,
-  userActor,
-  withChildContext,
-} from '@ultimat3/core';
-import {
-  createRecordingClient,
-  type DbClient,
-  type RecordingClient,
-  setDbClient,
-} from '@ultimat3/db';
+import { ctxOf, runWithContext, serviceActor, userActor, withChildContext } from '@ultimat3/core';
+import { type DbClient, type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { MAX_IDS_PER_STATEMENT } from './batch-read';
 import { money, text, timestamp, uuid } from './columns';
 import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
@@ -61,7 +50,7 @@ const physical = (id: string, over: Record<string, unknown> = {}): Record<string
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 
@@ -97,12 +86,12 @@ const settledWithin = async <T>(
 // The tenant is the actor's, so a request that reads a tenant-scoped table is a request with an
 // actor that carries one — `{ orgId: ORG }` on the call below is now a restatement of it.
 const inRequest = <T>(work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
+  runWithContext(ctxOf({ actor: userActor({ id: idAt(90), orgId: ORG }) }), work);
 
 /** A support-tool request: the one shape that may read two tenants, and it says so out loud. */
 const acrossTenants = <T>(work: () => Promise<T>): Promise<T> =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: serviceActor({ id: idAt(91), orgId: ORG, scopes: [CROSS_TENANT_SCOPE] }),
     }),
     () => crossTenant('a support tool reads two tenants in one request', work),
@@ -375,7 +364,7 @@ describe('the guards a point lookup already had', () => {
   test('a tenant-scoped lookup by an actor with no tenant never reaches a statement', async () => {
     // Inside a request there is no unscoped lookup left to catch — the actor's tenant is applied
     // whether or not the caller named one — so what is refused here is an actor carrying none.
-    await runWithContext(createContext(), async () => {
+    await runWithContext(ctxOf(), async () => {
       await expect(repo().findById(idAt(10))).rejects.toBeUltimateError(
         'X_TENANCY_ACTOR_ORG_REQUIRED',
       );

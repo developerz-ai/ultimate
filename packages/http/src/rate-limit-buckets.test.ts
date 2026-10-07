@@ -4,11 +4,11 @@
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
 import type { HttpError } from './errors';
-import { createPipeline } from './pipeline';
-import { type Bucket, createRateLimiter, memoryRateLimitStore } from './rate-limit';
+import { httpPipeline } from './pipeline';
+import { type Bucket, memoryRateLimitStore, rateLimiter } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
-import { createRouter, type Route } from './router';
-import { createServer } from './server';
+import { httpRouter, type Route } from './router';
+import { httpServer } from './server';
 
 const ok = (): Response => new Response('ok');
 
@@ -100,19 +100,19 @@ describe('withRouteBuckets', () => {
     ).toThrow(/X_RATE_LIMIT_BUCKET_CONFLICT/);
   });
 
-  // Run, never reasoned about: `createServer` merges and `createPipeline` merges again under it,
+  // Run, never reasoned about: `httpServer` merges and `httpPipeline` merges again under it,
   // so the second pass is proven a no-op by comparing the two resolved tables — not by trusting
   // that `same()` says so.
   test('the second pass over an already-merged config changes nothing', () => {
-    const server = createServer({ routes: [route('contactSales', TIGHT)], config: PROCESS_SCOPED });
+    const server = httpServer({ routes: [route('contactSales', TIGHT)], config: PROCESS_SCOPED });
     expect(server.config.rateLimit.buckets['contactSales']).toEqual(TIGHT);
     expect(server.pipeline.config.rateLimit.buckets).toEqual(server.config.rateLimit.buckets);
   });
 
-  // The reason `createServer` merges at all: the store-backed limiter is built there, from
+  // The reason `httpServer` merges at all: the store-backed limiter is built there, from
   // `config.rateLimit`. An unmerged table would resolve `contactSales` to `default` — 120 burst.
   test('a store-backed limiter enforces the route bucket, not the default', async () => {
-    const server = createServer({
+    const server = httpServer({
       routes: [route('contactSales', TIGHT)],
       config: PROCESS_SCOPED,
       rateLimitStore: memoryRateLimitStore(),
@@ -128,11 +128,11 @@ describe('withRouteBuckets', () => {
   // a route, so `bucketFor('contactSales')` fell through to `default` — 120 burst for a route
   // declaring 5, which is this slice's defect surviving through the one path we did not check.
   test('a limiter that cannot hold the route bucket is refused, not silently run on default', () => {
-    const foreign = createRateLimiter({ config: PROCESS_LIMITS });
+    const foreign = rateLimiter({ config: PROCESS_LIMITS });
     const error = (() => {
       try {
-        createPipeline({
-          table: createRouter([route('contactSales', TIGHT)]),
+        httpPipeline({
+          table: httpRouter([route('contactSales', TIGHT)]),
           config: PROCESS_SCOPED,
           limiter: foreign,
         });
@@ -145,11 +145,11 @@ describe('withRouteBuckets', () => {
     expect(error?.cause).toContain('5 / 0.008');
     expect(error?.cause).toContain('would run on the default one');
     // Axiom 4: one executable path out, not "reconcile your limiter".
-    expect(error?.fix).toContain('createServer({ routes, rateLimitStore })');
+    expect(error?.fix).toContain('httpServer({ routes, rateLimitStore })');
   });
 
   test('a limiter holding the right name but the wrong numbers is refused too', () => {
-    const wrong = createRateLimiter({
+    const wrong = rateLimiter({
       config: {
         ...PROCESS_LIMITS,
         buckets: {
@@ -159,8 +159,8 @@ describe('withRouteBuckets', () => {
       },
     });
     expect(() =>
-      createPipeline({
-        table: createRouter([route('contactSales', TIGHT)]),
+      httpPipeline({
+        table: httpRouter([route('contactSales', TIGHT)]),
         config: PROCESS_SCOPED,
         limiter: wrong,
       }),
@@ -171,10 +171,10 @@ describe('withRouteBuckets', () => {
     const config = withRouteBuckets(defineHttpConfig({ rateLimit: { scope: 'process' } }), [
       route('contactSales', TIGHT),
     ]);
-    const pipeline = createPipeline({
-      table: createRouter([route('contactSales', TIGHT)]),
+    const pipeline = httpPipeline({
+      table: httpRouter([route('contactSales', TIGHT)]),
       config,
-      limiter: createRateLimiter({ config: config.rateLimit }),
+      limiter: rateLimiter({ config: config.rateLimit }),
     });
     const response = await pipeline.handle(
       new Request('http://dev.test/api/contactSales', { method: 'POST' }),
@@ -184,10 +184,10 @@ describe('withRouteBuckets', () => {
   });
 
   test('a limiter declaring no table at all cannot be proven, so it is refused', () => {
-    const opaque = { ...createRateLimiter({ config: PROCESS_LIMITS }), buckets: undefined };
+    const opaque = { ...rateLimiter({ config: PROCESS_LIMITS }), buckets: undefined };
     expect(() =>
-      createPipeline({
-        table: createRouter([route('contactSales', TIGHT)]),
+      httpPipeline({
+        table: httpRouter([route('contactSales', TIGHT)]),
         config: PROCESS_SCOPED,
         limiter: opaque,
       }),
@@ -195,10 +195,10 @@ describe('withRouteBuckets', () => {
   });
 
   test('a route that declares nothing never consults the limiter table', () => {
-    const foreign = createRateLimiter({ config: PROCESS_LIMITS });
+    const foreign = rateLimiter({ config: PROCESS_LIMITS });
     expect(() =>
-      createPipeline({
-        table: createRouter([route('listPosts')]),
+      httpPipeline({
+        table: httpRouter([route('listPosts')]),
         config: PROCESS_SCOPED,
         limiter: foreign,
       }),
@@ -206,8 +206,8 @@ describe('withRouteBuckets', () => {
   });
 
   test('the pipeline enforces the registered bucket, not the default one', async () => {
-    const pipeline = createPipeline({
-      table: createRouter([route('contactSales', TIGHT)]),
+    const pipeline = httpPipeline({
+      table: httpRouter([route('contactSales', TIGHT)]),
       config: PROCESS_SCOPED,
     });
     const call = (): Promise<Response> =>
@@ -271,9 +271,9 @@ describe('a bucket named after an action or query is refused, never ignored (25.
     expect(error.fix).toStartWith('query({ …, rateLimit: { limit, windowMs } })   # ');
   });
 
-  test('refused through createServer too, before a socket exists', () => {
+  test('refused through httpServer too, before a socket exists', () => {
     expect(() =>
-      createServer({
+      httpServer({
         routes: [primitive('publishPost', 'action')],
         config: configWith({ publishPost: BUCKET }),
       }),

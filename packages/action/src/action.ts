@@ -7,9 +7,10 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
-import type { Actor, Ctx, Deprecation } from '@ultimat3/core';
+import type { Actor, Ctx, Deprecation, McpExposureDeclaration } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
+import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClientMethod, ClientOptions } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
@@ -22,75 +23,18 @@ import { actionName, defOf, hasDef, invoke, stashDef } from './invoke';
 import type { ActionJobHandle } from './job-handle';
 import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
-import {
-  type ActionPolicy,
-  policyCapability,
-  policyPermissions,
-  type Surface,
-} from './policy-gate';
+import type { ActionPolicy, Surface } from './policy-gate';
 
 export interface ActionCache {
   /** Tags dropped from every cache tier after the handler settles. */
   readonly invalidates: readonly CacheTag[];
 }
 
-export interface ActionMcp {
-  /** Opt-in: only a literal `true` makes the action a tool. Silence exposes nothing. */
-  readonly expose: boolean;
-  /**
-   * Contract text, NOT UI text — deliberately outside `t()`. It becomes the OpenAPI
-   * operation `summary` (`toOpenApiOperation`), and `buildOpenApi`'s bytes are what
-   * `x verify` diffs for contract drift. Resolving it through the ambient, request-scoped
-   * translator would make `openapi.json` depend on whichever locale happened to be active
-   * when it was generated, which is exactly the determinism that file's header forbids.
-   * Localised agent-facing text needs a separate, locale-resolved projection; there is no
-   * second field for it here until that exists, because two ways to describe one tool is
-   * the drift axiom 1 rejects.
-   */
-  readonly description?: string;
-  /**
-   * Roles that may SEE the projected tool. A CATALOG audience, never an authz rule — the
-   * `policy` above still decides every call, and this list decides nothing about one. Omitted
-   * means every caller may enumerate it.
-   *
-   * Fail-closed where it lands (`@ultimat3/mcp`): a caller whose role is not named — including
-   * one carrying no role at all — gets the answer an ABSENT tool gets, never `Forbidden`.
-   * Forbidden would confirm the tool exists, which turns the catalog into something an agent
-   * can enumerate by probing names.
-   *
-   * A plain role list, never a predicate: a declared fact has to stay static and serialisable.
-   * A surface deriving visibility from something richer (`@ultimat3/admin` derives it from the
-   * actor's admin permissions) hands `@ultimat3/mcp` a predicate instead.
-   */
-  readonly visibleTo?: readonly string[];
-  /**
-   * The tool's display name in an MCP client's UI (`title`, MCP 2025-06-18). Contract text, like
-   * `description`. Omitted: none is published and the client shows the tool name.
-   */
-  readonly title?: string;
-  /**
-   * MCP tool annotations, overriding what `@ultimat3/mcp` derives key by key. An action derives
-   * `readOnlyHint: false`, `destructiveHint: true` and `idempotentHint` from `idempotent`. Hints for
-   * a client's confirmation UI — the policy decides every call whatever they say.
-   *
-   * ```ts
-   * mcp: { expose: true, annotations: { destructiveHint: false, openWorldHint: true } },
-   * ```
-   */
-  readonly annotations?: McpAnnotationHints;
-}
-
 /**
- * MCP's four tool hints, as the spec spells them. Declared here (tier 3) and in `@ultimat3/query`
- * because `@ultimat3/mcp` (tier 4) is the reader and cannot be imported; its `McpToolAnnotations`
- * is the same shape.
+ * An action's `mcp` block: core's ONE `McpExposureDeclaration`, minus the list whitelist an action
+ * has no list to compose over. Derived, never restated — `type-pins.ts` holds it to core's.
  */
-export interface McpAnnotationHints {
-  readonly readOnlyHint?: boolean;
-  readonly destructiveHint?: boolean;
-  readonly idempotentHint?: boolean;
-  readonly openWorldHint?: boolean;
-}
+export type ActionMcp = Omit<McpExposureDeclaration, 'listParams'>;
 
 export interface ActionRateLimit {
   readonly limit: number;

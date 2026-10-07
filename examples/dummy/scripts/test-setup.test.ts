@@ -10,8 +10,8 @@
 // `seed` fixture and reported X_TEST_FIXTURE_UNKNOWN. One module, so the in-app run loads it once.
 import './test-setup';
 import { db } from '@postly/db';
-import { createContext, runWithContext } from '@ultimat3/core';
-import { createTestNetwork, expect, test } from '@ultimat3/testing';
+import { ctxOf, runWithContext } from '@ultimat3/core';
+import { expect, test, testNetwork } from '@ultimat3/testing';
 import { browserNetwork } from './test-setup';
 
 test('a seeded row is visible through the handle the app reads', async ({ seed, actorFor }) => {
@@ -27,7 +27,7 @@ test('a seeded row is visible through the handle the app reads', async ({ seed, 
   expect((await db.plans.all()).length).toBeGreaterThan(0);
 
   // And the tenant-scoped half, through the same scope an action's read runs under.
-  const found = await runWithContext(createContext({ actor: actorFor(ada) }), () =>
+  const found = await runWithContext(ctxOf({ actor: actorFor(ada) }), () =>
     db.posts.where({ orgId: acme.id, id: draft.id }).one(),
   );
   expect(found?.id).toBe(draft.id);
@@ -54,7 +54,7 @@ test('each seed call starts from an empty graph rather than the last one', async
 }) => {
   const { acme, ada } = await seed('dev').pick({ acme: 'org:acme', ada: 'member:ada' });
   const asAda = <T>(read: () => Promise<T>): Promise<T> =>
-    runWithContext(createContext({ actor: actorFor(ada) }), read);
+    runWithContext(ctxOf({ actor: actorFor(ada) }), read);
 
   // A row the seed does not write: the driver is process-wide now, so a test's own writes are
   // what the next test would otherwise inherit — the reason `x test contract` and `x test job`
@@ -91,7 +91,7 @@ test('a browser cable a test pulled is back in before its teardown is over', asy
       });
     },
   };
-  const network = browserNetwork(createTestNetwork(), session);
+  const network = browserNetwork(testNetwork(), session);
   await network.offline();
 
   // The disposer the fixture runner takes (`runWithFixtures`): the async one, awaited.

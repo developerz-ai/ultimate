@@ -30,7 +30,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "action: import { action, t } from '@ultimat3/action';": 1,
   "action: import { defineApi } from '@ultimat3/action';": 1,
   "action: import { rpc } from '@ultimat3/action';": 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
   "action: import { setAuditSink } from '@ultimat3/core';": 1,
   'action: likePost.local(tx, { postId })            // the optimistic write, replayed on rebase': 1,
   'action: publishPost.contract({': 1,
@@ -46,9 +45,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'ai: // app/support/summarize.eval.test.ts — the suite `x verify` runs': 1,
   'ai: // app/support/summarize.evals.ts — the declaration the gate reads': 1,
   'ai: configureAi({ gateway, redact: (text) => scrubPatientIdentifiers(text) });': 1,
-  "ai: configureAi({ gateway: createGateway({ providers: [yourProvider], defaultModel: 'house-large' }) });": 1,
-  "ai: const embedder = new RemoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY": 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
   "ai: const store = postgresVectorStore({ name: 'doc_chunks', dimension: 256 });   // memoryVectorStore() in dev": 1,
   "ai: const tenantStore = store.scoped({ tenant: orgId, allow: { visibility: ['public', 'internal'] } });": 1,
   'ai: export const summarize = definePrompt<{ ticket: string }>({': 1,
@@ -63,7 +59,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'auth: const { start, callback } = oauthLogin(auth);': 1,
   'auth: defineAuth({': 1,
   "auth: defineAuth({ adapter, providers: ['github'], link: 'verified-email' })  // the default": 1,
-  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
   "auth: import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';": 1,
   'auth: oauthLogin(auth, {': 1,
   'cache: await stack.read(key, () => db.posts.byId(id), { ttlMs: 300_000, negativeTtlMs: 5_000 });': 1,
@@ -72,13 +67,16 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'cache: const fence = sampleFence({ key, tags });': 1,
   "cache: const report = await invalidateTags([tag('post', postId)]);": 1,
   'cache: const restoreTags = isolateDeclaredTags();': 1,
-  'cache: createLruTier({ rng: () => 0 });          // the full lease — what a test asserting an exact expiry wants': 1,
-  "cache: import { createCacheStack, createLruTier, createMemoTier, registerTier } from '@ultimat3/cache';": 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  "cache: import { cacheStack, lruTier, memoTier, registerTier } from '@ultimat3/cache';": 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  'cache: lruTier({ rng: () => 0 });          // the full lease — what a test asserting an exact expiry wants': 1,
   "cache: registerInvalidationBroadcast(async (wireTags) => bus.publish('cache.invalidate', wireTags));": 1,
   'cache: tag.post          // the collection — busts lists': 1,
   'core: // app.config.ts': 1,
   "core: const code = stringField(error, 'code') ?? 'X_TRANSPORT_UNAVAILABLE';": 1,
-  "core: const ctx = createContext({ actor: agentActor({ id: 'mcp-1', scopes: ['post:publish'] }) });": 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  "core: const ctx = ctxOf({ actor: agentActor({ id: 'mcp-1', scopes: ['post:publish'] }) });": 1,
   "core: const dsn = secret(process.env.DATABASE_URL ?? '', 'DATABASE_URL');": 1,
   "core: const published = counter('posts_published_total', { description: 'posts published' });": 1,
   "core: declare module '@ultimat3/core' {": 1,
@@ -88,7 +86,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "core: registerErrorRetry({ X_OAUTH_EXCHANGE_FAILED: 'retryable', X_RATE_LIMITED: 'retry-after' });": 1,
   "core: resolveEnvironment();      // 'development' | 'test' | 'staging' | 'production'": 1,
   'core: throw new UltimateError({': 1,
-  'db: const dev = createPgliteClient({ dataDir: pgliteDataDir(services.db.url) });  // or memory://': 1,
   "db: import { db, sql, raw, withTransaction, currentTx, setDbClient } from '@ultimat3/db';": 1,
   "db: import { ensureReadOnlyRole, readOnlyQuery } from '@ultimat3/db';": 1,
   "db: return expectedQueryLoop('one indexed lookup per text field beats one unindexed OR', async () => {": 1,
@@ -132,7 +129,8 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'policy: interface PolicyArgs<I = unknown, R = unknown> {': 1,
   'policy: setDecisionSink({': 1,
   'pwa: // The generated worker posts this to every page it controls, on activation — and this is the': 1,
-  'pwa: const { source, precache, warnings } = generateServiceWorker(describeRoutes(), config, buildId);': 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  'pwa: const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);': 1,
   'query: const source = await sourceFor(target, input, {': 1,
   "query: deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2026-12-31T23:59:59Z', replacedBy: 'searchOrders' },": 1,
   "query: import { query, t } from '@ultimat3/query';": 1,
@@ -140,7 +138,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'query: rateLimit: { limit: 3, windowMs: 600_000 },   // 3 held, one back every three and a bit minutes': 1,
   'realtime: // query': 1,
   "render: const ContactModal = island({ src: './contact-modal.island.tsx', props: ['subject'] });": 1,
-  'render: const collector = createIslandCollector({ file, hydrate: config.hydrate, resolve });': 1,
   'render: export const config = defineRoute({': 1,
   "render: import type { RouteConfig, RouteMetaContext } from '@ultimat3/render';": 1,
   'schema: const body = t.discriminatedUnion(': 1,
@@ -165,6 +162,14 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   "ui: <AppShell header={<Toolbar label={t('nav.main')}>{nav}</Toolbar>} sidebar={<SideNav />}>": 1,
   "ui: import { Button, Field, Input } from '@ultimat3/ui';": 1,
   "ui: import { Icon } from '@ultimat3/ui';": 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  "ai: configureAi({ gateway: providerGateway({ providers: [yourProvider], defaultModel: 'house-large' }) });": 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  "ai: const embedder = remoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY": 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  'db: const dev = pgliteClient({ dataDir: pgliteDataDir(services.db.url) });  // or memory://': 1,
+  // why: re-keyed, not raised — the 25.0.0 rename changed this fence's text; same site, same count
+  'render: const collector = islandCollector({ file, hydrate: config.hydrate, resolve });': 1,
 };
 
 /** How many fences at this site may fail today. Absent means zero: a new example compiles or

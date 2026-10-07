@@ -3,12 +3,12 @@
 // the clock it measures with, and re-sweeping a table a killed attempt already checkpointed.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, frozenClock, isUltimateError } from '@ultimat3/core';
+import { ctxOf, frozenClock, isUltimateError } from '@ultimat3/core';
 import { resetJobs } from './job';
 import type { PurgeReport, PurgeTarget } from './purge';
 import { DEFAULT_PURGE_CRON, purge } from './purge';
 import type { StepStore } from './steps';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 const START_MS = 1_700_000_000_000;
@@ -32,11 +32,11 @@ async function attempt(
   store: StepStore,
   runId = 'run-1',
 ): Promise<PurgeReport> {
-  const runner = createStepRunner({ runId, jobName: handle.name, store });
+  const runner = stepRunner({ runId, jobName: handle.name, store });
   const result = await handle.run({
     input: {},
     step: runner.step,
-    ctx: createContext({ role: 'worker' }),
+    ctx: ctxOf({ role: 'worker' }),
     attempt: 1,
     finalAttempt: false,
     progress: () => undefined,

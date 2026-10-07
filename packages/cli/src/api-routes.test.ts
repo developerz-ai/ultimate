@@ -2,9 +2,9 @@
 // surface that answers in one and 404s in the other has to break this test first.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, defineApi, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
+import { action, defineApi, registerAction, resetActions } from '@ultimat3/action';
 import { allow } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { t } from '@ultimat3/schema';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';

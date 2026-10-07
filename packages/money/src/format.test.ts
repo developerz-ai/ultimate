@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError, MAX_CACHED_FORMATTERS, type UltimateError } from '@ultimat3/core';
 import { currencySymbol, formatMoney, formatMoneyDecimal, formatMoneyParts } from './format';
-import { fromDecimal, money } from './money';
+import { fromDecimal, fromMinor } from './money';
 
 /** Intl inserts narrow no-break spaces; compare on the digits, not the whitespace. */
 const normalize = (value: string) => value.replace(/[  ]/g, ' ');
@@ -9,18 +9,18 @@ const normalize = (value: string) => value.replace(/[  ]/g, ' ');
 describe('formatMoney', () => {
   test('derives fraction digits from the currency exponent', () => {
     // JPY has no minor unit: 1200 minor units is ¥1,200, never ¥12.00.
-    expect(normalize(formatMoney(money(1200, 'JPY'), 'en-US'))).toBe('¥1,200');
-    expect(normalize(formatMoney(money(1200, 'KRW'), 'en-US'))).toBe('₩1,200');
+    expect(normalize(formatMoney(fromMinor(1200, 'JPY'), 'en-US'))).toBe('¥1,200');
+    expect(normalize(formatMoney(fromMinor(1200, 'KRW'), 'en-US'))).toBe('₩1,200');
     // KWD has three: 1234 minor units is 1.234 dinar.
-    expect(normalize(formatMoney(money(1234, 'KWD'), 'en-US'))).toContain('1.234');
-    expect(normalize(formatMoney(money(1, 'BHD'), 'en-US'))).toContain('0.001');
-    expect(normalize(formatMoney(money(129900, 'USD'), 'en-US'))).toBe('$1,299.00');
+    expect(normalize(formatMoney(fromMinor(1234, 'KWD'), 'en-US'))).toContain('1.234');
+    expect(normalize(formatMoney(fromMinor(1, 'BHD'), 'en-US'))).toContain('0.001');
+    expect(normalize(formatMoney(fromMinor(129900, 'USD'), 'en-US'))).toBe('$1,299.00');
   });
 
   test('respects the locale for separators and symbol placement', () => {
-    expect(normalize(formatMoney(money(129900, 'EUR'), 'de-DE'))).toBe('1.299,00 €');
-    expect(normalize(formatMoney(money(129900, 'EUR'), 'en-US'))).toBe('€1,299.00');
-    expect(normalize(formatMoney(money(129900, 'EUR'), 'fr-FR'))).toBe('1 299,00 €');
+    expect(normalize(formatMoney(fromMinor(129900, 'EUR'), 'de-DE'))).toBe('1.299,00 €');
+    expect(normalize(formatMoney(fromMinor(129900, 'EUR'), 'en-US'))).toBe('€1,299.00');
+    expect(normalize(formatMoney(fromMinor(129900, 'EUR'), 'fr-FR'))).toBe('1 299,00 €');
   });
 
   test('a JPY round-trip through fromDecimal keeps the value', () => {
@@ -28,8 +28,8 @@ describe('formatMoney', () => {
   });
 
   test('accounting negatives wrap in parentheses', () => {
-    expect(normalize(formatMoney(money(-1299, 'USD'), 'en-US'))).toBe('-$12.99');
-    expect(normalize(formatMoney(money(-1299, 'USD'), 'en-US', { accounting: true }))).toBe(
+    expect(normalize(formatMoney(fromMinor(-1299, 'USD'), 'en-US'))).toBe('-$12.99');
+    expect(normalize(formatMoney(fromMinor(-1299, 'USD'), 'en-US', { accounting: true }))).toBe(
       '($12.99)',
     );
   });
@@ -39,30 +39,30 @@ describe('formatMoney', () => {
     // value has to be formatted FIRST for the collision to exist at all. A single-value
     // assertion passes against the broken cache and proves nothing.
     const trimmed = { trimZeroFraction: true } as const;
-    expect(normalize(formatMoney(money(1299, 'EUR'), 'de-DE', trimmed))).toBe('12,99 €');
-    expect(normalize(formatMoney(money(12_990_001, 'EUR', 6), 'de-DE', trimmed))).toBe(
+    expect(normalize(formatMoney(fromMinor(1299, 'EUR'), 'de-DE', trimmed))).toBe('12,99 €');
+    expect(normalize(formatMoney(fromMinor(12_990_001, 'EUR', 6), 'de-DE', trimmed))).toBe(
       '12,990001 €',
     );
     // …and back again, so the finer entry cannot capture the coarser one either.
-    expect(normalize(formatMoney(money(1299, 'EUR'), 'de-DE', trimmed))).toBe('12,99 €');
+    expect(normalize(formatMoney(fromMinor(1299, 'EUR'), 'de-DE', trimmed))).toBe('12,99 €');
   });
 
   test('display modes and digit-only output', () => {
-    expect(normalize(formatMoney(money(1299, 'USD'), 'en-US', { display: 'code' }))).toBe(
+    expect(normalize(formatMoney(fromMinor(1299, 'USD'), 'en-US', { display: 'code' }))).toBe(
       'USD 12.99',
     );
-    expect(formatMoneyDecimal(money(1234, 'KWD'), 'en-US')).toBe('1.234');
-    expect(formatMoneyDecimal(money(1200, 'JPY'), 'en-US')).toBe('1200');
+    expect(formatMoneyDecimal(fromMinor(1234, 'KWD'), 'en-US')).toBe('1.234');
+    expect(formatMoneyDecimal(fromMinor(1200, 'JPY'), 'en-US')).toBe('1200');
   });
 });
 
 describe('formatMoneyParts', () => {
   test('exposes the symbol separately so UI can style it', () => {
-    const parts = formatMoneyParts(money(129900, 'USD'), 'en-US');
+    const parts = formatMoneyParts(fromMinor(129900, 'USD'), 'en-US');
     expect(parts.find((part) => part.type === 'currency')?.value).toBe('$');
     expect(parts.find((part) => part.type === 'fraction')?.value).toBe('00');
     // JPY has no fraction part at all — a UI that assumes one renders "¥1,200." otherwise.
-    const yen = formatMoneyParts(money(1200, 'JPY'), 'en-US');
+    const yen = formatMoneyParts(fromMinor(1200, 'JPY'), 'en-US');
     expect(yen.find((part) => part.type === 'fraction')).toBeUndefined();
   });
 });
@@ -70,24 +70,26 @@ describe('formatMoneyParts', () => {
 describe('one place decides the sign', () => {
   test('the parts and the string agree on an accounting negative', () => {
     const options = { accounting: true } as const;
-    const joined = formatMoneyParts(money(-1299, 'EUR'), 'en-US', options)
+    const joined = formatMoneyParts(fromMinor(-1299, 'EUR'), 'en-US', options)
       .map((part) => part.value)
       .join('');
-    expect(normalize(joined)).toBe(normalize(formatMoney(money(-1299, 'EUR'), 'en-US', options)));
+    expect(normalize(joined)).toBe(
+      normalize(formatMoney(fromMinor(-1299, 'EUR'), 'en-US', options)),
+    );
     expect(normalize(joined)).toBe('(€12.99)');
   });
 
   test('the parts and the string agree on a plain negative', () => {
-    const joined = formatMoneyParts(money(-1299, 'EUR'), 'en-US')
+    const joined = formatMoneyParts(fromMinor(-1299, 'EUR'), 'en-US')
       .map((part) => part.value)
       .join('');
-    expect(normalize(joined)).toBe(normalize(formatMoney(money(-1299, 'EUR'), 'en-US')));
+    expect(normalize(joined)).toBe(normalize(formatMoney(fromMinor(-1299, 'EUR'), 'en-US')));
     expect(normalize(joined)).toBe('-€12.99');
   });
 
   test('sign placement belongs to the locale, not to a hand-rolled prefix', () => {
     // nl-NL puts the minus after the symbol; prefixing it here rendered a format Intl never emits.
-    expect(normalize(formatMoney(money(-129900, 'EUR'), 'nl-NL'))).toBe(
+    expect(normalize(formatMoney(fromMinor(-129900, 'EUR'), 'nl-NL'))).toBe(
       normalize(
         new Intl.NumberFormat('nl-NL', {
           style: 'currency',
@@ -107,7 +109,7 @@ describe('the formatter cache', () => {
     // after `Bun.gc(true)` — memory the client chooses, at ~2.7 KB per `Intl.NumberFormat`.
     // The heap does not show it (ICU allocates natively), so the bound is asserted where it is
     // decided: the first key in is the first key out, and asking for it again rebuilds it.
-    const amount = money(129900, 'EUR');
+    const amount = fromMinor(129900, 'EUR');
     const built: unknown[] = [];
     const real = Intl.NumberFormat;
     Intl.NumberFormat = new Proxy(real, {
@@ -130,7 +132,7 @@ describe('the formatter cache', () => {
   });
 
   test('a locale still inside the cap is answered from the cache, never rebuilt', () => {
-    const amount = money(129900, 'EUR');
+    const amount = fromMinor(129900, 'EUR');
     const built: unknown[] = [];
     const real = Intl.NumberFormat;
     formatMoney(amount, 'en-US-x-warm');
@@ -188,9 +190,11 @@ describe('a malformed locale tag', () => {
 
   for (const tag of MALFORMED) {
     test(`${JSON.stringify(tag)} is X_LOCALE_INVALID at every money entry point`, () => {
-      expect(codeOf(() => formatMoney(money(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
-      expect(codeOf(() => formatMoneyParts(money(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
-      expect(codeOf(() => formatMoneyDecimal(money(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
+      expect(codeOf(() => formatMoney(fromMinor(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
+      expect(codeOf(() => formatMoneyParts(fromMinor(1299, 'EUR'), tag))).toBe('X_LOCALE_INVALID');
+      expect(codeOf(() => formatMoneyDecimal(fromMinor(1299, 'EUR'), tag))).toBe(
+        'X_LOCALE_INVALID',
+      );
       expect(codeOf(() => currencySymbol('EUR', tag))).toBe('X_LOCALE_INVALID');
     });
   }
@@ -198,7 +202,7 @@ describe('a malformed locale tag', () => {
   test('the refusal carries the tag under `meta.locale` and a runnable fix', () => {
     let caught: unknown;
     try {
-      formatMoney(money(1299, 'EUR'), 'en_US');
+      formatMoney(fromMinor(1299, 'EUR'), 'en_US');
     } catch (thrown) {
       caught = thrown;
     }
@@ -212,7 +216,7 @@ describe('a malformed locale tag', () => {
   test('a well-formed tag this runtime has no data for is still rendered', () => {
     // `zz` is structurally valid and unknown to ICU: `Intl` falls back, and a user carrying it
     // must still get a page. Refusing it here would be stricter than the formatter itself.
-    expect(formatMoney(money(1299, 'EUR'), 'zz')).toContain('12.99');
+    expect(formatMoney(fromMinor(1299, 'EUR'), 'zz')).toContain('12.99');
   });
 });
 
@@ -231,14 +235,14 @@ describe('the largest amount a Money can hold renders every digit', () => {
   const max = Number.MAX_SAFE_INTEGER;
 
   test('scale 6', () => {
-    expect(formatMoney(money(max, 'USD', 6), 'en-US')).toBe('$9,007,199,254.740991');
-    expect(formatMoneyDecimal(money(max, 'USD', 6), 'en-US')).toBe('9007199254.740991');
+    expect(formatMoney(fromMinor(max, 'USD', 6), 'en-US')).toBe('$9,007,199,254.740991');
+    expect(formatMoneyDecimal(fromMinor(max, 'USD', 6), 'en-US')).toBe('9007199254.740991');
   });
 
   test('scale 2, and negative', () => {
-    expect(formatMoney(money(max, 'USD'), 'en-US')).toBe('$90,071,992,547,409.91');
+    expect(formatMoney(fromMinor(max, 'USD'), 'en-US')).toBe('$90,071,992,547,409.91');
     expect(
-      formatMoneyParts(money(-max, 'USD'), 'en-US')
+      formatMoneyParts(fromMinor(-max, 'USD'), 'en-US')
         .map((part) => part.value)
         .join(''),
     ).toBe('-$90,071,992,547,409.91');
@@ -251,37 +255,37 @@ describe('trimZeroFraction drops a WHOLE amount’s zeros and nothing else', () 
   // `minimumFractionDigits: 0` trimmed EVERY trailing zero, so 1250 cents rendered `$12.5` — a
   // spelling no price list uses. The contract is "drop `.00` on whole amounts".
   test('a fractional amount keeps every digit of its scale', () => {
-    expect(normalize(formatMoney(money(1250, 'USD'), 'en-US', trimmed))).toBe('$12.50');
-    expect(normalize(formatMoney(money(1250, 'EUR'), 'de-DE', trimmed))).toBe('12,50 €');
-    expect(normalize(formatMoney(money(-1250, 'USD'), 'en-US', trimmed))).toBe('-$12.50');
+    expect(normalize(formatMoney(fromMinor(1250, 'USD'), 'en-US', trimmed))).toBe('$12.50');
+    expect(normalize(formatMoney(fromMinor(1250, 'EUR'), 'de-DE', trimmed))).toBe('12,50 €');
+    expect(normalize(formatMoney(fromMinor(-1250, 'USD'), 'en-US', trimmed))).toBe('-$12.50');
     // A three-digit currency and a finer scale: the neighbours of the cited input.
-    expect(normalize(formatMoney(money(1230, 'KWD'), 'en-US', trimmed))).toContain('1.230');
-    expect(normalize(formatMoney(money(12_500_000, 'USD', 6), 'en-US', trimmed))).toBe(
+    expect(normalize(formatMoney(fromMinor(1230, 'KWD'), 'en-US', trimmed))).toContain('1.230');
+    expect(normalize(formatMoney(fromMinor(12_500_000, 'USD', 6), 'en-US', trimmed))).toBe(
       '$12.500000',
     );
   });
 
   test('a whole amount loses its zeros', () => {
-    expect(normalize(formatMoney(money(1200, 'USD'), 'en-US', trimmed))).toBe('$12');
-    expect(normalize(formatMoney(money(12_000_000, 'USD', 6), 'en-US', trimmed))).toBe('$12');
-    expect(normalize(formatMoney(money(1200, 'JPY'), 'en-US', trimmed))).toBe('¥1,200');
+    expect(normalize(formatMoney(fromMinor(1200, 'USD'), 'en-US', trimmed))).toBe('$12');
+    expect(normalize(formatMoney(fromMinor(12_000_000, 'USD', 6), 'en-US', trimmed))).toBe('$12');
+    expect(normalize(formatMoney(fromMinor(1200, 'JPY'), 'en-US', trimmed))).toBe('¥1,200');
   });
 
   test('the parts agree with the string', () => {
-    const parts = formatMoneyParts(money(1250, 'USD'), 'en-US', trimmed);
+    const parts = formatMoneyParts(fromMinor(1250, 'USD'), 'en-US', trimmed);
     expect(parts.find((part) => part.type === 'fraction')?.value).toBe('50');
   });
 
   test('the trimmed and untrimmed formatters never share a cache entry', () => {
-    expect(normalize(formatMoney(money(1200, 'USD'), 'en-US', { fractionDigits: 2 }))).toBe(
+    expect(normalize(formatMoney(fromMinor(1200, 'USD'), 'en-US', { fractionDigits: 2 }))).toBe(
       '$12.00',
     );
     expect(
       normalize(
-        formatMoney(money(1200, 'USD'), 'en-US', { fractionDigits: 2, trimZeroFraction: true }),
+        formatMoney(fromMinor(1200, 'USD'), 'en-US', { fractionDigits: 2, trimZeroFraction: true }),
       ),
     ).toBe('$12');
-    expect(normalize(formatMoney(money(1200, 'USD'), 'en-US', { fractionDigits: 2 }))).toBe(
+    expect(normalize(formatMoney(fromMinor(1200, 'USD'), 'en-US', { fractionDigits: 2 }))).toBe(
       '$12.00',
     );
   });
@@ -292,8 +296,8 @@ describe('fractionDigits is screened before Intl sees it', () => {
   for (const fractionDigits of [200, 101, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
     test(`fractionDigits ${String(fractionDigits)} is X_MONEY_SCALE_INVALID`, () => {
       for (const run of [
-        () => formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits }),
-        () => formatMoneyParts(money(1299, 'USD'), 'en-US', { fractionDigits }),
+        () => formatMoney(fromMinor(1299, 'USD'), 'en-US', { fractionDigits }),
+        () => formatMoneyParts(fromMinor(1299, 'USD'), 'en-US', { fractionDigits }),
       ]) {
         let caught: unknown;
         try {
@@ -309,7 +313,7 @@ describe('fractionDigits is screened before Intl sees it', () => {
   test('a null handed through an untyped caller is refused, never defaulted', () => {
     let caught: unknown;
     try {
-      formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits: null as unknown as number });
+      formatMoney(fromMinor(1299, 'USD'), 'en-US', { fractionDigits: null as unknown as number });
     } catch (error) {
       caught = error;
     }
@@ -317,7 +321,7 @@ describe('fractionDigits is screened before Intl sees it', () => {
   });
 
   test('every count Intl accepts still formats', () => {
-    expect(formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits: 0 })).toBe('$13');
-    expect(formatMoney(money(1299, 'USD'), 'en-US', { fractionDigits: 4 })).toBe('$12.9900');
+    expect(formatMoney(fromMinor(1299, 'USD'), 'en-US', { fractionDigits: 0 })).toBe('$13');
+    expect(formatMoney(fromMinor(1299, 'USD'), 'en-US', { fractionDigits: 4 })).toBe('$12.9900');
   });
 });

@@ -12,13 +12,13 @@ import {
   spanId,
   traceId,
   typedId,
-  uuid,
   uuidTimestamp,
+  uuidV7,
 } from './ids';
 
 describe('uuid v7', () => {
   test('is version 7, RFC-variant and well formed', () => {
-    const id = uuid();
+    const id = uuidV7();
     expect(isUuid(id)).toBe(true);
     expect(id[14]).toBe('7');
     // `charAt`, not `id[19]`: indexing a string is `string | undefined` under
@@ -30,7 +30,7 @@ describe('uuid v7', () => {
   test('is strictly monotonic under a frozen clock (same millisecond)', () => {
     resetIdCounter();
     const clock = frozenClock('2026-07-26T10:00:00.000Z');
-    const ids = Array.from({ length: 5000 }, () => uuid(clock));
+    const ids = Array.from({ length: 5000 }, () => uuidV7(clock));
 
     for (let index = 1; index < ids.length; index += 1) {
       const previous = ids[index - 1] as string;
@@ -42,16 +42,16 @@ describe('uuid v7', () => {
 
   test('is monotonic across real time and never goes backwards on clock skew', () => {
     resetIdCounter();
-    const forwards = uuid();
+    const forwards = uuidV7();
     const skewed = frozenClock('2000-01-01T00:00:00.000Z');
-    const afterSkew = uuid(skewed);
+    const afterSkew = uuidV7(skewed);
     expect(afterSkew > forwards).toBe(true);
   });
 
   test('embeds the generation timestamp', () => {
     resetIdCounter();
     const at = new Date('2026-07-26T10:00:00.000Z');
-    const id = uuid(frozenClock(at));
+    const id = uuidV7(frozenClock(at));
     expect(uuidTimestamp(id).getTime()).toBe(at.getTime());
     expect(() => uuidTimestamp('not-a-uuid')).toThrow(/X_ID_INVALID/);
   });
@@ -121,11 +121,11 @@ describe('the monotonic counter seed', () => {
   test('spans the full 10 bits COUNTER_SEED_MASK declares', () => {
     // `randomBytes(2)[0] & 0x3ff` allocated two bytes and read one, so the seed could only reach
     // 255 while the mask declared 1023 — the constant and the code disagreed and the second byte
-    // was dead weight on every uuid(). rand_a is the `7xxx` group: strip the version nibble.
+    // was dead weight on every uuidV7(). rand_a is the `7xxx` group: strip the version nibble.
     const seeds = new Set<number>();
     for (let index = 0; index < 4000; index += 1) {
       resetIdCounter();
-      const randA = Number.parseInt(uuid().split('-')[2]?.slice(1) ?? '0', 16);
+      const randA = Number.parseInt(uuidV7().split('-')[2]?.slice(1) ?? '0', 16);
       seeds.add(randA);
     }
     expect(Math.max(...seeds)).toBeGreaterThan(0x0ff);
@@ -135,7 +135,7 @@ describe('the monotonic counter seed', () => {
 
 describe('W3C trace ids', () => {
   test('a dashed UUID is NOT a trace id — the shape a collector silently rejects', () => {
-    expect(isTraceId(uuid())).toBe(false);
+    expect(isTraceId(uuidV7())).toBe(false);
     expect(isTraceId('0af7651916cd43dd-8448eb211c80319c')).toBe(false);
   });
 

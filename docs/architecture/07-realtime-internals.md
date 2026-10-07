@@ -47,7 +47,7 @@ graph TD
 | one socket per origin | the browser (`socket-engine.ts` in a `SharedWorker`) | one membership per topic across tabs; frames routed only to ports that want them | one socket per origin and principal |
 | store | each tab (`RecordStore`) | one record per `type:key`, updated once, shown everywhere | memory ∝ held records |
 
-Writes never ride the socket. The `mutate` and `rebase` frame kinds and `createSyncNode({ onMutate })`
+Writes never ride the socket. The `mutate` and `rebase` frame kinds and `syncNode({ onMutate })`
 are deleted (sync protocol 3): no host ever wired `onMutate`, so every socket write answered
 `X_NOT_IMPLEMENTED`. A write is the mutator's action over HTTP ([below](#writes-go-over-http)).
 
@@ -204,7 +204,7 @@ serves every registered one. The raw-topic hub API (`guard`, `subscribe(socket, 
 ### Sequence, epoch, ring
 
 Each open topic on a node has a `ChannelRing` (`channel-ring.ts`): an **epoch** (a fresh mark minted
-by this hub, `uuid()`-based, so a restarted node can never reuse one), a monotonically increasing
+by this hub, `uuidV7()`-based, so a restarted node can never reuse one), a monotonically increasing
 **seq**, and the last `DEFAULT_CHANNEL_RING = 256` records frames. The ring is dropped with the topic's
 last local member, and the next member gets a new epoch.
 

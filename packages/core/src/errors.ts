@@ -2,6 +2,7 @@
 // Stable code + cause + exact fix command, rendered identically in the terminal, the browser
 // overlay and `--json`. Never throw a bare Error anywhere in the framework.
 
+import { ULTIMATE_ERROR_BRAND } from '@ultimat3/schema';
 import { describeErrorCode, hasErrorCode } from './error-codes';
 import {
   isThrownError,
@@ -13,11 +14,12 @@ import {
 import { DEFAULT_ERROR_RETRY, type ErrorRetry, isErrorRetry, retryFor } from './error-retry';
 
 /**
- * Structural brand. `instanceof` is unreliable across duplicated module instances and across
- * tier-0 packages that may not import each other (`@ultimat3/schema` cannot import
- * `@ultimat3/core`), so the guard is duck-typed on a well-known symbol instead.
+ * Structural brand. `instanceof` is unreliable across duplicated module instances, so the guard is
+ * duck-typed on a well-known symbol instead. It is `@ultimat3/schema`'s — declared once, at the
+ * tier both error classes can reach (`core -> schema` is the declared edge) — and re-exported here
+ * as part of the error contract it brands.
  */
-export const ULTIMATE_ERROR_BRAND: unique symbol = Symbol.for('ultimate.error');
+export { ULTIMATE_ERROR_BRAND };
 
 export interface UltimateErrorInit {
   /** `SCREAMING_SNAKE`, prefixed `X_`. Must exist in the code registry to get a title. */

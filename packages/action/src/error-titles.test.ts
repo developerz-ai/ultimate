@@ -54,8 +54,8 @@ async function island(
 
 describe('a browser chunk that reaches the action barrel', () => {
   test('titles a remote action code with no class constructed — the titles module alone', async () => {
-    // `pluralize` constructs no error, so the title can only have come through the barrel.
-    const { modules, title } = await island('pluralize');
+    // `inputSchemaName` constructs no error, so the title can only have come through the barrel.
+    const { modules, title } = await island('inputSchemaName');
     expect(title).toBe(ACTION_ERROR_TITLES['X_INPUT_INVALID']);
     expect(modules).toContain('src/error-titles.ts');
     // The titles are their own module, so a chunk that constructs nothing carries none of the

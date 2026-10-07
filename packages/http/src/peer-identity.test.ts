@@ -4,9 +4,9 @@
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig, type HttpConfigInput } from './config';
 import { peerIdentity } from './peer-identity';
-import { createPipeline } from './pipeline';
-import { json } from './response';
-import { createRouter } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse } from './response';
+import { httpRouter } from './router';
 
 const SPIFFE =
   'By=spiffe://cluster.local/ns/default/sa/gateway;Hash=abc123;Subject="CN=checkout,OU=payments";URI=spiffe://cluster.local/ns/default/sa/checkout';
@@ -107,13 +107,13 @@ describe('a quoted value is unescaped once, after the pairs are split', () => {
 
 describe('ctx.peer through the pipeline', () => {
   const peerOf = async (input: HttpConfigInput): Promise<unknown> => {
-    const pipeline = createPipeline({
-      table: createRouter([
+    const pipeline = httpPipeline({
+      table: httpRouter([
         {
           method: 'GET',
           path: '/peer',
           meta: { name: 'peer', auth: 'public' },
-          handler: (_request, ctx) => json({ peer: ctx.peer?.id ?? null }),
+          handler: (_request, ctx) => jsonResponse({ peer: ctx.peer?.id ?? null }),
         },
       ]),
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, buildId: null, ...input }),

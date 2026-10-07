@@ -24,6 +24,6 @@ export function migrationExtensions(migrations: readonly Migration[]): readonly 
   return [...names].sort();
 }
 
-/** The same list for an app on disk — what an embedded boot hands `createPgliteClient`. */
+/** The same list for an app on disk — what an embedded boot hands `pgliteClient`. */
 export const appExtensions = async (root: string): Promise<readonly string[]> =>
   migrationExtensions(await readMigrations(root));

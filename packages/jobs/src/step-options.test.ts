@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, frozenClock } from '@ultimat3/core';
+import { ctxOf, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -26,7 +26,7 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
   };
 }
 
-const ctx = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const ctx = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 interface Harness {
   execute(): Promise<JobExecution>;

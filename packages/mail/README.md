@@ -175,19 +175,19 @@ with `messageId` (= the sending driver's `SendResult.id`), `recipient`, `at`, `e
 One event per recipient; `(eventId, recipient)` is the dedupe key.
 
 ```ts
-import { createResendEventReceiver, createSesEventReceiver } from '@ultimat3/mail/events';
+import { resendEventReceiver, sesEventReceiver } from '@ultimat3/mail/events';
 
 declare const env: Record<string, string>;
 
-export const ses = createSesEventReceiver({ topicArns: [env['SES_EVENTS_TOPIC_ARN'] ?? ''] });
-export const resend = createResendEventReceiver({ secret: env['RESEND_WEBHOOK_SECRET'] ?? '' });
+export const ses = sesEventReceiver({ topicArns: [env['SES_EVENTS_TOPIC_ARN'] ?? ''] });
+export const resend = resendEventReceiver({ secret: env['RESEND_WEBHOOK_SECRET'] ?? '' });
 // const outcome = await ses.receive(request);  // { type: 'events' | 'ignored' | 'subscription', … }
 ```
 
 | Receiver | Proves |
 |---|---|
-| `createSesEventReceiver` | SNS: the topic is in `topicArns`, the cert URL is `https://sns.<topic region>.amazonaws.com/…pem`, `SignatureVersion` 1 (RSA-SHA1) or 2 (RSA-SHA256) over AWS's canonical string, `Timestamp` within `toleranceMs` (1 h). A `SubscriptionConfirmation` returns its `confirmUrl`; it is fetched only with `confirmSubscriptions: true` |
-| `createResendEventReceiver` | Svix: HMAC-SHA256 over `svix-id.svix-timestamp.body` under the `whsec_` secret, constant-time, any `v1,` entry, within `toleranceMs` (5 min) |
+| `sesEventReceiver` | SNS: the topic is in `topicArns`, the cert URL is `https://sns.<topic region>.amazonaws.com/…pem`, `SignatureVersion` 1 (RSA-SHA1) or 2 (RSA-SHA256) over AWS's canonical string, `Timestamp` within `toleranceMs` (1 h). A `SubscriptionConfirmation` returns its `confirmUrl`; it is fetched only with `confirmSubscriptions: true` |
+| `resendEventReceiver` | Svix: HMAC-SHA256 over `svix-id.svix-timestamp.body` under the `whsec_` secret, constant-time, any `v1,` entry, within `toleranceMs` (5 min) |
 
 ## Framework mails
 

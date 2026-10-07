@@ -5,16 +5,16 @@
 
 import { join } from 'node:path';
 import {
-  createContext,
+  ctxOf,
   DEFAULT_ENVIRONMENT,
   isUltimateError,
+  localizePath,
   renderThrowable,
   runWithContext,
   tryResolveEnvironment,
 } from '@ultimat3/core';
-import { localeConfig, localizedPath, routedLocales } from '@ultimat3/i18n';
 import type { RouteEntry } from '@ultimat3/render';
-import { describeRoutes, routeEntries } from '@ultimat3/render';
+import { describePages, routeEntries } from '@ultimat3/render';
 import { renderStatic } from '@ultimat3/render/server';
 import { loadApp } from './app-load';
 import { appManifest } from './app-manifest';
@@ -29,7 +29,7 @@ import { measureDatabase } from './measure-database';
 import { measurePaths } from './measure-paths';
 import { measureScope, withAppUrl } from './measure-scope';
 import { loadNavigation, pageNavigation } from './page-navigation';
-import { loadSpeculation, pageSpeculation } from './page-speculation';
+import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-speculation';
 import { localizedArtifacts } from './prerender-locales';
 import { clearPrerenderOut } from './prerender-out';
 import type { PrerenderedPage, PrerenderReport } from './prerender-report';
@@ -142,10 +142,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // line on stdout, and a build that parses it must not meet a warning inside it.
   const warnings = originWarning(tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT, declaredOrigin);
   for (const warning of warnings) writeErrorLine(`warning: ${warning}`);
-  // After `loadApp`: `defineCatalogs()` configures the locales on the app's own import. The
-  // default first, so every other pass writes beside a tree that already holds the unprefixed one.
-  const locales = routedLocales();
-  const defaultLocale = localeConfig().fallback;
+  // The app's locales as `loadApp` read them, ONCE, off `@ultimat3/i18n`'s one reader — the same
+  // answer the PWA manifest and the service worker below are built from. The default first, so
+  // every other pass writes beside a tree that already holds the unprefixed one.
+  const appLocales = loaded.locales;
+  const { locales, defaultLocale } = appLocales;
   const pages: PrerenderedPage[] = [];
   const skipped: SkippedRoute[] = [];
   const routes: RouteStats[] = [];
@@ -203,6 +204,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const speculation = pageSpeculation({
     config: await loadSpeculation(options.root),
     client: declared.surfaces,
+    localeSegments: otherLocaleSegments(appLocales),
   });
   if (navigation.script !== undefined) {
     await Bun.write(join(options.out, navigation.script.url.slice(1)), navigation.script.code);
@@ -248,11 +250,11 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // build. One context for the build, `role: 'web'` because that is the role serving these
   // documents, and this build's own id so a component reading `ctx.buildId` stamps the artifact
   // with the id the report and the stats carry.
-  // ONE PER LOCALE, and the locale is the context's: `createContext` defaults it to core's `en`, so a
+  // ONE PER LOCALE, and the locale is the context's: `ctxOf` defaults it to core's `en`, so a
   // Spanish-default site was prerendered in English — `<html lang="en">` over English copy — while
   // the served process answered Spanish. Each `site/` page is rendered once per routed locale.
   const contexts = new Map(
-    locales.map((locale) => [locale, createContext({ role: 'web', buildId, locale })]),
+    locales.map((locale) => [locale, ctxOf({ role: 'web', buildId, locale })]),
   );
   // A SECOND scope, for the branch below that renders only to weigh (`measure-scope.ts`): a
   // request context holding the app's measurement actor, with the app's own API answered in
@@ -288,7 +290,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     entry: RouteEntry,
     data: { url: string; params: Record<string, string> },
   ) =>
-    runWithContext(contexts.get(locale) ?? createContext({ role: 'web', buildId, locale }), () =>
+    runWithContext(contexts.get(locale) ?? ctxOf({ role: 'web', buildId, locale }), () =>
       render(entry, data),
     );
 
@@ -349,12 +351,12 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         }
         continue;
       }
-      const artifacts = await localizedArtifacts(locales, defaultLocale, (locale) =>
+      const artifacts = await localizedArtifacts(appLocales, (locale) =>
         renderStatic(
           entry,
           ({ path, params }) =>
             document(locale, entry, {
-              url: new URL(localizedPath(path, locale, defaultLocale), origin).href,
+              url: new URL(localizePath(path, locale, locales, defaultLocale), origin).href,
               params,
             }),
           { buildId },
@@ -417,7 +419,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
       : serviceWorkerArtifacts({
           pwa,
           buildId,
-          routes: describeRoutes(),
+          routes: describePages(),
           islands,
           styles,
           documents,

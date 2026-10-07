@@ -1,7 +1,7 @@
 // The runs feature's reads, as a caller gets them: through the policy, the source and the repo,
 // against the in-memory driver. The subscription itself is the live suite's and the e2e's.
 import { driver } from '@postly/db';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { testActor } from '@ultimat3/policy';
 import { sourceFor } from '@ultimat3/query';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
@@ -21,7 +21,7 @@ const member = testActor('member', { orgId: ORG, permissions: ['run:read'] }).ac
 const outsider = testActor('outsider', { orgId: OTHER_ORG, permissions: ['run:read'] }).actor;
 
 const inOrg = <T>(run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'member', orgId: ORG }) }), run);
+  runWithContext(ctxOf({ actor: userActor({ id: 'member', orgId: ORG }) }), run);
 
 afterEach(() => {
   driver.reset?.();

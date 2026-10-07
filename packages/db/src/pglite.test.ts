@@ -2,12 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { isReservable } from './client';
 import { fakeDriver } from './fake-pglite-fixture';
 import {
-  createPgliteClient,
   loadPgliteDriver,
   PGLITE_FIX,
   PGLITE_MEMORY,
   type PgliteDriver,
   type PgliteResult,
+  pgliteClient,
   pgliteDataDir,
 } from './pglite';
 import { sql } from './sql';
@@ -122,16 +122,16 @@ describe('loadPgliteDriver', () => {
   });
 });
 
-describe('createPgliteClient', () => {
+describe('pgliteClient', () => {
   test('execute reports the command tag, not the empty row set', async () => {
     const driver = fakeDriver({ rows: [], affectedRows: 3 });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     expect(await client.execute(sql`delete from posts`)).toBe(3);
   });
 
   test('execute falls back to row count when the driver reports no command tag', async () => {
     const driver = fakeDriver({ rows: [{ id: 1 }, { id: 2 }] });
-    expect(await createPgliteClient({ driver }).execute(sql`select 1`)).toBe(2);
+    expect(await pgliteClient({ driver }).execute(sql`select 1`)).toBe(2);
   });
 
   // PGlite counts MODIFIED rows, so it tags a SELECT `affectedRows: 0` — a count of 0 is "this
@@ -139,28 +139,26 @@ describe('createPgliteClient', () => {
   // latter made execute answer 0 for every read while `PostgresClient.execute` answered 2.
   test('execute counts the rows of a SELECT the driver tagged with affectedRows: 0', async () => {
     const read = fakeDriver({ rows: [{ id: 1 }, { id: 2 }], affectedRows: 0 });
-    expect(await createPgliteClient({ driver: read }).execute(sql`select id from posts`)).toBe(2);
+    expect(await pgliteClient({ driver: read }).execute(sql`select id from posts`)).toBe(2);
 
     const written = fakeDriver({ rows: [], affectedRows: 3 });
-    expect(await createPgliteClient({ driver: written }).execute(sql`delete from posts`)).toBe(3);
+    expect(await pgliteClient({ driver: written }).execute(sql`delete from posts`)).toBe(3);
   });
 
   test('query and one read rows, and bind values as parameters', async () => {
     const driver = fakeDriver({ rows: [{ id: 7 }] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     expect(await client.query(sql`select id from posts where id = ${7}`)).toEqual([{ id: 7 }]);
     expect(await client.one<{ id: number }>(sql`select id from posts`)).toEqual({ id: 7 });
     expect(driver.calls[0]).toEqual({ text: 'select id from posts where id = $1', values: [7] });
   });
 
   test('one answers null on an empty result rather than undefined', async () => {
-    expect(await createPgliteClient({ driver: fakeDriver({ rows: [] }) }).one(sql`select 1`)).toBe(
-      null,
-    );
+    expect(await pgliteClient({ driver: fakeDriver({ rows: [] }) }).one(sql`select 1`)).toBe(null);
   });
 
   test('a failure carrying no SQLSTATE is X_DB_UNAVAILABLE with the statement in the cause', async () => {
-    const client = createPgliteClient({
+    const client = pgliteClient({
       driver: {
         query: () => Promise.reject(new Error('socket closed')),
         close: async () => undefined,
@@ -179,7 +177,7 @@ describe('createPgliteClient', () => {
   // it raised went to `dbUnavailable`, so an entity edited before its migration ran said "cannot
   // reach the database" — cause cut mid column-list, the Postgres message nowhere in it.
   test('an undefined column through PGlite is X_DB_SCHEMA_STALE, the server’s words first', async () => {
-    const client = createPgliteClient({
+    const client = pgliteClient({
       driver: {
         query: () => Promise.reject(pgliteError('42703', 'column "host_id" does not exist')),
         close: async () => undefined,
@@ -197,7 +195,7 @@ describe('createPgliteClient', () => {
   });
 
   test('a refused statement through PGlite is X_DB_STATEMENT_FAILED, never unavailable', async () => {
-    const client = createPgliteClient({
+    const client = pgliteClient({
       driver: {
         query: () => Promise.reject(pgliteError('42601', 'syntax error at or near "selct"')),
         close: async () => undefined,
@@ -210,7 +208,7 @@ describe('createPgliteClient', () => {
 
   test('concurrent first queries share one boot — PGlite is too slow to build twice', async () => {
     let constructed = 0;
-    const client = createPgliteClient({
+    const client = pgliteClient({
       load: async () => fakeModule(() => (constructed += 1), { rows: [{ ok: 1 }] }),
     });
     await Promise.all([client.query(sql`select 1`), client.query(sql`select 2`), client.ping()]);
@@ -219,7 +217,7 @@ describe('createPgliteClient', () => {
 
   test('a failed boot is not cached, so the retry after `bun add` succeeds', async () => {
     let attempts = 0;
-    const client = createPgliteClient({
+    const client = pgliteClient({
       load: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error('Cannot find module');
@@ -233,11 +231,11 @@ describe('createPgliteClient', () => {
 
   test('close shuts the driver down once and is a no-op before the first query', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     await client.close();
     expect(driver.closed).toBe(0);
 
-    const booted = createPgliteClient({ driver });
+    const booted = pgliteClient({ driver });
     await booted.query(sql`select 1`);
     await booted.close();
     await booted.close();
@@ -245,18 +243,18 @@ describe('createPgliteClient', () => {
   });
 
   test('close never rethrows a boot that failed', async () => {
-    const client = createPgliteClient({ load: () => Promise.reject(new Error('nope')) });
+    const client = pgliteClient({ load: () => Promise.reject(new Error('nope')) });
     void client.ping().catch(() => undefined);
     expect(await client.close().then(() => 'closed')).toBe('closed');
   });
 
   test('is reservable, so withTransaction pins it instead of sharing it', () => {
-    expect(isReservable(createPgliteClient({ driver: fakeDriver({ rows: [] }) }))).toBe(true);
+    expect(isReservable(pgliteClient({ driver: fakeDriver({ rows: [] }) }))).toBe(true);
   });
 
   test('a reservation holds the one connection until it is released', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const reserved = await client.reserve();
 
     await reserved.execute(sql`begin`);
@@ -280,7 +278,7 @@ describe('createPgliteClient', () => {
   // transaction, committed or rolled back with it, and no error anywhere to explain it.
   test('a released reservation waits its turn rather than writing over the holder', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const leaked = await client.reserve();
     leaked.release();
 
@@ -300,7 +298,7 @@ describe('createPgliteClient', () => {
   // request — waits for a turn that is never coming. `using` is what makes forgetting impossible.
   test('`using` gives the turn back, so the next statement is not wedged behind it', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
 
     {
       using reserved = await client.reserve();
@@ -327,7 +325,7 @@ describe('createPgliteClient', () => {
       },
       async close() {},
     };
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
 
     const failed = (async () => {
       using reserved = await client.reserve();
@@ -346,7 +344,7 @@ describe('createPgliteClient', () => {
   // straggler, inside tx 2, commit — a statement from a finished transaction committed by another.
   test('a straggler from a finished transaction waits its turn instead of joining the next one', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const gate = deferred();
     let straggler!: Promise<unknown>;
 
@@ -395,7 +393,7 @@ describe('createPgliteClient', () => {
   // `handle.enqueue(input, { outbox: false })` inside `withTransaction` takes.
   test('a statement inside a LIVE transaction still runs on the turn that transaction holds', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
 
     await withTransaction(
       async () => {
@@ -413,7 +411,7 @@ describe('createPgliteClient', () => {
 
   test('releasing after disposal is a no-op, not a second turn', async () => {
     const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const reserved = await client.reserve();
 
     reserved[Symbol.dispose]();

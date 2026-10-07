@@ -144,8 +144,8 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
 
   const sources: DevSources = {
     async routes(): Promise<readonly RouteFact[]> {
-      const { describeRoutes } = await import('@ultimat3/render');
-      return describeRoutes().map((route) => ({
+      const { describePages } = await import('@ultimat3/render');
+      return describePages().map((route) => ({
         path: route.path,
         // `RouteDescriptor` calls the render mode `mode`; the panel's own word is `render`, and
         // the two are bridged here, once. Reading `route['render']` answered `undefined` for

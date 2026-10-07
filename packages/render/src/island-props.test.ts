@@ -79,7 +79,7 @@ describe('checkIslandProps', () => {
     expect(cause).toContain('props.tags is 16 B');
     expect(cause).not.toContain('props.hostId');
     expect(fix).toContain(`in ${FILE}, pass \`models: []\` and \`tags: []\``);
-    expect(fix).toContain("modelsEndpoint: derivePath('<queryName>')");
+    expect(fix).toContain("modelsEndpoint: queryPath('<queryName>')` (@ultimat3/core)");
     expect(fix).toContain('fetch the rows inside the island after mount');
   });
 });

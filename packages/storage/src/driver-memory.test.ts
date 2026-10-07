@@ -82,7 +82,7 @@ describe('the memory disk answers as the local disk does', () => {
       const read = await driver.get('org/o1/m.json');
       (read.object.metadata as Record<string, string>)['owner'] = 'eve';
       read.object.lastModified?.setTime(0);
-      const [listed] = (await driver.list({ prefix: 'org/o1/' })).objects;
+      const [listed] = (await driver.list({ prefix: 'org/o1/' })).rows;
       listed?.lastModified?.setTime(0);
       const copied = await driver.copy('org/o1/m.json', 'org/o1/n.json');
       (copied.metadata as Record<string, string>)['owner'] = 'eve';
@@ -129,15 +129,24 @@ describe('the memory disk answers as the local disk does', () => {
         await driver.put(key, bytes(key));
       }
       const first = await driver.list({ prefix: 'b/', limit: 2 });
-      expect([name, first.objects.map((object) => object.key), first.truncated]).toEqual([
+      expect([name, first.rows.map((object) => object.key), first]).toMatchObject([
         name,
         ['b/1.txt', 'b/2.txt'],
-        true,
+        { nextCursor: 'b/2.txt', hasMore: true },
       ]);
-      const next = await driver.list({ prefix: 'b/', limit: 2, cursor: first.cursor });
-      expect([name, next.objects.map((object) => object.key), next.truncated]).toEqual([
+      const next = await driver.list({ prefix: 'b/', limit: 2, cursor: first.nextCursor });
+      expect([name, next.rows.map((object) => object.key), next]).toMatchObject([
         name,
         ['b/3.txt'],
+        { nextCursor: null, hasMore: false },
+      ]);
+      // A FULL last page: exactly `limit` rows are left, and none past them — so no cursor. A
+      // cursor minted from the row count alone would hand the caller an empty page past the end.
+      const exact = await driver.list({ prefix: 'b/', limit: 3 });
+      expect([name, exact.rows.length, exact.nextCursor, exact.hasMore]).toEqual([
+        name,
+        3,
+        null,
         false,
       ]);
       expect([name, await codeOf(() => driver.list({ limit: 0 }))]).toEqual([name, 'X_INVARIANT']);

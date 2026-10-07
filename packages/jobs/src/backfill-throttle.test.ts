@@ -9,13 +9,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, frozenClock, isUltimateError } from '@ultimat3/core';
+import { ctxOf, frozenClock, isUltimateError } from '@ultimat3/core';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { BackfillDefinition } from './backfill';
 import { backfill } from './backfill';
 import { backfillPass } from './backfill-pass';
-import { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
-import { createStepRunner } from './steps';
+import { backfillPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 const rows = entity('backfill_rate_rows', {
@@ -35,7 +35,7 @@ const SEED: readonly Row[] = Array.from({ length: 12 }, (_, index) => ({
 }));
 
 const RUN_ID = 'run-paced-1';
-const ctx: Ctx = createContext();
+const ctx: Ctx = ctxOf();
 
 /** What a paced pass records: the waits it asked for, and where they fell among its statements. */
 interface Throttled {
@@ -79,7 +79,7 @@ const throttled = (rate: number): Throttled => {
       seen.push(page.map((entry) => entry.title));
     },
   };
-  const pace = createPacer({
+  const pace = backfillPacer({
     rate,
     job: definition.name,
     clock,
@@ -100,7 +100,7 @@ const throttled = (rate: number): Throttled => {
         { definition, size: 3, checksum: 'paced-checksum', pace },
         {
           input: {},
-          step: createStepRunner({ runId: RUN_ID, jobName: 'paced', store }).step,
+          step: stepRunner({ runId: RUN_ID, jobName: 'paced', store }).step,
           ctx,
           attempt: 1,
           finalAttempt: false,
@@ -140,14 +140,14 @@ describe('the rate throttle', () => {
     expect(pass.seen).toHaveLength(4);
   });
 
-  test('createPacer refuses a rate that is no throttle at all, not just backfill() does', () => {
-    // `createPacer` is exported, so `backfill()` is not the only way in. `rate: 0` makes the
+  test('backfillPacer refuses a rate that is no throttle at all, not just backfill() does', () => {
+    // `backfillPacer` is exported, so `backfill()` is not the only way in. `rate: 0` makes the
     // interval Infinity, which the timer clamps to about a millisecond — an unvalidated zero is
     // therefore "sweep flat out", which is the one setting this module exists to make unreachable.
     for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
       let thrown: unknown;
       try {
-        createPacer({ rate, job: 'unthrottled' });
+        backfillPacer({ rate, job: 'unthrottled' });
       } catch (error) {
         thrown = error;
       }
@@ -183,7 +183,7 @@ describe('the rate throttle', () => {
       },
     });
     const controller = new AbortController();
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-slow',
       jobName: 'slow-sweep',
       store,

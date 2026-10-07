@@ -5,7 +5,7 @@
  * deduped when a `ClientFlight` is supplied. Anything else is a write: never deduped, never
  * aborted by the fence, and its records never adopted across one.
  *
- * `createClientFlight` is NOT imported here at value level — a caller passes one, and only then
+ * `clientFlight` is NOT imported here at value level — a caller passes one, and only then
  * does its graph enter the bundle. Neither is `traceHeaders()`: the trace and budget headers come
  * from an outbound slot that `runWithContext`/`startSpan` fill SERVER-side (`outbound-headers.ts`),
  * so a browser, which never has either, carries zero bytes of telemetry, context or logger.

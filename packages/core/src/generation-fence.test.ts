@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from './errors';
-import { createFence, isSuperseded } from './generation-fence';
+import { generationFence, isSuperseded } from './generation-fence';
 
 const thrown = (fn: () => unknown): unknown => {
   try {
@@ -11,9 +11,9 @@ const thrown = (fn: () => unknown): unknown => {
   return undefined;
 };
 
-describe('createFence', () => {
+describe('generationFence', () => {
   test('starts at generation 0 and bump returns the new one', () => {
-    const fence = createFence('the live window');
+    const fence = generationFence('the live window');
     expect(fence.generation()).toBe(0);
     expect(fence.bump()).toBe(1);
     expect(fence.bump()).toBe(2);
@@ -21,13 +21,13 @@ describe('createFence', () => {
   });
 
   test('guard passes while the generation the caller was issued is still current', () => {
-    const fence = createFence('the live window');
+    const fence = generationFence('the live window');
     const issued = fence.generation();
     expect(() => fence.guard(issued)).not.toThrow();
   });
 
   test('a late answer from a superseded generation is refused, not applied', () => {
-    const fence = createFence('the live window');
+    const fence = generationFence('the live window');
     const issued = fence.generation();
     fence.bump();
     const error = thrown(() => fence.guard(issued));
@@ -41,20 +41,20 @@ describe('createFence', () => {
   });
 
   test('the refusal is terminal — retrying superseded work produces a superseded answer', () => {
-    const fence = createFence('the live window');
+    const fence = generationFence('the live window');
     fence.bump();
     const error = thrown(() => fence.guard(0));
     expect(isUltimateError(error) ? error.retry : undefined).toBe('terminal');
   });
 
   test('a generation from the FUTURE is refused too — the fence fails closed', () => {
-    const fence = createFence('the live window');
+    const fence = generationFence('the live window');
     expect(isSuperseded(thrown(() => fence.guard(7)))).toBe(true);
   });
 
   test('two fences count independently', () => {
-    const one = createFence('one');
-    const other = createFence('other');
+    const one = generationFence('one');
+    const other = generationFence('other');
     one.bump();
     expect(other.generation()).toBe(0);
     expect(() => other.guard(0)).not.toThrow();

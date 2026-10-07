@@ -5,7 +5,7 @@ import { actorHas } from './grant-index';
 import type { KnownPermission } from './permissions';
 import { clearPermissions, definePermissions } from './permissions';
 import type { Policy } from './policy';
-import { allow, and, can, deny, not, or, policyPermissions } from './policy';
+import { allow, and, can, deny, not, or, policyCapability, policyPermissions } from './policy';
 import { admitsAnonymous } from './policy-anonymous';
 import { clearRoles, defineRoles, expandRoles } from './roles';
 import { testActor } from './test-kit';
@@ -162,6 +162,12 @@ describe('composition', () => {
     expect(policyPermissions(policy)).toEqual(['org:admin', 'post:delete', 'post:publish']);
     // The bug this closes: `label` is a sentence, never a permission.
     expect(policy.label).not.toBe('post:publish');
+  });
+
+  test('policyCapability is the display label, never the matchable list', () => {
+    const policy = and(canPublish, can<PostInput>('org:admin'));
+    expect(policyCapability(policy)).toBe(policy.label);
+    expect(policyCapability(canPublish)).toBe('post:publish');
   });
 
   test('allow() and deny() are terminal and say so in the trace', () => {

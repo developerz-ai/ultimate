@@ -8,7 +8,7 @@ import { postgresClient, setDbClient } from './client';
 import { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
 import type { StatementEvent, StatementObserver } from './observe';
 import { setStatementObserver } from './observe';
-import { createPgliteClient, type PgliteDriver } from './pglite';
+import { type PgliteDriver, pgliteClient } from './pglite';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
 
@@ -172,7 +172,7 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
   test('the embedded client marks a statement issued inside the scope', async () => {
     const observer = recorder();
     setStatementObserver(observer);
-    const client = createPgliteClient({ driver: fakeDriver() });
+    const client = pgliteClient({ driver: fakeDriver() });
 
     await expectedQueryLoop(REASON, () => client.query(sql`select id from members`));
     await client.query(sql`select id from posts`);
@@ -188,7 +188,7 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
   test('the embedded client keeps the reason across the turn queue and a transaction', async () => {
     const observer = recorder();
     setStatementObserver(observer);
-    const client = createPgliteClient({ driver: fakeDriver() });
+    const client = pgliteClient({ driver: fakeDriver() });
     setDbClient(client);
 
     await expectedQueryLoop(REASON, () =>
@@ -230,7 +230,7 @@ describe('unit · both funnels stamp the reason on what the loop issued', () => 
     ).rejects.toBeUltimateError('X_DB_UNAVAILABLE');
     await expect(
       expectedQueryLoop(REASON, () =>
-        createPgliteClient({ driver: fakeDriver(new Error('boom')) }).query(sql`select 1`),
+        pgliteClient({ driver: fakeDriver(new Error('boom')) }).query(sql`select 1`),
       ),
     ).rejects.toBeUltimateError('X_DB_UNAVAILABLE');
 

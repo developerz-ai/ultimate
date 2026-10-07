@@ -3,11 +3,11 @@
 // Bytes nobody declared a type for are refused; only a body that is really absent is `undefined`.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createRequestContext } from './context';
-import { createPipeline } from './pipeline';
+import { requestContext } from './context';
+import { httpPipeline } from './pipeline';
 import { UltimateRequest } from './request';
-import { json } from './response';
-import { createRouter } from './router';
+import { jsonResponse } from './response';
+import { httpRouter } from './router';
 import type { Schema } from './validate';
 
 const untyped = (
@@ -16,7 +16,7 @@ const untyped = (
 ): UltimateRequest => {
   const url = new URL('https://example.com/x');
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-  const ctx = createRequestContext({ url, method: 'POST', role: 'web', config });
+  const ctx = requestContext({ url, method: 'POST', role: 'web', config });
   return new UltimateRequest(new Request(url, { method: 'POST', body, headers }), ctx);
 };
 
@@ -53,13 +53,13 @@ describe('bodyRaw() — bytes with no declared type', () => {
         validate: (value: unknown) => ({ value: (value ?? {}) as { a?: number } }),
       },
     };
-    const pipeline = createPipeline({
-      table: createRouter([
+    const pipeline = httpPipeline({
+      table: httpRouter([
         {
           method: 'POST',
           path: '/x',
           meta: { name: 'x', auth: 'public', input: optional },
-          handler: (_request, ctx) => json({ input: ctx.input }),
+          handler: (_request, ctx) => jsonResponse({ input: ctx.input }),
         },
       ]),
       config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null }),

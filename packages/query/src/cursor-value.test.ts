@@ -4,21 +4,21 @@
 // string against a number and blanks the page rather than failing.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { configureCursorSigning, createContext, isUltimateError, userActor } from '@ultimat3/core';
+import { configureCursorSigning, ctxOf, isUltimateError, userActor } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { reviveSortKey, serializeSortValue } from './cursor-value';
 import { paginate } from './pagination';
 import { query } from './query';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 // `@ultimat3/policy`'s `Actor`, not core's: `permissions` is a direct grant, which is the field
 // `can()` reads and the one core's `Actor` deliberately does not carry.
 const reader: Actor = { ...userActor({ id: 'u1' }), permissions: ['feed:read'] };
-const ctx = createContext({ actor: reader });
+const ctx = ctxOf({ actor: reader });
 
 const roundTrip = (value: unknown): unknown =>
   reviveSortKey(JSON.parse(JSON.stringify([serializeSortValue(value)])))[0];
@@ -85,7 +85,7 @@ describe('page two of a read ordered by a non-JSON type', () => {
     );
 
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('test-secret');
   });
 

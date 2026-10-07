@@ -4,7 +4,7 @@
 // chain which cannot carry a cursor is refused before the first one goes out rather than after it.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient } from '@ultimat3/db';
 import type { BatchIterator } from './batch';
 import { text, timestamp, uuid } from './columns';
 import { database } from './database';
@@ -370,7 +370,7 @@ describe('the Postgres driver sends the same statement page() sends', () => {
   let pg: ReturnType<typeof tableFor<Post, typeof posts.$columns>>;
 
   beforeEach(() => {
-    client = createRecordingClient();
+    client = recordingClient();
     pg = tableFor(posts, postgresRepo(posts, { client }));
   });
 

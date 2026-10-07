@@ -2,13 +2,13 @@
  * The durable sink's PROTOCOL, driven through a recording executor rather than a live database —
  * the same shape `idempotency-postgres.test.ts` uses. One statement per record, append-only, and
  * an allow-list of framework facts: a `Ctx` carries the app's whole service bag on the object
- * itself (`createContext` spreads services onto it), so anything but an allow-list writes an
+ * itself (`ctxOf` spreads services onto it), so anything but an allow-list writes an
  * app's repositories, clients and closures into an audit table.
  */
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createContext, REDACTED, secret, userActor } from '@ultimat3/core';
+import { ctxOf, REDACTED, secret, userActor } from '@ultimat3/core';
 import type { AuditRecord } from './audit';
 import { postgresAuditSink, SQL_AUDIT_INSERT, SQL_AUDIT_TABLE } from './audit-postgres';
 
@@ -30,8 +30,8 @@ function executor(): { readonly exec: PgExecutor; readonly calls: readonly Call[
 
 const AT = new Date(1_700_000_000_000);
 
-const ctxFor = (over: Parameters<typeof createContext>[0] = {}) =>
-  createContext({
+const ctxFor = (over: Parameters<typeof ctxOf>[0] = {}) =>
+  ctxOf({
     requestId: 'req-1',
     traceId: '0af7651916cd43dd8448eb211c80319c',
     locale: 'es-ES',
@@ -142,14 +142,14 @@ describe('the postgres audit sink writes one append-only row', () => {
   });
 
   /**
-   * The failure this allow-list exists for. `createContext` spreads every installed service ONTO
+   * The failure this allow-list exists for. `ctxOf` spreads every installed service ONTO
    * the context object, so a projection that walked the ctx would put an app's repositories,
    * database clients and closures into an audit table — and on an HTTP surface the object is a
    * `RequestContext`, which carries the request's own `Authorization` and `Cookie` headers.
    */
   test('nothing from the service bag or an app’s own ctx fields reaches a param', async () => {
     const { exec, calls } = executor();
-    // Spread rather than mutated: `createContext` freezes what it returns, and an HTTP surface
+    // Spread rather than mutated: `ctxOf` freezes what it returns, and an HTTP surface
     // hands this seam a `RequestContext` whose `requestHeaders` this shape stands in for.
     const ctx = {
       ...ctxFor({ services: { billing: { apiToken: 'sk_live_do_not_store' } } }),

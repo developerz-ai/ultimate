@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { createRecordingClient } from '@ultimat3/db';
+import { recordingClient } from '@ultimat3/db';
 import { postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
 import { type MemoryAdapter, memoryAuthAdapter } from './memory-adapter';
@@ -37,7 +37,7 @@ describe('an address is looked up exactly as it is stored', () => {
     // `x dev` and create-a-second-one in production, off one provider that changed its casing.
     expect(await memory.findUserByEmail('Ada@Example.COM')).toBeNull();
 
-    const client = createRecordingClient();
+    const client = recordingClient();
     await postgresAuthAdapter(client).findUserByEmail('Ada@Example.COM');
     expect(client.texts.at(-1)).toContain('where email = $1');
     // Bound verbatim, against a column whose uniqueness is the plain `text` one. No `citext` and
@@ -54,7 +54,7 @@ describe('an address is looked up exactly as it is stored', () => {
     // the two implementations of that seam get to disagree about what they stored.
     expect((await memory.findUserById(ID))?.email).toBe(' Ada@Example.COM ');
 
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('insert into x_users', { rows: [] });
     await postgresAuthAdapter(client)
       .createUser({
@@ -233,7 +233,7 @@ describe('a redeemed verification is stamped when it is redeemed', () => {
     // The issue time is still the issue time: one of the two moved, not both.
     expect(taken?.createdAt).toEqual(ISSUED_AT);
 
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('update x_verifications', { rows: [] });
     await postgresAuthAdapter(client, frozenClock(REDEEMED_AT)).takeVerification(
       record.purpose,
@@ -284,7 +284,7 @@ describe('linkAccount on a pair that is already linked', () => {
   });
 
   test('Postgres answers the row it stored, not the object it was handed', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('insert into x_accounts', {
       rows: [
         {
@@ -327,7 +327,7 @@ describe('listApiKeys answers newest first, in both', () => {
     await memory.putApiKey(key('b2', '2026-09-01T00:00:00.000Z'));
     expect((await memory.listApiKeys('user-1')).map((one) => one.id)).toEqual(['c3', 'b2', 'a1']);
 
-    const client = createRecordingClient();
+    const client = recordingClient();
     await postgresAuthAdapter(client).listApiKeys('user-1');
     expect(client.texts.at(-1)).toContain('order by created_at desc, id desc');
   });

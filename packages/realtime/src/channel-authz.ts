@@ -1,9 +1,9 @@
 // A declared channel's policy, asked on subscribe: the params are the input and the row is what
-// the channel's own loader answered. Through `@ultimat3/query`'s `guard`, the package's one authz
-// seam — the same call `policy-gate.ts` makes for a live query.
+// the channel's own loader answered. Through `@ultimat3/query`'s `guardQuery`, the package's one
+// authz seam — the same call `policy-gate.ts` makes for a live query.
 
-import { type Actor, type Ctx, createContext, runWithContext } from '@ultimat3/core';
-import { guard, QueryDeniedError } from '@ultimat3/query';
+import { type Actor, type Ctx, ctxOf, runWithContext } from '@ultimat3/core';
+import { guardQuery, QueryDeniedError } from '@ultimat3/query';
 import type { Channel } from './channel-decl';
 import { isTenancyDenial, TopicForbiddenError } from './errors';
 
@@ -34,7 +34,7 @@ export async function authorizeChannel(
     });
   }
   // The loader and the rule run AS the subscriber, never as the node. Services are rebuilt for
-  // this actor by `createContext`, the rule `withChildContext` follows.
+  // this actor by `ctxOf`, the rule `withChildContext` follows.
   const scoped = subscriberContext(ctx, actor);
   let row: unknown;
   try {
@@ -59,7 +59,7 @@ function decide(
   row: unknown,
 ): void {
   try {
-    guard(channel.policy, { actor, input: params, row, ctx, query: channel.name }, 'live');
+    guardQuery(channel.policy, { actor, input: params, row, ctx, query: channel.name }, 'live');
   } catch (error) {
     if (!(error instanceof QueryDeniedError)) throw error;
     throw new TopicForbiddenError({
@@ -72,7 +72,7 @@ function decide(
 
 /** The node's context, re-made for one subscriber: same deploy, role and clock, their actor. */
 function subscriberContext(node: Ctx, actor: Actor): Ctx {
-  return createContext({
+  return ctxOf({
     actor,
     role: node.role,
     buildId: node.buildId,

@@ -33,7 +33,7 @@ export type SecretResolver = (name: string) => string | undefined;
 
 const fromEnvironment: SecretResolver = (name) => Bun.env[name];
 
-export function createSecretBag(
+export function secretBag(
   names: readonly string[],
   resolve: SecretResolver = fromEnvironment,
 ): ScrapeSecrets {

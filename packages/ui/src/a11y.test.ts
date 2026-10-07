@@ -2,11 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import {
   announce,
   ariaBool,
-  createFocusTrap,
-  createRovingTabindex,
   FOCUSABLE_SELECTOR,
   focusableWithin,
+  focusTrap,
   nextRovingIndex,
+  rovingTabindex,
 } from './a11y';
 import { FakeElement, installFakeDom, keydown } from './fake-dom-fixture';
 import { MENU_ITEM_SELECTOR } from './roving';
@@ -64,7 +64,7 @@ describe('ariaBool', () => {
 // handler that computed the right INDEX and then focused an element that refuses focus looked
 // correct in every assertion the package had.
 
-describe('createRovingTabindex, attached', () => {
+describe('rovingTabindex, attached', () => {
   const menu = (...flags: readonly boolean[]): { list: FakeElement; items: FakeElement[] } => {
     const list = new FakeElement('div', { role: 'menu' });
     const items = flags.map(
@@ -80,10 +80,9 @@ describe('createRovingTabindex, attached', () => {
   };
 
   const rove = (list: FakeElement, selector: string): ((event: KeyboardEvent) => void) =>
-    createRovingTabindex(
-      () => list.querySelectorAll(selector) as unknown as readonly HTMLElement[],
-      { orientation: 'vertical' },
-    );
+    rovingTabindex(() => list.querySelectorAll(selector) as unknown as readonly HTMLElement[], {
+      orientation: 'vertical',
+    });
 
   test('a disabled item does not swallow the group: every enabled item stays reachable', () => {
     const { list, items } = menu(false, true, false);
@@ -145,7 +144,7 @@ describe('createRovingTabindex, attached', () => {
   });
 });
 
-describe('createFocusTrap', () => {
+describe('focusTrap', () => {
   const panel = (): { root: FakeElement; page: FakeElement; buttons: FakeElement[] } => {
     const root = new FakeElement('div');
     const buttons = [new FakeElement('button'), new FakeElement('button')];
@@ -161,7 +160,7 @@ describe('createFocusTrap', () => {
     try {
       const trigger = page.children[0] as FakeElement;
       trigger.focus();
-      const trap = createFocusTrap(root as unknown as HTMLElement);
+      const trap = focusTrap(root as unknown as HTMLElement);
       trap.activate();
       expect(dom.document.activeElement).toBe(buttons[0] as FakeElement);
       trap.release();
@@ -182,7 +181,7 @@ describe('createFocusTrap', () => {
     const dom = installFakeDom(page);
     try {
       trigger.focus();
-      const trap = createFocusTrap(root as unknown as HTMLElement);
+      const trap = focusTrap(root as unknown as HTMLElement);
       trap.activate();
       expect(root.getAttribute('tabindex')).toBe('-1');
       expect(dom.document.activeElement).toBe(root);
@@ -203,7 +202,7 @@ describe('createFocusTrap', () => {
     const page = new FakeElement('div').append(root);
     const dom = installFakeDom(page);
     try {
-      createFocusTrap(root as unknown as HTMLElement).activate();
+      focusTrap(root as unknown as HTMLElement).activate();
       expect(root.getAttribute('tabindex')).toBe('0');
       expect(dom.document.activeElement).toBe(root);
     } finally {
@@ -215,7 +214,7 @@ describe('createFocusTrap', () => {
     const { root, page, buttons } = panel();
     const dom = installFakeDom(page);
     try {
-      const trap = createFocusTrap(root as unknown as HTMLElement);
+      const trap = focusTrap(root as unknown as HTMLElement);
       trap.activate();
       const trigger = page.children[0] as FakeElement;
       dom.document.activeElement = trigger;
@@ -231,7 +230,7 @@ describe('createFocusTrap', () => {
   });
 });
 
-describe('createFocusTrap, backwards', () => {
+describe('focusTrap, backwards', () => {
   test('shift-Tab off the first item wraps to the last, and pulls focus back from outside', () => {
     const root = new FakeElement('div');
     const buttons = [new FakeElement('button'), new FakeElement('button')];
@@ -240,7 +239,7 @@ describe('createFocusTrap, backwards', () => {
     const page = new FakeElement('div').append(trigger, root);
     const dom = installFakeDom(page);
     try {
-      const trap = createFocusTrap(root as unknown as HTMLElement);
+      const trap = focusTrap(root as unknown as HTMLElement);
       trap.activate();
       expect(dom.document.activeElement).toBe(buttons[0] as FakeElement);
 
@@ -268,7 +267,7 @@ describe('createFocusTrap, backwards', () => {
     root.append(...buttons);
     const dom = installFakeDom(new FakeElement('div').append(root));
     try {
-      createFocusTrap(root as unknown as HTMLElement).activate();
+      focusTrap(root as unknown as HTMLElement).activate();
       dom.document.activeElement = buttons[1] as FakeElement;
 
       const event = keydown('Tab');
@@ -286,7 +285,7 @@ describe('createFocusTrap, backwards', () => {
     root.append(new FakeElement('button'));
     const dom = installFakeDom(new FakeElement('div').append(root));
     try {
-      createFocusTrap(root as unknown as HTMLElement).activate();
+      focusTrap(root as unknown as HTMLElement).activate();
       const event = keydown('a');
       dom.document.dispatch('keydown', event);
       expect(event.defaultPrevented).toBe(false);

@@ -11,7 +11,7 @@ import {
   onShutdown,
   recordJob,
   renderThrowable,
-  uuid,
+  uuidV7,
 } from '@ultimat3/core';
 import { announceExhausted } from './claim-exhausted';
 import { nowMs } from './clock';
@@ -20,7 +20,7 @@ import type { ClaimedJob, JobRecord } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import type { JobExecution } from './execute';
 import { registeredJobs } from './job';
-import { createLimiter } from './limits';
+import { concurrencyLimiter } from './limits';
 import { JOB_OUTCOME_LABELS } from './metrics';
 import { claimAsks, createAdmission } from './worker-admit';
 import { armWorkerCutoff, type DrainCutoff } from './worker-drain-cutoff';
@@ -38,14 +38,14 @@ import type { Worker, WorkerOptions, WorkerStats } from './worker-types';
 
 export type { Worker, WorkerOptions, WorkerStats } from './worker-types';
 
-export function createWorker(options: WorkerOptions): Worker {
-  const workerId = options.workerId ?? `worker-${uuid()}`;
+export function jobWorker(options: WorkerOptions): Worker {
+  const workerId = options.workerId ?? `worker-${uuidV7()}`;
   const queues = options.queues ?? [DEFAULT_QUEUE];
   // Every numeric knob, read and refused in one place — `worker-options.ts` says why a non-finite
   // one is a refusal rather than a clamp, and carries the slot table's own-key read with it.
   const { visibilityTimeoutMs, pollIntervalMs, heartbeatIntervalMs, slotsFor } =
     resolveWorkerTimings(options);
-  const limiter = options.limiter ?? createLimiter({});
+  const limiter = options.limiter ?? concurrencyLimiter({});
   const driverLeases = options.driver.leases;
   // `job.concurrency`, held as a row every replica sees. The TTL is the visibility timeout and the
   // renewal rides the lease heartbeat's interval — `worker-fleet-slots.ts` says why both.
@@ -307,7 +307,7 @@ export function createWorker(options: WorkerOptions): Worker {
    * whole batch was done. `worker-loop.ts` owns the timer and everything that cuts its wait short.
    */
   const loop: ClaimLoop = createClaimLoop({
-    subject: 'createWorker',
+    subject: 'jobWorker',
     floorMs: pollIntervalMs,
     ...(options.idlePollMaxMs === undefined ? {} : { ceilingMs: options.idlePollMaxMs }),
     queues,

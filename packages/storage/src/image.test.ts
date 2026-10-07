@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
-  createRaster,
+  blankRaster,
   decodeImage,
   encodeImage,
   hasAlpha,
@@ -35,7 +35,7 @@ const untypedTransform = (format: string): ImageTransform => ({ format }) as Ima
 
 /** 40x20 and opaque: wide enough that `cover` and `contain` disagree about the box. */
 function opaquePng(): Uint8Array {
-  const raster = createRaster(40, 20);
+  const raster = blankRaster(40, 20);
   for (let y = 0; y < 20; y += 1) {
     for (let x = 0; x < 40; x += 1) {
       const at = (y * 40 + x) * 4;
@@ -50,7 +50,7 @@ function opaquePng(): Uint8Array {
 
 /** 8x8, left half fully transparent — the alpha a JPEG cannot carry. */
 function alphaPng(): Uint8Array {
-  const raster = createRaster(8, 8);
+  const raster = blankRaster(8, 8);
   for (let y = 0; y < 8; y += 1) {
     for (let x = 0; x < 8; x += 1) {
       const at = (y * 8 + x) * 4;

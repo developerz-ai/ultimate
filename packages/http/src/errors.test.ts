@@ -181,7 +181,7 @@ describe('serverNotStarted', () => {
     expect(error).toBeInstanceOf(HttpError);
     expect(error.code).toBe('X_SERVER_NOT_STARTED');
     expect(error.cause).toContain('url()');
-    expect(error.fix).toBe('call createServer({ ... }).start() before reading url()');
+    expect(error.fix).toBe('call httpServer({ ... }).start() before reading url()');
     expect(error.docs).toBe(ERROR_DOCS_URL);
   });
 });

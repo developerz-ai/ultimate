@@ -1,20 +1,20 @@
-// Single responsibility: named service factories that `createContext` installs automatically,
+// Single responsibility: named service factories that `ctxOf` installs automatically,
 // bound to the exact ctx (actor, clock, tz) they were built for.
 //
 // A service closes over the `ctx` it was constructed with — `ctx.actor.orgId` inside it means
 // "the actor this service was built for", not "whoever is calling right now". So a factory
-// cannot be built once and cached: it has to run again every time `createContext` produces a
+// cannot be built once and cached: it has to run again every time `ctxOf` produces a
 // ctx with a different actor, or an impersonated call would read the wrong tenant. Registering
-// with `defineService` is what lets `createContext` do that automatically instead of every
+// with `defineService` is what lets `ctxOf` do that automatically instead of every
 // caller wiring `services: { posts: postsService(ctx) }` by hand at every call site.
 
 import type { CtxFacts, ServiceBag } from './context';
 import { UltimateError } from './errors';
 
 /**
- * `CtxFacts` and not `Ctx`: this factory runs INSIDE `createContext`, against a preview that
+ * `CtxFacts` and not `Ctx`: this factory runs INSIDE `ctxOf`, against a preview that
  * carries no other registered service — which the paragraph above has always said and the type
- * now enforces. It is also what lets `createContext` build that preview without an assertion.
+ * now enforces. It is also what lets `ctxOf` build that preview without an assertion.
  */
 export type ServiceFactory<T = unknown> = (ctx: CtxFacts) => T;
 

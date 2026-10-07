@@ -26,9 +26,9 @@ import {
   buildOpenApi,
   inputSchemaName,
   registerAction,
-  resetRegistry as resetActions,
+  resetActions,
 } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -36,7 +36,7 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import { toolFrom } from './from-action';
@@ -369,7 +369,7 @@ describe('one declaration, ONE tool name', () => {
   // agent reads `x-ultimate.mcpTool` out of `openapi.json` and calls exactly that name.
   test('the name OpenAPI publishes is a name tools/call resolves', async () => {
     const name = openapiMcpTool();
-    const response = await runWithContext(createContext({}), () =>
+    const response = await runWithContext(ctxOf({}), () =>
       appMcp().server.handle(
         {
           jsonrpc: '2.0',

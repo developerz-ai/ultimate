@@ -85,7 +85,7 @@ export class IdempotencyNotSharedError extends UltimateError {
 }
 
 /**
- * The replay of a first attempt that FAILED. It is a replay and not a re-run on purpose: `guard()`
+ * The replay of a first attempt that FAILED. It is a replay and not a re-run on purpose: `guardAction()`
  * and the input parse both run before the idempotency gate, so everything the gate can see throw
  * is post-authorization and possibly post-commit — a handler that took the money and then failed
  * its own `output:` schema is the case this exists for. Releasing the reservation there let the

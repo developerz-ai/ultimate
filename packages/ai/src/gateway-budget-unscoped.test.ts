@@ -1,12 +1,12 @@
 // Single responsibility: a gateway's declared `budget` holds with no `scope()` open. It was
 // enforced only inside `gateway.scope()`, which nothing in the framework calls, and `llm()` /
-// `agent()` started from an empty ledger — so `createGateway({ defaultModel: FIXTURE_MODEL,  budget: { request: 100 } })` capped
+// `agent()` started from an empty ledger — so `providerGateway({ defaultModel: FIXTURE_MODEL,  budget: { request: 100 } })` capped
 // nothing any app ran.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx } from '@ultimat3/action';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { ANSWER, declare, POST_ID, promptFor, stub } from './llm-fixture';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { Provider } from './provider';
@@ -15,7 +15,7 @@ import { configureAi, resetAiRuntime } from './runtime';
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
 
-const echo = new EchoProvider();
+const echo = echoProvider();
 
 const counting = (): { provider: Provider; calls: () => number } => {
   let calls = 0;
@@ -40,7 +40,7 @@ beforeEach(() => {
 describe('a declared budget with no scope open', () => {
   test('gateway.generate refuses past the per-request ceiling', async () => {
     const { provider, calls } = counting();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [provider],
       budget: { request: 100 },
@@ -55,7 +55,7 @@ describe('a declared budget with no scope open', () => {
 
   test('gateway.stream refuses too', async () => {
     const { provider, calls } = counting();
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [provider],
       budget: { request: 100 },
@@ -75,7 +75,7 @@ describe('a declared budget with no scope open', () => {
   test('an llm() action runs under the gateway ceiling', async () => {
     const { provider, seen } = stub(ANSWER);
     configureAi({
-      gateway: createGateway({
+      gateway: providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [provider],
         budget: { request: 1 },
@@ -89,7 +89,7 @@ describe('a declared budget with no scope open', () => {
   });
 
   test('a call inside the ceiling still runs', async () => {
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [echo],
       budget: { request: 10_000 },

@@ -12,7 +12,7 @@ import { memoryAdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { formatLsn, memoryChangeFeed } from './changefeed';
 import { InProcessTransport } from './fanout';
-import { createReplicator, normalize } from './replicator';
+import { changeFeedReplicator, normalize } from './replicator';
 import { parseChange } from './replicator-envelope';
 import { defaultBackoff } from './thundering-herd';
 
@@ -30,7 +30,7 @@ const rig = (key: string) => {
     feed,
     transport,
     lock,
-    replicator: createReplicator({
+    replicator: changeFeedReplicator({
       feed,
       transport,
       lock,
@@ -176,7 +176,7 @@ describe('start is memoised while it is in flight', () => {
   test('two concurrent starts run ONE feed and take ONE acquisition', async () => {
     const feed = countingFeed();
     const lock = awaitingLock();
-    const replicator = createReplicator({ feed, lock, transport: new InProcessTransport() });
+    const replicator = changeFeedReplicator({ feed, lock, transport: new InProcessTransport() });
 
     expect(await Promise.all([replicator.start(), replicator.start()])).toEqual([true, true]);
     expect(feed.starts()).toBe(1);
@@ -190,7 +190,7 @@ describe('start is memoised while it is in flight', () => {
     // intends to stop, with the advisory lock still held by a process that already shut down.
     const feed = countingFeed();
     const lock = awaitingLock();
-    const replicator = createReplicator({ feed, lock, transport: new InProcessTransport() });
+    const replicator = changeFeedReplicator({ feed, lock, transport: new InProcessTransport() });
 
     const starting = replicator.start();
     const stopping = replicator.stop();
@@ -216,7 +216,7 @@ describe('start is memoised while it is in flight', () => {
       abandon: () => undefined,
       lastLsn: () => null,
     };
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed: failing,
       lock,
       transport: new InProcessTransport(),
@@ -229,7 +229,7 @@ describe('start is memoised while it is in flight', () => {
     // And the retry is a real one: `begin` runs again rather than being answered by a memo over a
     // feed that never pumped.
     const feed = countingFeed();
-    const retried = createReplicator({ feed, lock, transport: new InProcessTransport() });
+    const retried = changeFeedReplicator({ feed, lock, transport: new InProcessTransport() });
     expect(await retried.start()).toBe(true);
     expect(feed.starts()).toBe(1);
     expect(lock.calls()).toBe(2);
@@ -238,7 +238,7 @@ describe('start is memoised while it is in flight', () => {
 
   test('a stop after a failed start is a no-op — the lock is not released twice', async () => {
     const lock = awaitingLock();
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed: {
         source: 'failing',
         start: () => Promise.reject(new Error('slot busy')),
@@ -280,7 +280,7 @@ describe('lastLsn', () => {
 
   test("is the FEED's position until this run publishes something of its own", async () => {
     const feed = resumedFeed(formatLsn(4_096));
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed,
       transport: new InProcessTransport(),
       lock: memoryAdvisoryLock(freshKey()),
@@ -295,7 +295,7 @@ describe('lastLsn', () => {
   });
 
   test('a feed with no position at all is null, not an empty string', async () => {
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed: resumedFeed(null),
       transport: new InProcessTransport(),
       lock: memoryAdvisoryLock(freshKey()),
@@ -375,7 +375,7 @@ describe('retryDelayMs', () => {
 
   test('the injected rng is what jitters it, so a takeover storm is spread', () => {
     const feed = memoryChangeFeed();
-    const spread = createReplicator({
+    const spread = changeFeedReplicator({
       feed,
       transport: new InProcessTransport(),
       lock: memoryAdvisoryLock(freshKey()),

@@ -7,7 +7,7 @@ import { clientTransport, rescope } from '@ultimat3/core';
 import { type LocalStore, memoryLocalStore } from './local-store-idb';
 import type { QueueChange } from './offline-queue';
 import type { OutboxEntry } from './page-outbox';
-import { createOutbox } from './page-outbox';
+import { localOutbox } from './page-outbox';
 
 afterEach(() => {
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.client'));
@@ -42,7 +42,7 @@ describe('a principal change while a replay is on the wire', () => {
     rescope('u1');
     const first = gate();
     const sent: string[] = [];
-    const outbox = createOutbox({
+    const outbox = localOutbox({
       local,
       overlays: () => undefined,
       send: async (entry) => {
@@ -73,7 +73,7 @@ describe('a principal change while a replay is on the wire', () => {
     const local = memoryLocalStore();
     rescope('u1');
     const sent: string[] = [];
-    const outbox = createOutbox({
+    const outbox = localOutbox({
       local,
       overlays: () => undefined,
       send: async (entry) => {
@@ -111,7 +111,7 @@ describe('a principal change while a write is being queued', () => {
       wipeOthers: (keep) => inner.wipeOthers(keep),
     };
     rescope('u1');
-    const outbox = createOutbox({ local, overlays: () => undefined, send: async () => ({}) });
+    const outbox = localOutbox({ local, overlays: () => undefined, send: async () => ({}) });
     await outbox.ready;
     change = () => {
       change = () => undefined;
@@ -152,7 +152,7 @@ function tearable(inner: LocalStore): LocalStore & { tearDown(): void } {
 
 function document(local: LocalStore, answer: (entry: OutboxEntry) => Promise<unknown>) {
   const sent: string[] = [];
-  const outbox = createOutbox({
+  const outbox = localOutbox({
     local,
     principal: () => 'u1',
     overlays: () => undefined,

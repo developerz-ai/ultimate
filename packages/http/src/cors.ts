@@ -1,6 +1,7 @@
 // CORS with a locked default: same-origin only. Cross-origin access is a decision the app makes
 // once, in `configureHttp({ cors })`, never something a route can quietly opt into.
 
+import { BUILD_ID_HEADER } from '@ultimat3/core';
 import { corsConfigInvalid } from './errors';
 
 export interface CorsConfig {
@@ -16,8 +17,8 @@ export interface CorsConfig {
 export const DEFAULT_CORS: CorsConfig = {
   origins: [],
   methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowHeaders: ['content-type', 'authorization', 'x-ultimate-build', 'x-request-id'],
-  exposeHeaders: ['x-request-id', 'x-ultimate-build', 'retry-after'],
+  allowHeaders: ['content-type', 'authorization', BUILD_ID_HEADER, 'x-request-id'],
+  exposeHeaders: ['x-request-id', BUILD_ID_HEADER, 'retry-after'],
   credentials: true,
   maxAgeSeconds: 600,
 };

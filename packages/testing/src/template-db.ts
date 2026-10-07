@@ -65,7 +65,7 @@ export function urlFor(adminUrl: string, database: string): string {
   return url.toString();
 }
 
-export const createTemplateSql = (template: string): string =>
+export const templateSql = (template: string): string =>
   `CREATE DATABASE "${template}" TEMPLATE template0`;
 
 export const cloneSql = (template: string, target: string): string =>
@@ -132,7 +132,7 @@ export async function acquireWorkerDatabase(
     await admin.exec(lockSql(template));
     try {
       try {
-        await admin.exec(createTemplateSql(template));
+        await admin.exec(templateSql(template));
       } catch (error) {
         // Tolerated for the CREATE alone: "already exists" means another worker got here first, or
         // a Postgres that outlives one run still holds last run's template.

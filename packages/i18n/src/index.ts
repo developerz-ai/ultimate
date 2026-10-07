@@ -75,7 +75,7 @@ export {
   type LocaleAudit,
   mergeExtractions,
 } from './extract';
-export { FRAMEWORK_CATALOG, FRAMEWORK_CATALOG_LOCALE } from './framework';
+export { FRAMEWORK_CATALOG } from './framework';
 export {
   type InterpolationValue,
   type InterpolationVars,
@@ -89,17 +89,13 @@ export {
 } from './interpolate';
 export {
   type LocalePrefix,
-  localeSegment,
   localizedPath,
   splitLocalePrefix,
   unlocalizedPath,
 } from './locale-path';
 export {
   assertSupportedLocale,
-  DEFAULT_LOCALE,
   type Direction,
-  directionOf,
-  isRtl,
   isSupportedLocale,
   type LanguageRange,
   type Locale,
@@ -114,7 +110,7 @@ export {
   catalogRegistrationGaps,
 } from './registration';
 export {
-  createTranslator,
+  catalogTranslator,
   isMiss,
   type TranslateVars,
   type TranslationKey,

@@ -8,7 +8,7 @@ import {
   getAction,
   registerAction,
   registerActions,
-  resetRegistry,
+  resetActions,
 } from './registry';
 
 const Input = t.object({ postId: t.uuid });
@@ -25,7 +25,7 @@ const define = () =>
 
 describe('registry', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetActions();
   });
 
   test('names actions from their export names', () => {
@@ -154,7 +154,7 @@ describe('registry', () => {
 
 describe('one derived path, one action', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetActions();
   });
 
   const declare = define;

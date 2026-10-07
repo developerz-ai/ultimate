@@ -2,7 +2,7 @@
 // Statements are spelled out so an agent can run the exact one it saw in a log.
 
 import type { PgExecutor } from '@ultimat3/core';
-import { finiteCount, isUuid, uuid } from '@ultimat3/core';
+import { finiteCount, isUuid, uuidV7 } from '@ultimat3/core';
 import type { InboxRow, InboxStore, InboxWrite } from './inbox';
 import { DEFAULT_INBOX_PAGE } from './inbox';
 
@@ -162,7 +162,7 @@ export interface PgInboxStore extends InboxStore {
 
 export function postgresInboxStore(options: PgInboxStoreOptions): PgInboxStore {
   const { executor } = options;
-  const newId = options.newId ?? uuid;
+  const newId = options.newId ?? uuidV7;
   return {
     async add(write: InboxWrite) {
       const rows = await executor.query<InboxDbRow>(SQL_NOTIFY_INBOX_ADD, [

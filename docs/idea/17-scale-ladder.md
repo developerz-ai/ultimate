@@ -74,7 +74,7 @@ Same platform. The change is `ROLE` and two env vars. This is also the rung a fr
 
 Add the shared cache tier when there is more than one web replica **and** a measured cross-replica miss. `cache.tiers: ['request-memo', 'lru', 'redis']` plus `REDIS_URL`. Redis, Valkey or Dragonfly `As of 2026-08` — the key layout is slot-clean, so no engine is excluded and no server flag is needed ([below](#dragonfly-honestly)).
 
-**App code change: none.** The cache tiers are read-through and ordered by `TIER_ORDER`; adding one changes where a value is found, never how it is asked for ([`packages/cache/src/tiers.ts`](../../packages/cache/src/tiers.ts)).
+**App code change: none.** The cache tiers are read-through and ordered by core's `CACHE_TIERS`; adding one changes where a value is found, never how it is asked for ([`packages/cache/src/tiers.ts`](../../packages/cache/src/tiers.ts)).
 
 ## Rung 2 — one box, every role, Compose
 
@@ -133,13 +133,13 @@ Every scale component, and exactly what to swap.
 | Concern | Package · interface | Production implementation | `app.config.ts` | Env key that actually decides | Status |
 |---|---|---|---|---|---|
 | Rows / SQL | `@ultimat3/db` · `DbClient`, `ReservableClient` | `postgresClient()` over `Bun.SQL`; `setDbClient()` overrides | `database.driver`, `database.ssl` — `urlEnv`, `poolSize` and `schema` were deleted in 4.0.0, each read by nothing | `DATABASE_URL` | shipped |
-| Embedded dev DB | `@ultimat3/db` · `PgliteClient` | `createPgliteClient()` | — | unset `DATABASE_URL` | shipped, `x dev` only |
+| Embedded dev DB | `@ultimat3/db` · `PgliteClient` | `pgliteClient()` | — | unset `DATABASE_URL` | shipped, `x dev` only |
 | Repository | `@ultimat3/entity` · `Repo`, `Driver` | `postgresRepo()`; `memoryRepo()` for tests | — | — | shipped |
 | Pool sizing | `@ultimat3/db` · `POOL_PROFILES` | per-`ROLE` max / statement timeout / idle timeout | — | `ROLE`, `DATABASE_POOL_MAX` | shipped |
 | Read replicas | `@ultimat3/db` · `replicatedClient()`, `isPlainRead()`, `withReplicaReads()` | primary + standby behind one `DbClient`; a plain read inside an open scope goes to the standby, everything else and every transaction to the primary. Read-your-writes by scope, 3-failure/10s breaker back to the primary | — | `DATABASE_REPLICA_URL` | shipped `As of 2026-08-24` — the pool is env, the SCOPE is the app's, and nothing opens one yet |
 | Cache, per-request | `@ultimat3/cache` · `CacheTier` | request memo | `cache.tiers: ['request-memo']` | — | shipped |
 | Cache, per-process | `@ultimat3/cache` · `CacheTier` | LRU | `cache.tiers: ['lru']` | — | shipped |
-| Cache, cross-node | `@ultimat3/cache` · `CacheTier`, `RedisLike` | `createRedisTier()` over `Bun.redis` | `cache.tiers: ['redis']` | `REDIS_URL` | shipped |
+| Cache, cross-node | `@ultimat3/cache` · `CacheTier`, `RedisLike` | `redisTier()` over `Bun.redis` | `cache.tiers: ['redis']` | `REDIS_URL` | shipped |
 | Cache, edge | `@ultimat3/cache` · `CacheTier` | CDN headers + purge (Cloudflare, Fastly, HTTP) | `cache.tiers: ['cdn']` | purge-provider env | shipped |
 | Job queue | `@ultimat3/jobs` · `JobDriver` (`enqueue`/`claim`/`ack`/`nack`/`heartbeat`/`stats`) | `postgresJobDriver()`; `setJobDriver()` installs it | **none** — `jobs.driver` was deleted in 5.0.0 and `setJobDriver()` is the only switch | `DATABASE_URL` | shipped |
 | Job queue, Redis | same interface | a future `redisJobDriver()` — Streams + consumer groups + `XAUTOCLAIM` | none; `setJobDriver(redisJobDriver())` | `REDIS_URL` | **not shipped** — the all-throw stub was deleted in 25.0.0; a real driver arrives as a minor |

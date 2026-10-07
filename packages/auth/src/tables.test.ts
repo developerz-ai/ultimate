@@ -3,11 +3,11 @@
 // database created before 1.3 kept an `x_users` with no `scopes` and no `external_id` forever.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { createPgliteClient, raw } from '@ultimat3/db';
+import { pgliteClient, raw } from '@ultimat3/db';
 import { AUTH_TABLES } from './tables';
 
 const PGLITE_BOOT_MS = 30_000;
-const client = createPgliteClient();
+const client = pgliteClient();
 
 afterAll(async () => {
   await client.close();

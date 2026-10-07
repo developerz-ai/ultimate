@@ -9,10 +9,10 @@
 // reads is a key it can never delete, which is the whole of the claim.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { CacheTtlInvalidError } from './errors';
-import { createLruTier } from './lru';
-import { createMemoTier } from './memo';
+import { lruTier } from './lru';
+import { memoTier } from './memo';
 import { REDIS_INVALIDATE_SCRIPT } from './redis';
 import { fakeRedis, keysOf, tierFor } from './redis-fake-fixture';
 import { tag } from './tags';
@@ -44,8 +44,8 @@ describe('a ROW bust spares the other rows of its entity', () => {
     // COLLECTION bucket and then read that bucket back on a row bust, so `invalidateTags([tag(
     // 'post','1')])` deleted every post-tagged key in Redis while the LRU one rung closer kept
     // exactly the row that changed — every single-row write emptied the shared tier.
-    const memo = createMemoTier();
-    await runWithContext(createContext(), async () => {
+    const memo = memoTier();
+    await runWithContext(ctxOf(), async () => {
       await seed(memo);
       expect([...(await memo.invalidateTags([tag('post', '1')])).keys].sort()).toEqual([
         'feed',
@@ -54,7 +54,7 @@ describe('a ROW bust spares the other rows of its entity', () => {
       expect(await survivors(memo)).toEqual(['post-2']);
     });
 
-    const lru = createLruTier({ rng: () => 0 });
+    const lru = lruTier({ rng: () => 0 });
     await seed(lru);
     expect([...(await lru.invalidateTags([tag('post', '1')])).keys].sort()).toEqual([
       'feed',
@@ -82,14 +82,14 @@ describe('a COLLECTION bust takes every row of its entity', () => {
     // that read only the bare collection tag's bucket here would leave every row cached with
     // nothing left to clear it — the failure the entity index exists to prevent, and the reason
     // it is a second bucket rather than a narrowing of the first.
-    const memo = createMemoTier();
-    await runWithContext(createContext(), async () => {
+    const memo = memoTier();
+    await runWithContext(ctxOf(), async () => {
       await seed(memo);
       await memo.invalidateTags([tag('post')]);
       expect(await survivors(memo)).toEqual([]);
     });
 
-    const lru = createLruTier({ rng: () => 0 });
+    const lru = lruTier({ rng: () => 0 });
     await seed(lru);
     await lru.invalidateTags([tag('post')]);
     expect(await survivors(lru)).toEqual([]);
@@ -126,12 +126,12 @@ describe('ttlMs is positive and finite on EVERY rung', () => {
     // silently long after both were fixed. In a stack that is worse than either, because
     // `bestEffort` swallows the two refusals and the read still hits — out of the one tier that
     // should never have held it.
-    const memo = createMemoTier();
-    await runWithContext(createContext(), async () => {
+    const memo = memoTier();
+    await runWithContext(ctxOf(), async () => {
       await expect(memo.set('k', 'v', { ttlMs: 0 })).rejects.toThrow(CacheTtlInvalidError);
     });
 
-    await expect(createLruTier().set('k', 'v', { ttlMs: 0 })).rejects.toThrow(CacheTtlInvalidError);
+    await expect(lruTier().set('k', 'v', { ttlMs: 0 })).rejects.toThrow(CacheTtlInvalidError);
     await expect(tierFor(fakeRedis()).set('k', 'v', { ttlMs: 0 })).rejects.toThrow(
       CacheTtlInvalidError,
     );
@@ -141,8 +141,6 @@ describe('ttlMs is positive and finite on EVERY rung', () => {
     // The refusal is the caller's miswiring, not a property of the store: a no-op tier that
     // accepted `ttlMs: 0` would make the same call throw or resolve depending on whether a
     // request happened to be in scope.
-    await expect(createMemoTier().set('k', 'v', { ttlMs: 0 })).rejects.toThrow(
-      CacheTtlInvalidError,
-    );
+    await expect(memoTier().set('k', 'v', { ttlMs: 0 })).rejects.toThrow(CacheTtlInvalidError);
   });
 });

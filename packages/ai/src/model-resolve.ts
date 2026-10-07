@@ -1,5 +1,5 @@
 // Which model a call runs on, decided in ONE place. The app names it in one of three places — the
-// declaration's `model`, its prompt's, `createGateway({ defaultModel })` — and the framework has
+// declaration's `model`, its prompt's, `providerGateway({ defaultModel })` — and the framework has
 // no fourth: a call that names none is refused here, naming all three, never routed to a vendor.
 
 import { UltimateError } from '@ultimat3/core';
@@ -11,7 +11,7 @@ export type ModelSite = 'llm' | 'agent' | 'gateway' | 'provider' | 'echo-provide
 
 /** The three places, spelled once so the refusal and the docs cannot drift apart. */
 const PLACES =
-  'model: modelId on the llm()/agent() declaration, model: modelId in its definePrompt, or createGateway({ …, defaultModel: modelId })';
+  'model: modelId on the llm()/agent() declaration, model: modelId in its definePrompt, or providerGateway({ …, defaultModel: modelId })';
 
 /**
  * The first declared candidate, in the caller's precedence order (a declaration, then its prompt,
@@ -31,7 +31,7 @@ export class AiModelUnresolvedError extends UltimateError {
   constructor(site: ModelSite) {
     super({
       code: 'X_AI_MODEL_UNRESOLVED',
-      cause: `${site} resolved no model: no declaration, prompt or createGateway({ defaultModel }) named one, and the framework chooses none (modelId: an id your app registerModel-ed and a configured provider lists)`,
+      cause: `${site} resolved no model: no declaration, prompt or providerGateway({ defaultModel }) named one, and the framework chooses none (modelId: an id your app registerModel-ed and a configured provider lists)`,
       fix: `${PLACES}   # one of the three`,
     });
   }

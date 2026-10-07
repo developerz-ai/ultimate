@@ -99,7 +99,7 @@ function declaredFields(fields: readonly string[]): ReadonlySet<string> {
   return declared;
 }
 
-export function createFormBinding<TValues, TResult>(
+export function formBinding<TValues, TResult>(
   options: FormBindingOptions<TValues, TResult>,
 ): FormBinding<TValues, TResult> {
   const fields = declaredFields(options.fields);

@@ -135,7 +135,7 @@ returned none, so one operation has one wire shape. Every other action's body is
 what it was before the envelope existed, and its OpenAPI operation is unchanged; an enveloped one
 documents `data`, `records` and `removed`, and the header, generated from the declaration.
 
-### Flight control — `createClientFlight`, opt-in
+### Flight control — `clientFlight`, opt-in
 
 Same object as `@ultimat3/query`'s, installed the same way (`rpc({ baseUrl, flight })`), and the
 write half is the half made of refusals:
@@ -156,14 +156,14 @@ declare const orderId: string;
 await api.charge({ orderId }, { idempotencyKey: `charge:${orderId}`, retry: { attempts: 3 } });
 ```
 
-`createClientFlight` is **`@ultimat3/core`'s**, and imported from there — `import {
-createClientFlight } from '@ultimat3/core'`. It shipped as a byte-identical copy here and in
+`clientFlight` is **`@ultimat3/core`'s**, and imported from there — `import {
+clientFlight } from '@ultimat3/core'`. It shipped as a byte-identical copy here and in
 `@ultimat3/query` (both tier 3, neither may import the other); the copies are gone, and since 25.0.0
 so are the re-exports: one value, one import path (`X_HELPER_COPY`, `bun run flight-copies`). The
 types `ClientFlight` and `ClientRetry` stay re-exported, because `rpc`'s options name them.
 
 Importing `rpc` alone from this package is **19,671 B** minified for the browser; adding
-`createClientFlight` (measured through this barrel, before 25.0.0 moved the import to core) is **25,954 B** (`As of 2026-10-01`; `CLAUDE.md` carries the before/after and
+`clientFlight` (measured through this barrel, before 25.0.0 moved the import to core) is **25,954 B** (`As of 2026-10-01`; `CLAUDE.md` carries the before/after and
 what the delta is). `ClientFlight` is a TYPE inside `client.ts` and never a value, which is what
 keeps the second number off the first caller's bill.
 
@@ -280,7 +280,7 @@ no `.def`. A second authz path cannot be written without deleting that store.
 
 | Stage | Failure |
 |---|---|
-| policy, actor half (`guardBeforeInput`) | `X_UNAUTHENTICATED` / `X_FORBIDDEN` for a caller the policy refuses whatever the input — never a 400 describing the schema of an operation they may not call |
+| policy, actor half (`guardActionBeforeInput`) | `X_UNAUTHENTICATED` / `X_FORBIDDEN` for a caller the policy refuses whatever the input — never a 400 describing the schema of an operation they may not call |
 | parse input | `X_INPUT_INVALID` |
 | evaluate policy | the policy's own code — `X_UNAUTHENTICATED` (401), `X_FORBIDDEN` (403) |
 | handle | whatever the handler throws |
@@ -438,7 +438,7 @@ call (`surface: 'server'` — a service, a seed, a test) is app code, not a call
 | Fact | Answer |
 |---|---|
 | whose bucket | the caller's: actor → org → connection address (`@ultimat3/http`'s `rateLimitSpends`). An anonymous caller with no address (MCP, a job) shares one bucket |
-| where it is counted | `@ultimat3/http`'s installed store (`installRateLimitStore()`) — the slot `@ultimat3/query` spends from too; the boot fills it with the SAME instance it gives `createServer({ rateLimitStore })`, on every role. Default: one process' memory |
+| where it is counted | `@ultimat3/http`'s installed store (`installRateLimitStore()`) — the slot `@ultimat3/query` spends from too; the boot fills it with the SAME instance it gives `httpServer({ rateLimitStore })`, on every role. Default: one process' memory |
 | what HTTP answers | `RateLimit-*` from the bucket closest to refusing, and on a refusal `429` + `Retry-After` — the pipeline's own shape |
 | a retry | an admitted attempt spends one token; a refused one spends nothing. A job refused `X_RATE_LIMITED` is rescheduled for its `Retry-After` WITHOUT counting an attempt, so a backlog is delayed, never dead-lettered |
 | an idempotent replay | spends nothing: the stored answer is served, never a 429 |
@@ -452,7 +452,7 @@ import { installRateLimitStore, postgresRateLimitStore } from '@ultimat3/http';
 declare const executor: PgExecutor; // the pool this boot already opened
 
 // Boot, before the first call — the one store every surface and every replica counts in.
-// `x dev` and a container boot do this themselves, and `createServer({ rateLimitStore })` adopts
+// `x dev` and a container boot do this themselves, and `httpServer({ rateLimitStore })` adopts
 // the store it is handed; a process with no server (a worker of your own) installs it here.
 const rateLimitStore = postgresRateLimitStore({ executor });
 installRateLimitStore(rateLimitStore);
@@ -460,9 +460,9 @@ installRateLimitStore(rateLimitStore);
 
 `toBucket` is the only conversion — `capacity: limit`, `refillPerSecond: limit / (windowMs / 1000)`
 — so the published numbers and the enforced ones cannot differ. It lives in `@ultimat3/http`,
-beside `Bucket` and the limiter maths, and is re-exported here: `@ultimat3/query` needs the same
-conversion and is the same tier, so a copy in either package would be a second answer for the
-other. A pair the limiter cannot run on is `X_RATE_LIMIT_INVALID`, at projection. The route says
+beside `Bucket` and the limiter maths, and is imported from there — never re-exported here (25.0.0
+dropped that second path): `@ultimat3/query` needs the same conversion and is the same tier, so a
+copy in either package would be a second answer for the other. A pair the limiter cannot run on is `X_RATE_LIMIT_INVALID`, at projection. The route says
 `rateLimitedBy: 'handler'`, so the pipeline's stage spends no caller bucket for it — not `default`,
 which would cap an action declaring more than it — and only the tenant allowance. An
 `http.rateLimit.buckets.<actionName>` entry is a different table: it neither conflicts with nor
@@ -484,7 +484,7 @@ interpolation broke. Omit the header to run un-keyed; the published `maxLength: 
 by the same refusal. An anonymous caller has no identity to narrow to, so anonymous callers of a
 public idempotent action still share a key space: a UUID key is what keeps them apart.
 
-**A failed first attempt is replayed too, not re-run.** `guard()` and the input parse both happen
+**A failed first attempt is replayed too, not re-run.** `guardAction()` and the input parse both happen
 *before* the idempotency gate, so everything it can see throw is post-authorization and possibly
 post-commit: a handler that took the money and then failed its own `output:` schema is the case.
 The reservation is settled as a FAILURE and the retry re-throws it under the first attempt's own
@@ -575,15 +575,16 @@ opens. The table is `SQL_IDEMPOTENCY_TABLE`, applied the way `SQL_JOBS_TABLE` is
 development, the release-phase `ROLE=migrate` in production. `postgresIdempotencyStore(...)
 .purgeExpired()` is the sweep — Postgres forgets nothing on its own, so run it from a `task`.
 
-**A plain mutating `route` can use the same gate.** `withIdempotency`, `IDEMPOTENCY_HEADER`,
-`idempotencyKeyFor` and `getIdempotencyStore` are all public, so a route that is not an action
-reserves and replays through the one implementation rather than growing a second:
+**A plain mutating `route` can use the same gate.** `withIdempotency`, `idempotencyKeyFor` and
+`getIdempotencyStore` are public here and `IDEMPOTENCY_HEADER` is `@ultimat3/core`'s (imported from
+core — 25.0.0 dropped this package's re-export, and `BUILD_ID_HEADER`'s with it), so a route that is
+not an action reserves and replays through the one implementation rather than growing a second:
 
 ```ts
 const key = req.header(IDEMPOTENCY_HEADER);
 // No header is the caller declining idempotency; a BLANK one is not, and
 // `idempotencyKeyFor` refuses it below rather than filing a record everyone shares.
-if (key === null) return json(await refund(input));
+if (key === null) return jsonResponse(await refund(input));
 const outcome = await withIdempotency(
   getIdempotencyStore(),
   // Namespaced by action AND actor: otherwise two routes share one caller's key, and two
@@ -724,7 +725,7 @@ the actor, the correlation ids, the idempotency key — and the parsed `input` a
 through **core's own** `isRedactedKey` table, the one `defineEnv({ secret: true })` extends. So a
 value that renders `[redacted]` in a log line cannot be plaintext in the audit table, and a
 boxed `Secret` is redacted by value wherever its key sits. What never reaches a column: the `Ctx`
-itself (`createContext` spreads every installed service onto it, and an HTTP surface's is a
+itself (`ctxOf` spreads every installed service onto it, and an HTTP surface's is a
 `RequestContext` carrying the caller's `Authorization` and `Cookie`), and the thrown value behind
 a failure — the row keeps `failure.code`, never the throwable.
 
@@ -732,7 +733,7 @@ The table has **no purge**, deliberately, and it is the one framework table that
 stale idempotency row is meaningless while a stale audit row *is* the record, and "how long" is a
 legal answer that differs per app. Pruning or partitioning `x_audit` is yours.
 
-A denial is recorded because `invoke` wraps the whole path — `guard` throws **before** `handle`,
+A denial is recorded because `invoke` wraps the whole path — `guardAction` throws **before** `handle`,
 so nothing you could write around your own handler would ever see one. That is the reason this
 lives in the framework and the row does not.
 

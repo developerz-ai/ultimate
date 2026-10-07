@@ -20,7 +20,7 @@ import { assert, systemClock } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Pacer } from './backfill-rate';
-import { createPacer } from './backfill-rate';
+import { backfillPacer } from './backfill-rate';
 import type { DurationInput } from './clock';
 import { nowMs } from './clock';
 import type { ExportFormat, ExportRecord } from './export-format';
@@ -177,7 +177,7 @@ export function exportRows<Row, I>(definition: ExportDefinition<Row, I>): JobHan
   const pace =
     definition.rate === undefined
       ? undefined
-      : createPacer({ rate: definition.rate, job: definition.name, clock });
+      : backfillPacer({ rate: definition.rate, job: definition.name, clock });
 
   // Resolved per write, never here: this line runs at the app's import, before its storage exists.
   const planned: PlannedExport<Row, I> = {

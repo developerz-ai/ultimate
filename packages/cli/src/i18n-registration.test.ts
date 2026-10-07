@@ -12,6 +12,7 @@ import {
   resetCatalogs,
   resetLocaleConfig,
 } from '@ultimat3/i18n';
+import { UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
 import { VERIFY_STEPS } from './cmd-verify';
 import { CLI_ORIGIN, type DuplicateInstall } from './duplicate-packages';
 import {
@@ -43,7 +44,7 @@ const extraction: Extraction = {
 const unusedRunner = () => expect.unreachable('applies must not spawn a process');
 
 /** An app that loads and registers nothing — the shape castlefight.online shipped. */
-const loadsNothing = async () => ({ findings: [], defaultLocale: 'en' });
+const loadsNothing = async () => ({ findings: [], locales: UNDECLARED_LOCALES });
 
 /** No second copy anywhere — what every install but one has answered. */
 const oneCopy = async () => [];
@@ -142,7 +143,7 @@ describe('unit · checkRegistration', () => {
       ignoreUnused: [],
       load: async () => {
         for (const [locale, catalog] of Object.entries(shipped)) registerCatalog(locale, catalog);
-        return { findings: [], defaultLocale: 'en' };
+        return { findings: [], locales: UNDECLARED_LOCALES };
       },
       duplicates: duplicated,
     });
@@ -161,7 +162,7 @@ describe('unit · checkRegistration', () => {
       ignoreUnused: [],
       load: async () => {
         for (const [locale, catalog] of Object.entries(shipped)) registerCatalog(locale, catalog);
-        return { findings: [], defaultLocale: 'en' };
+        return { findings: [], locales: UNDECLARED_LOCALES };
       },
     });
 
@@ -231,7 +232,7 @@ describe('unit · checkRegistration', () => {
       catalogs: shipped,
       extraction,
       ignoreUnused: [],
-      load: async () => ({ findings: [broken], defaultLocale: 'en' }),
+      load: async () => ({ findings: [broken], locales: UNDECLARED_LOCALES }),
     });
 
     expect(report.findings).toContainEqual(broken);
@@ -247,7 +248,7 @@ describe('unit · checkRegistration', () => {
         for (const [locale, catalog] of Object.entries(shipped)) registerCatalog(locale, catalog);
         return {
           findings: [{ code: 'X_CLI_UNEXPECTED', cause: 'a route', fix: 'x doctor --json' }],
-          defaultLocale: 'en',
+          locales: UNDECLARED_LOCALES,
         };
       },
     });
@@ -261,7 +262,7 @@ describe('unit · a mounted admin’s DERIVED keys are audited per locale', () =
   // spells a key `defineAdmin` derives, so the source audit could never see one.
   const wired = async () => {
     for (const [locale, catalog] of Object.entries(shipped)) registerCatalog(locale, catalog);
-    return { findings: [], defaultLocale: 'en' };
+    return { findings: [], locales: UNDECLARED_LOCALES };
   };
   const check = (adminKeys: readonly string[], load = wired) =>
     checkRegistration({
@@ -300,7 +301,7 @@ describe('unit · a mounted admin’s DERIVED keys are audited per locale', () =
       for (const [locale, catalog] of Object.entries(shipped)) {
         registerCatalog(locale, { ...catalog, 'admin.orgs.title': loudMiss('admin.orgs.title') });
       }
-      return { findings: [], defaultLocale: 'en' };
+      return { findings: [], locales: UNDECLARED_LOCALES };
     });
     expect(report.findings).toHaveLength(2);
   });

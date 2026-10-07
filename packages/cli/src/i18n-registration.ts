@@ -19,6 +19,7 @@ import {
   registeredLocales,
 } from '@ultimat3/i18n';
 import { mountedAdminKeys } from './admin-catalog-keys';
+import type { LoadedApp } from './app-load';
 import { loadApp } from './app-load';
 import type { DuplicateProbe } from './duplicate-packages';
 import { duplicateCause, duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
@@ -37,10 +38,7 @@ const I18N_PKG = '@ultimat3/i18n';
  * can resolve `@ultimat3/*`. `loadApp` is the production value, and it is the same call
  * `serveApp` makes: asking a different loader than the server uses would prove nothing.
  */
-export type AppLoader = (root: string) => Promise<{
-  readonly findings: readonly Finding[];
-  readonly defaultLocale: string;
-}>;
+export type AppLoader = (root: string) => Promise<Pick<LoadedApp, 'findings' | 'locales'>>;
 
 export interface RegistrationInput {
   readonly root: string;
@@ -121,9 +119,9 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
   let locales = gaps.length;
 
   if (Object.keys(input.catalogs).length === 0) {
-    const unresolved = unresolvedUsedKeys(input, app.defaultLocale);
+    const unresolved = unresolvedUsedKeys(input, app.locales.defaultLocale);
     if (unresolved.length > 0) {
-      findings.push(findingFrom(catalogsNeverRegistered(app.defaultLocale, unresolved)));
+      findings.push(findingFrom(catalogsNeverRegistered(app.locales.defaultLocale, unresolved)));
       unregistered += unresolved.length;
       locales += 1;
     }

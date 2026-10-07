@@ -3,20 +3,9 @@
 // closed), and reading that field alone would stop retrying every job in every shipped app.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import {
-  classifyThrown as coreClassifyThrown,
-  statedDelayMs as coreStatedDelayMs,
-  registerErrorRetry,
-  UltimateError,
-} from '@ultimat3/core';
+import { classifyThrown, registerErrorRetry, statedDelayMs, UltimateError } from '@ultimat3/core';
 import type { RetryPolicy } from './retry';
-import {
-  classifyThrown,
-  failureForRow,
-  nextRetryForError,
-  recordedFailure,
-  statedDelayMs,
-} from './retry-classification';
+import { failureForRow, nextRetryForError, recordedFailure } from './retry-classification';
 
 const policy: RetryPolicy = {
   attempts: 3,
@@ -47,16 +36,9 @@ beforeEach(() => {
 });
 
 describe('classifyThrown', () => {
-  // Identity, not agreement. Two functions that answer the same today are two functions that can
-  // drift tomorrow, and the rule they share — an unregistered code carrying `terminal` reads as
-  // UNCLASSIFIED — is the one whose loss dead-letters attempt 1 of every job in every app. A copy
-  // here would make every assertion below prove it about this package's copy and nothing about the
-  // executor's, once core is the tier that owns the table.
-  test('is core’s function, not a copy of it', () => {
-    expect(classifyThrown).toBe(coreClassifyThrown);
-    expect(statedDelayMs).toBe(coreStatedDelayMs);
-  });
-
+  // Core's function, imported — never a copy or a re-export here (`X_HELPER_COPY`). The rule it
+  // holds — an unregistered code carrying `terminal` reads as UNCLASSIFIED — is the one whose loss
+  // dead-letters attempt 1 of every job in every app, so it is asserted where the executor reads it.
   test('reads a declared classification, whichever kind', () => {
     expect(classifyThrown(coded('X_TEST_CLASSIFY_TERMINAL'))).toBe('terminal');
     expect(classifyThrown(coded('X_TEST_CLASSIFY_RETRYABLE'))).toBe('retryable');

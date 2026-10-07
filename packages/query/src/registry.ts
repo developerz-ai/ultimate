@@ -64,6 +64,6 @@ export function describeQueries(): readonly QueryDescriptor[] {
 }
 
 /** Test-only. Production registers once at boot. */
-export function resetRegistry(): void {
+export function resetQueries(): void {
   registry.clear();
 }

@@ -7,7 +7,7 @@ import { postgresClient } from './client';
 import { DbError } from './errors';
 import { fakeDriver } from './fake-pglite-fixture';
 import { assertListenChannel, canListen } from './listen';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 
 const host = globalThis as unknown as { Bun: { SQL: unknown } };
 const realBunSql = host.Bun.SQL;
@@ -121,7 +121,7 @@ describe('unit · the LISTEN seam', () => {
     expect(pooled.fix).toContain('bun upgrade');
 
     const embedded = await caught(
-      createPgliteClient({ driver: fakeDriver({ rows: [] }) }).listen('x_a', () => undefined),
+      pgliteClient({ driver: fakeDriver({ rows: [] }) }).listen('x_a', () => undefined),
     );
     expect(embedded.cause).toContain('no listen()');
   });
@@ -130,7 +130,7 @@ describe('unit · the LISTEN seam', () => {
     let stops = 0;
     const channels: string[] = [];
     let deliver: (payload: string) => void = () => undefined;
-    const client = createPgliteClient({
+    const client = pgliteClient({
       driver: {
         ...fakeDriver({ rows: [] }),
         async listen(channel, callback) {
@@ -160,7 +160,7 @@ describe('unit · the LISTEN seam', () => {
   });
 
   test('canListen separates a client that holds a session from one that cannot', () => {
-    expect(canListen(createPgliteClient({ driver: fakeDriver({ rows: [] }) }))).toBe(true);
+    expect(canListen(pgliteClient({ driver: fakeDriver({ rows: [] }) }))).toBe(true);
     expect(canListen({ query: () => Promise.resolve([]) })).toBe(false);
   });
 });

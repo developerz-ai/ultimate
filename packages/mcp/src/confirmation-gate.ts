@@ -3,7 +3,7 @@
 // `handle` — where a projected action's full policy runs. So the order is visibility → scope →
 // args → admit → confirmation → policy, and a caller the tool refuses outright never opens a row.
 
-import { keyedFingerprint, seal, uuid } from '@ultimat3/core';
+import { keyedFingerprint, seal, uuidV7 } from '@ultimat3/core';
 import {
   McpConfirmationContestedError,
   McpConfirmationExpiredError,
@@ -65,7 +65,7 @@ function gate(tool: AnyMcpTool, confirmations: McpConfirmations): AnyMcpTool {
       tool.admit?.(caller);
       const now = clock.now();
       const draft = {
-        id: uuid(clock),
+        id: uuidV7(clock),
         actorId: caller.actor.id,
         orgId: caller.actor.orgId ?? null,
         tool: tool.name,

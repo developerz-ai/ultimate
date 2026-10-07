@@ -10,7 +10,7 @@
 // the transaction's connection — so the wiring is one line there and no tier crossing here.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
-import { uuid } from '@ultimat3/core';
+import { uuidV7 } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import {
@@ -96,7 +96,7 @@ export function postgresOutboxStore(options: PgOutboxOptions): OutboxStore {
   // One id per store, minted here rather than per claim: `claimed_by` is read by an operator
   // asking which relay is sitting on a batch, and a value that changed every tick answers nobody.
   // Per-store is also the granularity the fence needs — two relays are two processes, two stores.
-  const relayId = options.relayId ?? `relay-${uuid()}`;
+  const relayId = options.relayId ?? `relay-${uuidV7()}`;
   // Resolved once, at construction, so a lease this store could never honour fails where it was
   // written instead of inside a relay tick whose only trace is a log line nobody reads.
   const claimLeaseMs = resolveClaimLeaseMs(options.claimLeaseMs);

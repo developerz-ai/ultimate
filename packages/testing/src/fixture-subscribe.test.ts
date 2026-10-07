@@ -7,10 +7,10 @@
 // committed write, and `liveQueryDefinition` turning a declared query into something subscribable.
 
 import { afterEach, beforeEach, test as bunTest, describe, expect } from 'bun:test';
-import { type Actor, createContext, runWithContext, userActor } from '@ultimat3/core';
+import { type Actor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { database, defaultDriver, entity, setRowObserver, text, uuid } from '@ultimat3/entity';
 import { can, definePermissions, defineRoles } from '@ultimat3/policy';
-import { from, query, registerQueries, resetRegistry, t } from '@ultimat3/query';
+import { from, query, registerQueries, resetQueries, t } from '@ultimat3/query';
 import { type SubscribeDriver, subscribeDriver } from './fixture-subscribe';
 import { testName } from './test-types';
 
@@ -65,7 +65,7 @@ const member = (id: string, orgId: string): Actor => userActor({ id, orgId, role
  * be testing a call no app makes.
  */
 const as = <T>(actor: Actor, work: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor }), work);
+  runWithContext(ctxOf({ actor }), work);
 
 const NOTE_ONE = '00000000-0000-4000-8000-000000000001';
 const NOTE_TWO = '00000000-0000-4000-8000-000000000002';
@@ -88,7 +88,7 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
     // The memory driver is process-wide, so fresh is something each test does rather than
     // something a new object gives it — the same call `examples/dummy`'s seed fixture makes.
     defaultDriver().reset?.();
-    resetRegistry();
+    resetQueries();
     registerQueries({ liveNotes });
     driver = await subscribeDriver();
     await seed();
@@ -96,7 +96,7 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
 
   afterEach(async () => {
     await driver.stop();
-    resetRegistry();
+    resetQueries();
     // The observer is process-global and `driver.stop()` restores what it replaced; this is the
     // belt for a test that threw between `subscribeDriver` and here.
     setRowObserver(null);
@@ -286,7 +286,7 @@ describe(testName('unit', 'the subscribe fixture with nothing to serve'), () => 
   bunTest(
     'an empty query registry is a refusal, not a working socket serving nothing',
     async () => {
-      resetRegistry();
+      resetQueries();
       await expect(subscribeDriver()).rejects.toBeUltimateError('X_TEST_LIVE_NODE_EMPTY');
     },
   );

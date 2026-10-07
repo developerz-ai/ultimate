@@ -5,10 +5,10 @@
 // next caller, and an OAuth error RFC 6749 §5.1 says must carry `no-store`.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { createRateLimiter } from './rate-limit';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { rateLimiter } from './rate-limit';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const challenge = (): Response =>
   new Response('{"code":"X_UNAUTHENTICATED"}', {
@@ -21,7 +21,7 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/page',
     meta: { name: 'page', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   { method: 'POST', path: '/mcp', meta: { name: 'mcp', auth: 'public' }, handler: challenge },
   { method: 'GET', path: '/gated', meta: { name: 'gated', auth: 'public' }, handler: challenge },
@@ -29,7 +29,7 @@ const routes: readonly Route[] = [
     method: 'POST',
     path: '/token',
     meta: { name: 'token', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'GET',
@@ -45,7 +45,7 @@ const routes: readonly Route[] = [
     method: 'POST',
     path: '/hinted',
     meta: { name: 'hinted', auth: 'public', cache: { mode: 'public', sMaxAgeSeconds: 60 } },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   {
     method: 'GET',
@@ -59,10 +59,10 @@ const routes: readonly Route[] = [
   },
 ];
 
-const pipeline = createPipeline({
-  table: createRouter(routes),
+const pipeline = httpPipeline({
+  table: httpRouter(routes),
   config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null }),
-  limiter: createRateLimiter({
+  limiter: rateLimiter({
     config: {
       enabled: true,
       defaultBucket: 'default',
@@ -133,14 +133,14 @@ describe('an exchange a shared cache cannot replay is never offered to one', () 
 // directives read as an offer, so a per-user body under `max-age=3600` went to the CDN as written.
 describe('any freshness without private or no-store is an offer to a shared cache', () => {
   const declared = (value: string, actor: 'member' | 'anonymous'): Promise<Response> =>
-    createPipeline({
-      table: createRouter([
+    httpPipeline({
+      table: httpRouter([
         {
           method: 'GET',
           path: '/me',
           meta: { name: 'me', auth: 'public' },
           handler: () => {
-            const response = text('hello, ada');
+            const response = textResponse('hello, ada');
             response.headers.set('cache-control', value);
             response.headers.set('surrogate-key', 'me');
             return response;

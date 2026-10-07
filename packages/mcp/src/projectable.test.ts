@@ -8,9 +8,9 @@
 // that reaches it, and it is a real `action` and a real `query` throughout.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
+import { action, registerAction, resetActions } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -18,7 +18,7 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { ProjectablePrimitive } from './from-action';
@@ -31,7 +31,7 @@ const guest = agentActor({ id: 'a2', orgId: 'o1', roles: ['guest'] });
 const caller = (actor: Actor): McpCaller => ({ actor, scopes: new Set<string>() });
 
 /** Every tool runs inside a request; the child context the projection opens needs a parent. */
-const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
 const textOf = (result: McpToolResult): string =>
   result.content.map((block) => (block.type === 'text' ? block.text : '')).join('');

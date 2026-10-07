@@ -33,7 +33,7 @@ function randomBytes(length: number): Uint8Array {
 /**
  * A full 10 bits, from both bytes. Reading `bytes[0]` alone masked an 8-bit value with a 10-bit
  * mask, so the seed only ever reached 255 while `COUNTER_SEED_MASK` declared 1023 — the constant
- * and the code disagreed, and the second byte was allocated on every `uuid()` for nothing.
+ * and the code disagreed, and the second byte was allocated on every `uuidV7()` for nothing.
  */
 function seedCounter(): number {
   const bytes = randomBytes(2);
@@ -43,7 +43,7 @@ function seedCounter(): number {
 /**
  * `new Uint8Array(NaN)` is a zero-length array, not a throw, so an unscreened length made this
  * answer `''` — an id that is no id, minted silently. `min: 1`: zero bytes of randomness is the
- * same empty string, and every caller here (`uuid`, `traceId`, `spanId`) wants a width.
+ * same empty string, and every caller here (`uuidV7`, `traceId`, `spanId`) wants a width.
  */
 export function randomHex(byteLength: number): string {
   const bytes = randomBytes(finiteCount('randomHex', 'byteLength', byteLength, 1));
@@ -60,7 +60,7 @@ export function randomHex(byteLength: number): string {
  * Strictly increasing lexicographically even within the same millisecond, and never goes
  * backwards when the wall clock does.
  */
-export function uuid(clock: Clock = systemClock): string {
+export function uuidV7(clock: Clock = systemClock): string {
   let epochMs = clock.now().getTime();
   if (epochMs < lastEpochMs) epochMs = lastEpochMs;
 
@@ -108,7 +108,7 @@ export function uuidTimestamp(id: string): Date {
       // problem document, and the strings that arrive here wrong are session tokens and API keys
       // as often as they are typos. The expected shape is the half that helps the reader.
       cause: `expected a UUIDv7 (${UUID_SHAPE}), received ${describeValue(id)}`,
-      fix: 'generate ids with uuid() from @ultimat3/core',
+      fix: 'generate ids with uuidV7() from @ultimat3/core',
       meta: { received: describeValue(id) },
     });
   }
@@ -131,7 +131,7 @@ export function nanoid(length = 21): string {
 
 /** `typedId<'post'>()` — a UUIDv7 branded so it cannot be passed where a user id is wanted. */
 export function typedId<K extends string>(clock: Clock = systemClock): Id<K> {
-  return uuid(clock) as Id<K>;
+  return uuidV7(clock) as Id<K>;
 }
 
 /** Validate an untrusted string into a branded id. Throws `X_ID_INVALID`. */
@@ -166,9 +166,9 @@ const ALL_ZERO = /^0+$/;
  * The ONE definition of "is this a W3C trace id" — `traceparent` parsing, and any layer that
  * accepts an id from outside, ask here rather than carrying a second regex.
  *
- * A dashed UUID is the failure this predicate exists to name: `uuid()` produces 36 characters with
+ * A dashed UUID is the failure this predicate exists to name: `uuidV7()` produces 36 characters with
  * hyphens, every OTLP collector rejects it, and nothing downstream said so — the trace simply
- * never appeared. Mint trace ids with `traceId()`, never `uuid()`. All-zero is invalid per the
+ * never appeared. Mint trace ids with `traceId()`, never `uuidV7()`. All-zero is invalid per the
  * spec: it is the wire's spelling of "no trace", not a trace whose id happens to be zero.
  */
 export function isTraceId(value: unknown): boolean {

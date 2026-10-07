@@ -95,7 +95,7 @@ describe('the barrel re-exports the modules themselves, never copies', () => {
     const registry = await import('./registry');
     const island = await import('./island');
     expect(barrel.registerRoute).toBe(registry.registerRoute);
-    expect(barrel.describeRoutes).toBe(registry.describeRoutes);
+    expect(barrel.describePages).toBe(registry.describePages);
     expect(barrel.routeFor).toBe(registry.routeFor);
     // `matchRoute` is deleted, not renamed: two exported pattern matchers with different
     // precedence rules is two answers to "which route is this?", and `@ultimat3/http`'s trie

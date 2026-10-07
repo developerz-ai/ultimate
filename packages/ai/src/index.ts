@@ -12,6 +12,7 @@ export type { AgentJobOptions } from './agent-job';
 export { agentJob } from './agent-job';
 export type {
   BudgetKeys,
+  BudgetLedger,
   BudgetLedgerInput,
   BudgetLimits,
   BudgetReport,
@@ -21,7 +22,6 @@ export type {
   SpendEstimate,
 } from './budget';
 export {
-  BudgetLedger,
   budgetKeysFor,
   currentBudget,
   estimateSpend,
@@ -45,16 +45,16 @@ export {
 } from './content-blocks';
 export type { ContentRefusal } from './content-errors';
 export { AiContentUnsupportedError } from './content-errors';
-export type { EchoProviderInput } from './echo-provider';
-export { EchoProvider } from './echo-provider';
-export type { Embedder, HashEmbedderInput } from './embeddings';
+export type { EchoProvider, EchoProviderInput } from './echo-provider';
+export { echoProvider } from './echo-provider';
+export type { Embedder, HashEmbedder, HashEmbedderInput } from './embeddings';
 export {
   cosine,
   embedBatched,
   embedOne,
-  HashEmbedder,
-  normalize,
-  tokenize,
+  hashEmbedder,
+  normalizeVector,
+  wordTokens,
 } from './embeddings';
 export type { AiErrorCode } from './errors';
 export {
@@ -114,8 +114,14 @@ export {
   resetEvals,
 } from './evals';
 export type { AiFetch } from './fetch-seam';
-export type { CreateGatewayInput, Gateway, GatewayCache, RetryPolicy } from './gateway';
-export { backoffMs, cacheKeyFor, createGateway, DEFAULT_RETRY, isRetryable } from './gateway';
+export type { Gateway, GatewayCache, ProviderGatewayInput, RetryPolicy } from './gateway';
+export {
+  backoffMs,
+  DEFAULT_GATEWAY_RETRY,
+  isRetryable,
+  promptCacheKey,
+  providerGateway,
+} from './gateway';
 export type { HiveDef, HiveSplitArgs } from './hive';
 export { hive } from './hive';
 export { HiveEmptyError } from './hive-errors';
@@ -174,6 +180,7 @@ export {
 export type {
   AiContentBlock,
   AiMessage,
+  AnthropicProvider,
   AnthropicProviderInput,
   GenerateRequest,
   GenerateResult,
@@ -184,7 +191,7 @@ export type {
   TokenUsage,
 } from './provider';
 export {
-  AnthropicProvider,
+  anthropicProvider,
   costOf,
   estimateCost,
   estimateInputTokens,
@@ -204,17 +211,22 @@ export type {
   Reranker,
   RetrieveInput,
 } from './rag';
-export { assembleContext, chunk, indexDocument, passthroughReranker, retrieve } from './rag';
+export {
+  assembleContext,
+  chunkDocument,
+  indexDocument,
+  passthroughReranker,
+  retrieve,
+} from './rag';
 export { assertNoSecrets } from './redaction';
-export type { RemoteEmbedderInput } from './remote-embedder';
-export { RemoteEmbedder } from './remote-embedder';
+export type { RemoteEmbedder, RemoteEmbedderInput } from './remote-embedder';
+export { remoteEmbedder } from './remote-embedder';
 export type { AiRuntimeInput, Redactor } from './runtime';
 export {
   aiEmbedder,
   aiGateway,
   aiRedactor,
   configureAi,
-  MAX_SEMANTIC_CACHE_SCOPES,
   semanticCacheFor,
 } from './runtime';
 export type { Scorer } from './scorers';
@@ -247,5 +259,5 @@ export type {
 } from './vector';
 export { fuse, memoryVectorStore } from './vector';
 export type { VectorScope } from './vector-scope';
-export { NO_TENANT, tenantOf, UNSCOPED, VectorUnscopedError } from './vector-scope';
+export { NO_VECTOR_TENANT, tenantOf, UNSCOPED, VectorUnscopedError } from './vector-scope';
 export type { StreamState } from './wire';

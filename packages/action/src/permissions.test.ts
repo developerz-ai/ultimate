@@ -3,11 +3,10 @@
 // string, so every non-trivial rule in a real app reported its permissions as unenforced.
 
 import { describe, expect, test } from 'bun:test';
-import { and, can, not, or } from '@ultimat3/policy';
+import { and, can, not, or, policyCapability, policyPermissions } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { ActionPolicy } from './policy-gate';
-import { policyCapability, policyPermissions } from './policy-gate';
 
 const Input = t.object({ id: t.string });
 const Output = t.object({ ok: t.boolean });

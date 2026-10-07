@@ -12,7 +12,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Patch } from './matcher';
 import { assertMatchable } from './matcher';
 import type { QueryPolicy, QuerySubject } from './policy-gate';
-import { guard } from './policy-gate';
+import { guardQuery } from './policy-gate';
 import type { AnyQuery, Query } from './query';
 import { queryHash } from './query';
 import type { QueryLimitCaller } from './rate-limit-gate';
@@ -164,7 +164,7 @@ export async function toLiveQuery<TInput extends StandardSchemaV1, TRow extends 
     limit: shape.limit,
     execute: () => source.execute(),
     authorize: async (subject) => {
-      guard(policy, subject, 'live');
+      guardQuery(policy, subject, 'live');
     },
     initialCursor: (rows) => ({
       epoch,

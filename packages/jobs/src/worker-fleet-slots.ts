@@ -73,7 +73,7 @@ export interface FleetSlots {
    * to do without one. `granted` is also the answer for "no cap declared": a job with no
    * `concurrency` never touches the lease table.
    *
-   * A driver with no lease store cannot reach here: `createWorker().start()` refuses to boot when
+   * A driver with no lease store cannot reach here: `jobWorker().start()` refuses to boot when
    * a registered job declares `concurrency` and the driver has none, because a cap that silently
    * holds per process is the documented-guarantee-that-does-nothing axiom 3 exists to make
    * impossible.

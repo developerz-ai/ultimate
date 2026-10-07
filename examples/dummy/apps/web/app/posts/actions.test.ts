@@ -6,7 +6,7 @@
  * before a single token is spent.
  */
 
-import { configureAi, createGateway, EchoProvider } from '@ultimat3/ai';
+import { configureAi, echoProvider, providerGateway } from '@ultimat3/ai';
 import { beforeEach, expect, test } from '@ultimat3/testing';
 import { asDraftData, requestPostsExport, reviewDraft, summarizePosts } from './actions';
 import { exportPosts, postsExportPrefix } from './jobs';
@@ -26,7 +26,7 @@ const answer = (prompt: string): string => {
 // test answers from a summary another one cached.
 beforeEach(() => {
   sent.length = 0;
-  configureAi({ gateway: createGateway({ providers: [new EchoProvider({ fallback: answer })] }) });
+  configureAi({ gateway: providerGateway({ providers: [echoProvider({ fallback: answer })] }) });
 });
 
 test('summarizePosts answers one member per post, in the order asked, and a foreign post fails alone', async ({

@@ -3,7 +3,7 @@
 // underneath (`transitionRow`) addresses any single-column key.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, UltimateError, userActor } from '@ultimat3/core';
+import { ctxOf, UltimateError, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { t, toWireSchema } from '@ultimat3/schema';
@@ -16,7 +16,7 @@ interface Row {
   readonly status: State;
 }
 
-const ctx = createContext({ actor: { ...userActor({ id: 'u1' }), permissions: ['order:move'] } });
+const ctx = ctxOf({ actor: { ...userActor({ id: 'u1' }), permissions: ['order:move'] } });
 const UUID = '00000000-0000-4000-8000-0000000000aa';
 
 const moved: string[] = [];

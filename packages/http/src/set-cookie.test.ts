@@ -2,12 +2,12 @@
 // core's one serializer. Pinned end to end through the pipeline — the `response` stage's append is
 // the half that decides whether two cookies reach the browser as two lines or as one.
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, UltimateError } from '@ultimat3/core';
+import { ctxOf, runWithContext, UltimateError } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { asCtx, createRequestContext } from './context';
-import { createPipeline } from './pipeline';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { asCtx, requestContext } from './context';
+import { httpPipeline } from './pipeline';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 import { deleteCookie, setCookie } from './set-cookie';
 
 const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null });
@@ -18,7 +18,7 @@ const route = (path: string, handler: () => void): Route => ({
   meta: { name: path.slice(1), auth: 'public' },
   handler: () => {
     handler();
-    return text('ok');
+    return textResponse('ok');
   },
 });
 
@@ -36,7 +36,7 @@ const routes: readonly Route[] = [
   route('/delete-default', () => deleteCookie('theme')),
 ];
 
-const pipeline = createPipeline({ table: createRouter(routes), config });
+const pipeline = httpPipeline({ table: httpRouter(routes), config });
 
 const cookiesOf = async (path: string): Promise<readonly string[]> =>
   (await pipeline.handle(new Request(`http://localhost${path}`), { role: 'web' })).headers
@@ -44,7 +44,7 @@ const cookiesOf = async (path: string): Promise<readonly string[]> =>
     .slice();
 
 const inRequest = (fn: () => void) => {
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url: new URL('https://example.com/'),
     method: 'GET',
     role: 'web',
@@ -89,7 +89,7 @@ describe('setCookie', () => {
   });
 
   test("an invalid cookie is core's X_COOKIE_INVALID, and nothing is appended", () => {
-    const ctx = createRequestContext({
+    const ctx = requestContext({
       url: new URL('https://example.com/'),
       method: 'GET',
       role: 'web',
@@ -122,7 +122,7 @@ describe('setCookie', () => {
 
   test('outside a request it refuses rather than setting a cookie nobody will receive', () => {
     expect(codeOf(() => setCookie('theme', 'dark'))).toBe('X_NO_CONTEXT');
-    const job = createContext({ role: 'worker' });
+    const job = ctxOf({ role: 'worker' });
     expect(codeOf(() => runWithContext(job, () => setCookie('theme', 'dark')))).toBe(
       'X_NO_REQUEST',
     );
@@ -149,7 +149,7 @@ describe('deleteCookie', () => {
   });
 
   test('outside a request it refuses too', () => {
-    const job = createContext({ role: 'worker' });
+    const job = ctxOf({ role: 'worker' });
     expect(codeOf(() => runWithContext(job, () => deleteCookie('theme')))).toBe('X_NO_REQUEST');
   });
 });

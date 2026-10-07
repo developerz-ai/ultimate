@@ -11,7 +11,7 @@ import { agentActor, setLogSink, UltimateError } from '@ultimat3/core';
 import { McpScopeDeniedError } from './errors';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { textResult } from './registry';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import type { JsonRpcResponse } from './wire';
 import { INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
@@ -66,7 +66,7 @@ describe('outcome 1 — hidden: absent from the catalog, ToolNotFound on call', 
       return textResult('ran');
     },
   };
-  const server = createMcpServer({ tools: [hidden] });
+  const server = mcpServer({ tools: [hidden] });
 
   test('a hidden tool answers exactly what a nonexistent one answers', async () => {
     const member = caller('member', ['every:scope']);
@@ -121,7 +121,7 @@ describe('outcome 1 — hidden: absent from the catalog, ToolNotFound on call', 
         return textResult('seats');
       },
     };
-    const scoped = createMcpServer({ tools: [perCaller] });
+    const scoped = mcpServer({ tools: [perCaller] });
     const allowed: McpCaller = { actor: agentActor({ id: 'agent-allowed' }), scopes: new Set() };
     const refused: McpCaller = { actor: agentActor({ id: 'agent-other' }), scopes: new Set() };
 
@@ -151,7 +151,7 @@ describe('outcome 1 — hidden: absent from the catalog, ToolNotFound on call', 
         return textResult('seats');
       },
     };
-    const scoped = createMcpServer({ tools: [brittle] });
+    const scoped = mcpServer({ tools: [brittle] });
     const member = caller('member', ['every:scope']);
 
     const onBrittle = await scoped.handle(call('admin.seats'), member);
@@ -185,7 +185,7 @@ describe('outcome 2 — scope: named out loud, and decided before the policy', (
       throw new PolicyDeniedError();
     },
   };
-  const server = createMcpServer({ tools: [scoped] });
+  const server = mcpServer({ tools: [scoped] });
 
   test('names the missing scope and carries a runnable fix', async () => {
     const response = await server.handle(
@@ -268,7 +268,7 @@ describe('outcome 3 — policy: X_FORBIDDEN, exactly as HTTP answers it', () => 
       throw new PolicyDeniedError();
     },
   };
-  const server = createMcpServer({ tools: [guarded] });
+  const server = mcpServer({ tools: [guarded] });
 
   test('renders as a tool result the model can reason about, not a transport failure', async () => {
     const response = await server.handle(call('orders.void'), caller('member', []));
@@ -308,7 +308,7 @@ describe('tools/list is per connection, not a static file', () => {
       return textResult('ok');
     },
   };
-  const server = createMcpServer({ tools: [ownerOnly, open] });
+  const server = mcpServer({ tools: [ownerOnly, open] });
 
   test('one server object answers two callers with two catalogs', async () => {
     const asOwner = await server.handle(list, caller('owner', []));
@@ -334,7 +334,7 @@ describe('every outcome is audited', () => {
       return textResult('ran');
     },
   };
-  const server = createMcpServer({ tools: [hidden] });
+  const server = mcpServer({ tools: [hidden] });
 
   /** What the PROCESS logger wrote, through its own sink seam — never a patched `process.stdout`. */
   async function captureLines(run: () => Promise<unknown>): Promise<Record<string, unknown>[]> {

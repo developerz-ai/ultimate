@@ -78,7 +78,7 @@ export interface LiveNodeOptions {
   /** Pins the reconnect epoch, so a test can force a refetch by changing it. */
   readonly epoch?: string;
   // No `onMutate`: the socket carries no writes any more (plan 101, decision 2) — a mutation goes
-  // over HTTP as an action, and `createSyncNode` takes no mutation hook to forward.
+  // over HTTP as an action, and `syncNode` takes no mutation hook to forward.
 }
 
 export interface LiveNodeHandle {
@@ -115,7 +115,7 @@ const ACTORS = new Map<string, Actor | null>();
 
 let sequence = 0;
 
-export async function createLiveNode(options: LiveNodeOptions = {}): Promise<LiveNodeHandle> {
+export async function liveNode(options: LiveNodeOptions = {}): Promise<LiveNodeHandle> {
   const core = await import('@ultimat3/core');
   const query = await import('@ultimat3/query');
   const realtime = await import('@ultimat3/realtime/server');
@@ -126,7 +126,7 @@ export async function createLiveNode(options: LiveNodeOptions = {}): Promise<Liv
   const hub = new realtime.ChannelHub({ transport, sockets });
   const registry = new realtime.LiveQueryRegistry({ source: new realtime.RingChangeBuffer() });
 
-  const ctx = core.createContext({ role: 'sync', buildId });
+  const ctx = core.ctxOf({ role: 'sync', buildId });
   let live = 0;
   for (const target of query.listQueries()) {
     if (!target.isLive) continue;
@@ -143,7 +143,7 @@ export async function createLiveNode(options: LiveNodeOptions = {}): Promise<Liv
   // app that declared nothing. Said here, where the count is known.
   if (live === 0) throw liveNodeUnavailable();
 
-  const node = realtime.createSyncNode({
+  const node = realtime.syncNode({
     hub,
     registry,
     transport,

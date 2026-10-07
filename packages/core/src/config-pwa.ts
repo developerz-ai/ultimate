@@ -13,7 +13,7 @@
 import { describeValue } from './error-render';
 
 /**
- * `installPrompt` was removed 2026-08, same rule: `@ultimat3/pwa`'s `createInstallController` is
+ * `installPrompt` was removed 2026-08, same rule: `@ultimat3/pwa`'s `installController` is
  * real and complete, nothing ever threaded the flag into it, and both tracked apps plus every
  * scaffolded app set a switch with no wire. Call the controller from your own affordance instead.
  */

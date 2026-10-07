@@ -4,14 +4,14 @@
 // its own database and drops it afterwards.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, createLogger } from '@ultimat3/core';
+import { ctxOf, structuredLogger } from '@ultimat3/core';
 import type { JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
-  createJobsFacade,
-  createOutboxRelay,
-  createWorker,
+  jobWorker,
   memoryJobDriver,
   memoryOutboxStore,
+  outboxJobsFacade,
+  outboxRelay,
   postgresJobDriver,
   postgresOutboxStore,
   resetJobDriver,
@@ -25,7 +25,7 @@ import { type SendOptions, send } from './mail';
 import { welcomeMail } from './templates';
 
 /** The facade's transaction token, named without importing `@ultimat3/entity` into this package. */
-type Tx = NonNullable<ReturnType<Parameters<typeof createJobsFacade>[1]>>;
+type Tx = NonNullable<ReturnType<Parameters<typeof outboxJobsFacade>[1]>>;
 
 const PAYLOAD = { name: 'Ada', appName: 'Acme', url: 'https://acme.test/app' };
 const TO: SendOptions = { to: 'ada@example.test', locale: 'en', tz: 'UTC' };
@@ -46,15 +46,15 @@ afterEach(() => {
 
 /** Holds a real worker open for a bounded number of polls: the point is what it never delivers. */
 async function drainWith(driver: JobDriver, until?: () => boolean): Promise<void> {
-  const worker = createWorker({
+  const worker = jobWorker({
     driver,
     drainOnShutdown: false,
     pollIntervalMs: 5,
     context: () =>
-      createContext({
+      ctxOf({
         role: 'worker',
         buildId: 'test',
-        logger: createLogger({ writer: () => undefined }),
+        logger: structuredLogger({ writer: () => undefined }),
       }),
   });
   worker.start();
@@ -72,7 +72,7 @@ describe('memory outbox: send() rides the caller’s transaction', () => {
     setJobDriver(queue);
     const store = memoryOutboxStore();
     const tx = { id: 'request' } as unknown as Tx;
-    setJobsFacade(createJobsFacade({ store, driver: queue }, () => tx));
+    setJobsFacade(outboxJobsFacade({ store, driver: queue }, () => tx));
     return { queue, store, tx };
   };
 
@@ -82,7 +82,7 @@ describe('memory outbox: send() rides the caller’s transaction', () => {
     expect(result.queued).toBe(true);
     await store.rollback(tx);
 
-    expect(await createOutboxRelay({ store, driver: queue }).tick()).toBe(0);
+    expect(await outboxRelay({ store, driver: queue }).tick()).toBe(0);
     await drainWith(queue);
     expect(mail.sent).toEqual([]);
   });
@@ -92,7 +92,7 @@ describe('memory outbox: send() rides the caller’s transaction', () => {
     await send(welcomeMail, PAYLOAD, TO);
     await store.commit(tx);
 
-    expect(await createOutboxRelay({ store, driver: queue }).tick()).toBe(1);
+    expect(await outboxRelay({ store, driver: queue }).tick()).toBe(1);
     await drainWith(queue, () => mail.sent.length > 0);
     expect(mail.sent.map((entry) => entry.message.to)).toEqual([['ada@example.test']]);
   });
@@ -160,7 +160,7 @@ describe.skipIf(url === undefined)('pg outbox: send() stages on the caller’s c
       executor,
       txExecutor: () => bound ?? expect.unreachable('staged outside the transaction'),
     });
-    setJobsFacade(createJobsFacade({ store, driver: queue }, () => tx));
+    setJobsFacade(outboxJobsFacade({ store, driver: queue }, () => tx));
     await client
       .begin(async (open) => {
         bound = executorOf(open);
@@ -170,7 +170,7 @@ describe.skipIf(url === undefined)('pg outbox: send() stages on the caller’s c
       .catch((error: unknown) => {
         if (!(error instanceof Rollback)) throw error;
       });
-    await createOutboxRelay({ store, driver: queue }).tick();
+    await outboxRelay({ store, driver: queue }).tick();
     return queue;
   };
 

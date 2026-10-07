@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { StepRecord, StepStore } from './steps';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 class CardDeclined extends Error {}
@@ -26,7 +26,7 @@ function storeRefusingFailures(): StepStore & { readonly refused: StepRecord[] }
 describe('a step whose failure cannot be recorded', () => {
   test('still rejects with the step body error, never the store error', async () => {
     const store = storeRefusingFailures();
-    const runner = createStepRunner({ runId: 'run-f', jobName: 'charge', store });
+    const runner = stepRunner({ runId: 'run-f', jobName: 'charge', store });
     const original = new CardDeclined('card declined');
 
     const thrown = await runner.step
@@ -39,12 +39,12 @@ describe('a step whose failure cannot be recorded', () => {
 
   test('the unrecorded failure costs nothing later: the retry runs the body again', async () => {
     const store = storeRefusingFailures();
-    await createStepRunner({ runId: 'run-g', jobName: 'charge', store })
+    await stepRunner({ runId: 'run-g', jobName: 'charge', store })
       .step.run('charge', () => Promise.reject(new CardDeclined('card declined')))
       .catch((error: unknown) => error);
 
     let calls = 0;
-    const output = await createStepRunner({ runId: 'run-g', jobName: 'charge', store }).step.run(
+    const output = await stepRunner({ runId: 'run-g', jobName: 'charge', store }).step.run(
       'charge',
       () => {
         calls += 1;

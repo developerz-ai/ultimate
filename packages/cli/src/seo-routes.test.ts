@@ -3,7 +3,7 @@
 // `ROLE=web` container answered 404 for each — and an app has no way to add a non-page GET route.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RouteConfig } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { SITEMAP_MAX_URLS } from '@ultimat3/seo';
@@ -13,10 +13,8 @@ import { siteSeo } from './site-seo';
 
 const BUILD_ID = 'seo-under-test';
 
-const serve = (
-  env: Readonly<Record<string, string | undefined>>,
-): ReturnType<typeof createServer> =>
-  createServer({
+const serve = (env: Readonly<Record<string, string | undefined>>): ReturnType<typeof httpServer> =>
+  httpServer({
     routes: [...seoRoutes({ env }), ...appRoutes({ buildId: BUILD_ID })],
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

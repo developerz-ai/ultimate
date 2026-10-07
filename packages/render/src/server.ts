@@ -47,10 +47,10 @@ export type {
   IsrServeResult,
 } from './render-isr';
 export {
-  createIsrController,
   DEFAULT_ISR_REGENERATE_DEADLINE_MS,
   ISR_LOCALE_PARAM,
   invalidateAndRevalidate,
+  isrController,
   isrKey,
 } from './render-isr';
 export type { IsrEntry, IsrState, IsrStore, MemoryIsrStoreOptions } from './render-isr-store';

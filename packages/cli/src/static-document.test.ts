@@ -2,7 +2,7 @@
 // browser already holds the bytes — and neither for any other mode, a query string, or a 404.
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { RenderMode } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { clearRoutes, defineRoute, registerRoute, withStatus } from '@ultimat3/render';
 import { appRoutes } from './runtime-render';
 import { createStaticMemo } from './static-document';
@@ -41,7 +41,7 @@ function page(
 }
 
 const serverFor = (memoStatic: boolean) =>
-  createServer({
+  httpServer({
     routes: appRoutes({ buildId: BUILD_ID, memoStatic }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

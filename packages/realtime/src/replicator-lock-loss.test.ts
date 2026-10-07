@@ -14,7 +14,7 @@ import {
   readyForQuery,
 } from './pg-connection-fixture';
 import { ensurePostsEntity, FakeWalsender, feedOver } from './pg-replication-fixture';
-import { createReplicator } from './replicator';
+import { changeFeedReplicator } from './replicator';
 import type { Scheduler } from './thundering-herd';
 
 const turns = async (count = 400): Promise<void> => {
@@ -53,7 +53,7 @@ const rig = (sessions: FakeStream[]) => {
     pending.push(fn);
     return () => undefined;
   };
-  const replicator = createReplicator({
+  const replicator = changeFeedReplicator({
     feed,
     lock,
     transport: new InProcessTransport(),

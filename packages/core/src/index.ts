@@ -32,6 +32,7 @@ export {
   ACTOR_KINDS,
   actorFact,
   actorLabel,
+  actorOf,
   actorOrigin,
   agentActor,
   anonymousActor,
@@ -46,7 +47,7 @@ export {
 export type { AddressClass } from './address-class';
 export { addressNetwork, classifyAddress, isPublicAddress } from './address-class';
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
-export { assert, assertNever, type InvariantOptions, invariant } from './assert';
+export { type AssertCodedOptions, assert, assertCoded, assertNever } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';
 /** The four shapes an async region can be in — produced by `realtime`, rendered by `ui`. */
 export type { AsyncState } from './async-state';
@@ -78,11 +79,11 @@ export { isCompiledBundle } from './bunfs';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
 export type { FetchLike, TransportRequest } from './client-dispatch';
-export { IDEMPOTENCY_HEADER } from './client-dispatch';
+export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './client-dispatch';
 /**
  * Flight control for a typed client, and OPT-IN by construction: `@ultimat3/action`'s and
  * `@ultimat3/query`'s `client.ts` each name `ClientFlight` as a TYPE only, so a caller that never
- * mentions `createClientFlight` pays nothing for the fence, the dedup map or the retry loop.
+ * mentions `clientFlight` pays nothing for the fence, the dedup map or the retry loop.
  * Both packages re-export these names unchanged; this is the one copy.
  */
 export type {
@@ -92,7 +93,7 @@ export type {
   FlightKeyOptions,
   FlightPlan,
 } from './client-flight';
-export { createClientFlight, DEFAULT_CLIENT_RETRY, isTransientFailure } from './client-flight';
+export { clientFlight, DEFAULT_CLIENT_RETRY, isTransientFailure } from './client-flight';
 export type { ActionPathStyle, ActionRoute } from './client-paths';
 export {
   ACTION_PATH_PREFIX,
@@ -185,7 +186,7 @@ export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-pol
 export { resolveConflict } from './conflict-policy';
 export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
 export {
-  createContext,
+  ctxOf,
   DEFAULT_LOCALE,
   DEFAULT_TIME_ZONE,
   hasContext,
@@ -374,7 +375,6 @@ export {
   configureTelemetry,
   connections,
   counter,
-  createLogger,
   currentSampler,
   currentSpan,
   currentSpanContext,
@@ -441,6 +441,7 @@ export {
   setLogStream,
   startMetricExport,
   startSpan,
+  structuredLogger,
   traceparent,
   tryOtlpEndpoint,
   withSpan,
@@ -505,11 +506,11 @@ export type {
   FlightGateOptions,
   FlightGateState,
 } from './flight-gate';
-export { createFlightGate, gateOverloaded } from './flight-gate';
+export { flightGate, gateOverloaded } from './flight-gate';
 export { fnv1a } from './fnv1a';
 export { formatBytes } from './format-bytes';
 export type { GenerationFence } from './generation-fence';
-export { createFence, isSuperseded } from './generation-fence';
+export { generationFence, isSuperseded } from './generation-fence';
 export type { PublicHealthBody } from './health-disclosure';
 export { DEFAULT_HEALTH_DETAIL_PEERS, healthBody, healthPeerListed } from './health-disclosure';
 export type { HostDecision, HostRule } from './host-rules';
@@ -527,8 +528,8 @@ export {
   spanId,
   traceId,
   typedId,
-  uuid,
   uuidTimestamp,
+  uuidV7,
 } from './ids';
 export type { ImageFit, ResizeSpec } from './image/canvas';
 export { parseColor } from './image/color';
@@ -562,7 +563,7 @@ export type { ImageFormat, ImageInfo } from './image/probe';
 export { IMAGE_FORMATS, IMAGE_MIME_TYPES, probeImage, sniffImageFormat } from './image/probe';
 export type { ImageSize, Raster } from './image/raster';
 export {
-  createRaster,
+  blankRaster,
   hasAlpha,
   MAX_IMAGE_PIXELS,
 } from './image/raster';
@@ -633,7 +634,13 @@ export { localeSegment, localizePath, splitLocalePath } from './locale-path';
 // The process logger's test seam, beside nothing it groups with: where a default-writer line goes.
 export type { LogSink } from './logger';
 export { setLogSink } from './logger';
-export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
+export {
+  isMcpExposed,
+  type McpAnnotationHints,
+  type McpExposureDeclaration,
+  type McpListFilterOp,
+  type McpListParams,
+} from './mcp-exposure';
 export type { MeasurementActorFactory } from './measurement-actor';
 export {
   declaredMeasurementActor,
@@ -726,10 +733,11 @@ export {
   type ServiceFactory,
 } from './service';
 export type { FlightJoin, Scheduler, SingleFlight, SingleFlightOptions } from './single-flight';
-export { createSingleFlight } from './single-flight';
+export { singleFlight } from './single-flight';
 export { endOfLiteral, maskLiterals, QUOTES, stripComments } from './source-mask';
 export type { StoreMode } from './store-mode';
 export { STORE_MODES, storeMode } from './store-mode';
+export { THEME_STORAGE_KEY } from './theme-storage';
 export { timingSafeEqual } from './timing-safe-equal';
 export {
   frameworkVersion,

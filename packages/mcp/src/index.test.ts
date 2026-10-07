@@ -15,6 +15,20 @@ describe('@ultimat3/mcp public surface', () => {
     expect(typeof surface.toolFrom).toBe('function');
   });
 
+  // 25.0.0: the confirmation table's DDL is published ONCE, by the `@ultimat3/mcp/schema` leaf the
+  // boot installs from (`cli/src/framework-schema.ts`) — a second import path for one statement
+  // is a second place an agent reads it from.
+  test('no table DDL on the barrel — the /schema subpath is its one path', async () => {
+    for (const name of ['MCP_CONFIRMATIONS_TABLE', 'SQL_MCP_CONFIRMATIONS_TABLE']) {
+      expect(surface).not.toHaveProperty(name);
+    }
+    const schema = await import('./confirmation-schema');
+    expect(Object.keys(schema).sort()).toEqual([
+      'MCP_CONFIRMATIONS_TABLE',
+      'SQL_MCP_CONFIRMATIONS_TABLE',
+    ]);
+  });
+
   test('re-exports the one `t`, not a copy of it', () => {
     // A spread or a re-implementation would still typecheck but would stop tracking
     // `configureSchemaProvider()`. Identity is the only assertion that catches that.

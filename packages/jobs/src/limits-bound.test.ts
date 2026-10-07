@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { createLimiter, DEFAULT_MAX_LIMIT_TENANTS } from './limits';
+import { concurrencyLimiter, DEFAULT_MAX_LIMIT_TENANTS } from './limits';
 
 const T0 = Date.UTC(2026, 0, 1);
 
@@ -15,7 +15,7 @@ const T0 = Date.UTC(2026, 0, 1);
 
 describe('the concurrency counters are bounded by what is in flight', () => {
   test('a released slot leaves NO entry behind — zero and absent are the same answer', () => {
-    const limiter = createLimiter({ perTenant: 2 });
+    const limiter = concurrencyLimiter({ perTenant: 2 });
     const lease = limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' });
     expect(limiter.snapshot().byTenant['org-1']).toBe(1);
 
@@ -28,7 +28,7 @@ describe('the concurrency counters are bounded by what is in flight', () => {
   });
 
   test('ten thousand one-job tenants leave ten thousand nothing', () => {
-    const limiter = createLimiter({ perTenant: 2 });
+    const limiter = concurrencyLimiter({ perTenant: 2 });
     for (let index = 0; index < 10_000; index += 1) {
       limiter.tryAcquire({ queue: 'default', tenantId: `org-${index}` })?.release();
     }
@@ -39,7 +39,7 @@ describe('the concurrency counters are bounded by what is in flight', () => {
 describe('the rate window and the refusal log are swept and capped', () => {
   test('a spent rate window is forgotten, not kept as an empty array', () => {
     const clock = frozenClock(T0);
-    const limiter = createLimiter({ ratePerTenant: { limit: 2, windowMs: 1_000 } }, clock);
+    const limiter = concurrencyLimiter({ ratePerTenant: { limit: 2, windowMs: 1_000 } }, clock);
 
     for (let index = 0; index < 500; index += 1) {
       limiter.tryAcquire({ queue: 'default', tenantId: `org-${index}` })?.release();
@@ -54,7 +54,7 @@ describe('the rate window and the refusal log are swept and capped', () => {
 
   test('a stale refusal answers as a missing one, and the sweep drops it', () => {
     const clock = frozenClock(T0);
-    const limiter = createLimiter({ perTenant: 0 }, clock);
+    const limiter = concurrencyLimiter({ perTenant: 0 }, clock);
 
     expect(limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' })).toBeUndefined();
     expect(limiter.blockedBy({ queue: 'default', tenantId: 'org-1' })).toBe('per-tenant');
@@ -68,7 +68,7 @@ describe('the rate window and the refusal log are swept and capped', () => {
 
   test('the cap holds even when nothing has expired — one org per request cannot grow the heap', () => {
     const clock = frozenClock(T0);
-    const limiter = createLimiter(
+    const limiter = concurrencyLimiter(
       { perTenant: 0, ratePerTenant: { limit: 2, windowMs: 3_600_000 } },
       clock,
       { maxTenants: 100 },
@@ -84,9 +84,13 @@ describe('the rate window and the refusal log are swept and capped', () => {
 
   test('the cap evicts the LEAST throttled window first — a full one is never a free reset', () => {
     const clock = frozenClock(T0);
-    const limiter = createLimiter({ ratePerTenant: { limit: 5, windowMs: 3_600_000 } }, clock, {
-      maxTenants: 4,
-    });
+    const limiter = concurrencyLimiter(
+      { ratePerTenant: { limit: 5, windowMs: 3_600_000 } },
+      clock,
+      {
+        maxTenants: 4,
+      },
+    );
 
     // `org-hot` spends four of its five starts; everyone else spends one.
     for (let index = 0; index < 4; index += 1) {
@@ -112,12 +116,12 @@ describe('the rate window and the refusal log are swept and capped', () => {
     // below reads FALSE and the option quietly means "no cap at all" — the setting this bound
     // exists to make unreachable. `Number(process.env.WHATEVER)` is how a deploy writes the first.
     for (const maxTenants of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
-      expect(() => createLimiter({}, frozenClock(T0), { maxTenants })).toThrow(/maxTenants/);
+      expect(() => concurrencyLimiter({}, frozenClock(T0), { maxTenants })).toThrow(/maxTenants/);
     }
     // The default is still a number a limiter can be built with, so the guard refuses the bad
     // value rather than the option.
     expect(() =>
-      createLimiter({}, frozenClock(T0), { maxTenants: DEFAULT_MAX_LIMIT_TENANTS }),
+      concurrencyLimiter({}, frozenClock(T0), { maxTenants: DEFAULT_MAX_LIMIT_TENANTS }),
     ).not.toThrow();
   });
 });

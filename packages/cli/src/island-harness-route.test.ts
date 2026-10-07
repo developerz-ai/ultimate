@@ -3,7 +3,7 @@
 // screened where it enters the command (plan 101 row S12).
 
 import { describe, expect, test } from 'bun:test';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { IslandStatesManifest } from '@ultimat3/testing';
 import { defineIslandStates, islandShotTargets } from '@ultimat3/testing';
 import { islandBundle } from './island-bundle';
@@ -29,7 +29,7 @@ const refusalFix = async (manifest: IslandStatesManifest, query: string): Promis
   });
   const url = new URL(`${DEV_URL}${ISLAND_HARNESS_PATH}${query}`);
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-  const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+  const ctx = requestContext({ url, method: 'GET', role: 'web', config });
   const route = routes[0] as (typeof routes)[number];
   const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
   expect(response.status).toBe(404);
@@ -92,7 +92,7 @@ describe('the harness answers a loopback Host only', () => {
     });
     const url = new URL(`http://rebound.example${ISLAND_HARNESS_PATH}?island=x&state=y`);
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-    const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+    const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     const route = routes[0] as (typeof routes)[number];
     const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
     expect(response.status).toBe(421);

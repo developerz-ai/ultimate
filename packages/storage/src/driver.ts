@@ -3,7 +3,7 @@
 // strings — a base64 round trip through JSON is how a "small" upload becomes a 33%-larger OOM —
 // and never unbounded, which is the same failure with the sender choosing the size.
 
-import type { Clock } from '@ultimat3/core';
+import type { Clock, Page } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import { putTooLarge } from './errors';
 import type { ObjectLock, ObjectLockOptions } from './object-lock';
@@ -71,16 +71,13 @@ export interface PutOptions extends ObjectLockOptions {
 
 export interface ListOptions {
   readonly prefix?: string | undefined;
-  /** Opaque; pass back the `cursor` of the previous page. */
-  readonly cursor?: string | undefined;
+  /**
+   * Opaque; pass back the `nextCursor` of the previous page. `null` and absent both mean the
+   * first page, so `cursor: page.nextCursor` threads a loop with no conversion — the loop stops
+   * on `hasMore: false` before a `null` is ever handed back as "the page after the last".
+   */
+  readonly cursor?: string | null | undefined;
   readonly limit?: number | undefined;
-}
-
-export interface ListPage {
-  readonly objects: readonly StorageListEntry[];
-  readonly truncated: boolean;
-  /** Absent when `truncated` is false. */
-  readonly cursor?: string | undefined;
 }
 
 export interface StorageRead {
@@ -155,7 +152,11 @@ export interface StorageDriver {
    */
   delete(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
-  list(options?: ListOptions): Promise<ListPage>;
+  /**
+   * One page of core's ONE `Page` shape: `nextCursor` exists exactly when another object does,
+   * so a full last page answers `hasMore: false` rather than a cursor to an empty page.
+   */
+  list(options?: ListOptions): Promise<Page<StorageListEntry>>;
   signedUrl(key: string, options?: SignedUrlOptions): Promise<string>;
   /**
    * What locks one object — its Object Lock retention and legal hold — read back from the disk.
@@ -196,7 +197,7 @@ export const DEFAULT_LIST_LIMIT = 1000;
  * The page size a `list()` honours — refused rather than clamped when it cannot be one.
  *
  * At the `ListOptions` seam and not inside a driver, because the two answered a non-positive
- * limit differently: the local disk sliced `[0, 0)` and then dropped its own `truncated` flag, so
+ * limit differently: the local disk sliced `[0, 0)` and then dropped its own "more" flag, so
  * `list({ limit: 0 })` over a full disk reported a COMPLETE empty listing, while the s3 disk
  * handed `maxKeys: 0` straight to the provider. `sweepOrphans` pages through `list()`, so a page
  * that is empty and claims to be complete is a false erasure report — the same lie a swallowed
@@ -245,7 +246,7 @@ export function assertListOptions(options: ListOptions | undefined): void {
   for (const name of ['prefix', 'cursor'] as const) {
     const value = options?.[name];
     assert(
-      value === undefined || typeof value === 'string',
+      value === undefined || typeof value === 'string' || (name === 'cursor' && value === null),
       `list() was given a ${name} that is not a string`,
       `disk.list({ ${name}: 'a string' }) — or omit ${name}`,
     );

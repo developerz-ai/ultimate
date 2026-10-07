@@ -1,9 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { directionOf, isRtl } from '@ultimat3/core';
 import { resolveLocale } from './context';
 import {
   assertSupportedLocale,
-  directionOf,
-  isRtl,
   isSupportedLocale,
   negotiateLocale,
   normalizeLocale,

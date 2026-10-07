@@ -15,7 +15,7 @@ import { LiveQueryRegistry } from './live-query';
 import { OPEN_POLICY } from './policy-fake-fixture';
 import { PresenceRegistry } from './presence';
 import { CLOSE, SocketRegistry } from './socket';
-import { createSyncNode, type SyncNode, type SyncWs, type WsData } from './sync-node';
+import { type SyncNode, type SyncWs, syncNode, type WsData } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 const BUILD_ID = 'build-1';
@@ -91,7 +91,7 @@ function harness(options: { idleTimeoutMs?: number } = {}): Harness {
     visible: () => true,
     matcher: () => ({ entities: ['posts'], match: () => ({ patches: [], refill: false }) }),
   });
-  const node = createSyncNode({
+  const node = syncNode({
     hub,
     registry,
     transport,

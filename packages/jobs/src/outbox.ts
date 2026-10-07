@@ -14,9 +14,9 @@
 // `jobsFacade()` is what happens when they are not:
 //
 //   1. `x_outbox` exists — it ships in `SQL_JOBS_TABLE` now, so applying the queue DDL is enough.
-//   2. `setJobsFacade(createJobsFacade({ store, driver }, currentTx))` ran at boot, with a store
+//   2. `setJobsFacade(outboxJobsFacade({ store, driver }, currentTx))` ran at boot, with a store
 //      from `postgresOutboxStore` and a REAL `currentTx` accessor.
-//   3. `createOutboxRelay({ store, driver }).start()` is running somewhere.
+//   3. `outboxRelay({ store, driver }).start()` is running somewhere.
 //
 // With none of them, `jobsFacade()` answers the fallback below, whose `currentTx` is
 // `() => undefined`: every enqueue publishes straight to the driver, outside the caller's
@@ -29,7 +29,7 @@ import {
   describeValue,
   traceparent,
   UltimateError,
-  uuid,
+  uuidV7,
 } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
@@ -260,7 +260,7 @@ function namedRunId(job: string, runId: unknown): string | undefined {
     code: 'X_ID_INVALID',
     // `describeValue`, never the value: what arrives here wrong is as often a key as a typo.
     cause: `enqueue of job "${job}" was given runId ${describeValue(runId)}, and a run id is a lowercase uuid (8-4-4-4-12 hex) — the queue stores it in a uuid column`,
-    fix: "pass { runId: uuid() } to enqueue(), with import { uuid } from '@ultimat3/core'",
+    fix: "pass { runId: uuidV7() } to enqueue(), with import { uuidV7 } from '@ultimat3/core'",
     meta: { job, option: 'runId' },
   });
 }
@@ -285,8 +285,8 @@ export async function enqueueInTx<I>(
   const at = nowMs(deps.clock);
   const trace = options.traceparent ?? ambientTraceparent();
   const record: OutboxRecord = {
-    id: uuid(),
-    runId: runId ?? uuid(),
+    id: uuidV7(),
+    runId: runId ?? uuidV7(),
     job: handle.name,
     queue: options.queue ?? handle.queue ?? DEFAULT_QUEUE,
     input,
@@ -314,7 +314,7 @@ export interface JobsFacade {
   enqueue<I>(handle: JobHandle<I>, input: I, options?: EnqueueOptions): Promise<EnqueueResult>;
 }
 
-export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefined): JobsFacade {
+export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefined): JobsFacade {
   return {
     async enqueue<I>(
       handle: JobHandle<I>,
@@ -379,7 +379,7 @@ export function setJobsFacade(facade: JobsFacade | null): void {
  */
 export function jobsFacade(): JobsFacade {
   if (ambient !== undefined) return ambient;
-  fallback ??= createJobsFacade(
+  fallback ??= outboxJobsFacade(
     {
       // A getter, not a snapshot: `setJobDriver()` after the first enqueue is honoured, and a
       // missing driver is an error at the call rather than at import time.

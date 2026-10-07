@@ -6,13 +6,7 @@
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
 import type { DbClient, LinkedExtensions, Migration } from '@ultimat3/db';
-import {
-  createPgliteClient,
-  DbError,
-  linkPgliteExtensions,
-  postgresClient,
-  raw,
-} from '@ultimat3/db';
+import { DbError, linkPgliteExtensions, pgliteClient, postgresClient, raw } from '@ultimat3/db';
 import { migrationExtensions } from './migration-extensions';
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -103,7 +97,7 @@ export async function withScratchDatabase<T>(
   work: (client: DbClient) => Promise<T>,
 ): Promise<T> {
   if (engine.kind === 'postgres') return withPostgresScratch(engine.adminUrl, work);
-  const client = createPgliteClient({
+  const client = pgliteClient({
     extensions: engine.extensions,
     ...(stateDir === undefined ? {} : { snapshotDir: join(stateDir, 'cache') }),
   });

@@ -80,7 +80,7 @@ export interface PendingRead {
   readonly result: Promise<SnapshotResult>;
 }
 
-export function createEntry(
+export function queryEntry(
   qid: string,
   definition: LiveQueryDefinition,
   input: JsonValue,

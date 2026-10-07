@@ -14,7 +14,7 @@ example).
 import {
   budgetKeysFor,
   configureAi,
-  createGateway,
+  providerGateway,
   openAiProvider,
   registerModel,
 } from '@ultimat3/ai';
@@ -31,7 +31,7 @@ registerModel({
 });
 
 // 2. Your provider — any of the three below — and the model a call with none declared runs on.
-export const ai = createGateway({
+export const ai = providerGateway({
   providers: [openAiProvider({ apiKey: env.LLM_TOKEN, baseUrl: env.LLM_URL, models: ['house-large'] })],
   defaultModel: 'house-large',
   budget: { request: 40_000, actor: 500_000, org: 20_000_000 },  // tokens
@@ -55,7 +55,7 @@ const answer = await ai.scope(budgetKeysFor(actor), async () => {
 
 | Provider | Speaks | For |
 |---|---|---|
-| `new AnthropicProvider({ models, apiKey?, baseUrl? })` | the Anthropic Messages format | Anthropic, or any server speaking that format |
+| `anthropicProvider({ models, apiKey?, baseUrl? })` | the Anthropic Messages format | Anthropic, or any server speaking that format |
 | `openAiProvider({ baseUrl, models, apiKey, auth? })` | the OpenAI chat-completions format | OpenAI, Azure, vLLM, Ollama, LiteLLM, a company gateway — [below](#the-openai-format--azure-vllm-ollama-your-own-gateway) |
 | your own `Provider` | anything | `{ name, models, generate, stream }` — the same contract both adapters implement |
 
@@ -65,12 +65,12 @@ provider whose `models` lists it.
 
 | Question | Answer |
 |---|---|
-| which model a call runs on | the declaration's `model`, then its prompt's, then `createGateway({ defaultModel })` — first match wins |
+| which model a call runs on | the declaration's `model`, then its prompt's, then `providerGateway({ defaultModel })` — first match wins |
 | none of the three names one | `X_AI_MODEL_UNRESOLVED`, naming all three — never a model the framework picked |
 | an id the app never `registerModel`-ed | `X_AI_MODEL_UNKNOWN` at the first read (`costOf`, the budget's estimate, the request builder) — before anything is sent or reserved; the fix is `registerModel(…)` |
 | `X_LLM_REFUSED`'s "a more capable model" | a rung above, in the same `family`, among the rows the APP registered — or no suggestion at all |
-| a direct provider call naming no model | `X_AI_MODEL_UNRESOLVED` from every shipped provider — `AnthropicProvider`, `openAiProvider()` and `EchoProvider` alike; a provider's `models` list is what it serves, never a fallback |
-| `EchoProvider` | serves whatever the app registered, and has no model of its own |
+| a direct provider call naming no model | `X_AI_MODEL_UNRESOLVED` from every shipped provider — `anthropicProvider()`, `openAiProvider()` and `echoProvider()` alike; a provider's `models` list is what it serves, never a fallback |
+| `echoProvider()` | serves whatever the app registered, and has no model of its own |
 
 ## Budgets — and which of the three is fleet-wide
 
@@ -84,7 +84,7 @@ or `''` has no org key — never a shared `org:` window), so where they live dec
 | your own `BudgetStore` | fleet-wide | anything with more than one replica |
 
 ```ts
-import { AnthropicProvider, type BudgetStore, createGateway } from '@ultimat3/ai';
+import { anthropicProvider, type BudgetStore, providerGateway } from '@ultimat3/ai';
 
 declare const redis: {
   incrby(key: string, by: number): Promise<number>;
@@ -112,8 +112,8 @@ const sharedBudget: BudgetStore = {
   },
 };
 
-export const sharedGateway = createGateway({
-  providers: [new AnthropicProvider({ models: ['house-large'] })],
+export const sharedGateway = providerGateway({
+  providers: [anthropicProvider({ models: ['house-large'] })],
   defaultModel: 'house-large',
   budget: { request: 40_000, actor: 500_000, org: 20_000_000 },
   budgetStore: sharedBudget,
@@ -150,7 +150,7 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | `reserve()` **debits, then checks** | the in-memory scopes check and debit with no `await` between, the store's through its atomic `take`; a read-then-write let concurrent calls — one request per scope racing one org key — all read the same `spent()` and all pass. `record` reconciles and `release` gives it back |
 | The cache key is every tool **whole**, through core's `fingerprint` | every `llm()` tool is named `respond`, so a key over names served an answer shaped for an old `output` schema; a cache `set` that throws is logged, never turned into a failure of a call already paid for |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
-| Retries use **full jitter**, from core's one curve | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` with the gateway's field names mapped onto it, and the roll is `createGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
+| Retries use **full jitter**, from core's one curve | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` with the gateway's field names mapped onto it, and the roll is `providerGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
 | A 4xx is never retried **except 408, 409 and 425** | the same body gets the same rejection and burns the budget — but a request the server stopped reading (408), a round a concurrent writer won (409) and a handshake that had not finished (425) are transient by construction, and core's `isRetryableStatus` is the one table that says so |
 
 ## Streaming
@@ -181,12 +181,12 @@ for await (const chunk of ai.stream({ messages, maxTokens: 64_000 })) {
 
 ## Embeddings
 
-`RemoteEmbedder` speaks the one `/v1/embeddings` shape every hosted and self-hosted embedder
-uses; `baseUrl` selects the provider. `HashEmbedder` is the deterministic offline twin `x dev`
+`remoteEmbedder()` speaks the one `/v1/embeddings` shape every hosted and self-hosted embedder
+uses; `baseUrl` selects the provider. `hashEmbedder()` is the deterministic offline twin `x dev`
 and the test suite run on.
 
 ```ts
-const embedder = new RemoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY
+const embedder = remoteEmbedder({ name: 'voyage-3', dimension: 1_024 });  // EMBEDDINGS_API_KEY
 ```
 
 Vectors are L2-normalised on arrival. `cosine` is true cosine all the same — pgvector's `1 - (a <=> b)`,
@@ -211,7 +211,7 @@ registerModel({
   reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
 });
 
-configureAi({ gateway: createGateway({ providers: [new InternalGatewayProvider()] }) });
+configureAi({ gateway: providerGateway({ providers: [new InternalGatewayProvider()] }) });
 ```
 
 **The framework registers no model.** `registerModel` is the one way into the catalogue and only the
@@ -239,7 +239,7 @@ so a downgrade for price cannot become a request the provider rejects.
 | `input: ['image', 'document']` | the non-text blocks it takes | absent is text only |
 | `family` | which ladder it is a rung on | absent is its own family |
 
-`AnthropicProvider.models` is the list you gave it, never the registry's — a model served
+`anthropicProvider({ models }).models` is the list you gave it, never the registry's — a model served
 elsewhere is not routed to Anthropic.
 
 ## Images and documents
@@ -247,13 +247,13 @@ elsewhere is not routed to Anthropic.
 A user turn carries `image` and `document` blocks in the Messages API's own shapes:
 
 ```ts
-import { createGateway, AnthropicProvider } from '@ultimat3/ai';
+import { anthropicProvider, providerGateway } from '@ultimat3/ai';
 
 declare const png: string;      // base64, no data: prefix
 declare const pdf: string;
 declare const minutes: string;
 declare const visionModel: string;  // an id your app registered with input: ['image', 'document']
-const ai = createGateway({ providers: [new AnthropicProvider({ models: [visionModel] })] });
+const ai = providerGateway({ providers: [anthropicProvider({ models: [visionModel] })] });
 
 await ai.generate({
   model: visionModel,
@@ -598,7 +598,7 @@ The gateway is ambient, installed once at boot — a declaration is evaluated at
 long before a provider exists:
 
 ```ts
-configureAi({ gateway: createGateway({ providers: [yourProvider], defaultModel: 'house-large' }) });
+configureAi({ gateway: providerGateway({ providers: [yourProvider], defaultModel: 'house-large' }) });
 ```
 
 Missing at call time is `X_AI_GATEWAY_MISSING`, never a silent default provider.
@@ -729,7 +729,7 @@ org is `X_VECTOR_UNSCOPED`** — the forgotten `.scoped()` that searched every t
 request, or for an actor with no org, it reads as before. The backfill path opts in by name:
 `postgresVectorStore({ name, dimension, scope: UNSCOPED })`, or `store.scoped(UNSCOPED)`.
 
-`chunk()` is token-aware with overlap and splits at paragraph, then sentence, then hard wrap
+`chunkDocument()` is token-aware with overlap and splits at paragraph, then sentence, then hard wrap
 — a fact split across a boundary with no overlap is retrievable by neither chunk. All three
 splits are load-bearing: the wrap is what bounds a UNIT (a base64 blob, a minified line, a CJK
 paragraph the sentence alphabet cannot see), and a unit larger than `size` is one the size check

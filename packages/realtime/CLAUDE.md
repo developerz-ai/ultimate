@@ -7,7 +7,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | May import | Must not |
 |---|---|
 | `@ultimat3/core`, `@ultimat3/query`, `@ultimat3/entity` (`/record` only, server-side) | anything tier 4+ (`render`, `pwa`, `mcp`, `ui`, `cli`) |
-| `@ultimat3/policy` **only via** `@ultimat3/query`'s `guard` | a second authz path of any kind |
+| `@ultimat3/policy` **only via** `@ultimat3/query`'s `guardQuery` for a decision (`policyCapability` / `policyPermissions` are display reads) | a second authz path of any kind |
 | — | `solid-js` (each island bundle installs its own signal factory: `installRealtime`) |
 | `nats` (the one external dependency, pinned exact) — from `nats-lib-client.ts` and no other file | `nats` from anywhere else. Every other file is written against the port in `nats-client.ts` |
 
@@ -34,10 +34,9 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 ## Numbers and ceilings
 
 - **Every numeric option is refused when it is not FINITE** — `@ultimat3/core`'s `finiteOption()`.
-  `bun run finite-bounds` reads zero here but cannot see an option with no `??` default, so audit
-  by reading the option interfaces. `SyncGrant.expiresAt` is app DATA, deliberately unscreened.
+  `bun run finite-bounds` cannot see an option with no `??` default: read the option interfaces. `SyncGrant.expiresAt` is app DATA, deliberately unscreened.
 - **A ceiling is refused where the object is BUILT**, never in a per-connection callback:
-  `socketCeilings()` (`sync-node-bounds.ts`) runs once in `createSyncNode`; `SyncSocket` keeps its own
+  `socketCeilings()` (`sync-node-bounds.ts`) runs once in `syncNode`; `SyncSocket` keeps its own
   screen because it is exported. `AcceptBudget`, `SyncSocket` and `SocketRegistry` throw
   `X_INVARIANT` at construction on `NaN`/`±Infinity`.
 - **A ceiling per resource, and the wire's are not options** (table in `README.md`): the accept
@@ -155,7 +154,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   the asker and the list. `x dev` keeps the reached-on origin (`admitReachedOrigin`) and adds
   its web role's beside a declared list; a container adds nothing. `AcceptBudget` is reserved before
   `authenticate`, `refund()`ed on every exit that takes no socket.
-- **A socket's actor comes from `createSyncNode({ authenticate })` only**, run before
+- **A socket's actor comes from `syncNode({ authenticate })` only**, run before
   `server.upgrade`. `null` = 401 `X_SOCKET_UNAUTHENTICATED`; a throw = 503
   `X_SOCKET_AUTH_UNAVAILABLE`. Absent = anonymous, and `start()` warns. The actor lives only in the
   `GrantBook`.
@@ -184,7 +183,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   re-ask on a suspended seat is refused and latched. The latch is capped at `maxTopicsPerSocket`.
 - **A missed change reopens every records topic** (`ChannelHub.invalidate()`, beside both
   `registry.invalidate()` sites).
-- **A channel patch id carries the node** (`nodeId`, default a per-hub `uuid()`).
+- **A channel patch id carries the node** (`nodeId`, default a per-hub `uuidV7()`).
 - **An error never renders a credential**: `parsePgUrl`/`parseNatsUrl` name the variable.
 
 ## Replication
@@ -287,8 +286,6 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## The page boot
 
-Browser bytes per hook: `docs/history/realtime.md`. Re-measure before quoting.
-
 - **The disk boot is ONE page script (`boot.ts`, `./boot`)**, served at `/_x/page-boot/<hash>.js`
   on a document with the scope tag and a realtime island; it installs the runtime, wipes every other
   principal's stored scope (read at the wipe), then restores. `booted` reads its promise off
@@ -322,4 +319,5 @@ without one) and bumping `PROTOCOL_VERSION` **when an old frame becomes unreadab
 direction**. `decode` is a whitelist: an additive optional field, or removing a field read through
 `list()`, is free; removing a field read through `str()`/`num()` (which throw) is a bump.
 
-Why each rule above is shaped the way it is: [`docs/history/realtime.md`](../../docs/history/realtime.md).
+Why each rule is shaped so, and browser bytes per hook (re-measure before quoting):
+[`docs/history/realtime.md`](../../docs/history/realtime.md).

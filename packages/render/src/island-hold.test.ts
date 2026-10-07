@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import type { IslandDirective } from './hydrate';
 import { emitIslandAttributes, HYDRATE_RUNTIME_BODIES, hydrateRuntime } from './hydrate';
 import type { IslandSpec } from './island';
-import { createIslandCollector } from './island-collector';
+import { islandCollector } from './island-collector';
 import { ISLAND_HOLD_ATTRIBUTE, ISLAND_HOLD_MS } from './island-hold';
 
 const directive = (overrides: Partial<IslandDirective> = {}): IslandDirective => ({
@@ -52,7 +52,7 @@ describe('a held island, as markup', () => {
       propKeys: [],
       tag: 'div',
     });
-    const collector = createIslandCollector({
+    const collector = islandCollector({
       file: 'app/x/page.tsx',
       hydrate: 'idle',
       hold: (src) => src === './live.island.tsx',

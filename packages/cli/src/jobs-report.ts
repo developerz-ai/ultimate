@@ -1,7 +1,9 @@
 // Pure, driver-injected job operations behind `x jobs`: flag parsing, plus ls / show / retry. No
 // CLI parsing, no process I/O, no rendering — a test drives every path with `memoryJobDriver()`
-// alone. Drain is `jobs-drain.ts`, the `--json` shapes `jobs-json.ts`, the table `jobs-table.ts`.
+// alone. The `--json` shapes are `jobs-json.ts`, the table `jobs-table.ts`.
 
+import type { Page } from '@ultimat3/core';
+import { pageOf } from '@ultimat3/core';
 import type {
   BackfillProgress,
   DeadLetterEntry,
@@ -13,6 +15,7 @@ import type {
   QueueDepthReport,
 } from '@ultimat3/jobs';
 import {
+  DEFAULT_JOB_PAGE,
   inspectBackfills,
   inspectDeadLetters,
   inspectJob,
@@ -20,6 +23,8 @@ import {
   inspectQueues,
   isJobState,
   JOB_STATES,
+  jobCursor,
+  MAX_JOB_PAGE,
   retryFromStep,
 } from '@ultimat3/jobs';
 import { BadFlagError, JobUnknownError } from './errors';
@@ -76,12 +81,32 @@ export interface JobsListFilter {
   readonly after?: string | undefined;
 }
 
-export interface JobsListResult {
+/** ONE page of rows — core's `Page`, so `nextCursor` exists exactly when another row does. */
+export type JobsListResult = Page<JobRecord> & {
   readonly depth: QueueDepthReport;
-  readonly rows: readonly JobRecord[];
   readonly deadLetters: readonly DeadLetterEntry[];
   /** The sweeps still in flight — see below for why finished ones are not this command's answer. */
   readonly backfills: readonly BackfillProgress[];
+};
+
+/**
+ * One page, and whether a row exists past it — asked of the queue, never guessed from a count.
+ * `next = rows.length === limit ? cursor : null` handed a FULL last page a cursor to an empty one.
+ * The page reads one row past its limit; at `MAX_JOB_PAGE` there is no room for that row (the
+ * queue refuses a bigger page), so a full maximal page asks for the one row after its last.
+ */
+async function jobPage(driver: JobDriver, filter: JobFilter): Promise<Page<JobRecord>> {
+  const size = filter.limit ?? DEFAULT_JOB_PAGE;
+  const ask = size < MAX_JOB_PAGE ? size + 1 : size;
+  const fetched = await inspectJobList(driver, { ...filter, limit: ask });
+  const rows = fetched.slice(0, size);
+  const last = rows.at(-1);
+  if (last === undefined || fetched.length < size) return pageOf(rows, null);
+  if (fetched.length > size) return pageOf(rows, jobCursor(last));
+  if (ask > size) return pageOf(rows, null);
+  const after = jobCursor(last);
+  const beyond = await inspectJobList(driver, { ...filter, limit: 1, after });
+  return pageOf(rows, beyond.length > 0 ? after : null);
 }
 
 /**
@@ -107,13 +132,13 @@ export async function listJobs(
     ...(limit === undefined ? {} : { limit }),
     ...(filter.after === undefined ? {} : { after: filter.after }),
   };
-  const [depth, rows, deadLetters, backfills] = await Promise.all([
+  const [depth, page, deadLetters, backfills] = await Promise.all([
     inspectQueues(driver),
-    inspectJobList(driver, jobFilter),
+    jobPage(driver, jobFilter),
     inspectDeadLetters(driver),
     inspectBackfills(driver, { status: 'running' }),
   ]);
-  return { depth, rows, deadLetters, backfills };
+  return { ...page, depth, deadLetters, backfills };
 }
 
 // ── show ──────────────────────────────────────────────────────────────────

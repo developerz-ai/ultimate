@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
-  createClientFlight,
+  clientFlight,
   DEFAULT_CLIENT_RETRY,
   type FlightPlan,
   isTransientFailure,
@@ -81,20 +81,18 @@ describe('isTransientFailure inverts retryDecision’s unclassified default', ()
 
 describe('keyFor decides what may share a dispatch', () => {
   test('no principal, no dedup — naming who is asking is what turns it on', () => {
-    expect(createClientFlight({}).keyFor('/u')).toBeUndefined();
+    expect(clientFlight({}).keyFor('/u')).toBeUndefined();
   });
 
   test('the key carries the principal, as JSON and never a joined string', () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     expect(flight.keyFor('/u')).toBe(JSON.stringify(['alice', '/u']));
     // A principal is app data and may carry any separator a joined key would use.
-    expect(createClientFlight({ principal: () => 'a:b' }).keyFor('/u')).not.toBe(
-      flight.keyFor('/u'),
-    );
+    expect(clientFlight({ principal: () => 'a:b' }).keyFor('/u')).not.toBe(flight.keyFor('/u'));
   });
 
   test('a caller’s own signal and `fresh` each disqualify the call from sharing', () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     expect(flight.keyFor('/u', { signal: new AbortController().signal })).toBeUndefined();
     expect(flight.keyFor('/u', { fresh: true })).toBeUndefined();
     expect(flight.keyFor('/u', { fresh: false })).toBe(JSON.stringify(['alice', '/u']));
@@ -103,7 +101,7 @@ describe('keyFor decides what may share a dispatch', () => {
 
 describe('dedup', () => {
   test('two plans holding one key are ONE dispatch, and the map drains', async () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const wire = held('k');
 
     const both = Promise.all([flight.run(wire.plan), flight.run(wire.plan)]);
@@ -116,7 +114,7 @@ describe('dedup', () => {
   });
 
   test('a plan with no key never joins one', async () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const wire = held(undefined);
 
     const both = Promise.all([flight.run(wire.plan), flight.run(wire.plan)]);
@@ -130,7 +128,7 @@ describe('dedup', () => {
 
 describe('the generation fence', () => {
   test('a bump supersedes the answer of work already issued, and aborts it', async () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const wire = held('k');
 
     const pending = flight.run(wire.plan).catch((caught: unknown) => caught);
@@ -142,7 +140,7 @@ describe('the generation fence', () => {
   });
 
   test('a NON-abortable plan keeps its socket and is still told it was superseded', async () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const wire = held('k', false);
 
     const pending = flight.run(wire.plan).catch((caught: unknown) => caught);
@@ -155,7 +153,7 @@ describe('the generation fence', () => {
   });
 
   test('the guard runs on the FAILURE path too', async () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const thrown = new RangeError('a foreign value');
     let release = (): void => {};
     const plan: FlightPlan<string> = {
@@ -181,7 +179,7 @@ describe('the generation fence', () => {
   test('a same-key read issued right after the bump does not join the aborted flight', async () => {
     // The aborted read's dedup key stayed in the single-flight map until its rejection SETTLED, so
     // a read issued at the new generation in the same tick joined it and rejected with AbortError.
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     const wire = held('k');
 
     const old = flight.run(wire.plan).catch((caught: unknown) => caught);
@@ -195,7 +193,7 @@ describe('the generation fence', () => {
   });
 
   test('work issued AFTER the bump is answered normally', async () => {
-    const flight = createClientFlight({ principal: () => 'alice' });
+    const flight = clientFlight({ principal: () => 'alice' });
     flight.bump();
     const wire = held('k');
     const pending = flight.run(wire.plan);

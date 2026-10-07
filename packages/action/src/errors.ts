@@ -92,7 +92,7 @@ export function denialReason(denial: SurfaceDenial): string {
 }
 
 /**
- * An authz denial, thrown by `guard()`. The code and reason come from the policy
+ * An authz denial, thrown by `guardAction()`. The code and reason come from the policy
  * decision — this package never invents an authz code — and the surface-shaped
  * denial rides along for projections that render it themselves.
  */

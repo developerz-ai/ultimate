@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Route } from '@ultimat3/http';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes } from './dev-dashboard';
 import type { DevServices } from './runtime-bindings';
@@ -65,7 +65,7 @@ async function call(route: Route, target: string, sent: Sent = {}): Promise<Resp
   const method = sent.method ?? 'GET';
   const headers = { host: url.host, ...sent.headers };
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url,
     method,
     role: 'web',

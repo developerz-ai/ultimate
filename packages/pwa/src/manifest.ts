@@ -12,7 +12,7 @@
 import type { PwaColors } from '@ultimat3/core';
 import { escapeHtml } from '@ultimat3/core';
 import type { CapabilityFlags, ResolvedCapabilities } from './capabilities';
-import { isEnabled, resolveCapabilities } from './capabilities';
+import { hasCapability, resolveCapabilities } from './capabilities';
 import { PwaManifestInvalidError } from './errors';
 
 export type DisplayMode = 'standalone' | 'fullscreen' | 'minimal-ui' | 'browser';
@@ -143,13 +143,13 @@ export function generateWebManifest(config: WebManifestInput): WebManifestResult
   if (config.screenshots !== undefined) optional.screenshots = config.screenshots;
 
   // A disabled capability contributes no manifest member at all — not an empty one.
-  if (isEnabled(capabilities, 'shareTarget') && config.shareTarget !== undefined) {
+  if (hasCapability(capabilities, 'shareTarget') && config.shareTarget !== undefined) {
     optional.share_target = config.shareTarget;
   }
-  if (isEnabled(capabilities, 'fileHandlers') && config.fileHandlers !== undefined) {
+  if (hasCapability(capabilities, 'fileHandlers') && config.fileHandlers !== undefined) {
     optional.file_handlers = config.fileHandlers;
   }
-  if (isEnabled(capabilities, 'protocolHandlers') && config.protocolHandlers !== undefined) {
+  if (hasCapability(capabilities, 'protocolHandlers') && config.protocolHandlers !== undefined) {
     optional.protocol_handlers = config.protocolHandlers;
   }
 

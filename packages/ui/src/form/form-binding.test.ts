@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
-import { createFormBinding } from './form-binding';
+import { formBinding } from './form-binding';
 import type { FormIssue, FormSchema, FormValidationResult } from './form-issue';
 import type { FormState } from './form-state';
 
@@ -20,10 +20,10 @@ interface Saved {
   readonly id: string;
 }
 
-describe('createFormBinding', () => {
+describe('formBinding', () => {
   test('a form field the path grammar cannot read is refused where it is declared', () => {
     expect(() =>
-      createFormBinding<{ title: string }, Saved>({
+      formBinding<{ title: string }, Saved>({
         fields: ['items.0.price'],
         messageFor: raw,
         submit: () => Promise.resolve({ id: 'x' }),
@@ -33,7 +33,7 @@ describe('createFormBinding', () => {
 
   test('succeeds only through the server call, and carries its answer', async () => {
     const calls: unknown[] = [];
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: (values) => {
@@ -51,7 +51,7 @@ describe('createFormBinding', () => {
 
   test('a local parse failure never reaches the network, and lands on the field', async () => {
     let called = 0;
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       schema: schemaOf(() => ({ issues: [{ message: 'too short', path: ['title'] }] })),
@@ -78,7 +78,7 @@ describe('createFormBinding', () => {
   ] as const) {
     test(`a local validate that ${how} fails the form — it never strands it in submitting`, async () => {
       let called = 0;
-      const form = createFormBinding<{ title: string }, Saved>({
+      const form = formBinding<{ title: string }, Saved>({
         fields: ['title'],
         messageFor: raw,
         schema: schemaOf(validate),
@@ -102,7 +102,7 @@ describe('createFormBinding', () => {
    */
   test('submits the caller’s values, never the value the local parse produced', async () => {
     const calls: unknown[] = [];
-    const form = createFormBinding<{ price: string }, Saved>({
+    const form = formBinding<{ price: string }, Saved>({
       fields: ['price'],
       messageFor: raw,
       schema: schemaOf(() => ({ value: { price: 999 } })),
@@ -117,7 +117,7 @@ describe('createFormBinding', () => {
   });
 
   test('a server rejection lands on the field it names', async () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () =>
@@ -134,7 +134,7 @@ describe('createFormBinding', () => {
   });
 
   test('a server rejection naming no declared field is surfaced at the form', async () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () => Promise.reject({ code: 'X_FORBIDDEN', cause: 'policy "post:create" denied' }),
@@ -147,7 +147,7 @@ describe('createFormBinding', () => {
 
   test('publishes every transition, starting with a submitting state that holds no stale error', async () => {
     const seen: FormState<Saved>[] = [];
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       onState: (state) => seen.push(state),
@@ -169,7 +169,7 @@ describe('createFormBinding', () => {
   test('a second submit while one is in flight joins it — a double click is not a second write', async () => {
     let called = 0;
     let release = (): void => {};
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () => {
@@ -189,7 +189,7 @@ describe('createFormBinding', () => {
 
   test('a success after a failure clears what the failure wrote', async () => {
     let refuse = true;
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () =>
@@ -208,7 +208,7 @@ describe('createFormBinding', () => {
 
   test('pending is the one value that reaches both the submit control and the form', async () => {
     let release = (): void => {};
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () =>
@@ -226,7 +226,7 @@ describe('createFormBinding', () => {
   });
 
   test('the first invalid field is the first DECLARED one, never the first the server named', async () => {
-    const form = createFormBinding<{ title: string; slug: string }, Saved>({
+    const form = formBinding<{ title: string; slug: string }, Saved>({
       fields: ['title', 'slug'],
       messageFor: raw,
       // Reported slug-first. Focusing in issue order would land the reader halfway down a form
@@ -241,7 +241,7 @@ describe('createFormBinding', () => {
   });
 
   test('a rejection naming no declared field leaves nothing to focus', async () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () => Promise.reject({ code: 'X_FORBIDDEN', cause: 'denied' }),
@@ -253,7 +253,7 @@ describe('createFormBinding', () => {
   });
 
   test('touched and dirty are published without disturbing the submit status', () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       initial: { title: 'Hello' },
@@ -273,7 +273,7 @@ describe('createFormBinding', () => {
   });
 
   test('an empty control on a create form is not a change', () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () => Promise.resolve({ id: 'post-1' }),
@@ -284,7 +284,7 @@ describe('createFormBinding', () => {
   });
 
   test('a successful submit clears dirty — the server took what the form held', async () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () => Promise.resolve({ id: 'post-1' }),
@@ -304,7 +304,7 @@ describe('createFormBinding', () => {
   // itself — before `run` reaches its first await. That edit is after the read, too.
   test('an edit made from the submitting publish is still dirty after the save', async () => {
     let edited = false;
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () => Promise.resolve({ id: 'post-1' }),
@@ -321,7 +321,7 @@ describe('createFormBinding', () => {
 
   test('a successful submit keeps dirty the fields edited while it was in flight', async () => {
     let accept = (_saved: Saved): void => {};
-    const form = createFormBinding<{ title: string; body: string }, Saved>({
+    const form = formBinding<{ title: string; body: string }, Saved>({
       fields: ['title', 'body'],
       messageFor: raw,
       initial: { title: '', body: '' },
@@ -351,7 +351,7 @@ describe('createFormBinding', () => {
   });
 
   test('reset returns the form to idle', async () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () => Promise.reject({ code: 'X_INPUT_INVALID', cause: 'title: too short' }),
@@ -367,7 +367,7 @@ describe('createFormBinding', () => {
   });
 
   test('every message stays reachable when one field draws two issues', async () => {
-    const form = createFormBinding<{ title: string }, Saved>({
+    const form = formBinding<{ title: string }, Saved>({
       fields: ['title'],
       messageFor: raw,
       submit: () =>

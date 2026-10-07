@@ -3,7 +3,7 @@
 // Every case is built so exactly one fact is wrong. An allow that passes proves the happy path; a
 // denial that passes proves the rule.
 
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import type { Actor, Policy, PolicyDecision } from '@ultimat3/policy';
 import { evaluate } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
@@ -26,7 +26,7 @@ const decide = (
   policy: Policy<Record<string, never>, ThreadRow>,
   actor: Actor | null,
   row: ThreadRow | null,
-): PolicyDecision => evaluate(policy, { input: {}, actor, row, ctx: createContext() }).decision;
+): PolicyDecision => evaluate(policy, { input: {}, actor, row, ctx: ctxOf() }).decision;
 
 const codeOf = (decision: PolicyDecision): string | null =>
   decision.allowed ? null : decision.code;

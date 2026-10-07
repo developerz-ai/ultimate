@@ -6,10 +6,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
+import { httpPipeline } from './pipeline';
 import { rateLimitSpends } from './rate-limit';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const route = (rateLimitedBy?: 'handler'): Route => ({
   method: 'GET',
@@ -19,7 +19,7 @@ const route = (rateLimitedBy?: 'handler'): Route => ({
     auth: 'public',
     ...(rateLimitedBy === undefined ? {} : { rateLimitedBy }),
   },
-  handler: () => text('ok'),
+  handler: () => textResponse('ok'),
 });
 
 const actor = (id: string, orgId: string): Actor =>
@@ -27,8 +27,8 @@ const actor = (id: string, orgId: string): Actor =>
 
 /** `default` holds two and never refills; the tenant one is generous, or tight when asked. */
 const pipelineFor = (target: Route, tenantCapacity = 100) =>
-  createPipeline({
-    table: createRouter([target]),
+  httpPipeline({
+    table: httpRouter([target]),
     config: defineHttpConfig({
       dev: false,
       buildId: null,

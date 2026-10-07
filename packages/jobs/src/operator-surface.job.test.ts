@@ -20,7 +20,7 @@ import {
 } from './operator-surface-fixture';
 import { operatorScopeScenarios } from './operator-surface-scope-fixture';
 import { operatorSettleScenarios } from './operator-surface-settle-fixture';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 import { postgresLeaseLeader, postgresSchedulerState } from './scheduler-pg';
 import { resetTasks, task } from './task';
 
@@ -155,7 +155,7 @@ describe('the operator surface on the pg driver', () => {
         enqueue: () => [[handle, { item: 'nightly' }]],
       }),
     );
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       // The queue's own statements are counted too: an idle round must not read the pause table.
       driver: postgresJobDriver({ executor: counting }),
       clock,

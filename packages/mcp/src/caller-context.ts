@@ -5,7 +5,7 @@
 // came to answer differently by transport.
 
 import type { Actor } from '@ultimat3/core';
-import { createContext, hasContext, runWithContext, withChildContext } from '@ultimat3/core';
+import { ctxOf, hasContext, runWithContext, withChildContext } from '@ultimat3/core';
 
 /**
  * Run `fn` with `actor` as the ambient identity, whether or not a request is already in flight.
@@ -18,7 +18,5 @@ import { createContext, hasContext, runWithContext, withChildContext } from '@ul
  * reads off `ctx.actor` the same identity by construction rather than by two call sites agreeing.
  */
 export function asCallerContext<T>(actor: Actor, fn: () => T): T {
-  return hasContext()
-    ? withChildContext({ actor }, fn)
-    : runWithContext(createContext({ actor }), fn);
+  return hasContext() ? withChildContext({ actor }, fn) : runWithContext(ctxOf({ actor }), fn);
 }

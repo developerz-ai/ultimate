@@ -9,9 +9,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
-import { createRaster, encodeImage, userActor } from '@ultimat3/core';
+import { blankRaster, encodeImage, userActor } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import type { Storage } from '@ultimat3/storage';
 import {
@@ -30,7 +30,7 @@ let storage: Storage;
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'x-stored-headers-'));
   storage = defineStorage({ disks: { local: localDriver({ root: join(root, '.storage') }) } });
-  await storage.disk().put('brand/logo.png', encodeImage(createRaster(4, 4, 'logo'), 'png'), {
+  await storage.disk().put('brand/logo.png', encodeImage(blankRaster(4, 4, 'logo'), 'png'), {
     contentType: 'image/png',
   });
   await storage.disk().put('brand/page.html', new TextEncoder().encode('<script>1</script>'), {
@@ -50,7 +50,7 @@ afterEach(() => {
 async function serve(route: Route | undefined, path: string, params: Record<string, string>) {
   expect(route).toBeDefined();
   const url = new URL(`http://app.test${path}`);
-  const ctx = createRequestContext({
+  const ctx = requestContext({
     url,
     method: 'GET',
     role: 'web',

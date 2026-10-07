@@ -34,7 +34,7 @@ export function resolveCapabilities(flags: CapabilityFlags = {}): ResolvedCapabi
   return resolved;
 }
 
-export function isEnabled(capabilities: ResolvedCapabilities, capability: Capability): boolean {
+export function hasCapability(capabilities: ResolvedCapabilities, capability: Capability): boolean {
   return capabilities[capability];
 }
 

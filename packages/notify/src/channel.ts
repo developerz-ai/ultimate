@@ -51,7 +51,7 @@ export type AnyNotifyChannel<Params = unknown> = NotifyChannel<Params> | BulkNot
  * One recipient per call. The name is durable — it is a column of the delivery ledger — so it is
  * given here rather than derived from a variable name that a bundler may rewrite.
  */
-export function channel<Params = unknown>(
+export function deliveryChannel<Params = unknown>(
   name: string,
   deliver: (args: DeliveryArgs<Params>) => Promise<void> | void,
 ): NotifyChannel<Params> {

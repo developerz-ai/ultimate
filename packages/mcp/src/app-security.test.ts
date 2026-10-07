@@ -11,8 +11,8 @@
 // Split from `security.test.ts` for the file ceiling only — same contract, same rules.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry as resetActions } from '@ultimat3/action';
-import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { action, registerAction, resetActions } from '@ultimat3/action';
+import { agentActor, ctxOf, runWithContext } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -20,7 +20,7 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
-import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
+import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
@@ -69,7 +69,7 @@ describe('the three outcomes over the blessed path — defineAppMcp', () => {
   });
 
   /** A projected action opens a child context, so it needs a request to hang off. */
-  const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(createContext({}), fn);
+  const inRequest = <T>(fn: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), fn);
 
   beforeEach(() => {
     published = 0;

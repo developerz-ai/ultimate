@@ -112,4 +112,4 @@ export function destructiveStatements(up: string): readonly DestructiveStatement
 }
 
 /** Whether `up` destroys data at all — what `x db gen` writes the marker from. */
-export const isDestructive = (up: string): boolean => destructiveStatements(up).length > 0;
+export const isDestructiveMigration = (up: string): boolean => destructiveStatements(up).length > 0;

@@ -6,12 +6,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { TOAST_MAX_VISIBLE, type ToastHold } from '../toast/toast-state';
-import { createToastStore, INERT_TOAST_ENV, type ToastStore } from '../toast/toast-store';
+import { INERT_TOAST_ENV, type ToastStore, toastStore } from '../toast/toast-store';
 import { ToastRegion } from './Toast';
 import { Toaster } from './Toaster';
 
 const storeWith = (...messages: readonly string[]): ToastStore => {
-  const store = createToastStore(INERT_TOAST_ENV);
+  const store = toastStore(INERT_TOAST_ENV);
   for (const message of messages) store.show({ message });
   return store;
 };
@@ -101,7 +101,7 @@ describe('Toaster', () => {
   });
 
   test('an action is one undo-shaped control, and taking it answers the offer', () => {
-    const store = createToastStore(INERT_TOAST_ENV);
+    const store = toastStore(INERT_TOAST_ENV);
     const undone: number[] = [];
     store.show({
       message: 'Post deleted',

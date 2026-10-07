@@ -32,12 +32,12 @@ Reads walk down until a hit, then populate every tier they walked past. Writes p
 
 A tier is a `CacheTier` (`get`/`set`/`del`/`invalidateTags`, plus an optional `fence` for a tier
 other processes also write). Swap or omit any of them
-without touching a call site — order comes from `TIER_ORDER`, not registration order.
+without touching a call site — order comes from `@ultimat3/core`'s `CACHE_TIERS`, not registration order.
 
 ```ts
-import { createCacheStack, createLruTier, createMemoTier, registerTier } from '@ultimat3/cache';
+import { cacheStack, lruTier, memoTier, registerTier } from '@ultimat3/cache';
 
-const stack = createCacheStack([createMemoTier(), createLruTier({ maxBytes: 64 * 1024 * 1024 })]);
+const stack = cacheStack([memoTier(), lruTier({ maxBytes: 64 * 1024 * 1024 })]);
 for (const tier of stack.tiers) registerTier(tier);
 
 const feed = await stack.read('feed:org-1', () => db.posts.recent(), {
@@ -58,9 +58,9 @@ called. 40,000 keys warmed by one rolling restart otherwise share one expiry ins
 inside the same 30-second window. The roll is injected, never `Math.random()` at a call site:
 
 ```ts
-createLruTier({ rng: () => 0 });          // the full lease — what a test asserting an exact expiry wants
-createRedisTier({ jitterFraction: 0 });   // off entirely
-createRedisTier({ jitterFraction: 0.2 }); // a wider spread; outside [0, 1) is X_CACHE_JITTER_INVALID
+lruTier({ rng: () => 0 });          // the full lease — what a test asserting an exact expiry wants
+redisTier({ jitterFraction: 0 });   // off entirely
+redisTier({ jitterFraction: 0.2 }); // a wider spread; outside [0, 1) is X_CACHE_JITTER_INVALID
 ```
 
 **N concurrent misses are ONE origin load.** `stack.read` shares an in-flight `load()` per key, so
@@ -68,13 +68,13 @@ a reader arriving while another's load is running joins it instead of issuing it
 ends as the load settles, rejection included, so one failure is never held as a permanent one. A
 feed cached for 60s and read 8,000×/s otherwise sends ~1,600 identical queries to Postgres at every
 TTL boundary, because the write only lands after `load()` resolves. The primitive is
-`createSingleFlight()` if you need it elsewhere — `@ultimat3/core`'s, re-exported here unchanged;
-the stack holds one per stack.
+`singleFlight()` from `@ultimat3/core` if you need it elsewhere (25.0.0 dropped this
+package's re-export); the stack holds one per stack.
 A `load()` that never settles does **not** hold its key for ever: past `loadDeadlineMs`
 (`DEFAULT_LOAD_DEADLINE_MS`, 30s — the point at which `http.requestTimeoutMs` already abandoned the
 request that was waiting for it) the key is freed and the next reader loads for itself. Eviction
 frees the key and never the work, so the readers already holding that load still get its answer,
-and the cost is one duplicate fill — `createCacheStack(tiers, { loadDeadlineMs: 5_000 })` for a
+and the cost is one duplicate fill — `cacheStack(tiers, { loadDeadlineMs: 5_000 })` for a
 tighter ceiling on a fast origin. A joiner shares the
 leader's **write** as well as its load, so it contributes to it: tags union, TTLs take the shortest.
 Without that the entry landed carrying only the leader's tags and the joiner's invalidation never
@@ -96,7 +96,7 @@ if (fence.isValid()) await tier.set(key, value, { tags });
 **That fence is this process's; the Redis tier keeps a second one for the fleet.** A bust another
 replica ran reaches this process only when the broadcast does, and a lost broadcast means never —
 so the fill would publish the pre-write rows into the *shared* tier and every replica would promote
-them. `createRedisTier` implements `CacheTier.fence`: a bust writes a leased generation
+them. `redisTier` implements `CacheTier.fence`: a bust writes a leased generation
 (`<ns>:g:{entity}:r:<id>`, `:c`, `:a`) **before** it reads its buckets, `stack.read` samples the
 generations its tags watch before `load()`, and re-reads them after the tier's `SET`.
 
@@ -222,7 +222,7 @@ Redis cannot read each other's payloads. Rename `PostView.author` to `PostView.a
 deploy: `JSON.parse` does not validate, so the old pod reads the new shape back and hands it to a
 renderer expecting the old one — an undefined author on every cached post, on half the fleet, for
 the length of the rolling deploy. The cost of the default is a **cold shared tier per deploy**,
-which is the cheaper of the two. Opt out with `createRedisTier({ buildId: null })` if you version
+which is the cheaper of the two. Opt out with `redisTier({ buildId: null })` if you version
 your own payloads.
 
 ## Invalidating

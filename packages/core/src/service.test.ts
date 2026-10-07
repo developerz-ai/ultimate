@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { userActor } from './actor';
-import { createContext, runWithContext, useContext, withChildContext } from './context';
+import { ctxOf, runWithContext, useContext, withChildContext } from './context';
 import { defineService, resetServices } from './service';
 
 afterEach(() => {
@@ -11,7 +11,7 @@ describe('defineService', () => {
   test('installs a registered factory automatically, bound to the actor that built it', () => {
     defineService('tenant', (ctx) => ({ orgId: ctx.actor.orgId }));
 
-    const ctx = createContext({ actor: userActor({ id: 'ada', orgId: 'acme' }) });
+    const ctx = ctxOf({ actor: userActor({ id: 'ada', orgId: 'acme' }) });
 
     expect(ctx.services['tenant']).toEqual({ orgId: 'acme' });
   });
@@ -22,7 +22,7 @@ describe('defineService', () => {
     // service into another's request.
     defineService('tenant', (ctx) => ({ orgId: ctx.actor.orgId }));
 
-    const parent = createContext({ actor: userActor({ id: 'ada', orgId: 'acme' }) });
+    const parent = ctxOf({ actor: userActor({ id: 'ada', orgId: 'acme' }) });
     runWithContext(parent, () => {
       expect(useContext().services['tenant']).toEqual({ orgId: 'acme' });
       withChildContext({ actor: userActor({ id: 'mara', orgId: 'tinta' }) }, () => {
@@ -33,10 +33,10 @@ describe('defineService', () => {
     });
   });
 
-  test('an explicit service in createContext overrides a registered factory of the same name', () => {
+  test('an explicit service in ctxOf overrides a registered factory of the same name', () => {
     defineService('tenant', (ctx) => ({ orgId: ctx.actor.orgId }));
 
-    const ctx = createContext({
+    const ctx = ctxOf({
       actor: userActor({ id: 'ada', orgId: 'acme' }),
       services: { tenant: { orgId: 'mocked' } },
     });

@@ -6,7 +6,7 @@
 // that only one of the two write paths runs.
 
 import { db } from '@social-media-clone/db';
-import { createContext, isUltimateError, userActor } from '@ultimat3/core';
+import { ctxOf, isUltimateError, userActor } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { sendMessage } from './action';
@@ -43,7 +43,7 @@ const codeOf = async (work: Promise<unknown>): Promise<string> => {
 const target = sendMessage.named('sendMessage');
 
 const call = (actor: Actor | null, input: { conversationId: string; body: string }) =>
-  target(input, { ctx: createContext({ actor: actor ?? undefined }), actor, surface: 'http' });
+  target(input, { ctx: ctxOf({ actor: actor ?? undefined }), actor, surface: 'http' });
 
 unitTest('a non-participant is refused, even holding message:send', async () => {
   await seeded;

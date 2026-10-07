@@ -16,12 +16,17 @@
  */
 
 import { tagKeys } from '@ultimat3/cache';
-import { isMcpExposed, RECORDS_OPENAPI_HEADER, recordEnvelopeSchema } from '@ultimat3/core';
+import {
+  isMcpExposed,
+  queryPath,
+  RECORDS_OPENAPI_HEADER,
+  recordEnvelopeSchema,
+} from '@ultimat3/core';
+import { MAX_PAGE_SIZE } from '@ultimat3/entity';
+import { policyCapability } from '@ultimat3/policy';
 import type { SchemaNode } from '@ultimat3/schema';
 import { nodeToJsonSchema, tryIntrospect } from '@ultimat3/schema';
-import { derivePath } from './naming';
-import { MAX_PAGE_SIZE, PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
-import { policyCapability } from './policy-gate';
+import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import type { AnyQuery } from './query';
 import { queryName } from './read';
 import { answersRecords } from './record-answer';
@@ -72,7 +77,7 @@ export function queryOpenApiPaths(
 ): Record<string, OpenApiPathItem> {
   const paths: Record<string, OpenApiPathItem> = {};
   for (const target of [...queries].sort(compareByName)) {
-    paths[derivePath(queryName(target))] = { get: toQueryOpenApiOperation(target) };
+    paths[queryPath(queryName(target))] = { get: toQueryOpenApiOperation(target) };
   }
   return paths;
 }

@@ -1,7 +1,7 @@
-// Direct coverage: compile-time-backed runtime assertions — `assertNever`, `invariant`, `assert`.
+// Direct coverage: compile-time-backed runtime assertions — `assertNever`, `assertCoded`, `assert`.
 
 import { describe, expect, test } from 'bun:test';
-import { assert, assertNever, invariant } from './assert';
+import { assert, assertCoded, assertNever } from './assert';
 import { isUltimateError, type UltimateError } from './errors';
 
 describe('assertNever', () => {
@@ -95,17 +95,17 @@ describe('assertNever', () => {
   });
 });
 
-describe('invariant', () => {
+describe('assertCoded', () => {
   test('a truthy condition returns without throwing and without side effects', () => {
-    expect(() => invariant(true, 'X_TEST', 'unreachable cause', 'unreachable fix')).not.toThrow();
-    expect(() => invariant(1, 'X_TEST', 'unreachable cause', 'unreachable fix')).not.toThrow();
-    expect(() => invariant('non-empty', 'X_TEST', 'c', 'f')).not.toThrow();
+    expect(() => assertCoded(true, 'X_TEST', 'unreachable cause', 'unreachable fix')).not.toThrow();
+    expect(() => assertCoded(1, 'X_TEST', 'unreachable cause', 'unreachable fix')).not.toThrow();
+    expect(() => assertCoded('non-empty', 'X_TEST', 'c', 'f')).not.toThrow();
   });
 
   test('a falsy condition throws UltimateError with exactly the given code/cause/fix', () => {
     let caught: unknown;
     try {
-      invariant(false, 'X_SOME_CODE', 'the thing that actually happened', 'do the exact fix');
+      assertCoded(false, 'X_SOME_CODE', 'the thing that actually happened', 'do the exact fix');
     } catch (thrown) {
       caught = thrown;
     }
@@ -118,14 +118,14 @@ describe('invariant', () => {
 
   test('falsy conditions covered: 0, "", null, undefined, NaN all throw', () => {
     for (const falsy of [0, '', null, undefined, Number.NaN]) {
-      expect(() => invariant(falsy, 'X_TEST', 'c', 'f')).toThrow();
+      expect(() => assertCoded(falsy, 'X_TEST', 'c', 'f')).toThrow();
     }
   });
 
   test('options.docs and options.meta pass through onto the thrown error when provided', () => {
     let caught: unknown;
     try {
-      invariant(false, 'X_TEST', 'c', 'f', {
+      assertCoded(false, 'X_TEST', 'c', 'f', {
         docs: 'https://example.test/docs/x-test',
         meta: { key: 'value', n: 1 },
       });
@@ -140,7 +140,7 @@ describe('invariant', () => {
   test('docs/meta are undefined when options is omitted', () => {
     let caught: unknown;
     try {
-      invariant(false, 'X_TEST', 'c', 'f');
+      assertCoded(false, 'X_TEST', 'c', 'f');
     } catch (thrown) {
       caught = thrown;
     }

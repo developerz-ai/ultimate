@@ -22,7 +22,7 @@ import type { NavGroup } from './nav';
 import { adminBranding, type ThemeTokenRef, themeAttributes } from './theme';
 
 await import('@ultimat3/render/server');
-const { AdminLayout, actorLabel } = await import('./layout');
+const { AdminLayout, adminActorLabel } = await import('./layout');
 
 registerCatalog('en', {
   'admin.a11y.skip-to-content': 'Skip to content (probe)',
@@ -136,16 +136,18 @@ describe('the nav renders what it was handed, and decides nothing', () => {
 
 describe('who is acting', () => {
   test('a signed-in actor reads as their id and roles', () => {
-    expect(actorLabel({ id: 'u_9', roles: ['admin', 'ops'] })).toBe('u_9 as admin, ops (probe)');
+    expect(adminActorLabel({ id: 'u_9', roles: ['admin', 'ops'] })).toBe(
+      'u_9 as admin, ops (probe)',
+    );
     expect(textOf(render({ actor: { id: 'u_9', roles: ['admin'] } }), 'p')).toEqual([
       'u_9 as admin (probe)',
     ]);
   });
 
   test('absent, null and the anonymous actor all read as "not signed in" — never an empty line', () => {
-    expect(actorLabel(undefined)).toBe('nobody (probe)');
-    expect(actorLabel(null)).toBe('nobody (probe)');
-    expect(actorLabel({ id: 'anonymous', roles: [] })).toBe('nobody (probe)');
+    expect(adminActorLabel(undefined)).toBe('nobody (probe)');
+    expect(adminActorLabel(null)).toBe('nobody (probe)');
+    expect(adminActorLabel({ id: 'anonymous', roles: [] })).toBe('nobody (probe)');
     expect(textOf(render(), 'p')).toEqual(['nobody (probe)']);
   });
 });

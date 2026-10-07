@@ -11,7 +11,10 @@ import type { RenderedDocument, ServiceWorkerArtifacts } from './sw-artifacts';
 import { serviceWorkerArtifacts } from './sw-artifacts';
 import { precacheAssets } from './sw-precache-plan';
 
+const LOCALES = { routed: ['es-co', 'en'], fallback: 'es-co' };
+
 const pwa: PwaArtifacts = {
+  locales: LOCALES,
   body: '{}',
   head: '',
   headFor: () => '',
@@ -69,8 +72,6 @@ const ROUTES = [
   },
 ];
 
-const LOCALES = { routed: ['es-co', 'en'], fallback: 'es-co' };
-
 const build = (
   documents: ReadonlyMap<string, RenderedDocument> = new Map(),
   islands = islandBundle([HERO, OFFLINE_RETRY, KYC, WIZARD, NAMED]),
@@ -82,7 +83,6 @@ const build = (
     islands,
     styles: styleBundleOf([]),
     documents,
-    locales: LOCALES,
   });
   if (built === undefined) expect.unreachable('an app with a fallback got no service worker');
   return built;
@@ -172,12 +172,11 @@ describe('every route, once per routed locale', () => {
 
   test('a single-locale app gets exactly one spelling per route', () => {
     const built = serviceWorkerArtifacts({
-      pwa,
+      pwa: { ...pwa, locales: { routed: ['en'], fallback: 'en' } },
       buildId: 'build-1',
       routes: ROUTES,
       islands: islandBundle([]),
       styles: styleBundleOf([]),
-      locales: { routed: ['en'], fallback: 'en' },
     });
     expect(built?.source).not.toContain('^/en/');
     expect(built?.source).toContain('const OFFLINE_LOCALES=[];');

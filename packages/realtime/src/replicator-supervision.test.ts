@@ -20,7 +20,7 @@ import {
   relation,
   xlog,
 } from './pg-replication-fixture';
-import { createReplicator, STOP_DEADLINE_MS } from './replicator';
+import { changeFeedReplicator, STOP_DEADLINE_MS } from './replicator';
 import { parseChange } from './replicator-envelope';
 import type { Scheduler } from './thundering-herd';
 
@@ -99,7 +99,7 @@ const rig = (transport: Transport = new InProcessTransport()) => {
   });
   const lock = countingLock();
   const timers = manualScheduler();
-  const replicator = createReplicator({
+  const replicator = changeFeedReplicator({
     feed,
     transport,
     lock,
@@ -204,7 +204,7 @@ describe('a replication stream that ends', () => {
     });
     const lock = countingLock();
     const timers = manualScheduler();
-    const replicator = createReplicator({
+    const replicator = changeFeedReplicator({
       feed,
       lock,
       transport: new InProcessTransport(),

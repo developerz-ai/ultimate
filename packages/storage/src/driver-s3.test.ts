@@ -209,7 +209,7 @@ describe('s3Driver', () => {
       // No `contentType` at all. ListObjectsV2 does not return one, and the driver used to fill
       // in `application/octet-stream` — indistinguishable from an object that really is one,
       // while the local driver reported the truth. Absent is the honest answer.
-      expect(page.objects).toEqual([
+      expect(page.rows).toEqual([
         {
           key: 'org/org-1/a.txt',
           size: 3,
@@ -222,7 +222,7 @@ describe('s3Driver', () => {
           etag: '',
         },
       ]);
-      expect(page.objects[0]?.contentType).toBeUndefined();
+      expect(page.rows[0]?.contentType).toBeUndefined();
     });
 
     test('uses DEFAULT_LIST_LIMIT when no limit is given, and forwards prefix/cursor', async () => {
@@ -239,22 +239,27 @@ describe('s3Driver', () => {
       expect(fake.listCalls[1]).toEqual({ prefix: 'org/org-1/', maxKeys: 25 });
     });
 
-    test('truncated: true with a cursor only when isTruncated is true AND a token is present', async () => {
+    test('hasMore with a nextCursor only when IsTruncated is true AND a token is present', async () => {
       const fake = new FakeS3Client();
       const driver = s3Driver({ bucket: 'b', client: fake });
 
       fake.listResult = { contents: [], isTruncated: true, nextContinuationToken: 'next-token' };
       const truncated = await driver.list();
-      expect(truncated).toEqual({ objects: [], truncated: true, cursor: 'next-token' });
+      expect(truncated).toEqual({ rows: [], nextCursor: 'next-token', hasMore: true });
 
-      // isTruncated is true but there is no token — the `&&` means this reads as NOT truncated.
+      // IsTruncated is true but there is no token: no cursor to page with, so this is the end.
       fake.listResult = { contents: [], isTruncated: true };
       const noToken = await driver.list();
-      expect(noToken).toEqual({ objects: [], truncated: false });
+      expect(noToken).toEqual({ rows: [], nextCursor: null, hasMore: false });
 
+      // The last page: a token beside `IsTruncated: false` is stale and is NOT a next page.
       fake.listResult = { contents: [], isTruncated: false, nextContinuationToken: 'stale-token' };
       const notTruncated = await driver.list();
-      expect(notTruncated).toEqual({ objects: [], truncated: false });
+      expect(notTruncated).toEqual({ rows: [], nextCursor: null, hasMore: false });
+
+      // An empty-string token is no cursor either.
+      fake.listResult = { contents: [], isTruncated: true, nextContinuationToken: '' };
+      expect(await driver.list()).toEqual({ rows: [], nextCursor: null, hasMore: false });
     });
   });
 

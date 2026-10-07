@@ -343,7 +343,7 @@ describe('an empty queue list is not a question', () => {
    * The divergence this case exists for: `claim({ queues: [] })` meant EVERY queue on the memory
    * driver (`wanted.size === 0 ||`) and the `default` queue on Postgres (`queues.length > 0 ?
    * queues : [DEFAULT_QUEUE]`), and `ClaimOptions.queues` documented neither. Unreached through
-   * `createWorker`, which always passes exactly one queue — so the two answers could sit there
+   * `jobWorker`, which always passes exactly one queue — so the two answers could sit there
    * indefinitely, and whichever an embedder hit first became the one it wrote its deployment
    * against. Both drivers now refuse, which is the only answer that cannot be silently wrong in
    * the other's deployment: claiming every queue on a shared database is a worker taking work it
@@ -441,7 +441,7 @@ describe('a row limit is a count of rows, in both', () => {
   test('a claim limit that is not a count is refused before a single row moves', async () => {
     // The worst of the three: `.slice(0, -1)` on the memory driver CLAIMS every ready row but the
     // newest — a lease taken on work this pass never intended to run — where the pg driver's
-    // statement is rejected by the database. `createWorker` screens its own `concurrency`, so this
+    // statement is rejected by the database. `jobWorker` screens its own `concurrency`, so this
     // is the seam an embedder driving `JobDriver` directly reaches.
     const bad = (limit: number) => ({
       queues: ['default'],

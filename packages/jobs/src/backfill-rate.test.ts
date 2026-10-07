@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { DEFAULT_BACKFILL_BATCH } from './backfill';
-import { createPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
+import { backfillPacer, DEFAULT_BACKFILL_RATE } from './backfill-rate';
 
 const NEVER_ABORTED = new AbortController().signal;
 
@@ -22,7 +22,7 @@ interface Paced {
 const paced = (rate: number): Paced => {
   const clock = frozenClock('2026-08-14T00:00:00.000Z');
   const asked: number[] = [];
-  const pacer = createPacer({
+  const pacer = backfillPacer({
     rate,
     job: 'rewrite-titles',
     clock,
@@ -116,7 +116,7 @@ describe('cancellation', () => {
   test('an abort DURING the wait rejects instead of resuming the pass', async () => {
     const clock = frozenClock('2026-08-14T00:00:00.000Z');
     const controller = new AbortController();
-    const pacer = createPacer({
+    const pacer = backfillPacer({
       rate: 5,
       job: 'rewrite-titles',
       clock,
@@ -142,7 +142,7 @@ describe('cancellation', () => {
   test('the real sleeper wakes on abort instead of sitting the interval out', async () => {
     // Real timers on purpose — this is the one claim an injected sleeper cannot make. One batch
     // every two seconds, cancelled 5ms in: the wait has to end with the attempt, not with the slot.
-    const pacer = createPacer({ rate: 0.5, job: 'rewrite-titles' });
+    const pacer = backfillPacer({ rate: 0.5, job: 'rewrite-titles' });
     const controller = new AbortController();
     await pacer.wait({ signal: controller.signal });
     setTimeout(() => controller.abort(), 5);

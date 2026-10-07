@@ -31,7 +31,7 @@ describe('InMemoryChangeFeed', () => {
    * The failure this suite exists for. `#deliver` chained the next delivery on the LIVE tail, so
    * one rejected link poisoned every link after it: later changes rejected with the FIRST error,
    * the handler was never called again, and `lastLsn()` froze — silently, on a healthy process.
-   * Reachable under `x dev` and any single-node deployment, because `createReplicator`'s `onChange`
+   * Reachable under `x dev` and any single-node deployment, because `changeFeedReplicator`'s `onChange`
    * awaits `transport.publish(...)` and a closed `InProcessTransport` refuses with
    * `X_TRANSPORT_UNAVAILABLE`. One transient publish failure ended change delivery for good.
    */

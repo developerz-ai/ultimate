@@ -14,7 +14,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { defineApi } from './define-api';
-import { getAction, resetRegistry } from './registry';
+import { getAction, resetActions } from './registry';
 
 const echo = () =>
   action({
@@ -54,12 +54,12 @@ const recordingQueryRegistrar = (): { seen: string[]; registrar: ModuleRegistrar
   recordingRegistrar('query');
 
 beforeEach(() => {
-  resetRegistry();
+  resetActions();
   resetPrimitiveRegistrars();
 });
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   resetPrimitiveRegistrars();
 });
 

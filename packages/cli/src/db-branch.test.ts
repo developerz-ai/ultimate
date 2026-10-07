@@ -10,7 +10,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { createRecordingClient } from '@ultimat3/db';
+import { recordingClient } from '@ultimat3/db';
 import {
   BRANCH_SUBCOMMANDS,
   branchDatabaseName,
@@ -153,7 +153,7 @@ describe('unit · the database a connection URL names', () => {
 
 describe('unit · the external database', () => {
   test('only databases carrying the branch marker are branches', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('current_database', { rows: [{ name: 'postly' }] });
     client.on('pg_database', {
       rows: [
@@ -185,8 +185,8 @@ describe('unit · the external database', () => {
    * The listing is the whole of `drop`'s guard, so a row belonging to another app authorised a
    * `drop database` this session's own listing had never approved.
    */
-  const twoApps = (): ReturnType<typeof createRecordingClient> => {
-    const client = createRecordingClient();
+  const twoApps = (): ReturnType<typeof recordingClient> => {
+    const client = recordingClient();
     client.on('current_database', { rows: [{ name: 'postly' }] });
     client.on('pg_database', {
       rows: [
@@ -218,7 +218,7 @@ describe('unit · the external database', () => {
   });
 
   test('create writes the marker, so the branch it makes is one ls can see', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('current_database', { rows: [{ name: 'postly' }] });
 
     const created = await createExternalBranch(client, 'feat-x');
@@ -232,7 +232,7 @@ describe('unit · the external database', () => {
   });
 
   test('drop aims at the clone, never at the database the name was derived from', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on('current_database', { rows: [{ name: 'postly' }] });
     client.on('pg_database', {
       rows: [

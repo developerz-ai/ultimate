@@ -5,7 +5,7 @@
 // loops publish the delay they would arm, and the test adds those up for one idle minute.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { createContext, frozenClock } from '@ultimat3/core';
+import { ctxOf, frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -14,13 +14,13 @@ import { createIdleBackoff, IDLE_POLL_CEILING_MS } from './idle-backoff';
 import { resetJobs } from './job';
 import { itemJob } from './operator-surface-fixture';
 import { memoryOutboxStore } from './outbox';
-import { createOutboxRelay } from './outbox-relay';
-import { createScheduler } from './scheduler';
+import { outboxRelay } from './outbox-relay';
+import { jobScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
 import type { SchedulerState } from './scheduler-state';
 import { memorySchedulerState } from './scheduler-state';
 import { resetTasks, task } from './task';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 const MINUTE = 60_000;
 const TASKS = 35;
@@ -80,7 +80,7 @@ describe('an idle scheduler', () => {
     if (operator === undefined) return expect.unreachable('the memory driver ships an operator');
     const counting: JobDriver = { ...driver, introspect: counted(operator, count) };
     const state: SchedulerState = counted(memorySchedulerState(), count);
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: counting,
       clock,
       state,
@@ -107,7 +107,7 @@ describe('an idle scheduler', () => {
     const shared = memorySchedulerState();
     const driver = memoryJobDriver({ clock });
     // The pod this one replaces armed every task.
-    await createScheduler({
+    await jobScheduler({
       driver,
       clock,
       state: shared,
@@ -126,7 +126,7 @@ describe('an idle scheduler', () => {
       const at3 = Math.floor(options.from.getTime() / day) * day + 3 * 3_600_000;
       return new Date(at3 > options.from.getTime() ? at3 : at3 + day);
     };
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       state,
@@ -167,7 +167,7 @@ describe('an idle scheduler', () => {
         return undefined;
       },
     };
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: memoryJobDriver({ clock }),
       clock,
       state,
@@ -192,7 +192,7 @@ describe('an idle scheduler', () => {
   test('still fires on time: a watermark held in memory is not a missed occurrence', async () => {
     const clock = frozenClock('2026-10-01T02:59:30.000Z');
     const driver = memoryJobDriver({ clock });
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver,
       clock,
       leader: lease(() => undefined),
@@ -216,7 +216,7 @@ describe('an idle scheduler', () => {
   test('a task registered after the scheduler started is armed and fires at its own time', async () => {
     const clock = frozenClock('2026-10-01T02:00:00.000Z');
     const driver = memoryJobDriver({ clock });
-    const scheduler = createScheduler({ driver, clock, leader: lease(() => undefined) });
+    const scheduler = jobScheduler({ driver, clock, leader: lease(() => undefined) });
     await scheduler.tick();
     clock.advance(30 * 60_000);
 
@@ -247,7 +247,7 @@ describe('an idle scheduler', () => {
       release: () => Promise.resolve(),
       renewEveryMs: 0,
     };
-    const scheduler = createScheduler({
+    const scheduler = jobScheduler({
       driver: memoryJobDriver({ clock }),
       clock,
       leader,
@@ -275,12 +275,12 @@ describe('an idle worker', () => {
         return driver.claim(options);
       },
     };
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: counting,
       // Three queues, one of them named by no registered job.
       queues: ['default', 'mail', 'configured-and-unused'],
       clock,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
     });
 
@@ -312,12 +312,12 @@ describe('an idle worker', () => {
       },
     };
     const handle = itemJob({ run: () => Promise.resolve() });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver: counting,
       queues: ['default', 'mail'],
       concurrency: { default: 4, mail: 1 },
       clock,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
     });
     await worker.tick();
@@ -354,12 +354,12 @@ describe('an idle worker', () => {
         return Promise.resolve();
       },
     });
-    const worker = createWorker({
+    const worker = jobWorker({
       driver,
       pollIntervalMs: 100,
       // Far past the test: without the wake, the job below waits this long.
       idlePollMaxMs: 60_000,
-      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      context: () => ctxOf({ role: 'worker', buildId: 'test' }),
       drainOnShutdown: false,
     });
     worker.start();
@@ -380,7 +380,7 @@ describe('an idle worker', () => {
 describe('an idle outbox relay', () => {
   const relayOver = (onClaim: () => void) => {
     const store = memoryOutboxStore();
-    return createOutboxRelay({
+    return outboxRelay({
       driver: memoryJobDriver(),
       store: {
         ...store,

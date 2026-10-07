@@ -3,9 +3,10 @@
  * MCP tool's schema is `@ultimat3/schema`'s `toWireSchema` — the one `tools/list` serves.
  */
 
+import { isJsonObject } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { SchemaUnsupportedError, toJsonSchema } from '@ultimat3/schema';
-import { isJsonObject, stableStringify } from './stable';
+import { stableStringify } from './stable';
 
 export type JsonSchemaObject = Record<string, unknown>;
 

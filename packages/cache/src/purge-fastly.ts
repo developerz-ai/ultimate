@@ -3,6 +3,7 @@
 // client. The keys are Ultimate's wire tags unchanged (`post`, `post:1`), which is the property
 // that keeps an edge purge and an app-level invalidation from ever meaning different things.
 
+import { isRetryableStatus } from '@ultimat3/core';
 import type { PurgeDriver } from './cdn';
 import { CachePurgeFailedError } from './errors';
 import type { PurgeFetch } from './purge-http';
@@ -13,7 +14,6 @@ import {
   defaultPurgeFetch,
   detailFrom,
   isRecord,
-  isRetryableStatus,
   type PurgeBody,
   purgeBody,
   purgePost,

@@ -9,7 +9,7 @@
  * each; both re-export this one, so their public surface is unchanged and there is one file.
  *
  * Nothing here is imported by either package's `client.ts` at VALUE level. A caller that wants a
- * plain typed fetch never mentions `createClientFlight`, so this module and every module it
+ * plain typed fetch never mentions `clientFlight`, so this module and every module it
  * imports are shaken out of that caller's bundle — the 36 kB island problem is the reason it is
  * built this way, and `packages/{action,query}/src/client.ts` must keep naming `ClientFlight` as
  * an `import type`.
@@ -19,12 +19,12 @@ import type { Random } from './backoff';
 import { classifyThrown } from './error-retry';
 import { UltimateError } from './errors';
 import type { FlightGate, FlightGateLimits } from './flight-gate';
-import { createFlightGate } from './flight-gate';
-import { createFence } from './generation-fence';
+import { flightGate } from './flight-gate';
+import { generationFence } from './generation-fence';
 import type { RetryPolicy } from './retry';
 import { retry } from './retry';
 import type { Scheduler } from './single-flight';
-import { createSingleFlight } from './single-flight';
+import { singleFlight } from './single-flight';
 
 /** Overrides for the shipped policy. `attempts: 1` — the default — means one dispatch, no retry. */
 export type ClientRetry = Partial<RetryPolicy>;
@@ -158,9 +158,9 @@ const defaultSchedule: Scheduler = (fn, ms) => {
   };
 };
 
-export function createClientFlight(options: ClientFlightOptions = {}): ClientFlight {
+export function clientFlight(options: ClientFlightOptions = {}): ClientFlight {
   const subject = options.subject ?? 'a typed client call';
-  const fence = createFence(subject);
+  const fence = generationFence(subject);
   const schedule = options.schedule ?? defaultSchedule;
   const sleep =
     options.sleep ??
@@ -172,9 +172,9 @@ export function createClientFlight(options: ClientFlightOptions = {}): ClientFli
   const transientFor = (plan: FlightPlan<unknown>): ((error: unknown) => boolean) =>
     plan.classified === true && options.transient === undefined ? isDeclaredTransient : transient;
   const deadlineMs = options.deadlineMs;
-  const flights = createSingleFlight({ deadlineMs, schedule });
+  const flights = singleFlight({ deadlineMs, schedule });
   const gate: FlightGate | undefined =
-    options.limit === undefined ? undefined : createFlightGate(options.limit, { subject });
+    options.limit === undefined ? undefined : flightGate(options.limit, { subject });
   const live = new Set<AbortController>();
 
   /**
@@ -359,7 +359,7 @@ function deadlineExpired(subject: string, deadlineMs: number): UltimateError {
   return new UltimateError({
     code: 'X_TIMEOUT',
     cause: `${subject} was aborted after its client deadline of ${deadlineMs}ms`,
-    fix: 'raise deadlineMs at the createClientFlight({ deadlineMs }) call site, or find what is answering that slowly with x doctor --json',
+    fix: 'raise deadlineMs at the clientFlight({ deadlineMs }) call site, or find what is answering that slowly with x doctor --json',
     meta: { subject, deadlineMs },
   });
 }

@@ -46,7 +46,7 @@ const { start, callback } = oauthLogin(auth);
 
 ## The lockout across replicas
 
-`createAuthLimiter` keeps its table in the process, so `maxAttempts: 5` at `replicas: 3` lets an
+`authLimiter` keeps its table in the process, so `maxAttempts: 5` at `replicas: 3` lets an
 account survive 15 guesses and hides each replica's lockout from the other two. An app that runs
 more than one process says so and brings a limiter that says the same:
 
@@ -96,7 +96,7 @@ const { identity } = await verifyWorkloadToken({
   token,
   issuers: ['https://kubernetes.default.svc'],
   audience: 'https://ledger.internal',
-  keys: createJwksClient({ provider: 'k8s', jwksUri: 'https://kubernetes.default.svc/openid/v1/jwks' }),
+  keys: jwksClient({ provider: 'k8s', jwksUri: 'https://kubernetes.default.svc/openid/v1/jwks' }),
   clock,
 });
 const actor = actorFromService(identity);   // kind: 'service', id: the caller's own sub
@@ -193,7 +193,7 @@ A **factory** and not a limiter, because the host runs before the app: `defineAu
 limiter enforces against what the app declared, so a limiter built at boot on the framework
 defaults would be `X_AUTH_LIMITER_POLICY_MISMATCH` for every app that tuned its numbers. The
 factory is called once per bucket, with the resolved policy, so the two halves cannot disagree.
-Precedence is `defineAuth({ limiter })` → the installed factory → `createAuthLimiter`, and
+Precedence is `defineAuth({ limiter })` → the installed factory → `authLimiter`, and
 `resetAuthLimiters()` puts the per-process default back. `@ultimat3/cli`'s `startServices` calls it
 on every boot, so a scaffolded app gets a fleet-wide lockout with nothing to remember.
 
@@ -263,7 +263,7 @@ because a default is what silently makes a second door as trusting as the first.
 | `keys` | Means |
 |---|---|
 | `'token-endpoint-tls'` | this token came off a TLS response from the provider's own token endpoint — the one case OIDC Core 3.1.3.7 exempts. `exchangeOAuthCode` passes it, and that is the only shipped call site that may |
-| a `JwksKeySource` | the signature is checked. `providerJwks(providerFor(id))`, or `createJwksClient({ provider, jwksUri })` |
+| a `JwksKeySource` | the signature is checked. `providerJwks(providerFor(id))`, or `jwksClient({ provider, jwksUri })` |
 
 ```ts
 const keys = providerJwks(providerFor('bigco-sso'));
@@ -339,7 +339,7 @@ every enrolled user's second factor.
 |---|---|
 | `enrolTotp(auth, { account, issuer?, secret? })` | `{ secret, uri, digits, periodSeconds }` — `issuer` omitted is `auth.mfa.issuer`, `secret` omitted mints one |
 | `verifyTotp({ secret, code, at, drift?, usedSteps? })` | `{ ok, step }`. `step` is the window the code belonged to, `null` on no match |
-| `createTotpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
+| `totpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
 | `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
 | `recoveryCodeHash(code)` | what a code is stored and looked up as — dashes, spaces and case removed first. `auth.adapter.consumeRecoveryCode(userId, hash)` removes it in ONE statement and answers whether it was there, so two requests carrying one code cannot both redeem it |
 | `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code. `totpCode` throws `X_MFA_SECRET_INVALID` on a secret that decodes to zero bytes |

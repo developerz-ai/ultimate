@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  createRaster,
+  blankRaster,
   encodeImage,
   NotImplementedError,
   probeImage,
@@ -12,7 +12,7 @@ import { DEFAULT_FORMATS, IMAGE_QUERY_KEYS, parseImageQuery, responsiveImage } f
 
 /** A flat 64x48 PNG. `alpha: 255` is opaque; anything less makes the raster alpha-bearing. */
 function pngSource(alpha: number): Uint8Array {
-  const raster: Raster = createRaster(64, 48);
+  const raster: Raster = blankRaster(64, 48);
   for (let i = 0; i < raster.pixels.length; i += 4) {
     raster.pixels[i] = 200;
     raster.pixels[i + 1] = 120;

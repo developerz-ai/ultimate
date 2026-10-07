@@ -8,9 +8,9 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { ERROR_DOCS_URL, formatBytes } from '@ultimat3/core';
 import type { Manifest, RouteFact } from '@ultimat3/manifest';
-import { describeRoutes, formatBytes, parseByteBudget, themeScriptBody } from '@ultimat3/render';
+import { describePages, parseByteBudget, themeScriptBody } from '@ultimat3/render';
 import type { ChargedFile } from './budgets-charged';
 import { chargedClause, chargedMeta, heaviestFirst } from './budgets-charged';
 import {
@@ -85,7 +85,7 @@ const jsBudgetOf = (route: RouteFact): number | null => parseByteBudget(route.bu
 export type RouteFileOf = (url: string) => string | undefined;
 
 const declaredFileOf: RouteFileOf = (url) =>
-  describeRoutes().find((route) => route.path === url && route.mount === undefined)?.file;
+  describePages().find((route) => route.path === url && route.mount === undefined)?.file;
 
 const KB = 1024;
 

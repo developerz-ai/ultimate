@@ -1,7 +1,7 @@
 /**
  * Where a declared `rateLimit:` is spent: once, inside `invoke`, so HTTP, MCP, the in-app agent
  * tool and `.job()` draw on ONE bucket. The store is `@ultimat3/http`'s installed one — the slot
- * `@ultimat3/query` spends from too, filled at boot with the instance `createServer` is handed.
+ * `@ultimat3/query` spends from too, filled at boot with the instance `httpServer` is handed.
  */
 
 import type { Ctx } from '@ultimat3/core';

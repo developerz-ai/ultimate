@@ -10,7 +10,7 @@ import {
   scaleOf,
 } from './currency';
 import { formatMoney } from './format';
-import { fromDecimal, money, toDecimalString } from './money';
+import { fromDecimal, fromMinor, toDecimalString } from './money';
 
 describe('currency table', () => {
   test('exponents match ISO-4217 for the currencies that trip people up', () => {
@@ -61,7 +61,7 @@ describe('currency table', () => {
 describe('registering a currency the shipped table does not have', () => {
   test('an unregistered well-formed code is still refused — the seam is opt-in', () => {
     expect(isValidCurrency('XZZ')).toBe(false);
-    expect(codeOf(() => money(1, 'XZZ'))).toBe('X_CURRENCY_UNKNOWN');
+    expect(codeOf(() => fromMinor(1, 'XZZ'))).toBe('X_CURRENCY_UNKNOWN');
   });
 
   test('the registered exponent drives the maths — never a silent 2', () => {
@@ -70,21 +70,21 @@ describe('registering a currency the shipped table does not have', () => {
     expect(scaleOf('XBT')).toBe(100_000_000);
     // The whole point: a default of 2 would read this as 1.23 and lose six digits.
     expect(fromDecimal('1.23456789', 'XBT').minor).toBe(123_456_789);
-    expect(toDecimalString(money(123_456_789, 'XBT'))).toBe('1.23456789');
+    expect(toDecimalString(fromMinor(123_456_789, 'XBT'))).toBe('1.23456789');
   });
 
   test('an exponent of 0 is kept, not treated as absent', () => {
     registerCurrency({ code: 'XLP', exponent: 0, name: 'Loyalty Point' });
     expect(exponentOf('XLP')).toBe(0);
     expect(fromDecimal('250', 'XLP').minor).toBe(250);
-    // `money()` drops a `scale` that only restates the currency's own, so a zero-exponent
+    // `fromMinor()` drops a `scale` that only restates the currency's own, so a zero-exponent
     // registration must reach that comparison as 0 and not as `undefined`.
-    expect(money(250, 'XLP', 0).scale).toBeUndefined();
+    expect(fromMinor(250, 'XLP', 0).scale).toBeUndefined();
   });
 
   test('a registered currency formats — the seam reaches Intl, not just arithmetic', () => {
     registerCurrency({ code: 'XFM', exponent: 2, name: 'Framework Credit' });
-    expect(formatMoney(money(129_900, 'XFM'), 'en-US')).toContain('1,299.00');
+    expect(formatMoney(fromMinor(129_900, 'XFM'), 'en-US')).toContain('1,299.00');
   });
 
   test('currencyCodes() answers for the process; CURRENCIES stays the shipped ISO table', () => {

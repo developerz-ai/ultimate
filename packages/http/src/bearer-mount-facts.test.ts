@@ -6,18 +6,18 @@ import { describe, expect, test } from 'bun:test';
 import { agentActor, frozenClock } from '@ultimat3/core';
 import { bearerMount } from './bearer-mount';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
+import { httpPipeline } from './pipeline';
 import { memoryRateLimitStore } from './rate-limit';
 import type { RequestFacts } from './request-facts';
-import { json } from './response';
-import { createRouter, type Route } from './router';
+import { jsonResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const api: readonly Route[] = [
   {
     method: 'GET',
     path: '/_x/query/case-list',
     meta: { name: 'caseList', auth: 'required', enforcedBy: 'handler' },
-    handler: () => json({ ok: true }),
+    handler: () => jsonResponse({ ok: true }),
   },
 ];
 
@@ -36,8 +36,8 @@ const pipelineSeeing = (decide: (facts: RequestFacts) => boolean, trustProxy: bo
     rateLimitStore: memoryRateLimitStore(),
     clock: frozenClock(0),
   });
-  const pipeline = createPipeline({
-    table: createRouter([...api, ...mounted]),
+  const pipeline = httpPipeline({
+    table: httpRouter([...api, ...mounted]),
     config: defineHttpConfig({
       rateLimit: { scope: 'process' },
       dev: false,

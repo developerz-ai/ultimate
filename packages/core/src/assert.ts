@@ -4,7 +4,7 @@
 import { renderCauseValue } from './error-render';
 import { UltimateError } from './errors';
 
-export interface InvariantOptions {
+export interface AssertCodedOptions {
   readonly docs?: string | undefined;
   readonly meta?: Readonly<Record<string, unknown>> | undefined;
 }
@@ -25,12 +25,16 @@ export function assertNever(value: never, fix?: string): never {
   });
 }
 
-export function invariant(
+/**
+ * Throw `code` with `cause` and `fix` unless `condition` holds — `assert` with a dedicated code.
+ * Not `invariant`: that name is `@ultimat3/entity`'s, the declaration of an entity invariant.
+ */
+export function assertCoded(
   condition: unknown,
   code: string,
   cause: string,
   fix: string,
-  options?: InvariantOptions,
+  options?: AssertCodedOptions,
 ): asserts condition {
   if (condition) return;
   throw new UltimateError({
@@ -42,7 +46,7 @@ export function invariant(
   });
 }
 
-/** `invariant` with the generic code, for checks that have no dedicated code yet. */
+/** `assertCoded` with the generic code, for checks that have no dedicated code yet. */
 export function assert(condition: unknown, cause: string, fix: string): asserts condition {
-  invariant(condition, 'X_INVARIANT', cause, fix);
+  assertCoded(condition, 'X_INVARIANT', cause, fix);
 }

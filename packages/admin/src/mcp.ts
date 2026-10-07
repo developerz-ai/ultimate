@@ -3,13 +3,7 @@
 // confirmation rules as the buttons — this file adds a transport, not a second back door.
 
 import type { Actor } from '@ultimat3/core';
-import {
-  agentActor,
-  createContext,
-  hasContext,
-  runWithContext,
-  withChildContext,
-} from '@ultimat3/core';
+import { agentActor, ctxOf, hasContext, runWithContext, withChildContext } from '@ultimat3/core';
 import {
   type AnyMcpTool,
   type AppMcp,
@@ -387,7 +381,7 @@ function allowedToolNames(
 const asCaller = <T>(actor: Actor, requestId: string, run: () => Promise<T>): Promise<T> =>
   hasContext()
     ? withChildContext({ actor }, run)
-    : runWithContext(createContext({ actor, requestId }), run);
+    : runWithContext(ctxOf({ actor, requestId }), run);
 
 function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMcpTool): AnyMcpTool {
   return {

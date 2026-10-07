@@ -69,7 +69,7 @@ export function setActionPathStyle(next: unknown): ActionPathStyle {
   return style;
 }
 
-/** Test seam, beside `resetRegistry`. */
+/** Test seam, beside `resetActions`. */
 /**
  * Forget which paths were handed out, keeping the style. `@ultimat3/testing` calls it between two
  * test files of one worker (22.7, no `--isolate`): a path an earlier FILE derived is not one this

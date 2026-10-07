@@ -58,16 +58,12 @@ describe('finiteOption', () => {
 describe('finiteCount', () => {
   test('NaN, the infinities and a fraction are all refused', () => {
     for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 2.5]) {
-      expect(caught(() => finiteCount('createWorker', 'concurrency', value)).code).toBe(
-        'X_INVARIANT',
-      );
+      expect(caught(() => finiteCount('jobWorker', 'concurrency', value)).code).toBe('X_INVARIANT');
     }
   });
 
   test('a value past 2^53 is refused: a double there cannot name its own successor', () => {
-    expect(caught(() => finiteCount('createWorker', 'concurrency', 2 ** 53)).code).toBe(
-      'X_INVARIANT',
-    );
+    expect(caught(() => finiteCount('jobWorker', 'concurrency', 2 ** 53)).code).toBe('X_INVARIANT');
   });
 
   test('zero passes by default and is refused when the caller says at least one', () => {

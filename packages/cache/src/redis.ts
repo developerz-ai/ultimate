@@ -191,7 +191,7 @@ function raiseSweepFailure(failures: readonly unknown[], attempted: number): nev
   });
 }
 
-export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
+export function redisTier(options: RedisTierOptions = {}): CacheTier {
   const ns = namespaceFor(options.prefix ?? 'x', options.buildId);
   const defaultTtlMs = assertFiniteDurationMs(
     'redis',

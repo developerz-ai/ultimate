@@ -14,7 +14,7 @@ import { anonymousCtx, t } from '@ultimat3/action';
 import { secret } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import type { AiFetch } from './fetch-seam';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { llm } from './llm';
 import {
   FIXTURE_MODEL,
@@ -378,7 +378,7 @@ describe('the budget survives the new provider', () => {
       models: [MODEL],
       fetch: fakeFetch(calls, () => jsonResponse(completion({ content: 'ok' }))),
     });
-    const gateway = createGateway({ providers: [openai], budget: { request: 10 } });
+    const gateway = providerGateway({ providers: [openai], budget: { request: 10 } });
 
     await expect(
       gateway.scope({ actorKey: 'user-1' }, () => gateway.generate(request())),
@@ -393,7 +393,7 @@ describe('the budget survives the new provider', () => {
       models: [MODEL],
       fetch: fakeFetch([], () => jsonResponse(completion({ content: 'ok' }, 'stop', usage))),
     });
-    const gateway = createGateway({ providers: [openai] });
+    const gateway = providerGateway({ providers: [openai] });
 
     const spent = await gateway.scope({ actorKey: 'user-1' }, async () => {
       await gateway.generate(request());
@@ -444,7 +444,7 @@ describe('through llm()', () => {
         ),
       ),
     });
-    configureAi({ gateway: createGateway({ providers: [openai] }) });
+    configureAi({ gateway: providerGateway({ providers: [openai] }) });
 
     const answer = await summarizer()({ postId: 'p-1' }, { ctx: anonymousCtx() });
 
@@ -470,7 +470,7 @@ describe('through llm()', () => {
         jsonResponse(completion({ content: null, refusal: 'I will not do that' })),
       ),
     });
-    configureAi({ gateway: createGateway({ providers: [openai] }) });
+    configureAi({ gateway: providerGateway({ providers: [openai] }) });
 
     await expect(summarizer()({ postId: 'p-1' }, { ctx: anonymousCtx() })).rejects.toMatchObject({
       code: 'X_LLM_REFUSED',

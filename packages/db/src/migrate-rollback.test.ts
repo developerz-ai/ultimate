@@ -4,7 +4,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import { type LedgerRow, type Migration, migrate, migrationChecksum } from './migrate';
 import { ledgerAheadOfBuild } from './migrate-rollback';
 
@@ -33,7 +33,7 @@ const row = (of: Migration | string, appVersion = '1.5.0'): LedgerRow => {
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

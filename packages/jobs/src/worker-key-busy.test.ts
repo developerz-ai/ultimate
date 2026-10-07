@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver } from './driver';
 import { job, resetJobs } from './job';
@@ -59,7 +59,7 @@ function fixture(nackLands: boolean) {
   return { driver, nacks, announced };
 }
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 describe('a run refused by its key', () => {
   test('a refusal that landed is answered, and announced once', async () => {

@@ -62,7 +62,7 @@ export interface AdminAuthz {
   decide(query: AdminAuthzQuery): AdminDecision;
 }
 
-export function allowed(
+export function adminAllowed(
   permission: string,
   reason: string,
   trace: readonly string[] = [],
@@ -70,7 +70,7 @@ export function allowed(
   return { allowed: true, permission, reason, trace };
 }
 
-export function denied(
+export function adminDenied(
   permission: string,
   reason: string,
   trace: readonly string[] = [],
@@ -82,7 +82,7 @@ export function denied(
  * Every permission must hold. The first denial wins, and carries its own reason.
  *
  * An EMPTY list is refused, never granted. `permissions[length - 1] ?? ''` used to fall through to
- * `allowed('')`, so a declared-but-empty gate opened for every actor, anonymous included — and the
+ * `adminAllowed('')`, so a declared-but-empty gate opened for every actor, anonymous included — and the
  * decision it returned named no permission at all. `visibleNav` hands an author's
  * `item.permissions` straight here, so `permissions: []` on a nav item was that gate. `pages.ts`
  * already refuses an empty page list at declaration time (`X_ADMIN_PAGE_UNGUARDED`); this is the
@@ -96,7 +96,7 @@ export function decideAll(
   subject?: AdminSubject,
 ): AdminDecision {
   if (permissions.length === 0) {
-    return denied('', 'admin.policy.none-declared', [
+    return adminDenied('', 'admin.policy.none-declared', [
       'no permission was declared for this surface, so there is nothing to satisfy',
     ]);
   }
@@ -107,10 +107,10 @@ export function decideAll(
     );
     trace.push(`${permission}: ${decision.allowed ? 'allow' : 'deny'} (${decision.reason})`);
     if (!decision.allowed)
-      return denied(permission, decision.reason, [...trace, ...decision.trace]);
+      return adminDenied(permission, decision.reason, [...trace, ...decision.trace]);
   }
   const last = permissions[permissions.length - 1] ?? '';
-  return allowed(last, 'admin.policy.all-granted', trace);
+  return adminAllowed(last, 'admin.policy.all-granted', trace);
 }
 
 export function isAllowed(
@@ -167,8 +167,8 @@ export function staticAuthz(granted: readonly string[]): AdminAuthz {
   return {
     decide({ permission }): AdminDecision {
       return set.has(permission)
-        ? allowed(permission, 'admin.policy.granted', [`static: ${permission} in grant list`])
-        : denied(permission, 'admin.policy.not-granted', [
+        ? adminAllowed(permission, 'admin.policy.granted', [`static: ${permission} in grant list`])
+        : adminDenied(permission, 'admin.policy.not-granted', [
             `static: ${permission} not in [${[...set].join(', ')}]`,
           ]);
     },

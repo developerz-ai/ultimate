@@ -4,7 +4,9 @@
 // spared: render's server half, the PWA, SEO, MCP and island subsystems.
 
 import type { Route } from '@ultimat3/http';
-import { describeRoutes } from '@ultimat3/render';
+import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
+
+import { describePages } from '@ultimat3/render';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { mountAppMcp } from './app-mcp';
@@ -13,7 +15,7 @@ import { islandRoutes } from './island-routes';
 import type { LoadedIslands } from './island-store';
 import { loadOrBuildIslands } from './island-store';
 import { loadNavigation, pageNavigation } from './page-navigation';
-import { loadSpeculation, pageSpeculation } from './page-speculation';
+import { loadSpeculation, otherLocaleSegments, pageSpeculation } from './page-speculation';
 import { pageSync } from './page-sync';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { adminMountRoutes } from './runtime-admin';
@@ -76,8 +78,9 @@ export async function webSurface(
   const speculation = pageSpeculation({
     config: await loadSpeculation(options.root),
     client: declared.surfaces,
+    localeSegments: otherLocaleSegments(await appLocaleSet(options.root)),
   });
-  // The worker, from the SAME route table this process is about to serve — `describeRoutes()` is
+  // The worker, from the SAME route table this process is about to serve — `describePages()` is
   // the one projection `x.manifest.json`, `/_x`, the sitemap and `sw.js` are all built from, so a
   // route added here cannot be missing from the precache manifest.
   const serviceWorker =
@@ -86,7 +89,7 @@ export async function webSurface(
       : serviceWorkerArtifacts({
           pwa,
           buildId,
-          routes: describeRoutes(),
+          routes: describePages(),
           islands,
           styles: styleBundle(),
           scripts: [

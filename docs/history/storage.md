@@ -113,6 +113,17 @@ a current fact: the rules that still hold are in that file, and where the two di
 - **The signed base, before it was stated once on the driver** (moved from the package notes,
   2026-10): Before that, the base was stated twice (`/_storage/local` in the driver, `/_storage` in `verifySignedUrl`'s default) and NO genuine URL verified at all: the key parsed as `local/<key>`.
 
+## Two reserved-key and list rules (moved from the package notes, 2026-10)
+
+- **Why `META_DIR` is reserved case-insensitively**: `.META/a.txt.json` was a legal key that wrote
+  `<root>/.META/a.txt.json`, which on APFS and NTFS IS `<root>/.meta/a.txt.json` — the sidecar for
+  object `a.txt` — so a caller able to name a key rewrote another object's recorded `contentType`.
+- **Why `list()` refuses everything but `ENOENT`**: both drivers broke `delete()`'s rule in
+  opposite directions. The local one caught EVERYTHING and answered
+  `{ objects: [], truncated: false }`, so `EACCES` on the root read as "this disk is empty"; the s3
+  one let a bare `S3Error` escape uncoded, with nothing for the http error map to render but a
+  500. `sweepOrphans` walks `list()`, so the local swallow was a false-erasure report a layer up.
+
 ## Object Lock (plan 101 sweep 10a, `As of 2026-10-06`)
 
 - **Why the s3 disk has a second transport.** `Bun.S3Client`'s `write` takes a type, an ACL and a

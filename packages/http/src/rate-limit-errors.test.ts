@@ -30,7 +30,7 @@ describe('rateLimited', () => {
 });
 
 describe('the declaration refusals', () => {
-  // Both of these used to end at `createServer({ routes, rateLimitStore })` — a parameter name,
+  // Both of these used to end at `httpServer({ routes, rateLimitStore })` — a parameter name,
   // not a value, so the reader still had to find something to pass. There is now a shipped store.
   test("the fix names the store an app can actually pass, not a parameter's name", () => {
     expect(rateLimitNotShared('process').fix).toContain('postgresRateLimitStore(');

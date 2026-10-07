@@ -22,13 +22,13 @@ export type {
 export {
   announce,
   ariaBool,
-  createFocusTrap,
-  createRovingTabindex,
   FOCUSABLE_SELECTOR,
   focusableWithin,
+  focusTrap,
   LIVE_REGION_LEVELS,
   liveRegionAttrs,
-  resetIdCounter,
+  resetUseIdCounter,
+  rovingTabindex,
   useId,
 } from './a11y';
 export type { AccordionItem, AccordionProps } from './components/Accordion';
@@ -150,7 +150,7 @@ export type {
   FileTarget,
 } from './components/file-input-view';
 export {
-  formatBytes,
+  formatFileSize,
   selectFiles,
 } from './components/file-input-view';
 export type { GaugeProps } from './components/Gauge';
@@ -182,7 +182,7 @@ export type {
   ImageSources,
   ImageVariant,
 } from './components/image-source';
-export { boxFor, reservedRatio, sourceSetsFor, srcsetFor } from './components/image-source';
+export { boxFor, reservedRatio, sourceSetsFor, variantSrcset } from './components/image-source';
 export type { LoadMoreInput, LoadMoreState } from './components/infinite-scroll-view';
 export type { KbdProps } from './components/Kbd';
 export { Kbd } from './components/Kbd';
@@ -288,7 +288,7 @@ export {
 export type { FieldPathSegment, IssuePathSegment } from './form/field-path';
 export { fieldSelector, formatFieldPath, MAX_FIELD_INDEX, parseFieldPath } from './form/field-path';
 export type { FormBinding, FormBindingOptions } from './form/form-binding';
-export { createFormBinding } from './form/form-binding';
+export { formBinding } from './form/form-binding';
 export type {
   FormIssue,
   FormSchema,
@@ -360,7 +360,6 @@ export {
   THEME_ATTRIBUTE,
   THEME_DEFAULT_ATTRIBUTE,
   THEME_MEDIA_QUERY,
-  THEME_STORAGE_KEY,
   toggleTheme,
   watchOsTheme,
 } from './theme/theme';
@@ -378,7 +377,7 @@ export {
   TOAST_MAX_VISIBLE,
 } from './toast/toast-state';
 export type { ToastEnv, ToastStore } from './toast/toast-store';
-export { browserToastEnv, createToastStore, INERT_TOAST_ENV } from './toast/toast-store';
+export { browserToastEnv, INERT_TOAST_ENV, toastStore } from './toast/toast-store';
 export { useToasts } from './toast/use-toasts';
 export type { ColourVision } from './tokens/colour-vision';
 export {

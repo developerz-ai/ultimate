@@ -5,9 +5,9 @@
 // on, and still must not answer them.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { anonymousActor, createContext } from '@ultimat3/core';
+import { anonymousActor, ctxOf } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -75,7 +75,7 @@ afterAll(() => {
 
 const wire = async (target: AnyAction): Promise<string> => {
   const route = toRoute(target);
-  const server = createServer({
+  const server = httpServer({
     routes: [route],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => null },
@@ -100,7 +100,7 @@ const clean = (bytes: string): void => {
   expect(bytes).not.toContain('contact');
 };
 
-const ctx = () => createContext({ actor: anonymousActor() });
+const ctx = () => ctxOf({ actor: anonymousActor() });
 
 describe('unit · a sealed column leaves through no projection of an action', () => {
   test('HTTP: output IS the entity row — `data` and `records` of the envelope', async () => {

@@ -1,6 +1,6 @@
 // `missing-check` against a real catalog. Two halves, and the second is the one a fake cannot
 // prove: that a CORRECT database is silent even though Postgres has rewritten every predicate the
-// migration declared. This file reads `pg_constraint` through `introspect()` and compares the
+// migration declared. This file reads `pg_constraint` through `introspectSchema()` and compares the
 // answer with a snapshot `snapshotOf` produced, which is exactly what `checkDrift` does after
 // `ROLE=migrate`.
 //
@@ -11,7 +11,7 @@ import { type PostgresClient, postgresClient } from './client';
 import { appTables, diffSchema } from './drift';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
-import { introspect, type SchemaDescription } from './introspect';
+import { introspectSchema, type SchemaDescription } from './introspect';
 import { raw } from './sql';
 import { statementsOf } from './statement-split';
 
@@ -78,10 +78,10 @@ describe.skipIf(!hasPostgres)('live · postgres · a CHECK the catalog no longer
   let declared: SchemaDescription;
 
   const live = async (): Promise<SchemaDescription> =>
-    appTables(await introspect({ client, schema: SCHEMA }));
+    appTables(await introspectSchema({ client, schema: SCHEMA }));
 
   beforeAll(async () => {
-    // Its own schema, so `introspect()` sees this table and nothing else the server is holding.
+    // Its own schema, so `introspectSchema()` sees this table and nothing else the server is holding.
     admin = postgresClient({ url: url ?? '' });
     await admin.execute(raw(`drop schema if exists "${SCHEMA}" cascade`));
     await admin.execute(raw(`create schema "${SCHEMA}"`));

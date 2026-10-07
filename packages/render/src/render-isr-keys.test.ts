@@ -5,9 +5,9 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag, PurgeDriver } from '@ultimat3/cache';
-import { createCdnTier, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
-import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController } from './render-isr';
+import { cdnTier, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
+import { clearRoutes, describePages, registerRoute } from './registry';
+import { isrController } from './render-isr';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
@@ -42,7 +42,7 @@ const BLOG = 'apps/web/site/blog/page.tsx';
 const render = (): string => '<p>page</p>';
 
 const serveOnce = async (path: string): Promise<RenderResult> =>
-  (await createIsrController({ routes: describeRoutes }).serve(path, render)).result;
+  (await isrController({ routes: describePages }).serve(path, render)).result;
 
 const carried = (result: RenderResult): string[] =>
   (result.headers['surrogate-key'] ?? '').split(' ').filter((key) => key !== '');
@@ -58,7 +58,7 @@ const purgedBy = async (tags: readonly CacheTag[]): Promise<string[]> => {
     },
     purgeAll: () => Promise.resolve(),
   };
-  await createCdnTier({ purge: driver }).invalidateTags(tags);
+  await cdnTier({ purge: driver }).invalidateTags(tags);
   return purged;
 };
 
@@ -85,7 +85,7 @@ describe('a tag-revalidated ISR document carries its purge keys', () => {
 
   test('a miss, a hit and a served-stale answer all carry them', async () => {
     isrRoute(BLOG, { tags: [tag('post')] });
-    const controller = createIsrController({ routes: describeRoutes });
+    const controller = isrController({ routes: describePages });
 
     const miss = await controller.serve('/blog', render);
     const hit = await controller.serve('/blog', render);

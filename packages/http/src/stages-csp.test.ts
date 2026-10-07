@@ -5,10 +5,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { createRateLimiter } from './rate-limit';
-import { text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { rateLimiter } from './rate-limit';
+import { textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const sandboxed = (): Response =>
   new Response('<script>1</script>', {
@@ -20,21 +20,21 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/plain',
     meta: { name: 'plain', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   { method: 'GET', path: '/upload', meta: { name: 'upload', auth: 'public' }, handler: sandboxed },
 ];
 
 const pipelineFor = (reportOnly: boolean) =>
-  createPipeline({
-    table: createRouter(routes),
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({
       rateLimit: { scope: 'process' },
       dev: false,
       buildId: null,
       security: { csp: { reportOnly } },
     }),
-    limiter: createRateLimiter({
+    limiter: rateLimiter({
       config: {
         enabled: false,
         defaultBucket: 'default',

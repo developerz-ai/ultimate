@@ -88,7 +88,7 @@ const METHODS = [
   'prompts/get',
 ] as const;
 
-export function createMcpServer(input: CreateMcpServerInput = {}): McpServer {
+export function mcpServer(input: CreateMcpServerInput = {}): McpServer {
   const tools = new ToolRegistry().registerAll(input.tools ?? []);
   const resources = new ResourceRegistry().registerAll(input.resources ?? []);
   const meta = MetaSurface.build({

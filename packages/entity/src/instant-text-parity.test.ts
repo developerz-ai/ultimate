@@ -4,7 +4,7 @@
 // row's instant>`) answered an empty page two in memory and the right one in production.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient, setDbClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
 import { text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import { instantMicros } from './instant';
@@ -33,7 +33,7 @@ const SEED: readonly Event[] = [1, 2, 3, 4, 5].map((n) => ({
 
 let client: RecordingClient;
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 afterAll(() => {

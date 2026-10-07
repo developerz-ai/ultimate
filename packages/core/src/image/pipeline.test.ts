@@ -40,7 +40,7 @@ import {
 import { crc32, writeU32 } from './png-bytes';
 import { decodeImage, encodeImage } from './png-pixels';
 import { IMAGE_FORMATS, probeImage } from './probe';
-import { createRaster, MAX_IMAGE_PIXELS, type Raster } from './raster';
+import { blankRaster, MAX_IMAGE_PIXELS, type Raster } from './raster';
 
 interface Failure {
   readonly code: string;
@@ -69,7 +69,7 @@ const thrown = async (run: () => Promise<unknown>): Promise<Failure> => {
 };
 
 const solid = (width: number, height: number, alpha: number): Raster => {
-  const raster = createRaster(width, height, 'test');
+  const raster = blankRaster(width, height, 'test');
   for (let i = 0; i < raster.pixels.length; i += 4) {
     raster.pixels[i] = 200;
     raster.pixels[i + 1] = 100;
@@ -81,7 +81,7 @@ const solid = (width: number, height: number, alpha: number): Raster => {
 
 /** Incompressible pixels from a fixed LCG — deterministic, unlike `Math.random`. */
 const noise = (width: number, height: number): Raster => {
-  const raster = createRaster(width, height, 'test');
+  const raster = blankRaster(width, height, 'test');
   let seed = 0x2f6e2b1;
   for (let i = 0; i < raster.pixels.length; i += 1) {
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;

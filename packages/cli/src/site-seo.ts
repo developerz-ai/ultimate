@@ -4,7 +4,8 @@
 
 import type { Environment, SeoSitemapConfig } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
-import { localeConfig, localizedPath, routedLocales, unlocalizedPath } from '@ultimat3/i18n';
+import { localizedPath, unlocalizedPath } from '@ultimat3/i18n';
+import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import type { RouteEntry } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';
 import { enumeratePrerender, fillPath } from '@ultimat3/render/server';
@@ -150,10 +151,11 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
   // Every routed locale, with `xhtml:link` alternates: one `<url>` per page per locale, each
   // naming the whole cluster and `x-default`. A single-locale app passes none and gets the plain
   // urlset it always had — an alternates cluster of one is noise.
-  const locales = routedLocales();
-  const defaultLocale = localeConfig().fallback;
-  const settings = options.sitemap ?? NO_SITEMAP_SETTINGS;
+  // The app's declared set — the one the manifest, the worker and the prerender read — never the
+  // ambient locale config, which a build process has not configured.
   const root = options.root ?? process.cwd();
+  const { locales, defaultLocale } = await appLocaleSet(root);
+  const settings = options.sitemap ?? NO_SITEMAP_SETTINGS;
   const stamp: Stamp = (file) => {
     const lastmod = lastmodOf(file, settings.lastmod, root);
     return lastmod === undefined ? {} : { lastmod };

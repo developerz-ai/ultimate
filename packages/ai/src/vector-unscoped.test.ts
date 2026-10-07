@@ -3,20 +3,20 @@
 // and a forgotten call searched every tenant's rows. The backfill path opts in by name: `UNSCOPED`.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
-import { createRecordingClient } from '@ultimat3/db';
-import { normalize } from './embeddings';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
+import { recordingClient } from '@ultimat3/db';
+import { normalizeVector } from './embeddings';
 import { postgresVectorStore } from './pg-vector';
 import type { VectorStore } from './vector';
 import { memoryVectorStore } from './vector';
 import { narrowScope, UNSCOPED } from './vector-scope';
 
-const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
+const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 
 const inOrg = <T>(fn: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'u-1', orgId: 'acme' }) }), fn);
+  runWithContext(ctxOf({ actor: userActor({ id: 'u-1', orgId: 'acme' }) }), fn);
 const inNoOrg = <T>(fn: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'u-1' }) }), fn);
+  runWithContext(ctxOf({ actor: userActor({ id: 'u-1' }) }), fn);
 
 const stores = (): readonly (readonly [string, (scope?: typeof UNSCOPED) => VectorStore])[] => [
   [
@@ -29,7 +29,7 @@ const stores = (): readonly (readonly [string, (scope?: typeof UNSCOPED) => Vect
       postgresVectorStore({
         name: 'docs',
         dimension: 4,
-        client: createRecordingClient(),
+        client: recordingClient(),
         ...(scope === undefined ? {} : { scope }),
       }),
   ],

@@ -10,7 +10,7 @@
 // The client seam's own functions, for the hooks a browser island calls: the one transport, the
 // URL rule, the principal-supersession reader, and the small helpers realtime's browser half uses.
 // Each reaches no titles table — `page-bundle.test.ts` builds all of them together to prove it.
-export { invariant } from './assert';
+export { assertCoded } from './assert';
 export type { AsyncState } from './async-state';
 export type { JitterMode, Random } from './backoff';
 export { backoffDelay } from './backoff';
@@ -32,7 +32,7 @@ export type { UltimateErrorInit } from './errors';
 export { isUltimateError, UltimateError } from './errors';
 export { finiteCount, finiteOption } from './finite-option';
 export { isSuperseded } from './generation-fence';
-export { uuid } from './ids';
+export { uuidV7 } from './ids';
 export { isJsonObject } from './json-object';
 export type { OutboxDrainMessage } from './outbox-drain';
 export { OUTBOX_DRAIN_MESSAGE } from './outbox-drain';
@@ -54,5 +54,7 @@ export type { RecordEnvelope, RecordRows } from './record-envelope';
 export { decodeRecordEnvelope, RECORDS_HEADER } from './record-envelope';
 export type { PageClient, RecordSink } from './record-sink';
 export { pageClient } from './record-sink';
+// The key the theme boot script reads and the toggle island writes.
+export { THEME_STORAGE_KEY } from './theme-storage';
 // A write's public name, so the page's store can recognise the `records` frame its own write made.
 export { isWriteDigest, WRITE_DIGEST_LENGTH, writeDigest } from './write-digest';

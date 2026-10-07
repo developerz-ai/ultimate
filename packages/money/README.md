@@ -21,14 +21,14 @@ read rather than rounding it. → [Money](https://github.com/developerz-ai/ultim
 ## Use
 
 ```ts
-import { add, allocate, formatMoney, fromDecimal, money } from '@ultimat3/money';
+import { add, allocate, formatMoney, fromDecimal, fromMinor } from '@ultimat3/money';
 
 const price = fromDecimal('12.99', 'EUR');   // { minor: 1299, currency: 'EUR' }
-const total = add(price, money(500, 'EUR')); // 1799
+const total = add(price, fromMinor(500, 'EUR')); // 1799
 formatMoney(total, 'de-DE');                 // "17,99 €"
-formatMoney(money(1200, 'JPY'), 'en-US');    // "¥1,200"  — 0 decimals
-formatMoney(money(1234, 'KWD'), 'en-US');    // "KWD 1.234" — 3 decimals
-add(price, money(500, 'USD'));               // throws X_CURRENCY_MISMATCH
+formatMoney(fromMinor(1200, 'JPY'), 'en-US');    // "¥1,200"  — 0 decimals
+formatMoney(fromMinor(1234, 'KWD'), 'en-US');    // "KWD 1.234" — 3 decimals
+add(price, fromMinor(500, 'USD'));               // throws X_CURRENCY_MISMATCH
 ```
 
 ## Minor units are not always cents
@@ -69,22 +69,22 @@ included. That is why one is a value and the other is a call.
 
 ## Sub-cent amounts carry a scale
 
-`money(2, 'USD', 6)` is $0.000002 — `minor` counting 10⁻⁶ instead of the currency's own 10⁻².
+`fromMinor(2, 'USD', 6)` is $0.000002 — `minor` counting 10⁻⁶ instead of the currency's own 10⁻².
 A value that names no scale means the currency's, which is every amount that already exists, so
 nothing about `{ minor, currency }` changes: same shape, same JSON, same columns. Only a scale
-*equal* to the currency's is dropped, so a deliberately coarser one is kept too: `money(5, 'USD', 0)`
+*equal* to the currency's is dropped, so a deliberately coarser one is kept too: `fromMinor(5, 'USD', 0)`
 is $5 counted in whole dollars, and `rescale()` produces such values legitimately.
 
 ```ts
-import { add, fromDecimal, money, moneyScale, rescale } from '@ultimat3/money';
+import { add, fromDecimal, fromMinor, moneyScale, rescale } from '@ultimat3/money';
 
-moneyScale(money(1299, 'EUR'));              // 2 — the currency's own
-moneyScale(money(2, 'USD', 6));              // 6
-rescale(money(80, 'USD'), 8);                // $0.80 as 80,000,000 hundred-millionths
-rescale(money(1_234_567, 'USD', 6), 2);      // throws X_MONEY_NOT_INTEGER — digits would go
-rescale(money(1_234_567, 'USD', 6), 2, 'half-up');  // 123¢, the loss named at the call
+moneyScale(fromMinor(1299, 'EUR'));              // 2 — the currency's own
+moneyScale(fromMinor(2, 'USD', 6));              // 6
+rescale(fromMinor(80, 'USD'), 8);                // $0.80 as 80,000,000 hundred-millionths
+rescale(fromMinor(1_234_567, 'USD', 6), 2);      // throws X_MONEY_NOT_INTEGER — digits would go
+rescale(fromMinor(1_234_567, 'USD', 6), 2, 'half-up');  // 123¢, the loss named at the call
 fromDecimal('0.000002', 'USD', { scale: 6 });
-add(money(1, 'USD'), money(2, 'USD', 6));    // meets at scale 6: 10002, nothing lost
+add(fromMinor(1, 'USD'), fromMinor(2, 'USD', 6));    // meets at scale 6: 10002, nothing lost
 ```
 
 Arithmetic normalises to the *finer* of two scales, never the coarser — adding a sub-cent fee to
@@ -101,7 +101,7 @@ fiction. The alternative was a second money type.
 
 ## Allocation
 
-`allocate(money(100, 'USD'), 3)` → `34, 33, 33`. Largest-remainder split: floor every part,
+`allocate(fromMinor(100, 'USD'), 3)` → `34, 33, 33`. Largest-remainder split: floor every part,
 then hand out the leftover units one at a time, biggest fractional remainder first.
 `round(100 / 3)` either loses a cent or invents one, and an invoice that does that fails
 reconciliation forever. `allocateByRatios` does the same for revenue shares and line splits.
@@ -128,7 +128,7 @@ scales by that when it is there. It is how a derived direction stays exact: a ta
 double `1 / 0.92`, whose own decimal spelling rounds a large amount one minor unit low. `rate`
 stays the readable number the audit trail records.
 
-`convert` preserves the amount's own `scale`. `convert(money(2, 'USD', 6), 'EUR', parity)` is
+`convert` preserves the amount's own `scale`. `convert(fromMinor(2, 'USD', 6), 'EUR', parity)` is
 €0.000002, not €0.02 — the target currency's minor unit decides nothing about a value that
 already carries its own precision. `convertWith` on a same-currency pair stamps `at` from an
 injected `Clock` (`{ clock }`, default `systemClock`) or from an explicit `{ at }`, never from

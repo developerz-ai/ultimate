@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { memberId, orgId } from '@postly/domain';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import type { MemberView, OrgView } from '../app/orgs/entity';
 import { postlyActor, useActor } from './actor';
 
@@ -33,17 +33,17 @@ const member: MemberView = {
 
 describe('useActor', () => {
   test('refuses an actor nobody resolved facts for, by code', () => {
-    const ctx = createContext({ actor: userActor({ id: member.id, orgId: org.id }) });
+    const ctx = ctxOf({ actor: userActor({ id: member.id, orgId: org.id }) });
 
     expect(() => runWithContext(ctx, useActor)).toThrow(/X_ACTOR_UNRESOLVED/);
   });
 
   test('refuses an anonymous actor the same way — the app surface has no member row either', () => {
-    expect(() => runWithContext(createContext(), useActor)).toThrow(/X_ACTOR_UNRESOLVED/);
+    expect(() => runWithContext(ctxOf(), useActor)).toThrow(/X_ACTOR_UNRESOLVED/);
   });
 
   test('answers the member and org the request actor carries', () => {
-    const ctx = createContext({ actor: postlyActor({ member, org }) });
+    const ctx = ctxOf({ actor: postlyActor({ member, org }) });
 
     const actor = runWithContext(ctx, useActor);
 
@@ -58,7 +58,7 @@ describe('useActor', () => {
 
   test('takes `now` from the request clock, not the wall clock', () => {
     const fixed = new Date('2026-08-16T09:00:00.000Z');
-    const ctx = createContext({
+    const ctx = ctxOf({
       actor: postlyActor({ member, org }),
       clock: { now: () => fixed, monotonic: () => 0 },
     });

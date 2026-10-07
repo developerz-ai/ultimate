@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Logger } from '@ultimat3/core';
-import { agentActor, createLogger, frozenClock } from '@ultimat3/core';
+import { agentActor, frozenClock, structuredLogger } from '@ultimat3/core';
 import type { McpOutcome } from './audit';
 import { auditToolCall, outcomeForCode, outcomeForResult } from './audit';
 import type { McpCaller, McpToolResult } from './registry';
@@ -18,7 +18,7 @@ interface Capture {
 
 function capture(): Capture {
   const lines: Record<string, unknown>[] = [];
-  const logger = createLogger({
+  const logger = structuredLogger({
     level: 'trace',
     clock: frozenClock('2026-08-09T00:00:00.000Z'),
     writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),

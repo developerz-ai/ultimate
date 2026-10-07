@@ -23,7 +23,7 @@ import {
   resetLifecycle,
   shutdownHookCount,
 } from './lifecycle';
-import { createLogger } from './logger';
+import { structuredLogger } from './logger';
 
 // Lifecycle state is process-global, and any suite that boots a server calls `markReady()` — so
 // this resets on the way IN as well as out, or the first assertion reads another file's process.
@@ -131,7 +131,7 @@ describe('lifecycle', () => {
     const lines: string[] = [];
     configureLifecycle({
       deadlineMs: 10,
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
     markReady();
     beginWork();
@@ -173,7 +173,7 @@ describe('lifecycle', () => {
   test('concurrent signals join the same drain and a failing hook does not stop it', async () => {
     const lines: string[] = [];
     configureLifecycle({
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
     let closed = 0;
     onShutdown('bad', () => {
@@ -196,7 +196,7 @@ describe('lifecycle', () => {
     // `process.exit(0)` — the pod is killed at the grace period instead of exiting clean.
     const lines: string[] = [];
     configureLifecycle({
-      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      logger: structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
     });
     let closed = 0;
     onShutdown('bigint-thrower', () => {
@@ -237,7 +237,7 @@ describe('a drained lifecycle is terminal', () => {
     expect(lifecycleState()).toBe('stopped');
 
     // Measured before this refusal existed: `markReady()` returned normally, the state stayed
-    // `stopped`, and `@ultimat3/http`'s `createServer().start()` went on to bind a real port that
+    // `stopped`, and `@ultimat3/http`'s `httpServer().start()` went on to bind a real port that
     // answered 503 to every request and was still accepting connections after its own `stop()`.
     expect(() => markReady()).toThrow(/X_LIFECYCLE_DRAINED/);
     expect(lifecycleState()).toBe('stopped');
@@ -381,7 +381,7 @@ describe('readiness checks', () => {
  */
 describe('drain re-entrancy', () => {
   test('an accept hook calling drain() joins the in-flight drain instead of starting one', async () => {
-    configureLifecycle({ logger: createLogger({ writer: () => undefined }) });
+    configureLifecycle({ logger: structuredLogger({ writer: () => undefined }) });
     let calls = 0;
     let joined: Promise<void> | undefined;
     onShutdown(
@@ -400,7 +400,7 @@ describe('drain re-entrancy', () => {
   });
 
   test('every phase runs exactly once when a close hook re-enters', async () => {
-    configureLifecycle({ logger: createLogger({ writer: () => undefined }) });
+    configureLifecycle({ logger: structuredLogger({ writer: () => undefined }) });
     const ran: string[] = [];
     for (const phase of ['accept', 'inflight', 'close'] as const) {
       onShutdown(

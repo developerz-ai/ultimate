@@ -135,7 +135,7 @@ export interface PostgresRateLimitStore extends RateLimitStore {
    *
    * `nowMs` is required and comes from the SAME clock the takes use — `ctx.now().getTime()` in a
    * task. There is no default, because the only defensible default would be this process' own
-   * `Date.now()`, and a store that reads a clock nobody handed it is the thing `createRateLimiter`
+   * `Date.now()`, and a store that reads a clock nobody handed it is the thing `rateLimiter`
    * took a `Clock` to stop.
    */
   purgeExpired(nowMs: number): Promise<number>;
@@ -150,14 +150,14 @@ export interface PostgresRateLimitStore extends RateLimitStore {
  *
  * // apps/web/server.ts — what PROVIDES it
  * const client = db();
- * createServer({
+ * httpServer({
  *   rateLimitStore: postgresRateLimitStore({
  *     executor: { query: (text, values) => client.query({ text, values }) },
  *   }),
  * });
  * ```
  *
- * `assertRateLimitScope` compares the two once, inside `createPipeline`, and a `'shared'`
+ * `assertRateLimitScope` compares the two once, inside `httpPipeline`, and a `'shared'`
  * declaration over any other store is `X_RATE_LIMIT_NOT_SHARED` before the socket opens.
  */
 export function postgresRateLimitStore(

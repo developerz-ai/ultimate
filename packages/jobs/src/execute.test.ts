@@ -4,7 +4,7 @@
 
 import { afterAll, describe, expect, spyOn, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, logger } from '@ultimat3/core';
+import { ctxOf, logger } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
@@ -112,7 +112,7 @@ async function claimOne(
   return {
     driver,
     claimed,
-    execute: (ctx = createContext({ role: 'worker', buildId: 'test' })) =>
+    execute: (ctx = ctxOf({ role: 'worker', buildId: 'test' })) =>
       executeJob({ driver, claimed, handle: handle as AnyJobHandle, ctx }),
     nacks: () => nacks,
   };
@@ -250,7 +250,7 @@ describe('a timed-out job is cancelled, not orphaned', () => {
     });
 
     const execution = await harness.execute(
-      createContext({ role: 'worker', buildId: 'test', signal: gone.signal }),
+      ctxOf({ role: 'worker', buildId: 'test', signal: gone.signal }),
     );
 
     // The step body still runs — only a write can be fenced — but the attempt fails with the

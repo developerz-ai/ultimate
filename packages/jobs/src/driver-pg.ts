@@ -5,7 +5,7 @@
 // they run against in `driver-pg-ddl.ts`, and the row-to-record decoding in `driver-pg-rows.ts`.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
-import { finiteCount, renderCauseValue, systemClock, uuid } from '@ultimat3/core';
+import { finiteCount, renderCauseValue, systemClock, uuidV7 } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
 import { listedRunId } from './backfill-ledger';
 import { nowMs } from './clock';
@@ -265,12 +265,12 @@ export function postgresJobDriver(options: PgDriverOptions = {}): JobDriver {
     async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
       const runAt = request.runAt ?? nowMs(clock);
       const params = [
-        request.id ?? uuid(),
+        request.id ?? uuidV7(),
         request.name,
         request.queue || DEFAULT_QUEUE,
         JSON.stringify(request.input ?? null),
         request.idempotencyKey,
-        request.runId ?? uuid(),
+        request.runId ?? uuidV7(),
         request.maxAttempts,
         runAt,
         request.tenantId ?? null,
@@ -363,7 +363,6 @@ export function postgresJobDriver(options: PgDriverOptions = {}): JobDriver {
         by.workerId,
         Math.round(by.durationMs ?? 0),
         by.claim,
-        by.counted !== false,
       ]);
       return rows.length > 0;
     },

@@ -38,7 +38,7 @@ describe('@ultimat3/mail/events stays off the barrel', () => {
   test('the receivers are on the subpath and not on the barrel', async () => {
     const barrel: Record<string, unknown> = await import('./index');
     const events: Record<string, unknown> = await import('./events');
-    for (const name of ['createSesEventReceiver', 'createResendEventReceiver']) {
+    for (const name of ['sesEventReceiver', 'resendEventReceiver']) {
       expect(typeof events[name]).toBe('function');
       expect(barrel[name]).toBeUndefined();
     }

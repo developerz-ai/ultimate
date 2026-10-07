@@ -15,7 +15,7 @@ import {
 } from '@ultimat3/core';
 import { getJob, isJobHandle, resetJobs } from './job';
 import { retrySchedule } from './retry';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 import {
   codeOf,
@@ -321,7 +321,7 @@ describe('a delivery that can never be signed is refused before the socket opens
       await codeOf(() =>
         one.handle.run({
           input: { endpointId: 'ep_1', eventId: 'evt_missing' },
-          step: createStepRunner({
+          step: stepRunner({
             runId: 'run-x',
             jobName: 'partner-hooks-1',
             store: memoryStepStore(),

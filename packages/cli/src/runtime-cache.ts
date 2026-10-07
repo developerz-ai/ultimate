@@ -7,12 +7,12 @@
 import type { CacheTier, PurgeDriver } from '@ultimat3/cache';
 import {
   CacheDriverUnavailableError,
-  createCdnTier,
-  createLruTier,
-  createMemoTier,
-  createRedisTier,
+  cdnTier,
   isNoopPurgeDriver,
+  lruTier,
+  memoTier,
   receiveInvalidationBroadcast,
+  redisTier,
   registerInvalidationBroadcast,
   registerTier,
   resetTiers,
@@ -85,9 +85,9 @@ function redisUrl(env: Env): string | undefined {
 function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
   switch (name) {
     case 'request-memo':
-      return createMemoTier();
+      return memoTier();
     case 'lru':
-      return createLruTier();
+      return lruTier();
     case 'redis':
       if (redisUrl(options.env) === undefined) {
         throw new CacheDriverUnavailableError({
@@ -97,7 +97,7 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
           fix: 'set REDIS_URL in .env, or drop the redis tier from cache.tiers in app.config.ts',
         });
       }
-      return createRedisTier();
+      return redisTier();
     case 'cdn':
       // A noop tier would put a `cdn` line in every invalidation report claiming keys an edge that
       // does not exist had accepted — and the `/_x` cache panel renders those reports, so the lie
@@ -110,7 +110,7 @@ function buildTier(name: CacheTierName, options: CacheTiersOptions): CacheTier {
           fix: 'set FASTLY_API_TOKEN and FASTLY_SERVICE_ID in .env, or CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID, or drop the cdn tier from cache.tiers in app.config.ts',
         });
       }
-      return createCdnTier({ purge: options.purge });
+      return cdnTier({ purge: options.purge });
   }
 }
 

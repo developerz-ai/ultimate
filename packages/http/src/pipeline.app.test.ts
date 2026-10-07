@@ -13,9 +13,9 @@ import {
 import { defineHttpConfig } from './config';
 import { useRequestCookie, useRequestHeader } from './context';
 import { registerErrorStatus, resetErrorStatus } from './error-status';
-import { createPipeline } from './pipeline';
-import { json, text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse, textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 /** A code the APP owns — nothing in `ERROR_STATUS` knows it, which is the whole point. */
 const APP_CODE = 'X_CREDENTIALS_INVALID';
@@ -25,7 +25,7 @@ const routes: readonly Route[] = [
     method: 'GET',
     path: '/public',
     meta: { name: 'public', auth: 'public' },
-    handler: () => text('ok'),
+    handler: () => textResponse('ok'),
   },
   // The sign-in loop, both halves. The write half always worked; the read half had nowhere to
   // read from, which is why an app could set a session cookie and never see it again.
@@ -35,7 +35,7 @@ const routes: readonly Route[] = [
     meta: { name: 'sign-in', auth: 'public' },
     handler: (_request, ctx) => {
       ctx.headers.set('set-cookie', 'session=s3cret; Path=/; HttpOnly');
-      return text('signed in');
+      return textResponse('signed in');
     },
   },
   {
@@ -43,7 +43,7 @@ const routes: readonly Route[] = [
     path: '/me',
     meta: { name: 'me', auth: 'public' },
     handler: () =>
-      json({ session: useRequestCookie('session'), agent: useRequestHeader('x-agent') }),
+      jsonResponse({ session: useRequestCookie('session'), agent: useRequestHeader('x-agent') }),
   },
   {
     method: 'GET',
@@ -66,7 +66,7 @@ const config = defineHttpConfig({
   hostname: '127.0.0.1',
 });
 
-const pipeline = () => createPipeline({ table: createRouter(routes), config });
+const pipeline = () => httpPipeline({ table: httpRouter(routes), config });
 
 const get = (path: string, init?: RequestInit) => new Request(`http://localhost${path}`, init);
 
@@ -99,8 +99,8 @@ describe('the request the app is answering is readable from its context', () => 
 
   test('hooks.authenticate can read the cookie it was always meant to read', async () => {
     let seen: string | null = 'never ran';
-    const handle = createPipeline({
-      table: createRouter(routes),
+    const handle = httpPipeline({
+      table: httpRouter(routes),
       config,
       hooks: {
         authenticate: (request) => {

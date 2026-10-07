@@ -8,7 +8,7 @@ import { tag } from '@ultimat3/cache';
 import { isUltimateError } from '@ultimat3/core';
 import {
   clearRoutes,
-  describeRoutes,
+  describePages,
   registerMountedRoutes,
   registerRoute,
   routeCount,
@@ -66,11 +66,11 @@ describe('an unpurgeable revalidate tag is refused at registration', () => {
     );
     expect(error.code).toBe('X_ROUTE_MODE_INVALID');
     expect(error.cause).toContain('@acme/shop');
-    expect(describeRoutes()).toEqual([]);
+    expect(describePages()).toEqual([]);
   });
 
   test('purgeable tags register, and reach the descriptor as wire tags', () => {
     registerRoute({ file: FILE, config: isr([tag('post'), tag('post', '0191-ab_c.d')]) });
-    expect(describeRoutes()[0]?.revalidateTags).toEqual(['post', 'post:0191-ab_c.d']);
+    expect(describePages()[0]?.revalidateTags).toEqual(['post', 'post:0191-ab_c.d']);
   });
 });

@@ -4,12 +4,12 @@
 // by name instead of dialling its own constant.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, createLogger } from '@ultimat3/core';
+import { ctxOf, structuredLogger } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { fakeCdpLauncher } from './cdp-fake-fixture';
 import type { CdpBrowserLike, CdpLauncherLike } from './cdp-port';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import type { ScrapeDriver, SessionInit } from './driver';
 import { localBrowser, remoteBrowser } from './driver-cdp';
 import { fakeBrowser } from './driver-fake';
@@ -30,7 +30,7 @@ const runArgs = (input: Input): JobRunArgs<Input> => ({
   step: {
     run: <T>(_name: string, fn: () => Promise<T> | T) => Promise.resolve(fn()),
   } as unknown as StepApi,
-  ctx: createContext({ logger: createLogger({ writer: () => undefined }) }),
+  ctx: ctxOf({ logger: structuredLogger({ writer: () => undefined }) }),
   attempt: 1,
   finalAttempt: false,
   progress: () => undefined,
@@ -46,7 +46,7 @@ const define = (over: Partial<ScrapeDefinition<Input, { id: string }>> = {}) =>
     idempotencyKey: () => 'orders',
     tenant: 'none',
     allowHosts: ['shop.test'],
-    clock: testClock(),
+    clock: testScrapeClock(),
     // An offline driver has no origin to ask: under the sealed network the read is unreachable,
     // which is complete disallow. The robots tests below opt back in with `robots: 'obey'`.
     robots: { ignore: 'offline fixture, no origin to ask' },
@@ -90,9 +90,9 @@ const fetchesDuring = async (run: () => Promise<unknown>): Promise<Record<string
 
 const sessionInit = (over: Partial<SessionInit> = {}): SessionInit => ({
   name: 'orders',
-  logger: createLogger({ writer: () => undefined }),
+  logger: structuredLogger({ writer: () => undefined }),
   rules: { allowHosts: ['shop.test'] },
-  clock: testClock(),
+  clock: testScrapeClock(),
   timeoutMs: 1_000,
   ...over,
 });

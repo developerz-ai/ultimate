@@ -7,14 +7,14 @@
 //      never the dataset. The interleaving assertion below fails on any rewrite that buffers.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext, isUltimateError } from '@ultimat3/core';
+import { type Ctx, ctxOf, isUltimateError } from '@ultimat3/core';
 import { entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import { t } from '@ultimat3/schema';
 import { JobAbortedError } from './errors';
 import { exportRows } from './export';
 import { exportManifestKey, exportPartKey, memoryExportSink } from './export-sink';
 import { resetJobs } from './job';
-import { createStepRunner, type StepStore } from './steps';
+import { type StepStore, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 const rows = entity('export_pass_rows', {
@@ -32,7 +32,7 @@ const SEED: Row[] = Array.from({ length: 10 }, (_, index) => ({
   title: `row ${index}`,
 }));
 
-const ctx: Ctx = createContext();
+const ctx: Ctx = ctxOf();
 
 interface Harness {
   readonly store: StepStore;
@@ -91,7 +91,7 @@ const harness = (
     run: (): Promise<unknown> => {
       page = 0;
       completed = 0;
-      const runner = createStepRunner({ runId: RUN_ID, jobName: `orders-${sequence}`, store });
+      const runner = stepRunner({ runId: RUN_ID, jobName: `orders-${sequence}`, store });
       // `page` names which batch `row()` is running for, so `failOn` can pick one; `completed`
       // counts the checkpoints that have LANDED, which is what the interleaving assertion reads.
       const step = {

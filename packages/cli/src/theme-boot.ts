@@ -22,8 +22,8 @@ export interface ThemeBoot {
 /**
  * Tag and hash from ONE body: `themeScriptBody` is what `themeScript` inlines, so a policy hashed
  * here admits the script the document carries and not a restatement of it. The storage key is
- * render's `THEME_STORAGE_KEY`, which `theme-boot.test.ts` pins equal to `@ultimat3/ui`'s — the
- * toggle writes the key the boot reads.
+ * `@ultimat3/core`'s `THEME_STORAGE_KEY`, the one `@ultimat3/ui`'s toggle writes — so the toggle
+ * writes the key the boot reads.
  */
 export function themeBoot(mode: ThemeMode): ThemeBoot {
   const options = { fallback: mode };

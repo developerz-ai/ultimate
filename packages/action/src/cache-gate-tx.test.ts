@@ -14,9 +14,9 @@ import {
   resetTiers,
   tag,
 } from '@ultimat3/cache';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
-import { createPgliteClient, raw, sql, withTransaction } from '@ultimat3/db';
+import { pgliteClient, raw, sql, withTransaction } from '@ultimat3/db';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -103,7 +103,7 @@ describe('the bust inside a transaction — a fake scope', () => {
 
 describe('the bust inside a transaction — PGlite, through invoke', () => {
   let client: PgliteClient;
-  const ctx = createContext({});
+  const ctx = ctxOf({});
 
   const publish = action({
     input: t.object({ id: t.number }),
@@ -125,7 +125,7 @@ describe('the bust inside a transaction — PGlite, through invoke', () => {
     );
 
   beforeAll(async () => {
-    client = createPgliteClient();
+    client = pgliteClient();
     await client.execute(raw('create table bust_posts (id integer primary key)'));
   });
 

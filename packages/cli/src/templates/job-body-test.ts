@@ -28,7 +28,7 @@ const HEADER = (
 const storedRowTest = (name: NameSet): string => `
 unitTest('a stored row is loaded, then processed, once each', async ({ runJobs }) => {
   const draft = { orgId, title: 'kept', price: { minor: 0, currency: 'USD' } };
-  const row = await runWithContext(createContext({ actor: member }), () => repo.insert(draft));
+  const row = await runWithContext(ctxOf({ actor: member }), () => repo.insert(draft));
   const trace = await runJobs(${name.camel}, { id: row.id, orgId });
   expect(trace.executions.map((run) => run.outcome)).toEqual(['completed']);
   expect(trace.executions[0]?.result).toEqual({ skipped: false });
@@ -41,7 +41,7 @@ const scopedBodyTest = (name: NameSet, shape: JobBodyShape): string => `${HEADER
 ${sortedImports([
   ...(shape.storesRow
     ? [
-        "import { createContext, runWithContext } from '@ultimat3/core';",
+        "import { ctxOf, runWithContext } from '@ultimat3/core';",
         "import { testActor } from '@ultimat3/policy';",
         "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
         `import { driver } from '${shape.dbModule}';`,

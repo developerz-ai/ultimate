@@ -3,7 +3,7 @@
 // what every `defineAdmin()` carries. A request is answered and rendered as a host would.
 
 import { expect } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import {
   type JobDriver,
   type JobIntrospection,
@@ -181,7 +181,7 @@ export function ask(
   path: string,
   form?: Readonly<Record<string, unknown>>,
 ): Promise<Answer> {
-  return runWithContext(createContext({ tz: 'UTC', locale: 'en' }), async () => {
+  return runWithContext(ctxOf({ tz: 'UTC', locale: 'en' }), async () => {
     const url = `http://localhost${path}`;
     const matched = adminRouteMatch(app, new URL(url).pathname);
     if (matched === null) return expect.unreachable(`no admin route matches ${path}`);

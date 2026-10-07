@@ -1,33 +1,19 @@
 /**
  * Which clicks and submits the client router takes, and which it leaves to the browser — as pure
  * functions over plain facts, so every rule is testable without a DOM and the router
- * (`navigation.ts`) only gathers the facts. Also the one declaration of every attribute, header and
- * event name the router shares with the documents the server renders and the apps that listen.
+ * (`navigation.ts`) only gathers the facts. Also the one declaration of every attribute and event
+ * name the router shares with the documents the server renders and the apps that listen; the
+ * router's headers are core's (`CLIENT_NAVIGATION_*_HEADER`), imported where they are sent.
  */
-
-import {
-  CLIENT_NAVIGATION_HEADER,
-  CLIENT_NAVIGATION_LOCATION_HEADER,
-  CLIENT_NAVIGATION_SCOPE_HEADER,
-  CLIENT_NAVIGATION_SURFACE_HEADER,
-} from '@ultimat3/core/page';
 
 /**
  * `<meta name="ultimate-navigation" content="<app>:<surface>">` — present only on an opted-in
  * surface. The app's name is part of it, so two apps on one origin (web and admin) are two routers.
  */
 export const NAVIGATION_META = 'ultimate-navigation';
-/**
- * Sent on every router fetch: `soft` when a visitor asked for the page, `prefetch` when the router
- * guessed they would. The server answers a route that did not opt in before running it.
- */
-export const NAVIGATION_HEADER = CLIENT_NAVIGATION_HEADER;
-/** The `<app>:<surface>` of the document the router runs in, on every router fetch. */
-export const NAVIGATION_SURFACE_HEADER = CLIENT_NAVIGATION_SURFACE_HEADER;
-/** The document's principal (`ultimate-scope`), when it carries one. */
-export const NAVIGATION_SCOPE_HEADER = CLIENT_NAVIGATION_SCOPE_HEADER;
-/** On a `204`: load this URL with a real navigation — the server's hand-over. */
-export const NAVIGATION_LOCATION_HEADER = CLIENT_NAVIGATION_LOCATION_HEADER;
+// The four router HEADERS are core's (`CLIENT_NAVIGATION_HEADER`, `…_SURFACE_HEADER`,
+// `…_SCOPE_HEADER`, `…_LOCATION_HEADER`), imported by the fetcher and by `@ultimat3/http`'s gate —
+// 25.0.0 deleted the `NAVIGATION_*_HEADER` aliases this file published for them (`X_HELPER_COPY`).
 /** On a link or form: always a full document load. */
 export const NAVIGATION_RELOAD_ATTRIBUTE = 'data-x-reload';
 /** On a link: followed softly, never fetched before it is clicked. */

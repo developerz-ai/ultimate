@@ -9,6 +9,8 @@ import {
   finiteCount,
   isUltimateError,
   NotImplementedError,
+  type Page,
+  pageOf,
   renderFixLiteral,
   renderFixShellArg,
   systemClock,
@@ -18,7 +20,6 @@ import {
   assertPutOptions,
   DEFAULT_CONTENT_TYPE,
   type ListOptions,
-  type ListPage,
   type PutOptions,
   resolveListLimit,
   type SignedUrlOptions,
@@ -338,7 +339,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       );
     },
 
-    async list(listOptions?: ListOptions): Promise<ListPage> {
+    async list(listOptions?: ListOptions): Promise<Page<StorageListEntry>> {
       const prefix = listOptions?.prefix ?? '';
       // Refused at the seam both drivers share, before the provider is asked: `maxKeys: 0` used to
       // go straight through, while the local disk answered a complete-looking empty page.
@@ -352,7 +353,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         result = await client.list({
           maxKeys,
           ...(listOptions?.prefix === undefined ? {} : { prefix: listOptions.prefix }),
-          ...(listOptions?.cursor === undefined ? {} : { continuationToken: listOptions.cursor }),
+          ...(typeof listOptions?.cursor === 'string'
+            ? { continuationToken: listOptions.cursor }
+            : {}),
         });
       } catch (error) {
         // A bare `S3Error` used to escape here, uncoded: no `X_*`, no `fix`, no `--json` shape, and
@@ -385,10 +388,13 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
           ...dated(entry.lastModified),
         });
       }
-      const cursor = result.nextContinuationToken;
-      return result.isTruncated === true && cursor !== undefined
-        ? { objects, truncated: true, cursor }
-        : { objects, truncated: false };
+      // `IsTruncated` decides and `NextContinuationToken` is the cursor: a token beside
+      // `IsTruncated: false` is not a next page, and a truncated answer with no token has none to
+      // offer — both are the last page, never a cursor that fetches an empty one.
+      return pageOf(
+        objects,
+        result.isTruncated === true ? (result.nextContinuationToken ?? null) : null,
+      );
     },
 
     /**

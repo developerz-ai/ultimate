@@ -5,14 +5,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { nonAppRelations } from './app-relation';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 
-const textOf = (client: ReturnType<typeof createRecordingClient>): string =>
+const textOf = (client: ReturnType<typeof recordingClient>): string =>
   client.texts.find((text) => text.includes('pg_class')) ?? '';
 
 describe('nonAppRelations', () => {
   test('answers the names the catalog returned, in the order it returned them', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     client.on(/pg_depend/, { rows: [{ name: 'pg_stat_statements' }, { name: 'spatial_ref_sys' }] });
 
     expect(await nonAppRelations(client, 'public')).toEqual([
@@ -22,12 +22,12 @@ describe('nonAppRelations', () => {
   });
 
   test('a catalog with no extension and no view answers nothing, not `undefined`', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     expect(await nonAppRelations(client, 'public')).toEqual([]);
   });
 
   test('the schema is bound, never spliced — one query, one parameter', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await nonAppRelations(client, 'tenant_a');
 
     expect(client.statements).toHaveLength(1);
@@ -36,7 +36,7 @@ describe('nonAppRelations', () => {
   });
 
   test('ownership is read out of `pg_depend`, never guessed from a name', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await nonAppRelations(client, 'public');
     const text = textOf(client);
 
@@ -50,7 +50,7 @@ describe('nonAppRelations', () => {
   });
 
   test('a relation that is not a table is disqualified whoever created it', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await nonAppRelations(client, 'public');
     const text = textOf(client);
 

@@ -2,11 +2,9 @@
 // If it isn't logged, it didn't happen — so denied and failed attempts are logged too, and
 // there is deliberately no update or delete on this interface.
 
-import { canonicalJson, finiteCount } from '@ultimat3/core';
+import { canonicalJson, finiteCount, REDACTED } from '@ultimat3/core';
 import type { AdminActor, AdminDecision } from './authz';
 import type { AdminRow } from './registry';
-
-export const REDACTED = '[redacted]';
 
 /** Named once, so both refusals below say the same thing about the same call. */
 const SUBJECT = 'memoryAuditLog';

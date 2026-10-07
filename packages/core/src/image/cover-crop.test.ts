@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { layOut } from './canvas';
 import { transformImageBytes } from './pipeline';
 import { decodeImage, encodeImage } from './png-pixels';
-import { createRaster, MAX_IMAGE_PIXELS, type Raster } from './raster';
+import { blankRaster, MAX_IMAGE_PIXELS, type Raster } from './raster';
 
 type Rgba = readonly [number, number, number, number];
 const RED: Rgba = [255, 0, 0, 255];
@@ -16,7 +16,7 @@ const BLUE: Rgba = [0, 0, 255, 255];
 
 /** A 1-pixel-wide strip: rows `[0, 80)` red, `[80, 120)` green, `[120, 200)` blue. */
 const strip = (): Raster => {
-  const raster = createRaster(1, 200, 'test');
+  const raster = blankRaster(1, 200, 'test');
   for (let y = 0; y < 200; y += 1) {
     raster.pixels.set(y < 80 ? RED : y < 120 ? GREEN : BLUE, y * 4);
   }

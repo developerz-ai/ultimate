@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, frozenClock, logger, useContext } from '@ultimat3/core';
+import { ctxOf, frozenClock, logger, useContext } from '@ultimat3/core';
 import type { JobDriver, JobRecord } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { cancelJob } from './inspect';
@@ -14,7 +14,7 @@ import { passthrough } from './operator-surface-fixture';
 import type { JobSettled } from './settled';
 import { ON_SETTLED_ATTEMPTS } from './settled';
 import type { Worker } from './worker';
-import { createWorker } from './worker';
+import { jobWorker } from './worker';
 
 const clock = frozenClock('2026-10-01T00:00:30.000Z');
 const ORG = '00000000-0000-4000-8000-0000000000a1';
@@ -44,10 +44,10 @@ const syncJob = <R>(
   });
 };
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 const workerOn = (driver: JobDriver, workerId: string, heartbeatMs = 3_600_000): Worker =>
-  createWorker({
+  jobWorker({
     driver,
     workerId,
     // One slot: a pass claims one run, so the second run is the OTHER worker's to refuse.

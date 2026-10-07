@@ -5,13 +5,13 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { action, registerAction, resetRegistry } from '@ultimat3/action';
+import { action, registerAction, resetActions } from '@ultimat3/action';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { describeAgents, resetAgents } from './agent-facts';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
 import { configureAi, resetAiRuntime } from './runtime';
@@ -42,9 +42,9 @@ const tool = (name: string): ProjectableAction => ({
 beforeEach(() => {
   resetAiRuntime();
   resetAgents();
-  resetRegistry();
+  resetActions();
   configureAi({
-    gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider()] }),
+    gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
   });
 });
 
@@ -91,7 +91,7 @@ describe('describeAgents', () => {
   // the declaration and its prompt, so a row that skipped it described a model nobody calls.
   test("an undeclared model is the gateway's defaultModel, and says so", () => {
     configureAi({
-      gateway: createGateway({ providers: [new EchoProvider()], defaultModel: 'claude-sonnet-5' }),
+      gateway: providerGateway({ providers: [echoProvider()], defaultModel: 'claude-sonnet-5' }),
     });
     const prompt = promptFor();
     const base = {
@@ -121,7 +121,7 @@ describe('describeAgents', () => {
   // M12: no fourth place. A declaration naming no model, under a gateway with no `defaultModel`,
   // is described as naming none — never as a vendor id the framework picked for it.
   test('an agent nothing names a model for is published with model null, not a vendor default', () => {
-    configureAi({ gateway: createGateway({ providers: [new EchoProvider()] }) });
+    configureAi({ gateway: providerGateway({ providers: [echoProvider()] }) });
     registerAction(
       'unchosenAgent',
       agent({

@@ -7,10 +7,10 @@
 
 import { t } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { llm } from './llm';
 import { FIXTURE_ANTHROPIC_IDS, FIXTURE_MODEL } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
@@ -40,7 +40,7 @@ export function stub(...answers: readonly unknown[]): {
   seen: GenerateRequest[];
 } {
   const seen: GenerateRequest[] = [];
-  const echo = new EchoProvider();
+  const echo = echoProvider();
   const provider: Provider = {
     name: 'stub',
     models: FIXTURE_ANTHROPIC_IDS,
@@ -71,7 +71,7 @@ function reply(request: GenerateRequest, answer: unknown): GenerateResult {
 }
 
 export function install(provider: Provider): void {
-  configureAi({ gateway: createGateway({ providers: [provider], defaultModel: FIXTURE_MODEL }) });
+  configureAi({ gateway: providerGateway({ providers: [provider], defaultModel: FIXTURE_MODEL }) });
 }
 
 let seq = 0;
@@ -86,7 +86,7 @@ export function promptFor(id?: string, version = '1.0.0'): Prompt<{ postId: stri
 
 /** An authenticated caller. The default scope is derived from exactly these three fields. */
 export function ctxFor(id: string, orgId: string, locale?: string): Ctx {
-  return createContext({
+  return ctxOf({
     actor: userActor({ id, orgId }),
     ...(locale === undefined ? {} : { locale }),
   });

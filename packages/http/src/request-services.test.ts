@@ -7,11 +7,11 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { Actor, CtxFacts } from '@ultimat3/core';
 import { anonymousActor, defineService, resetServices, useService } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createRequestContext } from './context';
-import { createPipeline } from './pipeline';
-import { createRateLimiter } from './rate-limit';
-import { json } from './response';
-import { createRouter, type Route } from './router';
+import { requestContext } from './context';
+import { httpPipeline } from './pipeline';
+import { rateLimiter } from './rate-limit';
+import { jsonResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 afterEach(() => {
   resetServices();
@@ -20,10 +20,10 @@ afterEach(() => {
 const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: null });
 
 function pipeline(routes: readonly Route[], authenticate: () => Actor | null) {
-  return createPipeline({
-    table: createRouter(routes),
+  return httpPipeline({
+    table: httpRouter(routes),
     config,
-    limiter: createRateLimiter({
+    limiter: rateLimiter({
       config: {
         enabled: false,
         defaultBucket: 'default',
@@ -42,7 +42,7 @@ const whoRoute = (name: string): Route => ({
   path: `/${name}`,
   meta: { name, auth: 'public' },
   handler: (_request, ctx) =>
-    json({
+    jsonResponse({
       actor: ctx.actor.id,
       service: useService<{ id: string }>('who').id,
       onCtx: (ctx as unknown as { who: { id: string } }).who.id,
@@ -86,7 +86,7 @@ describe('registered services over HTTP', () => {
 
 /** A bare request context — the constructor the pipeline uses, without a pipeline around it. */
 const bare = (services?: Record<string, unknown>) =>
-  createRequestContext({
+  requestContext({
     url: new URL('https://app.test/x'),
     method: 'GET',
     role: 'web',

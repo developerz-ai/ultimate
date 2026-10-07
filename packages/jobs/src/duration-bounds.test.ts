@@ -11,7 +11,7 @@ import { finiteDurationMs } from './clock';
 import { memoryEventBus } from './events';
 import { job, resetJobs } from './job';
 import { backoffDelayMs } from './retry';
-import { createStepRunner } from './steps';
+import { stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -95,7 +95,7 @@ describe('the floor is finiteness only — negative, zero and fractional still p
 
 describe('the scheduling decisions built on it', () => {
   test('step.sleep(NaN) is refused at the call, never a wakeAt no clock ever reaches', async () => {
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-nan',
       jobName: 'digest',
       store: memoryStepStore(),
@@ -113,7 +113,7 @@ describe('the scheduling decisions built on it', () => {
   });
 
   test('an ordinary sleep is unchanged — the guard refuses durations, not sleeps', async () => {
-    const runner = createStepRunner({
+    const runner = stepRunner({
       runId: 'run-ok',
       jobName: 'digest',
       store: memoryStepStore(),

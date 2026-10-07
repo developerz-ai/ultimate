@@ -21,8 +21,8 @@ export {
   deliveryProviderUnreachable,
 } from './delivery-event-errors';
 export type { ResendEventReceiverOptions } from './resend-event-receiver';
-export { createResendEventReceiver } from './resend-event-receiver';
+export { resendEventReceiver } from './resend-event-receiver';
 export { DEFAULT_SVIX_TOLERANCE_MS } from './resend-signature';
 export type { SesEventReceiverOptions } from './ses-event-receiver';
-export { createSesEventReceiver, DEFAULT_SNS_TOLERANCE_MS } from './ses-event-receiver';
+export { DEFAULT_SNS_TOLERANCE_MS, sesEventReceiver } from './ses-event-receiver';
 export type { SnsCertificateFetch } from './sns-certificate-cache';

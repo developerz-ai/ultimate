@@ -185,6 +185,15 @@ export function isAnonymous(actor: Actor): boolean {
   return actor.kind === 'anonymous';
 }
 
+/**
+ * The context's actor as a policy reads it: core models "nobody" as the anonymous actor, policy as
+ * `null` — the value that turns a missing session into `X_UNAUTHENTICATED` instead of a bare
+ * denial. Declared here, once, so action, query, MCP and a page all map it the same way.
+ */
+export function actorOf(ctx: { readonly actor: Actor }): Actor | null {
+  return isAnonymous(ctx.actor) ? null : ctx.actor;
+}
+
 export function hasRole(actor: Actor, role: string): boolean {
   return actor.roles.includes(role);
 }

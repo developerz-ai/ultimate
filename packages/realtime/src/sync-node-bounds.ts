@@ -82,7 +82,7 @@ export function syncNodeBounds(options: SyncNodeNumericOptions): SyncNodeBounds 
  * that `SyncSocket` — not this module — owns the default of.
  *
  * They were screened only in `SyncSocket`'s constructor, which Bun runs inside `websocket.open`,
- * which Bun runs SYNCHRONOUSLY inside `server.upgrade`. Measured: `createSyncNode` did not throw,
+ * which Bun runs SYNCHRONOUSLY inside `server.upgrade`. Measured: `syncNode` did not throw,
  * `/healthz` and `/readyz` both answered, `ready` was true, and every upgrade threw `X_INVARIANT`
  * with the node holding zero sockets — a misconfiguration that fails per connection instead of at
  * boot, and each of those throws leaked the grant `handleUpgrade` records before the upgrade.

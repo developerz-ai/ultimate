@@ -104,11 +104,16 @@ describe('reading the retained set off the banners', () => {
   });
 });
 
-/** A titles table: core's own and schema's, each a side-effect anchor the barrel loads. */
+/**
+ * A titles table: core's own and schema's, each a side-effect anchor the barrel loads. Any schema
+ * module counts — except `error-brand.ts`, the one symbol `UltimateError` brands with: a leaf that
+ * declares `Symbol.for('ultimate.error')` and imports nothing, split out of `errors.ts` so exactly
+ * this edge carries no table.
+ */
 const isTitlesTable = (module: string): boolean =>
   module === 'core/src/core-error-codes.ts' ||
   module === 'core/src/schema-error-codes.ts' ||
-  module.startsWith('schema/src/');
+  (module.startsWith('schema/src/') && module !== 'schema/src/error-brand.ts');
 
 const THROWING_PAGE =
   "import { onRescope, pageClient, renderFixShellArg, UltimateError } from '@ultimat3/core/page';\n" +

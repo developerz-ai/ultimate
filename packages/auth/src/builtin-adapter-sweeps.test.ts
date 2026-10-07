@@ -1,9 +1,9 @@
 // The directory reads and the revocation sweeps of `AuthAdapter`. Split out of
 // `builtin-adapter.test.ts` to stay under the 500-line ceiling `x verify`'s `filesize` step
-// enforces; the same `createRecordingClient()` stands in for Postgres, so no database is needed.
+// enforces; the same `recordingClient()` stands in for Postgres, so no database is needed.
 
 import { describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient } from '@ultimat3/db';
 import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
 
 const ID = '00000000-0000-7000-8000-000000000101';
@@ -40,7 +40,7 @@ let client: RecordingClient;
 let adapter: BuiltinAdapter;
 
 const setup = (): void => {
-  client = createRecordingClient();
+  client = recordingClient();
   adapter = postgresAuthAdapter(client);
 };
 

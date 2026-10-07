@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os'; // why: Bun exposes no tmpdir().
 import { join } from 'node:path'; // why: Bun ships no path join.
 import { resetLocaleConfig } from '@ultimat3/i18n';
+import { appLocaleSet, UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
 import { fakeShotDriver } from './browser-launcher-fake-fixture';
 import type { ShotDriver, ShotSessionInit } from './browser-launcher-port';
 import { runShot, type ShotServer } from './cmd-shot';
@@ -18,12 +19,7 @@ import {
   planShotMatrix,
   runShotMatrix,
 } from './cmd-shot-matrix';
-import {
-  FALLBACK_SHOT_LOCALES,
-  loadShotLocales,
-  localizedShotPath,
-  readLocaleFlag,
-} from './shot-locale';
+import { localizedShotPath, readLocaleFlag } from './shot-locale';
 import { ISLAND_PROBE } from './shot-verdict';
 
 const SERVER_URL = 'http://localhost:4321';
@@ -112,14 +108,14 @@ describe('--locale', () => {
         "export const catalogs = defineCatalogs({ default: 'es-co', locales: { en: {}, 'es-co': {} } });\n",
     );
     try {
-      expect(await loadShotLocales(root)).toEqual({
+      expect(await appLocaleSet(root)).toEqual({
         locales: ['es-co', 'en'],
         defaultLocale: 'es-co',
       });
     } finally {
       resetLocaleConfig();
     }
-    expect(await loadShotLocales(join(scratch, 'nothing-here'))).toEqual(FALLBACK_SHOT_LOCALES);
+    expect(await appLocaleSet(join(scratch, 'nothing-here'))).toBe(UNDECLARED_LOCALES);
   });
 
   test('a single shot pins Accept-Language before it navigates', async () => {

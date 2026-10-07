@@ -4,7 +4,7 @@
  * The shape `summarize.eval.test.ts` set: one run that holds, one regression that is caught.
  */
 
-import { createGateway, EchoProvider } from '@ultimat3/ai';
+import { echoProvider, providerGateway } from '@ultimat3/ai';
 import { expect, test } from '@ultimat3/testing';
 import { reviewDraftPrompt } from './review-draft';
 import { reviewDraftCases, reviewDraftEval } from './review-draft.evals';
@@ -33,9 +33,9 @@ const REGRESSED: Readonly<Record<string, string>> = {
 };
 
 const gatewayServing = (answers: Readonly<Record<string, string>>) =>
-  createGateway({
+  providerGateway({
     providers: [
-      new EchoProvider({
+      echoProvider({
         replies: Object.fromEntries(
           reviewDraftCases.map((testCase) => [
             reviewDraftPrompt.render(testCase.vars),

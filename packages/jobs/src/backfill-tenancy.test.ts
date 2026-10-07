@@ -9,7 +9,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import type { ReadBuilder } from '@ultimat3/entity';
 import { clearRegistry, entity, memoryRepo, tableFor, text, uuid } from '@ultimat3/entity';
 import type { BackfillInput } from './backfill';
@@ -85,7 +85,7 @@ const sweep = async (handle: AnyJobHandle, seen: Post[], pages: () => number): P
   // What a worker builds: a context with an actor and NO org. The declaration is the only thing
   // that can put one on the run. Held rather than inlined so a caller can re-enter it after the
   // pass and ask whether the pass widened it.
-  const worker = createContext({ role: 'worker', actor: userActor({ id: 'worker-1' }) });
+  const worker = ctxOf({ role: 'worker', actor: userActor({ id: 'worker-1' }) });
   const execution = await executeJob({
     driver,
     claimed: claimed as ClaimedJob,

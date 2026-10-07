@@ -52,7 +52,7 @@ export function useId(prefix = 'u'): string {
 }
 
 /** Test-only: make id assertions deterministic. */
-export function resetIdCounter(): void {
+export function resetUseIdCounter(): void {
   idCounter = 0;
   islandScope = undefined;
 }
@@ -90,7 +90,7 @@ export interface FocusTrap {
  * branch that pulls it back was unreachable by construction. Every branch still tests
  * `root.contains`, so the trap only acts while it is the active one.
  */
-export function createFocusTrap(root: HTMLElement): FocusTrap {
+export function focusTrap(root: HTMLElement): FocusTrap {
   let previous: HTMLElement | null = null;
 
   /**
@@ -181,7 +181,7 @@ export function nextRovingIndex(
 }
 
 /** Wire a roving group: one tabbable item, arrows move focus and selection. */
-export function createRovingTabindex(
+export function rovingTabindex(
   getItems: () => readonly HTMLElement[],
   options: RovingOptions = {},
 ): (event: KeyboardEvent) => void {

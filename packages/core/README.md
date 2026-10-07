@@ -78,7 +78,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
 | the registrar table one same-tier package reaches another through | `registrar.ts` |
 | decode → resize → encode, the one image pipeline (over `Bun.Image`) | `image/` |
-| `assertNever`, `invariant` | `assert.ts` |
+| `assertNever`, `assertCoded`, `assert` | `assert.ts` |
 | the one HTML character table — `escapeHtml`, text and attributes alike (`& < > " '`) | `html-escape.ts` |
 | the one `Cookie:` reader — `readCookie(header, name)`, `null` when absent, never a throw | `cookie.ts` |
 | the one `Set-Cookie` writer — `serializeSetCookie(name, value, options?)`; defaults `Path=/; HttpOnly; Secure; SameSite=Lax`, the value percent-encoded so `readCookie` returns it exactly, `X_COOKIE_INVALID` for a non-token name, a pair over 4096 octets, `SameSite=None`/`Partitioned` without `Secure`, a broken `__Secure-`/`__Host-` prefix rule, or an injectable `Path`/`Domain`. `Expires` is an IMF-fixdate in UTC | `cookie.ts` |
@@ -236,7 +236,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 ## Context
 
 ```ts
-const ctx = createContext({ actor: agentActor({ id: 'mcp-1', scopes: ['post:publish'] }) });
+const ctx = ctxOf({ actor: agentActor({ id: 'mcp-1', scopes: ['post:publish'] }) });
 await runWithContext(ctx, async () => {
   const { actor, locale, tz, logger } = useContext();   // throws X_NO_CONTEXT outside
   await withChildContext({ locale: 'es' }, () => render());
@@ -248,13 +248,13 @@ automatically; so does the root `logger` while a context is active. Add typed se
 augmenting `CtxServices`; reach late-bound ones with `useService<T>('mail')`.
 
 A service that reads the actor (`ctx.posts`, scoped to `ctx.actor.orgId`) registers once with
-`defineService('posts', (ctx) => ({ ... }))`, at import time. `createContext` and
+`defineService('posts', (ctx) => ({ ... }))`, at import time. `ctxOf` and
 `withChildContext` then build it fresh, bound to whichever actor they are constructing a ctx
 for — importing the module that calls `defineService` is the registration, the same convention
-`registerActions` uses. Passing `services: { posts: ... }` to `createContext` still works and
+`registerActions` uses. Passing `services: { posts: ... }` to `ctxOf` still works and
 wins over a registered factory of the same name, for a test that wants to hand in a mock.
 
-A factory runs again on **every** `createContext` / `withChildContext` call and is never cached,
+A factory runs again on **every** `ctxOf` / `withChildContext` call and is never cached,
 because it closes over the ctx (actor, clock, tz) it was built for. `withChildContext` drops a
 factory-managed name from what it carries forward on purpose: only an ad hoc service nobody
 registered survives an actor swap unrebuilt.
@@ -365,7 +365,7 @@ leaves `idempotencyToken`, a paging token, `maxTokens`, an error `code`, `spinne
 `sessionStart` and `cookieName` readable — a redacted field is one an operator cannot correlate on.
 
 `LOG_LEVEL` is refused when it is not one of `LOG_LEVELS` (lowercase), exactly as
-`createLogger({ level })` refuses it; unset or empty is `info`.
+`structuredLogger({ level })` refuses it; unset or empty is `info`.
 
 A `Secret`
 box catches the other case: `String()`, template literals, `+`, `JSON.stringify`, `console.log`,
@@ -457,11 +457,11 @@ match with `sealAll()`; uniqueness cannot be held across keys.
 ## Time, ids, telemetry, drain
 
 - Never call `Date.now()`. Take a `Clock`; tests pass `frozenClock('2026-07-26T10:00:00Z')`.
-- `uuid()` is UUIDv7: time-prefixed, monotonic within a millisecond, never backwards on clock
+- `uuidV7()` is UUIDv7: time-prefixed, monotonic within a millisecond, never backwards on clock
   skew. `typedId<'post'>()` brands it so a post id cannot be passed where a user id is wanted.
 - `withSpan('action.publishPost', fn)` is free until `configureTelemetry({ exporter })`.
   Traces cross process boundaries via `traceparent()` / `parseTraceparent()`, whose ids come from
-  `traceId()` / `spanId()` — **never `uuid()`**, whose dashed 36 characters every collector
+  `traceId()` / `spanId()` — **never `uuidV7()`**, whose dashed 36 characters every collector
   rejects. `isTraceId()` / `isSpanId()` are the one definition of the valid shape.
 - **Sampling is honoured, not just propagated.** `startSpan` takes the parent's bit when there is
   one, else asks the `Sampler`; `span.end()` exports nothing when the bit is 0. The default reads
@@ -668,16 +668,16 @@ prose has none.
 ```ts
 import {
   backoffDelay,
-  createFence,
-  createFlightGate,
-  createSingleFlight,
+  generationFence,
+  flightGate,
+  singleFlight,
   isRetryableStatus,
 } from '@ultimat3/core';
 
 // One ceiling on work whose cost is memory, one run per key, one fence over the answer.
-const gate = createFlightGate({ maxConcurrent: 8, maxQueued: 64 }, { subject: 'jwks fetches' });
-const flights = createSingleFlight({ deadlineMs: 30_000 });
-const fence = createFence('the jwks cache');
+const gate = flightGate({ maxConcurrent: 8, maxQueued: 64 }, { subject: 'jwks fetches' });
+const flights = singleFlight({ deadlineMs: 30_000 });
+const fence = generationFence('the jwks cache');
 
 export async function jwks(url: string): Promise<Response> {
   const issued = fence.generation();
@@ -709,13 +709,13 @@ nothing consulted it before deciding to try again. `As of 2026-08-23`.
 | Export | The one answer | The question it settles |
 |---|---|---|
 | `backoffDelay({ attempt, base, max, factor?, curve?, jitter?, random? })` | one curve — `exponential \| linear \| fixed`, `full \| equal \| none` — 1-based `attempt`, clamped to `max` **before** jitter, rounded, and `0` rather than `NaN` | how long to wait. `random` is injectable, so a schedule is a unit test rather than a range |
-| `createSingleFlight({ deadlineMs?, schedule? })` → `run(key, work, join?)`, `size` | N callers on one key are ONE run | who pays for a miss. Eviction is identity-checked, so a load that settles late never drops the load that replaced it; `deadlineMs` frees the KEY a wedged load would hold forever — it never cancels the work and never rejects a joiner |
-| `createFlightGate({ maxConcurrent, maxQueued }, { subject?, overflow? })` | one bound, one queue, one refusal | how many at once. Past the queue the answer is `X_FLIGHT_GATE_OVERLOADED` (503) and never a longer queue; the slot is HANDED to a waiter, never released and re-acquired. Both limits are screened at construction (`finiteCount`, 0 allowed); a width of 0 refuses every caller rather than queueing for a slot that never frees. `run(work, signal?)`: an abort while QUEUED removes the waiter and rejects with the abort's reason |
-| `createFence(subject)` → `generation()`, `bump()`, `guard(issued)` | whether an answer still applies | `X_SUPERSEDED` (499) and `isSuperseded(error)` — the piece nothing in the tree had. `guard` compares `!==`, never `<` |
+| `singleFlight({ deadlineMs?, schedule? })` → `run(key, work, join?)`, `size` | N callers on one key are ONE run | who pays for a miss. Eviction is identity-checked, so a load that settles late never drops the load that replaced it; `deadlineMs` frees the KEY a wedged load would hold forever — it never cancels the work and never rejects a joiner |
+| `flightGate({ maxConcurrent, maxQueued }, { subject?, overflow? })` | one bound, one queue, one refusal | how many at once. Past the queue the answer is `X_FLIGHT_GATE_OVERLOADED` (503) and never a longer queue; the slot is HANDED to a waiter, never released and re-acquired. Both limits are screened at construction (`finiteCount`, 0 allowed); a width of 0 refuses every caller rather than queueing for a slot that never frees. `run(work, signal?)`: an abort while QUEUED removes the waiter and rejects with the abort's reason |
+| `generationFence(subject)` → `generation()`, `bump()`, `guard(issued)` | whether an answer still applies | `X_SUPERSEDED` (499) and `isSuperseded(error)` — the piece nothing in the tree had. `guard` compares `!==`, never `<` |
 | `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `>= 500`, plus 408, 409, 425, 429 | which HTTP answers are worth repeating |
 | `jitterStatedDelay(waitMs, capMs, random?)` | the ONE rule for a delay a responder named | the stated wait as a FLOOR plus a spread in `[0, min(wait / 2, cap))`, so a burst told `Retry-After: 1` does not replay in lockstep. `retryDecision`'s `retry-after` path (floor clamped to `max`; `jitter: 'none'` gets the bare floor) and `@ultimat3/jobs`' rate-limit deferral and webhook throttle all take it |
-| `retry(work, policy, { sleep, now?, random? })`, `retryDecision(policy, attempt, error, random?)` | the executor and the pure decision behind the classification | whether to try again at all. `createClientFlight` is its one caller in the framework; `jobs`, `ai` and `db` each keep their own loop and delegate only the arithmetic and the classification |
-| `createClientFlight({ principal?, retry?, deadlineMs?, limit?, … })` → `run(plan)`, `keyFor(url, opts?)`, `bump()`, `generation()` | the five above composed into one typed-client call | dedup, supersession, retry, one wall-clock deadline and a concurrency ceiling, for a call whose dispatch the caller supplies. `@ultimat3/action` and `@ultimat3/query` import it from here and re-export only its types — one file, because both are tier 3 and neither may import the other |
+| `retry(work, policy, { sleep, now?, random? })`, `retryDecision(policy, attempt, error, random?)` | the executor and the pure decision behind the classification | whether to try again at all. `clientFlight` is its one caller in the framework; `jobs`, `ai` and `db` each keep their own loop and delegate only the arithmetic and the classification |
+| `clientFlight({ principal?, retry?, deadlineMs?, limit?, … })` → `run(plan)`, `keyFor(url, opts?)`, `bump()`, `generation()` | the five above composed into one typed-client call | dedup, supersession, retry, one wall-clock deadline and a concurrency ceiling, for a call whose dispatch the caller supplies. `@ultimat3/action` and `@ultimat3/query` import it from here and re-export only its types — one file, because both are tier 3 and neither may import the other |
 | `isTransientFailure(error)` | what a CLIENT may send again | a declared `retryable`/`retry-after`, plus a dispatch that produced no response at all. It **inverts** `retryDecision`'s unclassified default on purpose: a caller's own `AbortError` and a foreign `TypeError` are terminal |
 | `traceHeaders()`, `problemOf(text)`, `retryForStatus(code, status, retryAfterSeconds?)`, `FRAMEWORK_CODE` | what a typed client puts on the wire and reads back off it | the W3C header (nothing at all when the span context is incomplete), a total `problem+json` read, and the classification a STATUS is allowed to give when nobody declared one for the code — `retry-after` for a 429 or 503 that stated a delay, unless the code is declared `terminal` |
 | `retryAfterSecondsOf(header, date)`, `MAX_RETRY_AFTER_SECONDS` | the one `Retry-After` reader | delta-seconds, or an IMF-fixdate measured against the same response's `Date` header (never the client's clock), capped at a day; `0`, a date already past and anything else `undefined` — only a positive delay is a statement (`retryAfterOf`'s outbound rule), so unstated falls back to the jittered curve. `clientTransport` passes it to `problemError` and to a caller's `decodeError(status, text, retryAfterSeconds)`, which carry it as `meta.retryAfterSeconds` for `statedDelayMs` |
@@ -743,7 +743,7 @@ read; `@ultimat3/jobs` re-exports both rather than keeping a second pair.
 | `resolveConflict(policy, local, server, { clockField? })`, `ConflictPolicy`, `Row` | one conflict vocabulary, over ROWS | `last-write-wins` keeps the local row only when its numeric clock field (default `updatedAt`) is newer; no provable clock = the server's row |
 | `AsyncState<T>` | `pending \| refreshing \| ready \| failed` | the type `realtime` produces and `ui` renders; tier 0 because neither may import the other |
 
-`clientTransport` does not value-import `createClientFlight` or `traceHeaders()` — measured sizes
+`clientTransport` does not value-import `clientFlight` or `traceHeaders()` — measured sizes
 are in its file header. A server-side caller that propagates a trace passes `traceHeaders()` in
 `headers` itself.
 

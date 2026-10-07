@@ -28,7 +28,7 @@ export const systemScrapeClock: ScrapeClock = Object.freeze({
       await Bun.sleep(ms);
       return;
     }
-    throwIfAborted(signal);
+    signal.throwIfAborted();
     // A timer raced against the signal, never `Bun.sleep(ms).then(check)`: the watchdog aborts a
     // wedged run precisely so nothing waits out the rest of a five-minute budget, and a sleep
     // that only notices the abort when it expires would wait out every one of them.
@@ -52,7 +52,7 @@ export const systemScrapeClock: ScrapeClock = Object.freeze({
  * The system clock with the waiting taken out: `now()` and `monotonic()` are real, and every
  * `sleep` is ONE turn of the event loop whatever was asked for. For a test whose run waits on
  * something that really happens in the same process — an answer the test publishes, a job another
- * worker holds — where `testClock()`'s "sleeping is advancing" would run a five-minute budget out
+ * worker holds — where `testScrapeClock()`'s "sleeping is advancing" would run a five-minute budget out
  * in microtasks before the test's next line. A deadline is still a real one.
  */
 export const noWaitClock: ScrapeClock = Object.freeze({
@@ -82,11 +82,6 @@ export function resetScrapeClock(): void {
   ambient = undefined;
 }
 
-/** The abort reason, unwrapped — a caller's `AbortSignal.reason` is whatever they put there. */
-export function throwIfAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw signal.reason;
-}
-
 /**
  * A clock in which sleeping IS advancing: `await clock.sleep(30_000)` returns on the next
  * microtask with thirty seconds elapsed. This is what makes a poll-until-deadline test instant
@@ -97,7 +92,7 @@ export interface TestScrapeClock extends ScrapeClock {
   advance(ms: number): void;
 }
 
-export function testClock(at: Date | number = 0): TestScrapeClock {
+export function testScrapeClock(at: Date | number = 0): TestScrapeClock {
   let epochMs = at instanceof Date ? at.getTime() : at;
   let mono = 0;
   const advance = (ms: number): void => {
@@ -113,7 +108,7 @@ export function testClock(at: Date | number = 0): TestScrapeClock {
       // Yield the microtask queue anyway: a loop that never awaits anything real starves whatever
       // the test armed to cancel it, and the wedge tests arm exactly that.
       await Promise.resolve();
-      if (signal !== undefined) throwIfAborted(signal);
+      signal?.throwIfAborted();
     },
   };
 }

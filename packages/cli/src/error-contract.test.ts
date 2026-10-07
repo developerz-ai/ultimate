@@ -34,7 +34,7 @@ describe('fixProblem', () => {
   test('accepts an edit instruction naming a call or a file', () => {
     expect(fixProblem("set jobs.driver = 'pg' in app.config.ts")).toBeUndefined();
     expect(fixProblem('add description to meta in site/pricing/page.tsx')).toBeUndefined();
-    expect(fixProblem('runWithContext(createContext({ … }), fn)')).toBeUndefined();
+    expect(fixProblem('runWithContext(ctxOf({ … }), fn)')).toBeUndefined();
   });
 
   // An app's own gate is `bin/check`, and "check" is a banned word: without the script token,

@@ -6,7 +6,7 @@
 
 import { encodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
 import { hasEntityRows, rowsOf } from '@ultimat3/entity';
-import { json } from '@ultimat3/http';
+import { jsonResponse } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 
 /** The header value that says "this body is an envelope". Presence alone is not enough. */
@@ -26,7 +26,7 @@ export function carriesRecords(output: StandardSchemaV1): boolean {
 
 /** The 200 for an action that carries records: the envelope, and the header that names it. */
 export function recordResponse(output: StandardSchemaV1, result: unknown): Response {
-  const response = json(encodeRecordEnvelope(result, rowsOf(output, result)));
+  const response = jsonResponse(encodeRecordEnvelope(result, rowsOf(output, result)));
   response.headers.set(RECORDS_HEADER, ENVELOPED);
   return response;
 }

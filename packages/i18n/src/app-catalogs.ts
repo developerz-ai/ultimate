@@ -1,11 +1,13 @@
-// The ONE reader of an app's declared locales: `defineCatalogs({ default, locales })` in the
-// app's catalog module, imported and read back from this package's own `localeConfig()`. The CLI
-// (pwa manifest, `x shot`, `x g`) and the e2e preload each kept a copy, and the copies disagreed.
-// Server-only, so its own entry (`@ultimat3/i18n/app-catalogs`): `index.ts` is in every island.
+// The ONE reader of an app's declared locales: its catalog module's `defineCatalogs()`, imported
+// and read back. The CLI (manifest, worker, prerender, `x shot`, `x g`, `x i18n`) and the e2e
+// preload each kept a copy, and the copies disagreed. Server-only, so its own entry
+// (`@ultimat3/i18n/app-catalogs`): `index.ts` is in every island.
 
 // why: Bun exposes no path-join primitive; the catalog module is joined to the app root.
 import { join } from 'node:path';
+import { DEFAULT_LOCALE } from '@ultimat3/core';
 import { localeConfig, routedLocales } from './context';
+import type { CatalogSet, CatalogSources } from './define-catalogs';
 import { catalogDeclarationCount, isDeclaredCatalogSet } from './define-catalogs';
 
 /** Where an app declares its catalogs — `x new` writes it, and its `defineCatalogs()` runs there. */
@@ -33,8 +35,43 @@ export async function loadAppCatalogs(root: string): Promise<AppLocaleSet | unde
   const before = catalogDeclarationCount();
   const module = (await import(path)) as Readonly<Record<string, unknown>>;
   const ran = catalogDeclarationCount() !== before;
-  if (!ran && !Object.values(module).some(isDeclaredCatalogSet)) return undefined;
+  // The exported set FIRST: it is the declaration itself, where the locale config is shared,
+  // process-wide state a later `configureLocales()` or a reset may have moved since the module ran
+  // — and a cached module never runs its `defineCatalogs()` again to put it back.
+  const exported = Object.values(module).find(isDeclaredCatalogSet) as DeclaredSet | undefined;
+  if (exported !== undefined) return setOf(exported.default, exported.locales);
+  if (!ran) return undefined;
+  // Declared by this very import and not exported: the config is what that call just wrote.
   const defaultLocale = localeConfig().fallback;
   if (defaultLocale === '') return undefined;
   return { locales: [...routedLocales()], defaultLocale };
+}
+
+/** What `isDeclaredCatalogSet` vouches for: a `CatalogSet` some `defineCatalogs()` returned. */
+type DeclaredSet = Pick<CatalogSet<CatalogSources>, 'default' | 'locales'>;
+
+/** Default first, as `routedLocales()` orders them — every consumer enumerates in this order. */
+const setOf = (defaultLocale: string, locales: readonly string[]): AppLocaleSet => ({
+  locales: [defaultLocale, ...locales.filter((locale) => locale !== defaultLocale)],
+  defaultLocale,
+});
+
+/**
+ * The answer for an app that declares no catalogs: the framework default, alone. ONE value, so the
+ * PWA manifest, the service worker, the prerender and every `x` command name the same language for
+ * such an app — before it, the manifest said `en` off its own literal while the worker and the
+ * prerender read `localeConfig()` blind and could inherit an earlier import's declaration.
+ */
+export const UNDECLARED_LOCALES: AppLocaleSet = Object.freeze({
+  locales: Object.freeze([DEFAULT_LOCALE]),
+  defaultLocale: DEFAULT_LOCALE,
+});
+
+/**
+ * `root`'s locales whether it declared any or not: `loadAppCatalogs`, else `UNDECLARED_LOCALES`.
+ * The caller that must tell the two apart (`x g`, which writes no catalog for an app without one)
+ * asks `loadAppCatalogs`; every other caller asks this. A module that will not import still throws.
+ */
+export async function appLocaleSet(root: string): Promise<AppLocaleSet> {
+  return (await loadAppCatalogs(root)) ?? UNDECLARED_LOCALES;
 }

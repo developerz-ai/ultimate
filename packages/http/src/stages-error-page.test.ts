@@ -3,8 +3,8 @@
 // a defect is what dev exists to debug. Production is pinned beside it so the two cannot drift.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { httpRouter, type Route } from './router';
 
 const SECRET = 'connect ECONNREFUSED 10.0.0.7:5432';
 const OWN_404 = '<!doctype html><title>ours</title>Lost at sea';
@@ -22,8 +22,8 @@ const routes: readonly Route[] = [
 ];
 
 const pipelineWith = (dev: boolean, errorPage: (status: number) => string | undefined) =>
-  createPipeline({
-    table: createRouter(routes),
+  httpPipeline({
+    table: httpRouter(routes),
     config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev, buildId: null }),
     hooks: { errorPage },
   });

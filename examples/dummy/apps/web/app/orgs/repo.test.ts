@@ -8,7 +8,7 @@
 import { expect, test } from 'bun:test';
 import { db } from '@postly/db';
 import { orgId as toOrgId } from '@postly/domain';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { allDigestRecipients, digestRecipients } from './repo';
 
 let issued = 0;
@@ -37,7 +37,7 @@ const anOptedInMember = async (): Promise<string> => {
 
 /** What the worker hands a job body: a context, and an actor with no org until `tenant` says one. */
 const inAJob = <T>(fn: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ role: 'worker' }), fn);
+  runWithContext(ctxOf({ role: 'worker' }), fn);
 
 test('the fan-out reads every org, and the cross-tenant scope is what allows it', async () => {
   const first = await anOptedInMember();

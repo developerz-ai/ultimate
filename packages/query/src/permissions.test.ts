@@ -3,10 +3,9 @@
 // so every non-trivially-guarded read reported its permissions as unenforced.
 
 import { describe, expect, test } from 'bun:test';
-import { and, can, not, or } from '@ultimat3/policy';
+import { and, can, not, or, policyCapability, policyPermissions } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { QueryPolicy } from './policy-gate';
-import { policyCapability, policyPermissions } from './policy-gate';
 import { query } from './query';
 import { from } from './source';
 

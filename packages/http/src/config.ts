@@ -3,11 +3,20 @@
 // `app.config.ts`, which this file claimed for four majors while `AppConfig` has never carried an
 // `http` key: an app declares its half through `configureHttp()` (`app-config.ts`) and the boot
 // lays its own facts over it before calling this.
-import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
+import {
+  DEFAULT_ENVIRONMENT,
+  DEFAULT_HEALTH_DETAIL_PEERS,
+  tryResolveEnvironment,
+} from '@ultimat3/core';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
-import { drainTimeoutDeleted, httpCountInvalid, trustProxyUnset } from './errors';
-import { assertHealthDetailPeers, DEFAULT_HEALTH_DETAIL_PEERS } from './health-disclosure';
+import {
+  buildIdHeaderDeleted,
+  drainTimeoutDeleted,
+  httpCountInvalid,
+  trustProxyUnset,
+} from './errors';
+import { assertHealthDetailPeers } from './health-disclosure';
 import {
   DEFAULT_LOCALE_CONFIG,
   DEFAULT_TZ_CONFIG,
@@ -24,7 +33,6 @@ export interface HttpConfig {
   readonly basePath: string;
   /** Build id this process serves; `null` disables skew detection (dev). */
   readonly buildId: string | null;
-  readonly buildIdHeader: string;
   readonly dev: boolean;
   /**
    * Where a browser that failed `auth: 'required'` is sent, or `null` to answer it with the
@@ -87,7 +95,6 @@ export interface HttpConfigInput {
   readonly hostname?: string;
   readonly basePath?: string;
   readonly buildId?: string | null;
-  readonly buildIdHeader?: string;
   readonly dev?: boolean;
   readonly signInPath?: string | null;
   readonly trustProxy?: boolean;
@@ -230,10 +237,10 @@ const resolveTrustedProxyHops = (trustProxy: boolean, declared: number | undefin
 export const refuseDeletedHttpKeys = (input: object): void => {
   // Core's rule for a removed key (`core/src/config-removed.ts`): `undefined` is a layer not
   // saying, so a spread carrying the key unset passes on both surfaces; any other value is written.
-  const written: unknown = Object.hasOwn(input, 'drainTimeoutMs')
-    ? (input as Record<string, unknown>)['drainTimeoutMs']
-    : undefined;
-  if (written !== undefined) throw drainTimeoutDeleted();
+  const written = (key: string): boolean =>
+    Object.hasOwn(input, key) && (input as Record<string, unknown>)[key] !== undefined;
+  if (written('drainTimeoutMs')) throw drainTimeoutDeleted();
+  if (written('buildIdHeader')) throw buildIdHeaderDeleted();
 };
 
 export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
@@ -274,7 +281,6 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     // `undefined` falls back to the environment; an explicit `null` is the declaration that
     // switches skew detection off, and `??` would have read it as unset.
     buildId: input.buildId === undefined ? (env('BUILD_ID') ?? null) : input.buildId,
-    buildIdHeader: input.buildIdHeader ?? 'x-ultimate-build',
     dev,
     signInPath: input.signInPath ?? null,
     trustProxy,

@@ -5,7 +5,6 @@ import { memoryAuthAdapter } from './memory-adapter';
 import {
   base32Decode,
   base32Encode,
-  createTotpReplayGuard,
   DEFAULT_MAX_TOTP_SUBJECTS,
   enrolTotp,
   generateRecoveryCodes,
@@ -13,6 +12,7 @@ import {
   TOTP_DRIFT_STEPS,
   TOTP_STEP_SECONDS,
   totpCode,
+  totpReplayGuard,
   totpStep,
   verifyTotp,
 } from './mfa';
@@ -68,7 +68,7 @@ describe('totp', () => {
 
   test('a step that was already spent is rejected as a replay', () => {
     const step = totpStep(AT);
-    const guard = createTotpReplayGuard();
+    const guard = totpReplayGuard();
     const code = totpCode(SECRET, step);
 
     const first = verifyTotp({ secret: SECRET, code, at: AT });
@@ -192,7 +192,7 @@ describe('totp', () => {
  */
 describe('the replay guard table', () => {
   test('a subject whose every step has left the drift window is forgotten', () => {
-    const guard = createTotpReplayGuard();
+    const guard = totpReplayGuard();
     guard.remember('alice', totpStep(AT), AT);
     expect(guard.size).toBe(1);
 
@@ -205,7 +205,7 @@ describe('the replay guard table', () => {
   });
 
   test('the cap evicts the subject furthest from the live window, never the newest', () => {
-    const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, 4);
+    const guard = totpReplayGuard(TOTP_DRIFT_STEPS, 4);
     const step = totpStep(AT);
     for (const subject of ['a', 'b', 'c', 'd']) guard.remember(subject, step, AT);
     expect(guard.size).toBe(4);
@@ -230,7 +230,7 @@ describe('the replay guard table', () => {
    */
   describe('a maxSubjects that is not a positive finite integer', () => {
     test('Infinity does not disable the bound it was passed as', () => {
-      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, Number.POSITIVE_INFINITY);
+      const guard = totpReplayGuard(TOTP_DRIFT_STEPS, Number.POSITIVE_INFINITY);
       const step = totpStep(AT);
       // One past the default, at a single step so nothing is forgotten by drift: the only thing
       // that can hold this table down is the cap.
@@ -244,7 +244,7 @@ describe('the replay guard table', () => {
     });
 
     test('NaN does not make the guard forget the code it just accepted', () => {
-      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, Number.NaN);
+      const guard = totpReplayGuard(TOTP_DRIFT_STEPS, Number.NaN);
       const step = totpStep(AT);
       guard.remember('alice', step, AT);
 
@@ -256,7 +256,7 @@ describe('the replay guard table', () => {
     });
 
     test('zero is a misread config, not an instruction to remember one subject', () => {
-      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, 0);
+      const guard = totpReplayGuard(TOTP_DRIFT_STEPS, 0);
       const step = totpStep(AT);
       guard.remember('alice', step, AT);
       guard.remember('bob', step, AT);

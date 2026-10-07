@@ -26,11 +26,11 @@ const DECIMAL = /^([+-])?(\d+)(?:\.(\d+))?$/;
  * The only constructor. Validates the currency and rejects fractional minor units.
  *
  * `scale` names how many decimal places `minor` counts when the currency's own are not enough:
- * `money(2, 'USD', 6)` is $0.000002. Omitted — and canonically omitted again when it says nothing
+ * `fromMinor(2, 'USD', 6)` is $0.000002. Omitted — and canonically omitted again when it says nothing
  * the currency does not already say — so a value at the natural scale serializes byte-for-byte as
  * it always has, and there is exactly one encoding of it.
  */
-export function money(minor: number, currency: string, scale?: number): Money {
+export function fromMinor(minor: number, currency: string, scale?: number): Money {
   const code = assertCurrency(currency);
   if (!Number.isSafeInteger(minor)) throw moneyNotInteger(minor, code);
   // `-0` is one amount with two identities: `JSON.stringify` writes `0` while `Object.is` and any
@@ -45,7 +45,7 @@ export function money(minor: number, currency: string, scale?: number): Money {
 }
 
 export function zero(currency: string): Money {
-  return money(0, currency);
+  return fromMinor(0, currency);
 }
 
 export interface FromDecimalOptions {
@@ -97,7 +97,7 @@ export function fromDecimal(
     );
   }
 
-  return money(negative ? -minor : minor, code, options.scale);
+  return fromMinor(negative ? -minor : minor, code, options.scale);
 }
 
 /** `1299 EUR` → `'12.99'`; `1200 JPY` → `'1200'`; `2 USD @ scale 6` → `'0.000002'`. */
@@ -114,7 +114,7 @@ export function toDecimalString(amount: Money): string {
 /**
  * Major units as a float — lossy past 2^53 / 10^scale, so never for arithmetic and no longer for
  * formatting either: `format.ts` hands `Intl` the exact `toDecimalString`, since a float rendered
- * `money(9007199254740991, 'USD', 6)` as `…740992`. Kept as public API for a chart axis or a sort
+ * `fromMinor(9007199254740991, 'USD', 6)` as `…740992`. Kept as public API for a chart axis or a sort
  * key, where an approximation is the point.
  */
 export function toDecimalNumber(amount: Money): number {

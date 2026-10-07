@@ -2,7 +2,7 @@
 // `events: true` joins its presence set, and a roster change is one `events` frame on that topic.
 // Browser-safe — the client reads the same shape back out with `readPresence`.
 
-import { isJsonObject, type JsonObject } from './json';
+import { isParsedJsonObject, type JsonObject } from './json';
 import { FRAME_LIMITS, type PresenceMember } from './sync-protocol';
 
 export type PresenceOp = 'join' | 'leave' | 'update' | 'sync';
@@ -60,9 +60,9 @@ export function readPresence(event: JsonObject): PresenceEvent | null {
 }
 
 function memberOf(value: unknown): PresenceMember | null {
-  if (!isJsonObject(value)) return null;
+  if (!isParsedJsonObject(value)) return null;
   const { id, actorId, meta, updatedAt } = value;
   if (typeof id !== 'string' || typeof updatedAt !== 'number') return null;
   if (actorId !== null && typeof actorId !== 'string') return null;
-  return { id, actorId, meta: isJsonObject(meta) ? meta : {}, updatedAt };
+  return { id, actorId, meta: isParsedJsonObject(meta) ? meta : {}, updatedAt };
 }

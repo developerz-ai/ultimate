@@ -15,7 +15,7 @@ registerErrorCodes({
  *
  * Loud rather than tolerant, because the silent version was measured and is worse than a failed
  * boot: `state` never leaves `stopped` and `drain()` has memoized its promise, so a second
- * `createServer().start()` bound a real port, answered `X_DRAINING` (503) to every request, and was
+ * `httpServer().start()` bound a real port, answered `X_DRAINING` (503) to every request, and was
  * still accepting connections after its own `stop()` returned — a dead listener holding a port,
  * with no log line naming what happened.
  *

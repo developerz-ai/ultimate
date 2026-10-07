@@ -1,6 +1,6 @@
 /**
  * The route table — the single source of route truth. File path → URL conventions for
- * `site/`, `app/` and `api/`, plus `describeRoutes()`, the serializable projection that
+ * `site/`, `app/` and `api/`, plus `describePages()`, the serializable projection that
  * `x.manifest.json`, the `/_x` routes panel, the sitemap and `sw.js` are all generated
  * from. Nothing downstream may keep its own list of routes.
  */
@@ -27,7 +27,7 @@ import {
   setMountedRoutes,
 } from './mounted-routes';
 import type { RouteConfig, RouteData } from './route';
-import { isRouteConfig, tagKeys } from './route';
+import { isRouteConfig, routeTagKeys } from './route';
 import type { RouteComponent } from './route-component';
 import type { CompiledPattern } from './route-pattern';
 import { compilePattern } from './route-pattern';
@@ -206,7 +206,7 @@ function toUrlSegment(segment: string): string {
 }
 
 const routes = new Map<string, RouteEntry>();
-/** The table `describeRoutes()` last built, dropped whenever a route registers or the registry clears. */
+/** The table `describePages()` last built, dropped whenever a route registers or the registry clears. */
 let described: readonly RouteDescriptor[] | undefined;
 
 export interface RegisterRouteInput<TData = RouteData> {
@@ -250,7 +250,7 @@ export function registerRoute<TData = RouteData>(
   input: RegisterRouteInput<TData>,
 ): RouteEntry<TData> {
   // The type already refuses a declaration; this catches the JS caller and the cast. Without it a
-  // raw declaration registers, and `describeRoutes()` is where it surfaces — as a bare TypeError
+  // raw declaration registers, and `describePages()` is where it surfaces — as a bare TypeError
   // on `config.budget.js`, one build step away from the file that caused it.
   if (!isRouteConfig(input.config)) {
     throw new RouteUnnormalizedError(
@@ -367,7 +367,7 @@ export function routeCount(): number {
 }
 
 export function routeEntries(): readonly RouteEntry[] {
-  // Code units, never `localeCompare` — `describeRoutes()` below promises an order "identical for
+  // Code units, never `localeCompare` — `describePages()` below promises an order "identical for
   // identical input", and `localeCompare` with no locale argument reads the runtime's ICU default.
   return [...routes.values()].sort((a, b) => byCodeUnit(a.path, b.path));
 }
@@ -380,7 +380,7 @@ export function routeFor(path: string): RouteEntry | undefined {
  * The manifest projection: JSON-safe, sorted by path, identical for identical input.
  * Determinism matters because `sw.js` and the sitemap are diffed across deploys.
  */
-export function describeRoutes(): readonly RouteDescriptor[] {
+export function describePages(): readonly RouteDescriptor[] {
   // Built once per registry change and handed out as the SAME frozen array: an ISR regeneration
   // looked its route up through this on every request, re-sorting the whole table each time, and
   // a stable identity is what lets `render-isr.ts` compile its matchers once per table.
@@ -422,7 +422,7 @@ const descriptorOf = (
   mode: config.render,
   offline: config.offline,
   hydrate: config.hydrate,
-  revalidateTags: tagKeys(config.revalidate?.tags),
+  revalidateTags: routeTagKeys(config.revalidate?.tags),
   revalidateTtl: config.revalidate?.ttl ?? null,
   prerenderable: config.prerender !== undefined,
   dynamic: params > 0,

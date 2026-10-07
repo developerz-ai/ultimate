@@ -12,7 +12,7 @@ import { LiveQueryRegistry } from './live-query';
 import { ANONYMOUS_SOCKET_MULTIPLIER, DEFAULT_MAX_SOCKETS_PER_ACTOR } from './principal-sockets';
 import { SocketRegistry, type WsLike } from './socket';
 import type { SyncGrant } from './sync-auth';
-import { createSyncNode, type SyncNode, type SyncWs, type WsData } from './sync-node';
+import { type SyncNode, type SyncWs, syncNode, type WsData } from './sync-node';
 
 class FakeWs implements WsLike {
   data!: WsData;
@@ -39,7 +39,7 @@ const build = (
 ): { node: SyncNode; dial: (actor: Actor | null, address: string) => Promise<Dial> } => {
   const sockets = new SocketRegistry();
   const transport = new InProcessTransport();
-  const node = createSyncNode({
+  const node = syncNode({
     hub: new ChannelHub({ transport, sockets }),
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     transport,
@@ -101,7 +101,7 @@ describe('the per-principal socket cap at the upgrade', () => {
     expect(third.status).toBe(429);
     expect(third.code).toBe('X_SOCKET_LIMIT');
     expect(third.fix).toContain('defineConfig({ realtime: { maxSocketsPerActor');
-    expect(third.fix).toContain('maxSocketsPerActor on createSyncNode');
+    expect(third.fix).toContain('maxSocketsPerActor on syncNode');
     expect((await dial(userActor({ id: 'alice' }), '198.51.100.1')).status).toBeNull();
     await node.stop();
   });

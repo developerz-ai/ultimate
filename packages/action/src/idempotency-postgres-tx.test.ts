@@ -4,14 +4,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { isUltimateError } from '@ultimat3/core';
-import { createPgliteClient, raw, withTransaction } from '@ultimat3/db';
+import { pgliteClient, raw, withTransaction } from '@ultimat3/db';
 import { withIdempotency } from './idempotency';
 import { postgresIdempotencyStore, SQL_IDEMPOTENCY_RESERVE } from './idempotency-postgres';
 import { postgresUnderTest } from './idempotency-tx-fixture';
 
 describe('the store’s DDL', () => {
   test('is re-appliable: the column arrives on a table that predates it', async () => {
-    const client = createPgliteClient();
+    const client = pgliteClient();
     try {
       await postgresUnderTest(client);
       // A second boot must be a no-op, not `42701`.
@@ -25,8 +25,8 @@ describe('the store’s DDL', () => {
 
 describe('a transaction on ANOTHER database', () => {
   test('the settle stays on the store’s own pool — the other database has no x_idempotency', async () => {
-    const home = createPgliteClient();
-    const shard = createPgliteClient();
+    const home = pgliteClient();
+    const shard = pgliteClient();
     try {
       const { store } = await postgresUnderTest(home);
       await shard.execute(raw('create table shard_charges (id text primary key)'));

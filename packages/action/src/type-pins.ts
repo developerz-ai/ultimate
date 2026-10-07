@@ -3,9 +3,9 @@
 // type-level claim written in one can never fail. This module emits nothing and exports nothing
 // anybody imports — a regression here is a build error, the only enforcement that counts.
 
-import type { AuditRecord, Row } from '@ultimat3/core';
+import type { AuditRecord, McpExposureDeclaration, Row } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import type { Action, AnyAction } from './action';
+import type { Action, ActionDef, AnyAction, AnyActionDef } from './action';
 import type { ClientMethod } from './client';
 import type {
   IdempotencyRecord,
@@ -14,12 +14,20 @@ import type {
   IdempotencyStore,
 } from './idempotency';
 import type { ActionJobHandle } from './job-handle';
-import type { LocalTable } from './mutator';
+import type { LocalTable, MutatorDef } from './mutator';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
 
 type Equals<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+/**
+ * IDENTICAL, not merely mutually assignable: an object type without an optional key is assignable
+ * to one with it and back, so `Equals` cannot see an optional field added on one side only — and
+ * every field of the `mcp` block is optional but `expose`.
+ */
+type Identical<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
 type PublishInput = StandardSchemaV1<{ readonly postId: string }>;
 type PublishOutput = StandardSchemaV1<{ readonly published: boolean }>;
@@ -124,3 +132,25 @@ export type _NoDeprecationRenderReexport = import('./index').DeprecationRender;
  */
 export type _AnActionHasNoToolTwin = Assert<Equals<Extract<keyof AnyAction, 'tool'>, never>>;
 export type _ATypedActionHasNoToolTwin = Assert<Equals<Extract<keyof PublishPost, 'tool'>, never>>;
+
+/**
+ * 25.0.0: an action's `mcp` block is core's ONE `McpExposureDeclaration`, minus the list
+ * whitelist an action has nothing to compose over — on the declaration, the erased declaration,
+ * the erased action and a mutator alike. `ActionMcp` restated the block field by field (and
+ * `McpAnnotationHints` its hints); a field drifting on either side flips these to `false`.
+ */
+type ActionBlock = Omit<McpExposureDeclaration, 'listParams'>;
+export type _ActionDeclaresCoresBlock = Assert<
+  Identical<NonNullable<ActionDef<PublishInput, PublishOutput>['mcp']>, ActionBlock>
+>;
+export type _ErasedActionDefDeclaresCoresBlock = Assert<
+  Identical<NonNullable<AnyActionDef['mcp']>, ActionBlock>
+>;
+export type _AnyActionCarriesCoresBlock = Assert<
+  Identical<NonNullable<AnyAction['mcp']>, ActionBlock>
+>;
+export type _MutatorDeclaresCoresBlock = Assert<
+  Identical<NonNullable<MutatorDef<PublishInput, PublishOutput>['mcp']>, ActionBlock>
+>;
+// @ts-expect-error — `McpAnnotationHints` is `@ultimat3/core`'s, never this barrel's.
+export type _NoAnnotationHintsTwin = import('./index').McpAnnotationHints;

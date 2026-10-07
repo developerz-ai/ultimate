@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { type DbClient, type DbConnection, type ReservableClient, setDbClient } from './client';
 import { expectedQueryLoopReason } from './expected-loop';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import { type LedgerRow, type Migration, migrate, migrationChecksum, rollback } from './migrate';
 
 const addPosts: Migration = {
@@ -29,7 +29,7 @@ const ledgerRow = (overrides: Partial<LedgerRow> = {}): LedgerRow => ({
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

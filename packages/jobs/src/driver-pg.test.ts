@@ -383,15 +383,9 @@ describe('pg enqueue, ack and nack', () => {
       durationMs: 412.6,
     });
     expect(executor.calls[0]?.sql).toBe(SQL_ACK);
-    // The id, the claimer and the CLAIM the settle is fenced on (last but one), the duration its
-    // counter bucket adds, and that it is counted — only `x jobs drain` settles one uncounted.
-    expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 413, 1, true]);
-    await postgresJobDriver({ executor }).ack('job-2', {
-      workerId: 'w1',
-      claim: 4,
-      counted: false,
-    });
-    expect(executor.calls[1]?.params).toEqual(['job-2', 'w1', 0, 4, false]);
+    // The id, the claimer, the duration its counter bucket adds and the CLAIM the settle is
+    // fenced on (last).
+    expect(executor.calls[0]?.params).toEqual(['job-1', 'w1', 413, 1]);
   });
 
   test('nack maps deadLetter, park and neither onto three states, and park burns no attempt', async () => {

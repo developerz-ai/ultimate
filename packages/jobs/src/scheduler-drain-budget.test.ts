@@ -20,7 +20,7 @@ import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 import type { CronResolver, Scheduler } from './scheduler';
-import { createScheduler } from './scheduler';
+import { jobScheduler } from './scheduler';
 import type { LeaderElection } from './scheduler-leader';
 import type { TaskHandle } from './task';
 import { resetTasks, task } from './task';
@@ -105,7 +105,7 @@ async function rig(): Promise<Rig> {
     tz: 'UTC',
     enqueue: () => [[sendDigest, {}]],
   });
-  const scheduler = createScheduler({
+  const scheduler = jobScheduler({
     driver,
     clock,
     leader,

@@ -197,6 +197,13 @@ export const policyPermissions = <I = unknown, R = unknown>(
   policy: Policy<I, R>,
 ): readonly Permission[] => policy.permissions;
 
+/**
+ * The capability a policy names, for manifests, OpenAPI metadata and the `/_x` dashboard — a
+ * DISPLAY label. What a report MATCHES on is `policyPermissions`; this is the sentence beside it.
+ */
+export const policyCapability = <I = unknown, R = unknown>(policy: Policy<I, R>): string =>
+  policy.label;
+
 const flatten = (children: readonly { readonly permissions: readonly Permission[] }[]) =>
   [...new Set(children.flatMap((child) => child.permissions))].sort();
 

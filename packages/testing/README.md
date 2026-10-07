@@ -42,7 +42,7 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty, and restores the ones that can be restored at the same boundary |
 | `registry-snapshot.ts` | `captureProcessRegistries()` / `restoreProcessRegistries()` — the locale config, the catalogs, the permission set, the role map, the tasks and the declared measurement actor, put back as a file inherited them. A module-scope declaration evaluates once per process (`bun test` without `--isolate`, `As of 2026-08`), so a neighbour's `clearPermissions()` is otherwise permanent |
 | `registry-isolation.ts` | `isolateEntityRegistry()` — an empty entity registry, and the process's back after. Its own entry point (`@ultimat3/testing/registry-isolation`), never the barrel: it value-imports `@ultimat3/entity`, and the barrel is what a tier-0 test imports for `expect` |
-| `quiet-logs.ts` | a green run prints the reporter and nothing else: the framework's log lines go to a sink that drops them. `LOG_LEVEL=info bun test <file>` shows them — naming `LOG_LEVEL` is the one escape hatch, and a level above `info` filters what the TERMINAL shows, never what the logger emits (below). A test asserting on log output hands `createLogger({ level, writer })` its own writer, or installs its own `setLogSink` and restores the previous one |
+| `quiet-logs.ts` | a green run prints the reporter and nothing else: the framework's log lines go to a sink that drops them. `LOG_LEVEL=info bun test <file>` shows them — naming `LOG_LEVEL` is the one escape hatch, and a level above `info` filters what the TERMINAL shows, never what the logger emits (below). A test asserting on log output hands `structuredLogger({ level, writer })` its own writer, or installs its own `setLogSink` and restores the previous one |
 | `preload.ts` | the bunfig preload that installs all of the above |
 
 ## Install
@@ -161,7 +161,7 @@ unitTest('the sweep runs as the billing worker', async ({ runJobs }) => {
 | **`{ actor }`** | on the call and on `drain()`: the identity the WORKER runs as — what an app wires through `WorkerOptions.context()`. Its org is replaced by the job's declared tenant, as a real worker's is; `tenant: 'none'` strips it. Absent is core's anonymous actor |
 | **`{ tenantId }`** | on the call and on `enqueue()`: the ENQUEUER's tenant on the row — the limiter's bucket and the dedupe namespace, the half of `handle.as(actor, input)` that reaches the queue. Never the tenant the body runs under: that is the job's own `tenant:` |
 | **one event bus per fixture** | `step.waitForEvent` reads an ambient bus that STORES; the fixture installs a fresh one and hands the process's back, so one test's `publishEvent` cannot resume the next test's run |
-| **a real worker's pass** | each round is `createWorker(...).tick()`: admission, the limiter and keyed `concurrency` (`whenBusy: 'fail'` settles `refused`, `X_JOB_KEY_BUSY`) hold exactly as in production |
+| **a real worker's pass** | each round is `jobWorker(...).tick()`: admission, the limiter and keyed `concurrency` (`whenBusy: 'fail'` settles `refused`, `X_JOB_KEY_BUSY`) hold exactly as in production |
 | **a cancel reaches a running body** | the worker renews its lease on the TEST clock — every millisecond of it — and a renewal that misses the row aborts `ctx.signal` with `X_JOB_LEASE_LOST`: start `runJobs.drain()`, cancel the row (`cancelJob(jobDriver(), id)` or the app's own action), `clock.advance(1)`, await the drain. No hand-built worker, no sleep, no wall-clock timer |
 
 ## An N+1 fails the test it happened in
@@ -350,7 +350,7 @@ X_TEST_NETWORK_SEALED
   fix:   mockFetch('https://api.stripe.com/v1/charges', () => new Response('{}')) — or allowHost('api.stripe.com') if it must be real
 ```
 
-A server this process booted is exempt: `createServer().start()` announces its socket through
+A server this process booted is exempt: `httpServer().start()` announces its socket through
 core's `markListening()`, so a test may call its own `handle.url()` on a kernel-assigned port with
 the seal fully on. Unsealing (`ULTIMATE_TEST_ALLOW_NET=1`) stays reserved for a deliberate live
 integration — never for a socket test.
@@ -408,7 +408,7 @@ unitTest('the shell keeps the page in <main>', async () => {
 | **`renderView(Component, props)`** | one component. `props` is the component's own type — a renamed prop is a compile error in the test. A component that renders an `island()` is refused here: its timing is a route's |
 | **`view.html`** | the markup as the document carries it |
 | **`view.text`** | what a reader sees: tags, `<script>` and `<style>` bodies removed, entities decoded, whitespace collapsed. Compare with `t('<key>')` — markup escapes what the catalog does not |
-| **`actor`** | `load` and the page run inside `runWithContext(createContext({ actor }))`. Without one they run outside any request context, as a static page does |
+| **`actor`** | `load` and the page run inside `runWithContext(ctxOf({ actor }))`. Without one they run outside any request context, as a static page does |
 | **the file stays `.test.ts`** | no JSX in a test: the registry-leak guard's loader covers `.test.ts` only, and children that need markup are a string |
 
 `@ultimat3/render` is imported inside the two functions, so the barrel still loads no renderer.

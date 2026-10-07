@@ -23,16 +23,10 @@ export interface JobRetryDecision extends RetryDecision {
   readonly classification: ErrorRetry | undefined;
 }
 
-/**
- * Core's, re-exported rather than copied — they are the readers of core's classification table and
- * every executor in the framework has to answer them the same way. Both were declared here first
- * and moved down a tier VERBATIM, the subtle rule included: an UNCLASSIFIED code carrying an
- * instance `retry: 'terminal'` reads as unclassified, because a per-instance `terminal` is
- * indistinguishable from the fail-closed default and honouring it would dead-letter the first
- * attempt of every job in every app whose codes nobody has classified. `retry-classification.test.ts`
- * pins that they are the same FUNCTION, not merely two functions that agree today.
- */
-export { classifyThrown, statedDelayMs };
+// `classifyThrown` and `statedDelayMs` are core's, imported — the readers of core's classification
+// table, which every executor answers the same way. An UNCLASSIFIED code carrying an instance
+// `retry: 'terminal'` reads as unclassified (a per-instance `terminal` is indistinguishable from
+// the fail-closed default); `retry-classification.test.ts` holds that rule against core's function.
 
 /**
  * Retry, dead-letter, and when. `terminal` stops here on the attempt that failed — the same code

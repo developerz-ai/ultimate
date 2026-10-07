@@ -2,7 +2,7 @@
 // tests in `runs.test.ts` do not reach: connecting, the key an admin issues and revokes, and what
 // each says when there is no queue to ask.
 import { driver } from '@postly/db';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
@@ -133,7 +133,7 @@ unitTest('a started run has its own row, queued, naming the job that runs it', a
   const made = await connectSite.as(writer, { orgId: ORG, label: 'Ledger', credential: 'x' });
   setJobDriver(memoryJobDriver());
   const run = await startRun.as(writer, { orgId: ORG, connectionId: made.id });
-  const row = await runWithContext(createContext({ actor: writer }), () => repo.runById(run.runId));
+  const row = await runWithContext(ctxOf({ actor: writer }), () => repo.runById(run.runId));
   expect(row).toMatchObject({
     orgId: ORG,
     connectionId: made.id,

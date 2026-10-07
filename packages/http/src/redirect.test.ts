@@ -2,9 +2,9 @@
 // surface. These pin the two halves the projection depends on: it survives the handler, and it
 // does not survive being read.
 import { describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { asCtx, createRequestContext } from './context';
+import { asCtx, requestContext } from './context';
 import { setRedirect, takeRedirect } from './redirect';
 
 const config = defineHttpConfig({
@@ -12,7 +12,7 @@ const config = defineHttpConfig({
 });
 
 const context = () =>
-  createRequestContext({
+  requestContext({
     url: new URL('https://example.com/api/sessions/create'),
     method: 'POST',
     role: 'web',
@@ -59,7 +59,7 @@ describe('setRedirect / takeRedirect', () => {
   // A job's context is frozen, so the raw write is `TypeError: object is not extensible` — a
   // throw with no code, no cause and no fix. X_NO_REQUEST is the instruction it should be.
   test('a job context refuses with X_NO_REQUEST, not a bare TypeError', () => {
-    expect(() => runWithContext(createContext({ role: 'worker' }), () => setRedirect('/feed'))) //
+    expect(() => runWithContext(ctxOf({ role: 'worker' }), () => setRedirect('/feed'))) //
       .toThrow('X_NO_REQUEST');
   });
 });

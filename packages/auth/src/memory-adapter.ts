@@ -2,7 +2,7 @@
 // database exists and the one every test in this package runs against — the same interface
 // Postgres and Better Auth implement, so a flow that works here works there or the seam is wrong.
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, systemClock, timingSafeEqual } from '@ultimat3/core';
 import type {
   AuthAccount,
   AuthAdapter,
@@ -17,7 +17,6 @@ import type {
   UserQuery,
 } from './adapter';
 import { authUniqueViolation } from './errors';
-import { timingSafeEqual } from './tokens';
 
 const verificationKey = (purpose: string, identifier: string): string => `${purpose}:${identifier}`;
 

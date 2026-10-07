@@ -8,7 +8,7 @@
 | Audience | you, debugging the framework | your operators, and their agents |
 | Environment | development **only** — mounting it with `env=production` or `role=production` throws `X_DEV_DASHBOARD_IN_PROD` | production |
 | Authz | none: it is your own machine | the app's policies, one decision per surface |
-| Data | introspection calls (`describeRoutes`, `inspect`, `dependentsOf`, …) | the entity registry + repos |
+| Data | introspection calls (`describePages`, `inspect`, `dependentsOf`, …) | the entity registry + repos |
 | Shipped in the app image | never mounted | mounted at `/admin` |
 
 ## `/_x` panels
@@ -267,10 +267,11 @@ transaction as the write (`AuditLog.atomic`) — a CRUD write, an action's handl
 set and a queued batch's enqueues alike, so an entry that cannot be written rolls the work back
 and the log holds one `failed` entry — and reads it back by keyset. An allowed READ is not
 written unless `reads: true` — a refused one always is. Sealed and `sensitive` values reach the
-table only as `[redacted]`. `memoryAuditLog()` is a ring that forgets at every restart. The
+table only as `[redacted]` — `@ultimat3/core`'s `REDACTED`, the logger's marker too. `memoryAuditLog()` is a ring that forgets at every restart. The
 table is applied at boot with every other framework table (`@ultimat3/cli`'s `FRAMEWORK_SCHEMA`),
 from the leaf module `@ultimat3/admin/schema` (`SQL_ADMIN_AUDIT_TABLE`, `ADMIN_AUDIT_TABLE`) —
-no migration, no screen loaded to install it.
+no migration, no screen loaded to install it. That subpath is their one import path: 25.0.0 took
+them off the barrel.
 
 ### A sealed column
 

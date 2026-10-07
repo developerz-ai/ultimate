@@ -117,7 +117,7 @@ export function apiDeclaration(): ApiDeclaration {
   return declared;
 }
 
-/** Test seam, called by `resetRegistry`. */
+/** Test seam, called by `resetActions`. */
 export function resetApiDeclaration(): void {
   declared = {};
 }

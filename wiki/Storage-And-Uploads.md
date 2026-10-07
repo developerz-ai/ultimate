@@ -44,6 +44,15 @@ only — production is whichever S3-compatible endpoint you run.
 and what the dev gateway is started with. An endpoint that expects another region refuses the
 first write, list or delete with `X_CONFIG_INVALID`, and the fix line names the value to set.
 
+## A listing is the framework's one page
+
+`disk(name).list({ prefix, cursor, limit })` answers `Page<StorageListEntry>` — `{ rows,
+nextCursor, hasMore }`, the shape `findMany` and a query's `.page()` answer. `nextCursor` is a
+string exactly when another object exists past the page, on every driver: a full last page is
+`hasMore: false`, never a cursor to an empty one. `cursor: null` (or absent) is the first page, so
+`cursor = page.nextCursor` until it is `null` walks the prefix. `limit` is a positive integer or
+`X_INVARIANT`. Until 25.0.0 it was `{ objects, truncated, cursor? }` ([Upgrading](Upgrading)).
+
 ## Keys are refused, never sanitised
 
 `assertSafeKey()` runs on every key: `..`, absolute keys, backslashes, control bytes, encoded

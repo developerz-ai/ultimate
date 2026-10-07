@@ -58,7 +58,7 @@ describe('randomHex byteLength', () => {
     });
   }
 
-  test('a real byte length still works, and uuid()/traceId()/spanId() still mint', () => {
+  test('a real byte length still works, and uuidV7()/traceId()/spanId() still mint', () => {
     expect(randomHex(1)).toMatch(/^[0-9a-f]{2}$/);
     expect(randomHex(16)).toMatch(/^[0-9a-f]{32}$/);
   });

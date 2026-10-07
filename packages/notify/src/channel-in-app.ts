@@ -3,7 +3,7 @@
 // declared where every other delivery is declared, rather than a table that fills itself.
 
 import type { NotifyChannel } from './channel';
-import { channel } from './channel';
+import { deliveryChannel } from './channel';
 import { requireInbox } from './stores';
 
 export interface InAppChannelOptions {
@@ -17,7 +17,7 @@ export const IN_APP_CHANNEL = 'in-app';
 export function inAppChannel<Params = unknown>(
   options: InAppChannelOptions = {},
 ): NotifyChannel<Params> {
-  return channel<Params>(options.name ?? IN_APP_CHANNEL, async ({ recipient, batch }) => {
+  return deliveryChannel<Params>(options.name ?? IN_APP_CHANNEL, async ({ recipient, batch }) => {
     // Every event in the batch, not just the newest: a digest window over an inbox still owes the
     // reader one row per thing that happened. `add` is idempotent on (recipient, notifier, key),
     // so a replayed attempt writes nothing new and does not move an existing row's timestamps.

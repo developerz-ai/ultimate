@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { ClientScope } from './client-scope';
 import { onRescope, rescope } from './client-scope';
 import { scopeChanged } from './client-scope-error';
-import { createFence, isSuperseded } from './generation-fence';
+import { generationFence, isSuperseded } from './generation-fence';
 import { pageClient } from './record-sink';
 
 afterEach(() => {
@@ -75,7 +75,7 @@ test('an unscoped page becoming anonymous IS a change — nobody is not the anon
 
 describe('isSuperseded', () => {
   test('answers true for both supersessions and false for anything else', () => {
-    const fence = createFence('a probe');
+    const fence = generationFence('a probe');
     const issued = fence.generation();
     fence.bump();
     let flight: unknown;

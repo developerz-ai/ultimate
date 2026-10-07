@@ -18,9 +18,7 @@ const MAX_DETAIL_LENGTH = 200;
 // Every other 4xx is a credential or a plan, which no retry fixes. The table itself is
 // `@ultimat3/core`'s — this line and `packages/mail/src/driver-resend.ts`'s were byte-identical in
 // two packages that cannot import each other, so one of them was always going to be edited alone.
-// Re-exported rather than imported twice, so both purge drivers still read "what a failure means"
-// off the shared HTTP half — the same door `@ultimat3/auth`'s `tokens.ts` gives `timingSafeEqual`.
-export { isRetryableStatus } from '@ultimat3/core';
+// Both purge drivers import it from core; it is not re-exported here (`X_HELPER_COPY`).
 
 /**
  * A bare reference to `globalThis.fetch` risks "Illegal invocation" on some hosts; closing over

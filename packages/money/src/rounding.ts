@@ -3,7 +3,7 @@
  * whichever one `Math.round` happens to implement is not an answer.
  */
 
-import { invariant } from '@ultimat3/core';
+import { assertCoded } from '@ultimat3/core';
 import { MAX_MONEY_SCALE } from '@ultimat3/schema';
 import { digitsInvalid, notRoundable } from './errors';
 import { factorFraction } from './factor';
@@ -66,7 +66,7 @@ export function roundRatio(
   denominator: bigint,
   mode: RoundingMode = DEFAULT_ROUNDING,
 ): number {
-  invariant(
+  assertCoded(
     denominator !== 0n,
     'X_INVARIANT',
     'cannot round a ratio whose denominator is zero',
@@ -98,7 +98,7 @@ export function roundRatio(
       else rounded = whole % 2n === 0n ? whole : whole + 1n;
       break;
   }
-  // Past 2^53 the `Number` is already approximate, which `money()` refuses as X_MONEY_NOT_INTEGER.
+  // Past 2^53 the `Number` is already approximate, which `fromMinor()` refuses as X_MONEY_NOT_INTEGER.
   return Number(negative ? -rounded : rounded);
 }
 

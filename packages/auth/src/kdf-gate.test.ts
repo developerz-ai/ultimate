@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { AuthError } from './errors';
-import { createKdfGate, DEFAULT_KDF_LIMITS } from './kdf-gate';
+import { boundedKdfGate, DEFAULT_KDF_LIMITS } from './kdf-gate';
 
 const deferred = (): { promise: Promise<void>; resolve: () => void } => {
   let resolve = (): void => {};
@@ -16,9 +16,9 @@ const deferred = (): { promise: Promise<void>; resolve: () => void } => {
   return { promise, resolve };
 };
 
-describe('createKdfGate', () => {
+describe('boundedKdfGate', () => {
   test('never runs more than maxConcurrent at once', async () => {
-    const gate = createKdfGate({ maxConcurrent: 2, maxQueued: 10 });
+    const gate = boundedKdfGate({ maxConcurrent: 2, maxQueued: 10 });
     const blocker = deferred();
     let running = 0;
     let peak = 0;
@@ -37,7 +37,7 @@ describe('createKdfGate', () => {
   });
 
   test('past the queue bound it refuses with X_OVERLOADED rather than queueing forever', async () => {
-    const gate = createKdfGate({ maxConcurrent: 1, maxQueued: 1 });
+    const gate = boundedKdfGate({ maxConcurrent: 1, maxQueued: 1 });
     const blocker = deferred();
     const held = gate.run(async () => await blocker.promise);
     const queued = gate.run(async () => await blocker.promise);
@@ -56,7 +56,7 @@ describe('createKdfGate', () => {
   });
 
   test('a slot is released even when the work throws', async () => {
-    const gate = createKdfGate({ maxConcurrent: 1, maxQueued: 0 });
+    const gate = boundedKdfGate({ maxConcurrent: 1, maxQueued: 0 });
     await gate
       .run(async () => {
         throw new Error('kdf blew up');
@@ -74,8 +74,8 @@ describe('createKdfGate', () => {
   });
 });
 
-// The refusal is the whole of what a caller sees when the gate sheds, and `createKdfGate`
-// delegates its mechanism to `@ultimat3/core`'s `createFlightGate` — which carries a refusal of
+// The refusal is the whole of what a caller sees when the gate sheds, and `boundedKdfGate`
+// delegates its mechanism to `@ultimat3/core`'s `flightGate` — which carries a refusal of
 // its own (`X_FLIGHT_GATE_OVERLOADED`). These pin the three facts that must survive that: the
 // code stays this package's borrowed `X_OVERLOADED`, the counts are the ones read at the instant
 // of the shed, and `retryAfterSeconds` is still in `meta` for the host to put on the header.
@@ -85,7 +85,7 @@ describe('the shed refusal, whoever performs the queueing', () => {
     maxConcurrent: number;
     maxQueued: number;
   }): Promise<{ refusal: AuthError; release: () => Promise<void> }> => {
-    const gate = createKdfGate(limits);
+    const gate = boundedKdfGate(limits);
     const blocker = deferred();
     const held = Array.from({ length: limits.maxConcurrent + limits.maxQueued }, async () =>
       gate.run(async () => await blocker.promise),
@@ -141,7 +141,7 @@ describe('the shed refusal, whoever performs the queueing', () => {
         setTimeout(done, 0);
       });
     };
-    const gate = createKdfGate({ maxConcurrent: 1, maxQueued: 8 });
+    const gate = boundedKdfGate({ maxConcurrent: 1, maxQueued: 8 });
     const first = deferred();
     const second = deferred();
     const order: string[] = [];
@@ -173,16 +173,16 @@ describe('the shed refusal, whoever performs the queueing', () => {
 
 /**
  * The fourth runtime number, and the one that WEDGES rather than fails — the shape `mfa.drift`
- * already had. `createFlightGate` asks `active < maxConcurrent` and then
+ * already had. `flightGate` asks `active < maxConcurrent` and then
  * `waiters.length >= maxQueued`, and both are false for `NaN`: every `hashPassword` and
  * `verifyPassword` on the box parks in a queue with no bound and nothing to release it, so login
  * stops answering at all instead of shedding. Screened at the constructor, so `configureKdfGate`
- * and a direct `createKdfGate(limits)` are the same door.
+ * and a direct `boundedKdfGate(limits)` are the same door.
  */
 describe('the kdf limits are screened numbers', () => {
   const refusal = (limits: { maxConcurrent: number; maxQueued: number }): AuthError => {
     try {
-      createKdfGate(limits);
+      boundedKdfGate(limits);
     } catch (error) {
       if (error instanceof AuthError) return error;
       throw error;
@@ -208,7 +208,7 @@ describe('the kdf limits are screened numbers', () => {
   });
 
   test('a zero queue stays legal — it sheds at the width instead of waiting', async () => {
-    const gate = createKdfGate({ maxConcurrent: 1, maxQueued: 0 });
+    const gate = boundedKdfGate({ maxConcurrent: 1, maxQueued: 0 });
     expect(await gate.run(async () => 'hashed')).toBe('hashed');
   });
 
@@ -219,12 +219,12 @@ describe('the kdf limits are screened numbers', () => {
    * and would have broken a control that is already shipped.
    */
   test('a zero width with a zero queue stays legal — it sheds every hash, it does not hang', async () => {
-    const gate = createKdfGate({ maxConcurrent: 0, maxQueued: 0 });
+    const gate = boundedKdfGate({ maxConcurrent: 0, maxQueued: 0 });
     const answer = await gate.run(async () => 'hashed').catch((error: unknown) => error);
     expect(answer instanceof AuthError ? answer.code : answer).toBe('X_OVERLOADED');
   });
 
   test('the shipped defaults pass their own screen', () => {
-    expect(createKdfGate(DEFAULT_KDF_LIMITS)).toBeDefined();
+    expect(boundedKdfGate(DEFAULT_KDF_LIMITS)).toBeDefined();
   });
 });

@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { type PostgresClient, postgresClient, raw, sql, statementsOf } from '@ultimat3/db';
-import { normalize } from './embeddings';
+import { normalizeVector } from './embeddings';
 import { type PgVectorStore, postgresVectorStore } from './pg-vector';
 import { searchSql } from './pg-vector-sql';
 import { fuse, memoryVectorStore, type SearchHit, type VectorRecord } from './vector';
@@ -17,7 +17,7 @@ const TABLE = 'ai_live_docs';
 const DROP = `drop table if exists "${TABLE}" cascade`;
 const DIMENSION = 4;
 
-const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
+const vec = (...values: number[]): Float32Array => normalizeVector(Float32Array.from(values));
 const ids = (hits: readonly SearchHit[]): readonly string[] => hits.map((hit) => hit.id);
 
 /** For the reads whose order is not part of the claim. Copies — `sort` mutates, `ids` is readonly. */

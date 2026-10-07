@@ -4,17 +4,11 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import {
-  anonymousActor,
-  createContext,
-  frozenClock,
-  runWithContext,
-  userActor,
-} from '@ultimat3/core';
+import { anonymousActor, ctxOf, frozenClock, runWithContext, userActor } from '@ultimat3/core';
 import type { RateLimitStore } from '@ultimat3/http';
 import {
-  createServer,
   defineHttpConfig,
+  httpServer,
   installRateLimitStore,
   memoryRateLimitStore,
   resetRateLimitStore,
@@ -43,7 +37,7 @@ const limited = () =>
 const INPUT = { email: 'buyer@example.test' };
 
 const server = (target: ReturnType<typeof limited>) =>
-  createServer({
+  httpServer({
     routes: [toRoute(target)],
     config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
   });
@@ -64,7 +58,7 @@ const outcome = (attempt: Promise<unknown>): Promise<string> =>
     (error: unknown) => (error as { readonly code?: string }).code ?? 'uncoded',
   );
 
-const anonymous = (): Ctx => createContext({});
+const anonymous = (): Ctx => ctxOf({});
 
 describe('a declared rate limit is refused after the limit on every surface', () => {
   test('HTTP: 200, 200, 429 — with the declared numbers on the headers', async () => {
@@ -101,7 +95,7 @@ describe('a declared rate limit is refused after the limit on every surface', ()
 
   test('job: the queued run is refused X_RATE_LIMITED on the third call', async () => {
     const handle = limited().job();
-    const ctx = createContext({ actor: userActor({ id: 'u-job' }) });
+    const ctx = ctxOf({ actor: userActor({ id: 'u-job' }) });
     const seen: string[] = [];
     for (let i = 0; i < 3; i += 1) seen.push(await outcome(handle.invoke(INPUT, ctx)));
     expect(seen).toEqual(['ok', 'ok', 'X_RATE_LIMITED']);
@@ -109,7 +103,7 @@ describe('a declared rate limit is refused after the limit on every surface', ()
 
   test('the surfaces spend ONE bucket: one caller over MCP and a job leaves HTTP nothing', async () => {
     const target = limited();
-    const caller = createContext({ actor: userActor({ id: 'u-shared' }) });
+    const caller = ctxOf({ actor: userActor({ id: 'u-shared' }) });
     expect(
       await runWithContext(caller, () => outcome(invoke(target, INPUT, { surface: 'mcp' }))),
     ).toBe('ok');
@@ -131,7 +125,7 @@ describe('a declared rate limit is refused after the limit on every surface', ()
 
 describe('a job run is charged to its tenant', () => {
   /** What `jobRunActor` hands a run: the worker's anonymous identity, carrying the job's org. */
-  const runAs = (orgId: string): Ctx => createContext({ actor: { ...anonymousActor(), orgId } });
+  const runAs = (orgId: string): Ctx => ctxOf({ actor: { ...anonymousActor(), orgId } });
 
   test('two tenants’ runs spend two buckets, never one shared `ip:unknown`', async () => {
     const handle = limited().job();
@@ -152,7 +146,7 @@ describe('an idempotent replay is its stored answer, never a 429', () => {
       rateLimit: { limit: 1, windowMs: 60_000 },
       handle: () => ({ ok: true }),
     }).named('chargeOnce');
-    const ctx = createContext({ actor: userActor({ id: 'u-idem' }) });
+    const ctx = ctxOf({ actor: userActor({ id: 'u-idem' }) });
     const call = (idempotencyKey: string) =>
       outcome(once(INPUT, { ctx, surface: 'http', idempotencyKey }));
     expect(await call('k1')).toBe('ok');
@@ -196,7 +190,7 @@ describe('the declared limit is the HTTP limit, not capped beneath it', () => {
       handle: () => ({ ok: true }),
     }).named('contactSales');
     // `default` holds two here — the stand-in for the shipped 120 an action may declare above.
-    const app = createServer({
+    const app = httpServer({
       routes: [toRoute(generous)],
       config: defineHttpConfig({
         rateLimit: {
@@ -214,8 +208,8 @@ describe('the declared limit is the HTTP limit, not capped beneath it', () => {
 describe('whose bucket, and from which store', () => {
   test('the bucket is per caller: one actor spending it out leaves another untouched', async () => {
     const target = limited();
-    const alice = createContext({ actor: userActor({ id: 'alice' }) });
-    const bob = createContext({ actor: userActor({ id: 'bob' }) });
+    const alice = ctxOf({ actor: userActor({ id: 'alice' }) });
+    const bob = ctxOf({ actor: userActor({ id: 'bob' }) });
     for (let i = 0; i < 2; i += 1) await target.job().invoke(INPUT, alice);
     expect(await outcome(target.job().invoke(INPUT, alice))).toBe('X_RATE_LIMITED');
     expect(await outcome(target.job().invoke(INPUT, bob))).toBe('ok');
@@ -248,7 +242,7 @@ describe('whose bucket, and from which store', () => {
     installRateLimitStore(store);
     await limited()
       .job()
-      .invoke(INPUT, createContext({ actor: userActor({ id: 'u9' }) }));
+      .invoke(INPUT, ctxOf({ actor: userActor({ id: 'u9' }) }));
     expect(taken).toEqual(['action:contactSales|actor:u9']);
   });
 
@@ -266,7 +260,7 @@ describe('a retry is not charged for a refusal', () => {
   test('a refused job attempt spends nothing: one refill admits exactly one retry', async () => {
     const target = limited();
     const clock = frozenClock('2026-10-04T00:00:00Z');
-    const ctx = createContext({ actor: userActor({ id: 'u-retry' }), clock });
+    const ctx = ctxOf({ actor: userActor({ id: 'u-retry' }), clock });
     for (let i = 0; i < 2; i += 1) await target.job().invoke(INPUT, ctx);
     // Three refused retries in a row: had any of them spent, the refill below would not cover it.
     for (let i = 0; i < 3; i += 1) {

@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
 import type { EntityDescriptionLike } from './entity-shape';
-import { createRecordingClient, type RecordingClient } from './fake';
+import { type RecordingClient, recordingClient } from './fake';
 import { generateMigration } from './generate';
 import {
   auditLedger,
@@ -37,7 +37,7 @@ const ledgerRow = (overrides: Partial<LedgerRow> = {}): LedgerRow => ({
 let client: RecordingClient;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   setDbClient(client);
 });
 

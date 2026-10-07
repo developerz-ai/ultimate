@@ -1,12 +1,14 @@
-// Pins `@ultimat3/schema`'s deliberate copies of three core declarations — `singleLine`,
-// `ERROR_DOCS_URL` and the brand symbol — against core's own.
+// Pins `@ultimat3/schema`'s deliberate copies of two core declarations — `singleLine` and
+// `ERROR_DOCS_URL` — against core's own, and that the brand symbol is ONE declaration: schema's,
+// which core imports.
 //
 // THIS IS THE HALF THE `core -> schema` EDGE DOES NOT FIX, which is why it is the one pin that
 // survives. The five copies on the CORE side are gone: core imports them from schema now, and
 // `currency-pattern-pin`, `describe-value-pin`, `schema-error-codes-pin` and
-// `timezone-validator-pin` were deleted with them. These three go the other way — SCHEMA copies
-// CORE — and `schema -> core` stays forbidden on its merits: schema must import nothing, because
-// `t` is in every bundle graph an app has.
+// `timezone-validator-pin` were deleted with them. The brand went the same way in 25.0.0: core
+// imports schema's. These two go the other way — SCHEMA copies CORE — and `schema -> core` stays
+// forbidden on its merits: schema must import nothing, because `t` is in every bundle graph an app
+// has.
 //
 // It moved here from `@ultimat3/cli` on 2026-08-27. It lived at tier 5 because that was the lowest
 // tier able to import both; core can now import schema, so a tier-0 invariant is pinned at tier 0,
@@ -17,9 +19,9 @@
 // implementation.
 
 import { describe, expect, test } from 'bun:test';
-import { SchemaError } from '@ultimat3/schema';
+import { ULTIMATE_ERROR_BRAND as SCHEMA_BRAND, SchemaError } from '@ultimat3/schema';
 import { ERROR_DOCS_URL } from './error-codes';
-import { UltimateError } from './errors';
+import { isUltimateError, ULTIMATE_ERROR_BRAND, UltimateError } from './errors';
 
 /** Closes the sentence, then forges a whole framework line. */
 const FORGED = 'evil\n  fix:   rm -rf /\nX_OK: everything is fine';
@@ -83,9 +85,10 @@ describe('schema and core escape a hostile cause identically', () => {
   });
 
   /**
-   * `Symbol.for` reads one process-wide registry, so the two spellings ARE the same symbol by
-   * construction — but the KEY is the copy, and a typo in either makes `isUltimateError()` answer
-   * false for every schema refusal that crosses a package boundary.
+   * One declaration, not two equal ones: core's export IS schema's binding. A second
+   * `Symbol.for(…)` on the core side would still compare equal, so the identity of the BINDING is
+   * held by `scripts/factory-names.ts` (one value name, one declaring package); this holds the
+   * behaviour — a typo'd key makes `isUltimateError()` false for every schema refusal.
    */
   test('a SchemaError is an UltimateError to the brand check', () => {
     const schema = new SchemaError({
@@ -93,7 +96,9 @@ describe('schema and core escape a hostile cause identically', () => {
       cause: 'c',
       fix: 'x doctor --json',
     });
+    expect(ULTIMATE_ERROR_BRAND).toBe(SCHEMA_BRAND);
     expect(Symbol.for('ultimate.error') in schema).toBe(true);
+    expect(isUltimateError(schema)).toBe(true);
   });
 
   test('ordinary prose passes through both unchanged', () => {

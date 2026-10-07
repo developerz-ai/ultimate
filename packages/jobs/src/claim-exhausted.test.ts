@@ -3,7 +3,7 @@
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
-import { createContext, logger } from '@ultimat3/core';
+import { ctxOf, logger } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { announceExhausted } from './claim-exhausted';
 import type { JobRecord } from './driver';
@@ -24,7 +24,7 @@ const passthrough: StandardSchemaV1<unknown, OrgInput> = {
   },
 };
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 
 const buried = (name: string, id: string): JobRecord => ({
   id,

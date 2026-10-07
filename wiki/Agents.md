@@ -10,7 +10,7 @@
 
 ```ts
 // app.config.ts, or any module the boot imports
-import { configureAi, createGateway, openAiProvider, registerModel } from '@ultimat3/ai';
+import { configureAi, providerGateway, openAiProvider, registerModel } from '@ultimat3/ai';
 
 registerModel({
   id: 'house-large',
@@ -23,7 +23,7 @@ registerModel({
 });
 
 configureAi({
-  gateway: createGateway({
+  gateway: providerGateway({
     providers: [
       openAiProvider({
         apiKey: Bun.env['LLM_TOKEN'] ?? '',
@@ -38,17 +38,17 @@ configureAi({
 
 | Provider | Speaks |
 |---|---|
-| `new AnthropicProvider({ models, apiKey?, baseUrl? })` | the Anthropic Messages format |
+| `anthropicProvider({ models, apiKey?, baseUrl? })` | the Anthropic Messages format |
 | `openAiProvider({ baseUrl, models, apiKey, auth? })` | the OpenAI chat-completions format, on any compatible server |
 | your own `Provider` | anything — `{ name, models, generate, stream }` |
 
-An agent's model resolves from, first match wins: its `model`, its prompt's `model`, then `createGateway({ defaultModel })` (`resolveModel`, `packages/ai/src/model-resolve.ts`). The gateway routes it to the first provider whose `models` lists it.
+An agent's model resolves from, first match wins: its `model`, its prompt's `model`, then `providerGateway({ defaultModel })` (`resolveModel`, `packages/ai/src/model-resolve.ts`). The gateway routes it to the first provider whose `models` lists it.
 
 The framework ships no default model and no catalogue row (25.0.0): every id is one the app `registerModel`-ed.
 
 | Missing | Refusal | Fix |
 |---|---|---|
-| none of the three names a model | `X_AI_MODEL_UNRESOLVED`, naming all three | `model:` on the declaration or in `definePrompt`, or `createGateway({ defaultModel })` |
+| none of the three names a model | `X_AI_MODEL_UNRESOLVED`, naming all three | `model:` on the declaration or in `definePrompt`, or `providerGateway({ defaultModel })` |
 | the id was never registered | `X_AI_MODEL_UNKNOWN`, before any provider call or budget reservation | `registerModel({ id, … })` at boot, in the app's `models.ts` |
 
 ## Quick answers
@@ -222,7 +222,7 @@ budget: {
 | `tokensIn` | prompt tokens of one call | `agent()`, `llm()`, `hive()` |
 | `tokensPerRun` | prompt + completion across **every turn and every nested call** of one run | `agent()`, `hive()` |
 | `costPerCall` | worst-case price of one call, integer minor units | `agent()`, `llm()`, `hive()` |
-| `actor` / `org` | tokens across a whole window, per identity — the CALLER's: `llm()`, `agent()` and `hive()` key it `budgetKeysFor(ctx.actor)` | `createGateway({ budget })` |
+| `actor` / `org` | tokens across a whole window, per identity — the CALLER's: `llm()`, `agent()` and `hive()` key it `budgetKeysFor(ctx.actor)` | `providerGateway({ budget })` |
 
 A budget **refuses**; it never truncates. A shortened prompt yields a confidently wrong answer with no signal, and `X_AI_BUDGET_EXCEEDED` names the scope and what remains.
 
@@ -426,7 +426,7 @@ export const triageEveryOrder = backfill({
 | per model call | `budget.costPerCall` on the `agent()` |
 | per agent run | `budget.tokensPerRun` on the `agent()` |
 | per page | `budget.tokensPerRun` on the `hive()` — every member's every turn |
-| per actor, per org, **fleet-wide** | `createGateway({ budget: { actor, org }, budgetStore })`. The default `memoryBudgetStore()` is per process; a shared store is what makes these mean anything above one replica |
+| per actor, per org, **fleet-wide** | `providerGateway({ budget: { actor, org }, budgetStore })`. The default `memoryBudgetStore()` is per process; a shared store is what makes these mean anything above one replica |
 | rows per second | `backfill`'s `rate` and `batch`. This pass shares its pool with the requests the app is still serving |
 | which deploys sweep at all | `backfill`'s `environments`. A mismatch is `X_BACKFILL_ENVIRONMENT`, refused inside the pass as well as by the CLI |
 
@@ -467,7 +467,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | `X_HIVE_EMPTY` | `split()` produced zero members | return at least one member input, or guard the call site |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains | raise that scope's ceiling, or shorten the prompt |
 | `X_AI_PROMPT_SECRET` | `vars()` returned a `Secret` | drop the key from `vars()` and the template, or `revealSecret(value)` if the model genuinely has to read it |
-| `X_AI_GATEWAY_MISSING` | the agent ran before `configureAi`; the cause lists the peer providers | `configureAi({ gateway: createGateway({ providers: [provider] }) })` at boot, with `provider` your choice — [above](#register-your-models-pick-your-provider) |
+| `X_AI_GATEWAY_MISSING` | the agent ran before `configureAi`; the cause lists the peer providers | `configureAi({ gateway: providerGateway({ providers: [provider] }) })` at boot, with `provider` your choice — [above](#register-your-models-pick-your-provider) |
 | `X_ABORTED` | `ctx.signal` fired mid-run | pass a longer deadline, or run it as a job |
 
 Full list: [Error codes](Error-Codes).

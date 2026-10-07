@@ -353,7 +353,7 @@ function timestamp(clock: Clock): string {
  * `LOG_LEVEL`, and the default where there is no environment to read it from.
  *
  * A BROWSER has no `process` binding at all, and this read runs at MODULE INIT — `logger` at the
- * foot of this file is `createLogger()` evaluated when the module is. Measured on ai-maxxing's
+ * foot of this file is `structuredLogger()` evaluated when the module is. Measured on ai-maxxing's
  * session console island: `@ultimat3/realtime`'s `channel.ts` calls `logger.warn`, so the shaker
  * keeps `logger`, and the island's chunk died on `ReferenceError: process is not defined` before a
  * line of the app's own code ran — the wrapper rendered `data-x-failed="process is not defined"`
@@ -373,7 +373,7 @@ function envLevel(): LogLevel {
   const raw = typeof process === 'undefined' ? undefined : process.env['LOG_LEVEL'];
   // Unset and EMPTY are the same answer — `LOG_LEVEL=` is how a compose file spells "not set".
   if (raw === undefined || raw === '') return 'info';
-  // REFUSED, as `resolveLevel` refuses the same value from `createLogger({ level })`. It fell back
+  // REFUSED, as `resolveLevel` refuses the same value from `structuredLogger({ level })`. It fell back
   // to `info` in silence, so `LOG_LEVEL=verbose` — or `DEBUG`, the spelling half the ecosystem
   // uses — gave an operator who asked for MORE lines fewer, and nothing said the variable was the
   // reason. This runs at module init, so the refusal is the first thing the process prints.
@@ -401,7 +401,7 @@ function resolveLevel(declared: LogLevel): LogLevel {
     // level that arrived from a config file can be either — the refusal must not be replaced by
     // a `TypeError` from building its own message.
     `${renderCauseValue(declared)} is not a log level`,
-    `pass one of ${LOG_LEVELS.join(', ')} to createLogger({ level })`,
+    `pass one of ${LOG_LEVELS.join(', ')} to structuredLogger({ level })`,
   );
   return declared;
 }
@@ -422,7 +422,7 @@ function unreserved(fields: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-export function createLogger(options?: LoggerOptions): Logger {
+export function structuredLogger(options?: LoggerOptions): Logger {
   const level = options?.level === undefined ? envLevel() : resolveLevel(options.level);
   const bound = options?.fields ?? {};
   const clock = options?.clock ?? systemClock;
@@ -453,10 +453,10 @@ export function createLogger(options?: LoggerOptions): Logger {
     warn: (message, fields) => emit('warn', message, fields),
     error: (message, fields) => emit('error', message, fields),
     fatal: (message, fields) => emit('fatal', message, fields),
-    child: (fields) => createLogger({ level, clock, writer, fields: { ...bound, ...fields } }),
-    withLevel: (next) => createLogger({ level: next, clock, writer, fields: bound }),
+    child: (fields) => structuredLogger({ level, clock, writer, fields: { ...bound, ...fields } }),
+    withLevel: (next) => structuredLogger({ level: next, clock, writer, fields: bound }),
   };
 }
 
 /** The process-wide logger. Prefer `ctx.logger` inside a request — it carries the ids. */
-export const logger: Logger = createLogger();
+export const logger: Logger = structuredLogger();

@@ -9,7 +9,7 @@
 
 import { canModerate, USER_ROLES, type UserRole } from '@social-media-clone/domain';
 import type { Actor } from '@ultimat3/core';
-import { actorFact, isAnonymous, useContext, userActor } from '@ultimat3/core';
+import { actorFact, actorOf, isAnonymous, useContext, userActor } from '@ultimat3/core';
 
 /**
  * This app's authz facts, declared once on core's extension seam.
@@ -61,7 +61,7 @@ export const viewerActor = (init: ViewerInit): Actor =>
 
 /**
  * `null` is "nobody" everywhere in this app, because that is what a policy predicate is handed:
- * `@ultimat3/action`'s `actorOf` maps core's anonymous actor onto `null` before any rule runs. A
+ * `@ultimat3/core`'s `actorOf` maps core's anonymous actor onto `null` before any rule runs. A
  * reader that gets the raw context actor has to make the same collapse, hence the second check.
  */
 export const isSignedIn = (actor: Actor | null): actor is Actor =>
@@ -89,11 +89,7 @@ export const isAdmin = (actor: Actor | null): boolean =>
 
 /**
  * The viewer of the request being rendered, for a PAGE — a rule reads its own `actor` argument and
- * never this. It is `@ultimat3/action`'s `actorOf` spelled against core alone: `shared/` sits in
- * `site/`'s import graph, and the static path does not pay for tier 3 to answer a question core
- * already holds the answer to.
+ * never this. Core's `actorOf`, the same mapping every policy surface runs, over the ambient
+ * context: `shared/` sits in `site/`'s import graph, and core is tier 0.
  */
-export const currentViewer = (): Actor | null => {
-  const actor = useContext().actor;
-  return isAnonymous(actor) ? null : actor;
-};
+export const currentViewer = (): Actor | null => actorOf(useContext());

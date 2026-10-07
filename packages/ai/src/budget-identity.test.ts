@@ -4,14 +4,14 @@
 // empty ledger, and each call's reservation queued on a turnstile nobody else shared.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { action, resetRegistry } from '@ultimat3/action';
-import { createContext, userActor } from '@ultimat3/core';
+import { action, resetActions } from '@ultimat3/action';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import type { BudgetLimits, BudgetStore, BudgetTake } from './budget';
 import { budgetKeysFor, type MemoryBudgetStore, memoryBudgetStore } from './budget';
-import { createGateway } from './gateway';
+import { providerGateway } from './gateway';
 import { hive } from './hive';
 import { ANSWER, ctxFor, declare, POST_ID, promptFor, stub } from './llm-fixture';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
@@ -24,7 +24,7 @@ useFixtureModels();
 
 beforeEach(() => {
   resetAiRuntime();
-  resetRegistry();
+  resetActions();
 });
 
 /** The store, wrapped so a test can read what each reservation asked for. */
@@ -51,7 +51,7 @@ function recording(): { store: BudgetStore; takes: number[]; inner: MemoryBudget
 
 function install(provider: Provider, limits: BudgetLimits, store: BudgetStore): void {
   configureAi({
-    gateway: createGateway({
+    gateway: providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [provider],
       budget: limits,
@@ -151,7 +151,7 @@ describe('a hive()’s members run under the gateway budget', () => {
   test('a gateway request ceiling refuses every member, as it refuses a direct call', async () => {
     const { provider, seen } = stub(ANSWER);
     configureAi({
-      gateway: createGateway({
+      gateway: providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [provider],
         budget: { request: 1 },
@@ -189,7 +189,7 @@ describe('a hive()’s members run under the gateway budget', () => {
       onMemberError: 'collect',
       policy: allow(),
     }).named('plainHive');
-    const result = await fanOut({}, { ctx: createContext({ actor: userActor({ id: 'u-1' }) }) });
+    const result = await fanOut({}, { ctx: ctxOf({ actor: userActor({ id: 'u-1' }) }) });
     expect(result.ok).toBe(2);
   });
 });
@@ -237,7 +237,7 @@ describe('the org ceiling holds under concurrency', () => {
       release = resolve;
     });
     const { provider: inner, seen } = stub(ANSWER);
-    const gateway = createGateway({
+    const gateway = providerGateway({
       defaultModel: FIXTURE_MODEL,
       providers: [
         {
@@ -291,7 +291,7 @@ describe('a scope with no ceiling never touches the store', () => {
     };
     const { provider, seen } = stub(ANSWER);
     configureAi({
-      gateway: createGateway({
+      gateway: providerGateway({
         defaultModel: FIXTURE_MODEL,
         providers: [provider],
         budgetStore: store,

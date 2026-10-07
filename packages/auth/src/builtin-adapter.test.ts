@@ -1,11 +1,11 @@
 // Covers the one production `AuthAdapter` — every statement it emits, every value it binds,
-// and the row ⇄ domain-object translation in both directions. A `createRecordingClient()` stands
+// and the row ⇄ domain-object translation in both directions. A `recordingClient()` stands
 // in for Postgres: no database, no Docker, and every assertion is on the exact text and values
 // that would reach the wire.
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient } from '@ultimat3/db';
 import { type BuiltinAdapter, postgresAuthAdapter } from './builtin-adapter';
 import { AuthError } from './errors';
 
@@ -44,7 +44,7 @@ let client: RecordingClient;
 let adapter: BuiltinAdapter;
 
 const setup = (): void => {
-  client = createRecordingClient();
+  client = recordingClient();
   adapter = postgresAuthAdapter(client);
 };
 

@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/schema';
 import { defineHttpConfig } from './config';
-import { createRequestContext } from './context';
+import { requestContext } from './context';
 import { HttpError } from './errors';
 import { UltimateRequest } from './request';
 import type { Schema } from './validate';
@@ -14,7 +14,7 @@ import type { Schema } from './validate';
 const build = (urlString: string) => {
   const url = new URL(urlString);
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-  const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+  const ctx = requestContext({ url, method: 'GET', role: 'web', config });
   return { req: new UltimateRequest(new Request(url), ctx) };
 };
 

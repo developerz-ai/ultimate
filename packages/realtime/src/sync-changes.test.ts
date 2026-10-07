@@ -12,7 +12,7 @@ import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { CHANGE_SUBJECT_PREFIX } from './replicator';
 import { SocketRegistry } from './socket';
-import { createSyncNode, type SyncNode } from './sync-node';
+import { type SyncNode, syncNode } from './sync-node';
 
 const BUILD_ID = 'build-1';
 
@@ -35,7 +35,7 @@ function harness(registry: LiveQueryRegistry): {
   const clock = frozenClock(0);
   const sockets = new SocketRegistry({ clock });
   const transport = new InProcessTransport({ clock });
-  const node = createSyncNode({
+  const node = syncNode({
     hub: new ChannelHub({ transport, sockets }),
     registry,
     transport,

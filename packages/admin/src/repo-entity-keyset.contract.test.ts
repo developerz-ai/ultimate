@@ -3,13 +3,7 @@
 // in the MICROSECONDS a row's `Date` drops. Walked to the end and back; every row exactly once.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  createPgliteClient,
-  generateMigration,
-  raw,
-  setDbClient,
-  statementsOf,
-} from '@ultimat3/db';
+import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import {
   clearRegistry,
   database,
@@ -37,7 +31,7 @@ const ranked = entity('admin_kc_ranked', {
   },
 });
 
-const client = createPgliteClient();
+const client = pgliteClient();
 const table = (): ReturnType<typeof database<{ ranked: typeof ranked }>>['ranked'] =>
   database({ ranked }, { driver: postgresDriver() }).ranked;
 const resource = () => adminResource(ranked, { pageSize: 3, repo: adminRepoFor(ranked, table()) });

@@ -71,7 +71,7 @@ sequenceDiagram
   participant J as jobs/outbox
 
   C->>H: request + traceparent + x-ultimate-build
-  H->>H: correlation.ts, startDeadline, createRequestContext
+  H->>H: correlation.ts, startDeadline, requestContext
   H->>A: runWithContext(asCtx(ctx)) + withSpan — before stage 1
   H->>H: request-id, admit, trace
   H->>H: context — preflight, build skew, route match
@@ -98,7 +98,7 @@ The `Note` is the half the old diagram drew as pipeline stages: the cache lookup
 
 ## AsyncLocalStorage context
 
-Opened **before stage 1**, in `pipeline.ts`'s `handle()`: `createRequestContext` builds the object, `runWithContext(asCtx(ctx), …)` publishes it, and `withSpan` wraps the whole loop. Not at a stage — a stage that opened the scope would leave every stage above it unable to read the context, and the span would exclude them.
+Opened **before stage 1**, in `pipeline.ts`'s `handle()`: `requestContext` builds the object, `runWithContext(asCtx(ctx), …)` publishes it, and `withSpan` wraps the whole loop. Not at a stage — a stage that opened the scope would leave every stage above it unable to read the context, and the span would exclude them.
 
 `asCtx` is the **identity function**, not a cast: `RequestContext extends Ctx`, so the compiler is the check. It was `ctx as unknown as Ctx` over an object that set none of `clock`, `now`, `logger`, `signal` or `services` — and `ctx.now()` threw `TypeError: ctx.now is not a function` on every audited action served over HTTP.
 
@@ -134,7 +134,7 @@ Why ALS and not a threaded parameter:
 Consequences, enforced:
 
 - One `AsyncLocalStorage` in the framework, `packages/core/src/async-context.ts`; every other scope opens through `asyncContext<T>(subject)`. `bun run async-context-guard` is the build error.
-- No context outside a request/job/subscription scope: `useContext()` on a module's top level throws `X_NO_CONTEXT` — `fix: wrap the entry point in runWithContext(createContext({ ... }), fn)`.
+- No context outside a request/job/subscription scope: `useContext()` on a module's top level throws `X_NO_CONTEXT` — `fix: wrap the entry point in runWithContext(ctxOf({ ... }), fn)`.
 - Every layer reads actor/locale/tz. **No layer rewrites them.** The mutable slots on `RequestContext` are each filled by exactly one stage, and the table above says which.
 
 ## Reading the request from app code
@@ -218,7 +218,7 @@ Result: "why did this row appear on my screen" is one trace query, spanning a br
 ## Rules
 
 - **Stages never reorder.** Adding one is a row in `PIPELINE_STAGES` with its own `why`, an entry in `stages.ts`'s `Record<StageName, StageRun>`, and a test. Two of the three are build errors; the test is `packages/http/CLAUDE.md`'s rule.
-- **Middleware exists, and it is deliberately tiny.** `createServer({ middleware })` ([`packages/http/src/server.ts`](../../packages/http/src/server.ts)) composes left-to-right once at start and wraps the matched handler — the one thing the ordered pipeline cannot express. It runs *inside* stage 11, so it can never see a request the pipeline already refused and can never become a second auth, locale or rate-limit path. This page said "no user-supplied middleware" until 2026-08-23, which the seam it was describing had contradicted since it shipped. There is still no plugin API.
+- **Middleware exists, and it is deliberately tiny.** `httpServer({ middleware })` ([`packages/http/src/server.ts`](../../packages/http/src/server.ts)) composes left-to-right once at start and wraps the matched handler — the one thing the ordered pipeline cannot express. It runs *inside* stage 11, so it can never see a request the pipeline already refused and can never become a second auth, locale or rate-limit path. This page said "no user-supplied middleware" until 2026-08-23, which the seam it was describing had contradicted since it shipped. There is still no plugin API.
 - **Authz is decided once.** `meta.enforcedBy` says who: `'pipeline'` (the default) means stage 10 decides through `hooks.authorize`; `'handler'` means the handler holds the row a row-level rule reads and the stage returns without deciding. Deciding in both places is two authz systems, and the one holding less answers first ([`../idea/02-primitives.md`](../idea/02-primitives.md)).
 - **Cache never precedes authz** — not for performance, not for public routes. Enforced in `@ultimat3/query`'s [`read.ts`](../../packages/query/src/read.ts), which evaluates the policy before it reads a tier and puts the authority in the key on every read, cached or not. No pipeline stage can do it: the lookup happens inside `handler`.
-- **Every response carries `x-request-id` and `x-trace-id`** — stages 1 and 3, set on `ctx.headers` before anything can fail, so a refusal carries them too. `x-ultimate-build` is the *client's* claim on the way in (`config.buildIdHeader`, read by `assertBuild`); on the way out it is written by `@ultimat3/render`'s response builders, not by the pipeline.
+- **Every response carries `x-request-id` and `x-trace-id`** — stages 1 and 3, set on `ctx.headers` before anything can fail, so a refusal carries them too. `x-ultimate-build` is the *client's* claim on the way in — core's `BUILD_ID_HEADER`, not configurable (`http.buildIdHeader` was deleted in 25.0.0 and is refused at `configureHttp`), read at `packages/http/src/stages.ts:177` and judged by `Request#assertBuild`; on the way out it is written by `@ultimat3/render`'s response builders, not by the pipeline.

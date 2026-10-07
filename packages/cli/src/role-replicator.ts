@@ -12,7 +12,11 @@ import {
 import { describeEntities } from '@ultimat3/entity';
 import { ReplicatorSlotHeldError } from '@ultimat3/realtime';
 import type { Replicator, ReplicatorOptions, Transport } from '@ultimat3/realtime/server';
-import { createReplicator, replicatorLockKey, selectChangeFeed } from '@ultimat3/realtime/server';
+import {
+  changeFeedReplicator,
+  replicatorLockKey,
+  selectChangeFeed,
+} from '@ultimat3/realtime/server';
 import { BadFlagError } from './errors';
 import type { DevServices, Env } from './runtime-bindings';
 
@@ -164,7 +168,7 @@ export async function startReplicator(options: StartReplicatorOptions): Promise<
   const selection = selectChangeFeed(options.env, { entities });
   const slot = selection.slot ?? '';
   const key = replicatorLockKey(slot);
-  const replicator = (options.create ?? createReplicator)({
+  const replicator = (options.create ?? changeFeedReplicator)({
     feed: selection.feed,
     transport: options.transport,
     lock: selection.lock,

@@ -10,8 +10,7 @@
 // nothing to intercept the response, the browser lands on the action's JSON instead of a
 // re-rendered thread.
 
-import { actorOf } from '@ultimat3/action';
-import { useContext } from '@ultimat3/core';
+import { actorOf, useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute, type RouteParams } from '@ultimat3/render';
 import { Button, Icon } from '@ultimat3/ui';

@@ -14,7 +14,7 @@ Imported by every package that renders a string.
 | `locales.ts` | supported set, normalize, negotiate, RTL. No catalogs. |
 | `context.ts` | request locale via ALS, the registry + the base layer under it, the ambient `t` and `useI18n`. |
 | `framework.ts` | the framework's own strings, installed as the base layer at module scope. |
-| `app-catalogs.ts` | an app's declared locales, read by importing its catalog module. Tooling only: the `./app-catalogs` entry, never `index.ts` (it is in every island). |
+| `app-catalogs.ts` | an app's declared locales, read by importing its catalog module — `loadAppCatalogs` (`undefined` when undeclared) and `appLocaleSet` (`UNDECLARED_LOCALES` then). The ONE reader: a CLI step never reads `localeConfig()`/`routedLocales()` after `loadApp`; it reads `LoadedApp.locales`. Tooling only: the `./app-catalogs` entry, never `index.ts` (it is in every island). |
 | `registration.ts` | are the catalogs an app SHIPS in the registry it READS? No file access. |
 | `extract.ts` | static scan + audit for `x verify`. |
 | `catalogs/en.json` | data, not code. |
@@ -36,7 +36,7 @@ Imported by every package that renders a string.
   puts it back. It was `registerFrameworkCatalog()`, whose ONE caller was `defineCatalogs`, so an
   app whose catalog module nothing imported served `⟦errors.notFound.title⟧` on its 404 page and
   `⟦ui.*⟧` in every design-system control, with `x verify` green (issue #249). Under
-  `FRAMEWORK_CATALOG_LOCALE` (`en`) **only**: it ran per locale until 2026-08, so an `es`-only app
+  core's `DEFAULT_LOCALE` (`en`) **only**: it ran per locale until 2026-08, so an `es`-only app
   served `Page not found` with `isMiss` reading FALSE — the fallback chain the line above refuses,
   wearing registration as a disguise. A non-`en` app translates the framework keys it renders into
   its own catalog.
@@ -106,7 +106,7 @@ Imported by every package that renders a string.
   `@ultimat3/mail` take a bare `Translator`. `has()` and `raw()` stay `string` — they are probes.
 - Nothing here formats a number, date or money. That is `@ultimat3/money` / `@ultimat3/time`.
 - **The ambient locale IS `Ctx.locale`**, core's own declared field — this package writes no context
-  field of its own and publishes no writer. `createContext({ locale })` and
+  field of its own and publishes no writer. `ctxOf({ locale })` and
   `withChildContext({ locale })` are the only ways in, `currentLocale()` the only way out.
   `attachLocale`/`localeOf` existed until 1.3.0 with zero callers; `@ultimat3/time` had the same
   pair over a field name (`ctx['timeZone']`) that disagreed with core's `tz`, which is what made

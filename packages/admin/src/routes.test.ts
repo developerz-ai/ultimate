@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { clearRoutes, describeRoutes, routeEntries } from '@ultimat3/render';
+import { clearRoutes, describePages, routeEntries } from '@ultimat3/render';
 import type { AdminApp } from './admin';
 import { defineAdmin } from './admin';
 import { type AdminActor, staticAuthz } from './authz';
@@ -81,7 +81,7 @@ describe('adminRouteFor — the gate a mount reads instead of restating', () => 
   });
 
   test('defineAdmin puts its routes in the framework’s ONE route list — mounted, with their permissions', () => {
-    const rows = describeRoutes().filter((route) => route.mount?.by === 'defineAdmin');
+    const rows = describePages().filter((route) => route.mount?.by === 'defineAdmin');
     // Every route of the table, and nothing a file would have declared.
     expect(rows.map((route) => route.path).sort()).toEqual(
       app.routes.map((route) => route.path).sort(),

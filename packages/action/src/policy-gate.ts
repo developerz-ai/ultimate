@@ -1,18 +1,13 @@
 /**
  * The single point of contact with @ultimat3/policy. Every surface (HTTP, MCP,
- * job, direct server call) reaches authz through `guard()` — there is no second
+ * job, direct server call) reaches authz through `guardAction()` — there is no second
  * code path, which is what makes "one authz system" true rather than aspirational.
  */
 
 import type { Actor, Ctx } from '@ultimat3/core';
-import { assertNever, isAnonymous } from '@ultimat3/core';
+import { assertNever } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
-import {
-  enforce,
-  enforceBeforeInput,
-  policyPermissions as flattenedPermissions,
-  admitsAnonymous as policyAdmitsAnonymous,
-} from '@ultimat3/policy';
+import { enforce, enforceBeforeInput } from '@ultimat3/policy';
 import { ActionDeniedError } from './errors';
 
 /**
@@ -45,7 +40,7 @@ export interface PolicySubject {
  * object for every surface, so an actor denied over HTTP is denied over MCP with
  * the same reason and the same code.
  */
-export function guard(policy: ActionPolicy, subject: PolicySubject, surface: Surface): void {
+export function guardAction(policy: ActionPolicy, subject: PolicySubject, surface: Surface): void {
   const denial = enforce(policySurface(surface), policy, {
     input: subject.input,
     actor: subject.actor,
@@ -58,13 +53,13 @@ export function guard(policy: ActionPolicy, subject: PolicySubject, surface: Sur
 }
 
 /**
- * The actor-only half of `guard`, run BEFORE the input is parsed: a caller the policy refuses
+ * The actor-only half of `guardAction`, run BEFORE the input is parsed: a caller the policy refuses
  * whatever they send gets the 403 (or 401) here, and never the 400 whose issue list describes
  * the input schema of an operation they may not call. Undecided — a predicate that reads the input
- * or the row — passes, and `guard` decides after the parse exactly as before. Same denial class,
- * same code, same surface rendering as `guard`'s.
+ * or the row — passes, and `guardAction` decides after the parse exactly as before. Same denial
+ * class, same code, same surface rendering as `guardAction`'s.
  */
-export function guardBeforeInput(
+export function guardActionBeforeInput(
   policy: ActionPolicy,
   subject: Omit<PolicySubject, 'input' | 'row'>,
   surface: Surface,
@@ -89,42 +84,4 @@ function policySurface(surface: Surface): PolicySurface {
     default:
       return assertNever(surface);
   }
-}
-
-/**
- * Core models "nobody" as an anonymous actor; policy models it as `null`, which is
- * what turns a missing session into `X_UNAUTHENTICATED` instead of a bare denial.
- */
-export function actorOf(ctx: Ctx): Actor | null {
-  return isAnonymous(ctx.actor) ? null : ctx.actor;
-}
-
-/** The capability an action requires, for manifests and OpenAPI metadata. A DISPLAY label. */
-export function policyCapability(policy: ActionPolicy): string {
-  return policy.label;
-}
-
-/**
- * Every permission the policy tree references, flattened and deduped — and the only field a
- * compliance report may match a grant against. `label` renders a composite as
- * `and(post:publish, org:administer)`, which is a sentence and never equals a permission string,
- * so matching on it reported every action guarded by a composite as enforcing nothing: `x policy
- * list` showed real grants as dead. The two are kept side by side rather than one replacing the
- * other — the label is what a human reads, this is what a machine compares.
- */
-export function policyPermissions(policy: ActionPolicy): readonly string[] {
-  return flattenedPermissions(policy);
-}
-
-/**
- * Whether a policy admits an ANONYMOUS caller — `@ultimat3/policy`'s answer, re-exported here so
- * `http.ts` reads it through this file like every other authz question. `toRoute` derives
- * `meta.auth` from it, never from `policy.kind === 'allow'`: that read looked at the ROOT
- * combinator only, so `or(allow(), can('x:y'))` was 401'd by the pipeline before `invoke` ran
- * while the MCP tool and the job handle allowed it. `true` is not "unguarded" — `invoke` still
- * evaluates the policy for every call. Declared once in `policy.ts`, exactly as
- * `policyPermissions` is: the answer is a property of the combinators it walks.
- */
-export function admitsAnonymous(policy: ActionPolicy): boolean {
-  return policyAdmitsAnonymous(policy);
 }

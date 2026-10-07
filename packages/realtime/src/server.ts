@@ -154,19 +154,19 @@ export {
 } from './presence';
 export { ANONYMOUS_SOCKET_MULTIPLIER, DEFAULT_MAX_SOCKETS_PER_ACTOR } from './principal-sockets';
 export {
-  createEntry,
   DEFAULT_READ_DEADLINE_MS,
   type EntryOptions,
   fillWindow,
   orgIdOf,
   type PendingRead,
   type QueryEntry,
+  queryEntry,
   refillWindowInLane,
 } from './query-window';
 export {
   CHANGE_SUBJECT_PREFIX,
+  changeFeedReplicator,
   changeSubject,
-  createReplicator,
   normalize,
   type Replicator,
   type ReplicatorOptions,
@@ -210,9 +210,9 @@ export {
   sweepGrants,
 } from './sync-auth';
 export {
-  createFrameRouter,
   type FrameRouter,
   type FrameRouterOptions,
+  frameRouter,
 } from './sync-frames';
 export {
   type ListenOptions,
@@ -220,13 +220,13 @@ export {
   type SyncListener,
 } from './sync-listen';
 export {
-  createSyncNode,
   DEFAULT_MAX_CONNECTIONS,
   DEFAULT_MAX_FRAME_BYTES,
   DEFAULT_REAUTH_INTERVAL_MS,
   type SyncNode,
   type SyncNodeOptions,
   type SyncWs,
+  syncNode,
   type UpgradeTarget,
   type WsData,
 } from './sync-node';

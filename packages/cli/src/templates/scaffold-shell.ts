@@ -354,8 +354,9 @@ const toggleTest =
 
 import { join } from 'node:path';
 import { buildIslands } from '@ultimat3/cli';
+import { THEME_STORAGE_KEY } from '@ultimat3/core';
 import { describeIslandState, expect, test } from '@ultimat3/testing';
-import { THEME_ATTRIBUTE, THEME_DEFAULT_ATTRIBUTE, THEME_STORAGE_KEY } from '@ultimat3/ui';
+import { THEME_ATTRIBUTE, THEME_DEFAULT_ATTRIBUTE } from '@ultimat3/ui';
 import { themeToggleStates } from './theme-toggle.island.states';
 
 /** What the island reads through \`browserThemeEnv\`: storage and the OS query, both fakes. */

@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import type { StandardResult } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import type { Schema } from './validate';
-import { formatIssue, validate, validateSync } from './validate';
+import { formatIssue, validateBody, validateSync } from './validate';
 
 // `StandardResult` comes from `@ultimat3/schema`, never a copy declared here: this file exists to
 // prove the seam behaves for a HAND-WRITTEN validator, and a hand-written validator conforms to
@@ -74,7 +74,7 @@ describe('validateSync', () => {
     const result = validateSync(schema, 'x');
     expect(result).toEqual({
       ok: false,
-      issues: ['schema is async; use validate() for request bodies'],
+      issues: ['schema is async; use validateBody() for request bodies'],
     });
   });
 
@@ -106,9 +106,9 @@ describe('a failure result carrying no issues is still a failure', () => {
     if (!result.ok) expect(result.issues).toEqual(['the schema reported a failure with no issues']);
   });
 
-  test('validate refuses it too, on the async path', async () => {
+  test('validateBody refuses it too, on the async path', async () => {
     const schema = asyncSchema<{ title: string }>(() => ({ issues: [] }));
-    const result = await validate(schema, { title: 'hi' });
+    const result = await validateBody(schema, { title: 'hi' });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues.length).toBeGreaterThan(0);
   });
@@ -122,12 +122,12 @@ describe('a failure result carrying no issues is still a failure', () => {
   });
 });
 
-describe('validate', () => {
+describe('validateBody', () => {
   test('awaits an async schema and returns ok with the value', async () => {
     const schema = asyncSchema<{ title: string }>((value) => ({
       value: value as { title: string },
     }));
-    const result = await validate(schema, { title: 'hi' });
+    const result = await validateBody(schema, { title: 'hi' });
     expect(result).toEqual({ ok: true, value: { title: 'hi' } });
   });
 
@@ -135,23 +135,23 @@ describe('validate', () => {
     const schema = asyncSchema<string>(() => ({
       issues: [{ message: 'must not be empty', path: [] }],
     }));
-    const result = await validate(schema, '');
+    const result = await validateBody(schema, '');
     expect(result).toEqual({ ok: false, issues: ['must not be empty'] });
   });
 
-  test('also accepts a synchronous schema (validate always returns a promise)', async () => {
+  test('also accepts a synchronous schema (validateBody always returns a promise)', async () => {
     const schema = syncSchema<number>((value) => ({ value: value as number }));
-    const result = await validate(schema, 7);
+    const result = await validateBody(schema, 7);
     expect(result).toEqual({ ok: true, value: 7 });
   });
 
   test('validates a real `t`-backed schema across valid and invalid values', async () => {
     const schema = t.object({ name: t.string });
 
-    const ok = await validate(schema, { name: 'grace' });
+    const ok = await validateBody(schema, { name: 'grace' });
     expect(ok).toEqual({ ok: true, value: { name: 'grace' } });
 
-    const bad = await validate(schema, { name: 42 });
+    const bad = await validateBody(schema, { name: 42 });
     expect(bad.ok).toBe(false);
     if (!bad.ok) {
       expect(bad.issues.length).toBeGreaterThan(0);

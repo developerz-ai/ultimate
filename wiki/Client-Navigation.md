@@ -257,11 +257,13 @@ Dispatched on `document`:
 | `ultimate:navigated` | after the swap, the scroll and the new scripts | `{ url }` |
 | `ultimate:navigation-error` | a POST that failed or could not be shown, a swap that failed on a POST. **Cancelable**: the default is a GET of the current page | `{ url, method, reason }` |
 
-The names, attributes and headers are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
+The event names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
 `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`, `NAVIGATION_RELOAD_ATTRIBUTE`,
-`NAVIGATION_NO_PREFETCH_ATTRIBUTE`, `NAVIGATION_PERSIST_ATTRIBUTE`, `NAVIGATING_ATTRIBUTE`,
-`NAVIGATION_HEADER`, `NAVIGATION_LOCATION_HEADER`), with the pure rules the router runs
-(`linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`). The server half is
+`NAVIGATION_NO_PREFETCH_ATTRIBUTE`, `NAVIGATION_PERSIST_ATTRIBUTE`, `NAVIGATING_ATTRIBUTE`), with
+the pure rules the router runs (`linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`,
+`mayPrefetch`). The headers are `@ultimat3/core`'s, imported from there only
+(`CLIENT_NAVIGATION_HEADER`, `CLIENT_NAVIGATION_LOCATION_HEADER`, `CLIENT_NAVIGATION_SCOPE_HEADER`,
+`CLIENT_NAVIGATION_SURFACE_HEADER`) — render's `NAVIGATION_*_HEADER` aliases were deleted in 25.0.0. The server half is
 `@ultimat3/http`'s `navigationGate`, `redirectForRouter` and `relocate`.
 
 ## Tested where

@@ -42,8 +42,8 @@ import {
  *   | jobs | `resetJobs` | `@ultimat3/jobs` | **no** |
  *   | tasks | `restoreTasks` | `@ultimat3/jobs` | yes (22.7) |
  *   | measurement actor | `resetMeasurementActor` | `@ultimat3/core` | yes |
- *   | actions | `resetRegistry` | `@ultimat3/action` | **no** |
- *   | queries | `resetRegistry` | `@ultimat3/query` | **no** |
+ *   | actions | `resetActions` | `@ultimat3/action` | **no** |
+ *   | queries | `resetQueries` | `@ultimat3/query` | **no** |
  *   | models / prompts / agents | `resetModels` / `resetPrompts` / `resetAgents` | `@ultimat3/ai` | **no** |
  *   | mails | `resetMails` | `@ultimat3/mail` | **no** |
  *   | entities | `clearRegistry` | `@ultimat3/entity` | no, by decision — `registry-isolation.ts` |

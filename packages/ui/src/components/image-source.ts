@@ -41,7 +41,7 @@ interface Candidate {
  * byte-stable whatever order the caller built the list in. `undefined` for an
  * empty list — the component omits the attribute rather than emitting an empty one.
  */
-export function srcsetFor(variants: readonly ImageVariant[] | undefined): string | undefined {
+export function variantSrcset(variants: readonly ImageVariant[] | undefined): string | undefined {
   if (variants === undefined || variants.length === 0) return undefined;
 
   const candidates = variants.map(toCandidate);
@@ -239,9 +239,9 @@ export interface ImageSourceSet {
 export function sourceSetsFor(sources: ImageSources | undefined): readonly ImageSourceSet[] {
   if (sources === undefined) return [];
   const sets: ImageSourceSet[] = [];
-  const avif = srcsetFor(sources.avif);
+  const avif = variantSrcset(sources.avif);
   if (avif !== undefined) sets.push({ type: 'image/avif', srcset: avif });
-  const webp = srcsetFor(sources.webp);
+  const webp = variantSrcset(sources.webp);
   if (webp !== undefined) sets.push({ type: 'image/webp', srcset: webp });
   return sets;
 }

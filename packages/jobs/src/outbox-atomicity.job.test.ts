@@ -4,15 +4,15 @@
 // once, and a relay that republishes after a crash must not turn into a second execution.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext } from '@ultimat3/core';
+import { type Ctx, ctxOf } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { OutboxStore } from './outbox';
 import { enqueueInTx, memoryOutboxStore } from './outbox';
-import { createOutboxRelay } from './outbox-relay';
-import { createWorker } from './worker';
+import { outboxRelay } from './outbox-relay';
+import { jobWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -24,7 +24,7 @@ function passthrough<T>(): StandardSchemaV1<unknown, T> {
   };
 }
 
-const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
+const context = (): Ctx => ctxOf({ role: 'worker', buildId: 'test' });
 const fakeTx = (id: string): Tx => ({ id }) as unknown as Tx;
 
 async function waitFor(check: () => Promise<boolean> | boolean, label: string): Promise<void> {
@@ -60,7 +60,7 @@ describe('a rolled-back stage never reaches a worker', () => {
     await enqueueInTx({ store, driver }, tx, handle, { orgId: 'org-1' });
     await store.rollback(tx);
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
     worker.start();
     try {
       // Nothing to wait FOR here — the point is the absence, so this holds the loop open across
@@ -80,7 +80,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
     const runs: unknown[] = [];
     const driver = memoryJobDriver();
     const store = memoryOutboxStore();
-    const relay = createOutboxRelay({ store, driver });
+    const relay = outboxRelay({ store, driver });
     const handle = job<{ orgId: string }>({
       tenant: 'none',
       name: 'welcomeEmailCommitted',
@@ -98,7 +98,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
     await store.commit(tx);
     expect(await relay.tick()).toBe(1);
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
     worker.start();
     try {
       await waitFor(async () => {
@@ -147,7 +147,7 @@ describe('a committed stage reaches a real worker exactly once', () => {
     expect(second.deduped).toBe(true);
     expect(second.id).toBe(first.id);
 
-    const worker = createWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
+    const worker = jobWorker({ driver, context, drainOnShutdown: false, pollIntervalMs: 5 });
     worker.start();
     let rowCount = 0;
     try {

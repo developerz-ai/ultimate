@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { FetchLike } from './client-dispatch';
-import { createClientFlight } from './client-flight';
+import { clientFlight } from './client-flight';
 import { rescope } from './client-scope';
 import { clientTransport } from './client-transport';
 import { failure, fakeFetch, heldFetch, json, recordingSink } from './client-transport-fixture';
@@ -74,7 +74,7 @@ describe('clientTransport — the principal fence', () => {
   });
 
   test('a flight-deduped GET across rescope rejects every joiner with the scope refusal', async () => {
-    const flight = createClientFlight({ principal: () => pageClient().scope.principal ?? '' });
+    const flight = clientFlight({ principal: () => pageClient().scope.principal ?? '' });
     const held = heldFetch();
     const a = failure(
       clientTransport({ method: 'GET', url: '/q', flight, fetchImpl: held.fetchImpl }),

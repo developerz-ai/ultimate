@@ -5,17 +5,17 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Page } from '@ultimat3/core';
-import { configureCursorSigning, createContext, userActor } from '@ultimat3/core';
+import { configureCursorSigning, ctxOf, userActor } from '@ultimat3/core';
 import { clearRegistry, entity, memoryRepo, text, uuid } from '@ultimat3/entity';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { paginate } from './pagination';
 import { query } from './query';
-import { registerQuery, resetRegistry } from './registry';
+import { registerQuery, resetQueries } from './registry';
 import { from } from './source';
 
 const ORG = '00000000-0000-4000-8000-000000000001';
-const ctx = createContext({ actor: { ...userActor({ id: 'u1' }), permissions: ['notes:read'] } });
+const ctx = ctxOf({ actor: { ...userActor({ id: 'u1' }), permissions: ['notes:read'] } });
 const PAGE = 2;
 
 const notes = entity('page_contract_notes', {
@@ -81,7 +81,7 @@ const viaQuery = (rows: readonly Note[]) => {
 
 describe('a repo page and a query page are one page', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
     configureCursorSigning('page-contract-secret');
   });
   afterAll(() => {

@@ -9,7 +9,7 @@ import { diffSchema } from './drift';
 import type { EntityDescriptionLike } from './entity-shape';
 import { generateMigration } from './generate';
 import { APPEND_ONLY_TRIGGER } from './generate-append-only';
-import { introspect, type SchemaDescription } from './introspect';
+import { introspectSchema, type SchemaDescription } from './introspect';
 import { raw } from './sql';
 import { sqlState } from './sqlstate';
 import { statementsOf } from './statement-split';
@@ -80,7 +80,7 @@ export async function proveAppendOnlyTrigger(client: DbClient, table: string): P
     tables: schema.tables.filter((each) => each.name === table),
   });
   const drift = async (expected: SchemaDescription) =>
-    diffSchema(one(await introspect({ client })), expected).differences.map((d) => d.kind);
+    diffSchema(one(await introspectSchema({ client })), expected).differences.map((d) => d.kind);
 
   await client.execute(raw(`drop table if exists "${table}"`));
   const migration = generateMigration({
@@ -108,7 +108,9 @@ export async function proveAppendOnlyTrigger(client: DbClient, table: string): P
   expect(rows.map((row) => row.body)).toEqual(['first', 'second']);
 
   // The catalog holds it, and drift agrees with the snapshot.
-  expect(one(await introspect({ client })).tables[0]?.triggerNames).toContain(APPEND_ONLY_TRIGGER);
+  expect(one(await introspectSchema({ client })).tables[0]?.triggerNames).toContain(
+    APPEND_ONLY_TRIGGER,
+  );
   expect(await drift(migration.snapshot)).toEqual([]);
 
   // Disabled is as good as gone: an ordinary session fires nothing. The finding's PRINTED repair,
@@ -120,7 +122,10 @@ export async function proveAppendOnlyTrigger(client: DbClient, table: string): P
   ]) {
     await client.execute(raw(breakIt));
     await client.execute(raw(`update "${table}" set body = 'unguarded' where id = 2`));
-    const found = diffSchema(one(await introspect({ client })), migration.snapshot).differences;
+    const found = diffSchema(
+      one(await introspectSchema({ client })),
+      migration.snapshot,
+    ).differences;
     expect(found.map((difference) => difference.kind)).toEqual(['missing-append-only-trigger']);
     await apply(printedRepair(found[0]?.fix ?? ''));
     expect(await drift(migration.snapshot)).toEqual([]);

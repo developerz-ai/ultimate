@@ -5,12 +5,12 @@
 // the write-loop sibling — all through `@ultimat3/db`'s actual observer funnel.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import {
-  createPgliteClient,
   expectedQueryLoop,
   type PgliteDriver,
   type PgliteResult,
+  pgliteClient,
   setStatementObserver,
 } from '@ultimat3/db';
 import {
@@ -58,10 +58,10 @@ interface StubResponse {
 }
 
 /**
- * A `PgliteDriver` that answers by matching the statement text, the way `createRecordingClient`
+ * A `PgliteDriver` that answers by matching the statement text, the way `recordingClient`
  * does — but injected as PGlite's own driver rather than standing in for `DbClient` directly, so
  * every statement still passes through `@ultimat3/db`'s real observer funnel
- * (`createRecordingClient` implements `DbClient` on its own and never reaches `runOn`/`statement()`,
+ * (`recordingClient` implements `DbClient` on its own and never reaches `runOn`/`statement()`,
  * which is why the ledger never sees anything sent through it).
  */
 function stubbedDriver(): PgliteDriver & { on(match: RegExp, response: StubResponse): void } {
@@ -94,7 +94,7 @@ afterEach(() => {
   setStatementObserver(undefined);
 });
 
-const inRequest = <T>(work: () => Promise<T>): Promise<T> => runWithContext(createContext(), work);
+const inRequest = <T>(work: () => Promise<T>): Promise<T> => runWithContext(ctxOf(), work);
 
 // `n1` is this codebase's own shorthand for the pattern (`packages/entity/src/n-plus-one.test.ts`'s
 // `n1_members`/`n1_posts` fixtures) — spelled that way here too so `-t 'n+1'` (a regex, not a
@@ -104,7 +104,7 @@ describe('detector · a real n1 loop over posts and their authors', () => {
     const driver = stubbedDriver();
     driver.on(/"n1cli_posts"/, { rows: aPageOfPosts() });
     driver.on(/"n1cli_authors"/, { rows: [authorRow()] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     // JIT preload (on by default, `packages/entity/src/jit-preload.ts`) would batch this exact
     // loop into two statements on its own — off here because this test is about the loop the
     // detector exists for, not the one the framework already fixes for free.
@@ -139,7 +139,7 @@ describe('detector · a real n1 loop over posts and their authors', () => {
     const driver = stubbedDriver();
     driver.on(/"n1cli_posts"/, { rows: aPageOfPosts() });
     driver.on(/"n1cli_authors"/, { rows: [authorRow()] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const db = database({ authors, posts }, { driver: postgresDriver({ client }) });
 
     const rows = await inRequest(() => db.posts.preload('author').all());
@@ -153,7 +153,7 @@ describe('detector · a real n1 loop over posts and their authors', () => {
     const driver = stubbedDriver();
     driver.on(/"n1cli_posts"/, { rows: aPageOfPosts() });
     driver.on(/"n1cli_authors"/, { rows: [authorRow()] });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const postRepo = postgresRepo(posts, { client, jitPreload: false });
     const authorRepo = postgresRepo(authors, { client });
 
@@ -174,7 +174,7 @@ describe('detector · a real n1 loop over posts and their authors', () => {
   test('a naive per-row delete loop trips X_N_PLUS_ONE_WRITE, fixed by deleteWhere', async () => {
     const driver = stubbedDriver();
     driver.on(/delete from "n1cli_posts"/, { affectedRows: 1 });
-    const client = createPgliteClient({ driver });
+    const client = pgliteClient({ driver });
     const postRepo = postgresRepo(posts, { client });
 
     await inRequest(async () => {

@@ -7,7 +7,7 @@ import { ImageDecodeFailedError, ImageUnsupportedError } from './errors';
 import { fixtureBytes, PNG_INTERLACED_8X8, PNG_PALETTE_4X1, PNG_RGBA_4X4 } from './image-fixture';
 import { decodeImage, encodeImage } from './png-pixels';
 import { probeImage } from './probe';
-import { createRaster, type Raster } from './raster';
+import { blankRaster, type Raster } from './raster';
 
 const thrown = (run: () => unknown): { code: string; cause: string; fix: string } => {
   try {
@@ -23,7 +23,7 @@ const thrown = (run: () => unknown): { code: string; cause: string; fix: string 
 
 /** A gradient with partial alpha: every channel varies per pixel, so no filter can be a no-op. */
 const gradient = (width: number, height: number): Raster => {
-  const raster = createRaster(width, height, 'test');
+  const raster = blankRaster(width, height, 'test');
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const i = (y * width + x) * 4;
@@ -122,7 +122,7 @@ describe('decodeImage · the header is believed BEFORE the stream is inflated', 
 
   /** A PNG whose header says `width`x`height` and whose IDAT inflates to `inflated` zero bytes. */
   const pngDeclaring = (width: number, height: number, inflated: number): Uint8Array => {
-    const honest = encodeImage(createRaster(1, 1, 'test'));
+    const honest = encodeImage(blankRaster(1, 1, 'test'));
     const ihdr = Uint8Array.from([...u32(width), ...u32(height), ...honest.subarray(24, 29)]);
     const deflated = Bun.deflateSync(new Uint8Array(inflated), { windowBits: -15 });
     const idat = Uint8Array.from([0x78, 0x9c, ...deflated, 0, 0, 0, 0]);

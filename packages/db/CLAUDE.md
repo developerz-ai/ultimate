@@ -107,7 +107,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 - **The migration lock is polled** (`pg_try_advisory_lock` every `MIGRATION_LOCK_POLL_MS` until
   `MIGRATION_LOCK_WAIT_MS`, then `X_MIGRATE_CONCURRENT`), declared with `expectedQueryLoop`;
-  `createRecordingClient` stubs the lock as `locked: true`.
+  `recordingClient` stubs the lock as `locked: true`.
 - **`lock_timeout` is the migration's** (`SET LOCAL` inside each migration's transaction, from the
   `migrate` profile's 3 s).
 - **The advisory lock is held by one pinned session, and `migrate()`/`rollback()` run every statement
@@ -141,7 +141,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   declared is CLOSED, live is OPEN (`indexMethodOf` passes the catalog through; `declaredMethod`
   refuses); absent is `btree` through one function; `snapshotOf` records `using` only when declared;
   `indexMethodSql` re-derives the literal (`X_SQL_UNSAFE` default); a unique or ordered GIN is
-  `X_INVARIANT`. `introspect()` reads `pg_am` (`introspect-embedded.test.ts`).
+  `X_INVARIANT`. `introspectSchema()` reads `pg_am` (`introspect-embedded.test.ts`).
 - **`index-plan.ts` walks both directions** (declared first, removed last). `dropRecordedIndex` emits
   `alter table … drop constraint if exists` then `drop index` for a shape a constraint could back
   (`mayBeConstraintBacked`); four names are skipped (primary, moved aside, rebuilt, over a dropped
@@ -172,7 +172,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **A generated column** (`generated-column.ts`): the clause right after the type; generated-and-
   defaulted refused; an expression change is `set expression as (…)`; a retype has no `using`; a NOT
   NULL add is one statement; generated → plain is `drop expression`; plain → generated rebuilds
-  (`rebuilt`) and moves dependents aside, its own type change does not. `introspect` never reads
+  (`rebuilt`) and moves dependents aside, its own type change does not. `introspectSchema` never reads
   `generation_expression`.
   `generate-generated-{column,rebuild}.live.test.ts`.
 - **`REPLICA IDENTITY FULL` is a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from the CLI's
@@ -205,16 +205,16 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   holds `x db gen`'s arm, its `drop not null`s, its two refusals). The type is not compared.
 - **A missing CHECK is drift, compared by NAME**: `TableDescription.checks` (declared: name and
   expression) vs `TableDescription.checkNames` (catalog: `conname` for `contype = 'c'`, always written
-  by `introspect()`, `[]` included). Only the declared side is judged; no `changed-check`, ever.
+  by `introspectSchema()`, `[]` included). Only the declared side is judged; never a `changed-check`.
   `drift-check.live.test.ts`.
 - `compareTable` judges declared indexes (`missing-index`, `changed-index` over method, column list,
   uniqueness, predicate presence and direction; `asc` normalises to `null`); never the predicate text.
 - `compareForeignKeys` matches on where a key points (`foreignKeyTarget`, the one copy) and compares
   `onDelete` through `onDeleteRule` (`changed-foreign-key`; its fix, `changed-column`'s and
   `missing-check`'s are one `psql -c` too — `repair()`, schema-scoped off `public`).
-- `introspect()` reads index columns in key order (`indkey`) and a foreign key's two column lists
+- `introspectSchema()` reads index columns in key order (`indkey`) and a foreign key's two column lists
   together (`unnest(a, b) with ordinality`), pinned by `introspect-embedded.test.ts`.
-- **`appTables()`** excludes the whole `x_` namespace for drift; `introspect()` alone excludes
+- **`appTables()`** excludes all of `x_` for drift; `introspectSchema()` alone excludes
   `x_migrations` by default. **`app-relation.ts`**: `nonAppRelations(client, schema)` — extension
   ownership from `pg_depend` (`deptype = 'e'`) plus views, materialised views and foreign tables —
   merged into `excluded` unconditionally.
@@ -229,9 +229,9 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 
 - **Its own entry: `@ultimat3/db/schema-dump`** (`schema-dump-entry.ts`). The barrel is in every
   role's boot graph and must evaluate none of this family — `schema-dump-entry.test.ts`.
-- **Two readings of one catalog, never mixed.** `introspect()` → `SchemaDescription`, the entity
-  vocabulary a snapshot is diffed in. `introspectCatalog()` (`catalog.ts`; queries in `catalog-relations.ts` and
-  `catalog-objects.ts`; the pure fold in `catalog-fold.ts`) → `CatalogDescription`, Postgres' own `pg_get_*def` text, compared only to
+- **Two readings of one catalog, never mixed.** `introspectSchema()` → `SchemaDescription`, the entity
+  vocabulary a snapshot is diffed in. `introspectCatalog()` (`catalog.ts`; queries: `catalog-relations.ts`,
+  `catalog-objects.ts`; pure fold: `catalog-fold.ts`) → `CatalogDescription`, Postgres' own `pg_get_*def` text, compared only to
   itself. A catalog spelling on a `SchemaDescription` field is the `checks`/`checkNames` mistake.
 - **Sorted in JS** (`byCodeUnit`), never `order by` and never `localeCompare`: collations differ.
 - **`renderSchemaDump()` is pure**; `schema-dump-table.ts` spells one table. `quoted()` escapes any
@@ -285,7 +285,7 @@ Gotchas:
 
 - `exactOptionalPropertyTypes` — declare optional fields as `x?: T | undefined`.
 - `noUncheckedIndexedAccess` — array reads are `T | undefined`; `chunks[i] ?? ''` everywhere.
-- Tests use `createRecordingClient()` + `setDbClient()`; no test may need a live database.
+- Tests use `recordingClient()` + `setDbClient()`; no test needs a live database.
 - A test that must prove a pin came back uses `reservableOver()` (`fake-reservable.ts`), never a copy.
 - `ALTER DEFAULT PRIVILEGES` is scoped to an object's creator, so layer 1 covers future tables only for
   the roles in `creators` (default: the connected user).

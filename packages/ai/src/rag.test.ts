@@ -7,9 +7,9 @@
 import { describe, expect, test } from 'bun:test';
 import { asyncRefusal, NOT_A_BOUND, refusal } from './bounds-fixture';
 import type { Embedder } from './embeddings';
-import { HashEmbedder } from './embeddings';
+import { hashEmbedder } from './embeddings';
 import { estimateTextTokens } from './provider';
-import { assembleContext, chunk, indexDocument, retrieve } from './rag';
+import { assembleContext, chunkDocument, indexDocument, retrieve } from './rag';
 import { memoryVectorStore } from './vector';
 
 const SIZE = 128;
@@ -20,10 +20,10 @@ function unbrokenParagraph(count: number): string {
   return Array.from({ length: count }, (_, i) => `token${i}`).join(' ');
 }
 
-describe('chunk() wraps what the sentence split could not break', () => {
+describe('chunkDocument() wraps what the sentence split could not break', () => {
   test('a paragraph with no terminator is wrapped to the budget instead of passed through', () => {
     const text = unbrokenParagraph(400);
-    const chunks = chunk({ id: 'doc', text, size: SIZE, overlap: OVERLAP });
+    const chunks = chunkDocument({ id: 'doc', text, size: SIZE, overlap: OVERLAP });
 
     expect(chunks.length).toBeGreaterThan(1);
     for (const piece of chunks) {
@@ -38,7 +38,7 @@ describe('chunk() wraps what the sentence split could not break', () => {
     // every one of them carrying the same oversized sentence.
     const text = `${unbrokenParagraph(300)}\n\nShort one. Short two. Short three. Short four.`;
     const documentTokens = estimateTextTokens(text);
-    const chunks = chunk({ id: 'doc', text, size: SIZE, overlap: OVERLAP });
+    const chunks = chunkDocument({ id: 'doc', text, size: SIZE, overlap: OVERLAP });
     const total = chunks.reduce((sum, piece) => sum + piece.tokens, 0);
 
     // Overlap duplicates a tail per boundary and nothing else, so the whole index is bounded by
@@ -52,7 +52,7 @@ describe('chunk() wraps what the sentence split could not break', () => {
   test('an unbroken run with no space in it is still cut', () => {
     // Base64, a minified line, a CJK paragraph this splitter's `[.!?]` alphabet cannot see: there
     // is no word boundary to prefer, and no boundary at all is not an option.
-    const chunks = chunk({ id: 'blob', text: 'x'.repeat(4_000), size: SIZE, overlap: 0 });
+    const chunks = chunkDocument({ id: 'blob', text: 'x'.repeat(4_000), size: SIZE, overlap: 0 });
 
     expect(chunks.length).toBeGreaterThan(1);
     for (const piece of chunks) expect(piece.tokens).toBeLessThanOrEqual(SIZE);
@@ -61,13 +61,13 @@ describe('chunk() wraps what the sentence split could not break', () => {
 
   test('the wrap loses no words', () => {
     const text = unbrokenParagraph(200);
-    const chunks = chunk({ id: 'doc', text, size: SIZE, overlap: 0 });
+    const chunks = chunkDocument({ id: 'doc', text, size: SIZE, overlap: 0 });
     // `overlap: 0` so the join is the document back, not the document plus its carried tails.
     expect(chunks.map((piece) => piece.text).join(' ')).toBe(text);
   });
 
   test('a document that already fits is one chunk, untouched', () => {
-    const chunks = chunk({ id: 'small', text: 'One sentence. Two sentences.', size: SIZE });
+    const chunks = chunkDocument({ id: 'small', text: 'One sentence. Two sentences.', size: SIZE });
     expect(chunks).toHaveLength(1);
     expect(chunks[0]?.text).toBe('One sentence. Two sentences.');
   });
@@ -75,7 +75,12 @@ describe('chunk() wraps what the sentence split could not break', () => {
   test('the overlap still carries a tail forward — the cap must not delete it', () => {
     // Sentences well under the budget, so the carry loop is the only thing joining two chunks.
     const sentences = Array.from({ length: 40 }, (_, i) => `Sentence number ${i} is here.`);
-    const chunks = chunk({ id: 'doc', text: sentences.join(' '), size: SIZE, overlap: OVERLAP });
+    const chunks = chunkDocument({
+      id: 'doc',
+      text: sentences.join(' '),
+      size: SIZE,
+      overlap: OVERLAP,
+    });
 
     expect(chunks.length).toBeGreaterThan(1);
     const first = chunks[0]?.text ?? '';
@@ -91,7 +96,7 @@ describe('chunk() wraps what the sentence split could not break', () => {
   });
 
   test('metadata and ids are stable and ordered', () => {
-    const chunks = chunk({
+    const chunks = chunkDocument({
       id: 'doc',
       text: unbrokenParagraph(200),
       size: SIZE,
@@ -110,25 +115,31 @@ describe('chunk() wraps what the sentence split could not break', () => {
  * killed, never returned. The other three fail as successes instead.
  */
 describe('a chunk, a retrieval and an assembly all refuse a bound that is not one', () => {
-  test('chunk() refuses a size no clamp can repair, and it is the clamp that hid it', () => {
+  test('chunkDocument() refuses a size no clamp can repair, and it is the clamp that hid it', () => {
     for (const size of NOT_A_BOUND) {
-      const error = refusal(() => chunk({ id: 'doc', text: 'alpha beta gamma', size }));
+      const error = refusal(() => chunkDocument({ id: 'doc', text: 'alpha beta gamma', size }));
       expect(error.code).toBe('X_INVARIANT');
       expect(error.cause).toContain('size');
       expect(error.fix).toContain('chunk');
     }
     // The deliberate flooring is untouched: a fractional budget is still floored, `size: 0` is
     // still read as one token, and both are what `rag.ts`'s own comment promises.
-    expect(chunk({ id: 'doc', text: 'alpha beta gamma', size: 0 }).length).toBeGreaterThan(0);
-    expect(chunk({ id: 'doc', text: 'alpha beta gamma', size: 12.5 }).length).toBeGreaterThan(0);
+    expect(chunkDocument({ id: 'doc', text: 'alpha beta gamma', size: 0 }).length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      chunkDocument({ id: 'doc', text: 'alpha beta gamma', size: 12.5 }).length,
+    ).toBeGreaterThan(0);
   });
 
   test('an overlap that is not a number is refused rather than silently dropping the carry', () => {
-    expect(refusal(() => chunk({ id: 'doc', text: 'a b c', overlap: Number.NaN })).cause).toContain(
-      'overlap',
-    );
+    expect(
+      refusal(() => chunkDocument({ id: 'doc', text: 'a b c', overlap: Number.NaN })).cause,
+    ).toContain('overlap');
     // Zero stays legal — two tests above rely on it to join chunks back into the document.
-    expect(chunk({ id: 'doc', text: 'a b c', size: 8, overlap: 0 }).length).toBeGreaterThan(0);
+    expect(chunkDocument({ id: 'doc', text: 'a b c', size: 8, overlap: 0 }).length).toBeGreaterThan(
+      0,
+    );
   });
 
   test('assembleContext refuses the ceiling that has no default at all', () => {
@@ -142,7 +153,7 @@ describe('a chunk, a retrieval and an assembly all refuse a bound that is not on
 
   test('retrieve() names its own k, not the k * 3 the store is asked for', async () => {
     const store = memoryVectorStore({ dimension: 256 });
-    const embedder = new HashEmbedder();
+    const embedder = hashEmbedder();
     const error = await asyncRefusal(() =>
       retrieve({ store, embedder, query: 'drift', k: Number.NaN }),
     );
@@ -182,7 +193,7 @@ describe('indexDocument against an embedder that under-answers', () => {
 describe('re-indexing a shorter document', () => {
   test('leaves none of the old tail retrievable', async () => {
     const store = memoryVectorStore({ dimension: 64 });
-    const embedder = new HashEmbedder({ dimension: 64 });
+    const embedder = hashEmbedder({ dimension: 64 });
     const long = ['alpha one.', 'bravo two.', 'charlie three zebra.'].join('\n\n');
     const first = await indexDocument({
       store,
@@ -197,7 +208,7 @@ describe('re-indexing a shorter document', () => {
 
   test('another document with the same prefix is untouched', async () => {
     const store = memoryVectorStore({ dimension: 64 });
-    const embedder = new HashEmbedder({ dimension: 64 });
+    const embedder = hashEmbedder({ dimension: 64 });
     await indexDocument({ store, embedder, document: { id: 'other', text: 'zebra stays.' } });
     await indexDocument({ store, embedder, document: { id: 'doc', text: 'alpha one.' } });
     expect((await store.searchText('zebra', 5)).map((hit) => hit.id)).toEqual(['other#0']);
@@ -213,7 +224,7 @@ describe('the carried overlap never pushes a chunk past its size', () => {
 
   test('the carry is dropped until the next unit fits', () => {
     const text = [words(2, 'tenth'), words(400, 'bbbb'), words(320, 'cccc')].join('\n\n');
-    const chunks = chunk({ id: 'doc', text, size: 512, overlap: 64 });
+    const chunks = chunkDocument({ id: 'doc', text, size: 512, overlap: 64 });
     for (const piece of chunks) expect(piece.tokens).toBeLessThanOrEqual(512);
     // Nothing is lost to the drop: every unit still opens or closes some chunk.
     expect(chunks.some((piece) => piece.text.includes('cccc'))).toBe(true);
@@ -225,13 +236,17 @@ describe('the carried overlap never pushes a chunk past its size', () => {
 // overwrote it, so a re-index pruned nothing of that document and could prune another's rows.
 describe('the source stamp is the chunker’s, whatever the caller passes', () => {
   test('a caller metadata `source` never replaces the document id', () => {
-    const [first] = chunk({ id: 'doc1', text: 'alpha one.', metadata: { source: 'upload' } });
+    const [first] = chunkDocument({
+      id: 'doc1',
+      text: 'alpha one.',
+      metadata: { source: 'upload' },
+    });
     expect(first?.metadata['source']).toBe('doc1');
   });
 
   test('re-indexing shorter still prunes the tail when the caller passed a source', async () => {
     const store = memoryVectorStore({ dimension: 64 });
-    const embedder = new HashEmbedder({ dimension: 64 });
+    const embedder = hashEmbedder({ dimension: 64 });
     const metadata = { source: 'upload' };
     const long = ['alpha one.', 'bravo two.', 'charlie three zebra.'].join('\n\n');
     await indexDocument({

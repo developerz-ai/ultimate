@@ -5,8 +5,7 @@
 // The count is DERIVED (`readAt is null`), never stored and never decremented, which is the same
 // property that makes the offline twin in `mutator.ts` safe to replay.
 
-import { actorOf } from '@ultimat3/action';
-import { useContext } from '@ultimat3/core';
+import { actorOf, useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { iconBell } from '@ultimat3/ui/icons/bell';

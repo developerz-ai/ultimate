@@ -473,6 +473,7 @@
       "dependencies": {
         "@ultimat3/core": "24.0.0",
         "@ultimat3/entity": "24.0.0",
+        "@ultimat3/policy": "24.0.0",
         "@ultimat3/query": "24.0.0",
         "nats": "2.29.3",
       },

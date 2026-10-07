@@ -1,7 +1,7 @@
 // The runs repo against the in-memory driver: whose rows a call reaches, what happens to the
 // sealed column on the way in and out, and how an event gets its number.
 import { driver } from '@postly/db';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
 import * as repo from './repo';
 
@@ -20,7 +20,7 @@ const started = (runId = RUN) =>
 
 /** What a request is to the handle: an actor, whose org every read and write runs under. */
 const inOrg = <T>(org: string, run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: userActor({ id: 'member', orgId: org }) }), run);
+  runWithContext(ctxOf({ actor: userActor({ id: 'member', orgId: org }) }), run);
 
 const ledger = { orgId: ORG, label: 'Ledger', credential: CREDENTIAL, exit: null };
 

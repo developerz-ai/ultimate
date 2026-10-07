@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { AuthError } from './errors';
-import { type AuthRateLimitPolicy, createAuthLimiter, DEFAULT_AUTH_RATE_LIMIT } from './rate-limit';
+import { type AuthRateLimitPolicy, authLimiter, DEFAULT_AUTH_RATE_LIMIT } from './rate-limit';
 
 const KEY = 'account:ada@example.test';
 
@@ -27,7 +27,7 @@ const codeOf = (settled: PromiseSettledResult<unknown>): string =>
 
 describe('reserve counts the attempt in the step that admits it', () => {
   test('a concurrent burst of 40 admits exactly maxAttempts', async () => {
-    const limiter = createAuthLimiter(frozenClock(0), policy());
+    const limiter = authLimiter(frozenClock(0), policy());
     const burst = await Promise.allSettled(Array.from({ length: 40 }, () => limiter.reserve(KEY)));
     const codes = burst.map(codeOf);
     expect(codes.filter((code) => code === 'admitted')).toHaveLength(5);
@@ -36,7 +36,7 @@ describe('reserve counts the attempt in the step that admits it', () => {
 
   test('a refused reservation counts nothing and never moves the lockout', async () => {
     const clock = frozenClock(0);
-    const limiter = createAuthLimiter(clock, policy({ lockoutMs: 60_000 }));
+    const limiter = authLimiter(clock, policy({ lockoutMs: 60_000 }));
     for (let attempt = 0; attempt < 5; attempt += 1) await limiter.reserve(KEY);
     const until = await limiter.lockedUntil(KEY);
 
@@ -51,7 +51,7 @@ describe('reserve counts the attempt in the step that admits it', () => {
 
 describe('refund gives back one reservation and nothing more', () => {
   test('the attempt that filled the window, refunded, lifts the lockout it started', async () => {
-    const limiter = createAuthLimiter(frozenClock(0), policy());
+    const limiter = authLimiter(frozenClock(0), policy());
     for (let attempt = 0; attempt < 4; attempt += 1) await limiter.reserve(KEY);
     const fifth = await limiter.reserve(KEY);
     expect(await limiter.lockedUntil(KEY)).not.toBeNull();
@@ -64,7 +64,7 @@ describe('refund gives back one reservation and nothing more', () => {
   });
 
   test('two reservations taken in one millisecond are refunded one at a time', async () => {
-    const limiter = createAuthLimiter(frozenClock(0), policy({ maxAttempts: 3 }));
+    const limiter = authLimiter(frozenClock(0), policy({ maxAttempts: 3 }));
     const first = await limiter.reserve(KEY);
     await limiter.reserve(KEY);
     await limiter.refund(first);
@@ -75,7 +75,7 @@ describe('refund gives back one reservation and nothing more', () => {
   });
 
   test('a refund for a key that was cleared, or never taken, changes nothing', async () => {
-    const limiter = createAuthLimiter(frozenClock(0), policy());
+    const limiter = authLimiter(frozenClock(0), policy());
     const taken = await limiter.reserve(KEY);
     await limiter.recordSuccess(KEY);
     await limiter.refund(taken);
@@ -85,7 +85,7 @@ describe('refund gives back one reservation and nothing more', () => {
 
   test('a refund leaves a lockout the remaining failures still justify', async () => {
     const clock = frozenClock(0);
-    const limiter = createAuthLimiter(clock, policy({ maxAttempts: 2 }));
+    const limiter = authLimiter(clock, policy({ maxAttempts: 2 }));
     const early = await limiter.reserve(KEY);
     clock.advance(10);
     await limiter.reserve(KEY);

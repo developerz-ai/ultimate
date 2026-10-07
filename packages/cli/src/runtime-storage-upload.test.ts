@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { userActor } from '@ultimat3/core';
 import type { RequestContext, Route } from '@ultimat3/http';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { Storage, UploadGrant } from '@ultimat3/storage';
 import {
   DEFAULT_SIGNED_URL_BASE,
@@ -48,7 +48,7 @@ function uploadRoute(): Route {
 async function put(grant: UploadGrant, init: PutInit): Promise<Response> {
   const url = new URL(grant.url, 'http://dev.test');
   const headers = { 'content-type': init.contentType ?? grant.contentType };
-  const ctx: RequestContext = createRequestContext({
+  const ctx: RequestContext = requestContext({
     url,
     method: 'PUT',
     role: 'web',

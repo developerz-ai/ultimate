@@ -34,7 +34,7 @@ import { type ListLocation, listHref, pageRequestOf } from './list-request';
 import { type AdminListRequest, findRow, scopeCounts } from './list-scope';
 import type { AdminRow } from './registry';
 import { relatedLists, relatedOf } from './related';
-import { type RelationNeed, relationNeeds, relationsFor } from './relations';
+import { type RelationNeed, relationDataFor, relationNeeds } from './relations';
 import type { AdminResource } from './resource';
 import { ROW_CHANGED_REASON, rowVersion, VERSION_FIELD } from './row-version';
 import { batchWrite, rowActionFormScreen, rowActionWrite } from './screen-action';
@@ -127,7 +127,7 @@ export function listScreen(app: AdminApp, resource: AdminResource): AdminScreen 
     // one, and one read per resource the page references — never one per row.
     const [counts, relations] = await Promise.all([
       scopeCounts(resource, request.ctx.actor),
-      relationsFor(
+      relationDataFor(
         app.resources,
         request.ctx,
         relationNeeds(result.page.rows, resource.listFields, resource.filters),
@@ -172,7 +172,7 @@ const relationsOf = (
   row: AdminRow,
   picking: boolean,
 ): Promise<WidgetContext> =>
-  relationsFor(
+  relationDataFor(
     app.resources,
     request.ctx,
     relationNeeds([row], resource.fields, picking ? resource.formFields : []),
@@ -259,7 +259,7 @@ export function detailScreen(app: AdminApp, resource: AdminResource): AdminScree
     ]);
     // ONE label read per referenced target for the whole page — this row's references and every
     // related row's together.
-    const relations = await relationsFor(
+    const relations = await relationDataFor(
       app.resources,
       request.ctx,
       mergedNeeds([

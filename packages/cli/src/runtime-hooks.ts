@@ -2,7 +2,8 @@
 // decides for pages only, from the SAME `Policy` object every other surface evaluates — the route
 // table's declared permission — so a denial in `x dev` is the one production produces.
 
-import { actorOf, explainActionPathMiss } from '@ultimat3/action';
+import { explainActionPathMiss } from '@ultimat3/action';
+import { actorOf } from '@ultimat3/core';
 import type { AuthzDecision, ServerHooks } from '@ultimat3/http';
 import { asCtx, configuredAuthenticator } from '@ultimat3/http';
 import type { KnownPermission, Policy } from '@ultimat3/policy';

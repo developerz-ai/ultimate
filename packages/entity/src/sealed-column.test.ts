@@ -10,13 +10,7 @@ import {
   resolveSealKeys,
   seal,
 } from '@ultimat3/core';
-import {
-  createPgliteClient,
-  generateMigration,
-  raw,
-  setDbClient,
-  statementsOf,
-} from '@ultimat3/db';
+import { generateMigration, pgliteClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { text, uuid } from './columns';
 import { type Driver, database, memoryDriver } from './database';
 import { entity } from './entity';
@@ -42,7 +36,7 @@ const connections = entity('sc_connections', {
 });
 
 const ENTITIES = { connections };
-const client = createPgliteClient();
+const client = pgliteClient();
 const previousKey = process.env[KEY_ENV];
 const previousRing = process.env[RING_ENV];
 const firstKey = generateMasterKey();

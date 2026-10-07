@@ -4,7 +4,7 @@ import { RouteDuplicateError, RouteFileInvalidError, SurfaceBoundaryError } from
 import {
   clearRoutes,
   decodeSegment,
-  describeRoutes,
+  describePages,
   registerRoute,
   routeCount,
   routeEntries,
@@ -227,14 +227,14 @@ describe('route table', () => {
     ).toThrow(RouteDuplicateError);
   });
 
-  test('describeRoutes is sorted, JSON-safe and identical for identical input', () => {
+  test('describePages is sorted, JSON-safe and identical for identical input', () => {
     registerRoute({ file: 'apps/web/site/pricing/page.tsx', config: staticConfig });
     registerRoute({ file: 'apps/web/site/page.tsx', config: staticConfig });
     registerRoute({ file: 'apps/web/site/blog/[slug]/page.tsx', config: staticConfig });
 
-    const first = describeRoutes();
+    const first = describePages();
     expect(first.map((r) => r.path)).toEqual(['/', '/blog/:slug', '/pricing']);
-    expect(JSON.stringify(first)).toBe(JSON.stringify(describeRoutes()));
+    expect(JSON.stringify(first)).toBe(JSON.stringify(describePages()));
     expect(first.find((r) => r.path === '/blog/:slug')?.dynamic).toBe(true);
   });
 
@@ -261,7 +261,7 @@ describe('route table', () => {
       file: 'apps/web/app/mine/page.tsx',
       config: defineRoute({ ...ssr, cache: { mode: 'private', maxAgeSeconds: 0 } }),
     });
-    const personal = Object.fromEntries(describeRoutes().map((r) => [r.path, r.personal]));
+    const personal = Object.fromEntries(describePages().map((r) => [r.path, r.personal]));
     expect(personal).toEqual({
       '/': false,
       '/feed': true,
@@ -436,7 +436,7 @@ describe('the suspense count is a number or it is refused', () => {
 });
 
 /**
- * `describeRoutes()` promises an order "identical for identical input", and `localeCompare` with
+ * `describePages()` promises an order "identical for identical input", and `localeCompare` with
  * no locale argument cannot keep it: it answers from the runtime's ICU default locale and
  * collation version, so `'/A'` sorted AFTER `'/a'` on one machine and before it on the next for
  * the same route table. Everything downstream — `x.manifest.json`, the sitemap, `sw.js`'s rule
@@ -447,13 +447,13 @@ describe('the suspense count is a number or it is refused', () => {
 describe('route order is by code unit, never by locale', () => {
   const paths = ['/a', '/_', '/A', '/1'] as const;
 
-  test('routeEntries and describeRoutes both enumerate in code-unit order', () => {
+  test('routeEntries and describePages both enumerate in code-unit order', () => {
     for (const path of paths) {
       registerRoute({ file: `apps/web/site${path}/page.tsx`, config: staticConfig });
     }
     const expected = [...paths].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     expect(expected).toEqual(['/1', '/A', '/_', '/a']);
     expect(routeEntries().map((entry) => entry.path)).toEqual(expected);
-    expect(describeRoutes().map((descriptor) => descriptor.path)).toEqual(expected);
+    expect(describePages().map((descriptor) => descriptor.path)).toEqual(expected);
   });
 });

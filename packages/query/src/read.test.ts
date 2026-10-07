@@ -5,16 +5,16 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import type { CacheTier } from '@ultimat3/cache';
 import {
-  createLruTier,
   declareTags,
   invalidateTags,
   isolateDeclaredTags,
   isolateTiers,
+  lruTier,
   registerTier,
   resetTiers,
   tag,
 } from '@ultimat3/cache';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { cacheKeyFor, DEFAULT_READ_CACHE_TTL_MS, readAuthority } from './cache';
@@ -50,7 +50,7 @@ const withReadTier = (): void => {
   restoreTiers?.();
   restoreTiers = isolateTiers();
   resetTiers();
-  readTier = createLruTier({ jitterFraction: 0 });
+  readTier = lruTier({ jitterFraction: 0 });
   registerTier(readTier);
 };
 afterAll(() => {
@@ -64,7 +64,7 @@ const rows: readonly Row[] = [{ id: 'a', orgId: ORG }];
 
 const allowedActor = { ...userActor({ id: 'allowed' }), permissions: ['feed:read'] };
 const otherActor = { ...userActor({ id: 'other' }), permissions: ['feed:read'] };
-const allowedCtx = createContext({ actor: allowedActor });
+const allowedCtx = ctxOf({ actor: allowedActor });
 
 /** Counts real executions of the source, so "guard runs before sql" is a number, not a claim. */
 function defineCountedQuery(policy = allow()) {
@@ -177,7 +177,7 @@ describe('runQuery — validate, authorize, then read, never out of order', () =
     const failure = await runQuery(
       target,
       { orgId: ORG },
-      { ctx: createContext({ actor: otherActor }) },
+      { ctx: ctxOf({ actor: otherActor }) },
     ).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(QueryDeniedError);
@@ -188,7 +188,7 @@ describe('runQuery — validate, authorize, then read, never out of order', () =
 });
 
 describe('the policy answers before the input is parsed', () => {
-  const strangerCtx = createContext({ actor: userActor({ id: 'stranger' }) });
+  const strangerCtx = ctxOf({ actor: userActor({ id: 'stranger' }) });
 
   test('a reader without the permission gets X_FORBIDDEN for garbage, never the schema', async () => {
     const { target } = defineCountedQuery(can('feed:read'));
@@ -202,7 +202,7 @@ describe('the policy answers before the input is parsed', () => {
 
   test('an anonymous reader is X_UNAUTHENTICATED before the parse', async () => {
     const { target } = defineCountedQuery(can('feed:read'));
-    const failure = await runQuery(target, null, { ctx: createContext({}) }).catch(
+    const failure = await runQuery(target, null, { ctx: ctxOf({}) }).catch(
       (error: unknown) => error,
     );
     expect((failure as { code?: string }).code).toBe('X_UNAUTHENTICATED');
@@ -235,7 +235,7 @@ describe('sourceFor — authorized but not yet run', () => {
 describe('the per-request memo applies whether or not the query declares cache:', () => {
   test('two runQuery calls with identical input in one context execute the source once', async () => {
     const { target, counts } = defineCountedQuery();
-    const ctx = createContext({ actor: allowedActor });
+    const ctx = ctxOf({ actor: allowedActor });
 
     const first = await runQuery(target, { orgId: ORG }, { ctx });
     const second = await runQuery(target, { orgId: ORG }, { ctx });
@@ -246,7 +246,7 @@ describe('the per-request memo applies whether or not the query declares cache:'
 
   test('options.fresh: true bypasses the memo and executes again', async () => {
     const { target, counts } = defineCountedQuery();
-    const ctx = createContext({ actor: allowedActor });
+    const ctx = ctxOf({ actor: allowedActor });
 
     await runQuery(target, { orgId: ORG }, { ctx });
     await runQuery(target, { orgId: ORG }, { ctx, fresh: true });
@@ -260,7 +260,7 @@ describe('options.actor — impersonation on the one read path', () => {
 
   test('allows via impersonation despite the ambient context actor being denied', async () => {
     const { target } = defineCountedQuery(dualPolicy);
-    const ambient = createContext({ actor: otherActor }); // would be denied on its own
+    const ambient = ctxOf({ actor: otherActor }); // would be denied on its own
 
     const result = await runQuery(target, { orgId: ORG }, { ctx: ambient, actor: allowedActor });
     expect(result).toEqual(rows);
@@ -268,7 +268,7 @@ describe('options.actor — impersonation on the one read path', () => {
 
   test('denies via impersonation despite the ambient context actor being allowed', async () => {
     const { target } = defineCountedQuery(dualPolicy);
-    const ambient = createContext({ actor: allowedActor }); // would be allowed on its own
+    const ambient = ctxOf({ actor: allowedActor }); // would be allowed on its own
 
     const failure = await runQuery(
       target,
@@ -280,7 +280,7 @@ describe('options.actor — impersonation on the one read path', () => {
 
   test("actor: null models the signed-out caller — core's anonymous actor, denied X_UNAUTHENTICATED", async () => {
     const { target } = defineCountedQuery(dualPolicy);
-    const ambient = createContext({ actor: allowedActor });
+    const ambient = ctxOf({ actor: allowedActor });
 
     const failure = await sourceFor(target, { orgId: ORG }, { ctx: ambient, actor: null }).catch(
       (error: unknown) => error,
@@ -366,13 +366,13 @@ describe("a cache: read's tier entry, and what drops it", () => {
     withReadTier();
     const { target, counts } = defineCachedQuery();
 
-    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
-    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+    await runQuery(target, { orgId: ORG }, { ctx: ctxOf({ actor: allowedActor }) });
+    await runQuery(target, { orgId: ORG }, { ctx: ctxOf({ actor: allowedActor }) });
     expect(counts.executed).toBe(1); // second request served from the tier
 
     await invalidateTags([tag('post')]);
 
-    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+    await runQuery(target, { orgId: ORG }, { ctx: ctxOf({ actor: allowedActor }) });
     expect(counts.executed).toBe(2);
   });
 
@@ -381,7 +381,7 @@ describe("a cache: read's tier entry, and what drops it", () => {
     const { target } = defineCachedQuery();
     const before = Date.now();
 
-    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+    await runQuery(target, { orgId: ORG }, { ctx: ctxOf({ actor: allowedActor }) });
 
     const key = cacheKeyFor(
       queryName(target),
@@ -399,7 +399,7 @@ describe("a cache: read's tier entry, and what drops it", () => {
     const { target } = defineCachedQuery(5_000);
     const before = Date.now();
 
-    await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
+    await runQuery(target, { orgId: ORG }, { ctx: ctxOf({ actor: allowedActor }) });
 
     const key = cacheKeyFor(
       queryName(target),

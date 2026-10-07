@@ -5,7 +5,7 @@
 // shows up here first.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createRecordingClient, type RecordingClient } from '@ultimat3/db';
+import { type RecordingClient, recordingClient } from '@ultimat3/db';
 import type { BatchIterator } from './batch';
 import { text, uuid } from './columns';
 import { entity } from './entity';
@@ -70,7 +70,7 @@ let pg: ReturnType<typeof tableFor<Post, typeof posts.$columns>>;
 let mem: ReturnType<typeof tableFor<Post, typeof posts.$columns>>;
 
 beforeEach(() => {
-  client = createRecordingClient();
+  client = recordingClient();
   pg = tableFor(posts, postgresRepo(posts, { client }));
   mem = tableFor(posts, memoryRepo(posts, SEED));
 });

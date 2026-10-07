@@ -16,7 +16,7 @@ import { agentActor, setLogSink, UltimateError } from '@ultimat3/core';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
 import type { McpResource } from './resources';
-import { createMcpServer } from './server';
+import { mcpServer } from './server';
 import type { JsonRpcResponse } from './wire';
 import { INTERNAL_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
@@ -57,7 +57,7 @@ const readRequest = (uri: string) => ({
 });
 
 describe('outcome 1 — a resource the caller may not see is absent AND unreadable', () => {
-  const server = createMcpServer({
+  const server = mcpServer({
     resources: [
       doc({ uri: 'ultimate://public' }),
       doc({ uri: 'ultimate://internal', visibleTo: ['admin'] }),
@@ -98,7 +98,7 @@ describe('outcome 1 — a resource the caller may not see is absent AND unreadab
 });
 
 describe('outcome 2 — a resource the caller may see but whose scope the token lacks', () => {
-  const server = createMcpServer({
+  const server = mcpServer({
     resources: [doc({ uri: 'ultimate://report', scope: 'report:read' })],
   });
 
@@ -134,7 +134,7 @@ describe('a provider that throws is answered, never escaped', () => {
     }
   }
 
-  const server = createMcpServer({
+  const server = mcpServer({
     resources: [
       doc({
         uri: 'ultimate://enoent',
@@ -193,7 +193,7 @@ describe('a provider that throws is answered, never escaped', () => {
  * is answered pre-filtered and reveals only what the caller may already see.
  */
 describe('every resources/read outcome is audited, hidden included', () => {
-  const server = createMcpServer({
+  const server = mcpServer({
     resources: [
       doc({ uri: 'ultimate://audit-public' }),
       doc({ uri: 'ultimate://audit-hidden', visibleTo: ['admin'] }),

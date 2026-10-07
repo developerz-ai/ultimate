@@ -98,7 +98,7 @@ export class PolicyError extends UltimateError {
 const BARE_PERMISSION = /^[a-z0-9_-]+:[a-z0-9_-]+$/;
 
 /** `reason` comes from a decision and is always safe to log: no row data, no PII. */
-export const forbidden = (label: string, reason: string): PolicyError =>
+export const policyForbidden = (label: string, reason: string): PolicyError =>
   new PolicyError({
     code: 'X_FORBIDDEN',
     cause: `${label} denied: ${reason}`,
@@ -128,13 +128,13 @@ export class PolicyDenialError extends UltimateError {
 }
 
 /**
- * The error a denial is thrown as: `X_FORBIDDEN` through `forbidden()`, anything else under its
+ * The error a denial is thrown as: `X_FORBIDDEN` through `policyForbidden()`, anything else under its
  * own code. `assertAllowed` threw `X_FORBIDDEN` for every denial, so an anonymous caller read
  * "denied" where every adapter reports `X_UNAUTHENTICATED` — the code a 401 and a sign-in
  * redirect key on.
  */
 export const denialError = (label: string, reason: string, code: string): UltimateError => {
-  if (code === 'X_FORBIDDEN') return forbidden(label, reason);
+  if (code === 'X_FORBIDDEN') return policyForbidden(label, reason);
   const subject = BARE_PERMISSION.test(label)
     ? `x policy explain ${label} --json`
     : 'x policy list --json';

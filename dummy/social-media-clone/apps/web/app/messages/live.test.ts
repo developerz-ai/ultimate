@@ -5,7 +5,7 @@
 // (packages/query/src/matcher.ts), so a partial order lets two rows swap between evaluations and a
 // bounded page silently drops or repeats one at its boundary.
 
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { expect, liveTest, unitTest } from '@ultimat3/testing';
 import { liveThread } from './live';
@@ -20,7 +20,7 @@ const target = liveThread.named('liveThread');
 const describeQuery = () =>
   // `enforce: false` is what a sync node passes when it builds the SUBJECT-LESS window; the
   // per-subscriber decision is `authorize` below, asserted separately.
-  target.live({ conversationId: ROOM }, { ctx: createContext(), enforce: false });
+  target.live({ conversationId: ROOM }, { ctx: ctxOf(), enforce: false });
 
 liveTest('the thread is bounded — a subscription window cannot grow without end', async () => {
   const live = await describeQuery();
@@ -57,7 +57,7 @@ liveTest('subscribing with no row is REFUSED, including for a real participant',
     live.authorize({
       actor: member,
       input: { conversationId: ROOM },
-      ctx: createContext(),
+      ctx: ctxOf(),
       query: 'liveThread',
     }),
   ).rejects.toThrow();

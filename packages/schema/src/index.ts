@@ -25,6 +25,7 @@ export type { QuerySource } from './coerce';
 export { coerceInput, coerceNode, coerceQuery, numeric } from './coerce';
 export { describeValue, expected } from './describe-value';
 export { discriminatedUnionSchema } from './discriminated-union';
+export { ULTIMATE_ERROR_BRAND } from './error-brand';
 export type { SchemaErrorCodeDeclaration } from './error-codes';
 export { SCHEMA_ERROR_CODES } from './error-codes';
 export type {
@@ -39,7 +40,6 @@ export {
   isSchemaError,
   SchemaError,
   SchemaUnsupportedError,
-  ULTIMATE_ERROR_BRAND,
   ValidationFailedError,
 } from './errors';
 // Exported for `@ultimat3/time`'s `fromIso`: one ISO-shape rule, whichever door a date comes in by.

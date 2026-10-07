@@ -125,7 +125,7 @@ export function noopPurgeDriver(): PurgeDriver {
  * A driver that reaches no CDN, so a caller can report "purges nothing" without a name match.
  *
  * Lives here rather than beside `selectPurgeDriver`, which is where it was until 2026-08: the
- * `name: 'noop'` it tests for is declared one function up, and `createCdnTier` — the caller that
+ * `name: 'noop'` it tests for is declared one function up, and `cdnTier` — the caller that
  * most needs it — cannot import from `purge-env.ts` without making a cycle of the two files.
  */
 export const isNoopPurgeDriver = (driver: PurgeDriver): boolean => driver.name === 'noop';
@@ -140,7 +140,7 @@ export interface CdnTierOptions {
   readonly pathsForKey?: (key: string) => readonly string[];
 }
 
-export function createCdnTier(options: CdnTierOptions = {}): CacheTier {
+export function cdnTier(options: CdnTierOptions = {}): CacheTier {
   const driver = options.purge ?? noopPurgeDriver();
 
   return {

@@ -7,13 +7,13 @@ import { describe, expect, test } from 'bun:test';
 import { renderThrowable } from '@ultimat3/core';
 import type { DbClient, ReservableClient } from './client';
 import { dbUnavailable } from './errors';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 import { reservableOver } from './fake-reservable-fixture';
 import { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 
 describe('readOnlyQuery', () => {
   test('the default order is BEGIN READ ONLY, timeout, statement, ROLLBACK', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const result = await readOnlyQuery('select 1', { client });
 
     expect(client.texts).toEqual([
@@ -26,7 +26,7 @@ describe('readOnlyQuery', () => {
   });
 
   test('a role is set after the timeout and before the statement', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const result = await readOnlyQuery('select 1', { client, role: 'ultimate_readonly' });
 
     expect(client.texts).toEqual([
@@ -44,7 +44,7 @@ describe('readOnlyQuery', () => {
   });
 
   test('timeoutMs: 0 disables the timeout statement and its guard', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const result = await readOnlyQuery('select 1', { client, timeoutMs: 0 });
 
     expect(client.texts).toEqual(['BEGIN READ ONLY', 'select 1', 'ROLLBACK']);
@@ -60,7 +60,7 @@ describe('readOnlyQuery', () => {
   test.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 1.5])(
     'refuses timeoutMs %p instead of taking the default in silence',
     async (timeoutMs) => {
-      const client = createRecordingClient();
+      const client = recordingClient();
       const rendered = renderThrowable(
         await readOnlyQuery('select 1', { client, timeoutMs }).catch((error: unknown) => error),
       );
@@ -126,7 +126,7 @@ describe('readOnlyQuery', () => {
   });
 
   test('maxRows fetches through a cursor declared after the role, inside the transaction', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const result = await readOnlyQuery('select * from events', {
       client,
       role: 'ultimate_readonly',
@@ -145,7 +145,7 @@ describe('readOnlyQuery', () => {
   });
 
   test('a trailing semicolon does not split the DECLARE into two statements', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await readOnlyQuery('select 1;  ', { client, maxRows: 5 });
 
     expect(client.texts).toContain('DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select 1');
@@ -158,7 +158,7 @@ describe('readOnlyQuery', () => {
   // "cannot insert multiple commands into a prepared statement": an uncoded driver error out of
   // a path whose whole job is to bound the read.
   test('a trailing comment after the separator is not spliced into the DECLARE', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await readOnlyQuery('select 1; -- note', { client, maxRows: 5 });
 
     expect(client.texts).toContain('DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select 1');
@@ -173,7 +173,7 @@ describe('readOnlyQuery', () => {
     ['explain select 1', false],
     ['show statement_timeout', false],
   ])('cursorability of %p is %p', async (statement, expected) => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const result = await readOnlyQuery(statement, { client, maxRows: 7 });
 
     expect(result.guards.includes('fetch:7 rows')).toBe(expected);
@@ -183,7 +183,7 @@ describe('readOnlyQuery', () => {
   test.each([0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY])(
     'maxRows %p is not a fetch count, so the statement runs whole',
     async (maxRows) => {
-      const client = createRecordingClient();
+      const client = recordingClient();
       const result = await readOnlyQuery('select 1', { client, maxRows });
 
       expect(client.texts).toContain('select 1');
@@ -192,7 +192,7 @@ describe('readOnlyQuery', () => {
   );
 
   test("the caller's SQL reaches the driver byte-for-byte", async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     const statement = "select 'delete from posts' as note";
     await readOnlyQuery(statement, { client });
 
@@ -202,7 +202,7 @@ describe('readOnlyQuery', () => {
   });
 
   test('a reservable client is reserved and released exactly once', async () => {
-    const recorder = createRecordingClient();
+    const recorder = recordingClient();
     const { client: reservable, pins } = reservableOver(recorder);
 
     await readOnlyQuery('select 1', { client: reservable });
@@ -239,7 +239,7 @@ describe('one statement, or none at all', () => {
     // Only the FIRST command is bounded by the guards this function installs, so a second one
     // undid `SET LOCAL statement_timeout` while `guards` still reported `timeout:5000ms` — the
     // BEGIN READ ONLY backstop held, but the reported guard list was a lie.
-    const client = createRecordingClient();
+    const client = recordingClient();
     let code = 'no-throw';
     try {
       await readOnlyQuery('select 1; set statement_timeout = 0', { client, maxRows: 10 });
@@ -252,7 +252,7 @@ describe('one statement, or none at all', () => {
   });
 
   test('the refusal does not depend on maxRows — the direct path splices too', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await expect(readOnlyQuery('select 1; delete from posts', { client })).rejects.toThrow(
       /X_SQL_UNSAFE/,
     );
@@ -260,11 +260,11 @@ describe('one statement, or none at all', () => {
   });
 
   test('a ";" inside a literal or a comment is data, not a second statement', async () => {
-    const client = createRecordingClient();
+    const client = recordingClient();
     await expect(readOnlyQuery("select ';'", { client })).resolves.toBeDefined();
     await expect(readOnlyQuery('select 1 -- ; nope', { client })).resolves.toBeDefined();
     // A trailing ";" is still one statement and still stripped before the DECLARE.
-    const trailing = createRecordingClient();
+    const trailing = recordingClient();
     await readOnlyQuery('select 1;', { client: trailing, maxRows: 5 });
     expect(trailing.texts).toContain('DECLARE ultimate_read_cursor NO SCROLL CURSOR FOR select 1');
   });

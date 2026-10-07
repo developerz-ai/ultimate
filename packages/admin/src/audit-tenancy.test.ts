@@ -3,7 +3,7 @@
 // wrote — the probe that reproduced the leak. An actor with no org (the platform) sees both.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext, userActor } from '@ultimat3/core';
+import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { resetCatalogs } from '@ultimat3/i18n';
 import {
@@ -70,7 +70,7 @@ afterAll(() => {
 /** One GET as an `auditor` of `orgId` (or of no org), rendered to HTML. */
 const render = (orgId: string | undefined, path: string): Promise<string> =>
   runWithContext(
-    createContext({
+    ctxOf({
       actor: userActor({ id: 'u-reader', roles: ['auditor'], ...(orgId ? { orgId } : {}) }),
       tz: 'UTC',
       locale: 'en',

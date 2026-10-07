@@ -2,11 +2,11 @@
 // Six methods and no more: claim/ack/nack with a visibility timeout is the smallest set that
 // survives a worker crash.
 //
-// This header used to say "switching backends is a config line" (`As of 2026-08`). There is no
-// such config line: `JobsConfig.driver` has no reader anywhere and boot always builds
-// `postgresDriver`. `pg` and `memory` are the two that exist (25.0.0 deleted the all-throw `redis`
-// and `nats` stubs). What IS true is the second half — swapping the driver is
-// `setJobDriver(other)` and ZERO job-code change — and that is what the interface buys.
+// There is no config line that picks a backend: boot always builds `postgresJobDriver()`, and a
+// stale `jobs.driver` in `app.config.ts` is refused by `defineConfig` (25.0.0; it was read by
+// nothing since 5.0.0). `postgresJobDriver` and `memoryJobDriver` are the two that exist — 25.0.0
+// deleted the all-throw `redis` and `nats` stubs. Swapping the driver is `setJobDriver(other)` and
+// ZERO job-code change, and that is what the interface buys.
 
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';
@@ -157,7 +157,7 @@ export interface EnqueueResult {
 export interface ClaimOptions {
   /**
    * The queues this pass may take work from, by name. **At least one, and an empty list is
-   * refused** (`X_JOB_CLAIM_QUEUES_EMPTY`) — see `assertClaimQueues`. `createWorker` passes exactly
+   * refused** (`X_JOB_CLAIM_QUEUES_EMPTY`) — see `assertClaimQueues`. `jobWorker` passes exactly
    * one per pass, which is what keeps a slow queue from starving the others.
    */
   readonly queues: readonly string[];
@@ -221,14 +221,8 @@ export interface SettleBy extends ClaimIdentity {
   readonly durationMs?: number;
 }
 
-export interface AckOptions extends SettleBy {
-  /**
-   * False when the row is finished WITHOUT its body having run here — `x jobs drain` moving it to
-   * another driver. It is settled `done` and adds nothing to the job's counters: a job that was
-   * moved is not a job that completed.
-   */
-  readonly counted?: boolean;
-}
+/** An ack is a settle by the claimer: every ack is a completed run and adds to the counters. */
+export type AckOptions = SettleBy;
 
 export interface NackOptions extends SettleBy {
   /** Delay before the job becomes claimable again. */
@@ -337,7 +331,7 @@ export interface JobDriver {
    * Optional, like `introspect` and `backfills`: fleet-wide slot counting, which is the only thing
    * that can make `job.concurrency` mean what its docstring says. The in-process limiter is a fast
    * path over ONE heap and is multiplied by the replica count; this is the gate that is not.
-   * A driver without one can only hold the cap per process, so `createWorker().start()` THROWS
+   * A driver without one can only hold the cap per process, so `jobWorker().start()` THROWS
    * `X_JOB_CONCURRENCY_UNENFORCEABLE` (`worker.ts`) naming every registered job that declared
    * `concurrency` — refused rather than logged, because a documented guarantee that silently does
    * nothing is worse than either alternative.

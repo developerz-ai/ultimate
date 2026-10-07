@@ -9,7 +9,7 @@ import { defineHttpConfig } from './config';
 import { locationFor, navigationGate, redirectForRouter } from './navigation';
 import { redirect } from './response';
 import type { Route, RouteNavigation } from './router';
-import { createServer } from './server';
+import { httpServer } from './server';
 
 const APP = 'web:app';
 const soft = { 'x-ultimate-navigation': 'soft', 'x-ultimate-surface': APP };
@@ -138,7 +138,7 @@ describe('through the pipeline', () => {
     },
   });
   const authenticated: string[] = [];
-  const server = createServer({
+  const server = httpServer({
     routes: [
       route('/evidence'),
       route('/page', page()),
@@ -256,7 +256,7 @@ describe('a same-origin target never reaches the router as a scheme-relative pat
   // The whole server, and a handler that redirects to a caller-influenced path WITHOUT
   // `nextAfterSignIn` — the shape every other `setRedirect`/`redirect` caller could take.
   test('through the pipeline, a handler redirecting to `/.//evil.test` hands the router this origin', async () => {
-    const server = createServer({
+    const server = httpServer({
       routes: [
         {
           method: 'POST',

@@ -4,7 +4,7 @@
 // pod it replaced dropped, and two pods in a rolling update both dispatch every task.
 
 import type { Clock, PgExecutor } from '@ultimat3/core';
-import { finiteOption, uuid } from '@ultimat3/core';
+import { finiteOption, uuidV7 } from '@ultimat3/core';
 import { nowMs } from './clock';
 import { DEFAULT_QUEUE } from './driver';
 import { SQL_SCHEDULER_FIRE } from './driver-pg-operator-sql';
@@ -41,7 +41,7 @@ export function postgresSchedulerState(executor: PgExecutor): SchedulerState {
       // One statement only when the queue IS this database. A host that swapped the driver keeps
       // the watermark here and its jobs elsewhere, and no statement spans the two.
       if (driver.name !== 'pg') return fireThroughDriver(state, driver, fire);
-      const ids = fire.jobs.map(() => uuid());
+      const ids = fire.jobs.map(() => uuidV7());
       const rows = await executor.query<{
         fired: number | string;
         id: string | null;
@@ -56,7 +56,7 @@ export function postgresSchedulerState(executor: PgExecutor): SchedulerState {
             queue: request.queue || DEFAULT_QUEUE,
             input: request.input ?? null,
             idempotency_key: request.idempotencyKey,
-            run_id: request.runId ?? uuid(),
+            run_id: request.runId ?? uuidV7(),
             max_attempts: request.maxAttempts,
           })),
         ),
@@ -122,7 +122,7 @@ export const LEASE_RENEWALS_PER_TTL = 3;
  */
 export function postgresLeaseLeader(options: PgLeaseLeaderOptions): LeaderElection {
   const lockKey = options.lockKey ?? 'scheduler';
-  const holder = options.holder ?? `scheduler-${uuid()}`;
+  const holder = options.holder ?? `scheduler-${uuidV7()}`;
   const ttlMs = finiteOption(
     'the pg scheduler lease',
     'ttlMs',

@@ -6,11 +6,11 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, t } from '@ultimat3/action';
-import { createContext } from '@ultimat3/core';
+import { ctxOf } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { BudgetLedger, withBudget } from './budget';
-import { EchoProvider } from './echo-provider';
-import { createGateway } from './gateway';
+import { echoProvider } from './echo-provider';
+import { providerGateway } from './gateway';
 import { llm } from './llm';
 import type { LlmStreamChunk } from './llm-stream';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
@@ -79,7 +79,9 @@ beforeEach(() => {
 describe('.stream() keeps everything llm() is for', () => {
   test('a denial happens before the provider is reached — the whole reason it is not a raw gateway call', async () => {
     const { provider, seen } = streamer('nope');
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Prose,
@@ -96,7 +98,9 @@ describe('.stream() keeps everything llm() is for', () => {
 
   test('the budget still refuses BEFORE a token is spent', async () => {
     const { provider, seen } = streamer('a long answer');
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Prose,
@@ -116,7 +120,9 @@ describe('.stream() keeps everything llm() is for', () => {
 
   test('yields increments, then one done carrying the validated value', async () => {
     const { provider, seen } = streamer('a post about caching');
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Prose,
@@ -141,7 +147,9 @@ describe('.stream() keeps everything llm() is for', () => {
 
   test('an object output is satisfied by the JSON the stream assembled', async () => {
     const { provider } = streamer('{"summary": "caching"}');
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Structured,
@@ -159,7 +167,9 @@ describe('.stream() keeps everything llm() is for', () => {
   // with its own code instead of reporting a repair that never happened.
   test('an answer that fails its schema is X_LLM_STREAM_INVALID, never a silent repair', async () => {
     const { provider } = streamer('just some prose');
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Structured,
@@ -175,7 +185,9 @@ describe('.stream() keeps everything llm() is for', () => {
 
   test('nothing is sent until the first pull', async () => {
     const { provider, seen } = streamer('unread');
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Prose,
@@ -193,7 +205,9 @@ describe('.stream() keeps everything llm() is for', () => {
     // The stream is where a disconnect is most likely and most expensive: the consumer stops
     // pulling, and without a signal the socket stays open and the tokens keep being billed.
     const { provider, seen } = streamer('a summary');
-    configureAi({ gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+    });
     const summarize = llm({
       input: Input,
       output: Prose,
@@ -204,7 +218,7 @@ describe('.stream() keeps everything llm() is for', () => {
     const controller = new AbortController();
 
     await collect(
-      summarize.stream({ postId: POST_ID }, { ctx: createContext({ signal: controller.signal }) }),
+      summarize.stream({ postId: POST_ID }, { ctx: ctxOf({ signal: controller.signal }) }),
     );
 
     expect(seen[0]?.signal).toBe(controller.signal);
@@ -212,7 +226,7 @@ describe('.stream() keeps everything llm() is for', () => {
 
   test('a renamed twin still streams — named() rebuilds the action, and would have dropped it', () => {
     configureAi({
-      gateway: createGateway({ defaultModel: FIXTURE_MODEL, providers: [new EchoProvider()] }),
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [echoProvider()] }),
     });
     const summarize = llm({
       input: Input,

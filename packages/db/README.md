@@ -38,7 +38,7 @@ await withTransaction(async (tx) => {
 | `replicatedClient()` / `ReplicaStats` / `REPLICA_URL_ENV` | `As of 2026-08-24`: one `DbClient` over a primary and a standby. `baseClient()` builds one when `DATABASE_REPLICA_URL` is set and the single-pool client when it is not |
 | `INDEX_METHODS` / `IndexMethod` / `indexMethodOf()` / `indexMethodSql()` / `declaredMethod()` / `isIndexMethod()` | `As of 2026-08-24`: an index's access method — `btree` or `gin`, closed. Absent is `btree`, the live side is read open (whatever `pg_am` said), and the DDL literal is re-derived from the set rather than spliced from the input |
 | `isPlainRead()` | `As of 2026-08-24`: whether a statement may leave the primary. An allow-list — everything it cannot vouch for is the primary's |
-| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes (access method `As of 2026-08-24`, columns, uniqueness, direction, and whether a predicate is there at all — never its text), declared CHECK constraints by NAME (`missing-check`, `As of 2026-08-25` — never a predicate, which the catalog answers rewritten) and declared foreign keys, matched on where the key points and not on its constraint name, with the `on delete` rule compared through one normalisation `As of 2026-08-19` |
+| `checkDrift()` / `diffSchema()` / `assertNoSchemaDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes (access method `As of 2026-08-24`, columns, uniqueness, direction, and whether a predicate is there at all — never its text), declared CHECK constraints by NAME (`missing-check`, `As of 2026-08-25` — never a predicate, which the catalog answers rewritten) and declared foreign keys, matched on where the key points and not on its constraint name, with the `on delete` rule compared through one normalisation `As of 2026-08-19` |
 | `declaredSchema()` / `expectedSchema()` | `As of 2026-08`: the schema the migrations write down, or `undefined` when the newest one carries no snapshot — never an older snapshot standing in for it |
 | `parseSnapshot()` | `As of 2026-08`: a `<id>.snapshot.json` sidecar validated to the last nested field, or `undefined`. `{"tables":[null]}` is valid JSON and is not a schema |
 | `snapshotJson()` | `As of 2026-08`: the sidecar's **bytes** — the JSON Biome would have printed, trailing newline included. The one writer of a `<id>.snapshot.json`, because `JSON.stringify(…, null, 2)` is not formatter-clean and an app's `lint` step rejected the file `x db gen` had just written |
@@ -49,10 +49,10 @@ await withTransaction(async (tx) => {
 | `declaredChecks()` / `checkClauses()` / `checkPlan()` / `columnChecks()` / `columnCheckName()` / `columnNamesConstraint()` | `As of 2026-08-25`: **every** CHECK a table declares — a column's own (`enumerated()`'s value set, `tz()`'s IANA whitelist, `locale()`'s tags, money's currency pattern and scale bound) and an invariant's — on ONE list, so `createTable`, `diffTable` and `snapshotOf` agree about what exists. A column's check reached `create table` **inline and anonymous** and nothing else: the snapshot recorded none and the diff had no arm, so a value added to `enumerated()` generated no migration and a regenerated ENUM column came back as bare `text`. The name is `<table>_<column>_check` because that is the name **Postgres itself mints** for the old anonymous form — measured — so the repair lands on the constraint an already-generated database is holding; `checkPlan` emits `drop constraint if exists` before the `add` for exactly that column, because a bare add is `42710` there and a no-op everywhere else |
 | `defaultExpression()` / `ColumnDefaultLike` | `As of 2026-08-25`: a column's `default` as SQL. A DECLARED default (`{ kind: 'value', value }`) wins; `gen_random_uuid()` and `now()` stay as the inference for a description that carries only `hasDefault` |
 | `unrenderedOf()` / `unrenderedComment()` / `UnrenderedDeclaration` | `As of 2026-08-25`: what the generator could **not** write, on `GeneratedMigration.unrendered` and as a `-- UNRENDERED` block at the top of a non-empty `up`. A generator that emits less than the declaration in silence is the defect the whole file exists against, and `x verify`'s `drift` step reads a source hash — it never reads the SQL, so the loss was green. **`unrenderedOf(entities, current)` takes the recorded schema**, required and nullable: a rule declared as an `assert` reaches no SQL by design and is no loss on its own, but one whose CHECK a previous migration RECORDED is dropped by this run and reported by nothing — five in `examples/dummy`, and `@ultimat3/cli`'s `repairFix` then offered `x db gen "drop <name>"` as the repair for the loss that command performs |
-| `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructive()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
+| `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructiveMigration()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
 | `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a reader sees the operation and not the prose. Shared by `readOnlyQuery()` and the destructive rail |
-| `introspect()` | live schema → `SchemaDescription`. **App tables only**, `As of 2026-08-24`: a relation an extension owns (`pg_depend`, `deptype = 'e'`) and anything that is not an ordinary or partitioned table are excluded before the fold, and an explicit `exclude` cannot bring them back |
-| `introspectCatalog()` / `CatalogDescription` / `emptyCatalog()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: the WHOLE schema in the catalog's own spelling — extensions, enum and domain types, sequences, tables, indexes, foreign keys, views, functions, triggers — sorted in code-unit order, plus `unrendered`: what exists and the dump cannot spell. Comparable only to another reading of itself; `introspect()` stays the entity-vocabulary reading a snapshot is diffed in |
+| `introspectSchema()` | live schema → `SchemaDescription`. **App tables only**, `As of 2026-08-24`: a relation an extension owns (`pg_depend`, `deptype = 'e'`) and anything that is not an ordinary or partitioned table are excluded before the fold, and an explicit `exclude` cannot bring them back |
+| `introspectCatalog()` / `CatalogDescription` / `emptyCatalog()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: the WHOLE schema in the catalog's own spelling — extensions, enum and domain types, sequences, tables, indexes, foreign keys, views, functions, triggers — sorted in code-unit order, plus `unrendered`: what exists and the dump cannot spell. Comparable only to another reading of itself; `introspectSchema()` stays the entity-vocabulary reading a snapshot is diffed in |
 | `renderSchemaDump()` / `SchemaDumpFile` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: a catalog → the schema dump's files. Pure and byte-deterministic. [The schema dump](#the-schema-dump) |
 | `loadSchemaDump()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: build a schema from those files, in one transaction, retrying a file that names something not created yet |
 | `compareSchemaDump()` / `reloadDifferences()` / `schemaDumpDrift()` / `schemaDumpDifferenceOf()` | **`@ultimat3/db/schema-dump`.** `As of 2026-10`: `X_SCHEMA_DUMP_DRIFT` — committed files against rendered ones in both directions, and load-equals-replay as a comparison |
@@ -60,7 +60,7 @@ await withTransaction(async (tx) => {
 | `PgliteOptions.extensions` / `linkPgliteExtensions()` | `As of 2026-10`: Postgres extensions to link at boot, by name — a list, or a function for a caller whose list is read from disk. `linkPgliteExtensions(names)` answers `{ linked, missing }` without booting anything: `missing` is what the installed PGlite ships no bundle for, which is how `@ultimat3/cli` decides a replay needs a real Postgres. A missing name is skipped at boot and refused by `create extension` itself |
 | `PgliteOptions.snapshotDir` | `As of 2026-10`: a directory for the post-`initdb` snapshot, so an in-memory boot is a restore (~0.4 s against ~2.7 s). Keyed on the PGlite version alone — `initdb` never sees a linked extension, so one snapshot serves every set; checksummed, never trusted, written by temp-name-then-rename. Ignored for a data directory on disk |
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases. `As of 2026-08-19` the marker comment records the **base** as well as the instant (`ultimate:branch:<base>:<iso>`, on `BranchInfo.base`), and `reapBranches()` sweeps only branches of the database it is connected to — one Postgres hosting two Ultimate apps used to mean one app's nightly reap dropped the other's branches. A pre-3.x marker records no base and is skipped, never dropped |
-| `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
+| `pgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
 | `setStatementObserver()` / `statementObserver()` | `As of 2026-08`: one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
@@ -68,7 +68,7 @@ await withTransaction(async (tx) => {
 | `withStatementAttribution()` / `statementAttribution()` | `As of 2026-08`: the `{ entity, op }` pair on `StatementEvent.attribution`, scoped exactly like `expectedQueryLoop()` — `@ultimat3/entity`'s `postgresRepo` is the one producer |
 | `STATEMENT_ATTRIBUTE` | `As of 2026-08`: `db.statement`, the OTel attribute each span carries its text under — declared here, read by `x dev`'s timeline |
 | `statementFingerprint()` / `statementKind()` / `statementVerb()` | `As of 2026-08`: what shape a statement is — `entity.op` when attributed else its own collapsed text, read or write from the leading verb. One rule, so two detectors group identically |
-| `createRecordingClient()` | in-memory `DbClient` that records SQL, for tests |
+| `recordingClient()` | in-memory `DbClient` that records SQL, for tests |
 
 ## `sql` is parameters-only
 
@@ -197,7 +197,7 @@ production traffic is routed.
 
 ## The drift contract
 
-`checkDrift()` compares `introspect()` against the snapshot the newest applied migration carries —
+`checkDrift()` compares `introspectSchema()` against the snapshot the newest applied migration carries —
 `expectedSchema(migrations, ledger)`. `declaredSchema(migrations)` is the same read with the ledger
 left out: the schema the files *declare*, applied or not, which is what `x db gen` diffs the app's
 entities against so generation needs no database at all. One implementation, two callers — a
@@ -215,7 +215,7 @@ A migration the ledger has not recorded is **not** drift: `expectedSchema` reads
 subset, so a database that simply has not migrated yet is pending, not divergent. Neither is a
 table in the `x_` namespace — `x_migrations`, the queue's tables, the outbox and every
 `@ultimat3/auth` table are created by `create table if not exists` at boot and appear in no
-snapshot, so `appTables()` drops them before the diff. `introspect()` keeps its own narrower
+snapshot, so `appTables()` drops them before the diff. `introspectSchema()` keeps its own narrower
 exclusion (the ledger alone), reserving `x_users` for a schema view that wants it.
 
 **A CHECK the catalog no longer holds is drift, `As of 2026-08-25` — by NAME.**
@@ -233,7 +233,7 @@ expression parser competing with the server's.
 **Nor is a relation an extension owns, `As of 2026-08-24`.** `create extension pg_stat_statements`
 in `public` is the CNPG, RDS, Supabase and Neon default, and its view read as `unexpected-table`
 with `x db gen "add pg_stat_statements"` as the fix — so every deploy failed terminally and the fix
-would have written an extension's internal view into the app's migration set. `introspect()` now
+would have written an extension's internal view into the app's migration set. `introspectSchema()` now
 excludes every relation Postgres records as extension-owned (`pg_depend`, `deptype = 'e'`), which is
 ownership rather than a name: a `pg_*` prefix rule covers that view and misses `postgis`'
 `spatial_ref_sys`. Views, materialised views and foreign tables go with them — no snapshot records
@@ -260,9 +260,9 @@ X_DB_DRIFT: schema differs from migrations
 | append-only trigger gone (`missing-append-only-trigger`, `As of 2026-10-06`) — raised as `X_APPEND_ONLY_TRIGGER_MISSING`, the one kind with its own code | `table "T" is declared appendOnly, and its trigger ultimate_append_only is missing or disabled` — a disabled (`D`) or replica-only (`R`) trigger counts as missing, because an ordinary session fires neither | `psql "$DATABASE_URL" -c '<create or replace function …; drop trigger if exists "ultimate_append_only" on "T"; create trigger "ultimate_append_only" …>'` against the drifted database, then `x db migrate`. Drop-if-exists first: a disabled trigger still exists, and a bare `create trigger` would fail on it (`42710`) |
 | primary key differs (`changed-primary-key`, `As of 2026-10-02`) | `table "T" has primary key (id) as constraint "T_pkey", and migrations declare (slug)` — the constraint named is the one the DATABASE holds — compared in column ORDER; `has no primary key` when the database holds none | `psql "$DATABASE_URL" -c '<drop constraint "<the live key>"; add constraint "T_pkey" primary key (…)>'` — one command, against the drifted database — then `x db migrate`. Nullability is skipped for the DECLARED key's columns only |
 
-`checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` renders
+`checkDrift()` returns every difference; `assertNoSchemaDrift()` throws the first. `x db migrate` renders
 them all as findings and exits non-zero; a `ROLE=migrate` container throws the first one
-(`assertNoDrift`, in `runRole`) and exits non-zero too, because the release phase has one channel —
+(`assertNoSchemaDrift`, in `runRole`) and exits non-zero too, because the release phase has one channel —
 the exit code — and a deploy that rolled on past a schema nobody can reconstruct is the failure
 drift exists to catch. There is no `x db drift`, and `x verify`'s `drift` step is the *source*
 detector (`checkSourceDrift`), which needs no database and never calls this.
@@ -285,7 +285,7 @@ create trigger "ultimate_append_only" before update or delete on "ledger" for ea
 | On / off | adding `appendOnly` emits the function (once per migration) and the trigger (drop-if-exists first on an existing table), `down` drops the trigger; removing it drops the trigger, `down` restores both. A dropped table takes its trigger with it; the function is never dropped |
 | NOT NULL with no backfill | a NEW NOT NULL column needs a default (or `.nullable()`), and an EXISTING column cannot be turned NOT NULL: `x db gen` refuses both (`X_MIGRATION_APPEND_ONLY_BACKFILL`) rather than emit the usual `-- backfill …, then: set not null` note — that backfill is an UPDATE the trigger refuses, and a default fills no NULL already stored (`generate-append-only-column.test.ts`) |
 | Engines | Postgres and PGlite alike (`generate-append-only.live.test.ts`, `generate-append-only-embedded.test.ts`) |
-| Drift | `introspect()` writes `triggerNames` (enabled, non-internal) on every table — the catalog half; `appendOnly` is the snapshot half, never read from the catalog |
+| Drift | `introspectSchema()` writes `triggerNames` (enabled, non-internal) on every table — the catalog half; `appendOnly` is the snapshot half, never read from the catalog |
 
 ## The schema dump
 
@@ -338,17 +338,17 @@ Which engine, where the files live, when they are written and what holds them is
 
 ## The embedded database
 
-No `DATABASE_URL` means no Docker: `createPgliteClient()` runs Postgres as WASM inside this
+No `DATABASE_URL` means no Docker: `pgliteClient()` runs Postgres as WASM inside this
 process. The module is resolved on the first statement, never at import, so an image that only
 ever talks to a managed Postgres never loads it.
 
 ```ts
-const dev = createPgliteClient({ dataDir: pgliteDataDir(services.db.url) });  // or memory://
+const dev = pgliteClient({ dataDir: pgliteDataDir(services.db.url) });  // or memory://
 await dev.ping();                                       // pay the ~3s boot before serving
 setDbClient(dev);
 
 const branch = await branchPglite('feature_x', { from: '.x/pgdata' });
-setDbClient(createPgliteClient({ dataDir: branch.dataDir }));
+setDbClient(pgliteClient({ dataDir: branch.dataDir }));
 ```
 
 PGlite has no `CREATE DATABASE ... TEMPLATE`, so `branchPglite()` copies the data directory —
@@ -358,7 +358,7 @@ lands in a filesystem path, so an unvalidated one is traversal rather than a typ
 
 ### One session, so callers take turns
 
-Embedded Postgres is a single session, not a pool. `createPgliteClient()` is therefore
+Embedded Postgres is a single session, not a pool. `pgliteClient()` is therefore
 `ReservableClient`: `withTransaction()` and `readOnlyQuery()` pin it, and every other statement
 waits for its turn. Without that pin two concurrent units of work each run `BEGIN` on the same
 connection — the second `COMMIT` commits the first's rows and the first `ROLLBACK` finds no

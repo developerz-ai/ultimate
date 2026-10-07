@@ -18,7 +18,7 @@ import {
   CLIENT_SYNC_WORKER_META,
   userActor,
 } from '@ultimat3/core';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RenderMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
 import { reachesRealtime } from './island-realtime';
@@ -46,7 +46,7 @@ function register(file: string, render: RenderMode, gated: boolean): void {
 }
 
 async function scopeIn(path: string, actor: Actor | null): Promise<string | null> {
-  const server = createServer({
+  const server = httpServer({
     routes: appRoutes({ buildId: BUILD_ID }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
@@ -93,7 +93,7 @@ describe('unit · the client scope a document carries', () => {
 describe('unit · the sync target every document carries', () => {
   test('principal-free, so even a shareable static page names the socket, the build and the worker', async () => {
     register('apps/web/site/page.tsx', 'static', false);
-    const server = createServer({
+    const server = httpServer({
       routes: appRoutes({
         buildId: BUILD_ID,
         sync: { syncUrl: '/_x/sync', buildId: BUILD_ID, workerUrl: '/_x/sync-worker/0a1b2c3d.js' },
@@ -115,7 +115,7 @@ describe('unit · the sync target every document carries', () => {
 
 describe('unit · the persisted record types ride with the scope', () => {
   const serveWith = (actor: Actor | null) =>
-    createServer({
+    httpServer({
       routes: appRoutes({ buildId: BUILD_ID, persisted: () => ['post', 'comment'] }),
       role: 'web',
       config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
@@ -183,7 +183,7 @@ describe('unit · the page boot rides with the scope AND a realtime island', () 
   };
 
   const bootIn = async (actor: Actor | null): Promise<boolean> => {
-    const server = createServer({
+    const server = httpServer({
       routes: appRoutes({
         buildId: BUILD_ID,
         sync: { syncUrl: '/_x/sync', buildId: BUILD_ID, bootUrl: BOOT },

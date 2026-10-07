@@ -4,16 +4,11 @@
 // generator, so its shape and its discriminant are read back out of that source, never restated.
 
 import { describe, expect, test } from 'bun:test';
+import { APP_UPDATE_MESSAGE } from '@ultimat3/core';
 import { BuildIdMissingError } from './errors';
 import { generateServiceWorker } from './service-worker';
 import type { AppUpdateAvailable, Deploy } from './version-skew';
-import {
-  APP_UPDATE_AVAILABLE,
-  buildId,
-  cacheNamespace,
-  detectSkew,
-  retentionPlan,
-} from './version-skew';
+import { buildId, cacheNamespace, detectSkew, retentionPlan } from './version-skew';
 
 describe('buildId', () => {
   test('is deterministic and scoped by channel so previews never collide', () => {
@@ -88,7 +83,7 @@ describe('AppUpdateAvailable is the message the service worker posts, and no mor
   test('every field the interface declares is on the literal the activate block emits', () => {
     // `Required<>` is the build error behind this rule: a field added to the interface — optional
     // or not — stops compiling here until the generated worker actually posts it.
-    const message = { type: APP_UPDATE_AVAILABLE, to: 'b2' } satisfies Required<AppUpdateAvailable>;
+    const message = { type: APP_UPDATE_MESSAGE, to: 'b2' } satisfies Required<AppUpdateAvailable>;
     expect(Object.keys(postedUpdateMessage()).sort()).toEqual(Object.keys(message).sort());
   });
 
@@ -96,7 +91,7 @@ describe('AppUpdateAvailable is the message the service worker posts, and no mor
   // switches on the constant then ignores every update this worker sends — the discriminant is the
   // one field whose value is the contract, so it is read as a value and not as a key.
   test('the discriminant it emits is the constant consumers switch on', () => {
-    expect(postedUpdateMessage()['type']).toBe(JSON.stringify(APP_UPDATE_AVAILABLE));
+    expect(postedUpdateMessage()['type']).toBe(JSON.stringify(APP_UPDATE_MESSAGE));
   });
 });
 

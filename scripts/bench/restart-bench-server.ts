@@ -1,5 +1,5 @@
 // Child process for the 50k-socket forced-restart benchmark (docs/idea/14-roadmap.md, "Open at
-// 1.0.0"). Boots one real `sync` node — the actual shipped `createSyncNode`/`listenSyncNode`, the
+// 1.0.0"). Boots one real `sync` node — the actual shipped `syncNode`/`listenSyncNode`, the
 // real `AcceptBudget`, the real `ChannelHub` — over `Bun.serve`, plus two bench-only routes the
 // orchestrator uses to drive a consistency probe. Never imported: this is a measurement harness,
 // not a package, and it is not part of `x verify`.
@@ -11,12 +11,12 @@
 import {
   AcceptBudget,
   ChannelHub,
-  createSyncNode,
   DEFAULT_MAX_CONNECTIONS,
   InProcessTransport,
   LiveQueryRegistry,
   RingChangeBuffer,
   SocketRegistry,
+  syncNode,
 } from '@ultimat3/realtime/server';
 import { probeChange } from './restart-bench-channel';
 
@@ -61,7 +61,7 @@ if (import.meta.main) {
   // No channel list: `BENCH_CHANNEL` registered itself on import, and it declares no policy, so
   // every socket may join it.
   const hub = new ChannelHub({ transport, sockets });
-  const node = createSyncNode({
+  const node = syncNode({
     hub,
     // The whole swarm dials from loopback, so it is ONE anonymous principal: the per-principal caps
     // are sized to the node's own connection ceiling, so neither binds before `maxConnections` does

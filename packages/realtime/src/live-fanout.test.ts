@@ -11,7 +11,7 @@ import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition, LiveSubscription } from './live-contract';
 import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
 import type { BridgeResult } from './matcher-bridge';
-import { createEntry, type QueryEntry } from './query-window';
+import { type QueryEntry, queryEntry } from './query-window';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { SubscriberGate } from './subscriber-gate';
 import { decode, type Frame } from './sync-protocol';
@@ -68,7 +68,7 @@ function rig(
     visible: () => true,
     matcher: () => ({ entities: ['posts'], match }),
   };
-  const entry = createEntry('liveFeed:1', definition, input, definition.matcher(input));
+  const entry = queryEntry('liveFeed:1', definition, input, definition.matcher(input));
   entry.rows = seated;
   // As a landed read leaves it: a window no read has filled is never patched.
   entry.generation = 1;
@@ -281,7 +281,7 @@ describe('snapshotFrame is the one place the identity scope is decided', () => {
       matcher: () => ({ entities: ['posts'], match: () => patched }),
       rowEntity: () => 'posts',
     };
-    const entry = createEntry('liveFeed:1', definition, input, definition.matcher(input));
+    const entry = queryEntry('liveFeed:1', definition, input, definition.matcher(input));
 
     expect(snapshotFrame(entry, 's1', seated, makeCursor(entry.qid, '', seated, 0))).toMatchObject({
       entity: 'posts',
@@ -303,7 +303,7 @@ describe('a live row travels under its RECORD key', () => {
       rowEntity: () => 'posts',
       rowKey: () => composite,
     };
-    const entry = createEntry('liveFeed:1', definition, input, definition.matcher(input));
+    const entry = queryEntry('liveFeed:1', definition, input, definition.matcher(input));
     entry.rows = seated;
     entry.generation = 1;
     entry.applied = 1;

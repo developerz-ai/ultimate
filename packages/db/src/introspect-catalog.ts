@@ -1,5 +1,5 @@
 // Single responsibility: read the WHOLE schema out of `pg_catalog` — tables and everything that is
-// not a table — into one `CatalogDescription`, sorted in JS. `introspect()` beside it stays the
+// not a table — into one `CatalogDescription`, sorted in JS. `introspectSchema()` beside it stays the
 // entity-vocabulary reading drift compares to a snapshot; this is the catalog's own spelling, the
 // input of the schema dump, and comparable only to another reading of itself.
 

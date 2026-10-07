@@ -3,7 +3,7 @@
 // "nobody" must be `null`, never an actor with an empty id.
 
 import { describe, expect, test } from 'bun:test';
-import { anonymousActor, createContext, runWithContext, userActor } from '@ultimat3/core';
+import { anonymousActor, ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { ANONYMOUS_ADMIN_ACTOR, adminActorFrom, NO_REQUEST_ID, requestActor } from './actor';
 
 describe('unit · adminActorFrom', () => {
@@ -34,7 +34,7 @@ describe('unit · requestActor', () => {
   });
 
   test('inside a request it is that request’s actor, locale, zone and id', async () => {
-    const context = createContext({
+    const context = ctxOf({
       actor: userActor({ id: 'u_7', roles: ['ops'], orgId: 'org_1' }),
       locale: 'de',
       tz: 'Europe/Berlin',

@@ -4,9 +4,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL, NotImplementedError } from '@ultimat3/core';
-import { createRecordingClient, READONLY_ROLE } from '@ultimat3/db';
+import { READONLY_ROLE, recordingClient } from '@ultimat3/db';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
-import { createMcpServer, devTools, resolveQueryLimits } from '@ultimat3/mcp';
+import { devTools, mcpServer, resolveQueryLimits } from '@ultimat3/mcp';
 import { loadCodeFixes } from './error-fixes';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
@@ -126,7 +126,7 @@ function fakeHost(database: DatabaseTarget, calls: HostCalls): DevHost {
 }
 
 const serverFor = (database: DatabaseTarget, calls: HostCalls): McpServer =>
-  createMcpServer({ tools: devTools(fakeHost(database, calls)) });
+  mcpServer({ tools: devTools(fakeHost(database, calls)) });
 
 const noCalls = (): HostCalls => ({ runQuery: 0, runMigrations: 0 });
 
@@ -223,7 +223,7 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
   const limits = resolveQueryLimits(2);
 
   test('the statement runs inside BEGIN READ ONLY, timed out, as the SELECT-only role', async () => {
-    const db = createRecordingClient();
+    const db = recordingClient();
     const answer = await readOnlyRows(db, 'select id from posts', limits, READONLY_ROLE);
     expect(db.texts).toEqual([
       'BEGIN READ ONLY',
@@ -242,7 +242,7 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
   });
 
   test('the ceiling is asked of the SERVER, so a wide table is never paged into this process', async () => {
-    const db = createRecordingClient();
+    const db = recordingClient();
     await readOnlyRows(db, 'select * from events', limits, null);
 
     // The bound that matters is on the FETCH, not on a slice afterwards: without it the driver
@@ -253,7 +253,7 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
 
   test('EXPLAIN and SHOW have no cursor form, so they still run directly', async () => {
     for (const statement of ['explain select 1', 'show statement_timeout']) {
-      const db = createRecordingClient();
+      const db = recordingClient();
       const answer = await readOnlyRows(db, statement, limits, null);
       expect(db.texts).toContain(statement);
       expect(answer.guards.some((guard) => guard.startsWith('fetch:'))).toBe(false);
@@ -261,7 +261,7 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
   });
 
   test('no role means the layer is absent from guards, never assumed present', async () => {
-    const db = createRecordingClient();
+    const db = recordingClient();
     const answer = await readOnlyRows(db, 'select 1', limits, null);
     expect(db.texts).not.toContain('SET LOCAL ROLE "ultimate_readonly"');
     expect(answer.guards.some((guard) => guard.startsWith('role:'))).toBe(false);
@@ -271,7 +271,7 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
 
   test('one row past the ceiling comes back, so the tool can report truncation', async () => {
     // More rows than asked for: a server that over-delivers must still not widen the answer.
-    const db = createRecordingClient().on('FETCH', {
+    const db = recordingClient().on('FETCH', {
       rows: Array.from({ length: 50 }, (_, id) => ({ id, title: `p${id}` })),
     });
     const answer = await readOnlyRows(db, 'select id, title from posts', limits, null);
@@ -281,7 +281,7 @@ describe('unit · the host runs layers 1 and 2 on the real connection', () => {
   });
 
   test('the statement reaches the driver byte-for-byte', async () => {
-    const db = createRecordingClient();
+    const db = recordingClient();
     const sql = "select 'delete from posts' as note";
     await readOnlyRows(db, sql, limits, null);
     // Inside the cursor now, but still verbatim — stripping it would run

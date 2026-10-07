@@ -97,7 +97,7 @@ export const examplePageTest = (
 ${sortedImports([
   `import { driver } from '@${app.kebab}/db';`,
   `import { useT } from '@${app.kebab}/i18n';`,
-  "import { createContext, frozenClock, isUltimateError, runWithContext } from '@ultimat3/core';",
+  "import { ctxOf, frozenClock, isUltimateError, runWithContext } from '@ultimat3/core';",
   "import { testActor } from '@ultimat3/policy';",
   "import { dbUnavailable } from '@ultimat3/db';",
   "import { afterEach, expect, renderRoute, unitTest } from '@ultimat3/testing';",
@@ -125,7 +125,7 @@ const DAY_MS = 86_400_000;
 const post = (title: string, daysAgo: number, minor = 0) => {
   const clock = frozenClock(new Date(Date.now() - daysAgo * DAY_MS));
   const draft = { orgId: DEMO_ORG_ID, title, price: { minor, currency: 'USD' } };
-  return runWithContext(createContext({ actor: viewer, clock }), () => repo.insert(draft));
+  return runWithContext(ctxOf({ actor: viewer, clock }), () => repo.insert(draft));
 };
 
 /** The figure a tile shows, read off the markup by the \`stat\` the page gave it. */

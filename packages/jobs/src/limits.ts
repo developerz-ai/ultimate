@@ -119,20 +119,20 @@ export function tenantKeyFrom(actor: { readonly orgId?: string } | undefined): s
   return actor?.orgId ?? NO_TENANT;
 }
 
-export function createLimiter(
+export function concurrencyLimiter(
   config: LimitConfig,
   clock: Clock = systemClock,
   options: { readonly maxTenants?: number | undefined } = {},
 ): Limiter {
   const requested = options.maxTenants ?? DEFAULT_MAX_LIMIT_TENANTS;
-  // Refused where it was written, for the reason `createPacer` refuses `rate: 0`: `Math.floor(NaN)`
+  // Refused where it was written, for the reason `backfillPacer` refuses `rate: 0`: `Math.floor(NaN)`
   // is `NaN` and `Math.floor(Infinity)` is `Infinity`, so BOTH cap comparisons below read false and
   // the option silently means "no cap at all" — the one setting this bound exists to make
   // unreachable. `Number(process.env.X)` is how a deployment writes the first of those.
   assert(
     Number.isFinite(requested),
     `job limiter maxTenants is ${String(requested)}, which caps nothing — the per-tenant maps would grow without a bound`,
-    `pass a finite maxTenants to createLimiter(...), or omit it for the default ${String(DEFAULT_MAX_LIMIT_TENANTS)}`,
+    `pass a finite maxTenants to concurrencyLimiter(...), or omit it for the default ${String(DEFAULT_MAX_LIMIT_TENANTS)}`,
   );
   const maxTenants = Math.max(1, Math.floor(requested));
   const evictTo = Math.max(1, Math.floor(maxTenants * 0.9));
@@ -154,12 +154,12 @@ export function createLimiter(
     ['global', config.global],
     ['ratePerTenant.limit', config.ratePerTenant?.limit],
   ] as const) {
-    if (value !== undefined) finiteCount('createLimiter', option, value);
+    if (value !== undefined) finiteCount('concurrencyLimiter', option, value);
   }
   // Out of the loop because it is also READ, by `sweep`: the screened value is the one it reads.
   // An absent rate window is 0, which `sweep` treats as "every stamp is spent".
   const rateWindowMs = finiteCount(
-    'createLimiter',
+    'concurrencyLimiter',
     'ratePerTenant.windowMs',
     config.ratePerTenant?.windowMs ?? 0,
   );

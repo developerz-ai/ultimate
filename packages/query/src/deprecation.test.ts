@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Deprecation } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -35,7 +35,7 @@ const listOrders = (deprecated?: Deprecation) =>
   }).named('listOrders');
 
 const read = (deprecated?: Deprecation): Promise<Response> =>
-  createServer({
+  httpServer({
     routes: [toQueryRoute(listOrders(deprecated))],
     config: oneProcess(),
     hooks: { authenticate: () => reader },

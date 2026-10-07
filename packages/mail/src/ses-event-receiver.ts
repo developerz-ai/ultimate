@@ -73,14 +73,14 @@ function defaultCertificateFetch(fetch: MailFetch): SnsCertificateFetch {
   };
 }
 
-export function createSesEventReceiver(options: SesEventReceiverOptions): DeliveryReceiver {
+export function sesEventReceiver(options: SesEventReceiverOptions): DeliveryReceiver {
   const topicArns = new Set(options.topicArns);
   if (topicArns.size === 0 || [...topicArns].some((arn) => snsTopicRegion(arn) === undefined)) {
     throw deliveryEventConfig();
   }
-  const maxBytes = resolveBodyLimit('createSesEventReceiver', options.maxBytes);
+  const maxBytes = resolveBodyLimit('sesEventReceiver', options.maxBytes);
   const toleranceMs = finiteCount(
-    'createSesEventReceiver',
+    'sesEventReceiver',
     'toleranceMs',
     options.toleranceMs ?? DEFAULT_SNS_TOLERANCE_MS,
     1,
@@ -135,8 +135,7 @@ export function createSesEventReceiver(options: SesEventReceiverOptions): Delive
 
 function deliveryEventConfig(): ConfigInvalidError {
   return new ConfigInvalidError({
-    cause:
-      'createSesEventReceiver needs at least one topic ARN, and every one must be an SNS topic ARN',
-    fix: "createSesEventReceiver({ topicArns: ['arn:aws:sns:us-east-1:123456789012:ses-events'] }) — the topics this route is subscribed to (aws sns list-topics)",
+    cause: 'sesEventReceiver needs at least one topic ARN, and every one must be an SNS topic ARN',
+    fix: "sesEventReceiver({ topicArns: ['arn:aws:sns:us-east-1:123456789012:ses-events'] }) — the topics this route is subscribed to (aws sns list-topics)",
   });
 }

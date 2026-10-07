@@ -5,7 +5,7 @@
 
 import { isUltimateError } from '@ultimat3/core';
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, json } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse } from '@ultimat3/http';
 import type { SiteAsset, SiteAssetTable } from './site-assets';
 import { parseHashedAssetUrl, SITE_ASSET_BASE_PATH } from './site-assets';
 
@@ -13,7 +13,7 @@ import { parseHashedAssetUrl, SITE_ASSET_BASE_PATH } from './site-assets';
 export const SITE_ASSET_CACHE: CacheHint = { mode: 'immutable' };
 
 const notFound = (code: string, cause: string, fix: string): Response =>
-  json({ ok: false, error: { code, cause, fix } }, { status: 404 });
+  jsonResponse({ ok: false, error: { code, cause, fix } }, { status: 404 });
 
 /** One `bytes=` range, resolved against the file's size; `null` when it cannot be satisfied. */
 export function byteRange(

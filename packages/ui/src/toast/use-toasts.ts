@@ -1,4 +1,4 @@
-// The reactive shell over `createToastStore`, and the whole of what it adds: the queue lands in a
+// The reactive shell over `toastStore`, and the whole of what it adds: the queue lands in a
 // signal, so `<Toaster>` re-renders when a message arrives or a dwell runs out.
 //
 // The subscription lives in an EFFECT, which is the package's one seam for DOM-only work: a server

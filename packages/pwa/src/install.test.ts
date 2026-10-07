@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { BeforeInstallPromptEventLike, InstallHost } from './install';
-import { createInstallController, iosInstallGuidance, MIN_ENGAGEMENT_MS } from './install';
+import { installController, iosInstallGuidance, MIN_ENGAGEMENT_MS } from './install';
 
 const IOS_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
 
@@ -42,10 +42,10 @@ function promptEvent(outcome: 'accepted' | 'dismissed'): BeforeInstallPromptEven
   };
 }
 
-describe('createInstallController', () => {
+describe('installController', () => {
   test('captures beforeinstallprompt and suppresses the browser bar', () => {
     const host = fakeHost(() => 0);
-    const controller = createInstallController({ host });
+    const controller = installController({ host });
     expect(controller.canInstall()).toBe(false);
 
     const event = promptEvent('accepted');
@@ -58,7 +58,7 @@ describe('createInstallController', () => {
   test('never prompts on first paint', async () => {
     let now = 0;
     const host = fakeHost(() => now);
-    const controller = createInstallController({ host });
+    const controller = installController({ host });
     host.fire('beforeinstallprompt', promptEvent('accepted'));
 
     expect(await controller.prompt()).toBe('too-early');
@@ -68,7 +68,7 @@ describe('createInstallController', () => {
   });
 
   test('reports unavailable when the platform never offered a prompt', async () => {
-    const controller = createInstallController({ host: fakeHost(() => 1_000_000) });
+    const controller = installController({ host: fakeHost(() => 1_000_000) });
     expect(await controller.prompt()).toBe('unavailable');
   });
 });
@@ -84,7 +84,7 @@ describe('iosInstallGuidance', () => {
 describe('after the app is installed', () => {
   test('appinstalled clears the deferred prompt — no "Install" on an installed app', async () => {
     const host = fakeHost(() => MIN_ENGAGEMENT_MS + 1);
-    const controller = createInstallController({ host });
+    const controller = installController({ host });
     host.fire('beforeinstallprompt', promptEvent('accepted'));
     expect(controller.canInstall()).toBe(true);
     expect(controller.installed()).toBe(false);
@@ -99,7 +99,7 @@ describe('after the app is installed', () => {
 
   test('an event with no prompt() is not a beforeinstallprompt and is ignored', () => {
     const host = fakeHost(() => 0);
-    const controller = createInstallController({ host });
+    const controller = installController({ host });
 
     host.fire('beforeinstallprompt', { preventDefault: (): void => undefined });
 
@@ -110,7 +110,7 @@ describe('after the app is installed', () => {
 describe('the controller signals', () => {
   test('subscribers see each change once, and unsubscribing stops them', () => {
     const host = fakeHost(() => 0);
-    const controller = createInstallController({ host });
+    const controller = installController({ host });
     const seen: boolean[] = [];
     const off = controller.canInstall.subscribe((value) => seen.push(value));
 
@@ -129,7 +129,7 @@ describe('the controller signals', () => {
 describe('dispose', () => {
   test('detaches both listeners, so a disposed controller stops reacting', () => {
     const host = fakeHost(() => 0);
-    const controller = createInstallController({ host });
+    const controller = installController({ host });
 
     controller.dispose();
     host.fire('beforeinstallprompt', promptEvent('accepted'));
@@ -149,13 +149,13 @@ describe('dispose', () => {
 describe('a non-finite engagement threshold is refused', () => {
   test('a NaN minEngagementMs is refused instead of prompting on first paint', () => {
     expect(() =>
-      createInstallController({ host: fakeHost(() => 0), minEngagementMs: Number.NaN }),
+      installController({ host: fakeHost(() => 0), minEngagementMs: Number.NaN }),
     ).toThrow(/minEngagementMs/);
   });
 
   test('zero still means "as soon as the browser offers"', async () => {
     const host = fakeHost(() => 0);
-    const controller = createInstallController({ host, minEngagementMs: 0 });
+    const controller = installController({ host, minEngagementMs: 0 });
     host.fire('beforeinstallprompt', promptEvent('accepted'));
     expect(await controller.prompt()).toBe('accepted');
   });

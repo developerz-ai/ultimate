@@ -110,18 +110,18 @@ describe('this repository', () => {
       let code: string;
       let used: string;
       try {
-        code = await build('consumer', 'uuid');
+        code = await build('consumer', 'uuidV7');
         // The other direction, and the reason an unlisted module is safe: a chunk that USES the
         // module's bindings keeps its import-time statement. `runWithContext` is the only way a
         // context exists, so the provider install rides along exactly where it can answer.
-        used = await build('context-user', 'runWithContext, createContext, logger');
+        used = await build('context-user', 'runWithContext, ctxOf, logger');
       } finally {
         await rm(BUILD_FIXTURE, { recursive: true, force: true });
       }
       expect(used).toContain('packages/core/src/context.ts');
       expect(used).toContain('setLoggerContextFields(() =>');
 
-      // `uuid` reaches them through nothing — that is the point. They are in the chunk because
+      // `uuidV7` reaches them through nothing — that is the point. They are in the chunk because
       // `src/index.ts` imports them bare and the array lists them, and for no other reason.
       for (const module of ['core-error-codes.ts', 'schema-error-codes.ts']) {
         expect(code, `${module} must survive a browser build`).toContain(`core/src/${module}`);

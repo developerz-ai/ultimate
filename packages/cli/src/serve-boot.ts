@@ -49,7 +49,7 @@ const LISTENING_ROLES: readonly Role[] = ['web', 'sync'];
 
 /**
  * `app.config.ts`'s `drain`, applied to the WHOLE process rather than only to the web server that
- * `createServer` hands it to. A role nothing routes to gets no readiness grace at all: the grace
+ * `httpServer` hands it to. A role nothing routes to gets no readiness grace at all: the grace
  * holds `/readyz` at 503 with the listener open so the endpoints catch up, and a worker has neither
  * — it only went on claiming jobs for those seconds, then aborted them at the drain (s1-con #7).
  *

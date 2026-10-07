@@ -156,7 +156,7 @@ const repoTest = (
 ): string => `// The ${name.kebab} repo against the in-memory driver: the contract Postgres serves, with no
 // database. What it pins is what the repo cannot show by being read — whose rows a call reaches.
 ${sortedImports([
-  "import { createContext, frozenClock, runWithContext } from '@ultimat3/core';",
+  "import { ctxOf, frozenClock, runWithContext } from '@ultimat3/core';",
   "import { testActor } from '@ultimat3/policy';",
   "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
   `import { driver } from '${dbModule}';`,
@@ -171,7 +171,7 @@ const clock = frozenClock('2026-01-01T00:00:00.000Z');
 
 /** What a request is to the handle: an actor, whose org every read and write runs under. */
 const inOrg = <T>(org: string, run: () => Promise<T>): Promise<T> =>
-  runWithContext(createContext({ actor: testActor('member', { orgId: org }).actor, clock }), run);
+  runWithContext(ctxOf({ actor: testActor('member', { orgId: org }).actor, clock }), run);
 
 const draft = (title: string) => ({ orgId, title, price: { minor: 1200, currency: 'USD' } });
 

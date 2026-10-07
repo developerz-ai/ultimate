@@ -230,6 +230,7 @@ describe('the tables that live inside a script', () => {
       'scripts/lib/gated-apps.ts',
       'scripts/posix-relative.ts',
       'scripts/set-cookie-literals.ts',
+      'scripts/factory-names-pins.ts',
       'scripts/wiki-fences-backlog.ts',
     ]);
   });

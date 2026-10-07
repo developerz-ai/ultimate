@@ -15,7 +15,7 @@ export interface RetryMemo<T> {
 }
 
 /**
- * `start` runs at most once per SUCCESS. `@ultimat3/db`'s `createPgliteClient` states the rule this
+ * `start` runs at most once per SUCCESS. `@ultimat3/db`'s `pgliteClient` states the rule this
  * generalises — "a failed boot must not be cached" — and the clearing handler is attached at
  * creation for the reason that matters: it therefore runs ahead of every caller's own `await`
  * continuation, so by the time anyone sees the rejection the slot is already empty and the next

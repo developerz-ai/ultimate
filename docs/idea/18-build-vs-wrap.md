@@ -125,7 +125,7 @@ of that, and everything in it would have to be re-explained to the agent reading
 
 **The provider layer is a real seam, and the port is the wider one.** `Provider` in
 [`packages/ai/src/provider.ts`](../../packages/ai/src/provider.ts) is four members — `name`,
-`models`, `generate`, `stream` — sitting behind `createGateway({ providers })`, which is exactly the
+`models`, `generate`, `stream` — sitting behind `providerGateway({ providers })`, which is exactly the
 driver/transport shape the criterion admits a dependency at. Two things Ultimate's port carries that
 the SDK's usage type does not, and both are load-bearing:
 

@@ -7,11 +7,11 @@
 // owns what a driver does with the outcome. A `-fixture.ts` file is excluded from the tarball.
 
 import type { Ctx, FrozenClock } from '@ultimat3/core';
-import { assert, createContext, frozenClock } from '@ultimat3/core';
+import { assert, ctxOf, frozenClock } from '@ultimat3/core';
 import type { JobHandle, StepStore } from '@ultimat3/jobs';
-import { createStepRunner, isStepSuspension, memoryStepStore } from '@ultimat3/jobs';
+import { isStepSuspension, memoryStepStore, stepRunner } from '@ultimat3/jobs';
 import type { BulkNotifyChannel, NotifyChannel } from './channel';
-import { bulkChannel, channel } from './channel';
+import { bulkChannel, deliveryChannel } from './channel';
 import type { NotifyPayload, NotifyReport } from './plan';
 
 /** One `deliver` call, flattened so a test asserts on data rather than on a mock's call log. */
@@ -45,11 +45,11 @@ export function recorder(): Recorder {
   return {
     sent,
     one: (name) =>
-      channel<TestParams>(name, ({ recipient, batch }) => {
+      deliveryChannel<TestParams>(name, ({ recipient, batch }) => {
         sent.push({ channel: name, to: [recipient.id], events: batch.map((e) => e.key) });
       }),
     broken: (name, reject) =>
-      channel<TestParams>(name, () => {
+      deliveryChannel<TestParams>(name, () => {
         throw reject();
       }),
     many: (name) =>
@@ -95,7 +95,7 @@ const MAX_ATTEMPTS = 20;
  */
 export function driver(options: { store?: StepStore; runId?: string } = {}): Driver {
   const clock = frozenClock(START);
-  const ctx = createContext({ clock });
+  const ctx = ctxOf({ clock });
   const store = options.store ?? memoryStepStore();
   const runId = options.runId ?? RUN_ID;
   let attempts = 0;
@@ -105,7 +105,7 @@ export function driver(options: { store?: StepStore; runId?: string } = {}): Dri
     payload: NotifyPayload<TestParams>,
   ): Promise<NotifyReport | undefined> => {
     attempts += 1;
-    const runner = createStepRunner({ runId, jobName: handle.name, store, clock });
+    const runner = stepRunner({ runId, jobName: handle.name, store, clock });
     try {
       return (await handle.run({
         input: payload,

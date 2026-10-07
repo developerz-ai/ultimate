@@ -13,7 +13,7 @@ is its own entry point and not part of the barrel.
 | Rule | Detail |
 |---|---|
 | No mocks of the DB | clone a template database; `template-db.ts` is the only DB path |
-| No wall clock | `frozenClock` / `advanceClock`; `Date.now()` is frozen by the preload |
+| No wall clock | `withFrozenClock` / `advanceClock`; `Date.now()` is frozen by the preload |
 | Frozen ≠ different | `globalThis.Date` becomes a subclass, so `FrozenDate[Symbol.hasInstance]` brands on the `[[DateValue]]` slot — `Date.prototype.getTime.call(value)` throws or it doesn't. |
 | Slot, not prototype | the brand is cross-realm on purpose: `instanceof RealDate` misses a `node:vm` or worker Date, and `Object.prototype.toString` is spoofable by `Symbol.toStringTag: 'Date'`. Only the slot is both |
 | No unmocked egress | `sealed-network.ts` seals `fetch`; `sealed-sockets.ts` `WebSocket`, `Bun.connect` (not loopback); a miss is `X_TEST_NETWORK_SEALED` |
@@ -36,7 +36,7 @@ is its own entry point and not part of the barrel.
 | Test names | the filename picks the step; a typed helper prefixes its own name. `testName(type, name)` is for an outer `describe` only — never on the inner `test` too, the prefix would print twice |
 | One body shape, five registrars | `test` (= `fixtureTest`), `unitTest`, `contractTest`, `liveTest`, `jobTest` all take `FixtureBody` + `{ timeoutMs }`: `unitTest('…', async ({ runJobs }) => …)`. Never `describe(testName('unit', …))` + `test` to get a fixture |
 | `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture |
-| A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `createWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Never `executeJob` on a bare `claim()`. The lease and slot renew every 1 ms of TEST time (`RENEW_MS`, `frozen-scheduler.ts` on `onClockMoved`), never on a wall-clock interval: cancel, `clock.advance(1)`, and the body hears `X_JOB_LEASE_LOST` — no hand-built worker |
+| A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `jobWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Never `executeJob` on a bare `claim()`. The lease and slot renew every 1 ms of TEST time (`RENEW_MS`, `frozen-scheduler.ts` on `onClockMoved`), never on a wall-clock interval: cancel, `clock.advance(1)`, and the body hears `X_JOB_LEASE_LOST` — no hand-built worker |
 | Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so a core test never loads it |
 | An island test is `describeIslandState` | one block per declared state: mounted in `beforeAll` (60 s), disposed in `afterAll`, one build per file. `mountIslandState` + `using` for one test's own mount; an undeclared id is `X_TEST_ISLAND_STATE_UNKNOWN` |
 | An authenticator is tested with `authRequest()` | the hook's own two arguments, real — never `as unknown as Parameters<…>` |
@@ -74,7 +74,7 @@ is its own entry point and not part of the barrel.
 | A boot that rejects is its own teardown | `acquireWorkerDatabase`, `seed` or `boot` throwing returns no `BootedHarness`, so no caller can ever reach `close()` |
 | A found template is not a migrated one | `template-db.ts` tolerates "already exists" for the `CREATE DATABASE` alone. `config.migrate` runs unconditionally; drop + clone hold the same lock |
 | Fixture teardown | a fixture that installs process-global state (the ambient job or mail driver) implements `Symbol.dispose` / `Symbol.asyncDispose` and restores what was there |
-| Building one by hand | `createRunJobs()` outside a fixture body is not disposed for you — dispose it in `afterEach`, or the next file inherits your queue and your event bus |
+| Building one by hand | `testJobs()` outside a fixture body is not disposed for you — dispose it in `afterEach`, or the next file inherits your queue and your event bus |
 | Factory strategy | an association is built with the strategy that asked for it: `build()` never reaches a database, `create()` writes the parent first. Never a third strategy |
 | One write seam | `usePersister` is the only place `create()` writes. A factory that took a repo argument would put the seam at every call site |
 | Factory seeds | derived from the table name unless given, so two entities never draw the same uuid stream. `reset()` cascades into associated parents — a half-reset row is worse than none |
@@ -110,7 +110,7 @@ is its own entry point and not part of the barrel.
 
 ## The frozen instant and the seed are screened
 
-`installDeterminism({ now })`, `setFrozenClock`, `frozenClock` and `advanceClock` go through one
+`installDeterminism({ now })`, `setFrozenClock`, `withFrozenClock` and `advanceClock` go through one
 `instantMs`: an unreadable instant would make `Date.now()` answer `NaN` for every later file. The
 seed is screened too — `seed >>> 0` maps `NaN`, `0.5` and `2 ** 32` onto seed 0 silently.
 `finiteOption`/`finiteCount` from `@ultimat3/core` are the one form; `determinism-bounds.test.ts`

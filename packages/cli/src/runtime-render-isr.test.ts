@@ -6,9 +6,9 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { invalidateTags, isolateGraph, tag } from '@ultimat3/cache';
 import type { LogSink } from '@ultimat3/core';
 import { setLogSink } from '@ultimat3/core';
-import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
+import { defineHttpConfig, httpServer, setRedirect } from '@ultimat3/http';
 import { clearRoutes, defineRoute, h, registerRoute } from '@ultimat3/render';
-import { createIsrController } from '@ultimat3/render/server';
+import { isrController } from '@ultimat3/render/server';
 import { attachedIsr } from './runtime-isr';
 import { appRoutes } from './runtime-render';
 
@@ -50,12 +50,12 @@ afterEach(() => {
 
 afterAll(() => {
   // The revalidator slot is process-global: hand it back empty, through the same detach.
-  createIsrController().attach()();
+  isrController().attach()();
   restoreGraph();
 });
 
 const serverOver = (routes: ReturnType<typeof appRoutes>) =>
-  createServer({
+  httpServer({
     routes,
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

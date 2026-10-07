@@ -6,7 +6,6 @@ import {
   advanceClock,
   assertDeterministic,
   captureDeterminism,
-  frozenClock,
   frozenNow,
   installDeterminism,
   isDeterminismInstalled,
@@ -15,6 +14,7 @@ import {
   seededRandom,
   seededUuid,
   setFrozenClock,
+  withFrozenClock,
 } from './determinism';
 
 // Self-sufficient: the preload installs this globally, but a single test file must be runnable on
@@ -36,9 +36,11 @@ describe('unit · determinism', () => {
     expect(frozenNow().toISOString()).toBe('2026-01-04T00:00:00.000Z');
   });
 
-  test('frozenClock scopes the clock to one body and restores it', async () => {
+  test('withFrozenClock scopes the clock to one body and restores it', async () => {
     setFrozenClock('2026-01-01T00:00:00.000Z');
-    const inside = await frozenClock('2030-06-01T12:00:00.000Z', () => new Date().toISOString());
+    const inside = await withFrozenClock('2030-06-01T12:00:00.000Z', () =>
+      new Date().toISOString(),
+    );
     expect(inside).toBe('2030-06-01T12:00:00.000Z');
     expect(new Date().toISOString()).toBe('2026-01-01T00:00:00.000Z');
   });
@@ -150,14 +152,14 @@ describe('unit · determinism', () => {
     }
   });
 
-  test('frozenClock announces its move in, and its move back out', async () => {
+  test('withFrozenClock announces its move in, and its move back out', async () => {
     // The frozen scheduler renews leases on `onClockMoved`: a jump it never hears is a lease that
     // never renews inside the body, and a restore it never hears leaves its timers on the body's time.
     setFrozenClock('2026-01-01T00:00:00.000Z');
     const heard: string[] = [];
     const stop = onClockMoved(() => heard.push(frozenNow().toISOString()));
     try {
-      await frozenClock('2030-06-01T00:00:00.000Z', () => undefined);
+      await withFrozenClock('2030-06-01T00:00:00.000Z', () => undefined);
     } finally {
       stop();
     }
@@ -207,7 +209,7 @@ describe('unit · determinism', () => {
     let ran = false;
     try {
       await expect(
-        frozenClock('2030-06-01T00:00:00.000Z', () => {
+        withFrozenClock('2030-06-01T00:00:00.000Z', () => {
           ran = true;
         }),
       ).rejects.toThrow('listener refused the move');

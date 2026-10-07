@@ -4,7 +4,7 @@
 // deliberately does not, was unasserted.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createLogger, frozenClock } from '@ultimat3/core';
+import { frozenClock, structuredLogger } from '@ultimat3/core';
 import {
   isMemoryDriver,
   isUnconfiguredDriver,
@@ -71,7 +71,7 @@ describe('the ambient driver slot', () => {
 
   test('the last setMailDriver wins — one driver per process', () => {
     const first = memoryMailDriver();
-    const second = logMailDriver(createLogger({ writer: () => undefined }));
+    const second = logMailDriver(structuredLogger({ writer: () => undefined }));
     setMailDriver(first);
     setMailDriver(second);
     expect(tryMailDriver()).toBe(second);
@@ -85,7 +85,9 @@ describe('the log driver', () => {
       lines,
       // The REAL logger with an injected writer, not a stand-in for it: redaction, level filtering
       // and field merging are core's, and a hand-written `info()` would prove none of them ran.
-      driver: logMailDriver(createLogger({ level: 'info', writer: (line) => lines.push(line) })),
+      driver: logMailDriver(
+        structuredLogger({ level: 'info', writer: (line) => lines.push(line) }),
+      ),
     };
   };
 
@@ -226,7 +228,7 @@ describe('the unconfigured driver', () => {
   test('isUnconfiguredDriver answers true for it alone', () => {
     expect(isUnconfiguredDriver(unconfiguredMailDriver('staging'))).toBe(true);
     expect(isUnconfiguredDriver(memoryMailDriver())).toBe(false);
-    expect(isUnconfiguredDriver(logMailDriver(createLogger({ writer: () => undefined })))).toBe(
+    expect(isUnconfiguredDriver(logMailDriver(structuredLogger({ writer: () => undefined })))).toBe(
       false,
     );
     // Keyed on the name, so a driver that borrows it reads as unconfigured — which is the point:

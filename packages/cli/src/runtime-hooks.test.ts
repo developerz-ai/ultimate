@@ -8,7 +8,7 @@ import {
   action,
   configureActionPathStyle,
   registerAction,
-  resetRegistry,
+  resetActions,
   t,
   toRoute,
 } from '@ultimat3/action';
@@ -16,8 +16,8 @@ import { NotImplementedError, userActor } from '@ultimat3/core';
 import type { AuthzDecision, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import {
   configureAuthenticator,
-  createRequestContext,
   defineHttpConfig,
+  requestContext,
   resetAuthenticator,
 } from '@ultimat3/http';
 import {
@@ -33,7 +33,7 @@ import { devHooks } from './runtime-hooks';
 import { appRoutes } from './runtime-render';
 
 const context = (path: string): RequestContext =>
-  createRequestContext({
+  requestContext({
     url: new URL(`http://dev.test${path}`),
     method: 'GET',
     role: 'web',
@@ -54,7 +54,7 @@ const decide = async (route: Route, ctx: RequestContext): Promise<AuthzDecision>
 };
 
 afterEach(() => {
-  resetRegistry();
+  resetActions();
   clearRoutes();
   clearPermissions();
   clearRoles();
@@ -186,7 +186,7 @@ describe('unit · the dev-notice seam is passed in, never reached for', () => {
 // The fourth seam: what a miss means. Every web role boots through these hooks, so a caller that
 // derived an action's URL under the wrong path style is told so in `x dev` and in production alike.
 describe('unit · a route miss is explained by the action surface', () => {
-  afterEach(() => resetRegistry());
+  afterEach(() => resetActions());
 
   test("an action's path under the style this app does not serve is X_CONTRACT_DRIFT", () => {
     configureActionPathStyle('readable');

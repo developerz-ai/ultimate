@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { systemClock, withSpan } from '@ultimat3/core';
-import { createCdnTier } from './cdn';
+import { cdnTier } from './cdn';
 import { CacheDriverUnavailableError, CacheTagUnknownError } from './errors';
 import { dependentsOfKind, isolateGraph, registerDependent, resetGraph } from './graph';
 import type { InvalidationEvent } from './invalidate';
@@ -15,9 +15,9 @@ import {
   registerTier,
   resetTiers,
 } from './invalidate';
-import { createLruTier } from './lru';
+import { lruTier } from './lru';
 import type { RedisLike } from './redis';
-import { createRedisTier, REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT } from './redis';
+import { REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT, redisTier } from './redis';
 import { declareTags, isolateDeclaredTags, knownTags, resetDeclaredTags, tag } from './tags';
 import { bestEffort, recentTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
@@ -154,13 +154,13 @@ afterAll(restoreRegistries);
 
 describe('invalidateTags fan-out', () => {
   test('reaches every registered tier and reports what each one dropped', async () => {
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     // `buildId: null` so the canned member below can name the value key without reading
     // `appVersion()`; the namespace is `redis.test.ts`'s subject, not this file's.
     const client = fakeRedis();
-    const redis = createRedisTier({ client, buildId: null });
+    const redis = redisTier({ client, buildId: null });
     const cdn = cdnSpy();
-    // Registered out of order on purpose: the stack must normalise to TIER_ORDER.
+    // Registered out of order on purpose: the stack must normalise to CACHE_TIERS order.
     registerTier(cdn);
     registerTier(redis);
     registerTier(lru);
@@ -188,7 +188,7 @@ describe('invalidateTags fan-out', () => {
   });
 
   test('a failing tier is reported, never thrown — the write that triggered it must not fail', async () => {
-    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     registerTier(brokenRedisTier());
     await lru.set('k', 1, { tags: [tag('post')] });
@@ -283,7 +283,7 @@ describe('invalidateTags fan-out', () => {
 
 describe('recentInvalidations log', () => {
   test('an invalidation is recorded with its wire tags, its duration and the keys every tier reported', async () => {
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     await lru.set('feed', ['a'], { tags: [tag('post')] });
 
@@ -296,11 +296,11 @@ describe('recentInvalidations log', () => {
   });
 
   test('busted includes ISR paths, live queries and what the CDN tier actually purged, with no duplicates', async () => {
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     const purged: string[] = [];
     registerTier(lru);
     registerTier(
-      createCdnTier({
+      cdnTier({
         purge: {
           name: 'recording',
           purge: (keys) => {
@@ -330,7 +330,7 @@ describe('recentInvalidations log', () => {
     // purged it, so `x cache bust --json` named `/blog/hello` cleared while the edge held it
     // for its whole s-maxage. A partial bust that reads as a clean one is the failure the log
     // exists to catch.
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     registerDependent([tag('post', '1')], { kind: 'cdn-path', id: '/blog/hello' });
 
@@ -342,7 +342,7 @@ describe('recentInvalidations log', () => {
   });
 
   test('newest first, and the log never grows past the cap (drive it past 100)', async () => {
-    const lru = createLruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
 
     for (let i = 0; i < 105; i += 1) {
@@ -356,7 +356,7 @@ describe('recentInvalidations log', () => {
   });
 
   test('source is the calling span name when invalidateTags runs inside a withSpan call', async () => {
-    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
 
     await withSpan('job.reindex', () => invalidateTags([tag('post')]));
@@ -366,7 +366,7 @@ describe('recentInvalidations log', () => {
   });
 
   test('source falls back to the literal invalidateTags when there is no active span', async () => {
-    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
 
     await invalidateTags([tag('post')]);
@@ -387,7 +387,7 @@ describe('recentInvalidations log', () => {
   });
 
   test('recentInvalidations hands back a copy: mutating it does not change the next answer', async () => {
-    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     await invalidateTags([tag('post')]);
 
@@ -405,7 +405,7 @@ describe('recentInvalidations log', () => {
   });
 
   test('resetTiers clears the log', async () => {
-    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     await invalidateTags([tag('post')]);
     expect(recentInvalidations().length).toBe(1);
@@ -416,7 +416,7 @@ describe('recentInvalidations log', () => {
   });
 
   test('invalidateWireTags records exactly one event, not two', async () => {
-    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
 
     await invalidateWireTags(['post']);
@@ -425,7 +425,7 @@ describe('recentInvalidations log', () => {
   });
 
   test('at is an ISO-8601 timestamp from the frozen system clock', async () => {
-    const lru = createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
+    const lru = lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 });
     registerTier(lru);
     const before = systemClock.now().toISOString();
 
@@ -457,7 +457,7 @@ describe('the suite baseline this file hands back', () => {
     registerRevalidator((path) => {
       revalidated.push(path);
     });
-    registerTier(createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 }));
+    registerTier(lruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 }));
     registerDependent([tag('post')], { kind: 'isr-route', id: '/neighbour' });
     await invalidateTags([tag('post')]);
     await bestEffort('redis', 'get', 'k', () => Promise.reject(new Error('neighbour boom')));

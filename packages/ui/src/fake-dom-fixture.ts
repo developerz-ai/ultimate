@@ -2,7 +2,7 @@
 // against: focus that a disabled control silently refuses, `document.activeElement`, `contains`,
 // and `querySelectorAll` for the selector grammar these helpers actually pass. Not exported from
 // `index.ts` — the alternative is a DOM dependency, and the bugs it catches are the ones that only
-// exist because nothing ever called `createRovingTabindex` with elements attached.
+// exist because nothing ever called `rovingTabindex` with elements attached.
 
 /** The subset of a selector these helpers use: comma groups of tag + `[attr]` + `:not(...)`. */
 const PART = /\[[^\]]*\]|:not\([^)]*\)/g;
@@ -30,7 +30,7 @@ function compoundMatches(element: FakeElement, compound: string): boolean {
 
 /** Listener book shared by the element and the document: registration only, and NO bubbling — a
  * listener on a node never sees an event dispatched somewhere else, which is the whole point of
- * the question `createFocusTrap` gets wrong. */
+ * the question `focusTrap` gets wrong. */
 class Listeners {
   readonly listeners = new Map<string, Set<(event: unknown) => void>>();
 
@@ -181,7 +181,7 @@ export interface InstalledDom {
 
 /**
  * Publish `document` and `HTMLElement` globally for the duration of one test. Both are needed:
- * `createRovingTabindex` reads `document.activeElement` and narrows it with `instanceof
+ * `rovingTabindex` reads `document.activeElement` and narrows it with `instanceof
  * HTMLElement`, so a fake that is not the global class is silently treated as "focus is nowhere".
  * ALWAYS restored — `solid()` decides a render is a server render by `document` being absent, and
  * a leaked one turns every later component test in the process into `X_UI_RUNTIME_MISSING`.

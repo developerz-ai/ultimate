@@ -6,12 +6,12 @@ Postgres queue by default, one driver interface, durable steps. Why an outbox an
 
 `run()` is re-entered from the top on every attempt. Completed steps are **not re-executed** — their stored results are returned.
 
-Sketch of `createStepRunner` ([`packages/jobs/src/steps.ts`](../../packages/jobs/src/steps.ts)) —
+Sketch of `stepRunner` ([`packages/jobs/src/steps.ts`](../../packages/jobs/src/steps.ts)) —
 the shape, not the source:
 
 ```text
 // one responsibility: replay a run deterministically
-createStepRunner(options) => {
+stepRunner(options) => {
     async run<T>(name: string, fn: () => Promise<T>): Promise<T> {
       assertUniqueStepName(jobId, name);              // X_STEP_DUPLICATE
       if (name in memo) return memo[name] as T;       // replay: no call, no side effect
@@ -81,7 +81,7 @@ export interface JobDriver {
 
 `x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 
-Because `steps` is a driver member, step persistence works identically on both. There is no NATS or Redis jobs driver: both all-throw stubs were deleted in 25.0.0. Switching is the `setJobDriver(…)` call at boot plus `x jobs drain --to <driver>` for in-flight rows — a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`): no second durable driver ships, so there is nowhere to drain to.
+Because `steps` is a driver member, step persistence works identically on both. **Postgres is the one durable driver.** There is no NATS or Redis jobs driver: both all-throw stubs were deleted in 25.0.0, and with them the drain body and its `--to` targets. `x jobs drain` is a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`) — running it is `X_NOT_IMPLEMENTED`: there is nowhere to drain to. A driver is chosen by the `setJobDriver(…)` call at boot, nothing else.
 
 ## The pg claim loop
 
@@ -205,7 +205,7 @@ export const onboardOrg = job({
 
 ## Limits and concurrency
 
-Two layers. `createLimiter` counts in ONE process; `job.concurrency` is held across the fleet.
+Two layers. `concurrencyLimiter` counts in ONE process; `job.concurrency` is held across the fleet.
 
 ```ts
 export const syncCrm = job({
@@ -222,7 +222,7 @@ export const syncCrm = job({
 | Control | Mechanism | On breach |
 |---|---|---|
 | `concurrency: 4` / `concurrency: { key, limit }` | one row per HELD SLOT in `x_job_leases`, taken after the claim by `SQL_LEASE_ACQUIRE` — the `(lease_key, slot)` primary key serialises two workers. Lease key `job:<name>`, or `job-key:<encoded name>:<key(input)>` for a keyed cap. TTL is the worker's `visibilityTimeoutMs`, renewed on the heartbeat interval. There is no `concurrency_key` column and no count inside the claim | `whenBusy: 'wait'` (default, and always for a plain number): nacked back `ready`, attempt uncounted. `whenBusy: 'fail'`: settled `failed` with `X_JOB_KEY_BUSY`, body never run — unless the only holder is this run's own earlier claim (`SQL_LEASE_HOLDERS`), which waits |
-| `createLimiter({ perTenant, perQueue, global, ratePerTenant })` | three `Map`s in the worker's heap (`limits.ts`). **Per process**: multiplied by the replica count. `ratePerTenant` stamps a START and the stamp is a reservation: a lease handed back for a run that never started (`Lease.abandon()` — shed over `job.concurrency`, refused by its key) takes its stamp with it. There is no `rateLimit:` on a job and no `x_rate_buckets` table, `As of 2026-10` | handed straight back: `ready`, attempt uncounted, `jobs.worker.shed` |
+| `concurrencyLimiter({ perTenant, perQueue, global, ratePerTenant })` | three `Map`s in the worker's heap (`limits.ts`). **Per process**: multiplied by the replica count. `ratePerTenant` stamps a START and the stamp is a reservation: a lease handed back for a run that never started (`Lease.abandon()` — shed over `job.concurrency`, refused by its key) takes its stamp with it. There is no `rateLimit:` on a job and no `x_rate_buckets` table, `As of 2026-10` | handed straight back: `ready`, attempt uncounted, `jobs.worker.shed` |
 | `queue` | named pool; `WORKER_QUEUES=default,integrations` selects pools per replica | a queue with no worker is visible in `x jobs ls --json`, not silently stalled |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, in the driver scheduler. The curve is `@ultimat3/core`'s `backoffDelay` since 2026-08-23; what stays here is `DurationInput` (`'30s'`), the `DEFAULT_RETRY` fallbacks, and this package's public `jitter: boolean` | after `attempts`, dead-letter with the full step trace |
 | `retry.jitter` | **equal** jitter — half fixed, half rolled — and `true` by default. Never `full`: a job that has already failed twice must not be handed a near-zero wait | a burst of failures retries spread out rather than in lockstep |
@@ -238,7 +238,7 @@ A limited job is **deferred, never dropped** — `whenBusy: 'fail'` is the one d
 | Capability | Mechanism | Statement |
 |---|---|---|
 | paged listing | keyset on `(created_at, id)`, newest first, over `x_jobs_created_idx`. The cursor is `<createdAt ms>:<id>`; the seek reads the cursor row's own `created_at`, because the ms is rounded | `SQL_JOB_LIST` |
-| settle + history | `ack` / `nack` are fenced on `state = 'running'`, `claimed_by` AND the claim's ordinal (`x_jobs.claims`, moved by `SQL_CLAIM`, never reset) — a worker that takes back its own lapsed job has the same id as the body still unwinding. The same statement upserts the job's one-minute bucket in `x_job_counters`; an ack with `counted: false` (`x jobs drain`) skips it | `SQL_ACK`, `SQL_NACK` |
+| settle + history | `ack` / `nack` are fenced on `state = 'running'`, `claimed_by` AND the claim's ordinal (`x_jobs.claims`, moved by `SQL_CLAIM`, never reset) — a worker that takes back its own lapsed job has the same id as the body still unwinding. The same statement upserts the job's one-minute bucket in `x_job_counters` | `SQL_ACK`, `SQL_NACK` |
 | renewal + progress | fenced the same way, so the superseded body's heartbeat answers `false` and its run is cancelled | `SQL_HEARTBEAT`, `SQL_JOB_PROGRESS` |
 | last fire | `x_scheduler_state.fired_occurrence_at` / `fired_at`, written by the firing statement. The watermark beside them also moves on an arming and a skipped catch-up, which are not fires | `SQL_SCHEDULER_FIRE`, `SQL_TASK_FIRES` |
 | counter tiers | 1-minute for 24 h → 5-minute for 7 d → 1-hour for 30 d. The scheduler leader folds once a minute; delete-and-insert in one statement, so two nodes folding move each bucket once | `SQL_COUNTER_FOLD`, `SQL_COUNTER_DROP` |
@@ -298,7 +298,7 @@ await onboardOrg.enqueue({ org: { ...30 fields } });  // ❌ a record
 
 | Consequence of a payload-as-record | Detail |
 |---|---|
-| Draining or migrating the queue loses business facts | `x jobs drain --to <driver>` must be a boring operation, the day a second durable driver ships |
+| Draining or migrating the queue loses business facts | moving rows between drivers must be a boring operation, the day a second durable driver ships — `x jobs drain` is planned until then |
 | A stale payload overwrites newer state on retry | the job re-applies values captured minutes ago |
 | The truth is unqueryable | "which orgs are mid-onboarding" needs a table, not a queue scan |
 | Step results are not business state either | they are a replay memo with a retention window; if a fact must survive, write it in a step |

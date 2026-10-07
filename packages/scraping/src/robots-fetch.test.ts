@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ScrapeFetch } from './http';
-import { createRobotsGate } from './robots';
+import { robotsGate } from './robots';
 import { DEFAULT_ROBOTS_MAX_BYTES, MAX_ROBOTS_REDIRECTS, robotsFetcher } from './robots-fetch';
 
 const streamOf = (chunks: readonly Uint8Array[]): ReadableStream<Uint8Array> =>
@@ -114,7 +114,7 @@ describe('unit · the gate takes the deadline without a fetchText injected', () 
   // The gap that hid this: every existing gate test injects `fetchText`, so the path production
   // actually takes (`scrape-run.ts` constructs the gate with no `fetchText`) had no coverage.
   test('a hung origin does not park every later navigation on one cached promise', async () => {
-    const gate = createRobotsGate({
+    const gate = robotsGate({
       policy: 'obey',
       timeoutMs: 25,
       fetch: hangingFetch,
@@ -139,13 +139,13 @@ describe('unit · an unreachable robots.txt disallows, an unavailable one allows
     expect(await robotsFetcher({ fetch: answering(503) })('https://down.test/robots.txt')).toEqual({
       unreachable: 'status 503',
     });
-    const gate = createRobotsGate({ policy: 'obey', fetch: answering(503) });
+    const gate = robotsGate({ policy: 'obey', fetch: answering(503) });
     expect(await codeOf(gate.assertAllowed('https://down.test/anything'))).toBe(DISALLOWED);
     expect(await codeOf(gate.assertAllowed('https://down.test/'))).toBe(DISALLOWED);
   });
 
   test('a 429 is the origin shedding load, not a missing file', async () => {
-    const gate = createRobotsGate({ policy: 'obey', fetch: answering(429) });
+    const gate = robotsGate({ policy: 'obey', fetch: answering(429) });
     expect(await codeOf(gate.assertAllowed('https://busy.test/page'))).toBe(DISALLOWED);
   });
 
@@ -154,13 +154,13 @@ describe('unit · an unreachable robots.txt disallows, an unavailable one allows
     expect(await robotsFetcher({ fetch: thrown })('https://gone.test/robots.txt')).toEqual({
       unreachable: 'network',
     });
-    const gate = createRobotsGate({ policy: 'obey', fetch: thrown });
+    const gate = robotsGate({ policy: 'obey', fetch: thrown });
     expect(await codeOf(gate.assertAllowed('https://gone.test/page'))).toBe(DISALLOWED);
   });
 
   test('a 404 and a 410 allow', async () => {
     for (const status of [404, 410, 403]) {
-      const gate = createRobotsGate({ policy: 'obey', fetch: answering(status) });
+      const gate = robotsGate({ policy: 'obey', fetch: answering(status) });
       expect(await codeOf(gate.assertAllowed('https://plain.test/page'))).toBeUndefined();
     }
   });
@@ -175,7 +175,7 @@ describe('unit · an unreachable robots.txt disallows, an unavailable one allows
         }),
       );
     };
-    const gate = createRobotsGate({ policy: 'obey', fetch: flaky });
+    const gate = robotsGate({ policy: 'obey', fetch: flaky });
     expect(await codeOf(gate.assertAllowed('https://flaky.test/page'))).toBe(DISALLOWED);
     expect(await codeOf(gate.assertAllowed('https://flaky.test/page'))).toBeUndefined();
     expect(await codeOf(gate.assertAllowed('https://flaky.test/private'))).toBe(DISALLOWED);
@@ -185,7 +185,7 @@ describe('unit · an unreachable robots.txt disallows, an unavailable one allows
   });
 
   test('a caller-supplied read that rejects refuses rather than allowing', async () => {
-    const gate = createRobotsGate({
+    const gate = robotsGate({
       policy: 'obey',
       fetchText: () => Promise.reject(new TypeError('dns')),
     });
@@ -193,7 +193,7 @@ describe('unit · an unreachable robots.txt disallows, an unavailable one allows
   });
 
   test('a caller-supplied read may answer unreachable itself', async () => {
-    const gate = createRobotsGate({
+    const gate = robotsGate({
       policy: 'obey',
       fetchText: () => Promise.resolve({ unreachable: 'upstream cache said 502' }),
     });
@@ -304,7 +304,7 @@ describe('unit · a robots redirect is followed hop by hop, inside allowHosts', 
       'https://shop.test/robots.txt': to('https://evil.test/robots.txt'),
       'https://evil.test/robots.txt': new Response('User-agent: *\nDisallow: /'),
     });
-    const gate = createRobotsGate({ policy: 'obey', allowHosts: ['shop.test'], fetch: call });
+    const gate = robotsGate({ policy: 'obey', allowHosts: ['shop.test'], fetch: call });
     await gate.assertAllowed('https://shop.test/orders');
     expect(seen.map((hop) => hop.url)).toEqual(['https://shop.test/robots.txt']);
   });

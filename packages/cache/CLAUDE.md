@@ -18,13 +18,13 @@ Tier 1. Tagged caching + THE invalidation graph.
   repair by the call's shape.
 - `invalidateTags()` in `invalidate.ts` is the ONLY fan-out path, and the only writer of the log
   `recentInvalidations()` reads. Never call `tier.invalidateTags()` from outside it.
-- **The fan-out clears FARTHEST tier first, and reports in read order** (`TIER_ORDER`, what `/_x`
+- **The fan-out clears FARTHEST tier first, and reports in read order** (core's `CACHE_TIERS`, what `/_x`
   renders). Near-to-far lets a racing read promote the stale far value straight back up.
   `CacheStack.drop` reverses for the same reason. `invalidation-race.test.ts`.
 - **A fill is fenced: sample before `load()`, ask before the write** (`fence.ts`). `sampleFence({ key,
   tags })` → `fence.isValid()`; `markInvalidated` is the write half (`fanOut`, `CacheStack.write`,
   `CacheStack.drop`). Exported so a store outside this package reuses it rather than growing a
-  second mechanism. `cover()` widens a fence for joiners' tags (`createCacheStack.read` only). A
+  second mechanism. `cover()` widens a fence for joiners' tags (`cacheStack.read` only). A
   fence never fails a read — it declines to publish. The one process-global here with no `isolate*()`
   seam, structurally: a fence samples the current generation.
 - **The Redis tier keeps a second fence, for the FLEET** (`CacheTier.fence`, `tier-fence.ts`,
@@ -36,11 +36,11 @@ Tier 1. Tagged caching + THE invalidation graph.
 - **A refused `set` in `fill` is followed by a `del` in that tier.** `LruCache.set` called
   directly still leaves the entry it refused to replace.
 - One graph. `graph.ts` exports functions over module state and **no constructor**; no second registry.
-- Tag order is `TIER_ORDER`, never registration order. `sortTiers()` enforces it.
+- Tag order is core's `CACHE_TIERS`, never registration order. `sortTiers()` enforces it.
 - **The rung NAMES are `@ultimat3/core`'s (`CACHE_TIERS`); the ladder is this package's.** `TierName`
-  aliases core's `CacheTierName` and `TIER_ORDER` IS `CACHE_TIERS` (asserted by identity in
-  `tier-vocabulary.test.ts`). Adding a rung is an edit to `packages/core/src/cache-vocabulary.ts`
-  plus a factory here; `scripts/render-modes.ts` refuses a second declaration of the set. **`isr` is
+  aliases core's `CacheTierName`; the read order IS `CACHE_TIERS`, imported — 25.0.0 deleted the
+  `TIER_ORDER` alias (`X_HELPER_COPY` refuses a value of core's under a second name). Adding a
+  rung is an edit to `packages/core/src/cache-vocabulary.ts` plus a factory here; `scripts/render-modes.ts` refuses a second declaration of the set. **`isr` is
   not a tier** — the `'isr'` in `invalidate.ts` is an ISR route (`DependentKind = 'isr-route'`).
 - **`bestEffort()` is the only sanctioned way to swallow a cache refusal.** Its label is `TierLabel`
   (`TierName` plus `'query-read'`), deliberately not a widening of `TierName`.
@@ -49,13 +49,13 @@ Tier 1. Tagged caching + THE invalidation graph.
   values are too. The code field keeps its own total probe (`ultimateCode` in `tier-failures.ts`):
   a driver `code` is a SQLSTATE, never an `X_*`.
 - Tier failures go into `report.errors`; a cache tier may never fail a business read or write.
-  `createCacheStack` routes every `get`/`set`/`del` through `bestEffort()` into
+  `cacheStack` routes every `get`/`set`/`del` through `bestEffort()` into
   `recentTierFailures()`. `load()` is the one unguarded call (it IS the business read).
   `LruCache.set` still throws `X_CACHE_TOO_LARGE` to a direct caller.
 - **`serializeTags` is the wire form; `tagKeys` is the IDENTITY form** (sorted, de-duplicated —
   `@ultimat3/query`'s `cacheKeyFor` builds keys from it). It lives here because `action` and `query`
-  are one tier and cannot share a copy. **Known collision:** `@ultimat3/render` exports its own
-  `tagKeys` (`render/src/route.ts`) with different behaviour; consolidating is render's call.
+  are one tier and cannot share a copy. `@ultimat3/render`'s order-preserving route form is its
+  internal `routeTagKeys` (`render/src/route.ts`) — one public `tagKeys`, this one.
 - **Two exports have no production caller and both are KEPT**: `invalidateWireTags` (the outbound
   twin of `receiveInvalidationBroadcast`, which `packages/cli/src/runtime-cache.ts` calls) and
   `recentTierFailures()` (no `/_x` panel reads it yet). Wire the panel or leave them.
@@ -73,11 +73,11 @@ Tier 1. Tagged caching + THE invalidation graph.
 - **`assertTtl` also SPREADS the lease it validated.** `rng` is injected (`LruOptions.rng`,
   `RedisTierOptions.rng`) — never `Math.random()` at a call site; `rng: () => 0` is the full lease.
   `jitterFraction` outside `[0, 1)` is `X_CACHE_JITTER_INVALID`, refused, not clamped.
-- **`createCacheStack` is the production read path, and `@ultimat3/query`'s `readThrough` is its
+- **`cacheStack` is the production read path, and `@ultimat3/query`'s `readThrough` is its
   caller** — it is what makes an action's `cache.invalidates` reach a `cache:` query.
-- **`createCacheStack` shares one in-flight `load()` per key** through `single-flight.ts`, which is
-  the door onto `@ultimat3/core`'s `createSingleFlight` (pinned by identity in
-  `single-flight.test.ts`). A rejected load clears its entry. One `SingleFlight` per stack.
+- **`cacheStack` shares one in-flight `load()` per key** through `@ultimat3/core`'s
+  `singleFlight`, imported by `tiers.ts` (`single-flight.test.ts` exercises it through the
+  stack); 25.0.0 deleted the `single-flight.ts` door and its re-export. A rejected load clears its entry. One `SingleFlight` per stack.
 - **A wedged `load()` frees its key after `DEFAULT_LOAD_DEADLINE_MS` (30 s)** — http's
   `requestTimeoutMs` default, written as a literal because http is tier 2. `loadDeadlineMs`
   overrides it and `schedule` injects the timer. Eviction frees the KEY only; the load runs on. Not
@@ -95,7 +95,7 @@ Tier 1. Tagged caching + THE invalidation graph.
   collection bust and `t:{entity}:<id>` + `t:{entity}` for a row one. A row bust still `SREM`s what
   it deleted from the index (`sweepBucketsFor`). Pinned by `tier-parity.test.ts` and
   `redis.live.test.ts`.
-- **`CacheTier.set` REJECTS, never throws synchronously** — `createLruTier`/`createMemoTier` are
+- **`CacheTier.set` REJECTS, never throws synchronously** — `lruTier`/`memoTier` are
   `async` for that alone.
 - **`redis.ts`'s script deletes NOTHING — it reads.** It returns the members; the tier `DEL`s them
   client-side one key at a time (slot-local on Cluster/Dragonfly) and `SREM`s only what
@@ -148,7 +148,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 |---|---|
 | `tags.ts` | `tag` factory, wire form, match semantics, `tagKeys`, declared-tag registry |
 | `graph.ts` | tag → dependents (cache keys, ISR routes, CDN paths, live queries) |
-| `tiers.ts` | `CacheTier`, `TIER_ORDER`, `TierLabel`, `assertTtl`, read-through stack |
+| `tiers.ts` | `CacheTier`, `TierLabel`, `assertTtl`, read-through stack |
 | `fence.ts` | the invalidation fence a fill (here or in `query`) checks before it publishes |
 | `tier-fence.ts` | `TierFence`/`FenceVerdict`, and how a fill samples and asks a shared tier's fence |
 | `redis-fence.ts` | the leased generation keys a bust writes and a fill watches |
@@ -157,7 +157,6 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
 | `redis.ts` | `Bun.redis` tier, build-namespaced keys, hash-tagged buckets, one script call per tag |
-| `single-flight.ts` | the door onto `@ultimat3/core`'s `createSingleFlight` — one in-flight `load()` per key, shared by every concurrent miss. No implementation of its own since 2026-08-23 |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, `surrogateKeys`, the purge key list, the `PurgeDriver` seam |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |
 | `purge-fastly.ts` | `fastlyPurgeDriver`: surrogate-key batch purge, `purge_all` |

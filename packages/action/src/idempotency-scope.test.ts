@@ -15,7 +15,7 @@ import {
   setIdempotencyStore,
 } from './idempotency';
 import { memoryIdempotencyStore } from './idempotency-memory';
-import { registerAction, resetRegistry } from './registry';
+import { registerAction, resetActions } from './registry';
 
 const anAction = () =>
   action({
@@ -28,7 +28,7 @@ const anAction = () =>
 
 afterEach(() => {
   resetIdempotency();
-  resetRegistry();
+  resetActions();
 });
 
 describe("a 'shared' declaration over a process store is refused at boot", () => {

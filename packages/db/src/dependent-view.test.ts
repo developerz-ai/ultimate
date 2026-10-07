@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { refuseDependentViews, retypeTargets } from './dependent-view';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
-import { createRecordingClient } from './fake';
+import { recordingClient } from './fake';
 import { generateMigration, snapshotOf } from './generate';
 
 const column = (
@@ -116,7 +116,7 @@ describe('the fix line', () => {
     view = 'docs_published',
     relkind = 'v',
   ): Promise<UltimateError> => {
-    const client = createRecordingClient().on(/pg_depend/, {
+    const client = recordingClient().on(/pg_depend/, {
       rows: [{ view_name: view, table_name: 'docs', column_name: 'rank', definition, relkind }],
     });
     const failure = await refuseDependentViews(client, up).then(

@@ -11,7 +11,7 @@ import { ChannelSids } from './channel-sids';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
-import { ackRefOf, createFrameRouter, MAX_SID_LENGTH } from './sync-frames';
+import { ackRefOf, frameRouter, MAX_SID_LENGTH } from './sync-frames';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 const room = channel('frames-room', {
@@ -41,7 +41,7 @@ function rig() {
   const sockets = new SocketRegistry();
   const hub = new ChannelHub({ transport: new InProcessTransport(), sockets });
   const channelSids = new ChannelSids();
-  const route = createFrameRouter({
+  const route = frameRouter({
     hub,
     registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
     buildId: 'b',
@@ -147,7 +147,7 @@ describe('an events channel on a node with no presence', () => {
     const sent: Frame[] = [];
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport: new InProcessTransport(), sockets });
-    const route = createFrameRouter({
+    const route = frameRouter({
       hub,
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       buildId: 'b',
@@ -196,7 +196,7 @@ describe('the hello reply names the beat', () => {
     const answers = async (heartbeatMs?: number): Promise<Frame | undefined> => {
       const sent: Frame[] = [];
       const sockets = new SocketRegistry();
-      const route = createFrameRouter({
+      const route = frameRouter({
         hub: new ChannelHub({ transport: new InProcessTransport(), sockets }),
         registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
         buildId: 'b',
@@ -247,7 +247,7 @@ describe('a beat on a suspended seat', () => {
     const sent: Frame[] = [];
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport: new InProcessTransport(), sockets });
-    const route = createFrameRouter({
+    const route = frameRouter({
       hub,
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       buildId: 'b',
@@ -305,7 +305,7 @@ describe('a re-ask that DENIES a suspended seat', () => {
     const sockets = new SocketRegistry();
     const hub = new ChannelHub({ transport: new InProcessTransport(), sockets });
     const channelSids = new ChannelSids();
-    const route = createFrameRouter({
+    const route = frameRouter({
       hub,
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       buildId: 'b',

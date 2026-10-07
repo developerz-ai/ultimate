@@ -2,12 +2,12 @@
 // `actorFor`, …). Called by the preload, which is why an app never writes
 // `defineFixtures({ clock })` and why two apps cannot disagree about what `clock` means.
 
-import { createTestClock } from './fixture-clock';
+import { testClock } from './fixture-clock';
 import { DRIVER_FIXTURE_NAMES, driverFixtures } from './fixture-drivers';
-import { createRunJobs } from './fixture-jobs';
-import { createTestMail } from './fixture-mail';
-import { createTestNetwork } from './fixture-network';
-import { createTestStatements } from './fixture-statements';
+import { testJobs } from './fixture-jobs';
+import { testMail } from './fixture-mail';
+import { testNetwork } from './fixture-network';
+import { testStatements } from './fixture-statements';
 import { subscribeDriver } from './fixture-subscribe';
 import { defineFixtures } from './fixtures';
 
@@ -48,11 +48,11 @@ export const ALL_FIXTURE_NAMES: readonly string[] = [
 export function registerFrameworkFixtures(): void {
   defineFixtures({
     ...driverFixtures(),
-    clock: createTestClock,
-    mail: createTestMail,
-    network: createTestNetwork,
-    runJobs: createRunJobs,
-    statements: createTestStatements,
+    clock: testClock,
+    mail: testMail,
+    network: testNetwork,
+    runJobs: testJobs,
+    statements: testStatements,
     // After the spread, so it REPLACES the `unavailableFixture('subscribe')` declaration above it —
     // `defineFixtures` merges and the last registration wins, which is the same seam an app's own
     // driver uses.

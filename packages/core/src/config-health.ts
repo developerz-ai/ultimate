@@ -25,7 +25,7 @@ export interface HealthConfig {
 }
 
 /**
- * How a SIGTERM'd process leaves the load balancer. Read by `@ultimat3/http`'s `createServer`
+ * How a SIGTERM'd process leaves the load balancer. Read by `@ultimat3/http`'s `httpServer`
  * (`ServerOptions.drain`), which hands it to core's `configureLifecycle`.
  */
 export interface DrainConfig {

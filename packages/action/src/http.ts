@@ -8,6 +8,7 @@
 import { tagKeys } from '@ultimat3/cache';
 import type { Deprecation } from '@ultimat3/core';
 import {
+  IDEMPOTENCY_HEADER,
   isMcpExposed,
   RECORDS_OPENAPI_HEADER,
   recordDeprecatedCall,
@@ -21,7 +22,8 @@ import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
 // and `@ultimat3/query` needs the identical conversion while being the same tier as this one — so
 // a copy here would be a second answer to "what does this limit mean" for the read half.
-import { json, publishRateLimit, redirect, takeRedirect, toBucket } from '@ultimat3/http';
+import { jsonResponse, publishRateLimit, redirect, takeRedirect, toBucket } from '@ultimat3/http';
+import { admitsAnonymous, policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { ActionRateLimit, AnyAction } from './action';
 import { ActionDeprecationInvalidError } from './errors';
 import { actionPathStyle, servedActionRoute } from './http-path';
@@ -33,16 +35,7 @@ import {
   schemaRef,
   toOperationId,
 } from './naming';
-import { admitsAnonymous, policyCapability, policyPermissions } from './policy-gate';
 import { carriesRecords, recordResponse } from './record-wire';
-import { IDEMPOTENCY_HEADER } from './wire-headers';
-
-/**
- * Re-exported, never re-declared. The two strings moved to `wire-headers.ts` so `client.ts` can
- * name them without pulling this file's server graph into a browser bundle; every importer of
- * `./http` still reads them from here, which is what kept the move from touching a call site.
- */
-export { BUILD_ID_HEADER, IDEMPOTENCY_HEADER } from './wire-headers';
 
 export const REPLAYED_HEADER = 'x-ultimate-replayed';
 
@@ -142,7 +135,7 @@ function projectRoute(
         ? redirect(to.location, to.status)
         : enveloped
           ? recordResponse(target.output, result)
-          : json(result);
+          : jsonResponse(result);
     if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
     return response;
   };

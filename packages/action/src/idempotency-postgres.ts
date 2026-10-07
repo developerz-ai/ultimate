@@ -5,7 +5,7 @@
  * Statements are spelled out so an agent can run the exact one it saw in a log.
  */
 import type { PgExecutor } from '@ultimat3/core';
-import { finiteCount, logger, uuid } from '@ultimat3/core';
+import { finiteCount, logger, uuidV7 } from '@ultimat3/core';
 import { IdempotencyReservationLostError, IdempotencyStatusUnknownError } from './errors';
 import type {
   IdempotencyFailure,
@@ -240,7 +240,7 @@ export function postgresIdempotencyStore(
         // transaction is the SETTLE — and the row says so, which is what makes it reclaimable.
         const claimed = await exec.query<IdempotencyRow>(SQL_IDEMPOTENCY_RESERVE, [
           key,
-          uuid(),
+          uuidV7(),
           requestHash,
           windowSecs,
           boundTx() !== undefined,
@@ -255,7 +255,7 @@ export function postgresIdempotencyStore(
       // that matters, so this is the honest answer: the caller sees the in-flight refusal.
       return {
         record: {
-          id: uuid(),
+          id: uuidV7(),
           key,
           requestHash,
           status: 'in-flight',

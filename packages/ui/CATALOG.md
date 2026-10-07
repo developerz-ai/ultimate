@@ -1029,7 +1029,7 @@ The one way to render a toast queue: the store's VISIBLE slice, inside the regio
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
-| `store` | `ToastStore` | yes | The queue. One per app — `createToastStore()` in the island that mounts this. |
+| `store` | `ToastStore` | yes | The queue. One per app — `toastStore()` in the island that mounts this. |
 | `label` | `string` | yes | Already-translated landmark name, e.g. "Notifications". |
 | `politeness` | `Politeness` | — |  |
 | `placement` | `ToastPlacement` | — |  |

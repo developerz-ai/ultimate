@@ -5,27 +5,27 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { configureErrorReporting, memoryErrorReporter, resetErrorReporting } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createPipeline } from './pipeline';
-import { json, text } from './response';
-import { createRouter, type Route } from './router';
+import { httpPipeline } from './pipeline';
+import { jsonResponse, textResponse } from './response';
+import { httpRouter, type Route } from './router';
 
 const routes: readonly Route[] = [
   {
     method: 'GET',
     path: '/posts/:id',
     meta: { name: 'posts.show', auth: 'public' },
-    handler: (_request, ctx) => json({ id: ctx.params['id'] }),
+    handler: (_request, ctx) => jsonResponse({ id: ctx.params['id'] }),
   },
   {
     method: 'GET',
     path: '/files/*path',
     meta: { name: 'files.serve', auth: 'public' },
-    handler: () => text('file'),
+    handler: () => textResponse('file'),
   },
 ];
 
 const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });
-const pipeline = () => createPipeline({ table: createRouter(routes), config, hooks: {} });
+const pipeline = () => httpPipeline({ table: httpRouter(routes), config, hooks: {} });
 const get = (path: string) => new Request(`http://localhost${path}`);
 
 describe('a path the client mis-encoded', () => {

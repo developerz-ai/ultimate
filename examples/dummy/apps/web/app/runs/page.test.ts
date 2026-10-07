@@ -1,7 +1,7 @@
 // /runs, rendered as a member: the heading, the island the route hands a browser and every word
 // that island is given. The events are not here — they arrive over a socket no server has.
 import { useT } from '@postly/i18n';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import type { IslandDirective } from '@ultimat3/render';
 import { expect, renderRoute, unitTest } from '@ultimat3/testing';
 import { DEFAULT_DEMO_MEMBER, demoActorFor } from '../auth/demo-actor';
@@ -92,7 +92,7 @@ unitTest('load reads the org’s connections as the member who asked', async () 
     // A request, as the pipeline publishes it: the actor, and the inbound headers a member read
     // forwards. The route is the real one — its own `load`, not an answer handed to it.
     const view = await runWithContext(
-      { ...createContext({ actor }), requestHeaders: new Headers({ cookie }) },
+      { ...ctxOf({ actor }), requestHeaders: new Headers({ cookie }) },
       () => renderRoute(page, { url: request.url }),
     );
     expect(view.data.map((row) => row.label)).toEqual(['Ledger']);

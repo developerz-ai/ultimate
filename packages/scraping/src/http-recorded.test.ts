@@ -3,16 +3,16 @@
 // production one.
 
 import { describe, expect, test } from 'bun:test';
-import { createLogger } from '@ultimat3/core';
+import { structuredLogger } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { fakeBrowser } from './driver-fake';
 import { recordedHttp } from './http-recorded';
 import type { HttpRecording } from './recording';
 import type { NetworkEntry } from './rings';
-import { createRing } from './rings';
-import { createRobotsGate } from './robots';
-import { createSecretBag, SECRET_PLACEHOLDER } from './secrets';
+import { boundedRing } from './rings';
+import { robotsGate } from './robots';
+import { SECRET_PLACEHOLDER, secretBag } from './secrets';
 
 const ROBOTS = 'User-agent: *\nDisallow: /api/private\n';
 
@@ -35,12 +35,12 @@ const offline = (robots = true) =>
     lookup: (method, url) =>
       Promise.resolve(recordings.find((r) => r.method === method && r.url === url)),
     rules: { allowHosts: ['shop.test'] },
-    network: createRing<NetworkEntry>(),
-    clock: testClock(),
+    network: boundedRing<NetworkEntry>(),
+    clock: testScrapeClock(),
     source: 'test',
     ...(robots
       ? {
-          robots: createRobotsGate({
+          robots: robotsGate({
             policy: 'obey',
             // Never the network, ever: an offline transport that fetched robots.txt for real would
             // make a green suite secretly live, which is the rule this file exists for.
@@ -94,11 +94,11 @@ describe('unit · the recorded leg redacts the same body the live leg does', () 
       ],
     }).open({
       name: 'orders',
-      logger: createLogger({ writer: () => undefined }),
+      logger: structuredLogger({ writer: () => undefined }),
       rules: { allowHosts: ['shop.test'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
       timeoutMs: 1_000,
-      secrets: createSecretBag(['SHOP_PASSWORD'], () => SECRET),
+      secrets: secretBag(['SHOP_PASSWORD'], () => SECRET),
     });
     try {
       const response = await session.http.request('https://shop.test/login');
@@ -129,8 +129,8 @@ describe('unit · a recording whose age cannot be read is stale, never fresh', (
           recordedAt,
         }),
       rules: { allowHosts: ['shop.test'] },
-      network: createRing<NetworkEntry>(),
-      clock: testClock(),
+      network: boundedRing<NetworkEntry>(),
+      clock: testScrapeClock(),
       source: 'test',
       maxAgeMs: 86_400_000,
     });
@@ -148,7 +148,7 @@ describe('unit · a recording whose age cannot be read is stale, never fresh', (
   });
 
   test('a fresh, parseable recordedAt still replays', async () => {
-    const now = testClock().now().toISOString();
+    const now = testScrapeClock().now().toISOString();
     expect((await aged(now).request('https://shop.test/api/public/orders')).status).toBe(200);
   });
 });

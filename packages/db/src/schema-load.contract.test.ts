@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { type DbClient, postgresClient } from './client';
 import { introspectCatalog } from './introspect-catalog';
 import { type Migration, migrate } from './migrate';
-import { createPgliteClient } from './pglite';
+import { pgliteClient } from './pglite';
 import { renderSchemaDump, type SchemaDumpFile } from './schema-dump';
 import { loadSchemaDump } from './schema-load';
 import { raw } from './sql';
@@ -79,7 +79,7 @@ describe('load(dump) equals replay(migrations) · the reference app', () => {
   test(
     'on the embedded database',
     async () => {
-      const client = createPgliteClient();
+      const client = pgliteClient();
       try {
         const { replayed, loaded } = await replayThenLoad(client);
         // Not vacuous: every table the app's dump names, and the ledger, are there to be compared.

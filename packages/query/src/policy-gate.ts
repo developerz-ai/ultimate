@@ -5,14 +5,9 @@
  */
 
 import type { Actor, Ctx } from '@ultimat3/core';
-import { assertNever, isAnonymous } from '@ultimat3/core';
+import { assertNever } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
-import {
-  enforce,
-  enforceBeforeInput,
-  policyPermissions as flattenedPermissions,
-  admitsAnonymous as policyAdmitsAnonymous,
-} from '@ultimat3/policy';
+import { enforce, enforceBeforeInput } from '@ultimat3/policy';
 import { QueryDeniedError } from './errors';
 
 /** Policies are opaque here: we evaluate them, we never introspect their rules. */
@@ -38,7 +33,11 @@ export interface QuerySubject {
   readonly query: string;
 }
 
-export function guard(policy: QueryPolicy, subject: QuerySubject, surface: QuerySurface): void {
+export function guardQuery(
+  policy: QueryPolicy,
+  subject: QuerySubject,
+  surface: QuerySurface,
+): void {
   const denial = enforce(policySurface(surface), policy, {
     input: subject.input,
     actor: subject.actor,
@@ -49,11 +48,11 @@ export function guard(policy: QueryPolicy, subject: QuerySubject, surface: Query
 }
 
 /**
- * The actor-only half of `guard`, run BEFORE the input is parsed — the twin of
+ * The actor-only half of `guardQuery`, run BEFORE the input is parsed — the twin of
  * `@ultimat3/action`'s. A reader the policy refuses whatever they send is answered 403 (or 401),
- * never `X_INPUT_INVALID` with the read's input schema in it. Undecided passes to `guard`.
+ * never `X_INPUT_INVALID` with the read's input schema in it. Undecided passes to `guardQuery`.
  */
-export function guardBeforeInput(
+export function guardQueryBeforeInput(
   policy: QueryPolicy,
   subject: Omit<QuerySubject, 'input' | 'row'>,
   surface: QuerySurface,
@@ -78,41 +77,4 @@ function policySurface(surface: QuerySurface): PolicySurface {
     default:
       return assertNever(surface);
   }
-}
-
-/**
- * Core models "nobody" as an anonymous actor; policy models it as `null`, which is
- * what turns a missing session into `X_UNAUTHENTICATED` instead of a bare denial.
- */
-export function actorOf(ctx: Ctx): Actor | null {
-  return isAnonymous(ctx.actor) ? null : ctx.actor;
-}
-
-/** The capability a read requires, for manifests and the `/_x` dashboard. A DISPLAY label. */
-export function policyCapability(policy: QueryPolicy): string {
-  return policy.label;
-}
-
-/**
- * Every permission the policy tree references, flattened and deduped — and the only field a
- * compliance report may match a grant against. `label` renders a composite as
- * `or(feed:read, org:administer)`, which is a sentence and never equals a permission string, so
- * matching on it reported every read guarded by a composite as enforcing nothing. The mirror of
- * `@ultimat3/action`'s, because `x policy list` reads both lists the same way.
- */
-export function policyPermissions(policy: QueryPolicy): readonly string[] {
-  return flattenedPermissions(policy);
-}
-
-/**
- * Whether a policy admits an ANONYMOUS caller — `@ultimat3/policy`'s answer, re-exported here so
- * `http.ts` reads it through this file like every other authz question. `toQueryRoute` derives
- * `meta.auth` from it, never from `policy.kind === 'allow'`: that read looked at the ROOT
- * combinator only, so `or(allow(), can('x:y'))` was 401'd by the pipeline before `runQuery` ran
- * while the MCP tool and a direct server read allowed it. `true` is `meta.auth` only — the read is
- * still `no-store` and `runQuery` still evaluates the policy per caller. Declared once in
- * `policy.ts`, exactly as `policyPermissions` is: the answer is a property of the combinators.
- */
-export function admitsAnonymous(policy: QueryPolicy): boolean {
-  return policyAdmitsAnonymous(policy);
 }

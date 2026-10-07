@@ -4,7 +4,7 @@
 // against a gate that releases on a post-commit throw.
 
 import { describe, expect, test } from 'bun:test';
-import { createContext, userActor } from '@ultimat3/core';
+import { ctxOf, userActor } from '@ultimat3/core';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -23,7 +23,7 @@ const Output = t.object({ chargeId: t.string, amount: t.number.int() });
 // (`CoreActor & PolicyActorFields`), which is what `can()` reads through `actorHas`. Core's
 // `Actor` has none and cannot: core is tier 0 and knows nothing about grants.
 const chargerActor: PolicyActor = { ...userActor({ id: 'u1' }), permissions: ['card:charge'] };
-const charger = createContext({ actor: chargerActor });
+const charger = ctxOf({ actor: chargerActor });
 
 /** Commits (increments `charges`) and then returns a value its own `output:` rejects. */
 function chargeCard() {

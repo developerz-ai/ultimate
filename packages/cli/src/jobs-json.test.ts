@@ -11,13 +11,10 @@ import {
   inspectQueues,
   memoryJobDriver,
 } from '@ultimat3/jobs';
-import type { DrainFailure, DrainSkip } from './jobs-drain';
 import {
   backfillToJson,
   deadLetterToJson,
   depthToJson,
-  drainFailureToJson,
-  drainSkipToJson,
   jobRecordToJson,
   jobTraceToJson,
 } from './jobs-json';
@@ -181,35 +178,5 @@ describe('unit · backfillToJson', () => {
     });
     // ISO in, ISO out: the projection re-formats no date, because it has no zone to do it with.
     expect(json).toMatchObject({ startedAt: progress?.startedAt ?? 'missing' });
-  });
-});
-
-describe('unit · drain projections', () => {
-  test('a failure carries the finding whole, with docs and at nulled rather than dropped', () => {
-    const failure: DrainFailure = {
-      id: 'job_1',
-      name: 'send-email',
-      finding: { code: 'X_NOT_IMPLEMENTED', cause: 'redis', fix: 'use driver: "pg"' },
-    };
-    const json = drainFailureToJson(failure);
-    expect(json).toEqual(roundTrip(json) as never);
-    expect(json).toMatchObject({ finding: { docs: null, at: null } });
-  });
-
-  test('a skip names the job, its queue, its state and why the drain left it alone', () => {
-    const skip: DrainSkip = {
-      id: 'job_2',
-      name: 'checkout',
-      queue: 'billing',
-      state: 'delayed',
-      reason: 'no lease could be taken',
-    };
-    expect(drainSkipToJson(skip)).toEqual({
-      id: 'job_2',
-      name: 'checkout',
-      queue: 'billing',
-      state: 'delayed',
-      reason: 'no lease could be taken',
-    });
   });
 });

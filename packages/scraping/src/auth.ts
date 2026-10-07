@@ -20,7 +20,7 @@
 import type { Logger } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
 import type { ScrapeClock } from './clock';
-import { authFailed, promptUnanswered, sessionExpired } from './error-throws';
+import { authFailed, promptUnanswered, scrapeSessionExpired } from './error-throws';
 import type { ScrapePage } from './page';
 import type { ScrapeSecrets } from './secrets';
 import {
@@ -124,7 +124,7 @@ export interface PromptInit<I = unknown> {
  */
 const KEEPALIVE_SELECTOR = 'ultimate-keepalive';
 
-export function createPrompt<I>(init: PromptInit<I>): (label: string) => Promise<string> {
+export function scrapePrompt<I>(init: PromptInit<I>): (label: string) => Promise<string> {
   let asked = 0;
   return async (label: string): Promise<string> => {
     const { scrape, handler, page } = init;
@@ -316,7 +316,7 @@ export async function ensureAuthenticated<I>(args: EnsureAuthInput<I>): Promise<
     args.logger.info('scrape.session.expired', { reused: false });
     await burnSession(args, recordVersion(args.restored));
   }
-  if (auth.login === undefined) throw sessionExpired(args.scrape, args.key);
+  if (auth.login === undefined) throw scrapeSessionExpired(args.scrape, args.key);
   await auth.login(context);
   return true;
 }

@@ -18,7 +18,7 @@ import { memoryJobDriver } from './driver-memory';
 import type { MemoryOutboxStore, OutboxRecord } from './outbox';
 import { memoryOutboxStore } from './outbox';
 import type { OutboxRelay } from './outbox-relay';
-import { createOutboxRelay } from './outbox-relay';
+import { outboxRelay } from './outbox-relay';
 
 /** The tx identity is the store's map key and nothing here reads a connection off it. */
 const fakeTx = (id: string): Tx => ({ id }) as unknown as Tx;
@@ -82,7 +82,7 @@ async function rig(options: { park: boolean }): Promise<Rig> {
   await store.stage(tx, record('row-1'));
   await store.commit(tx);
 
-  const relay = createOutboxRelay({ store, driver, intervalMs: 1 });
+  const relay = outboxRelay({ store, driver, intervalMs: 1 });
   relay.start();
   await first;
   let staged = 1;
@@ -123,7 +123,7 @@ describe('the relay takes part in the drain instead of running through it', () =
   });
 
   test('drainOnShutdown: false registers none, for a caller that drives its own teardown', async () => {
-    const relay = createOutboxRelay({
+    const relay = outboxRelay({
       store: memoryOutboxStore(),
       driver: memoryJobDriver(),
       drainOnShutdown: false,

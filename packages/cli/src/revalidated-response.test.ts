@@ -2,14 +2,14 @@
 // script) and `runtime-assets.test.ts` (the icon matrix).
 
 import { describe, expect, test } from 'bun:test';
-import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { contentHash } from '@ultimat3/render/server';
 import { REVALIDATE_CACHE_CONTROL, revalidatedResponse } from './revalidated-response';
 
 const request = (headers: Record<string, string> = {}): UltimateRequest => {
   const url = new URL('http://dev.test/x-sw-register.js');
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
-  const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
+  const ctx = requestContext({ url, method: 'GET', role: 'web', config });
   return new UltimateRequest(new Request(url, { headers }), ctx);
 };
 

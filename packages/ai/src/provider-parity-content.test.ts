@@ -17,7 +17,7 @@ import {
 } from './model-fixture';
 import { chatCompletionBody } from './openai-body';
 import { openAiProvider } from './openai-provider';
-import { type AiMessage, AnthropicProvider } from './provider';
+import { type AiMessage, anthropicProvider } from './provider';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
 useFixtureModels();
@@ -60,7 +60,7 @@ describe('an image or a document reads the same on both wires, or is refused the
     { role: 'user', content: [...blocks, { type: 'text', text: 'compare them' }] },
   ];
   const anthropicBody = (messages: readonly AiMessage[]) =>
-    new AnthropicProvider({ models: FIXTURE_ANTHROPIC_IDS }).body({
+    anthropicProvider({ models: FIXTURE_ANTHROPIC_IDS }).body({
       model: ANTHROPIC_MODEL,
       messages,
       maxTokens: 64,
@@ -150,7 +150,7 @@ describe('an image or a document reads the same on both wires, or is refused the
       return new Response('{}');
     };
     const bad = [{ role: 'assistant', content: [pdf] }] as const satisfies readonly AiMessage[];
-    const anthropic = new AnthropicProvider({
+    const anthropic = anthropicProvider({
       models: FIXTURE_ANTHROPIC_IDS,
       apiKey: KEY,
       fetch: counting,

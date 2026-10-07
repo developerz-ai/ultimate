@@ -9,7 +9,7 @@ import { ChannelHub } from './channel';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry } from './socket';
-import { createSyncNode } from './sync-node';
+import { syncNode } from './sync-node';
 import { handleUpgrade, type UpgradeDeps, type UpgradeTarget } from './sync-upgrade';
 import { AcceptBudget } from './thundering-herd';
 
@@ -121,11 +121,11 @@ describe('the sync listener tells a listed peer the whole report', () => {
   }
 });
 
-describe('createSyncNode forwards the peer list', () => {
+describe('syncNode forwards the peer list', () => {
   const node = (healthDetailPeers?: readonly string[]) => {
     const sockets = new SocketRegistry();
     const transport = new InProcessTransport();
-    return createSyncNode({
+    return syncNode({
       hub: new ChannelHub({ transport, sockets }),
       registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
       transport,

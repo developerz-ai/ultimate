@@ -6,7 +6,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no `tmpdir()`; `node:os` is the only way to ask the platform where its
 // temporary directory is.
 import { tmpdir } from 'node:os';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, pageOf } from '@ultimat3/core';
 import {
   attachmentKey,
   attachmentPrefix,
@@ -137,14 +137,19 @@ function agedDisk(
   }));
   const driver = {
     name: 'aged',
-    async list(options?: { readonly prefix?: string | undefined }) {
+    // ONE object per page, keyed on the last key handed out — so every sweep below is also a
+    // multi-page walk, and a loop that dropped `nextCursor` would sweep the first object only.
+    async list(options?: {
+      readonly prefix?: string | undefined;
+      readonly cursor?: string | null | undefined;
+    }) {
       const prefix = options?.prefix ?? '';
-      return {
-        objects: objects.filter(
-          (object) => object.key.startsWith(prefix) && !deleted.includes(object.key),
-        ),
-        truncated: false,
-      };
+      const after = options?.cursor ?? '';
+      const left = objects
+        .filter((object) => object.key.startsWith(prefix) && object.key > after)
+        .sort((a, b) => (a.key < b.key ? -1 : 1));
+      const page = left.slice(0, 1).filter((object) => !deleted.includes(object.key));
+      return pageOf(page, left.length > 1 ? (left[0]?.key ?? null) : null);
     },
     async delete(key: string) {
       // A refused delete is a THROW, exactly as the driver contract now says — the bucket

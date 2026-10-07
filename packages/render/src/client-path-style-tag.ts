@@ -9,9 +9,6 @@ import type { ActionPathStyle } from '@ultimat3/core';
 import { CLIENT_PATH_STYLE_META } from '@ultimat3/core';
 import type { HeadTag } from './head';
 
-/** The `name` core's reader matches — core's constant, so the writer and the reader are one literal. */
-export { CLIENT_PATH_STYLE_META };
-
 /** `style` is `@ultimat3/action`'s `actionPathStyle()`: what `defineApi` declared, read per render. */
 export function clientPathStyleTags(style: ActionPathStyle): readonly HeadTag[] {
   if (style === 'resource') return [];

@@ -3,7 +3,7 @@
 // loop and the panel mirrors under `dir="rtl"` — `rtl-sheets.test.ts` holds that.
 
 import type { JSX } from 'solid-js';
-import { createFocusTrap, useId } from '../a11y';
+import { focusTrap, useId } from '../a11y';
 import { cx } from '../cx';
 import { solid } from '../theme/solid-adapter';
 import styles from './Popover.module.scss';
@@ -50,7 +50,7 @@ export function Popover(props: PopoverProps): JSX.Element {
     // Closing unmounts the panel with focus inside it, which drops focus to <body> and makes the
     // next Tab restart at the top of the document. The trap moves focus into the panel on open and
     // hands it back to the trigger on close.
-    const trap = panel === undefined ? undefined : createFocusTrap(panel);
+    const trap = panel === undefined ? undefined : focusTrap(panel);
     trap?.activate();
     rt.onCleanup(() => {
       document.removeEventListener('pointerdown', onPointerDown, true);

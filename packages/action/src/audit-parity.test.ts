@@ -18,7 +18,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { createContext, secret, userActor } from '@ultimat3/core';
+import { ctxOf, secret, userActor } from '@ultimat3/core';
 import type { AuditRecord, AuditSink } from './audit';
 import { memoryAuditSink } from './audit-memory';
 import { postgresAuditSink } from './audit-postgres';
@@ -146,7 +146,7 @@ const recordFor = (over: Partial<AuditRecord> = {}): AuditRecord => ({
   surface: 'http',
   // Every string field a DIFFERENT value, on purpose: two columns holding the same word cannot
   // catch a parameter-order slip, and `SQL_AUDIT_INSERT` is positional.
-  ctx: createContext({
+  ctx: ctxOf({
     requestId: 'req-1',
     traceId: '0af7651916cd43dd8448eb211c80319c',
     locale: 'es-ES',

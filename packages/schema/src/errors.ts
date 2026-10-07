@@ -1,7 +1,8 @@
 // Single responsibility: this package's error codes. `@ultimat3/schema` is tier 0 and may not
 // import `@ultimat3/core`, so `SchemaError` reproduces the `UltimateError` shape structurally
-// and carries the same `Symbol.for('ultimate.error')` brand — `isUltimateError()` still matches.
+// and carries the one brand both classes share (`error-brand.ts`) — `isUltimateError()` matches.
 
+import { ULTIMATE_ERROR_BRAND } from './error-brand';
 import { SCHEMA_ERROR_CODES } from './error-codes';
 import { renderMetaRecord } from './render-meta';
 import { formatIssues } from './standard';
@@ -11,8 +12,8 @@ import { formatIssues } from './standard';
  * there — briefly: the 3-line format is line-oriented, and a `cause` may hold a value the caller
  * chose, so a newline in one writes a line an operator reads as a genuine framework message.
  *
- * Copied rather than imported for the same reason the brand symbol above is: `schema` and `core`
- * are both tier 0, so `schema` may not import `core` (imports go DOWN, never sideways). A schema
+ * Copied rather than imported: `schema` and `core` are both tier 0, and only `core -> schema` is a
+ * declared edge, so `schema` may not import `core`. A schema
  * cause is the one most likely to carry a hostile string — it describes the value that failed
  * validation, which is the request body.
  */
@@ -34,9 +35,6 @@ const singleLine = (text: string): string =>
     CONTROL,
     (char) => ESCAPES[char] ?? `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
   );
-
-/** Same well-known symbol `@ultimat3/core` brands with. Keep in sync, never rename. */
-export const ULTIMATE_ERROR_BRAND: unique symbol = Symbol.for('ultimate.error');
 
 /**
  * The same one URL `@ultimat3/core`'s `ERROR_DOCS_URL` holds. **Keep in sync**, and read the

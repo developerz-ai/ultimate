@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { OUTBOX_DRAIN_MESSAGE, rescope, UltimateError } from '@ultimat3/core';
 import { memoryLocalStore } from './local-store-idb';
 import type { OutboxEntry, OutboxOverlays } from './page-outbox';
-import { createOutbox, listenForDrain } from './page-outbox';
+import { listenForDrain, localOutbox } from './page-outbox';
 
 afterEach(() => {
   Reflect.deleteProperty(globalThis, Symbol.for('ultimate.client'));
@@ -29,7 +29,7 @@ function setup(principal: string | null | undefined, local = memoryLocalStore())
   const sent: OutboxEntry[] = [];
   let answer: (entry: OutboxEntry) => Promise<unknown> = async () => ({ ok: true });
   const twins = overlays();
-  const outbox = createOutbox({
+  const outbox = localOutbox({
     local,
     principal: () => principal,
     send: (entry) => {
@@ -104,7 +104,7 @@ describe('the page outbox', () => {
   test("a principal change wipes the previous principal's queue — never sent as the next", async () => {
     const local = memoryLocalStore();
     rescope('u1');
-    const outbox = createOutbox({ local, send: async () => ({}), overlays: () => undefined });
+    const outbox = localOutbox({ local, send: async () => ({}), overlays: () => undefined });
     await outbox.enqueue(like(1));
     rescope('u2');
     await outbox.ready;

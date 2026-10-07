@@ -4,8 +4,8 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import type { JobHandle } from './job';
 import { job, resetJobs } from './job';
-import { createLimiter, tenantKeyFrom } from './limits';
-import { createWorker } from './worker';
+import { concurrencyLimiter, tenantKeyFrom } from './limits';
+import { jobWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
   return {
@@ -52,9 +52,9 @@ beforeEach(() => {
   });
 });
 
-describe('createLimiter', () => {
+describe('concurrencyLimiter', () => {
   test('the N+1th acquire for a tenant is refused until a lease is released', () => {
-    const limiter = createLimiter({ perTenant: 2 });
+    const limiter = concurrencyLimiter({ perTenant: 2 });
     const a = limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' });
     const b = limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' });
     const c = limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' });
@@ -72,7 +72,7 @@ describe('createLimiter', () => {
   });
 
   test('a double release cannot leak slots back into the pool', () => {
-    const limiter = createLimiter({ perTenant: 1 });
+    const limiter = concurrencyLimiter({ perTenant: 1 });
     const lease = limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' });
     lease?.release();
     lease?.release();
@@ -83,7 +83,7 @@ describe('createLimiter', () => {
   // drop the queue whenever a tenant was present, so the same key asked two questions of two
   // functions and the second answered "this tenant, everywhere".
   test('inFlight answers the key it was given, not the widest part of it', () => {
-    const limiter = createLimiter({});
+    const limiter = concurrencyLimiter({});
     limiter.tryAcquire({ queue: 'mail', tenantId: 'org-1' });
     limiter.tryAcquire({ queue: 'import', tenantId: 'org-1' });
     limiter.tryAcquire({ queue: 'mail', tenantId: 'org-2' });
@@ -96,7 +96,7 @@ describe('createLimiter', () => {
   });
 
   test('a released composite slot is dropped, never left at zero', () => {
-    const limiter = createLimiter({});
+    const limiter = concurrencyLimiter({});
     const lease = limiter.tryAcquire({ queue: 'mail', tenantId: 'org-1' });
     expect(limiter.inFlight({ queue: 'mail', tenantId: 'org-1' })).toBe(1);
     lease?.release();
@@ -105,7 +105,7 @@ describe('createLimiter', () => {
   });
 
   test('the per-queue cap applies across tenants and the global cap across queues', () => {
-    const limiter = createLimiter({ perQueue: 1, global: 2 });
+    const limiter = concurrencyLimiter({ perQueue: 1, global: 2 });
     expect(limiter.tryAcquire({ queue: 'mail', tenantId: 'org-1' })).toBeDefined();
     expect(limiter.tryAcquire({ queue: 'mail', tenantId: 'org-2' })).toBeUndefined();
     expect(limiter.blockedBy({ queue: 'mail', tenantId: 'org-2' })).toBe('per-queue');
@@ -116,7 +116,7 @@ describe('createLimiter', () => {
 
   test('the rate limit refuses starts once the window is full, and recovers after it', () => {
     const clock = fakeClock(T0);
-    const limiter = createLimiter({ ratePerTenant: { limit: 2, windowMs: 1_000 } }, clock);
+    const limiter = concurrencyLimiter({ ratePerTenant: { limit: 2, windowMs: 1_000 } }, clock);
     limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' })?.release();
     limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' })?.release();
     expect(limiter.tryAcquire({ queue: 'default', tenantId: 'org-1' })).toBeUndefined();
@@ -135,8 +135,8 @@ describe('worker concurrency', () => {
   test('a tenant at its concurrency cap has the next claim handed straight back, unrun', async () => {
     const clock = fakeClock(T0);
     const driver = memoryJobDriver({ clock });
-    const limiter = createLimiter({ perTenant: 2 });
-    const worker = createWorker({
+    const limiter = concurrencyLimiter({ perTenant: 2 });
+    const worker = jobWorker({
       driver,
       limiter,
       clock,

@@ -6,12 +6,12 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
-import { createRequestContext } from './context';
+import { requestContext } from './context';
 import { routeNotFound } from './errors';
 import type { AuthzDecision, ServerHooks } from './hooks';
 import { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
 import { UltimateRequest } from './request';
-import { text } from './response';
+import { textResponse } from './response';
 import type { Route } from './router';
 
 const config = defineHttpConfig({
@@ -21,7 +21,7 @@ const config = defineHttpConfig({
   hostname: '127.0.0.1',
 });
 
-const ctx = createRequestContext({
+const ctx = requestContext({
   url: new URL('http://x.test/posts'),
   method: 'GET',
   role: 'web',
@@ -33,7 +33,7 @@ const request = new UltimateRequest(new Request('http://x.test/posts'), ctx);
 const route: Route = {
   method: 'GET',
   path: '/posts',
-  handler: () => text('ok'),
+  handler: () => textResponse('ok'),
   meta: { name: 'posts.show', auth: 'required', policy: 'post:read' },
 };
 

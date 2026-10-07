@@ -5,10 +5,7 @@
 export type { ActionabilityState, ActionabilityWait } from './actionability';
 export { awaitActionable } from './actionability';
 export type { ArtifactRef, ArtifactWriter, ArtifactWriterInit } from './artifacts';
-export {
-  createArtifactWriter,
-  DEFAULT_CONTENT_TYPE,
-} from './artifacts';
+export { artifactWriter } from './artifacts';
 export type {
   AuthContext,
   PromptHandler,
@@ -16,7 +13,7 @@ export type {
   PromptRequest,
   ScrapeAuth,
 } from './auth';
-export { burnSession, createPrompt, ensureAuthenticated, restorableSession } from './auth';
+export { burnSession, ensureAuthenticated, restorableSession, scrapePrompt } from './auth';
 export { browserRecord } from './browser-record';
 export type { CaptureClip, CaptureFraming } from './capture-clip';
 export { assertCaptureFraming } from './capture-clip';
@@ -44,8 +41,7 @@ export {
   scrapeClock,
   setScrapeClock,
   systemScrapeClock,
-  testClock,
-  throwIfAborted,
+  testScrapeClock,
 } from './clock';
 export type { ColorScheme } from './color-scheme';
 export { COLOR_SCHEMES, isColorScheme } from './color-scheme';
@@ -81,10 +77,10 @@ export {
   redirectLoop,
   remoteRequired,
   robotsDisallowed,
+  scrapeSessionExpired,
   scrapeTimeout,
   secretExposed,
   selectorMissing,
-  sessionExpired,
   wedged,
   yieldCollapsed,
 } from './error-throws';
@@ -122,8 +118,6 @@ export {
   memoryYieldHistory,
 } from './expect';
 export { BURNS_SESSION, errorCode, NEVER_RETRIED } from './failures';
-export type { HostDecision, HostRule } from './hosts';
-export { ANY_HOST, hostDecision, hostMatches } from './hosts';
 export { queryHtml } from './html-query';
 export type { MarkupRequest } from './html-requests';
 export type { HtmlTargetInit, RecordingLookup } from './html-target';
@@ -152,7 +146,7 @@ export type {
 export type { PageContext } from './page-over-target';
 export { pageOverTarget } from './page-over-target';
 export type { Pacer } from './rate';
-export { createPacer } from './rate';
+export { scrapePacer } from './rate';
 export type { HttpRecording, PageRecording } from './recording';
 export {
   httpRecordingSchema,
@@ -173,7 +167,7 @@ export type {
   Ring,
 } from './rings';
 export {
-  createRing,
+  boundedRing,
   MAX_PAGE_ERROR_CHARS,
   pageErrorEntry,
   RESOURCE_TYPES,
@@ -187,7 +181,7 @@ export type {
   RobotsRules,
   RobotsUnreachable,
 } from './robots';
-export { createRobotsGate, parseRobots, robotsAllows } from './robots';
+export { parseRobots, robotsAllows, robotsGate } from './robots';
 export type { RobotsFetchInit } from './robots-fetch';
 export {
   DEFAULT_ROBOTS_MAX_BYTES,
@@ -205,13 +199,13 @@ export { scrape } from './scrape';
 export { DEFAULT_PAGE_TIMEOUT_MS, runScrape } from './scrape-run';
 export type { ScrapeSecrets, SecretResolver } from './secrets';
 export {
-  createSecretBag,
   MIN_REDACTABLE_LENGTH,
   redactSecrets,
   safeConsole,
   safeHtml,
   safeNetwork,
   safePageErrors,
+  secretBag,
 } from './secrets';
 export type {
   ScrapeSessionStore,
@@ -242,6 +236,6 @@ export type {
 } from './target';
 export { endpointLabel, urlSecretValues } from './url-secrets';
 export type { RunUsageMeter, ScrapeUsage, UsageMeter } from './usage';
-export { createUsageMeter } from './usage';
+export { usageMeter } from './usage';
 export type { WedgeGuard, WedgeGuardInit } from './watchdog';
 export { DEFAULT_GRACE_MS } from './watchdog';

@@ -30,9 +30,9 @@ export async function appConfigExport(root: string, name: string): Promise<unkno
 /**
  * `root`'s `AppConfig`, or `undefined` when the root has no `app.config.ts` — not an app, and each
  * caller's "nothing declared" answer is its own. A file that IS there is held to `defineConfig`'s
- * one validator: a hand-built `config` object, or one resolved through an older core, reaches the
- * boot validated and defaulted exactly as one built by `defineConfig` does, which re-merges to
- * itself. A file with no `config` object is refused rather than read as "every default".
+ * one validator: a hand-built `config` object reaches the boot validated and defaulted exactly as
+ * one built by `defineConfig` does, which re-merges to itself. One resolved through a 24.x core is
+ * refused (its defaults wrote keys 25.0.0 removed): install every `@ultimat3/*` at one version. A file with no `config` object is refused rather than read as "every default".
  */
 export async function loadAppConfig(root: string): Promise<AppConfig | undefined> {
   const path = join(root, APP_CONFIG_FILE);

@@ -56,7 +56,7 @@ const defaultScheduler: Scheduler = (fn, ms) => {
   };
 };
 
-export function createSingleFlight(options?: SingleFlightOptions): SingleFlight {
+export function singleFlight(options?: SingleFlightOptions): SingleFlight {
   const inflight = new Map<string, Flight>();
   const schedule = options?.schedule ?? defaultScheduler;
   const deadlineMs = options?.deadlineMs;

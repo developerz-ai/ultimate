@@ -27,12 +27,12 @@ describe('@ultimat3/realtime browser barrel', () => {
     const client: Record<string, unknown> = await import('@ultimat3/realtime');
     expect(client['useQuery']).toBeTypeOf('function');
     expect(client['openNatsClient']).toBeUndefined();
-    expect(client['createSyncNode']).toBeUndefined();
+    expect(client['syncNode']).toBeUndefined();
   });
 
   test('the server entry carries it', async () => {
     const server: Record<string, unknown> = await import('@ultimat3/realtime/server');
     expect(server['openNatsClient']).toBeTypeOf('function');
-    expect(server['createSyncNode']).toBeTypeOf('function');
+    expect(server['syncNode']).toBeTypeOf('function');
   });
 });

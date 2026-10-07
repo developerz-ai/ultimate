@@ -1,5 +1,5 @@
 // `drain` is a process fact, not a web-server one (s1-con #7). The readiness grace reached core only
-// through `createServer`, so a worker pod kept the default grace — five seconds of claiming jobs
+// through `httpServer`, so a worker pod kept the default grace — five seconds of claiming jobs
 // after SIGTERM, every one of them aborted when the drain reached its `accept` phase.
 
 import { afterAll, describe, expect, test } from 'bun:test';

@@ -3,7 +3,7 @@
 // would be a page that boots in `x dev` and 404s in the image.
 
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, json, NO_STORE } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
 import type { IslandBundle } from './island-bundle';
 import { ISLAND_BASE_PATH } from './island-bundle';
 
@@ -30,7 +30,7 @@ export function islandRoutes(source: IslandSource): readonly Route[] {
         // have to answer at the one base path, under the one cache rule.
         const chunk = source().assetAt(request.pathname);
         if (chunk === undefined) {
-          const missing = json(
+          const missing = jsonResponse(
             {
               ok: false,
               error: {

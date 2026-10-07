@@ -7,7 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { fakeBrowserTarget } from './cdp-fake-target-fixture';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpScreenshotOptions } from './cdp-port';
 import { cdpTarget } from './cdp-target';
-import { testClock } from './clock';
+import { testScrapeClock } from './clock';
 import { scrapeTimeout } from './error-throws';
 
 /** The thrown value itself — the code and the retry classification are both under test here. */
@@ -173,7 +173,7 @@ const targetOver = (fixture: Rich) =>
     page: fixture.page,
     browser: fixture.browser,
     rules: { allowHosts: ['*'] },
-    clock: testClock(),
+    clock: testScrapeClock(),
   });
 
 describe('unit · the target`s input calls reach the page, not a reimplementation of it', () => {
@@ -400,7 +400,7 @@ describe('unit · a dead renderer is a CODE, not a hang', () => {
       page: broken,
       browser: fixture.browser,
       rules: { allowHosts: ['*'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
     });
     await expect(other.content()).rejects.toThrow(/browser stopped answering/);
     await expect(target.content()).resolves.toBe('<html></html>');
@@ -417,7 +417,7 @@ describe('unit · guard() wraps what came FROM the browser, and only that', () =
       page: { ...fixture.page, content: () => Promise.reject(scrapeTimeout('content', 500)) },
       browser: fixture.browser,
       rules: { allowHosts: ['*'] },
-      clock: testClock(),
+      clock: testScrapeClock(),
     });
     const thrown = await caught(target.content());
     expect((thrown as { code?: string }).code).toBe('X_SCRAPE_BROWSER_UNREACHABLE');

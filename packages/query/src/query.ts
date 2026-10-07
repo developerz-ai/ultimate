@@ -8,9 +8,10 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
-import type { Actor, Ctx, Deprecation } from '@ultimat3/core';
+import type { Actor, Ctx, Deprecation, McpExposureDeclaration } from '@ultimat3/core';
 import { fingerprint } from '@ultimat3/core';
 import type { RateLimitDecision } from '@ultimat3/http';
+import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryCacheScope } from './cache';
 import type { QueryClientMethodOf, QueryClientOptions } from './client';
@@ -20,7 +21,6 @@ import { assertEncodableInput } from './input-shape';
 import type { LiveQuery, ToLiveOptions } from './live';
 import type { Page, PaginateArgs } from './pagination';
 import type { QueryPolicy, QuerySurface } from './policy-gate';
-import { policyCapability, policyPermissions } from './policy-gate';
 import { hasDef, queryName, runQuery, stashDef } from './read';
 import type { SqlSource } from './source';
 import { assertSubscribes } from './subscribes';
@@ -41,52 +41,6 @@ export interface QueryCache {
    * their org, or at all — see `readAuthority`.
    */
   readonly scope?: QueryCacheScope;
-}
-
-export interface QueryMcp {
-  /** Opt-in: a read reaches an agent only when it says so. Silence exposes nothing. */
-  readonly expose: boolean;
-  /** Contract text, not UI text — see `ActionMcp.description` for why it stays outside `t()`. */
-  readonly description?: string;
-  /**
-   * Roles that may SEE the projected tool — a catalog audience, not an authz rule; the `policy`
-   * still decides every call. A caller whose role is not named gets ToolNotFound, never
-   * Forbidden. See `ActionMcp.visibleTo`, which this mirrors exactly.
-   */
-  readonly visibleTo?: readonly string[];
-  /**
-   * The list whitelist an MCP meta surface composes over (`@ultimat3/mcp` `McpListParams`):
-   * `filters` field → operators, sortable `sort` fields, pickable `fields`, `maxLimit`. Flat keys:
-   * the query's own `input` declares `status_eq`, `sort`, `fields`, `cursor`, `limit` and
-   * implements them; `manage_resource` refuses anything outside the whitelist before it runs.
-   */
-  readonly listParams?: QueryListParams;
-  /** The tool's display name in an MCP client. See `ActionMcp.title`. */
-  readonly title?: string;
-  /**
-   * MCP tool annotations, overriding the derived `readOnlyHint: true` key by key — `openWorldHint:
-   * true` for a read that reaches outside the app. See `ActionMcp.annotations`.
-   */
-  readonly annotations?: QueryMcpAnnotations;
-}
-
-/** Structural twin of `@ultimat3/action`'s `McpAnnotationHints` (siblings cannot import). */
-export interface QueryMcpAnnotations {
-  readonly readOnlyHint?: boolean;
-  readonly destructiveHint?: boolean;
-  readonly idempotentHint?: boolean;
-  readonly openWorldHint?: boolean;
-}
-
-/** One comparison a list filter accepts. A filter key is `<field><op>`: `status_eq`. */
-export type QueryListFilterOp = '_eq' | '_in' | '_gt' | '_lt' | '_cont';
-
-/** Structural twin of `@ultimat3/mcp`'s `McpListParams` (tier 3 cannot import tier 4). */
-export interface QueryListParams {
-  readonly filters?: Readonly<Record<string, readonly QueryListFilterOp[]>>;
-  readonly sort?: readonly string[];
-  readonly fields?: readonly string[];
-  readonly maxLimit?: number;
 }
 
 /**
@@ -146,7 +100,7 @@ export interface QueryDef<
   readonly rows?: StandardSchemaV1<unknown, TRow>;
   sql(input: InferOutput<TInput>, ctx: Ctx): SqlSource<TRow>;
   readonly cache?: QueryCache;
-  readonly mcp?: QueryMcp;
+  readonly mcp?: McpExposureDeclaration;
   /** Burst and refill for THIS read's route, in the limiter's own vocabulary. */
   readonly rateLimit?: QueryRateLimit;
   /**
@@ -252,7 +206,7 @@ export interface AnyQueryDef {
   readonly rows?: StandardSchemaV1;
   sql(input: unknown, ctx: Ctx): SqlSource<object>;
   readonly cache?: QueryCache;
-  readonly mcp?: QueryMcp;
+  readonly mcp?: McpExposureDeclaration;
   readonly rateLimit?: QueryRateLimit;
   readonly deprecated?: Deprecation;
   readonly audit?: boolean;
@@ -273,7 +227,7 @@ export interface AnyQuery {
   /** Lifted for the route: whether an answer is a record envelope is decided at projection. */
   readonly rows?: StandardSchemaV1;
   readonly cache?: QueryCache;
-  readonly mcp?: QueryMcp;
+  readonly mcp?: McpExposureDeclaration;
   /** Lifted so `toQueryRoute` reads the declaration without reaching through `defOf`. */
   readonly rateLimit?: QueryRateLimit;
   readonly deprecated?: Deprecation;

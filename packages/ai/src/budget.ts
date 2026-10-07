@@ -216,7 +216,7 @@ export class BudgetLedger {
     // limit makes `limit - spent` a `NaN`, `want > NaN` false, and the scope silently unlimited —
     // the ceiling does not become wrong, it stops existing. `llm()`, `agent()` and `hive()` screen
     // the same numbers first under the key names their declarations use (`tokensPerRun` is this
-    // `request`), so this is the backstop for a `createGateway({ budget })` or a hand-built ledger,
+    // `request`), so this is the backstop for a `providerGateway({ budget })` or a hand-built ledger,
     // where these ARE the names the caller wrote.
     this.limits = assertFiniteLimits(input.limits);
     this.actorKey = input.actorKey;
@@ -411,7 +411,7 @@ export class BudgetLedger {
  * declared ceiling everywhere (`report()`, a manifest row, a log line) and enforces nothing. The
  * money one most of all: `tighterMoney` asks `a.minor <= b.minor`, false against a `NaN`, so an
  * unscreened `costPerCall` won every `derive` and WIDENED the stricter ceiling it ran inside.
- * `subject` and `prefix` let a caller name the key its own declaration wrote (`createGateway`'s
+ * `subject` and `prefix` let a caller name the key its own declaration wrote (`gateway`'s
  * `budget.org`), because a fix line naming a key the app never typed is not a fix.
  */
 export function assertFiniteLimits(

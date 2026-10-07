@@ -11,7 +11,7 @@ import {
   getQuery,
   registerQueries,
   registerQuery,
-  resetRegistry,
+  resetQueries,
 } from './registry';
 import { from } from './source';
 
@@ -33,7 +33,7 @@ const defineFeed = () =>
 
 describe('query registry', () => {
   beforeEach(() => {
-    resetRegistry();
+    resetQueries();
   });
 
   test('registering the same query twice under the same name is one registration', () => {

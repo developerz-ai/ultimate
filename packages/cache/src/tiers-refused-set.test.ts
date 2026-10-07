@@ -3,10 +3,10 @@
 // value serves from that tier for its whole lease — the one stale read that reports `errors: []`.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createLruTier } from './lru';
+import { lruTier } from './lru';
 import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheSetOptions, CacheTier } from './tiers';
-import { createCacheStack } from './tiers';
+import { cacheStack } from './tiers';
 
 // The failure log is the subject of one test below, so it is emptied per test and handed back.
 const restoreFailures = isolateTierFailures();
@@ -35,8 +35,8 @@ function mapTier(name: CacheTier['name']): CacheTier & { readonly held: Map<stri
 
 describe('a refused set in a fill deletes the key in THAT tier', () => {
   test('an overwrite the LRU refuses as too large does not leave the old value behind', async () => {
-    const lru = createLruTier({ maxBytes: 100, rng: () => 0 });
-    const stack = createCacheStack([lru]);
+    const lru = lruTier({ maxBytes: 100, rng: () => 0 });
+    const stack = cacheStack([lru]);
     await stack.write('k', 'old');
 
     await stack.write('k', 'x'.repeat(500));
@@ -45,9 +45,9 @@ describe('a refused set in a fill deletes the key in THAT tier', () => {
   });
 
   test('read() then sees the value a further tier took, not the one the near tier kept', async () => {
-    const lru = createLruTier({ maxBytes: 100, rng: () => 0 });
+    const lru = lruTier({ maxBytes: 100, rng: () => 0 });
     const redis = mapTier('redis');
-    const stack = createCacheStack([lru, redis]);
+    const stack = cacheStack([lru, redis]);
     await stack.write('k', 'old');
     const big = 'x'.repeat(500);
 
@@ -60,8 +60,8 @@ describe('a refused set in a fill deletes the key in THAT tier', () => {
   test('a refused lease is the same: the entry it would have replaced is gone', async () => {
     // The neighbour of the size refusal. `X_CACHE_TTL_INVALID` leaves a direct `LruCache.set`
     // caller's entry alone on purpose; in a FILL the caller's new value supersedes it either way.
-    const lru = createLruTier({ maxBytes: 10_000, rng: () => 0 });
-    const stack = createCacheStack([lru]);
+    const lru = lruTier({ maxBytes: 10_000, rng: () => 0 });
+    const stack = cacheStack([lru]);
     await stack.write('k', 'old');
 
     await stack.write('k', 'new', { ttlMs: 0 });
@@ -70,8 +70,8 @@ describe('a refused set in a fill deletes the key in THAT tier', () => {
   });
 
   test('the refusal is still recorded, and the del is not reported as a second failure', async () => {
-    const lru = createLruTier({ maxBytes: 100, rng: () => 0 });
-    const stack = createCacheStack([lru]);
+    const lru = lruTier({ maxBytes: 100, rng: () => 0 });
+    const stack = cacheStack([lru]);
     await stack.write('k', 'old');
     await stack.write('k', 'x'.repeat(500));
 
@@ -90,7 +90,7 @@ describe('a refused set in a fill deletes the key in THAT tier', () => {
         return tier.del(key);
       },
     };
-    await createCacheStack([spied]).write('k', 'v');
+    await cacheStack([spied]).write('k', 'v');
     expect(calls).toEqual([]);
     expect(tier.held.get('k')).toBe('v');
   });

@@ -28,7 +28,7 @@ export type McpAuditEvent =
 
 /**
  * Where the app keeps them: a table, a SIEM, a queue. Fire-and-forget by design — see `deliver`.
- * `createMcpServer({ onAudit })` and `defineAppMcp({ onAudit })`; the route reads its server's.
+ * `mcpServer({ onAudit })` and `defineAppMcp({ onAudit })`; the route reads its server's.
  */
 export type McpAuditHook = (event: McpAuditEvent) => void | Promise<void>;
 
