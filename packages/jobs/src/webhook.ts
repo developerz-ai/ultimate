@@ -369,7 +369,7 @@ function tenantOf(definition: WebhookDefinition): JobTenant<WebhookDeliveryInput
     throw new JobTenantMismatchError({
       job: definition.name,
       reason: `declares an org tenant, and this delivery's payload names no org for it${input.orgId === undefined ? ' (it carries no orgId)' : ''}`,
-      fix: `re-enqueue it with the org that owns the endpoint: ${definition.name}.enqueue({ endpointId, eventId, orgId }) — a queued row cannot be retried into having one`,
+      fix: `${definition.name}.enqueue({ endpointId, eventId, orgId }) — re-enqueue it with the org that owns the endpoint; a queued row cannot be retried into having one`,
     });
   };
 }
@@ -387,7 +387,7 @@ function assertInputOrg(name: string, orgId: string | undefined, ctx: Ctx): void
   throw new JobTenantMismatchError({
     job: name,
     reason: `was handed orgId ${orgId}, but the run is under ${runOrg === undefined ? "tenant 'none'" : `org ${runOrg}`}`,
-    fix: `derive the tenant from the payload's own org — webhook({ tenant: ({ orgId }) => orgId }) — or enqueue ${name} with the orgId its tenant resolves to`,
+    fix: `webhook({ name: '${name}', tenant: ({ orgId }) => orgId, … }) — derive the tenant from the payload's own org, or enqueue ${name} with the orgId its tenant resolves to`,
   });
 }
 

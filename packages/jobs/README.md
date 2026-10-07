@@ -568,7 +568,7 @@ re-exports (`X_HELPER_COPY`). Same argument `timing-safe-equal.ts` makes for its
 **Upgrading a webhook to `tenant: ({ orgId }) => orgId`.** Deliveries already queued without an
 `orgId` dead-letter on their next attempt with `X_JOB_TENANT_MISMATCH`, and a retry cannot add the
 field. Drain the queue before deploying the new declaration, or re-enqueue what dead-letters with its
-org: `x jobs list --state dead --json`, then `deliver.enqueue({ endpointId, eventId, orgId })` for each.
+org: `x jobs ls --state dead --name partner.webhooks --json`, then `deliver.enqueue({ endpointId, eventId, orgId })` for each.
 
 **Set `timeout` below the drain budget.** A webhook has no timeout unless you declare one, and a
 POST on the wire when SIGTERM lands runs until the receiver answers. With a `timeout`, a drained

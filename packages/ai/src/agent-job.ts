@@ -121,7 +121,7 @@ function assertSameTenant(name: string, actor: Actor, tenant: string | undefined
   throw new JobTenantMismatchError({
     job: name,
     reason: `resolved an actor in org ${orgId ?? '(none)'} through actor(), but the run is under ${tenant === undefined ? "tenant 'none'" : `org ${tenant}`}, so it would act outside the org it declared`,
-    fix: `load the member in agentJob("${name}").actor under the job's own tenant — the ambient context already carries it — so a member of another org is not found rather than returned`,
+    fix: `actor: ({ input, ctx }) => memberActorIn(ctx.actor.orgId, input) — in agentJob("${name}"), load the member under the job's own tenant, so a member of another org is not found rather than returned`,
   });
 }
 

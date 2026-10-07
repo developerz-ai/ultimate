@@ -71,8 +71,13 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * surrogate was a jsonb 500 and a silent U+FFFD on text), split out of `validators.ts` at 486 lines.
  * raised 624 → 625, measured 625 (2026-10-07, plan 101 sweep 12c): `core/src/config-jobs.ts` — the
  * per-queue `jobs.concurrency` table (#676), validated where every config section is.
+ * raised 625 → 628, measured 628 (2026-10-07, sweep 13a): `schema/src/array-schema.ts` (array
+ * item-count bounds, split out of `validators.ts` at 484 lines), `db/src/db-executor.ts` (the one
+ * `PgExecutor` builder, #688) and `cache/src/value-codec.ts` (one value shape on every cache tier).
+ * raised 628 → 629, measured 629 (2026-10-07, sweep 13b): `jobs/src/errors-tenant.ts` — the terminal
+ * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
  */
-const MIGRATE_CEILING = 625;
+const MIGRATE_CEILING = 629;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -129,8 +134,12 @@ const MIGRATE_CEILING = 625;
  * raised 918 → 920, measured 920 (2026-10-07, plan 101 sweep 12c): the module named on
  * `MIGRATE_CEILING` for 12c, and `realtime/src/record-publisher.ts` — committed rows published as
  * channel records with no replicator (#682), which the `x dev` bridge reads to skip a claimed table.
+ * raised 920 → 923, measured 923 (2026-10-07, sweep 13a): the three modules named on
+ * `MIGRATE_CEILING` for 13a, reached through the same db, schema and cache barrels.
+ * raised 923 → 924, measured 924 (2026-10-07, sweep 13b): `jobs/src/errors-tenant.ts` — the terminal
+ * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
  */
-const SERVING_ROLE_CEILING = 920;
+const SERVING_ROLE_CEILING = 924;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -176,8 +185,12 @@ const SERVING_ROLE_CEILING = 920;
  * named on `SERVING_ROLE_CEILING` for 11b.
  * raised 1030 → 1032, measured 1032 (2026-10-07, plan 101 sweep 12c): the two modules named on
  * `SERVING_ROLE_CEILING` for 12c.
+ * raised 1032 → 1035, measured 1035 (2026-10-07, sweep 13a): the three modules named on
+ * `MIGRATE_CEILING` for 13a — the web role reaches every module the serving roles do.
+ * raised 1035 → 1036, measured 1036 (2026-10-07, sweep 13b): `jobs/src/errors-tenant.ts` — the terminal
+ * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
  */
-const WEB_ROLE_CEILING = 1032;
+const WEB_ROLE_CEILING = 1036;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

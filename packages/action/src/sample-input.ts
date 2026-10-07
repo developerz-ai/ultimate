@@ -99,6 +99,16 @@ function sampleObject(node: SchemaNode): Record<string, unknown> {
   return sample;
 }
 
+/**
+ * How many items a minimal array sample holds: its `minItems`, screened here as well. The builtin
+ * `t.array` refuses a bad bound at declaration (`X_SCHEMA_BOUNDS_INVALID`), but this IR may come
+ * from a swapped provider, and `Array.from({ length: NaN })` is silently `[]`.
+ */
+function itemCount(node: SchemaNode): number {
+  const min = node.minItems;
+  return min !== undefined && Number.isSafeInteger(min) && min >= 0 ? min : 0;
+}
+
 function sampleFor(node: SchemaNode): unknown {
   // A nullable field accepts `null`, and `null` is the smallest thing it accepts.
   if (node.nullable === true) return null;
@@ -118,7 +128,7 @@ function sampleFor(node: SchemaNode): unknown {
     // The fewest items the array accepts: `[]` under a `minItems` is a sample its own schema
     // refuses. Items repeat the one item sample; a uniqueness rule would be a refinement.
     case 'array':
-      return Array.from({ length: node.minItems ?? 0 }, () =>
+      return Array.from({ length: itemCount(node) }, () =>
         node.items === undefined ? null : sampleFor(node.items),
       );
     case 'union': {

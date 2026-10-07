@@ -59,7 +59,7 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
       reserve: (key, hash) => inner.reserve(key, hash),
       settle: (key, value, id, redacted) => inner.settle(key, value, id, redacted),
       fail: (key, failure, id) => inner.fail(key, failure, id),
-      release: (key) => inner.release(key),
+      release: (key, id) => inner.release(key, id),
       get: (key) => inner.get(key),
     };
     setIdempotencyStore(shared);
