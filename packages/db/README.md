@@ -28,6 +28,7 @@ await withTransaction(async (tx) => {
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
 | `shellInertIdentifier()` | `As of 2026-08-26`: a quoted identifier that is also inert wherever a human PASTES it — or `null`. The one screen a catalog name goes through before it reaches a `fix:`. `identifier()` answers about SQL and **accepts** a backtick and a `$`, which are exactly what a shell substitutes inside double quotes, so a column called `$(id)` inside `x db gen "add $(id)"` runs `id` on paste |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
+| `dbExecutor(client = db)` | the client as `@ultimat3/core`'s `PgExecutor` (`query(text, values)`) — what a jobs, idempotency, notify or MCP confirmation store takes. The client is resolved per statement: the default reaches the boot's client even when declared at module scope, and joins an open `withTransaction`; `() => pool` pins one pool whatever transaction is open |
 | `DbTx.origin` | `As of 2026-08`: the client the transaction was **opened on** — `options.client` or `baseClient()`, never the reservation it runs statements through. `@ultimat3/entity` compares a pinned repository's client against it, so a pinned repo joins its own shard's transaction instead of being refused |
 | `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it. Each re-run **waits first**, `As of 2026-08-23`: exponential from 10ms, capped at 500ms, full jitter (`@ultimat3/core`'s `backoffDelay`). A budget of 0 waits not at all. **A transaction the server aborted is reported as one**, `As of 2026-10-02` → [Transactions that end badly](#transactions-that-end-badly) |
 | `liveTxConnection()` | the connection of the transaction still **open** on this async context, or `undefined`. `currentTx()` keeps answering a finished scope's handle to a promise chain the body forgot to await; this is the one that says whether a statement sent now is really inside a transaction. `@ultimat3/action` reads it before binding an idempotency settlement to a commit |
@@ -112,7 +113,8 @@ the transaction untouched.
 `As of 2026-07`: a bug in one defence must not become a write, so `db.query` on the MCP dev
 server stacks independent layers rather than trusting a single gate. This package owns the two
 layers that are Postgres facts rather than MCP facts — the tool-boundary layers (pre-parse scan,
-policy) live above it, and `@ultimat3/mcp` never imports this package directly.
+policy) live above it, and `@ultimat3/mcp` imports nothing of this package but one lexer rule,
+`endOfBlockComment` (a nested `/* */` ends where Postgres ends it, `null` when it never closes).
 
 ```ts
 import { ensureReadOnlyRole, readOnlyQuery } from '@ultimat3/db';

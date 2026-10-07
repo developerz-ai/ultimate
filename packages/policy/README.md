@@ -151,7 +151,9 @@ dispatch failed **closed with a `SurfaceDenial` no caller could read**.
 `PermissionRegistry` (which `x g policy` generates) makes a typo a compile error, and
 `can()` throws `X_PERMISSION_UNKNOWN` at declaration time either way. Roles are sugar:
 `defineRoles({ owner: { grants: ['post:delete'], inherits: ['editor'] } })` expands
-depth-first to a flat set, cycles included. `post:*` and `*` are supported.
+depth-first to a flat set, cycles included. `post:*` and `*` are supported. A wildcard reaches
+its PREFIX and nothing beside it: `billing:invoice:*` grants `billing:invoice:read`, never
+`billing:refund:issue` (`@ultimat3/core`'s `grantCovers`, the one reading `auth` shares).
 
 `defineRoles()` **merges** into the app's one role map. A second call in a new feature folder
 adds roles; it never deletes the first module's. A role two modules define *differently* is

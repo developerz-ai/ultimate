@@ -30,6 +30,7 @@ export type {
 export { baseClient, db, isReservable, postgresClient, setDbClient } from './client';
 export type { ColumnDefaultLike } from './column-default';
 export { defaultExpression } from './column-default';
+export { dbExecutor } from './db-executor';
 export type { DbHealthReport } from './db-health';
 export { checkDb } from './db-health';
 export {
@@ -198,6 +199,7 @@ export {
   sql,
 } from './sql';
 export { stripSqlNoise } from './sql-noise';
+export { dollarTagAt, endOfBlockComment } from './sql-scan';
 export type { DbSqlStateCode } from './sqlstate';
 export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode } from './sqlstate';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';

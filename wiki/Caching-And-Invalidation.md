@@ -15,6 +15,8 @@ Four tiers, one invalidation graph. You declare what a write touches; the framew
 
 Read order is **1 → 2 → 3 → origin**. A tier is never consulted for a request whose `policy` has not already passed.
 
+**A cached value is JSON + `Date` + `bigint` + `Map` + `Set`, and every tier answers the same shape.** `As of 2026-10`, tiers 1–3 store one encoding (`@ultimat3/cache`'s `value-codec.ts`) and decode a fresh copy per hit: a `Date` is a `Date` whether the memo, the LRU or Redis answered, and mutating a hit never reaches the next reader. A class instance comes back as a plain object; a cycle is `X_CACHE_VALUE_UNENCODABLE` at the write.
+
 **A cache key is framework-generated, never hand-built.** `As of 2026-08` it is the query name, a fingerprint of the parsed input, and the read's sorted tag keys — `cacheKeyFor` in `@ultimat3/query`. The actor is **not** one of its parts, so what separates one tenant's entry from another's is the **input**: `feed({ orgId })` is one key per org. Policy still runs on every read before a tier is consulted, but it decides whether *this* caller may ask — not which rows the entry holds. So a read whose answer differs by actor for the same input must not declare `cache:`; tier 1 is keyed by `Ctx` identity and already separates it.
 
 | Tier | Opt-out / requirement |

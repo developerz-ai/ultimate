@@ -171,6 +171,7 @@ export const OFF_SOCKET: Pins = {
   ],
   // tier 4 — the build's budget, and a route file refused by `registerRoute`.
   render: ['X_BUDGET_EXCEEDED', 'X_ROUTE_DUPLICATE', 'X_ROUTE_FILE_INVALID'],
+  schema: ['X_SCHEMA_BOUNDS_INVALID'],
 };
 
 /**

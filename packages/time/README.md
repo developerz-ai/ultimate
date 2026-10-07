@@ -220,7 +220,7 @@ negated; an empty one is `0` in either direction, never `-0`.
 |---|---|
 | `X_TIMEZONE_INVALID` | not `Area/Location` or `UTC`: an abbreviation (`CET`), a numeric offset (`+02:00`), or a single-label legacy name (`Japan`) |
 | `X_CRON_INVALID` | unparseable expression, or one that can never match |
-| `X_DURATION_INVALID` | `'3'` with no unit, trailing junk, unknown unit |
+| `X_DURATION_INVALID` | `'3'` with no unit, trailing junk, unknown unit, or a total past `Number.MAX_SAFE_INTEGER` ms (`'99999999999999999999d'`) |
 | `X_DST_AMBIGUOUS` | overlap hit with `overlap: 'throw'` |
 | `X_DST_NONEXISTENT` | gap hit with `gap: 'throw'` |
 | `X_INSTANT_INVALID` | unparseable timestamp |

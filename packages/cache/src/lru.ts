@@ -17,6 +17,7 @@ import type {
   TtlJitter,
 } from './tiers';
 import { assertFiniteCapacity, assertFiniteDurationMs, assertTtl, nowMs } from './tiers';
+import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
 export interface LruOptions {
   /** Byte budget for the whole tier. Default 64 MiB. */
@@ -32,7 +33,12 @@ export interface LruOptions {
 
 interface LruNode {
   key: string;
-  value: unknown;
+  /**
+   * `{ v }` as `value-codec.ts` text, never the caller's object: held by reference, a hit was the
+   * writer's live object — mutated by one reader for every later one — and a `Date` here was an
+   * ISO string on the pod that read the same entry back out of Redis.
+   */
+  text: string;
   bytes: number;
   /** Epoch ms. Always finite: `assertTtl` refuses the `0` that used to mean "never expires". */
   expiresAt: number;
@@ -141,11 +147,15 @@ export class LruCache {
     }
     this.touch(node);
     this.hits += 1;
-    return { value: node.value as T, tags: node.tags, expiresAt: node.expiresAt };
+    const { v } = decodeCacheValue(node.text) as { readonly v: T };
+    return { value: v, tags: node.tags, expiresAt: node.expiresAt };
   }
 
   set<T>(key: string, value: T, options: CacheSetOptions = {}): void {
-    const bytes = estimateBytes(value) + encoder.encode(key).byteLength;
+    // Encoded first: the budget is then the exact bytes held, and an unencodable value is refused
+    // before anything is evicted for it.
+    const text = encodeCacheValue({ v: value }, { key, tier: 'lru' });
+    const bytes = estimateBytes(text) + encoder.encode(key).byteLength;
     if (bytes > this.maxBytes) {
       throw new CacheTooLargeError({ key, bytes, maxBytes: this.maxBytes, tier: 'lru' });
     }
@@ -158,7 +168,7 @@ export class LruCache {
 
     const node: LruNode = {
       key,
-      value,
+      text,
       bytes,
       expiresAt: nowMs(this.clock) + ttl,
       tags: options.tags ?? [],

@@ -10,8 +10,18 @@ import type { CacheTag } from './tags';
 import { tagsIntersect } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
 import { assertTtl } from './tiers';
+import { decodeCacheValue, encodeCacheValue } from './value-codec';
 
-type MemoStore = Map<string, CacheEntry<unknown>>;
+/**
+ * Codec text, as in every other tier: two callers in one request reading one key must not share
+ * one mutable object, and a hit here must be the shape the LRU or Redis would have answered.
+ */
+interface MemoEntry {
+  readonly text: string;
+  readonly tags: readonly CacheTag[];
+}
+
+type MemoStore = Map<string, MemoEntry>;
 
 const stores = new WeakMap<object, MemoStore>();
 
@@ -53,7 +63,9 @@ export function memoTier(): CacheTier {
     get<T>(key: string): Promise<CacheEntry<T> | undefined> {
       const entry = storeFor(false)?.get(key);
       // No TTL check: a request is shorter than any meaningful TTL.
-      return Promise.resolve(entry as CacheEntry<T> | undefined);
+      if (entry === undefined) return Promise.resolve(undefined);
+      const { v } = decodeCacheValue(entry.text) as { readonly v: T };
+      return Promise.resolve({ value: v, tags: entry.tags });
     },
 
     /**
@@ -75,7 +87,8 @@ export function memoTier(): CacheTier {
       if (options?.ttlMs !== undefined) {
         assertTtl(key, options.ttlMs, 'request-memo', { jitterFraction: 0 });
       }
-      storeFor(true)?.set(key, { value, tags: options?.tags ?? [] });
+      const text = encodeCacheValue({ v: value }, { key, tier: 'request-memo' });
+      storeFor(true)?.set(key, { text, tags: options?.tags ?? [] });
     },
 
     del(key: string): Promise<void> {

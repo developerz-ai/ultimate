@@ -95,6 +95,10 @@ Tier 1. Tagged caching + THE invalidation graph.
   collection bust and `t:{entity}:<id>` + `t:{entity}` for a row one. A row bust still `SREM`s what
   it deleted from the index (`sweepBucketsFor`). Pinned by `tier-parity.test.ts` and
   `redis.live.test.ts`.
+- **Every tier stores codec TEXT, never the caller's object** (`value-codec.ts`: JSON + tagged
+  `Date`/`bigint`/`Map`/`Set`, app `$x` keys escaped). One shape whichever tier hit, no shared
+  mutable reference; a cycle, depth > 512 or a bigint > 4096 chars is `X_CACHE_VALUE_UNENCODABLE`
+  at the write. Only `x1:`-marked text is revived; unmarked (pre-codec) is plain `JSON.parse`.
 - **`CacheTier.set` REJECTS, never throws synchronously** — `lruTier`/`memoTier` are
   `async` for that alone.
 - **`redis.ts`'s script deletes NOTHING — it reads.** It returns the members; the tier `DEL`s them
@@ -156,6 +160,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `tier-failures.ts` | `bestEffort()`, and the bounded log of refusals it absorbs |
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
+| `value-codec.ts` | the one value encoding every tier stores and decodes |
 | `redis.ts` | `Bun.redis` tier, build-namespaced keys, hash-tagged buckets, one script call per tag |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, `surrogateKeys`, the purge key list, the `PurgeDriver` seam |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, batching, key guard, and core's retryable table re-exported |

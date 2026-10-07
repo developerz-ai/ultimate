@@ -3,6 +3,7 @@
 // Standard Schema surface are what the rest of the framework actually depends on.
 
 import { isAbsoluteUrl } from './absolute-url';
+import { type ArrayBounds, arraySchema } from './array-schema';
 import {
   type AnySchema,
   type Check,
@@ -230,25 +231,6 @@ export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
   };
 }
 
-export function arraySchema<S extends AnySchema>(
-  items: S,
-): Schema<readonly InferInput<S>[], InferOutput<S>[]> {
-  const itemCheck = checkOf(items);
-  const node: SchemaNode = { kind: 'array', items: items.node };
-  return makeSchema<readonly InferInput<S>[], InferOutput<S>[]>(node, (value, path) => {
-    if (!Array.isArray(value)) return fail(path, expected('an array', value));
-    const issues: StandardIssue[] = [];
-    const out: unknown[] = [];
-    for (const [index, item] of value.entries()) {
-      const result = itemCheck(item, [...path, index]);
-      if (result.ok) out.push(result.value);
-      else issues.push(...result.issues);
-    }
-    if (issues.length > 0) return failWith(issues);
-    return pass(out as InferOutput<S>[]);
-  });
-}
-
 export function enumSchema<const V extends readonly [string, ...string[]]>(
   values: V,
 ): Schema<V[number], V[number]> {
@@ -416,7 +398,11 @@ export interface TNamespace {
   /** Any JSON value, bounded in depth — a payload whose shape is somebody else's. */
   json(): Schema<JsonValue, JsonValue>;
   object<S extends Shape>(shape: S): ObjectSchema<S>;
-  array<S extends AnySchema>(items: S): Schema<readonly InferInput<S>[], InferOutput<S>[]>;
+  /** `t.array(items, { min, max })` — inclusive item-count bounds, both optional. */
+  array<S extends AnySchema>(
+    items: S,
+    bounds?: ArrayBounds,
+  ): Schema<readonly InferInput<S>[], InferOutput<S>[]>;
   enum<const V extends readonly [string, ...string[]]>(values: V): Schema<V[number], V[number]>;
   /** Variadic `enum`; the blessed spelling at call sites. */
   enumerated<const V extends readonly [string, ...string[]]>(

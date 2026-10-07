@@ -70,4 +70,8 @@ export const TIER_1_ERROR_STATUS = {
   X_STORAGE_READ_FAILED: 500,
   // @ultimat3/storage — the object is under retention or a legal hold
   X_STORAGE_OBJECT_LOCKED: 409,
+  // @ultimat3/cache — a cached value the cache codec cannot encode (a cycle). The stack absorbs it
+  // through `bestEffort`; only a direct `LruCache.set` in a handler reaches a socket, and that is
+  // an authoring defect in the server's own code, never the caller's — hence 500.
+  X_CACHE_VALUE_UNENCODABLE: 500,
 } satisfies Readonly<Record<string, number>>;

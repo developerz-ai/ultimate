@@ -447,3 +447,17 @@ export const webhookSignatureStale = (
     fix: 'sync the sending host clock with NTP, or widen the window with verifyWebhookSignature(request, { secret, toleranceMs: 600_000 }) if the sender queues deliveries for longer than that',
     meta: { skewMs, toleranceMs },
   });
+
+/**
+ * The receiver holds no secret. Not a weak key — NO key: an HMAC under '' is a mac anyone can
+ * compute, so verifying against it accepts every forged delivery. `X_CONFIG_INVALID` because the
+ * repair is the route's configuration and nothing a sender does can fix it. `shape` is `typeof`
+ * or "an empty string" — never the value, which is a credential when it is one.
+ */
+export const webhookSecretMissing = (shape: string): HttpError =>
+  new HttpError({
+    code: 'X_CONFIG_INVALID',
+    cause: `verifyWebhookSignature was given ${shape} as its secret, and a mac under an empty key is one anyone can compute — every forged delivery would verify`,
+    fix: "verifyWebhookSignature(request, { secret: process.env.WEBHOOK_SECRET ?? '' }) in the api/ route receiving it, with WEBHOOK_SECRET set in the deployment environment to the signing secret the sender shows for this endpoint — an unset variable is then refused here rather than verified against",
+    meta: { option: 'webhook secret' },
+  });

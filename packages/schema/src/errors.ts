@@ -210,6 +210,19 @@ export class DefaultInvalidError extends SchemaError {
   }
 }
 
+/**
+ * Thrown where `t.array(items, { min, max })` is WRITTEN: a bound no item count meets refuses every
+ * input, and the first import of the authoring file is the earliest honest place to say so.
+ */
+export class BoundsInvalidError extends SchemaError {
+  static readonly code = 'X_SCHEMA_BOUNDS_INVALID';
+  override readonly name = 'BoundsInvalidError';
+
+  constructor(init: Omit<SchemaErrorInit, 'code'>) {
+    super({ ...init, code: BoundsInvalidError.code });
+  }
+}
+
 export class SchemaUnsupportedError extends SchemaError {
   static readonly code = 'X_SCHEMA_UNSUPPORTED';
   override readonly name = 'SchemaUnsupportedError';

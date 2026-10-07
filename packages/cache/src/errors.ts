@@ -11,6 +11,7 @@ export const CACHE_OWNED_ERROR_CODES = [
   'X_CACHE_TAG_UNKNOWN',
   'X_CACHE_TOO_LARGE',
   'X_CACHE_TTL_INVALID',
+  'X_CACHE_VALUE_UNENCODABLE',
 ] as const;
 
 /** Every code cache can throw. It borrows none: every remote driver here is implemented. */
@@ -27,6 +28,7 @@ export const CACHE_ERROR_TITLES: Readonly<Record<CacheOwnedErrorCode, string>> =
   X_CACHE_TAG_UNKNOWN: 'a tag no entity declared',
   X_CACHE_TOO_LARGE: "one entry exceeds the tier's byte budget",
   X_CACHE_TTL_INVALID: 'a cache TTL that is not a positive number of milliseconds',
+  X_CACHE_VALUE_UNENCODABLE: 'a cached value the cache codec cannot encode',
 };
 
 // One unconditional call, so a second package claiming one of cache's codes throws
@@ -69,6 +71,23 @@ export class CacheTooLargeError extends UltimateError {
       code: 'X_CACHE_TOO_LARGE',
       cause: `entry "${input.key}" is ${input.bytes}B, over the ${input.tier} budget of ${input.maxBytes}B`,
       fix: `raise cache.${input.tier}.maxBytes in app.config.ts, or cache a projection instead of the row`,
+    });
+  }
+}
+
+/**
+ * A value the cache codec (`value-codec.ts`) cannot write: a cycle, a `toJSON` that throws, nesting
+ * past `MAX_CACHE_VALUE_DEPTH`, or a `bigint` past `MAX_CACHE_BIGINT_DIGITS`. Refused at the WRITE, in every tier alike — the LRU used to hold it by reference while Redis
+ * threw a bare `TypeError`, so the same `set` worked on one rung and failed on the next. `reason`
+ * is `renderThrowable` output, never the value: a cached value is application data.
+ */
+export class CacheValueUnencodableError extends UltimateError {
+  constructor(input: { key: string; tier: string; reason: string }) {
+    super({
+      code: 'X_CACHE_VALUE_UNENCODABLE',
+      cause: `entry "${input.key}" cannot be written to the ${input.tier} tier: ${input.reason}. A cache tier holds JSON plus Date, bigint, Map and Set, the same shape on every tier`,
+      fix: 'load: () => rows.map(({ parent, ...row }) => row) — cache a projection the codec reads back: plain objects, no back-references, nesting under 512 levels, a bigint past 4096 digits stored as a string',
+      meta: { key: input.key, tier: input.tier },
     });
   }
 }

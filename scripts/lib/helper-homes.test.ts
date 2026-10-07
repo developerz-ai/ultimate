@@ -109,6 +109,25 @@ describe('a second implementation of a helper with one home is refused', () => {
     expect(helpersIn('const t = `x-ultimate-build`;')).toEqual(['BUILD_ID_HEADER']);
   });
 
+  // Three copies of "does this grant reach that permission" — policy's matcher, its grant index
+  // and auth's API-key cut — read `billing:invoice:*` by its FIRST segment and granted refunds.
+  test('grantCovers, as a `:*` test beside a prefix or first-segment read, either order', () => {
+    expect(helpersIn("if (g.endsWith(':*')) return resourceOf(g) === resourceOf(w);")).toEqual([
+      'grantCovers',
+    ]);
+    expect(helpersIn('return g.endsWith(":*") && w.startsWith(g.slice(0, -1));')).toEqual([
+      'grantCovers',
+    ]);
+    expect(
+      helpersIn("const r = w.split(':')[0];\nreturn g.endsWith(`:*`) && g.split(':')[0] === r;"),
+    ).toEqual(['grantCovers']);
+  });
+
+  test('naming a wildcard, or collecting one, is not a copy of the matcher', () => {
+    expect(helpersIn("const isWild = (s: string) => s === '*' || s.endsWith(':*');")).toEqual([]);
+    expect(helpersIn("else if (grant.endsWith(':*')) wildcards.push(grant);")).toEqual([]);
+  });
+
   test('a build-id header named in prose, or a longer name, is not a copy', () => {
     expect(helpersIn('/** sent as `x-ultimate-build` */')).toEqual([]);
     expect(helpersIn("const n = 'x-ultimate-build-hash';")).toEqual([]);
@@ -192,6 +211,7 @@ describe('what is never a copy', () => {
       storeMode: "resolveEnvironment({ env }) === 'test' ? 'memory' : 'database'",
       renderDeprecation: 'const link = \'</v2>; rel="successor-version"\';',
       BUILD_ID_HEADER: "export const CLIENT_BUILD_META = 'x-ultimate-build';",
+      grantCovers: "return grant.endsWith(':*') && wanted.startsWith(grant.slice(0, -1));",
     };
     for (const rule of HELPER_HOMES) {
       expect(helpersIn(samples[rule.helper] ?? '', rule.home)).toEqual([]);

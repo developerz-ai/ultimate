@@ -69,6 +69,14 @@ describe('referencesColumn', () => {
     expect(referencesColumn('$tag$ status $tag$ = body', 'status')).toBe(false);
   });
 
+  // Postgres's `ident_cont` takes `$` and any non-ASCII character: `écol` and `a$col` are ONE
+  // name each, and an ASCII-only word scan found `col` inside both and missed `prénom` whole.
+  test('a non-ASCII name is a reference, and `col` is never read inside `écol` or `a$col`', () => {
+    expect(referencesColumn('prénom is not null', 'prénom')).toBe(true);
+    expect(referencesColumn('écol > 0', 'col')).toBe(false);
+    expect(referencesColumn('a$col > 0', 'col')).toBe(false);
+  });
+
   test('a longer name that merely contains the column is not a reference', () => {
     expect(referencesColumn("status_code = 'x'", 'status')).toBe(false);
     expect(referencesColumn("old_status = 'x'", 'status')).toBe(false);

@@ -3,9 +3,9 @@
 // evaluator never has to reason about hierarchy — and a cycle is caught here, once.
 // The per-actor flattening and its memo live in `grant-index.ts`; this file owns the map.
 import type { Actor as CoreActor } from '@ultimat3/core';
+import { grantCovers } from '@ultimat3/core';
 import { callerSite, UNKNOWN_SITE } from './declaration-site';
 import { roleRedefined } from './errors';
-import { resourceOf } from './permissions';
 
 /**
  * An **alias** of core's declaration, and nothing more (`As of 2026-08-19`) — so the actor
@@ -156,12 +156,12 @@ export const expandRoles = (
   return [...out].sort();
 };
 
-/** `post:*` matches every verb on `post`; `*` matches everything. */
-export const grantMatches = (grant: string, wanted: string): boolean => {
-  if (grant === '*' || grant === wanted) return true;
-  if (grant.endsWith(':*')) return resourceOf(grant) === resourceOf(wanted);
-  return false;
-};
+/**
+ * `post:*` matches every name under `post:`; `billing:invoice:*` only those under
+ * `billing:invoice:`; `*` matches everything. Core's `grantCovers` is the one reading — `auth`
+ * cuts an API key to its owner with it too, and the two may not share a copy at tier 2.
+ */
+export const grantMatches = (grant: string, wanted: string): boolean => grantCovers(grant, wanted);
 
 /** For the `/_x` dashboard: which roles would satisfy a permission. */
 export const rolesGranting = (permission: string, map: RoleMap = roleMap): readonly string[] =>

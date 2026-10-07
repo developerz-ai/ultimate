@@ -2,18 +2,23 @@
 // stays put. Why it earns a file: a live query evaluates policy PER SUBSCRIBER on every change
 // event, and every `can()` clause asks this question — so an unmemoised expansion turned one
 // write on a channel with 10k subscribers into 10k role-graph walks in a single tick.
-import { type Permission, resourceOf } from './permissions';
+import { grantCovers } from '@ultimat3/core';
+import type { Permission } from './permissions';
 import { type Actor, expandRoles, type RoleMap, roleDefinitions, roleMapGeneration } from './roles';
 
 /**
  * The three shapes `grantMatches()` can take, pre-split so a lookup is a `Set.has` instead of a
- * scan: an exact grant, a `<resource>:*` wildcard, and the bare `*`. Equivalent to
+ * scan: an exact grant, a `<prefix>:*` wildcard, and the bare `*`. Equivalent to
  * `actorPermissions(actor).some((grant) => grantMatches(grant, permission))`, per grant kind.
  */
 interface GrantIndex {
   readonly exact: ReadonlySet<string>;
-  /** Resources covered by a `<resource>:*` grant. */
-  readonly wildcards: ReadonlySet<string>;
+  /**
+   * The `<prefix>:*` grants themselves, asked through core's `grantCovers` — a list, not a set of
+   * resources: keyed by the first segment, `billing:invoice:*` answered for `billing:refund:issue`.
+   * An actor holds a handful, so the scan is a few `startsWith`.
+   */
+  readonly wildcards: readonly string[];
   readonly all: boolean;
   /** Deduped and sorted, built once so `actorPermissions()` never sorts per clause. */
   readonly sorted: readonly string[];
@@ -39,11 +44,11 @@ const buildIndex = (actor: Actor, map: RoleMap): GrantIndex => {
   // read that throws where it should have DENIED is the `testActor` defect one layer down.
   const exact = new Set<string>(actor.permissions ?? []);
   for (const grant of expandRoles(actor.roles ?? [], map)) exact.add(grant);
-  const wildcards = new Set<string>();
+  const wildcards: string[] = [];
   let all = false;
   for (const grant of exact) {
     if (grant === '*') all = true;
-    else if (grant.endsWith(':*')) wildcards.add(resourceOf(grant));
+    else if (grant.endsWith(':*')) wildcards.push(grant);
   }
   return { exact, wildcards, all, sorted: [...exact].sort() };
 };
@@ -78,5 +83,5 @@ export const actorHas = (
   if (actor === null) return false;
   const index = indexFor(actor, map);
   if (index.all || index.exact.has(permission)) return true;
-  return index.wildcards.has(resourceOf(permission));
+  return index.wildcards.some((grant) => grantCovers(grant, permission));
 };

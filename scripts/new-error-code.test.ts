@@ -135,8 +135,11 @@ describe('a registry kept as frozen declarations, not titles', () => {
     expect(codes).toContain("    X_SCHEMA_PROBE: { title: 'a probe' },\n  });");
     expect(transpiles(codes)).toBe(true);
     expect(await read(dir, WIKI_PAGE)).toContain('| `X_SCHEMA_PROBE` | a probe |');
-    // schema has no OFF_SOCKET group yet, so the pin opens one — never schema's UNDECIDED group.
-    expect(await read(dir, STATUS_BACKLOG)).toContain("  schema: ['X_SCHEMA_PROBE'],\n};");
+    // The pin joins schema's OFF_SOCKET group — never schema's UNDECIDED group. Opening a group a
+    // package lacks is `new-error-code-status.test.ts`'s `ai` case.
+    expect(await read(dir, STATUS_BACKLOG)).toContain(
+      "  schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_PROBE'],\n};",
+    );
   });
 
   test('a title past 100 columns wraps the way Biome writes the entry', async () => {

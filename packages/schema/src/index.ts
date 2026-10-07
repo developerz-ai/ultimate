@@ -1,5 +1,7 @@
 // Single responsibility: the public API of @ultimat3/schema. Explicit named exports only.
 
+export type { ArrayBounds } from './array-schema';
+export { arraySchema } from './array-schema';
 export type {
   AnySchema,
   Check,
@@ -35,6 +37,7 @@ export type {
   ValidationIssue,
 } from './errors';
 export {
+  BoundsInvalidError,
   DefaultInvalidError,
   DiscriminantInvalidError,
   isSchemaError,
@@ -105,7 +108,6 @@ export type {
   TNamespace,
 } from './validators';
 export {
-  arraySchema,
   builtinT,
   enumSchema,
   literalSchema,

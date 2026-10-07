@@ -796,7 +796,9 @@ default set:
 
 - `*` and `<resource>:*` are refused at `issueApiKey` (`X_CONFIG_INVALID`), and dropped from a row
   that already holds one.
-- A key a user owns keeps only the scopes that owner's grants cover. This package can read the
+- A key a user owns keeps only the scopes that owner's grants cover — `@ultimat3/core`'s
+  `grantCovers`, the reading `can()` uses: an owner with `billing:invoice:*` covers
+  `billing:invoice:read`, never `billing:refund:issue`. This package can read the
   row's `permissions` and `scopes` (`directGrants`) and cannot expand a role — that is
   `@ultimat3/policy`'s — so an app whose users hold roles says what they grant:
 

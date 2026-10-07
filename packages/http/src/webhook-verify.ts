@@ -25,6 +25,7 @@ import {
 import {
   bodyInvalid,
   httpCountInvalid,
+  webhookSecretMissing,
   webhookSignatureInvalid,
   webhookSignatureStale,
 } from './errors';
@@ -78,6 +79,20 @@ const assertFiniteBodyLimit = (maxBytes: number): number => {
   );
 };
 
+/**
+ * The secret is screened before the request is touched. `string` in the type is no guarantee: the
+ * usual caller passes `process.env.X`, and an unset one is `undefined` — which `webhookMac` turns
+ * into an UNKEYED hash, as it does '' into an HMAC under an empty key. Either way the mac is one
+ * anyone can compute. Only empty is refused, not short: the sender (`@ultimat3/jobs`) signs with
+ * any non-empty secret, and a receiver stricter than its sender refuses deliveries that are real.
+ */
+const assertWebhookSecret = (secret: unknown): string => {
+  if (typeof secret === 'string' && secret.length > 0) return secret;
+  throw webhookSecretMissing(
+    secret === '' ? 'an empty string' : `a value of type ${typeof secret}`,
+  );
+};
+
 export interface WebhookVerifyOptions {
   /** The shared secret for THIS sender. Never logged, never rendered into a refusal. */
   readonly secret: string;
@@ -118,6 +133,7 @@ export async function verifyWebhookSignature(
   request: Request,
   options: WebhookVerifyOptions,
 ): Promise<VerifiedWebhook> {
+  const secret = assertWebhookSecret(options.secret);
   const pathname = new URL(request.url).pathname;
   const signature = parseWebhookSignatureHeader(request.headers.get(WEBHOOK_SIGNATURE_HEADER));
   if (signature === undefined) {
@@ -149,7 +165,7 @@ export async function verifyWebhookSignature(
   // and then the body is identical to hashing one string — and it never round-trips a body that is
   // not valid UTF-8 through a decoder before the mac is taken over it.
   const expected = webhookMac({
-    secret: options.secret,
+    secret,
     timestampText: signature.timestampText,
     eventId,
     topic,

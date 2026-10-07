@@ -15,8 +15,9 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | Re-exports | `action`, `query`, `jobs`, `entity` re-export `t` verbatim so an authoring file imports one package — never let them wrap or copy it |
 
 Module order (no cycles):
-`char-count → describe-value → node → builder → money-value → json-value → validators →
-discriminated-union → provider → t` (`node-fits` and `json-schema` read `json-value` too).
+`char-count → describe-value → node → builder → money-value → json-value → array-schema →
+validators → discriminated-union → provider → t` (`node-fits` and `json-schema` read `json-value`
+too).
 `char-count.ts` is imported by BOTH `validators.ts` (which rejects on length) and
 `describe-value.ts` (which renders the length in the same message), because they disagreed: the
 rule counted code points and the message counted UTF-16 units, so `t.string.min(3)` refused `'👍a'`
@@ -46,6 +47,11 @@ it. Every rejected value goes through `describeValue`, which reports length and 
 else, in CHARACTERS (`char-count.ts`) — the unit the rule that rejected it counts in. No dev flag
 re-enables the echo — one misconfigured environment is the same breach, and a dev
 overlay already holds the raw body. `describe-value.test.ts` is the enforcement.
+
+`t.array(items, { min, max })` (`array-schema.ts`) carries its bounds as `minItems`/`maxItems` ON
+the node — JSON Schema's names — and `json-schema.ts` and `wire-schema.ts` publish both;
+`@ultimat3/action`'s `sampleFor` samples `minItems` items. A bound no count meets is
+`X_SCHEMA_BOUNDS_INVALID` where it is declared, the same rule as the discriminant below.
 
 `X_SCHEMA_DISCRIMINANT_INVALID` is thrown where a `discriminatedUnion` is BUILT, not where a value
 is parsed. A member with no literal at the discriminant, or a second member claiming a tag the

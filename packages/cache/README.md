@@ -46,6 +46,22 @@ const feed = await stack.read('feed:org-1', () => db.posts.recent(), {
 });
 ```
 
+**Cached values: JSON + `Date` + `bigint` + `Map` + `Set` — the same shape from every tier.**
+Every tier (the memo and the LRU included) stores the value as text through one codec
+(`value-codec.ts`) and decodes a fresh copy on each hit, so:
+
+| You write | Every tier answers |
+|---|---|
+| a `Date`, a `bigint`, a `Map`, a `Set` (at any depth) | the same type back |
+| a plain object, array, string, number, boolean, `null` | JSON semantics: `NaN`/`Infinity` → `null`, `undefined` members dropped |
+| a class instance | a plain object — its prototype is not stored |
+| a cycle, a `toJSON` that throws, nesting past `MAX_CACHE_VALUE_DEPTH` (512), a `bigint` past `MAX_CACHE_BIGINT_DIGITS` (4096 chars) | `X_CACHE_VALUE_UNENCODABLE`, at the write — a value is stored and readable, or refused |
+
+A hit is never the object that was written, nor the one another reader got: mutating it changes
+nothing in the cache. An app key spelled `$x` (or `$$x`…) is escaped on the way in. The stored text
+is `x1:` + JSON; only marked text is revived, so a Redis entry written as plain JSON before the
+codec reads back exactly as stored — never revived, never renamed.
+
 **`ttlMs` is positive and finite, in every tier.** Omit it for the tier's default; anything else
 is `X_CACHE_TTL_INVALID`. There is no "never expires" and no "do not cache" — `0` used to mean the
 first in the LRU tier and one second in the Redis tier, so a stack holding both answered
@@ -399,6 +415,7 @@ cache).
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared — usually a typo |
 | `X_CACHE_TOO_LARGE` | one entry exceeds a tier's whole byte budget |
 | `X_CACHE_TTL_INVALID` | a `ttlMs` that is not a positive, finite number of milliseconds |
+| `X_CACHE_VALUE_UNENCODABLE` | a value with a cycle, a throwing `toJSON`, nesting past 512 levels or a `bigint` past 4096 digits, written to any tier |
 
 ### Error classes
 
@@ -414,6 +431,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `CacheTagUnknownError` | `X_CACHE_TAG_UNKNOWN` | `src/errors.ts` |
 | `CacheTooLargeError` | `X_CACHE_TOO_LARGE` | `src/errors.ts` |
 | `CacheTtlInvalidError` | `X_CACHE_TTL_INVALID` | `src/errors.ts` |
+| `CacheValueUnencodableError` | `X_CACHE_VALUE_UNENCODABLE` | `src/errors.ts` |
 
 ## Boundary
 

@@ -6,8 +6,8 @@
  * One method, positional parameters. **`Bun.sql` does not satisfy it** — `Bun.sql.query` is
  * `undefined`; it is a tagged template whose positional form is `unsafe`, so `{ executor: Bun.sql }`
  * would `TypeError` on the first statement. What satisfies it is a client that already speaks
- * `(text, values)`, wrapped in one line — `@ultimat3/cli`'s `pgExecutorFor(client)` over
- * `@ultimat3/db`'s `DbClient.query({ text, values })` is the framework's own — or a transaction
+ * `(text, values)` — `@ultimat3/db`'s `dbExecutor()` over `DbClient.query({ text, values })` is
+ * the framework's own, and its one builder — or a transaction
  * handle, which is a client on its own connection. It answers rows, never a command tag.
  */
 export interface PgExecutor {

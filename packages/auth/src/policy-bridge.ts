@@ -5,7 +5,14 @@
 // import a same-tier package; policy binds to it by structure, in whichever order they land.
 
 import type { Actor } from '@ultimat3/core';
-import { agentActor, anonymousActor, assertNever, serviceActor, userActor } from '@ultimat3/core';
+import {
+  agentActor,
+  anonymousActor,
+  assertNever,
+  grantCovers,
+  serviceActor,
+  userActor,
+} from '@ultimat3/core';
 import type { AuthApiKeyRecord, AuthSession, AuthUser } from './adapter';
 
 /** Structural mirror of `@ultimat3/policy`'s `PolicyActorFields`. Kept in sync by hand. */
@@ -72,15 +79,6 @@ export function actorFromUser(user: AuthUser, session: AuthSession): PolicyActor
 /** `*` and `<resource>:*` — the two spellings a role uses to be granted everything. */
 export const isWildcardScope = (scope: string): boolean => scope === '*' || scope.endsWith(':*');
 
-// `@ultimat3/policy`'s own reading of a grant's resource, mirrored: same tier, so not imported.
-const resourceOf = (grant: string): string => grant.split(':')[0] ?? grant;
-
-/** Whether one of the owner's grants reaches a named permission. A grant MAY be a wildcard. */
-const covers = (grant: string, wanted: string): boolean =>
-  grant === '*' ||
-  grant === wanted ||
-  (grant.endsWith(':*') && resourceOf(grant) === resourceOf(wanted));
-
 /**
  * What a key may carry of what it names. Two cuts, and both only ever remove:
  *
@@ -99,7 +97,7 @@ export function apiKeyScopes(
   return scopes.filter(
     (scope) =>
       !isWildcardScope(scope) &&
-      (ownerGrants === null || ownerGrants.some((grant) => covers(grant, scope))),
+      (ownerGrants === null || ownerGrants.some((grant) => grantCovers(grant, scope))),
   );
 }
 

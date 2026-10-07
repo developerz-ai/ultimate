@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5374859e71397b43c980f02872318ed2d8db51a3e8a5ee803e18e159da70f1df",
+  "buildId": "79d3235af8123576d640a59c7ca99377a8c1227f225f2041273d72fef60d80f9",
   "tiers": {
     "0": [
       "core",
@@ -726,6 +726,11 @@
     },
     {
       "code": "X_CACHE_TTL_INVALID",
+      "owner": "cache",
+      "at": "packages/cache/src/errors.ts"
+    },
+    {
+      "code": "X_CACHE_VALUE_UNENCODABLE",
       "owner": "cache",
       "at": "packages/cache/src/errors.ts"
     },
@@ -3338,6 +3343,11 @@
       "code": "X_SCHEDULE_INVALID",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_SCHEMA_BOUNDS_INVALID",
+      "owner": "schema",
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_DEFAULT_INVALID",

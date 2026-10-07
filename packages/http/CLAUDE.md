@@ -225,8 +225,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `readWithinLimit` and returns the raw text. The mac is checked BEFORE freshness
   (`X_WEBHOOK_SIGNATURE_STALE` means authentic and old); the window is `Math.abs`; the timestamp is
   digits-only; `:` is refused in id and topic; the comparison is `timingSafeEqual`
-  (`bun run secret-compare`). **The FORMAT is core's** (`packages/core/src/webhook-signature.ts`) —
-  never re-declared here.
+  (`bun run secret-compare`). **An empty `secret` is `X_CONFIG_INVALID`.**
+  **The FORMAT is core's** (`packages/core/src/webhook-signature.ts`) — never re-declared here.
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in `e2e/` (`bun test
   packages/http/e2e`), sealed; `start()` calls core's `markListening()`. Never unseal.
 

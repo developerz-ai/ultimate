@@ -3,10 +3,27 @@
 // disagreed with a guard about where a literal ends is a `;` sent as data or a `delete` read as
 // prose, and the two answers must be the same answer.
 
-const IDENTIFIER_START = /[A-Za-z_]/;
-export const IDENTIFIER_PART = /[A-Za-z0-9_]/;
-/** `$` is legal in an identifier after the first character — `a$b` is one name, not three. */
-const IDENTIFIER_TAIL = /[A-Za-z0-9_$]/;
+/**
+ * Postgres's `ident_start`/`dolq_start`: any non-ASCII character too (`\200-\377` per UTF-8 byte),
+ * so `$é$` opens a body and `é$x$` is one name — read against a server, `sql-scan.test.ts`.
+ */
+const IDENTIFIER_START = /[A-Za-z_\u0080-\uffff]/;
+/** A tag's `dolq_cont`: an identifier character without the `$`, non-ASCII included. */
+const TAG_PART = /[A-Za-z0-9_\u0080-\uffff]/;
+/**
+ * `ident_cont`: the one class every word scan in this package reads a name with. `$` is legal
+ * after the first character (`a$b` is one name, not three) and so is any non-ASCII one — an
+ * ASCII-only scan found `col` inside `écol` and never found `prénom` at all.
+ */
+export const IDENTIFIER_CHAR = /[A-Za-z0-9_$\u0080-\uffff]/;
+
+/**
+ * An unquoted name as a UTF8 server stores it: ASCII folded to lower case and nothing else —
+ * `Évent` stays `Évent` (read against a server, `dependent-view.test.ts`). `toLowerCase()` folded
+ * the `É` too and named a column the catalog does not hold.
+ */
+export const foldIdentifier = (name: string): string =>
+  name.replace(/[A-Z]+/g, (run) => run.toLowerCase());
 
 export type NoiseKind = 'line-comment' | 'block-comment' | 'string' | 'identifier' | 'dollar-body';
 
@@ -23,11 +40,13 @@ function skipLineComment(script: string, index: number): number {
 }
 
 /**
- * Past a block comment. Postgres **nests** them, so the depth is counted rather than matched to
- * the first terminator — a commented-out block that itself contains a comment closes once, and
- * every `;` after that point would otherwise be read as data.
+ * Past a block comment opening at `index`, or `null` when it never closes. Postgres **nests**
+ * them, so the depth is counted rather than matched to the first terminator — a commented-out
+ * block that itself contains a comment closes once, and every `;` after that point would otherwise
+ * be read as data. Exported for `@ultimat3/mcp`'s read-only check, which REFUSES an unclosed
+ * comment where this lexer runs it to the end: one rule for where a comment ends, two readers.
  */
-function skipBlockComment(script: string, index: number): number {
+export function endOfBlockComment(script: string, index: number): number | null {
   let depth = 0;
   let at = index;
   while (at < script.length) {
@@ -46,8 +65,12 @@ function skipBlockComment(script: string, index: number): number {
     }
     at += 1;
   }
-  return script.length;
+  return null;
 }
+
+/** An unclosed comment runs to the end: Postgres reports that syntax error, not this lexer. */
+const skipBlockComment = (script: string, index: number): number =>
+  endOfBlockComment(script, index) ?? script.length;
 
 /**
  * Past a run closing on `quote`, where a doubled quote is an escaped one — `'it''s'` and
@@ -84,7 +107,7 @@ function skipQuoted(script: string, index: number, quote: string, escapes: boole
  */
 function insideIdentifier(script: string, index: number): boolean {
   let at = index - 1;
-  while (at >= 0 && IDENTIFIER_TAIL.test(script[at] ?? '')) at -= 1;
+  while (at >= 0 && IDENTIFIER_CHAR.test(script[at] ?? '')) at -= 1;
   const first = script[at + 1];
   return at + 1 < index && first !== undefined && IDENTIFIER_START.test(first);
 }
@@ -104,7 +127,7 @@ export function dollarTagAt(script: string, index: number): string | null {
   let at = index + 1;
   while (at < script.length) {
     const char = script[at] ?? '';
-    const valid = at === index + 1 ? IDENTIFIER_START.test(char) : IDENTIFIER_PART.test(char);
+    const valid = at === index + 1 ? IDENTIFIER_START.test(char) : TAG_PART.test(char);
     if (!valid) break;
     at += 1;
   }
@@ -125,7 +148,9 @@ function escapesAt(script: string, index: number): boolean {
   const prefix = script[index - 1];
   if (prefix !== 'E' && prefix !== 'e') return false;
   const before = script[index - 2];
-  return before === undefined || !IDENTIFIER_PART.test(before);
+  // `IDENTIFIER_CHAR`, never an ASCII-only class: `éE` and `a$E` are names to Postgres,
+  // and reading their `E` as a prefix let a `\'` swallow the `;` before a `drop table`.
+  return before === undefined || !IDENTIFIER_CHAR.test(before);
 }
 
 /**

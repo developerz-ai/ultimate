@@ -27,7 +27,7 @@ export const publishPost = t.object({
   postId:   t.uuid,
   notify:   t.boolean.default(true),
   title:    t.string.min(3).max(80),
-  tags:     t.array(t.slug),
+  tags:     t.array(t.slug, { max: 10 }),  // inclusive item-count bounds, both optional
   price:    t.money,                 // { minor: 1999, currency: 'EUR' } — never a float
                                      // { minor: 2, currency: 'USD', scale: 6 } is $0.000002
   timeZone: t.timezone,              // real IANA validation, not an annotation
@@ -55,6 +55,7 @@ Refused at the boundary rather than guessed at (`As of 2026-10`):
 | `t.url` | leading / trailing spaces and C0 controls, a tab or newline anywhere | the URL parser strips them in silence and the validator returns the string as written. Trim before parsing |
 | `t.object` `t.record` `t.money` | anything whose prototype is not `Object.prototype` or `null` — a `Map`, a `Date`, a class instance | none has the own keys the schema declared, so it parsed to `{}` |
 | `.default(v)` | a `v` the schema itself rejects — `X_SCHEMA_DEFAULT_INVALID`, thrown where it is declared | an omitted field parsed to a value the same schema refuses when sent |
+| `t.array(items, { min, max })` | fewer than `min` or more than `max` items, before any item is read; at declaration, a bound that is not a whole number from 0 up, or `min > max` — `X_SCHEMA_BOUNDS_INVALID` | the bounds sit on the array node, so OpenAPI and the MCP tool schema publish them as `minItems`/`maxItems` — a `t.refine` count was prose no generated client could enforce |
 
 ### `t.json()` — a payload whose shape is somebody else's
 
@@ -184,6 +185,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
+| `BoundsInvalidError` (extends `SchemaError`) | `X_SCHEMA_BOUNDS_INVALID` | `src/errors.ts` |
 | `DefaultInvalidError` (extends `SchemaError`) | `X_SCHEMA_DEFAULT_INVALID` | `src/errors.ts` |
 | `DiscriminantInvalidError` (extends `SchemaError`) | `X_SCHEMA_DISCRIMINANT_INVALID` | `src/errors.ts` |
 | `SchemaError` | any schema code; the base of the four that extend it. Extends `Error`, not core's `UltimateError` — schema imports nothing — and carries the same `Symbol.for('ultimate.error')` brand so `isUltimateError` answers `true` | `src/errors.ts` |

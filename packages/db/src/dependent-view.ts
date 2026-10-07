@@ -21,7 +21,7 @@
 import type { DbClient } from './client';
 import { migrationViewDepends } from './migration-errors';
 import { identifier, join, sql } from './sql';
-import { IDENTIFIER_PART, noiseAt } from './sql-scan';
+import { foldIdentifier, IDENTIFIER_CHAR, noiseAt } from './sql-scan';
 import { statementsOf } from './statement-split';
 
 /** One `alter table <table> alter column <column> type …`, as the catalog spells both names. */
@@ -44,7 +44,7 @@ interface SqlWord {
 
 /**
  * The names in one statement, in order, folded the way Postgres folds them: an unquoted identifier
- * to lower case, a quoted one verbatim. Comments, string literals and dollar-quoted bodies
+ * to lower case in ASCII only (`foldIdentifier`), a quoted one verbatim. Comments, string literals and dollar-quoted bodies
  * contribute nothing, through this package's one lexer — `-- alter column` is prose and
  * `'alter column'` is data.
  */
@@ -60,13 +60,13 @@ function wordsOf(statement: string): readonly SqlWord[] {
       at = noise.end;
       continue;
     }
-    if (!IDENTIFIER_PART.test(statement[at] ?? '')) {
+    if (!IDENTIFIER_CHAR.test(statement[at] ?? '')) {
       at += 1;
       continue;
     }
     let end = at;
-    while (end < statement.length && IDENTIFIER_PART.test(statement[end] ?? '')) end += 1;
-    words.push({ text: statement.slice(at, end).toLowerCase(), quoted: false });
+    while (end < statement.length && IDENTIFIER_CHAR.test(statement[end] ?? '')) end += 1;
+    words.push({ text: foldIdentifier(statement.slice(at, end)), quoted: false });
     at = end;
   }
   return words;

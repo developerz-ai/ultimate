@@ -139,6 +139,8 @@
   canonical zero most emitters write — was refused along with `'PT0H0M0S'` and `'P0W'`, while
   `'P0D'` was let through by a special case. `ISO_8601` already requires a component group for any
   body past a bare `'P'`, which is the case the guard was written for.
+- **`parseDuration`'s rounded total must be `Number.isSafeInteger`** (`safeTotal`, both arms) —
+  finite components can still sum to `Infinity` or past 2^53. `X_DURATION_INVALID`.
 - **An impossible day/month pair is refused by `parseCron`, in constant time.**
   `isValidCron('0 0 30 2 *')` answered `true` and the refusal arrived ~150 ms later out of
   `nextCronOccurrence`, after 200,000 walk steps — a cost `firedSince` pays on every tick of the

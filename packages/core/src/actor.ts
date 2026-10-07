@@ -203,6 +203,18 @@ export function hasScope(actor: Actor, scope: string): boolean {
 }
 
 /**
+ * Whether one permission grant reaches `wanted`: `*` reaches everything, `<prefix>:*` every name
+ * beginning `<prefix>:` (any depth), anything else only itself. The PREFIX, never the first
+ * segment: `billing:invoice:*` read as "all of `billing`" granted refunds to an invoice clerk.
+ * Here, at tier 0, because `@ultimat3/policy` (`can()`) and `@ultimat3/auth` (an API key's cut
+ * to its owner) are one tier and may not share a copy — two copies were how it drifted.
+ */
+export function grantCovers(grant: string, wanted: string): boolean {
+  if (grant === '*' || grant === wanted) return true;
+  return grant.endsWith(':*') && wanted.startsWith(grant.slice(0, -1));
+}
+
+/**
  * Attach resolved facts to an actor, once, at the request boundary — the one place that already
  * awaited the database. Returns a new frozen actor, so the actor a predicate reads later cannot
  * be edited under it; later facts win over earlier ones for the same key.

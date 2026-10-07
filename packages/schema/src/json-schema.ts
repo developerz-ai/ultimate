@@ -54,6 +54,8 @@ export interface JsonSchema {
   /** Negation. Emitted only inside `propertyNames`, to publish a closed set of refused keys. */
   readonly not?: JsonSchema;
   readonly items?: JsonSchema;
+  readonly minItems?: number;
+  readonly maxItems?: number;
   readonly anyOf?: readonly JsonSchema[];
   readonly discriminator?: JsonSchemaDiscriminator;
   readonly title?: string;
@@ -227,6 +229,8 @@ function convert(node: SchemaNode): JsonSchema {
       return annotate({
         type: 'array',
         items: node.items === undefined ? {} : convert(node.items),
+        ...(node.minItems === undefined ? {} : { minItems: node.minItems }),
+        ...(node.maxItems === undefined ? {} : { maxItems: node.maxItems }),
       });
     case 'union':
       return annotate({
