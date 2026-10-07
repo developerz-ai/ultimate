@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 25.1.0 - 2026-10-07
+
 **Sweep 13** — a deep-dive audit of every tier, and the last open reference-app gaps (B24–B27).
 
 ### Added
@@ -33,6 +37,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `@ultimat3/time`: `parseDuration` refuses a total that is not a safe integer (`'9'.repeat(305) + 'd'` was `Infinity`).
 - `@ultimat3/db`: a dollar-quote tag may hold non-ASCII letters, as in Postgres (`$é$ … $é$`).
 - `@ultimat3/db`: one identifier character class (`IDENTIFIER_CHAR`: ASCII, `_`, `$`, any non-ASCII), as Postgres reads names. `éE'\'` is a name then a plain string, so a `drop` after it is no longer hidden from `destructiveStatements`; a retyped non-ASCII column (`prénom`) finds its dependent views, and `col` is not matched inside `écol`; bare names fold ASCII-only, like the server.
+
+### Commits
+
+- fix(testing): import an island chunk by file: URL — macOS Bun's directory cache (#704) (#707)
+- feat: sweep 13c — the reference app uses every primitive factory: webhooks, a background review agent, bounded arrays, dbExecutor (#706)
+- fix: sweep 13b — tiers 3–5: stale soft navigation (#693), MCP guard bypass, idempotency fence, transition row, agentJob actor (#703)
+- fix: sweep 13a — tiers 0–2: forged webhooks, wildcard escalation, one cache shape, array bounds, dbExecutor (#701)
+- ci: prove what npm serves after every release — release.yml npm-scaffold (#700)
 
 ## 25.0.0 - 2026-10-07
 
