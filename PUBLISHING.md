@@ -375,6 +375,12 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
 5. Only then does the **`publish` job** start behind `environment: npm-publish` — nobody approves
    anything today, the environment has no reviewers (step 2 above) — and publish each tier over
    OIDC.
+6. Then the **`npm-scaffold` job** proves what npm SERVES, with no `id-token` and no workspace on
+   the path. It waits until `registry-audit` sees every package at the version, attested, then runs
+   `bunx create-ultimate@<version>`, `bun install`, `bun run setup`, `bun run check` and
+   `docker build -f docker/Dockerfile .` in a temp directory. CI's scaffold smoke builds against
+   workspace links, so this is the one check that a registry-only gap (an export the tarball lacks)
+   cannot pass. Red means the release shipped broken and the next patch is owed — never an unpublish.
 
 **A publish that failed half way is resumed by re-running it**:
 `gh run rerun <run-id> --failed`. The publish step asks `npm view <pkg>@<version> version` first

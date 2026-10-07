@@ -291,3 +291,58 @@ jobs:
               echo "::endgroup::"
             done
           done <<< "$plan"
+
+  # Is what npm SERVES a working app? CI's scaffold smoke builds against workspace links, so a
+  # scaffold that imports an export the registry lacks passes every gate and fails `docker build` on
+  # a user's machine (found by plan 101 sweep 10e; proven by hand for 25.0.0). This job is the same
+  # walk against the just-published version, with no workspace on the path: wait until the registry
+  # audit sees every package at this version, attested; `bunx create-ultimate@<version>`; install;
+  # the scaffold's own setup and check; the production image. It holds no `id-token` — nothing here
+  # can publish — and a red run means the release shipped broken and the next patch is owed.
+  npm-scaffold:
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.2'
+
+      - name: install (for the registry audit only)
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      # npm answers "may take a few minutes to become available" after a publish, and 25.0.0 took
+      # several: the audit is polled, never read once.
+      - name: wait for every package on npm at this version, attested
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            if bun run scripts/registry-audit.ts --json > audit.json; then
+              jq -r '.summary' audit.json
+              exit 0
+            fi
+            echo "attempt ${attempt}: $(jq -r '.summary' audit.json)"
+            sleep 30
+          done
+          jq -r '.findings[] | "\(.code) \(.cause)"' audit.json
+          exit 1
+
+      - name: scaffold, set up, check and build from npm
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          bunx "create-ultimate@${VERSION}" npmapp
+          cd npmapp
+          grep -q "\"@ultimat3/cli\": \"^${VERSION}\"" package.json
+          bun install
+          bun run setup
+          bun run check
+          docker build -f docker/Dockerfile -t "npmapp:${VERSION}" .
