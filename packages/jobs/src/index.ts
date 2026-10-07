@@ -153,6 +153,14 @@ export {
   JobPageInvalidError,
 } from './errors-operator';
 export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
+/**
+ * The tenant a job's body runs under. The TYPE only: `NO_JOB_TENANT`, `jobRunActor` and
+ * `jobTenantFor` stay unexported. The first would be a second spelling of `'none'` (axiom 1 — the
+ * literal is what the type says and what a declaration reads as), and the other two are
+ * `executeJob`'s and `job()`'s: a second caller deriving a run's org would be a second answer to
+ * "whose tenant is this", which is the thing this declaration exists to make singular.
+ */
+export { JobTenantMismatchError } from './errors-tenant';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export {
   EVENTS_PURGE_TARGET,
@@ -347,21 +355,14 @@ export type {
   TaskJobResult,
 } from './task';
 export { getTask, isTaskHandle, registeredTasks, resetTasks, restoreTasks, task } from './task';
-/**
- * The tenant a job's body runs under. The TYPE only: `NO_JOB_TENANT`, `jobRunActor` and
- * `jobTenantFor` stay unexported. The first would be a second spelling of `'none'` (axiom 1 — the
- * literal is what the type says and what a declaration reads as), and the other two are
- * `executeJob`'s and `job()`'s: a second caller deriving a run's org would be a second answer to
- * "whose tenant is this", which is the thing this declaration exists to make singular.
- */
 export type { JobTenant } from './tenant';
 export type {
-  OrgWebhookDeliveryInput,
   WebhookDefinition,
   WebhookDeliveryInput,
   WebhookEndpoint,
   WebhookEvent,
   WebhookReport,
+  WebhookTenant,
 } from './webhook';
 export { DEFAULT_WEBHOOK_DISABLE_AFTER, webhook } from './webhook';
 export type { WebhookFetch } from './webhook-attempt';

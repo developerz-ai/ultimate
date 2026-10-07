@@ -17,7 +17,6 @@
 
 import type { Clock, Ctx } from '@ultimat3/core';
 import {
-  assert,
   finiteOption,
   isCanonicalWebhookField,
   isUltimateError,
@@ -28,6 +27,7 @@ import {
 import { t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { nowMs } from './clock';
+import { JobTenantMismatchError } from './errors-tenant';
 import type { JobHandle } from './job';
 import { job } from './job';
 import type { RetryPolicy } from './retry';
@@ -104,10 +104,13 @@ export interface WebhookDeliveryInput {
   readonly orgId?: string | undefined;
 }
 
-/** A delivery to an endpoint an org owns: the org is REQUIRED at the enqueue. */
-export interface OrgWebhookDeliveryInput extends WebhookDeliveryInput {
-  readonly orgId: string;
-}
+/**
+ * Who a delivery runs as: `'none'`, or the org derived from its payload. May answer `undefined` —
+ * `({ orgId }) => orgId` over a row that carries none — and that answer is refused, TERMINALLY,
+ * before either seam reads (`X_JOB_TENANT_MISMATCH`). One signature for both shapes on purpose: a
+ * 25.0.0 `({ endpointId }) => …` that never reads `orgId` keeps enqueuing without one.
+ */
+export type WebhookTenant = 'none' | ((input: WebhookDeliveryInput) => string | undefined);
 
 /** What one landed delivery reports. Bounded, so `x jobs show` can print it. */
 export interface WebhookReport {
@@ -117,7 +120,7 @@ export interface WebhookReport {
   readonly durationMs: number;
 }
 
-export interface WebhookDefinition<I extends WebhookDeliveryInput = WebhookDeliveryInput> {
+export interface WebhookDefinition {
   /**
    * REQUIRED, unlike a job's. A delivery's name is a durable queue key — every queued, retrying
    * and dead-lettered row carries it — so it is never left to whichever export name a module used.
@@ -125,12 +128,12 @@ export interface WebhookDefinition<I extends WebhookDeliveryInput = WebhookDeliv
   readonly name: string;
   /**
    * REQUIRED, exactly as on `job()`: `tenant: ({ orgId }) => orgId` for a delivery scoped to the
-   * org that owns the endpoint — every enqueue then carries `orgId` (`OrgWebhookDeliveryInput`) —
-   * or the explicit `tenant: 'none'`. A delivery reads the app's own endpoint and event rows
+   * org that owns the endpoint — every enqueue then carries `orgId` — or the explicit
+   * `tenant: 'none'`. A delivery reads the app's own endpoint and event rows
    * through the seams below, so the org those reads run under is a fact about the WORK and is
    * declared here rather than inherited from whichever worker claimed it.
    */
-  readonly tenant: JobTenant<I>;
+  readonly tenant: WebhookTenant;
   /**
    * The endpoint this delivery is for. Read once PER ATTEMPT and never checkpointed: it carries a
    * secret, and a `step.run` output is written to `x_job_steps` — a credential in a durable table
@@ -139,16 +142,17 @@ export interface WebhookDefinition<I extends WebhookDeliveryInput = WebhookDeliv
   endpoint(args: {
     readonly endpointId: string;
     /**
-     * The delivery's own `orgId`, off the input — required by `OrgWebhookDeliveryInput`. Handed
-     * over so a seam names its tenant from the work rather than reading it back off `ctx.actor`.
+     * The delivery's own `orgId`, off the input — by the time a seam runs, the org the run is
+     * under, or absent. Handed over so a seam names its tenant from the work rather than reading it
+     * back off `ctx.actor`.
      */
-    readonly orgId: I['orgId'];
+    readonly orgId: string | undefined;
     readonly ctx: Ctx;
   }): Promise<WebhookEndpoint | null> | WebhookEndpoint | null;
   /** The event's bytes. Read per attempt as well, out of the app's own table. */
   event(args: {
     readonly eventId: string;
-    readonly orgId: I['orgId'];
+    readonly orgId: string | undefined;
     readonly ctx: Ctx;
   }): Promise<WebhookEvent | null> | WebhookEvent | null;
   /** Where every attempt is recorded, and where the consecutive-failure count comes from. */
@@ -183,15 +187,7 @@ export interface WebhookDefinition<I extends WebhookDeliveryInput = WebhookDeliv
   readonly timeout?: DurationInput;
 }
 
-export function webhook(
-  definition: WebhookDefinition<OrgWebhookDeliveryInput> & {
-    readonly tenant: (input: OrgWebhookDeliveryInput) => string;
-  },
-): JobHandle<OrgWebhookDeliveryInput>;
-export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliveryInput>;
-export function webhook(
-  definition: WebhookDefinition<OrgWebhookDeliveryInput> | WebhookDefinition,
-): JobHandle<WebhookDeliveryInput> {
+export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliveryInput> {
   const clock = definition.clock ?? systemClock;
   const disableAfter = finiteOption(
     'webhook()',
@@ -199,10 +195,6 @@ export function webhook(
     definition.disableAfter ?? DEFAULT_WEBHOOK_DISABLE_AFTER,
   );
   const send = definition.fetch ?? ((url, init) => fetch(url, init));
-  // The two seams at the base input. An org-tenant declaration's seams take `orgId: string`, and
-  // they only ever run after `tenantOf` refused a delivery without one — so the org they are handed
-  // is the one their type promises.
-  const seams: Pick<WebhookDefinition, 'endpoint' | 'event'> = definition;
 
   // Named so `run` can read the deadline `job()` resolved — one parse of `timeout`, never two.
   const handle: JobHandle<WebhookDeliveryInput> = job<WebhookDeliveryInput>({
@@ -226,7 +218,9 @@ export function webhook(
               job: definition.name,
               timeoutMs: handle.timeoutMs,
             };
-      const endpoint = await seams.endpoint({
+      // Before either seam: the org they are handed must be the org every read runs under.
+      assertInputOrg(definition.name, input.orgId, ctx);
+      const endpoint = await definition.endpoint({
         endpointId: input.endpointId,
         orgId: input.orgId,
         ctx,
@@ -258,7 +252,7 @@ export function webhook(
         resolve: definition.resolve ?? resolveWebhookHost,
       });
 
-      const event = await seams.event({ eventId: input.eventId, orgId: input.orgId, ctx });
+      const event = await definition.event({ eventId: input.eventId, orgId: input.orgId, ctx });
       if (event === null) {
         throw new WebhookEventUnknownError({ webhook: definition.name, eventId: input.eventId });
       }
@@ -360,25 +354,41 @@ export function webhook(
 }
 
 /**
- * The declared tenant, with the one refusal an org-owned delivery adds: a queued row with no
- * `orgId` — enqueued untyped, or before the org was added — names no org to run under, and is
- * refused before either seam reads anything. `assert`, as `jobTenantFor`'s empty-tenant refusal:
- * the repair is the enqueue, and the fix names it.
+ * The declared tenant, asked as declared, with one refusal added: an answer that names NO org. Only
+ * then — a 25.0.0 `tenant: ({ endpointId }) => …` never reads `orgId` and needs none, so requiring
+ * one would refuse every delivery it queued. The usual cause is a row queued before `orgId` existed
+ * under a `({ orgId }) => orgId` declaration. Coded and TERMINAL rather than `jobTenantFor`'s
+ * `assert`: an unclassified refusal spent the whole retry policy, and `x jobs retry`, re-proving it.
  */
-function tenantOf(
-  definition: WebhookDefinition<OrgWebhookDeliveryInput> | WebhookDefinition,
-): JobTenant<WebhookDeliveryInput> {
+function tenantOf(definition: WebhookDefinition): JobTenant<WebhookDeliveryInput> {
   const declared = definition.tenant;
   if (typeof declared !== 'function') return declared;
   return (input) => {
-    const { orgId } = input;
-    assert(
-      orgId !== undefined,
-      `webhook "${definition.name}" declares an org tenant, and this delivery was enqueued with no orgId`,
-      `enqueue it with the org that owns the endpoint: ${definition.name}.enqueue({ endpointId, eventId, orgId })`,
-    );
-    return declared({ ...input, orgId });
+    const orgId = declared(input);
+    if (typeof orgId === 'string' && orgId.length > 0) return orgId;
+    throw new JobTenantMismatchError({
+      job: definition.name,
+      reason: `declares an org tenant, and this delivery's payload names no org for it${input.orgId === undefined ? ' (it carries no orgId)' : ''}`,
+      fix: `re-enqueue it with the org that owns the endpoint: ${definition.name}.enqueue({ endpointId, eventId, orgId }) — a queued row cannot be retried into having one`,
+    });
   };
+}
+
+/**
+ * The org a seam is HANDED is the org the run is UNDER, or the delivery is refused before either
+ * seam reads: a lookup filtered by `orgId` would otherwise read another org's endpoint, secret and
+ * all, inside this org's run. With `tenant: 'none'` nothing would check it at all, so any `orgId`
+ * is refused there. Terminal for `tenantOf`'s reason — the payload is the same on every attempt.
+ */
+function assertInputOrg(name: string, orgId: string | undefined, ctx: Ctx): void {
+  if (orgId === undefined) return;
+  const runOrg = ctx.actor.orgId ?? undefined;
+  if (orgId === runOrg) return;
+  throw new JobTenantMismatchError({
+    job: name,
+    reason: `was handed orgId ${orgId}, but the run is under ${runOrg === undefined ? "tenant 'none'" : `org ${runOrg}`}`,
+    fix: `derive the tenant from the payload's own org — webhook({ tenant: ({ orgId }) => orgId }) — or enqueue ${name} with the orgId its tenant resolves to`,
+  });
 }
 
 /** A URL no delivery may open, or a secret that would make the POST unsigned. The parsed url. */

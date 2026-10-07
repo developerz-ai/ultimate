@@ -1,7 +1,8 @@
-// A delivery to an endpoint an org owns runs under that org. The delivery input carried only
-// `endpointId` and `eventId`, and `tenant` is a synchronous function of the input — so the
-// `tenant: ({ endpointId }) => …` every doc suggested could not be written, and a multi-tenant app's
-// endpoint read ran under no org at all. The org now rides on the input, beside the two ids.
+// A delivery to an endpoint an org owns runs under that org. `tenant` is a synchronous function of
+// the input, so the org rides on it beside the two ids — `tenant: ({ orgId }) => orgId`. A 25.0.0
+// declaration that derives its org some other way (`({ endpointId }) => …`) keeps working without
+// one, and a delivery whose declared tenant names no org, or whose `orgId` is not the org it runs
+// under, is refused TERMINALLY: the same payload is refused identically on every attempt.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf } from '@ultimat3/core';
@@ -9,7 +10,7 @@ import type { ClaimedJob } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import { executeJob } from './execute';
 import { type JobHandle, resetJobs } from './job';
-import { type OrgWebhookDeliveryInput, type WebhookDeliveryInput, webhook } from './webhook';
+import { type WebhookDeliveryInput, webhook } from './webhook';
 import { ENDPOINT, PUBLIC_IP } from './webhook-harness-fixture';
 import { memoryWebhookLedger } from './webhook-ledger';
 
@@ -20,7 +21,7 @@ beforeEach(() => {
 /** The org every seam read under, in order. */
 let seen: (string | undefined)[] = [];
 
-const orgDelivery = (): JobHandle<OrgWebhookDeliveryInput> =>
+const orgDelivery = (): JobHandle<WebhookDeliveryInput> =>
   webhook({
     name: 'org-hooks',
     tenant: ({ orgId }) => orgId,
@@ -40,14 +41,18 @@ const orgDelivery = (): JobHandle<OrgWebhookDeliveryInput> =>
   });
 
 /** Queued on a memory driver and run by the real `executeJob`, under the production worker. */
-async function deliver(handle: JobHandle<WebhookDeliveryInput>, input: WebhookDeliveryInput) {
+async function deliver(
+  handle: JobHandle<WebhookDeliveryInput>,
+  input: WebhookDeliveryInput,
+  maxAttempts = 3,
+) {
   const driver = memoryJobDriver();
   await driver.enqueue({
     name: handle.name,
     queue: handle.queue,
     input,
     idempotencyKey: handle.idempotencyKeyFor(input),
-    maxAttempts: 1,
+    maxAttempts,
   });
   const [claimed] = await driver.claim({
     queues: [handle.queue],
@@ -87,7 +92,10 @@ describe('webhook() — the org that owns the endpoint is on the delivery', () =
     seen = [];
     const execution = await deliver(orgDelivery(), { endpointId: 'ep_1', eventId: 'evt_1' });
     expect(execution.outcome).not.toBe('completed');
-    expect(execution.error).toContain('enqueued with no orgId');
+    expect(execution.error).toContain('X_JOB_TENANT_MISMATCH');
+    // TERMINAL: dead-lettered on attempt 1 of 3 — the payload names no org on every attempt, and
+    // an unclassified refusal spent the whole policy proving it, then failed `x jobs retry` too.
+    expect(execution.outcome).toBe('dead-lettered');
     // Refused before any seam ran: nothing was read under no org.
     expect(seen).toEqual([]);
   });
@@ -105,5 +113,77 @@ describe('webhook() — the org that owns the endpoint is on the delivery', () =
       eventId: 'evt_1',
     });
     expect(handle.tenantFor({ endpointId: 'ep_1', eventId: 'evt_1' })).toBeUndefined();
+  });
+});
+
+describe('webhook() — the org on the input is the org the run is under, or nothing', () => {
+  test('a 25.0.0 tenant that derives its org without `orgId` still delivers, and enqueues without one', async () => {
+    seen = [];
+    const handle = webhook({
+      name: 'derived-hooks',
+      // The 25.0.0 shape: an org the app can name from the endpoint id alone.
+      tenant: ({ endpointId }) => (endpointId === 'ep_1' ? 'org-1' : 'org-unknown'),
+      ledger: memoryWebhookLedger(),
+      resolve: () => Promise.resolve([PUBLIC_IP]),
+      endpoint: ({ ctx }) => {
+        seen.push(ctx.actor.orgId);
+        return ENDPOINT;
+      },
+      event: () => ({ topic: 'post.published', body: '{}' }),
+      fetch: () => Promise.resolve(new Response('ok', { status: 200 })),
+    });
+    // No `orgId` at the enqueue, and that compiles: the declaration never asked for one.
+    const execution = await deliver(handle, { endpointId: 'ep_1', eventId: 'evt_1' });
+    expect(execution.outcome).toBe('completed');
+    expect(seen).toEqual(['org-1']);
+  });
+
+  test('an orgId that is not the org the run is under is refused before either seam reads', async () => {
+    seen = [];
+    const handle = webhook({
+      name: 'mismatched-hooks',
+      tenant: () => 'org-1',
+      ledger: memoryWebhookLedger(),
+      resolve: () => Promise.resolve([PUBLIC_IP]),
+      endpoint: ({ orgId }) => {
+        seen.push(orgId);
+        return ENDPOINT;
+      },
+      event: () => ({ topic: 'post.published', body: '{}' }),
+      fetch: () => Promise.resolve(new Response('ok', { status: 200 })),
+    });
+    const execution = await deliver(handle, {
+      endpointId: 'ep_1',
+      eventId: 'evt_1',
+      orgId: 'org-2',
+    });
+    expect(execution.error).toContain('X_JOB_TENANT_MISMATCH');
+    expect(execution.outcome).toBe('dead-lettered');
+    // A seam handed `org-2` while the run is `org-1` could read another org's secret.
+    expect(seen).toEqual([]);
+  });
+
+  test("tenant: 'none' with an orgId is refused too: nothing would check the org a seam is handed", async () => {
+    seen = [];
+    const handle = webhook({
+      name: 'untenanted-hooks',
+      tenant: 'none',
+      ledger: memoryWebhookLedger(),
+      resolve: () => Promise.resolve([PUBLIC_IP]),
+      endpoint: ({ orgId }) => {
+        seen.push(orgId);
+        return ENDPOINT;
+      },
+      event: () => ({ topic: 'post.published', body: '{}' }),
+      fetch: () => Promise.resolve(new Response('ok', { status: 200 })),
+    });
+    const execution = await deliver(handle, {
+      endpointId: 'ep_1',
+      eventId: 'evt_1',
+      orgId: 'org-2',
+    });
+    expect(execution.error).toContain('X_JOB_TENANT_MISMATCH');
+    expect(execution.outcome).toBe('dead-lettered');
+    expect(seen).toEqual([]);
   });
 });

@@ -14,9 +14,9 @@
 
 import type { Action, ActionJobHandle } from '@ultimat3/action';
 import type { Actor, Ctx } from '@ultimat3/core';
-import { assert, impersonate, useContext } from '@ultimat3/core';
+import { impersonate, useContext } from '@ultimat3/core';
 import type { JobHandle, JobTenant, RetryPolicy } from '@ultimat3/jobs';
-import { job } from '@ultimat3/jobs';
+import { JobTenantMismatchError, job } from '@ultimat3/jobs';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 
 export interface AgentJobOptions<I> {
@@ -110,16 +110,19 @@ export function agentJob<TInput extends StandardSchemaV1, TOutput extends Standa
 }
 
 /**
- * The resolver's actor stays inside the org the job declared. `assert` and no code of its own, as
- * `jobTenantFor`'s empty-tenant refusal: the declaration is wrong, and the repair is that edit.
+ * The resolver's actor stays inside the org the job declared. Coded and TERMINAL — jobs' own
+ * `X_JOB_TENANT_MISMATCH`, the refusal a webhook delivery naming the wrong org gets — because the
+ * same payload resolves the same foreign actor on every attempt: an unclassified `assert` spent the
+ * whole retry policy re-proving it.
  */
 function assertSameTenant(name: string, actor: Actor, tenant: string | undefined): void {
   const orgId = actor.orgId ?? undefined;
-  assert(
-    orgId === tenant,
-    `agentJob "${name}" actor() resolved an actor in org ${orgId ?? '(none)'}, but the job's tenant is ${tenant ?? "'none'"}, so the run would act outside the org it declared`,
-    `load the member in agentJob("${name}").actor under the job's own tenant — the ambient context already carries it — so a member of another org is not found rather than returned`,
-  );
+  if (orgId === tenant) return;
+  throw new JobTenantMismatchError({
+    job: name,
+    reason: `resolved an actor in org ${orgId ?? '(none)'} through actor(), but the run is under ${tenant === undefined ? "tenant 'none'" : `org ${tenant}`}, so it would act outside the org it declared`,
+    fix: `load the member in agentJob("${name}").actor under the job's own tenant — the ambient context already carries it — so a member of another org is not found rather than returned`,
+  });
 }
 
 /**

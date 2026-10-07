@@ -168,12 +168,15 @@ describe('agentJob({ actor }) — the run acts for the member its input names', 
     const handle = agentJob(reviewer(), {
       name: 'review-wrong-org',
       tenant: (input) => input.orgId,
-      retry: { attempts: 1 },
+      retry: { attempts: 3, jitter: false },
       actor: ({ input }) => member(input.memberId, 'org-2'),
     });
     const execution = await run(handle, INPUT);
-    expect(execution.outcome).not.toBe('completed');
+    expect(execution.error).toContain('X_JOB_TENANT_MISMATCH');
     expect(execution.error).toContain('org-2');
+    // TERMINAL: dead-lettered on attempt 1 of 3. The same payload resolves the same foreign actor
+    // on every attempt, so an unclassified refusal spent the whole policy re-proving it.
+    expect(execution.outcome).toBe('dead-lettered');
     // The policy was never asked: the refusal is the declaration's, before any turn.
     expect(asked).toEqual([]);
   });

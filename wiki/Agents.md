@@ -363,7 +363,7 @@ export const triageJob = agentJob(supportAgent, {
 | `retry` | yes | a model call fails transiently; how many times is nobody else's guess |
 | `queue` | no | |
 | `idempotencyKey` | no | defaults to the action projection's `action:<name>:<fingerprint of input>` |
-| `actor` | no | `({ input, ctx }) => Actor` — who the run acts FOR, re-resolved on every attempt from the id its input carries. Without it the agent runs as the worker, whose actor is **anonymous** in a served app, so a member policy refuses it `X_UNAUTHENTICATED`. Swapped in through core's `impersonate` (the worker stays on the record as `onBehalfOf`); an actor outside the declared `tenant` is refused before the agent starts |
+| `actor` | no | `({ input, ctx }) => Actor` — who the run acts FOR, re-resolved on every attempt from the id its input carries. Without it the agent runs as the worker, whose actor is **anonymous** in a served app, so a member policy refuses it `X_UNAUTHENTICATED`. Swapped in through core's `impersonate` (the worker stays on the record as `onBehalfOf`); an actor outside the declared `tenant` is `X_JOB_TENANT_MISMATCH` before the agent starts — terminal, dead-lettered on attempt 1, since the same payload resolves the same actor every time |
 
 It composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row all arrive for free. One execution path, and it is the action's: `invoke(agent, input, { surface: 'job', ctx })`, so the agent's policy, input parse, budget scope and span all apply — and `ctx` is the **worker's**, so an attempt timing out aborts the turn loop.
 

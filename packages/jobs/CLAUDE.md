@@ -228,7 +228,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 - **`exportRows()`**: one object per PAGE, named by page index; NO cross-tenant escape.
 - **`webhook()`**: ONE event to ONE endpoint, no steps; each attempt but a CANCELLED one recorded
   before the throw; `ledger.isDisabled` gates the socket. **The wire format is core's.** An org
-  tenant reads `orgId` OFF THE INPUT (`OrgWebhookDeliveryInput`); missing is an `assert`.
+  tenant reads `orgId` OFF THE INPUT; none, or not the run's org: TERMINAL `X_JOB_TENANT_MISMATCH`.
 - A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` subclass on
   purpose (it stands in for app code).
 
@@ -302,6 +302,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `worker-loop.ts` | the claim loop's timer: wake, `again`, the kicks |
 | `driver-pg-outbox-sql.ts` | the `x_outbox` statements |
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
+| `errors-tenant.ts` | `JobTenantMismatchError` |
 
 Which `-fixture.ts` harness each suite shares, and what each `.job.` suite proves:
 `docs/history/jobs.md`, "Moved 2026-10-01 — test harnesses".

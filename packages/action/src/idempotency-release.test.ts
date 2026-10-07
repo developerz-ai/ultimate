@@ -4,6 +4,7 @@
 // handler that had already committed (the double charge); in flight, it let a duplicate run beside it.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { setLogSink } from '@ultimat3/core';
 import type { PgliteClient } from '@ultimat3/db';
 import { pgliteClient } from '@ultimat3/db';
 import { type IdempotencyStore, withIdempotency } from './idempotency';
@@ -103,5 +104,34 @@ describe('withIdempotency releases THIS reservation, never the key', () => {
     expect(failure).toBe(refused);
     expect(released).toEqual([[KEY, reserved]]);
     expect(await inner.get(KEY)).toBeUndefined();
+  });
+
+  test('a release the store refuses is logged, and the caller still gets the beforeRun refusal', async () => {
+    const inner = memoryIdempotencyStore();
+    const store: IdempotencyStore = {
+      scope: inner.scope,
+      keepsRedaction: true,
+      reserve: (key, hash) => inner.reserve(key, hash),
+      settle: (key, value, id, redacted) => inner.settle(key, value, id, redacted),
+      fail: (key, failure, id) => inner.fail(key, failure, id),
+      release: () => Promise.reject(new TypeError('connection reset')),
+      get: (key) => inner.get(key),
+    };
+    const refused = new RangeError('bucket empty');
+    const lines: string[] = [];
+    const previous = setLogSink((line) => {
+      lines.push(line);
+    });
+    let failure: unknown;
+    try {
+      failure = await withIdempotency(store, KEY, { amount: 1 }, () => Promise.resolve(1), {
+        beforeRun: () => Promise.reject(refused),
+      }).catch((error: unknown) => error);
+    } finally {
+      setLogSink(previous);
+    }
+
+    expect(failure).toBe(refused);
+    expect(lines.some((line) => line.includes('action.idempotency.release-refused'))).toBe(true);
   });
 });

@@ -257,11 +257,11 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   unwinds with `X_ABORTED`.
 - **`describeAgents()` / `registeredModels()` are offered, not published** — their only legal consumer
   is `@ultimat3/cli`. The facts are a THUNK; an unnamed agent has no row.
-- **`agentJob()` composes `job()`** (never an imitation handle). `name`, `tenant`, `retry` are
+- **`agentJob()` composes `job()`** (never an imitation). `name`, `tenant`, `retry` are
   REQUIRED; both reads of `target.job()` are LAZY. **Every tool an `agentJob()`'d agent may call must
-  be idempotent** — unenforceable; no result is stored, a tool writes it. **`actor`** re-resolves
-  who it acts FOR per attempt (a served worker is ANONYMOUS) via `impersonate`; outside `tenant`
-  is an `assert`.
+  be idempotent** — unenforceable; no result is kept, a tool writes it. **`actor`** re-resolves
+  who it acts FOR each attempt (a served worker: ANONYMOUS) via `impersonate`; off-tenant is
+  TERMINAL `X_JOB_TENANT_MISMATCH`.
 
 ## Invariants — evals, retrieval, fix lines
 

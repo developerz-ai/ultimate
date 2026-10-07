@@ -17,7 +17,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `@ultimat3/core`: `grantCovers(grant, wanted)` â€” the one wildcard-grant matcher.
 - `@ultimat3/action`: `transition({ row })` â€” a row loader on the same seam `action()` has, so a transition's policy sees the row it moves (authorship) (#687). The contract-test sampler generates `minItems` items for a bounded array.
 - `@ultimat3/ai`: `agentJob(agent, { actor })` â€” who a queued run acts for, re-resolved on every attempt through core's `impersonate`; refused outside the job's tenant. A served worker is anonymous, so without it an agent whose policy needs a member failed `X_UNAUTHENTICATED` on its first claim.
-- `@ultimat3/jobs`: `webhook` deliveries carry `orgId` (`OrgWebhookDeliveryInput`), so `tenant: ({ orgId }) => orgId` can be written, and the `endpoint`/`event` seams receive the org from the input.
+- `@ultimat3/jobs`: `webhook` deliveries may carry `orgId`, so `tenant: ({ orgId }) => orgId` can be written, and the `endpoint`/`event` seams receive it. A 25.0.0 tenant that never reads it still delivers; an `orgId` that is not the run's org, or a tenant that names no org, dead-letters on the first attempt (`X_JOB_TENANT_MISMATCH`, terminal). `agentJob`'s cross-org actor refusal uses the same code.
 
 ### Fixed
 
@@ -26,7 +26,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - `@ultimat3/cache`: every tier stores one encoding (JSON plus tagged `Date`, `bigint`, `Map`, `Set`) and hands back a fresh copy. A `Date` was a `Date` on the pod that loaded it and a string on every other; a mutated LRU hit leaked to the next reader; a `bigint` never reached Redis. Codec text is marked (`x1:`), so a pre-codec entry reads back as plain JSON; nesting past 512 levels or a `bigint` past 4096 digits is refused at the write. A value no codec can encode is `X_CACHE_VALUE_UNENCODABLE`.
 - `@ultimat3/render`: the client router's fetch sends `cache: 'no-cache'`. A soft navigation after a write, a cross-tab clear or a sign-out was answered from the browser's HTTP cache (anonymous pages are `stale-while-revalidate=600`), showing the stale page and hiding build skew (#693).
 - `@ultimat3/mcp`: the read-only SQL guard reads nested block comments and dollar tags with `@ultimat3/db`'s lexer. `select /* /* */ ' */ pg_advisory_lock(42) --'` passed it, and a session advisory lock survives the read-only rollback. Hand-written tool arguments enforce `minItems`/`maxItems`.
-- `@ultimat3/action`: an idempotency `release(key, reservationId)` is fenced on the reservation, like `settle` and `fail`. A late release from a reclaimed attempt deleted its replacement's record and reopened the double-run window.
+- `@ultimat3/action`: an idempotency `release(key, reservationId)` is fenced on the reservation, like `settle` and `fail`. A late release from a reclaimed attempt deleted its replacement's record and reopened the double-run window. A release that itself fails is logged, and the caller gets the original refusal.
 - `@ultimat3/notify`: the memory delivery ledger answers as Postgres does: a `null` and an empty recipient are one delivery, a re-claim keeps the stored row, and `settle` without a claim is a no-op.
 - `@ultimat3/cli`: the boot builds every executor with `dbExecutor`; the internal `pgExecutorFor` is gone.
 - `@ultimat3/time`: `parseDuration` refuses a total that is not a safe integer (`'9'.repeat(305) + 'd'` was `Infinity`).

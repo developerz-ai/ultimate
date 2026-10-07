@@ -258,7 +258,14 @@ export async function withIdempotency<T>(
       await options.beforeRun();
     } catch (error) {
       // THIS reservation's id: one reclaimed while `beforeRun` waited is no longer ours to drop.
-      await store.release(key, record.id);
+      // A release the store refuses never replaces the refusal: the caller is owed the 429, not a
+      // driver error. The reservation then stays in flight until the window lapses (an autocommit
+      // one is never reclaimed early), so a retry inside it is a 409 — logged, so it is findable.
+      try {
+        await store.release(key, record.id);
+      } catch (storeError) {
+        logger.error('action.idempotency.release-refused', { key, error: storeError });
+      }
       throw error;
     }
   }

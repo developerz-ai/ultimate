@@ -92,6 +92,13 @@ export interface TransitionDef<
    * unchanged: loaded once, after the input parse, before the guard and before the statement. The
    * factory reads no row itself; which columns a rule needs (an `authorId` the `output` view may not
    * carry) is the app's. Omitted, the rule sees `row: null` — and must fail closed on it.
+   *
+   * CHECK-THEN-ACT, as every row-policy action's: the read is unlocked and outside any transaction,
+   * and the compare-and-set predicate is `id` + `from` only. A concurrent write to a column the
+   * rule read (an `authorId` reassigned between the read and the move) is not seen, so the move
+   * lands on the decision about the older row. Where that matters, do not use `transition()`: an
+   * `action` whose handler runs `withTransaction`, reads the row `for update`, decides, and calls
+   * `Table.transition` in that transaction closes the window.
    */
   row?(args: ActionRowArgs<TransitionInput<S>>): TRow | null | Promise<TRow | null>;
   /**
