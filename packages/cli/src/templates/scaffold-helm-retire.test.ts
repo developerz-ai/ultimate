@@ -16,6 +16,13 @@ import { names } from './naming';
 import { helmFiles } from './scaffold-helm';
 
 const HELM = Bun.which('helm');
+/**
+ * One `helm template` child's budget, and the test's own deadline derived from it: a cold runner's
+ * first render took over Bun's default 5 s while the child itself was allowed 30 s, so the TEST
+ * died first (CI, 2026-10-07). Each test renders at most twice, plus the scaffold's chart write.
+ */
+const HELM_RENDER_MS = 30_000;
+const TEST_MS = 2 * HELM_RENDER_MS + 5_000;
 const FRAMEWORK = join(import.meta.dir, '..', '..', '..', '..', 'docker', 'helm');
 const SCAFFOLD = mkdtempSync(join(tmpdir(), 'x-helm-retire-'));
 
@@ -61,7 +68,7 @@ function render(chart: string, extra: readonly string[]): Map<string, Deployment
       'image.repository=registry.example.com/app',
       ...extra,
     ],
-    { stdout: 'pipe', stderr: 'pipe', timeout: 30_000 },
+    { stdout: 'pipe', stderr: 'pipe', timeout: HELM_RENDER_MS },
   );
   if (result.exitCode !== 0) return expect.unreachable(`helm: ${result.stderr.toString()}`);
   const parsed: unknown = Bun.YAML.parse(result.stdout.toString());
@@ -74,25 +81,33 @@ const preStopOf = (doc: Deployment | undefined): readonly string[] | undefined =
 
 describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both charts', () => {
   for (const which of ['framework', 'scaffold'] as const) {
-    test(`${which}: off by default — no retire preStop, the drain-only grace`, async () => {
-      const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
-      const worker = render(chart, []).get('worker');
-      expect(preStopOf(worker)).toBeUndefined();
-      expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(35);
-    });
+    test(
+      `${which}: off by default — no retire preStop, the drain-only grace`,
+      async () => {
+        const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
+        const worker = render(chart, []).get('worker');
+        expect(preStopOf(worker)).toBeUndefined();
+        expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(35);
+      },
+      TEST_MS,
+    );
 
-    test(`${which}: set, the worker sends PID 1 the retire signal and waits it out`, async () => {
-      const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
-      const rendered = render(chart, ['--set', 'roles.worker.retireSeconds=7200']);
-      const worker = rendered.get('worker');
-      const command = preStopOf(worker);
-      expect(command?.[0]).toBe('bun');
-      expect(command?.join(' ')).toContain(`process.kill(1, '${RETIRE_SIGNAL}')`);
-      expect(command?.join(' ')).toContain('process.kill(1, 0)');
-      expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(7200 + 35);
-      // The other roles are untouched: the retire is the worker's alone.
-      expect(preStopOf(rendered.get('scheduler'))).toBeUndefined();
-      expect(rendered.get('web')?.spec.template.spec.terminationGracePeriodSeconds).toBe(45);
-    });
+    test(
+      `${which}: set, the worker sends PID 1 the retire signal and waits it out`,
+      async () => {
+        const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
+        const rendered = render(chart, ['--set', 'roles.worker.retireSeconds=7200']);
+        const worker = rendered.get('worker');
+        const command = preStopOf(worker);
+        expect(command?.[0]).toBe('bun');
+        expect(command?.join(' ')).toContain(`process.kill(1, '${RETIRE_SIGNAL}')`);
+        expect(command?.join(' ')).toContain('process.kill(1, 0)');
+        expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(7200 + 35);
+        // The other roles are untouched: the retire is the worker's alone.
+        expect(preStopOf(rendered.get('scheduler'))).toBeUndefined();
+        expect(rendered.get('web')?.spec.template.spec.terminationGracePeriodSeconds).toBe(45);
+      },
+      TEST_MS,
+    );
   }
 });
