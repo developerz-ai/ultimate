@@ -27,6 +27,7 @@ import { scanFrameworkCatalogSources } from './lib/i18n-scan';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { nodeImportFindings } from './node-imports';
 import { relativeSites } from './posix-relative';
+import { probeDatabaseScan } from './probe-databases';
 import { protoIndexFindings } from './proto-index';
 import { vocabularyFindings } from './render-modes';
 import { secretCompareFindings } from './secret-compare';
@@ -60,6 +61,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['test-fix-citations', testFixFindings],
   ['url-pathname', urlPathnameFindings],
   ['posix-relative', relativeSites],
+  ['probe-databases', probeDatabaseScan],
 ];
 
 const codeOf = async (run: () => Promise<unknown>): Promise<string> => {

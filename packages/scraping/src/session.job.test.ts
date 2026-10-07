@@ -11,7 +11,13 @@
 //   bun test packages/scraping/src/session.job.test.ts
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { ctxOf, isSealed, structuredLogger } from '@ultimat3/core';
+import {
+  ctxOf,
+  isSealed,
+  probeDatabaseName,
+  structuredLogger,
+  sweepProbeDatabases,
+} from '@ultimat3/core';
 import type { JobDriver, JobRecord, PgExecutor, Worker } from '@ultimat3/jobs';
 import {
   jobWorker,
@@ -35,7 +41,7 @@ const url = Bun.env['TEST_DATABASE_URL'];
 const describeJob = url === undefined ? describe.skip : describe;
 
 /** Its own database: this file applies the queue's tables and drops them with it. */
-const PROBE_DB = 'x_scrape_session_probe';
+const PROBE_DB = probeDatabaseName('x_scrape_session_probe');
 const MASTER_KEY = 'e5'.repeat(32);
 const KEYS = { env: { ULTIMATE_SECRETS_KEY: MASTER_KEY }, root: '/nonexistent-app-root' };
 const LOGIN = 'https://bank.test/login';
@@ -47,13 +53,19 @@ const probeUrl = (): string => {
   return parsed.href;
 };
 
-const admin = async (statement: string): Promise<void> => {
+const admin = async (statement: string, values: readonly unknown[] = []): Promise<unknown[]> => {
   const sql = new Bun.SQL(url ?? '', { max: 1 });
   try {
-    await sql.unsafe(statement, []);
+    return [...(await sql.unsafe(statement, [...values]))];
   } finally {
     await sql.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    (await admin(text, values)) as R[],
 };
 
 /**
@@ -87,6 +99,7 @@ let executor: PgExecutor | undefined;
 beforeAll(async () => {
   if (url === undefined) return;
   await admin(`drop database if exists ${PROBE_DB} with (force)`);
+  await sweepProbeDatabases(adminExecutor, PROBE_DB);
   await admin(`create database ${PROBE_DB}`);
   const client = new Bun.SQL(probeUrl(), { max: 4, prepare: false });
   sql = client;

@@ -18,7 +18,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { accountKey, defineAuth, memoryAuthAdapter } from '@ultimat3/auth';
-import { ctxOf, systemClock } from '@ultimat3/core';
+import { ctxOf, probeDatabaseName, sweepProbeDatabases, systemClock } from '@ultimat3/core';
 import { dbExecutor } from '@ultimat3/db';
 import type { PurgeReport } from '@ultimat3/jobs';
 import { getJob, memoryStepStore, resetJobs, resetTasks, stepRunner } from '@ultimat3/jobs';
@@ -39,7 +39,7 @@ const describeLive = url === undefined ? describe.skip : describe;
 
 const BOOT_TIMEOUT_MS = 60_000;
 /** Its own database, because the boot applies DDL to it. Never the one `TEST_DATABASE_URL` names. */
-const PROBE_DB = 'x_purge_probe';
+const PROBE_DB = probeDatabaseName('x_purge_probe');
 
 let runtime: RunningServices | undefined;
 let root: string | undefined;
@@ -50,13 +50,23 @@ const probeUrl = (): string => {
   return parsed.href;
 };
 
-const on = async (target: string, statement: string): Promise<void> => {
+const on = async <R = unknown>(
+  target: string,
+  statement: string,
+  values: readonly unknown[] = [],
+): Promise<readonly R[]> => {
   const sql = new Bun.SQL(target, { max: 1 });
   try {
-    await sql.unsafe(statement, []);
+    return [...(await sql.unsafe(statement, [...values]))] as R[];
   } finally {
     await sql.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    on<R>(url ?? '', text, values),
 };
 
 const countIn = async (table: string): Promise<number> => {
@@ -83,6 +93,7 @@ async function boot(config?: string): Promise<RunningServices> {
   root = mkdtempSync(join(tmpdir(), 'x-purge-'));
   if (config !== undefined) await Bun.write(join(root, 'app.config.ts'), config);
   await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
+  await sweepProbeDatabases(adminExecutor, PROBE_DB);
   await on(url ?? '', `create database ${PROBE_DB}`);
   const dbUrl = probeUrl();
   runtime = await startServices(resolveServices(root, { DATABASE_URL: dbUrl }), {

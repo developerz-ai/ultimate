@@ -4,7 +4,7 @@
 // its own database and drops it afterwards.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { ctxOf, structuredLogger } from '@ultimat3/core';
+import { ctxOf, probeDatabaseName, structuredLogger, sweepProbeDatabases } from '@ultimat3/core';
 import type { JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
   jobWorker,
@@ -100,15 +100,21 @@ describe('memory outbox: send() rides the caller’s transaction', () => {
 
 const url = Bun.env['TEST_DATABASE_URL'];
 /** Its own database: this file applies the queue's tables and drops them with it. */
-const PROBE_DB = 'x_mail_outbox_probe';
+const PROBE_DB = probeDatabaseName('x_mail_outbox_probe');
 
-const admin = async (statement: string): Promise<void> => {
+const admin = async (statement: string, values: readonly unknown[] = []): Promise<unknown[]> => {
   const sql = new Bun.SQL(url ?? '', { max: 1 });
   try {
-    await sql.unsafe(statement, []);
+    return [...(await sql.unsafe(statement, [...values]))];
   } finally {
     await sql.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    (await admin(text, values)) as R[],
 };
 
 /** `Bun.SQL` binds a JS array as a joined string; the queue binds queue NAMES as one. */
@@ -128,6 +134,7 @@ let sql: Sql | undefined;
 beforeAll(async () => {
   if (url === undefined) return;
   await admin(`drop database if exists ${PROBE_DB} with (force)`);
+  await sweepProbeDatabases(adminExecutor, PROBE_DB);
   await admin(`create database ${PROBE_DB}`);
   const target = new URL(url);
   target.pathname = `/${PROBE_DB}`;

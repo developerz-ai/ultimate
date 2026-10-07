@@ -9,7 +9,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun ships no path joiner, and the migrations are found relative to this file.
 import { join } from 'node:path';
+import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import { type DbClient, postgresClient } from './client';
+import { dbExecutor } from './db-executor';
 import { introspectCatalog } from './introspect-catalog';
 import { type Migration, migrate } from './migrate';
 import { pgliteClient } from './pglite';
@@ -96,7 +98,7 @@ describe('load(dump) equals replay(migrations) · the reference app', () => {
   );
 
   describe.skipIf(!hasPostgres)('on Postgres', () => {
-    const database = `x_schema_load_${process.pid}`;
+    const database = probeDatabaseName('x_schema_load');
     const admin = postgresClient({ url: url ?? '' });
 
     afterAll(async () => {
@@ -108,6 +110,10 @@ describe('load(dump) equals replay(migrations) · the reference app', () => {
       'in a database of its own',
       async () => {
         await admin.execute(raw(`drop database if exists ${database} with (force)`));
+        await sweepProbeDatabases(
+          dbExecutor(() => admin),
+          database,
+        );
         await admin.execute(raw(`create database ${database} template template0`));
         const target = new URL(url ?? '');
         target.pathname = `/${database}`;

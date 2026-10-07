@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { isSealed, SECRETS_KEY_ENV } from '@ultimat3/core';
+import { isSealed, probeDatabaseName, SECRETS_KEY_ENV, sweepProbeDatabases } from '@ultimat3/core';
 import { resetJobs, resetTasks } from '@ultimat3/jobs';
 import { REQUIRED_BUN } from './app-root';
 import { authCommand } from './cmd-auth';
@@ -20,7 +20,7 @@ import type { CommandContext } from './command';
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
 const BOOT_TIMEOUT_MS = 60_000;
-const PROBE_DB = 'x_auth_seal_probe';
+const PROBE_DB = probeDatabaseName('x_auth_seal_probe');
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? '');
@@ -28,13 +28,23 @@ const probeUrl = (): string => {
   return parsed.href;
 };
 
-const on = async <R>(target: string, statement: string): Promise<readonly R[]> => {
+const on = async <R = unknown>(
+  target: string,
+  statement: string,
+  values: readonly unknown[] = [],
+): Promise<readonly R[]> => {
   const sql = new Bun.SQL(target, { max: 1 });
   try {
-    return (await sql.unsafe(statement, [])) as readonly R[];
+    return [...(await sql.unsafe(statement, [...values]))] as R[];
   } finally {
     await sql.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    on<R>(url ?? '', text, values),
 };
 
 let root: string;
@@ -87,6 +97,7 @@ describeLive('live · postgres · x auth seal-mfa', () => {
     root = mkdtempSync(join(tmpdir(), 'x-auth-live-'));
     writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
     await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
+    await sweepProbeDatabases(adminExecutor, PROBE_DB);
     await on(url ?? '', `create database ${PROBE_DB}`);
   });
 

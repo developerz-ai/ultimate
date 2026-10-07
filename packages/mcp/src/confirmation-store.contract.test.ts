@@ -5,7 +5,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
-import { uuidV7 } from '@ultimat3/core';
+import { probeDatabaseName, sweepProbeDatabases, uuidV7 } from '@ultimat3/core';
 import { postgresConfirmationStore } from './confirmation-postgres';
 import { SQL_MCP_CONFIRMATIONS_TABLE } from './confirmation-schema';
 import type { McpConfirmationDraft, McpConfirmationStore } from './confirmation-store';
@@ -102,7 +102,7 @@ contract('memory', async () => memoryConfirmationStore());
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
-const PROBE_DB = 'x_mcp_confirmations_contract';
+const PROBE_DB = probeDatabaseName('x_mcp_confirmations_contract');
 
 describe.skipIf(!hasPostgres)('postgres', () => {
   let admin: InstanceType<typeof Bun.SQL>;
@@ -115,6 +115,13 @@ describe.skipIf(!hasPostgres)('postgres', () => {
   beforeAll(async () => {
     admin = new Bun.SQL(url ?? '');
     await admin.unsafe(`drop database if exists ${PROBE_DB} with (force)`);
+    await sweepProbeDatabases(
+      {
+        query: async <R>(text: string, params: readonly unknown[]) =>
+          [...(await admin.unsafe(text, [...params]))] as R[],
+      },
+      PROBE_DB,
+    );
     await admin.unsafe(`create database ${PROBE_DB}`);
     const probe = new URL(url ?? '');
     probe.pathname = `/${PROBE_DB}`;

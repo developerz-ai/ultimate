@@ -12,7 +12,7 @@
 
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
-import { resetLifecycle } from '@ultimat3/core';
+import { probeDatabaseName, resetLifecycle, sweepProbeDatabases } from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { postgresClient, raw } from '@ultimat3/db';
 import { applyFrameworkSchema } from './framework-schema';
@@ -21,7 +21,7 @@ import { serveApp } from './serve';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
-const PROBE_DB = 'x_framework_schema_probe';
+const PROBE_DB = probeDatabaseName('x_framework_schema_probe');
 const TIMEOUT_MS = 60_000;
 
 const probeUrl = (): string => {
@@ -30,19 +30,30 @@ const probeUrl = (): string => {
   return parsed.href;
 };
 
-const on = async (target: string, statement: string): Promise<void> => {
+const on = async <R = unknown>(
+  target: string,
+  statement: string,
+  values: readonly unknown[] = [],
+): Promise<readonly R[]> => {
   const sql = new Bun.SQL(target, { max: 1 });
   try {
-    await sql.unsafe(statement, []);
+    return [...(await sql.unsafe(statement, [...values]))] as R[];
   } finally {
     await sql.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    on<R>(url ?? '', text, values),
 };
 
 let client: PostgresClient | undefined;
 
 beforeEach(async () => {
   await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
+  await sweepProbeDatabases(adminExecutor, PROBE_DB);
   await on(url ?? '', `create database ${PROBE_DB}`);
   client = postgresClient({ url: probeUrl() });
 }, TIMEOUT_MS);

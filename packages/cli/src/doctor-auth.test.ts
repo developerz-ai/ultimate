@@ -4,6 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { AUTH_TABLES } from '@ultimat3/auth';
+import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
 import {
   authStorageFindings,
   authStorageProbe,
@@ -49,7 +50,7 @@ describe('unit · doctor · auth storage', () => {
 const url = Bun.env['TEST_DATABASE_URL'];
 const describeLive = url === undefined ? describe.skip : describe;
 /** Its own database: the probe reads the whole of `x_users`, and this file creates a table. */
-const PROBE_DB = 'x_doctor_auth_probe';
+const PROBE_DB = probeDatabaseName('x_doctor_auth_probe');
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? '');
@@ -57,18 +58,29 @@ const probeUrl = (): string => {
   return parsed.href;
 };
 
-const on = async (target: string, statement: string): Promise<void> => {
+const on = async <R = unknown>(
+  target: string,
+  statement: string,
+  values: readonly unknown[] = [],
+): Promise<readonly R[]> => {
   const sql = new Bun.SQL(target, { max: 1 });
   try {
-    await sql.unsafe(statement, []);
+    return [...(await sql.unsafe(statement, [...values]))] as R[];
   } finally {
     await sql.end();
   }
 };
 
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    on<R>(url ?? '', text, values),
+};
+
 describeLive('live · postgres · doctor · auth storage', () => {
   beforeAll(async () => {
     await on(url ?? '', `drop database if exists ${PROBE_DB} with (force)`);
+    await sweepProbeDatabases(adminExecutor, PROBE_DB);
     await on(url ?? '', `create database ${PROBE_DB}`);
   });
 

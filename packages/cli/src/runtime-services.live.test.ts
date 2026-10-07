@@ -23,7 +23,12 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { HealthReport } from '@ultimat3/core';
-import { readinessCheckCount, resetLifecycle } from '@ultimat3/core';
+import {
+  probeDatabaseName,
+  readinessCheckCount,
+  resetLifecycle,
+  sweepProbeDatabases,
+} from '@ultimat3/core';
 import type { RunningRoles } from './role-start';
 import { startRoles } from './role-start';
 import { resolveServices } from './runtime-bindings';
@@ -40,7 +45,7 @@ let runtime: RunningServices | undefined;
 let root: string | undefined;
 
 /** Its own database, because the test destroys it. Never the one `TEST_DATABASE_URL` names. */
-const PROBE_DB = 'x_readyz_probe';
+const PROBE_DB = probeDatabaseName('x_readyz_probe');
 
 const probeUrl = (): string => {
   const parsed = new URL(url ?? '');
@@ -48,13 +53,19 @@ const probeUrl = (): string => {
   return parsed.href;
 };
 
-const admin = async (statement: string): Promise<void> => {
+const admin = async (statement: string, values: readonly unknown[] = []): Promise<unknown[]> => {
   const sql = new Bun.SQL(url ?? '', { max: 1 });
   try {
-    await sql.unsafe(statement, []);
+    return [...(await sql.unsafe(statement, [...values]))];
   } finally {
     await sql.end();
   }
+};
+
+/** The server-level connection as an executor, for `sweepProbeDatabases`. */
+const adminExecutor = {
+  query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    (await admin(text, values)) as R[],
 };
 
 afterEach(async () => {
@@ -103,6 +114,7 @@ describeLive('/readyz means the process can serve, not that it bound a socket', 
     async () => {
       root = mkdtempSync(join(tmpdir(), 'x-readyz-'));
       await admin(`drop database if exists ${PROBE_DB} with (force)`);
+      await sweepProbeDatabases(adminExecutor, PROBE_DB);
       await admin(`create database ${PROBE_DB}`);
       const dbUrl = probeUrl();
       runtime = await startServices(resolveServices(root, { DATABASE_URL: dbUrl }), {
@@ -148,6 +160,7 @@ describeLive('/readyz means the process can serve, not that it bound a socket', 
     async () => {
       root = mkdtempSync(join(tmpdir(), 'x-readyz-'));
       await admin(`drop database if exists ${PROBE_DB} with (force)`);
+      await sweepProbeDatabases(adminExecutor, PROBE_DB);
       await admin(`create database ${PROBE_DB}`);
       const dbUrl = probeUrl();
       const before = readinessCheckCount();

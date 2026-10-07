@@ -8,7 +8,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- `@ultimat3/core`: `probeDatabaseName(prefix)` — the one way a test names a throwaway database (`<prefix>_<pid>_<8 hex>`, ≤ 63 bytes). `sweepProbeDatabases(executor, name)` drops one a killed run left behind (dead pid, no backends). `bun run probe-databases` refuses a fixed name (`X_PROBE_DATABASE_FIXED`); 17 suites that collided under concurrent runs on one server now use it (#705).
 
 ## 25.1.0 - 2026-10-07
 
