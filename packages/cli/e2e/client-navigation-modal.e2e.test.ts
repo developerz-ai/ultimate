@@ -42,10 +42,17 @@ async function start(path = '/runs'): Promise<void> {
   if (!path.includes('#')) ran.length = 0;
 }
 
+/**
+ * The modal open AND its own island booted. The island is `idle`: it mounts when the browser next
+ * goes idle, which a slow runner reaches after the dialog is already on screen — a close before that
+ * has nothing mounted to dispose (`never mounts after a close` covers that case).
+ */
 async function openNew(): Promise<void> {
+  await read('window.__mounts = (window.__mounts || []).filter((name) => name !== "form")');
   await read('document.getElementById("new").focus()');
   await read('document.getElementById("new").click()');
   await opened('New run');
+  await waitFor('(window.__mounts || []).includes("form")', "the modal's own island");
 }
 
 describe.skipIf(noBrowser)('client navigation · route-presented modals', () => {
@@ -99,6 +106,36 @@ describe.skipIf(noBrowser)('client navigation · route-presented modals', () => 
       await read('history.forward()');
       await opened('New run');
       expect(await at()).toBe('/runs#/runs/new');
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    'an island closed before its idle boot never mounts into the detached dialog',
+    async () => {
+      await start();
+      // The browser's idle callback, held: the test decides when "idle" comes.
+      await read(
+        'window.__idle = []; window.__ric = window.requestIdleCallback; window.requestIdleCallback = (fn) => { window.__idle.push(fn); return 1; }',
+      );
+      await read('window.__mounts = []');
+      await read('document.getElementById("new").click()');
+      await opened('New run');
+      await waitFor('window.__idle.length > 0', 'the idle boot queued');
+      await pressEscape();
+      await closed();
+      // "Idle" comes now, after the close: the queued boot runs against the detached dialog.
+      await read('window.requestIdleCallback = window.__ric; window.__idle.forEach((fn) => fn())');
+      // Opened again, its island booted for real: a wrong mount of the first would be in by then.
+      await read('document.getElementById("new").click()');
+      await opened('New run');
+      await waitFor(
+        `${DIALOG}?.querySelector("[data-x-mounted]") !== null`,
+        "the second dialog's island mounted",
+      );
+      // Every mount since the reset, by name: a stray boot of the first dialog's island mounts with
+      // no props (its props script left the document with it) and shows here as `null`.
+      expect(await read('JSON.stringify(window.__mounts)')).toBe('["form"]');
     },
     TIMEOUT_MS,
   );
@@ -308,9 +345,11 @@ describe.skipIf(noBrowser)('client navigation · route-presented modals', () => 
       await tab.scripting(false);
       try {
         await tab.evaluate(`location.href = ${JSON.stringify(`${base}/runs`)}`);
+        // The NEW document: the one the previous test left on `/runs` ran the router; this one
+        // cannot.
         await tab.waitFor(
-          'location.pathname === "/runs" && document.readyState === "complete"',
-          'runs',
+          'location.pathname === "/runs" && document.readyState === "complete" && window.__xNavigation === undefined',
+          'runs, loaded with scripting off',
         );
         await tab.click('#new');
         await tab.waitFor(

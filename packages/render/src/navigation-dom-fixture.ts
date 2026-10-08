@@ -46,7 +46,7 @@ const matches = (el: FakeElement, selector: string): boolean =>
       }),
   );
 
-export class FakeElement {
+export class FakeElement extends EventTarget {
   readonly tagName: string;
   readonly attrs = new Map<string, string>();
   children: FakeElement[] = [];
@@ -67,6 +67,7 @@ export class FakeElement {
     attrs: Attrs = {},
     content: readonly FakeElement[] | string = [],
   ) {
+    super();
     this.ownerDocument = doc;
     this.tagName = tag.toUpperCase();
     for (const [name, value] of Object.entries(attrs)) this.attrs.set(name, value);
@@ -76,6 +77,29 @@ export class FakeElement {
 
   get id(): string {
     return this.getAttribute('id') ?? '';
+  }
+  set id(value: string) {
+    this.setAttribute('id', value);
+  }
+  get childNodes(): FakeElement[] {
+    return [...this.children];
+  }
+  get isConnected(): boolean {
+    return this.connected;
+  }
+  replaceChildren(...nodes: FakeElement[]): void {
+    for (const child of this.children) child.parentElement = null;
+    this.children = [];
+    this.append(...nodes);
+  }
+  /** A `<dialog>`: `showModal` opens it; `close` fires `close` on a later task, as a browser does. */
+  open = false;
+  showModal(): void {
+    this.open = true;
+  }
+  close(): void {
+    this.open = false;
+    setTimeout(() => this.dispatchEvent(new Event('close')), 0);
   }
   getAttribute(name: string): string | null {
     return this.attrs.get(name) ?? null;
@@ -333,6 +357,9 @@ export class FakeWindow extends EventTarget {
     assign: (url: string): void => {
       this.assigned.push(url);
     },
+    reload: (): void => {
+      this.assigned.push('reload');
+    },
   };
 
   readonly history = {
@@ -347,6 +374,9 @@ export class FakeWindow extends EventTarget {
     },
     replaceState: (state: unknown, _title: string, url?: string): void => {
       this.entries[this.index] = { state, url: url ?? this.location.href };
+    },
+    back: (): void => {
+      setTimeout(() => this.go(-1), 0);
     },
   };
 

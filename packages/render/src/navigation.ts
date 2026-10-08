@@ -121,6 +121,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   /** The pending prefetch of a hover, cancelled by anything that navigates. */
   let intent: number | undefined;
   let untrusted = false;
+  let backing = false; // a Back this router started is traversing: the URL is still the one left
   let inflight: AbortController | undefined;
   const live = announcer(doc);
   const owned = documentHead(doc);
@@ -265,7 +266,10 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
           return;
         }
-        if (leave === 'back') win.history.back();
+        if (leave === 'back') {
+          backing = true;
+          win.history.back();
+        }
         modal.dismiss();
         let swapped: ReturnType<typeof swapDocument> | undefined;
         const track = (running: RunningTransition, finished: boolean): void => {
@@ -400,6 +404,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
    */
   const onPop = (event: PopStateEvent): void => {
     scroll.cancel();
+    backing = false;
     // The page is the PATH: a modal's hash is the modal's (`reconcile`), never the page's fragment.
     const at = win.location.href;
     const url = modalAddress(new URL(at).hash, at) === null ? at : withoutFragment(at);
@@ -429,6 +434,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
    * typed hash, and after every page swap — a Back onto a modal's entry swaps its page first.
    */
   function reconcile(): void {
+    // Until that Back lands, the hash still names the modal just left: it would be opened again.
+    if (backing) return;
     const at = win.location.href;
     if (withoutFragment(at) !== rendered) return;
     const wanted = modalAddress(new URL(at).hash, at);
