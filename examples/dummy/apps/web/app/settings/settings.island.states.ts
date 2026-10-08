@@ -29,6 +29,10 @@ const LABELS: SettingsProps['labels'] = {
   save: 'Save',
   saved: 'Saved',
   retry: 'That did not save. Try again.',
+  push: 'Notify me in this browser',
+  pushOn: 'This browser will be notified.',
+  pushDenied: 'Notifications are blocked for this site in this browser.',
+  pushUnavailable: 'This browser cannot receive notifications from this app.',
 };
 
 /** What a working read hands the editor — the baseline each state below departs from. */

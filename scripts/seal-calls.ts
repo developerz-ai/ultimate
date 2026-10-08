@@ -12,8 +12,9 @@
 // `Bun.CryptoHasher` are never reported. Prose that mentions AES inside a longer string is not an
 // algorithm name and is not reported either.
 //
-// The three files in `SEAL_SEAM` are the rule's own subject and are exempt; a seam file that was
-// not scanned makes a clean run prove nothing, and is its own finding.
+// The three files in `SEAL_SEAM` are the rule's own subject and are exempt, and so is a module in
+// `STANDARD_CIPHERS` (a cipher a standard fixes, toward a key that is not the app's — RFC 8291);
+// an exempt file that was not scanned makes a clean run prove nothing, and is its own finding.
 //
 //   bun run seal-calls  ·  bun run scripts/seal-calls.ts [--json]
 
@@ -32,6 +33,20 @@ export const SEAL_SEAM: readonly string[] = [
   'packages/core/src/seal.ts',
   'packages/core/src/seal-keys.ts',
 ];
+
+/**
+ * Modules that implement a cipher a STANDARD fixes byte for byte, toward a key that is not the
+ * app's — so `seal()` (the app's master key, its own envelope) cannot be what they call. Each row
+ * names the standard. Not a seam: they seal nothing at rest; and scanned like one, so a row naming
+ * a moved file is its own finding.
+ */
+export const STANDARD_CIPHERS = Object.freeze<Record<string, string>>({
+  // AES-128-GCM under a key agreed by ECDH with the subscriber's browser (RFC 8291 / RFC 8188):
+  // the push service delivers the bytes, and only that browser's private key opens them.
+  'packages/pwa/src/push-encrypt.ts': 'RFC 8291 Web Push message encryption',
+  // Its receiving half, the browser's: `@ultimat3/testing`'s `push` fixture plays the device.
+  'packages/pwa/src/push-decrypt.ts': 'RFC 8291 Web Push message decryption',
+});
 
 export type SealCallKind = 'call' | 'cipher' | 'algorithm';
 
@@ -56,7 +71,8 @@ const CIPHER = /\b(createCipheriv|createDecipheriv|createCipher|createDecipher)\
 const ALGORITHM = /(['"`])(AES-[A-Za-z0-9-]{2,12})\1/gi;
 
 export function sealCalls(file: SealSource): readonly SealCall[] {
-  if (SEAL_SEAM.includes(file.path) || isTestPath(file.path)) return [];
+  if (SEAL_SEAM.includes(file.path) || Object.hasOwn(STANDARD_CIPHERS, file.path)) return [];
+  if (isTestPath(file.path)) return [];
   const found: SealCall[] = [];
   const push = (text: string, index: number, kind: SealCallKind, via: string): void => {
     found.push({ file: file.path, line: lineOf(text, index), kind, via });
@@ -92,13 +108,15 @@ export function sealCallResult(files: readonly SealSource[]): ScriptResult {
   const sites = files.flatMap(sealCalls);
   const findings = sites.map(sealCallFinding);
   const scanned = new Set(files.map((file) => file.path));
-  const missing = SEAL_SEAM.filter((path) => !scanned.has(path));
+  const missing = [...SEAL_SEAM, ...Object.keys(STANDARD_CIPHERS)].filter(
+    (path) => !scanned.has(path),
+  );
   if (missing.length > 0) {
     findings.unshift({
       code: 'X_SEAL_CALL_UNSCANNED',
       at: 'scripts/seal-calls.ts',
       cause: `${missing.join(', ')} was not among the files scanned, so the exemption names nothing and a clean run proves nothing`,
-      fix: 'edit SEAL_SEAM in scripts/seal-calls.ts to name the modules that call the cipher, then: bun run seal-calls --json',
+      fix: 'edit SEAL_SEAM or STANDARD_CIPHERS in scripts/seal-calls.ts to name the modules that call the cipher, then: bun run seal-calls --json',
     });
   }
   return {

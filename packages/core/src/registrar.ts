@@ -86,6 +86,8 @@ export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
       { factory: 'webhook', pkg: '@ultimat3/jobs', kind: 'job' },
       { factory: 'mcpConfirmations', pkg: '@ultimat3/mcp', kind: 'action' },
       { factory: 'notifier', pkg: '@ultimat3/notify', kind: 'job' },
+      { factory: 'pushSubscribe', pkg: '@ultimat3/pwa', kind: 'action' },
+      { factory: 'pushUnsubscribe', pkg: '@ultimat3/pwa', kind: 'action' },
       { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
     ] satisfies readonly PrimitiveFactory[]
   ).map((entry) => Object.freeze(entry)),

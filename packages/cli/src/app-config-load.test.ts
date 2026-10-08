@@ -42,6 +42,7 @@ export const config = {
     offline: { fallback: '/offline', neverCache: ['/api/*'], personalPages: 'last-member' },
     backgroundSync: true,
     push: true,
+    vapid: { subject: 'mailto:ops@example.com' },
   },
   cache: { tiers: ['request-memo'] },
   jobs: { queues: ['mail'], concurrency: 3, visibilityTimeoutMs: 45000 },
@@ -81,6 +82,7 @@ describe('loadAppConfig', () => {
     expect(config?.pwa.offline.neverCache).toEqual(['/api/*']);
     expect(config?.pwa.offline.personalPages).toBe('last-member');
     expect([config?.pwa.backgroundSync, config?.pwa.push]).toEqual([true, true]);
+    expect(config?.pwa.vapid?.subject).toBe('mailto:ops@example.com');
     expect(config?.cache.tiers).toEqual(['request-memo']);
     expect(config?.jobs.queues).toEqual(['mail']);
     expect(config?.jobs.concurrency).toBe(3);

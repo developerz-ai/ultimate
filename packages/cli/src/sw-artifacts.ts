@@ -3,8 +3,9 @@
 // until #390. Beside `pwa-artifacts.ts` and not inside it: that file needs a root and a config
 // file, this one needs a booted app and a finished build.
 
-import type { PrecacheManifest } from '@ultimat3/pwa';
-import { generateServiceWorker } from '@ultimat3/pwa';
+import { escapeHtml } from '@ultimat3/core';
+import type { PrecacheManifest, VapidConfig } from '@ultimat3/pwa';
+import { generateServiceWorker, PUSH_KEY_META } from '@ultimat3/pwa';
 import type { RouteDescriptor } from '@ultimat3/render';
 import type { IslandBundle } from './island-bundle';
 import { ISLAND_BASE_PATH } from './island-bundle';
@@ -72,6 +73,12 @@ export interface ServiceWorkerInput {
    * offline reload that cannot load the boot restores no record and shows the old count.
    */
   readonly scripts?: readonly { readonly url: string; readonly bytes: number }[];
+  /**
+   * The installed Web Push runtime's public key and subject (`@ultimat3/pwa`'s `installedVapid()`),
+   * which the boot put there from `pwa.push` and the VAPID pair — or absent where no runtime runs:
+   * a static export serves no subscribe action, so its worker carries no push handler.
+   */
+  readonly vapid?: VapidConfig | undefined;
 }
 
 /**
@@ -175,6 +182,7 @@ export function serviceWorkerArtifacts(
         personalPages: pwa.offline.personalPages,
       },
       capabilities: { backgroundSync: pwa.backgroundSync, push: pwa.push },
+      ...(pwa.push && input.vapid !== undefined ? { vapid: input.vapid } : {}),
       assets: precacheAssets({
         routes: input.routes,
         documents,
@@ -194,15 +202,14 @@ export function serviceWorkerArtifacts(
   return {
     source: output.source,
     register: serviceWorkerRegistration(),
-    head,
+    head: head + pushKeyMeta(pwa, input.vapid),
     precache: output.precache,
     // `output.warnings` IS `output.precache.warnings` — the generator returns the manifest's list
     // verbatim — so it is read once, not twice. The push line is this module's own, and it is the
     // one thing the generator cannot say: `generateServiceWorker` emits a push handler only when a
-    // VAPID key comes with the capability, and drops it in SILENCE otherwise. `pwa.push: true` in
-    // an `app.config.ts` therefore wires nothing and reports nothing, which is `jobs.driver`'s
-    // shape one package over.
-    warnings: [...output.warnings, ...pushWarning(pwa)],
+    // VAPID key comes with the capability, and drops it in SILENCE otherwise — which, since the
+    // boot installs the runtime whenever `pwa.push` is on, is a build with no runtime behind it.
+    warnings: [...output.warnings, ...pushWarning(pwa, input.vapid)],
   };
 }
 
@@ -219,10 +226,20 @@ export const serviceWorkerHead = (pwa: PwaArtifacts): string | undefined =>
   pwa.offline.fallback === null ? undefined : `<script src="${SW_REGISTER_PATH}" defer></script>`;
 
 /**
- * `pwa.push: true` with nothing to sign a subscription with. There is no `pwa.vapid` config key
- * yet, so today this fires for EVERY app that sets the flag — deliberately: a switch that silently
- * does nothing is the defect this framework keeps re-shipping, and a warning naming the missing
- * half is the smallest honest answer until the key exists.
+ * `pwa.push: true` in a build no Web Push runtime stands behind. A served boot installs one whenever
+ * the flag is on (`runtime-push.ts`, and it refuses to boot without the keys), so this fires for a
+ * static export alone — which serves no subscribe action, so a push handler there would be a
+ * capability the deploy cannot use. Said, never dropped in silence.
  */
-const pushWarning = (pwa: PwaArtifacts): readonly string[] =>
-  pwa.push ? [msg('cli.build.pushUnwired')] : [];
+const pushWarning = (pwa: PwaArtifacts, vapid: VapidConfig | undefined): readonly string[] =>
+  pwa.push && vapid === undefined ? [msg('cli.build.pushUnwired')] : [];
+
+/**
+ * `<meta name="x-push-key">`: the public key `@ultimat3/pwa/client`'s `subscribeToPush` hands the
+ * browser. In the document rather than fetched, so subscribing is one click and no round trip, and
+ * a key rotation reaches every page on its next render. Public by definition; escaped regardless.
+ */
+const pushKeyMeta = (pwa: PwaArtifacts, vapid: VapidConfig | undefined): string =>
+  pwa.push && vapid !== undefined
+    ? `<meta name="${PUSH_KEY_META}" content="${escapeHtml(vapid.publicKey)}">`
+    : '';

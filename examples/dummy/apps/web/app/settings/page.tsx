@@ -104,8 +104,17 @@ export const config = defineRoute({
    * `x build --target static`), against 62,464. why: +59 B in the inline `idle` runtime — `catchUp`
    * lets go of a press after a mount it did not flush (a held island's first click ran twice, #506);
    * the other +998 B is the settings island's growth from the rest of sweep 9, measured here.
+   * raised 61kb → 67kb (26.1.0). measured: 67,874 B (2026-10-08; `x build --target static`),
+   * against 68,608. why: the client router grew 19,966 → 24,058 B (+4,092) — `navigation: 'modal'`,
+   * a hash-addressed `<dialog>` over the page, and `refresh`/`openModal`/`closeModal` for
+   * navigating from code — charged to every `app/` document; and the settings island grew
+   * 39,182 → 41,294 B (+2,112) for its Web Push button: `@ultimat3/pwa/client`'s
+   * `subscribeToPush`, the `subscribePush` action through the typed client, and the status line
+   * that tells a failed save from a browser that cannot (`push-status.ts`). The other +176 B is
+   * main's growth between the 2026-10-05 measurement and 26.0.0, which measured 61,670 B (router
+   * 19,966, island 39,182, banner 710, inline runtime 1,812), unstated until now.
    */
-  budget: { js: '61kb' },
+  budget: { js: '67kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
@@ -159,6 +168,10 @@ export function Page(): JSX.Element {
               save: t('common.save'),
               saved: t('common.saved'),
               retry: t('common.retry'),
+              push: t('app.settings.pushLabel'),
+              pushOn: t('app.settings.pushOn'),
+              pushDenied: t('app.settings.pushDenied'),
+              pushUnavailable: t('app.settings.pushUnavailable'),
             }}
           >
             {/*

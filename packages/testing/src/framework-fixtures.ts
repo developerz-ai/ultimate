@@ -7,6 +7,7 @@ import { DRIVER_FIXTURE_NAMES, driverFixtures } from './fixture-drivers';
 import { testJobs } from './fixture-jobs';
 import { testMail } from './fixture-mail';
 import { testNetwork } from './fixture-network';
+import { testPush } from './fixture-push';
 import { testStatements } from './fixture-statements';
 import { subscribeDriver } from './fixture-subscribe';
 import { defineFixtures } from './fixtures';
@@ -21,6 +22,8 @@ export const FRAMEWORK_FIXTURE_NAMES = [
   'clock',
   'mail',
   'network',
+  // 2026-10-08: the Web Push runtime, with the push service and the device played in-process.
+  'push',
   'runJobs',
   'statements',
   // Moved here from `DRIVER_FIXTURE_NAMES` on 2026-08-20: the driver it was waiting for is
@@ -51,6 +54,7 @@ export function registerFrameworkFixtures(): void {
     clock: testClock,
     mail: testMail,
     network: testNetwork,
+    push: testPush,
     runJobs: testJobs,
     statements: testStatements,
     // After the spread, so it REPLACES the `unavailableFixture('subscribe')` declaration above it —

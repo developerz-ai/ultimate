@@ -303,6 +303,38 @@ render error naming the key. On 3.0.0 and below, `x new` writes no
 chart at all and `--method helm` exits `X_NOT_IMPLEMENTED`: copy the chart in, or use
 `--method compose`.
 
+## Routing a proxy to the `sync` role
+
+`As of 26.1.0`. A proxy in front of both roles (an Ingress, a Cloudflare tunnel, nginx, an ALB)
+sends the `sync` role exactly one path family, and everything else to `web`:
+
+| Route to | Exactly | Regex |
+|---|---|---|
+| `sync` | the socket, `/_x/sync` — and anything under `/_x/sync/`, which the framework reserves for it | `^/_x/sync(/.*)?$` |
+| `web` | everything else — pages, actions, queries, `/_x/assets/…`, `/islands/…`, `/healthz` | — |
+
+**Anchor the rule.** `^/_x/sync` with no end anchor is the rule an operator writes first, and it is
+safe as of 26.1.0 only because nothing else the framework serves starts with that string. Through
+26.0.0 the sync worker lived at `/_x/sync-worker/<hash>.js`: that rule sent it to the sync role,
+which serves only the socket, so no page got its shared worker (no realtime), and the 404 came back
+with no `cache-control`, which a CDN pinned for its default TTL (Cloudflare: four hours).
+
+**Every framework-served, content-addressed script lives under one asset prefix, `/_x/assets/`** —
+the Rails rule: `<prefix>/<name>/<sha>.js`, served `immutable`, a new URL per build:
+
+| Script | URL |
+|---|---|
+| the sync worker | `/_x/assets/sync-worker/<hash>.js` |
+| the page boot | `/_x/assets/page-boot/<hash>.js` |
+| the client router | `/_x/assets/navigation/<hash>.js` |
+
+Island chunks (`/islands/…`), surface stylesheets and `asset()` files have prefixes of their own; no
+live endpoint shares any of them. A miss on any content-addressed path is `404` with
+`cache-control: no-store` — a CDN never keeps it — and so is every answer of the `sync` role that is
+not the socket (a stray path, a plain GET of the socket path, a shed upgrade). Old `/_x/sync-worker/`,
+`/_x/page-boot/` and `/_x/navigation/` URLs are not served: each named one build's file, which no
+other build serves either, and a tab mid-roll that already started its worker keeps it.
+
 ## Behind a proxy — `TRUSTED_PROXY_HOPS`
 
 `TRUSTED_PROXY_HOPS` counts the proxies that **append** to `x-forwarded-for` between the client and

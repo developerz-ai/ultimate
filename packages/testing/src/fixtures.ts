@@ -16,6 +16,7 @@ import type { SignIn, Subscribe, TestBudget, TestDeploy } from './fixture-driver
 import type { RunJobs } from './fixture-jobs';
 import type { TestMail } from './fixture-mail';
 import type { TestNetwork } from './fixture-network';
+import type { TestPush } from './fixture-push';
 import type { TestStatements } from './fixture-statements';
 import type { PageLike, TestOptions } from './test-types';
 
@@ -45,6 +46,7 @@ export interface Fixtures {
   readonly clock: TestClock;
   readonly mail: TestMail;
   readonly network: TestNetwork;
+  readonly push: TestPush;
   readonly runJobs: RunJobs;
   readonly statements: TestStatements;
   readonly budget: TestBudget;

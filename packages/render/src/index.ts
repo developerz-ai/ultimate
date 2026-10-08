@@ -38,6 +38,7 @@ export {
   IslandInvalidError,
   IslandNotHydratedError,
   IslandPropsInvalidError,
+  NavigationModalPathInvalidError,
   PrerenderFailedError,
   RENDER_ERROR_CODES,
   RENDER_ERROR_TITLES,
@@ -106,9 +107,23 @@ export {
   defaultIslandBudget,
   MODE_SPECS,
 } from './modes';
+/** Navigating from code — through the router when the page has one, the browser's load when not. */
+export type { NavigateToOptions } from './navigation-api';
+export { closeModal, navigate, openModal, refresh } from './navigation-api';
 /** Client-side navigation over server-rendered documents — `navigation: { client }` surfaces. */
 export type { CachedDocument, NavigationCache, NavigationCacheOptions } from './navigation-cache';
 export { cacheKey, NAVIGATION_CACHE_MAX_ENTRIES, navigationCache } from './navigation-cache';
+export type { Presentation, PresentationFacts } from './navigation-modal-rules';
+export {
+  addressOf,
+  leaveModal,
+  modalAddress,
+  modalHistory,
+  modalLocation,
+  NAVIGATION_MODAL_ATTRIBUTE,
+  NAVIGATION_PRESENTATION_META,
+  presentation,
+} from './navigation-modal-rules';
 export type {
   CachedFacts,
   FormFacts,

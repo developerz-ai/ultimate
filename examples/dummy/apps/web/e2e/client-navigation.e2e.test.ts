@@ -211,6 +211,28 @@ describe.skipIf(noBrowser)('client navigation on the app surface', () => {
     );
   }, 60_000);
 
+  test("the editor (`navigation: 'modal'`) opens over the feed, and Back closes it", async () => {
+    await onFeed();
+    const modal = 'document.querySelector("dialog[data-x-modal]")';
+    await tab.evaluate(`document.querySelector('main a[href="/posts/new"]').click()`);
+    await tab.waitFor(
+      `${modal}?.open === true && ${modal}.querySelector('form') !== null`,
+      'the editor',
+    );
+    expect(await tab.evaluate('location.pathname + location.hash')).toBe('/feed#/posts/new');
+    // The feed is still the page: its rows, its island and this document.
+    expect(await tab.evaluate(`${likeCount(POSTS.tenancy.id)} !== null`)).toBe(true);
+    expect(await readFlag(tab, KEPT)).toBe(true);
+    await tab.evaluate('history.back()');
+    await tab.waitFor(`${modal} === null && location.hash === ''`, 'the editor closed');
+    expect(await readFlag(tab, KEPT)).toBe(true);
+    // A pasted address reopens it over its page.
+    await tab.goto(`${app.base}/settings`);
+    await tab.goto(`${app.base}/feed#/posts/new`);
+    await tab.waitFor(`${modal}?.open === true`, 'the editor, from the address');
+    expect(await tab.evaluate('location.pathname')).toBe('/feed');
+  }, 60_000);
+
   test('with scripting off the same links are plain navigations', async () => {
     const plain = await browser.session.newTab();
     try {
@@ -228,6 +250,13 @@ describe.skipIf(noBrowser)('client navigation on the app surface', () => {
         'the plain navigation',
       );
       expect(await plain.evaluate('document.querySelector("main") !== null')).toBe(true);
+      // A modal route is its whole page without the router.
+      await plain.evaluate(`location.href = ${JSON.stringify(`${app.base}/posts/new`)}`);
+      await plain.waitFor(
+        'location.pathname === "/posts/new" && document.readyState === "complete"',
+        'the editor as a page',
+      );
+      expect(await plain.evaluate('document.querySelector("main form") !== null')).toBe(true);
     } finally {
       await plain.scripting(true);
       await plain.close();

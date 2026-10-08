@@ -14,7 +14,7 @@ const CATALOG = {
   // A build-output line, so it belongs here rather than inline beside the emitter: `x build` is a
   // human surface and every other word it prints comes from this catalog.
   'cli.build.pushUnwired':
-    'pwa.push is true and no VAPID key is configured, so the emitted sw.js carries no push handler',
+    'pwa.push is true and this build has no Web Push runtime behind it (a static export serves no subscribe action), so the emitted sw.js carries no push handler',
   // `describeCron`'s vocabulary. `@ultimat3/time` is tier 1 and reaches no i18n runtime, so the
   // caller supplies the words — and the caller here is a rendered `x tasks show` line, which is
   // exactly what this catalog holds. `msg()` leaves an un-supplied `{n}`/`{time}`/`{days}`/
@@ -355,6 +355,14 @@ const CATALOG = {
   'cli.secrets.edited': '{path} resealed — {added} added, {updated} changed, {removed} removed',
   'cli.secrets.unchanged': '{path} unchanged — nothing was written',
   'cli.secrets.set': 'sealed {name} into {path} — {count} secret(s)',
+  'cli.vapid.created':
+    'sealed a new Web Push key pair into {path} — ULTIMATE_VAPID_PUBLIC_KEY and ULTIMATE_VAPID_PRIVATE_KEY',
+  'cli.vapid.public': '  public key (every page carries it as <meta name="x-push-key">): {key}',
+  'cli.vapid.source.environment':
+    'this process signs Web Push with the pair in its environment (ULTIMATE_VAPID_*)',
+  'cli.vapid.source.sealed': 'this app signs Web Push with the pair sealed in {path}',
+  'cli.vapid.source.development':
+    'no pair in the environment or {path}: a local process signs with the published development pair, which a deployed boot refuses — x vapid create',
   'cli.secrets.rotated':
     'rotated {path} from master key {from} to {to} — {count} secret(s) resealed',
   'cli.secrets.retired':

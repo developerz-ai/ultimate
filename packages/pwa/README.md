@@ -8,6 +8,32 @@ the second copy is the one nobody updates.
 const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);
 ```
 
+## Browser entry: `@ultimat3/pwa/client`
+
+`As of 26.1.0`. Everything a page or an island calls comes from **`@ultimat3/pwa/client`**, never
+from `@ultimat3/pwa`: the barrel reaches the icon pipeline (core's image transform, Node-only), the
+service-worker generator and the push sender, and an island importing it does not build.
+
+```ts
+import {
+  detectSkew,
+  installController,
+  MIN_ENGAGEMENT_MS,
+  subscribeToPush,
+} from '@ultimat3/pwa/client';
+import { APP_UPDATE_MESSAGE, CLIENT_BUILD_META } from '@ultimat3/core/page';
+```
+
+| Need | From `@ultimat3/pwa/client` |
+|---|---|
+| the install prompt, never on first paint | `installController` (+ `InstallOptions`, `InstallHost`, `InstallController`, `InstallOutcome`, `BeforeInstallPromptEventLike`, `ReadSignal`), `iosInstallGuidance` (+ `IosGuidance`), `MIN_ENGAGEMENT_MS` (30 000 — the default `minEngagementMs`) |
+| "a new version is live" | `AppUpdateAvailable` (the worker's message), `detectSkew` (+ `SkewState`). The message's `type` value is core's `APP_UPDATE_MESSAGE`, from `@ultimat3/core/page` — one name, one home |
+| Web Push | `subscribeToPush`, `unsubscribeFromPush`, `pushPermission`, `browserPushHost`, `PUSH_KEY_META` (+ their types) |
+
+Its graph is three modules of this package plus `@ultimat3/core/page`; `client-bundle.test.ts`
+bundles it for the browser and refuses a fourth, an image module or a `node:` import. The server
+barrel keeps exporting the same names for server code and tests.
+
 ## Render mode → runtime strategy
 
 | Render mode | Strategy | Why |
@@ -72,7 +98,7 @@ placeholders a failed image or font request gets — each served only from the p
 
 | Capability | Manifest member | SW code |
 |---|---|---|
-| `push` | — | `push` + `notificationclick` listeners; a tap opens a same-origin URL only |
+| `push` | — | `push` + `notificationclick` listeners; a tap opens a same-origin URL only. Emitted only when a `vapid` key comes with it — the web role passes `installedVapid()` |
 | `backgroundSync` | — | `sync` listener that tells every open tab to drain realtime's outbox (`OUTBOX_DRAIN_MESSAGE`) |
 | `badging` | — | `navigator.setAppBadge` after a push |
 | `shareTarget` | `share_target` | — |
@@ -88,6 +114,59 @@ gate. `CAPABILITY_SW_MARKERS` is checked against the emitted `sw.js` in both dir
 here that the generator does not honour is a failing test rather than an installed app announcing a
 capability nothing implements.
 
+## Web Push
+
+`pwa: { push: true, vapid: { subject: 'mailto:ops@example.com' } }` in `app.config.ts`, and the rest
+is wiring the framework does: the boot resolves the VAPID pair from the environment and installs the
+runtime, the worker carries the handlers, every page carries `<meta name="x-push-key">`. RFC 8291
+encryption and RFC 8292 (ES256) signing, on WebCrypto — no dependency.
+
+```ts
+// apps/web/app/push/actions.ts — two real actions: route, OpenAPI, typed client, contract tests.
+import { pushSubscribe, pushUnsubscribe } from '@ultimat3/pwa';
+
+export const subscribePush = pushSubscribe({ permission: 'push:subscribe' });
+export const unsubscribePush = pushUnsubscribe({ permission: 'push:subscribe' });
+```
+
+```ts
+// an island, on a click — the browser entry, `@ultimat3/pwa/client`.
+import { subscribeToPush } from '@ultimat3/pwa/client';
+
+declare const client: { subscribePush(input: unknown): Promise<unknown> };
+
+const outcome = await subscribeToPush({ save: client.subscribePush });
+// { status: 'subscribed', endpoint } | { status: 'denied' } | { status: 'unsupported' } | { status: 'unconfigured' }
+```
+
+```ts
+// a notifier — every device of the recipient, each in the locale it subscribed with.
+import { pushChannel } from '@ultimat3/notify';
+import { webPush } from '@ultimat3/pwa';
+
+export const channel = pushChannel<{ postId: string }>({
+  pusher: webPush(),
+  message: ({ event }) => ({
+    titleKey: 'push.comment.title',
+    bodyKey: 'push.comment.body',
+    url: `/posts/${event.params.postId}`,
+    tag: `post:${event.params.postId}`,
+  }),
+});
+```
+
+| Piece | Rule |
+|---|---|
+| Keys | `ULTIMATE_VAPID_PUBLIC_KEY` + `ULTIMATE_VAPID_PRIVATE_KEY`, env only. `x vapid create` seals both in one write; locally, neither set signs with `DEV_VAPID_KEYS`, which a deployed boot refuses (`X_PWA_VAPID_KEY_MISSING`). Two halves that do not sign for each other: `X_PWA_VAPID_KEY_INVALID`, at boot |
+| Subscriptions | `x_push_subscriptions`, applied by the boot; keyed by endpoint, stored against `ctx.actor.id`, with the locale and zone they subscribed in. An agent never subscribes |
+| Strings | catalog keys (`titleKey`, `bodyKey`, `actions[].titleKey`), rendered per subscription locale through `@ultimat3/i18n`'s `translatorFor` |
+| Size | one 4096-byte record: 3993 bytes of notification (`X_PWA_PUSH_PAYLOAD_TOO_LARGE`). Send a path, never the content |
+| Travel | `ttlSeconds` (default 86 400), `urgency`, `topic` — RFC 8030 headers; the topic is any string, sent as 32 URL-safe characters of its SHA-256 |
+| 201 / 404, 410 / 429, 5xx / 400, 401, 403, 413 | delivered / subscription deleted / `X_PWA_PUSH_FAILED`, retried by the job after every other device was tried / `X_PWA_PUSH_REJECTED`, logged, never retried — and on 401/403 the subscription is deleted: it was made with a key this server no longer signs with |
+| Key rotation | `subscribeToPush` compares a browser's existing subscription with the page's `x-push-key`; one made with another key is unsubscribed and replaced, never re-saved |
+| Endpoints | dialled only on a push service: `https:`, and a host that is one of `PUSH_SERVICE_HOSTS` (FCM, Mozilla, Apple, WNS) or `pwa.vapid.pushHosts`, or a subdomain of one on a dot boundary — checked when stored and before every send (`assertPushEndpoint`), never by where the name resolves, since the endpoint came from a request body (`X_PWA_PUSH_HOST_UNLISTED`; a stored one is deleted unsent). One POST waits at most `PUSH_SEND_TIMEOUT_MS` (30 s); a caller's abort is rethrown as is, never the retryable class |
+| `renotify` | dropped, with a warning, without a `tag` — at both ends |
+
 ## Error classes
 
 Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
@@ -99,7 +178,14 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `PwaIconMissingError` | `X_PWA_ICON_MISSING` | `src/errors.ts` |
 | `PwaManifestInvalidError` | `X_PWA_MANIFEST_INVALID` | `src/errors.ts` |
 | `PwaNoOfflineFallbackError` | `X_PWA_NO_OFFLINE_FALLBACK` | `src/errors.ts` |
+| `PwaPushFailedError` | `X_PWA_PUSH_FAILED` | `src/errors.ts` |
+| `PwaPushPayloadTooLargeError` | `X_PWA_PUSH_PAYLOAD_TOO_LARGE` | `src/errors.ts` |
+| `PwaPushRejectedError` | `X_PWA_PUSH_REJECTED` | `src/errors.ts` |
+| `PwaPushSubscriptionInvalidError` | `X_PWA_PUSH_SUBSCRIPTION_INVALID` | `src/errors.ts` |
+| `PwaPushUnconfiguredError` | `X_PWA_PUSH_UNCONFIGURED` | `src/errors.ts` |
 | `PwaStrategyExhaustedError` | `X_PWA_STRATEGY_EXHAUSTED` | `src/errors.ts` |
+| `PwaVapidKeyInvalidError` | `X_PWA_VAPID_KEY_INVALID` | `src/errors.ts` |
+| `PwaVapidKeyMissingError` | `X_PWA_VAPID_KEY_MISSING` | `src/errors.ts` |
 | `SwScopeInvalidError` | `X_SW_SCOPE_INVALID` | `src/errors.ts` |
 
 ## Public API
@@ -111,14 +197,21 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them. `routeRules(routes, personalPages)` — `'last-member'` gives a personal page a `pages` rule; a pattern matches the browser's percent-encoded pathname, and a catch-all its bare prefix |
 | `CLEAR_PAGES_MESSAGE`, `PAGES_CLEARED_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
-| `buildId`, `detectSkew`, `retentionPlan` | version skew |
+| `buildId`, `detectSkew`, `retentionPlan` | version skew (`detectSkew` also on `./client`) |
 | `generateWebManifest` | the manifest + `theme-color` metas for both schemes, from a `WebManifestInput`. Called by `@ultimat3/cli` (`pwa-artifacts.ts`) `As of 2026-08-27`, so `x dev`, the container and the static export all emit `manifest.webmanifest` |
 | `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
 | `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |
 | `requireOfflineFallback` | the mandatory offline route |
 | `backgroundSyncSource`, `registerBackgroundSyncSource` | the Background Sync trigger. No retry policy: the handler rejects and the PLATFORM reschedules it |
 | `renderPushPayload`, `pushSource`, `subscribeSource` | Web Push, per-locale bodies |
-| `installController`, `iosInstallGuidance` | install prompt, never on first paint |
+| `pushSubscribe`, `pushUnsubscribe` | factories over `action`: store / forget this browser's subscription for `ctx.actor` |
+| `webPush`, `pushToActor` | one notification to every device of one person — `webPush()` is notify's `Pusher` |
+| `sendPushMessage`, `encryptPushMessage`, `vapidAuthorization` | one message to one subscription; RFC 8291; RFC 8292 |
+| `installWebPush`, `installedVapid`, `webPushRuntime`, `resetWebPush` | the runtime the boot installs (store, signer, transport, translator) |
+| `memoryPushSubscriptionStore`, `postgresPushSubscriptionStore` | where subscriptions live; `x_push_subscriptions` DDL is `@ultimat3/pwa/schema` |
+| `resolveVapidKeys`, `generateVapidKeys`, `assertVapidPair`, `DEV_VAPID_KEYS` | the key pair: from env, minted, checked, and the published development one |
+| `@ultimat3/pwa/client` | THE browser entry — [Browser entry](#browser-entry-ultimat3pwaclient) |
+| `installController`, `iosInstallGuidance`, `MIN_ENGAGEMENT_MS` | install prompt, never on first paint (also on `./client`) |
 | `PwaStrategyExhaustedError` and the other `errors.ts` classes | the codes this package throws, catchable by an app |
 
 ## Notes

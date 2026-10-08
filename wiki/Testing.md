@@ -333,6 +333,7 @@ What the rendered result is then held to: [Interface rules](Interface-Rules).
 | `clock` | `now()` · `advance('3d')` · `set(instant)` | the preload |
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` | the preload |
 | `network` | `offline()` · `drop()` · `online()` · `state()` | the preload |
+| `push` | `subscribe(actorId, { locale })` · `sent()` — each delivery decrypted, as the device shows it · `answerOnce(status)` | the preload |
 | `runJobs` | enqueue+drain, then `enqueue()` `drain()` `due()` `inFlight()` `depth()` → [A job under `runJobs`](#a-job-under-runjobs) | the preload |
 | `statements` | `all()` · `count(fingerprint?)` · `shapes()` — and an N+1 fails the test | the preload |
 | `page` | `goto` · `gotoStreamed` · `getByRole` · `evaluate` · `waitForServiceWorker` | a browser driver |

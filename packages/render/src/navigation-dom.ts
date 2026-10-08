@@ -4,8 +4,13 @@
  * browser. Split from `navigation.ts` so that file is the controller and nothing else.
  */
 
-import type { LinkFacts } from './navigation-rules';
-import { NAVIGATION_RELOAD_ATTRIBUTE } from './navigation-rules';
+import type { FormFacts, LinkFacts } from './navigation-rules';
+import {
+  linkVerdict,
+  mayPrefetch,
+  NAVIGATION_NO_PREFETCH_ATTRIBUTE,
+  NAVIGATION_RELOAD_ATTRIBUTE,
+} from './navigation-rules';
 
 /** A link as the rules read it; `event` absent for a hover, which is no click at all. */
 export function linkFacts(
@@ -33,6 +38,24 @@ export function anchorOf(target: EventTarget | null): HTMLAnchorElement | HTMLAr
   return el !== null && typeof (el as HTMLAnchorElement).href === 'string'
     ? (el as HTMLAnchorElement)
     : null;
+}
+
+/** The URL a hover or focus on `target` may prefetch, or `undefined` (`linkVerdict`, `mayPrefetch`). */
+export function intentUrl(win: Window, target: EventTarget | null): string | undefined {
+  const anchor = anchorOf(target);
+  if (anchor === null) return undefined;
+  const verdict = linkVerdict(linkFacts(win, anchor));
+  if (verdict.kind !== 'soft') return undefined;
+  const connection = (
+    win.navigator as { connection?: { saveData?: boolean; effectiveType?: string } }
+  ).connection;
+  const may = mayPrefetch({
+    url: verdict.url,
+    noPrefetch: anchor.hasAttribute(NAVIGATION_NO_PREFETCH_ATTRIBUTE),
+    saveData: connection?.saveData,
+    effectiveType: connection?.effectiveType,
+  });
+  return may ? verdict.url : undefined;
 }
 
 /** A field as a GET query carries it: a file by its name, as the browser does. */
@@ -68,6 +91,35 @@ export function formFields(form: HTMLFormElement, submitter: HTMLElement | null)
   } catch {
     return new FormData(form);
   }
+}
+
+/** A submit as the rules read it — the submitter's `form*` attributes over the form's — and its fields. */
+export function submitFacts(
+  win: Window,
+  form: HTMLFormElement,
+  submitter: HTMLElement | null,
+  defaultPrevented: boolean,
+): { readonly facts: FormFacts; readonly fields: FormData } {
+  const fields = formFields(form, submitter);
+  const say = (attr: string, fallback: string): string =>
+    submitter?.getAttribute(`form${attr}`) ?? form.getAttribute(attr) ?? fallback;
+  const facts: FormFacts = {
+    action: formAction(say('action', ''), win.location.href, win.document.baseURI),
+    current: win.location.href,
+    method: say('method', 'get').toLowerCase(),
+    enctype: say('enctype', 'application/x-www-form-urlencoded').toLowerCase(),
+    target: say('target', ''),
+    defaultPrevented,
+    reload:
+      form.hasAttribute(NAVIGATION_RELOAD_ATTRIBUTE) ||
+      submitter?.hasAttribute(NAVIGATION_RELOAD_ATTRIBUTE) === true,
+    // `unknown`: a browser yields a `File` for a file input, whatever a server-side type says.
+    hasFile: [...fields.values()].some(
+      (value: unknown) => value instanceof File && value.name !== '',
+    ),
+    fields: formPairs(fields),
+  };
+  return { facts, fields };
 }
 
 const hush = (): void => undefined;

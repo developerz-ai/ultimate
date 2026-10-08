@@ -5,6 +5,7 @@
 
 @use 'tokens/theme';
 @use 'tokens/reset';
+@use 'tokens' as t;
 
 // A held island's reveal that needs no script (`@ultimat3/render`'s `ISLAND_HOLD_REVEAL`, issue 506):
 // its wrapper animates to this after the hold's cap, so JS off or a blocked runtime still shows
@@ -12,5 +13,36 @@
 @keyframes ultimate-hold-reveal {
   to {
     visibility: visible;
+  }
+}
+
+// The client router's route-presented modal (`@ultimat3/render`'s `NAVIGATION_MODAL_ATTRIBUTE`, a
+// route declaring `navigation: 'modal'`): a native <dialog> holding the page's `<main>`, styled as
+// `Dialog` is. Global because no component renders it — the router does, and `render` cannot
+// import `ui` (one tier) — so the name is held equal by render's `navigation-modal-style.test.ts`.
+// `:where()`: an app restyles it without out-shouting a selector.
+:where(dialog[data-x-modal]) {
+  inline-size: min(100% - #{t.space(8)}, 40rem);
+  max-block-size: min(88dvh, 60rem);
+  padding: t.space(5);
+  border: 1px solid t.role('line');
+  border-radius: t.radius(lg);
+  background: t.role('surface-raised');
+  color: t.role('fg');
+  box-shadow: t.shadow(xl);
+  overflow-y: auto;
+
+  @include t.custom-scrollbar;
+  @include t.scrim-backdrop($blur: t.rem(2px));
+
+  &[open] {
+    animation: ultimate-modal-in t.duration(base) t.easing(out);
+  }
+}
+
+@keyframes ultimate-modal-in {
+  from {
+    opacity: 0;
+    translate: 0 t.space(2);
   }
 }

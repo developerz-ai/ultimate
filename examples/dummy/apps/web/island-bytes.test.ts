@@ -202,7 +202,11 @@ test('every island in the app is measured, and each is classified by its own gra
     '@ultimat3/realtime',
   ]);
   // Both reach the typed action client through `shared/browser-client.ts` (plan 101, slice 16).
-  expect(reachable.get('apps/web/app/settings/settings.island.tsx')).toEqual(['@ultimat3/action']);
+  // Settings also subscribes this browser to Web Push: `@ultimat3/pwa/client`, which imports nothing.
+  expect(reachable.get('apps/web/app/settings/settings.island.tsx')).toEqual([
+    '@ultimat3/action',
+    '@ultimat3/pwa/client',
+  ]);
   expect(reachable.get('apps/web/site/pricing/contact-sales.island.tsx')).toEqual([
     '@ultimat3/action',
   ]);

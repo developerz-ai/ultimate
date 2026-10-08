@@ -11,7 +11,7 @@ import {
   maskedEnvValues,
   UltimateError,
 } from '@ultimat3/core';
-import { envExampleFor, loadEnvSchema } from './app-env';
+import { appSecretFacts, envExampleFor, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
 import { envSpec } from './cmd-env-spec';
 import type { CliCommand, CommandContext } from './command';
@@ -51,7 +51,7 @@ async function requireSchema(cwd: string, subcommand: string) {
 
 async function writeExample(ctx: CommandContext): Promise<CommandResult> {
   const { root, schema } = await requireSchema(ctx.cwd, 'example');
-  const contents = envExampleFor(schema);
+  const contents = envExampleFor(schema, await appSecretFacts(root));
   const path = join(root, ENV_EXAMPLE_PATH);
   const file = Bun.file(path);
   const fresh = (await file.exists()) && (await file.text()) === contents;
@@ -78,14 +78,14 @@ async function writeExample(ctx: CommandContext): Promise<CommandResult> {
  * the first deployed boot would, instead of each role crash-looping on one key at a time (#679).
  */
 async function checkProcessEnv(ctx: CommandContext): Promise<CommandResult> {
-  const { schema } = await requireSchema(ctx.cwd, 'check');
+  const { root, schema } = await requireSchema(ctx.cwd, 'check');
   const report = checkEnv(schema, { env: ctx.env });
   const total = Object.keys(schema).length;
   // A key the app's own declaration already reported is one finding, not two.
   const reported = new Set(report.issues.map((issue) => issue.key));
   // Gated by `deployed()` inside — the boot's own rule, so a table naming no environment is
   // checked as the production process it boots as.
-  const framework = frameworkSecretFindings(ctx.env, reported);
+  const framework = frameworkSecretFindings(ctx.env, reported, await appSecretFacts(root));
   const findings: readonly Finding[] = [
     ...report.issues.map((issue) => ({
       code: 'X_ENV_MISSING',

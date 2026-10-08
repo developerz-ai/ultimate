@@ -7,24 +7,34 @@
 // why: Bun ships no path API; the entry is resolved to a file and named in the cause.
 import { dirname, join, relative } from 'node:path';
 import type { Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, jsonResponse } from '@ultimat3/http';
+import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
 import { FrameworkScriptBuildFailedError, type FrameworkScriptKind } from './errors';
 import { describeBuildError, graphHash, stripDebugId } from './island-identity';
 
-/** Under the dev namespace `/_x` — where the socket it opens (`/_x/sync`) already lives. */
-export const SYNC_WORKER_BASE_PATH = '/_x/sync-worker';
+/**
+ * The ONE prefix every framework-served, content-addressed script lives under — the sync worker,
+ * the page boot, the client router — the way Rails serves `/assets/<name>-<sha>`. No live endpoint
+ * shares it: the worker lived at `/_x/sync-worker/…`, and an operator's ordinary prefix rule for
+ * the socket (`^/_x/sync` → the sync role) sent it to a process that serves only the socket, so
+ * no page got its worker and the CDN kept the 404 for hours. `SYNC_PROXY_PATTERN` (`sync-url.ts`)
+ * is the socket's whole claim, and `worker-bundle.test.ts` holds the two apart.
+ */
+export const FRAMEWORK_ASSET_BASE_PATH = '/_x/assets';
+
+/** The sync worker: `<FRAMEWORK_ASSET_BASE_PATH>/sync-worker/<hash>.js`. */
+export const SYNC_WORKER_BASE_PATH = `${FRAMEWORK_ASSET_BASE_PATH}/sync-worker`;
 
 /** What an app resolves: realtime's worker entry, from the APP's install, never the CLI's own. */
 export const SYNC_WORKER_SPECIFIER = '@ultimat3/realtime/sync-worker';
 
-/** Under the dev namespace too; one per document that carries a principal scope. */
-export const PAGE_BOOT_BASE_PATH = '/_x/page-boot';
+/** The page boot, one per document that carries a principal scope. */
+export const PAGE_BOOT_BASE_PATH = `${FRAMEWORK_ASSET_BASE_PATH}/page-boot`;
 
 /** Realtime's page boot, from the APP's install. */
 export const PAGE_BOOT_SPECIFIER = '@ultimat3/realtime/boot';
 
-/** Under the dev namespace too; one per document whose surface opted into client navigation. */
-export const NAVIGATION_BASE_PATH = '/_x/navigation';
+/** The client router, one per document whose surface opted into client navigation. */
+export const NAVIGATION_BASE_PATH = `${FRAMEWORK_ASSET_BASE_PATH}/navigation`;
 
 /** Render's client router, from the APP's install — the copy its documents were rendered by. */
 export const NAVIGATION_SPECIFIER = '@ultimat3/render/navigation';
@@ -198,7 +208,7 @@ function scriptRoute(
     handler: (request: UltimateRequest): Response => {
       const script = source();
       if (script === undefined || script.url !== request.pathname) {
-        return jsonResponse(
+        const missing = jsonResponse(
           {
             ok: false,
             error: {
@@ -209,6 +219,9 @@ function scriptRoute(
           },
           { status: 404 },
         );
+        // `no-store`, said here and not left to the pipeline: a miss on a content-addressed URL
+        // must never be pinned by a CDN or a proxy (`island-routes.ts`' rule).
+        return applyCacheHeaders(missing, NO_STORE);
       }
       return applyCacheHeaders(
         new Response(script.code, { headers: { 'content-type': 'text/javascript' } }),

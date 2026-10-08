@@ -39,6 +39,13 @@ export const config = defineRoute({
    */
   policy: { permission: 'post:create' satisfies KnownPermission },
   /**
+   * The editor opens OVER the feed it was reached from (`/feed#/posts/new`): the feed's islands,
+   * socket and scroll stay live underneath, and Escape, Back or Cancel close it. A full load of
+   * `/posts/new` — a reload without the router, scripting off, a bookmark of the bare path — is
+   * still this whole page; the server renders one document either way.
+   */
+  navigation: 'modal',
+  /**
    * `idle`, for the layout's update banner alone: the form itself is the browser's, but an editor
    * left open across a deploy is exactly the page that must hear a new build is live.
    */
@@ -72,8 +79,15 @@ export const config = defineRoute({
    * sheets are retired, a finished older view transition no longer forgets the running one, and
    * `<a href="#">` and an unparsable href stay the browser's. The other +198 B is the router's
    * growth on main between 22.8.1's statement and this slice (19,071 → 19,269 B), unstated until now.
+   * raised 22kb → 26kb (26.1.0, route-presented modals). measured: 26,580 B (2026-10-08;
+   * `x build --target static`), against 26,624. why: the client router grew 19,966 → 24,058 B
+   * (+4,092): `navigation: 'modal'` — a hash-addressed `<dialog>` over the page, reopened by a
+   * reload, Back/Forward or a pasted URL, its forms posted through the router, and the router's
+   * `refresh`/`openModal`/`closeModal` for navigating from code; charged to every
+   * `app/` document, as the router is. Of the +4,072 B over 22,508, the router is
+   * +4,092; −20 B is main's own drift between that measurement and 26.0.0.
    */
-  budget: { js: '22kb' },
+  budget: { js: '26kb' },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

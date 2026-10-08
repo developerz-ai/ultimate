@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9167a8341bdc44793724c0c59cd3fcefcdbae37f6e8f0bb9d1b3e8c593d7ecde",
+  "buildId": "16f0de4031d110d69d52b14ba33a46d15b90450f8a1ccb346576877739e5265c",
   "tiers": {
     "0": [
       "core",
@@ -2555,6 +2555,11 @@
       "at": "packages/entity/src/entity-error.ts"
     },
     {
+      "code": "X_NAVIGATION_MODAL_PATH_INVALID",
+      "owner": "render",
+      "at": "packages/render/src/errors.ts"
+    },
+    {
       "code": "X_NEW_ERROR_CODE_EXISTS",
       "owner": "scripts",
       "at": "scripts/lib/error-code-plan.ts"
@@ -2900,6 +2905,36 @@
       "at": "packages/pwa/src/errors.ts"
     },
     {
+      "code": "X_PWA_PUSH_FAILED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_PUSH_HOST_UNLISTED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_PUSH_PAYLOAD_TOO_LARGE",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_PUSH_REJECTED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_PUSH_SUBSCRIPTION_INVALID",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_PUSH_UNCONFIGURED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
       "code": "X_PWA_STRATEGY_EXHAUSTED",
       "owner": "pwa",
       "at": "packages/pwa/src/errors.ts"
@@ -2911,6 +2946,16 @@
     },
     {
       "code": "X_PWA_SYNC_INCOMPLETE",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_VAPID_KEY_INVALID",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_VAPID_KEY_MISSING",
       "owner": "pwa",
       "at": "packages/pwa/src/errors.ts"
     },

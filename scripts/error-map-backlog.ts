@@ -158,8 +158,9 @@ export const OFF_SOCKET: Pins = {
     'X_MCP_TOOL_UNSAFE',
     'X_MCP_CONFIRMATION_TOOL_UNKNOWN',
   ],
-  // tier 4 — the service worker and the PWA manifest: build-time rules plus faults raised in
-  // the BROWSER, where there is no response to give a status to.
+  // tier 4 — the service worker and the PWA manifest: build-time rules, faults raised in the
+  // BROWSER, where there is no response to give a status to, and the VAPID pair refused at BOOT,
+  // before a listener exists. The send-time push faults have rows (`error-map-tier-4.ts`).
   pwa: [
     'X_BUILD_ID_MISSING',
     'X_PWA_ICON_MISSING',
@@ -169,9 +170,17 @@ export const OFF_SOCKET: Pins = {
     'X_PWA_SYNC_FLUSH_FAILED',
     'X_PWA_SYNC_INCOMPLETE',
     'X_SW_SCOPE_INVALID',
+    'X_PWA_VAPID_KEY_MISSING',
+    'X_PWA_VAPID_KEY_INVALID',
   ],
-  // tier 4 — the build's budget, and a route file refused by `registerRoute`.
-  render: ['X_BUDGET_EXCEEDED', 'X_ROUTE_DUPLICATE', 'X_ROUTE_FILE_INVALID'],
+  // tier 4 — the build's budget, a route file refused by `registerRoute`, and `openModal`'s
+  // refusal, thrown in the browser by the code that called it — no request carries it.
+  render: [
+    'X_BUDGET_EXCEEDED',
+    'X_ROUTE_DUPLICATE',
+    'X_ROUTE_FILE_INVALID',
+    'X_NAVIGATION_MODAL_PATH_INVALID',
+  ],
   // tier 4 since 26.0.0 (#709) — `scrape()` returns a job: every code is raised in the worker,
   // which opens no HTTP port, or at declaration, at boot.
   scraping: [

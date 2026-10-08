@@ -6,6 +6,7 @@ import { mailDriver, resetMailDriver, tryMailDriver } from '@ultimat3/mail';
 import { frozenNow, setFrozenClock } from './determinism';
 import { testJobs } from './fixture-jobs';
 import { testMail } from './fixture-mail';
+import { testPush } from './fixture-push';
 import { fixtureTest, registeredFixtures } from './fixtures';
 import {
   ALL_FIXTURE_NAMES,
@@ -46,7 +47,7 @@ const message = (mailId: string) => ({
 });
 
 describe(testName('unit', 'the framework fixture bag'), () => {
-  bunTest('builds exactly clock, mail, network, runJobs, statements and subscribe', () => {
+  bunTest('builds exactly clock, mail, network, push, runJobs, statements and subscribe', () => {
     registerFrameworkFixtures();
     // `subscribe` joined this list on 2026-08-20. It was declared-and-driverless because the
     // framework had no change SOURCE in a test process — PGlite has no walsender and the memory
@@ -56,6 +57,7 @@ describe(testName('unit', 'the framework fixture bag'), () => {
       'clock',
       'mail',
       'network',
+      'push',
       'runJobs',
       'statements',
       'subscribe',
@@ -232,4 +234,81 @@ describe(testName('unit', 'a fixture that installs process-global state hands it
   bunTest('so the next test starts without the previous one’s queue', () => {
     expect(jobDriver()).toBeUndefined();
   });
+});
+
+describe(testName('unit', 'the push fixture'), () => {
+  bunTest('a subscribed person receives the notification their device would show', async () => {
+    const { pushToActor } = await import('@ultimat3/pwa');
+    using push = await testPush();
+    await push.subscribe('ana', { locale: 'en' });
+    await push.subscribe('ben');
+    const report = await pushToActor('ana', {
+      titleKey: 'push.missing.title',
+      bodyKey: 'push.missing.body',
+      url: '/posts/1',
+      tag: 'post:1',
+      urgency: 'high',
+    });
+    expect(report).toEqual({ delivered: 1, removed: 0, refused: 0 });
+    const [message] = push.sent();
+    expect(message?.actorId).toBe('ana');
+    expect(message?.headers['urgency']).toBe('high');
+    // Decrypted with ana's own browser key: the fields the worker shows, keys rendered (here, the
+    // loud miss — this test registers no catalog).
+    expect(message?.notification).toMatchObject({
+      title: '⟦push.missing.title⟧',
+      url: '/posts/1',
+      tag: 'post:1',
+      lang: 'en',
+    });
+  });
+
+  bunTest(
+    'the runtime reads the frozen clock the `clock` fixture moves, never the wall clock',
+    async () => {
+      const { webPushRuntime } = await import('@ultimat3/pwa');
+      using _push = await testPush();
+      const runtime = webPushRuntime('the push fixture test');
+      const before = runtime.clock.monotonic();
+      setFrozenClock(frozenNow().getTime() + 172_800_000);
+      try {
+        expect(runtime.clock.monotonic() - before).toBe(172_800_000);
+        expect(runtime.clock.now().getTime()).toBe(frozenNow().getTime());
+      } finally {
+        setFrozenClock(frozenNow().getTime() - 172_800_000);
+      }
+    },
+  );
+
+  bunTest('answerOnce(410) deletes the device; a 429 is the job retrying', async () => {
+    const { pushToActor } = await import('@ultimat3/pwa');
+    using push = await testPush();
+    await push.subscribe('ana');
+    push.answerOnce(410);
+    expect(await pushToActor('ana', { titleKey: 'a', bodyKey: 'b', url: '/' })).toEqual({
+      delivered: 0,
+      removed: 1,
+      refused: 0,
+    });
+    await push.subscribe('ana');
+    push.answerOnce(429);
+    await expect(
+      pushToActor('ana', { titleKey: 'a', bodyKey: 'b', url: '/' }),
+    ).rejects.toMatchObject({ code: 'X_PWA_PUSH_FAILED' });
+    expect(push.sent()).toEqual([]);
+  });
+
+  bunTest(
+    'disposing releases the runtime: push outside the test is unconfigured again',
+    async () => {
+      const { pushToActor } = await import('@ultimat3/pwa');
+      {
+        using push = await testPush();
+        await push.subscribe('ana');
+      }
+      await expect(
+        pushToActor('ana', { titleKey: 'a', bodyKey: 'b', url: '/' }),
+      ).rejects.toMatchObject({ code: 'X_PWA_PUSH_UNCONFIGURED' });
+    },
+  );
 });

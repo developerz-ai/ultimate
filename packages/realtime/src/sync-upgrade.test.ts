@@ -251,3 +251,39 @@ describe('the sync node honours the readiness mode', () => {
     }
   });
 });
+
+// The sync role answers its OWN non-socket paths with `no-store`. A response with no
+// `cache-control` is one a CDN applies its default TTL to: a page asset an operator's prefix rule
+// misrouted here was a `404 not found` kept at the edge for four hours, long after the fix.
+describe('every answer that is not a socket is never cacheable', () => {
+  test('a path that is not the socket: 404, no-store', async () => {
+    const target = rig({ accepts: true });
+    for (const path of ['/_x/sync-worker/0a1b2c3d.js', '/favicon.ico', '/_x/sync/extra']) {
+      const response = await handleUpgrade(
+        target.deps,
+        new Request(`http://node${path}`),
+        target.server,
+      );
+      expect(response?.status).toBe(404);
+      expect(response?.headers.get('cache-control')).toBe('no-store');
+    }
+  });
+
+  test('a plain GET of the socket path (no upgrade): 426, no-store', async () => {
+    const response = await handleUpgrade(
+      rig({ accepts: false }).deps,
+      request,
+      rig({ accepts: false }).server,
+    );
+    expect(response?.status).toBe(426);
+    expect(response?.headers.get('cache-control')).toBe('no-store');
+  });
+
+  test('a node shedding load: 503, no-store', async () => {
+    const target = rig({ accepts: true });
+    const shedding: UpgradeDeps = { ...target.deps, ready: () => true, maxConnections: 0 };
+    const response = await handleUpgrade(shedding, request, target.server);
+    expect(response?.status).toBe(503);
+    expect(response?.headers.get('cache-control')).toBe('no-store');
+  });
+});

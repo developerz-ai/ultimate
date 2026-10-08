@@ -50,8 +50,8 @@ message disappears is your decision ([Configuration](Configuration)).
 
 - `deliveryChannel(name, fn)` delivers per recipient; `bulkChannel(name, fn)` makes **one** call for the
   whole audience (a Slack post, a webhook) and cannot take a digest (`X_NOTIFY_DIGEST_UNSUPPORTED`).
-  `inAppChannel()` and `mailChannel({ mailer })` ship; `mailer` is structural, so [Mail](Mail) plugs
-  in without an import.
+  `inAppChannel()`, `mailChannel({ mailer })` and `pushChannel({ pusher, message })` ship; `mailer` and
+  `pusher` are structural, so [Mail](Mail) and `@ultimat3/pwa` plug in without an import — [Push](#push).
 - `requireInbox(name)` answers `list`, `unreadCount`, `markSeen`, `markRead`. `seenAt` and `readAt`
   are two facts, and the unread count is derived, never stored.
 - A recipient id named twice in the audience is one recipient: the list is deduplicated by `id`,
@@ -63,3 +63,68 @@ message disappears is your decision ([Configuration](Configuration)).
 Codes: `X_NOTIFY_CHANNELS_EMPTY`, `X_NOTIFY_CHANNEL_DUPLICATE`, `X_NOTIFY_DIGEST_UNSUPPORTED`,
 `X_NOTIFY_FANOUT_TOO_WIDE` (default cap 500 recipients), `X_NOTIFY_STORE_MISSING`,
 `X_NOTIFY_DELIVERY_FAILED` — [Error codes](Error-Codes).
+
+## Push
+
+`pushChannel` delivers one notification to **every device the recipient subscribed**, each in the
+locale that browser subscribed with. `As of 26.1.0`. The transport is `@ultimat3/pwa`'s `webPush()`:
+RFC 8291 encryption and an RFC 8292 (VAPID, ES256) token, on WebCrypto — no dependency.
+
+```ts
+import type { Recipient } from '@ultimat3/notify';
+import { notifier, pushChannel, t } from '@ultimat3/notify';
+import { webPush } from '@ultimat3/pwa';
+
+// The app's own read: who follows a post. A notifier never touches the database itself.
+declare const posts: {
+  subscribers(postId: string, signal: AbortSignal): Promise<readonly Recipient[]>;
+};
+
+export const commentPushed = notifier({
+  name: 'post.commented.push',
+  input: t.object({ postId: t.uuid, commenter: t.string }),
+  tenant: 'none',
+  key: (params) => `comment-push:${params.postId}`,
+  // The audience — every device of each of them is reached. Omitted, the audience is empty and
+  // nothing is sent unless every enqueue names its own `recipients`.
+  recipients: ({ input, ctx }) => posts.subscribers(input.postId, ctx.signal),
+  deliver: [
+    {
+      channel: pushChannel<{ postId: string; commenter: string }>({
+        pusher: webPush(),
+        // Catalog KEYS, never text: rendered per subscription, in its own locale.
+        message: ({ event }) => ({
+          titleKey: 'push.comment.title',
+          bodyKey: 'push.comment.body',
+          params: { who: event.params.commenter },
+          url: `/posts/${event.params.postId}`, // a path on this app; anything else opens the root
+          tag: `post:${event.params.postId}`, // set it: a retry re-sends, a tag makes it a replacement
+        }),
+      }),
+    },
+  ],
+});
+```
+
+| Piece | Where |
+|---|---|
+| config | `pwa: { push: true, vapid: { subject: 'mailto:ops@example.com' } }` ([Configuration](Configuration)) |
+| key pair | `x vapid create` seals `ULTIMATE_VAPID_PUBLIC_KEY` + `ULTIMATE_VAPID_PRIVATE_KEY`; a local process with neither signs with a published development pair, a deployed boot refuses it (`X_PWA_VAPID_KEY_MISSING`) |
+| subscriptions | `x_push_subscriptions`, a framework table the boot applies; the boot installs the store |
+| subscribe / unsubscribe | `export const subscribePush = pushSubscribe({ permission: 'push:subscribe' })` and `pushUnsubscribe(…)` in an actions module — real actions, on the one authz path, stored against `ctx.actor.id`; an agent never subscribes |
+| the button | `subscribeToPush({ save: client.subscribePush })` from `@ultimat3/pwa/client`, on a click: asks permission, subscribes with the key in `<meta name="x-push-key">`, saves the page's locale and the device's zone |
+
+What each push-service answer does:
+
+| Answer | Outcome |
+|---|---|
+| 201 | delivered |
+| 404 / 410, or an expired subscription | the subscription is deleted; nothing is retried |
+| 429 / 5xx / no connection | `X_PWA_PUSH_FAILED` — thrown after every other device was tried, so the delivery fails as `X_NOTIFY_DELIVERY_FAILED` and the notifier job retries on its own backoff |
+| 400 / 413 | `X_PWA_PUSH_REJECTED` — logged and counted, never retried |
+| 401 / 403 | `X_PWA_PUSH_REJECTED`, and the subscription is deleted: it was made with a VAPID key this server no longer signs with. `subscribeToPush` replaces such a browser's subscription the next time it asks |
+
+A retry re-sends to the devices that already got it; the `tag` makes that a replacement on the device
+rather than a second notification. `renotify` without a `tag` is dropped with a warning — the spec
+makes that pair show nothing at all.
+

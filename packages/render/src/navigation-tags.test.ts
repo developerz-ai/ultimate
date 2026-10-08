@@ -20,6 +20,17 @@ describe('clientNavigationTags', () => {
     );
   });
 
+  test("a `navigation: 'modal'` route says so; every other names no presentation", () => {
+    const modal = clientNavigationTags({
+      surface: 'web:app',
+      buildId: 'b1',
+      scriptUrl: '/_x/navigation/h.js',
+      modal: true,
+    });
+    expect(renderHead(modal)).toContain('<meta name="ultimate-presentation" content="modal">');
+    expect(renderHead(tags)).not.toContain('ultimate-presentation');
+  });
+
   test("the build shares realtime's key: merged with the sync tags, it is written once", () => {
     const merged = mergeHead(clientSyncTags({ syncUrl: '/_x/sync', buildId: 'b1' }), tags);
     expect(merged.filter((tag) => tag.key === 'meta:x-ultimate-build')).toHaveLength(1);

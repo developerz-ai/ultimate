@@ -264,7 +264,7 @@ The framework decides this; no app owns a `sync-url.ts`, `As of 2026-09-22`.
 | `SYNC_URL` overrides the target, and must be `ws:`/`wss:` or boot fails with `X_CONFIG_INVALID`. It is never derived from a port: behind any ingress, a neighbouring port is a URL nothing publishes | `packages/cli/src/sync-url.ts` |
 | the Compose rung needs `SYNC_URL`, because `sync` is published on its own port with no proxy | [`docs/ops/README.md`](../ops/README.md), rung 2 |
 | every document carries `<meta name="ultimate-sync">` and `<meta name="x-ultimate-build">`, plus `<meta name="ultimate-sync-worker">` when the app has realtime (and so has a worker). All principal-free, so a shareable document may carry them | `packages/render/src/client-sync-tags.ts`; the names are declared once, in `packages/core/src/page-meta.ts` |
-| the worker is built once at boot, from its source graph, and served `immutable` at `/_x/sync-worker/<hash>.js`, so a deploy gets a new URL and an open tab keeps the worker it started with | `packages/cli/src/worker-bundle.ts` |
+| the worker is built once at boot, from its source graph, and served `immutable` at `/_x/assets/sync-worker/<hash>.js`, so a deploy gets a new URL and an open tab keeps the worker it started with | `packages/cli/src/worker-bundle.ts` |
 | `x dev` and `serve.ts` compose all of it through one call, so the two cannot serve different targets | `packages/cli/src/page-sync.ts` |
 
 ## What each hook costs
@@ -280,7 +280,7 @@ table, so an error thrown in it and rendered there shows the code's **name** as 
 registered title is in `core-error-codes.ts`, anchored by the barrel, and reaches any process that
 imports the barrel (every server). That is the trade for about 6 kB per island.
 
-**The page boot** (`/_x/page-boot/<hash>.js`) is one deferred classic script, rendered only on a
+**The page boot** (`/_x/assets/page-boot/<hash>.js`) is one deferred classic script, rendered only on a
 document that carries a scope tag **and** emitted an island reaching `@ultimat3/realtime`
 (`packages/cli/src/runtime-render.ts`). The worker and the boot are resolved from the app root, then
 from each `apps/*` workspace (`worker-bundle.ts`). Until 2026-09-22 only the root was read, so a

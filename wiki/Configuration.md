@@ -283,7 +283,7 @@ seo: {
 
 ## `pwa`
 
-`offline` is a **block**, not a string, `As of 2026-08` — see [Upgrading](Upgrading). Two booleans, one block; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required.
+`offline` is a **block**, not a string, `As of 2026-08` — see [Upgrading](Upgrading). Three booleans, two blocks; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required, and `pwa.vapid.subject`, which a `pwa.vapid` block does.
 
 ```ts
 pwa: {
@@ -294,6 +294,9 @@ pwa: {
     light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
     dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
   },
+  // Web Push — the key pair is env (`x vapid create`), never here.
+  push: true,
+  vapid: { subject: 'mailto:ops@example.com' },
 },
 ```
 
@@ -308,7 +311,9 @@ pwa: {
 | `pwa.offline.neverCache` | `string[]` | `[]` | **read** — path prefixes the worker passes straight through. Auth and payments belong here: a stale 200 is worse than a failure |
 | ~~`pwa.offline` as a string~~ | — | — | **Changed in the release that closed [#390](https://github.com/developerz-ai/ultimate/issues/390).** It was `'precache' \| 'runtime' \| 'network-only'`, an app-wide default for a field `defineRoute` makes **required** on every route — so it defaulted nothing and was read by nobody. Migration: `offline: 'runtime'` → `offline: { fallback: '/offline' }`, plus a route at that path ([Upgrading](Upgrading)) |
 | `pwa.backgroundSync` | `boolean` | `false` | **read**. The emitted worker's `sync` event posts `OUTBOX_DRAIN_MESSAGE` to every open tab, which drains realtime's outbox (21.0.0) |
-| `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
+| `pwa.push` | `boolean` | `false` | **read** `As of 26.1.0` — Web Push, end to end: every role's boot resolves the VAPID pair and installs the push runtime (refused with `X_PWA_VAPID_KEY_MISSING` in a deployed environment with no keys), `sw.js` carries the `push` and `notificationclick` handlers, every document carries `<meta name="x-push-key">`, and `pushSubscribe()` / `pushUnsubscribe()` / `webPush()` work. **Wired only with `pwa.vapid`:** `push: true` alone boots as it did on 26.0.0, where the key wired nothing — push stays off and the boot logs `pwa.push unwired` with the fix; 27.0.0 refuses it. A static export has no runtime behind it, so it emits no handler and says so in `serviceWorkerWarnings`. [Notify](Notify#push) |
+| `pwa.vapid.subject` | `string` | — | **read** — `mailto:` or an `https:` URL: who a push service writes to about this server (RFC 8292). **What wires `pwa.push`; refused when `pwa.push` is false** (a key with no reader), and a block with no valid subject is refused. The KEYS are never config: `ULTIMATE_VAPID_PUBLIC_KEY` and `ULTIMATE_VAPID_PRIVATE_KEY` are environment variables, sealed together by `x vapid create`, because a public key in committed config and a private key per deploy are two places that can disagree. A development or test process with neither set signs with a published development pair |
+| `pwa.vapid.pushHosts` | `string[]` | `[]` | **read** `As of 26.1.0` — push services this app sends to **beyond** the built-in ones (`PUSH_SERVICE_HOSTS`: `fcm.googleapis.com`, `push.services.mozilla.com`, `push.apple.com`, `notify.windows.com`), for a self-hosted push service. Bare host names — no scheme, port, path or wildcard; each admits its subdomains on a dot boundary; `localhost` and IP literals are refused (`X_CONFIG_INVALID`). A subscription on any other host is refused when it is stored and deleted unsent (`X_PWA_PUSH_HOST_UNLISTED`): an endpoint comes from a request body, and a hostname resolves wherever its owner points it, so the list of services — not the name's shape — is what keeps the sender off private addresses |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `installController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `installController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
 ## `navigation`
@@ -321,7 +326,7 @@ navigation: { client: ['app'], speculation: { prefetch: 'moderate', exclude: [] 
 
 | field | type | default | notes |
 |---|---|---|---|
-| `navigation.client` | `('site' \| 'app')[]` | `[]` | **read** by `x dev`, the container and `x build --target static`: a listed surface's documents carry the router (`/_x/navigation/<hash>.js`, charged to each route's `budget.js`). `api`, `shared`, a duplicate or a non-list → `X_CONFIG_INVALID`. The last layer that lists surfaces wins |
+| `navigation.client` | `('site' \| 'app')[]` | `[]` | **read** by `x dev`, the container and `x build --target static`: a listed surface's documents carry the router (`/_x/assets/navigation/<hash>.js`, charged to each route's `budget.js`). `api`, `shared`, a duplicate or a non-list → `X_CONFIG_INVALID`. The last layer that lists surfaces wins |
 | `navigation.speculation.prefetch` | `'moderate' \| 'conservative' \| false` | `'moderate'` | **read** by the same three: every document WITHOUT the router carries `<script type="speculationrules">` (prefetch only, admitted to the CSP by hash, 0 bytes against `budget.js`). `false` emits nothing. Any other value → `X_CONFIG_INVALID` |
 | `navigation.speculation.exclude` | `string[]` | `[]` | **read** — URL patterns subtracted from the candidates the route table yields. Each must start with `/`, else `X_CONFIG_INVALID`. The last layer that lists any wins |
 
@@ -713,13 +718,13 @@ await Bun.write(ENV_EXAMPLE_PATH, renderEnvExample(schema));      // '.env.examp
 
 `renderEnvExample(schema, { extras })` returns the whole file, deterministic in declaration order. Per key it writes the description, then an annotation line — `required|optional · <type or enum values> · secret · role a/b` — then `KEY=<example>`. **A `secret: true` key's example is always empty**, even when the declaration has a default. `extras` are appended as commented `# NAME=` lines.
 
-**`x env example` writes more than the schema.** After the app's own keys it appends a `# --- Framework` section: the secrets the framework refuses to boot without outside `development`/`test`, whatever `envSchema` declares — `ULTIMATE_CURSOR_SECRET` (cursor signing, `X_CURSOR_SECRET_DEV`) and `STORAGE_SIGNING_SECRET` (the embedded disk's upload grants, `X_ENV_MISSING`; not read when `S3_ENDPOINT`/`S3_BUCKET` select object storage). Each is annotated `required when deployed · string · secret` with its reason and an empty value, so the file is the whole deploy contract an infra repo builds its Secret from. A key the app declares itself is rendered once, as the app declared it. The list is `FRAMEWORK_SECRETS` in [`packages/cli/src/framework-env.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/framework-env.ts) — `x env check` and `x doctor` read the same one. `renderEnvExample` itself is the app's projection alone.
+**`x env example` writes more than the schema.** After the app's own keys it appends a `# --- Framework` section: the secrets the framework refuses to boot without outside `development`/`test`, whatever `envSchema` declares — `ULTIMATE_CURSOR_SECRET` (cursor signing, `X_CURSOR_SECRET_DEV`) and `STORAGE_SIGNING_SECRET` (the embedded disk's upload grants, `X_ENV_MISSING`; not read when `S3_ENDPOINT`/`S3_BUCKET` select object storage), always; and, once `pwa.push` is wired (`As of 26.1.0`), `ULTIMATE_VAPID_PUBLIC_KEY` and `ULTIMATE_VAPID_PRIVATE_KEY` (`X_PWA_VAPID_KEY_MISSING`), minted together by `x vapid create` — never by `openssl`, and the section header then says which generator mints which. Each is annotated `required when deployed · string` (and `· secret`, all but the public key) with its reason and an empty value, so the file is the whole deploy contract an infra repo builds its Secret from. A key the app declares itself is rendered once, as the app declared it. The list is `FRAMEWORK_SECRETS` in [`packages/cli/src/framework-env.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/framework-env.ts) — `x env check` and `x doctor` read the same one. `renderEnvExample` itself is the app's projection alone.
 
 | Command | Framework secrets |
 |---|---|
 | `x env example` | rendered, blank, after the app's keys |
-| `x env check` | checked against the environment it runs in, by the boot's own rule (core's `devSecretsRefused`, `deployed` in `framework-env.ts`): anything but `development`/`test`, **and an environment naming none** — the boot fails closed. `ULTIMATE_ENV=production x env check` answers what the first deployed boot would (`X_CURSOR_SECRET_DEV`, `X_STORAGE_SECRET_DEV`, exit 1); the published development keys count as unset |
-| `x doctor` | the same findings, cause and fix — but about **this machine**: only where `ULTIMATE_ENV` (else `NODE_ENV`) names `staging` or `production` (`namedDeployed`). A developer shell naming no environment gets none; ask `x env check` what a deployed boot would do with it |
+| `x env check` | checked against the environment it runs in, by the boot's own rule (core's `devSecretsRefused`, `deployed` in `framework-env.ts`): anything but `development`/`test`, **and an environment naming none** — the boot fails closed. `ULTIMATE_ENV=production x env check` answers what the first deployed boot would (`X_CURSOR_SECRET_DEV`, `X_STORAGE_SECRET_DEV`, and `X_PWA_VAPID_KEY_MISSING` for a push app; exit 1); the published development keys count as unset |
+| `x doctor` | the same findings, cause and fix — except the VAPID pair, which needs the app's config and doctor reads none — but about **this machine**: only where `ULTIMATE_ENV` (else `NODE_ENV`) names `staging` or `production` (`namedDeployed`). A developer shell naming no environment gets none; ask `x env check` what a deployed boot would do with it |
 
 **`x verify` holds the committed file to it**, on the `manifest` step: `.env.example` must be byte-for-byte the projection of `envSchema` in `app.config.ts`, so a moved description, default or required flag fails the gate as well as a missing key — and so does a file missing the framework section (an example written by 24.x). A miss is `X_ENV_EXAMPLE_DRIFT`, missing keys named first; the fix is `x env example`. An app that exports no `envSchema` has nothing to project and the check is silent.
 

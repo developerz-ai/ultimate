@@ -49,6 +49,10 @@ const PROPS = {
     save: 'Save',
     saved: 'Saved',
     retry: 'Try again',
+    push: 'Notify me',
+    pushOn: 'On',
+    pushDenied: 'Blocked',
+    pushUnavailable: 'Unavailable',
   },
 } as const;
 
@@ -141,7 +145,8 @@ describe('the settings island', () => {
   test('mount replaces the server shell with the editor', () => {
     expect(mounted.find('dl')).toBeNull();
     expect(mounted.all('select')).toHaveLength(3);
-    expect(mounted.all('button')).toHaveLength(1);
+    // Save, and Web Push for this browser.
+    expect(mounted.all('button')).toHaveLength(2);
     // Solid compiles to real DOM calls; a chunk falling back to the classic React factory names a
     // global that is not in it, and `Bun.build` answers `success: true` over that all the same.
     expect(mounted.code).not.toMatch(/\bReact\b/);
@@ -193,6 +198,14 @@ describe('the settings island', () => {
       theme: 'system',
       digestOptIn: true,
     });
+  });
+
+  test('push in a runtime with no service worker says so, and saves nothing', async () => {
+    const before = calls.length;
+    mounted.fire('[data-role="push"]', 'click');
+    await settle();
+    expect(mounted.text('[data-role="push-status"]')).toBe(PROPS.labels.pushUnavailable);
+    expect(calls).toHaveLength(before);
   });
 
   test('the status line answers the response, both ways', async () => {

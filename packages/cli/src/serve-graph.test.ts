@@ -27,11 +27,12 @@ const FORBIDDEN = /packages\/testing\/|packages\/cli\/src\/templates\/|\/e2e-|\/
  * What only a process that serves documents evaluates. In the static graph these were 107 modules
  * every worker, scheduler and migrate pod loaded to render nothing (966 static, 2026-10-01).
  */
-// `admin/src/audit-schema.ts` and `mcp/src/confirmation-schema.ts` are the one admin and the one
-// mcp module every role may load: the leaves the boot's `FRAMEWORK_SCHEMA` applies `x_admin_audit`
-// and `x_mcp_confirmations` from, reached as `@ultimat3/admin/schema` and `@ultimat3/mcp/schema`.
+// `admin/src/audit-schema.ts`, `mcp/src/confirmation-schema.ts` and `pwa/src/push-schema.ts` are
+// the one admin, mcp and pwa module every role may load: the leaves the boot's `FRAMEWORK_SCHEMA`
+// applies `x_admin_audit`, `x_mcp_confirmations` and `x_push_subscriptions` from, reached as
+// `@ultimat3/admin/schema`, `@ultimat3/mcp/schema` and `@ultimat3/pwa/schema`.
 const WEB_ONLY =
-  /packages\/(?:pwa|manifest|ui)\/src\/|packages\/mcp\/src\/(?!confirmation-schema\.ts$)|packages\/admin\/src\/(?!audit-schema\.ts$)|packages\/cli\/src\/(?:serve-web|runtime-render|island-|sw-|pwa-|seo-routes|page-)/;
+  /packages\/pwa\/src\/(?!push-schema\.ts$)|packages\/(?:manifest|ui)\/src\/|packages\/mcp\/src\/(?!confirmation-schema\.ts$)|packages\/admin\/src\/(?!audit-schema\.ts$)|packages\/cli\/src\/(?:serve-web|runtime-render|island-|sw-|pwa-|seo-routes|page-)/;
 
 /**
  * What no role evaluates at boot, whatever the app: reachable only behind an `await import()` at
@@ -80,8 +81,10 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * columns a transition's policy read, pinned into its compare-and-set (#702).
  * raised 630 → 631, measured 631 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
  * the supported log tee, reached through `logger.ts` by every module that logs.
+ * raised 631 → 632, measured 632 (2026-10-08, Web Push): `pwa/src/push-schema.ts` — the leaf
+ * `@ultimat3/pwa/schema` the boot applies `x_push_subscriptions` from, as the mcp leaf above.
  */
-const MIGRATE_CEILING = 631;
+const MIGRATE_CEILING = 632;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -146,8 +149,14 @@ const MIGRATE_CEILING = 631;
  * columns a transition's policy read, pinned into its compare-and-set (#702).
  * raised 925 → 926, measured 926 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
  * the supported log tee, reached through `logger.ts` by every module that logs.
+ * raised 926 → 927, measured 927 (2026-10-08, 26.1.0 route-presented modals):
+ * `render/src/navigation-modal-rules.ts` — `NAVIGATION_PRESENTATION_META`, the meta a
+ * `navigation: 'modal'` document names, reached through `navigation-tags.ts` by the render barrel.
+ * raised 927 → 929, measured 929 (2026-10-08, Web Push): the leaf named on `MIGRATE_CEILING`, and
+ * `cli/src/runtime-push.ts` — `pwa.push` read and its VAPID pair resolved before the queue starts;
+ * `@ultimat3/pwa` itself stays behind its `await import()`.
  */
-const SERVING_ROLE_CEILING = 926;
+const SERVING_ROLE_CEILING = 929;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -201,8 +210,21 @@ const SERVING_ROLE_CEILING = 926;
  * columns a transition's policy read, pinned into its compare-and-set (#702).
  * raised 1037 → 1038, measured 1038 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
  * the supported log tee, reached through `logger.ts` by every module that logs.
+ * raised 1038 → 1039, measured 1039 (2026-10-08, 26.1.0): the module named on
+ * `SERVING_ROLE_CEILING` for route-presented modals.
+ * raised 1039 → 1053, measured 1053 (2026-10-08, Web Push): the two modules named on
+ * `SERVING_ROLE_CEILING`, and the twelve the `@ultimat3/pwa` barrel the web role already loads now
+ * carries — RFC 8291 encryption and its receiving half, the RFC 8292 signer and its key pair, the
+ * sender, the runtime, the two stores, the subscribe actions and the client's meta name
+ * (`installedVapid()` feeds `sw.js`'s push handler and `<meta name="x-push-key">`).
+ * raised 1053 → 1054, measured 1054 (2026-10-08, 26.1.0 browser entry): `pwa/src/skew.ts` —
+ * `detectSkew` and `AppUpdateAvailable`, split from `version-skew.ts` so `@ultimat3/pwa/client`
+ * carries them without the error table; the web role reaches it through the pwa barrel.
+ * raised 1054 → 1055, measured 1055 (2026-10-08, 26.1.0): `pwa/src/push-hosts.ts` — the push
+ * services the sender may dial, checked at subscribe and at send (an endpoint from a request body
+ * resolves wherever its owner points it), reached through `push-send.ts`.
  */
-const WEB_ROLE_CEILING = 1038;
+const WEB_ROLE_CEILING = 1055;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

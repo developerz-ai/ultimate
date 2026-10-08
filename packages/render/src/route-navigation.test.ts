@@ -1,4 +1,4 @@
-// `defineRoute({ navigation })`: one key, two values, refused when it says anything else — an
+// `defineRoute({ navigation })`: one key, three values, refused when it says anything else — an
 // evidence GET that meant `'document'` and typed something else must fail at module evaluation,
 // not be swapped in by the router.
 import { describe, expect, test } from 'bun:test';
@@ -14,7 +14,7 @@ const route = (navigation: unknown) =>
   });
 
 describe('defineRoute navigation', () => {
-  test.each([['doc'], ['soft'], [true], ['']])('%p is refused by code', (value) => {
+  test.each([['doc'], ['soft'], ['dialog'], [true], ['']])('%p is refused by code', (value) => {
     try {
       route(value);
     } catch (error) {
@@ -25,9 +25,10 @@ describe('defineRoute navigation', () => {
     expect.unreachable(`navigation: ${String(value)} was accepted`);
   });
 
-  test("'prefetch' and 'document' are kept on the descriptor; absent stays absent", () => {
+  test("'prefetch', 'document' and 'modal' are kept on the descriptor; absent stays absent", () => {
     expect(route('prefetch').navigation).toBe('prefetch');
     expect(route('document').navigation).toBe('document');
+    expect(route('modal').navigation).toBe('modal');
     expect(
       'navigation' in
         defineRoute({ render: 'ssr', offline: 'network-only', meta: () => ({ title: 't' }) }),

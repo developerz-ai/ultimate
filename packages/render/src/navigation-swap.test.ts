@@ -109,6 +109,17 @@ describe('islands', () => {
     expect(count).toBe(3);
     expect(disposed).toEqual(['a']);
   });
+
+  test('an island whose boot never started is settled, so its pending boot mounts nothing', async () => {
+    const pending = h('div', { 'data-x-island': 'idle-pending' });
+    const kept = h('div', { 'data-x-island': 'kept-pending' });
+    disposeIslands(el(h('div', {}, [pending, kept])), (node) => node === el(kept));
+    // What the runtime's `boot` reads: an `__x` already there is returned, never re-imported.
+    expect(pending.__x).toBeInstanceOf(Promise);
+    expect(await pending.__x).toBeUndefined();
+    // A carried island is the tab's: its own boot still runs.
+    expect(kept.__x).toBeUndefined();
+  });
 });
 
 describe('persisted elements', () => {

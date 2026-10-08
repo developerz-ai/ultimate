@@ -35,6 +35,7 @@ x version              # CLI version
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x auth seal-mfa` | one-shot: seal every second-factor secret still stored in the clear | shipped |
+| `x vapid [show\|create]` | the Web Push key pair: which one this app signs with, or mint one and seal both halves | shipped |
 | `x build` | container image, single binary, prerendered static site, or a prebuilt bundle (`--target docker\|binary\|static\|prebuilt`) | shipped |
 | `x deploy` | run the container deploy plan: migrate first, then the serving roles | shipped |
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
@@ -918,6 +919,39 @@ $ x auth seal-mfa --json
 ```
 
 Errors: `X_SEAL_KEY_MISSING`, `X_NOT_IN_APP`, `X_DB_UNAVAILABLE`, `X_AUTH_WRITE_FAILED`.
+
+## x vapid
+
+```bash
+x vapid [show|create] [--json]
+```
+
+The Web Push key pair `pwa.push` signs with (RFC 8292), `As of 26.1.0`. Both halves are environment
+variables — `ULTIMATE_VAPID_PUBLIC_KEY` and `ULTIMATE_VAPID_PRIVATE_KEY` — and never config, so they
+cannot come from different pairs. [PWA and offline](PWA-And-Offline#push).
+
+| Subcommand | Does |
+|---|---|
+| `show` (default) | names the pair the boot would sign with — `environment`, `sealed` (`secrets.enc.json`) or `development` (the published pair a local process falls back to, which a deployed boot refuses) — and its public key. **Never the private key**, in either renderer |
+| `create` | mints a P-256 pair on WebCrypto and seals BOTH halves into `secrets.enc.json` in one write. Refuses (`X_GENERATE_CONFLICT`) when either is already sealed: a new pair unsubscribes every browser that subscribed with the old one, so rotating is `x secrets edit` (delete both lines) and then `create` — a decision, never a re-run |
+
+```bash
+$ x vapid create --json
+{"ok":true,"command":"vapid","summary":"sealed a new Web Push key pair into secrets.enc.json — ULTIMATE_VAPID_PUBLIC_KEY and ULTIMATE_VAPID_PRIVATE_KEY",
+ "data":{"path":"secrets.enc.json","publicKey":"BBwN…","sealed":["ULTIMATE_VAPID_PUBLIC_KEY","ULTIMATE_VAPID_PRIVATE_KEY"]}}
+```
+
+A key pair minted elsewhere (`web-push generate-vapid-keys`) is the same format: set the two variables
+directly. `x env example` lists both in the Framework section once `pwa.push` is wired (`pwa.vapid`
+set), and `x env check` reports a deployed table that lacks them (`X_PWA_VAPID_KEY_MISSING`).
+
+`show` reads `development` only when there is nothing sealed to read — no `secrets.enc.json`, or no
+master key for it. A sealed file it cannot open is that refusal, with its own fix
+(`X_SECRETS_TAMPERED`, `X_SECRETS_KEY_MISMATCH`, `X_SECRETS_FILE_INVALID`): the pair is there, and
+`create` would refuse it.
+
+Errors: `X_SECRETS_KEY_MISSING` (`create` with no `x secrets init`), `X_GENERATE_CONFLICT`, `X_NOT_IN_APP`,
+and the `X_SECRETS_*` refusals above.
 
 ## x manifest
 

@@ -14,6 +14,7 @@ import {
   tryResolveEnvironment,
   usesDevCursorSecret,
 } from '@ultimat3/core';
+import { usesDevVapidKeys, VAPID_PRIVATE_KEY_ENV, VAPID_PUBLIC_KEY_ENV } from '@ultimat3/pwa';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import type { Finding } from './output';
 import { storageIsExternal } from './runtime-bindings';
@@ -42,11 +43,24 @@ export const namedDeployed = (env: EnvTable): boolean => {
   return environment === 'staging' || environment === 'production';
 };
 
+/**
+ * What the app's `app.config.ts` decides about which framework keys it owes — read by the caller,
+ * which has the root (`appSecretFacts`). `x doctor` asks of no config and passes `NO_APP_FACTS`.
+ */
+export interface AppSecretFacts {
+  /** `pwa.enabled && pwa.push`: the boot resolves a VAPID pair and refuses without one. */
+  readonly push: boolean;
+}
+
+export const NO_APP_FACTS: AppSecretFacts = Object.freeze({ push: false });
+
 /** One framework secret: what refuses without it, when it is needed, and the command that mints one. */
 export interface FrameworkSecret {
   readonly key: string;
   /** The diagnostic code `x doctor` and `x env check` report it under. */
-  readonly code: 'X_CURSOR_SECRET_DEV' | 'X_STORAGE_SECRET_DEV';
+  readonly code: 'X_CURSOR_SECRET_DEV' | 'X_STORAGE_SECRET_DEV' | 'X_PWA_VAPID_KEY_MISSING';
+  /** False for the one key here that is public (the VAPID public key). Default true. */
+  readonly secret?: boolean;
   /** Why the framework needs it, one line, rendered into `.env.example`. */
   readonly why: string;
   /** When the key is needed at all, if not always — rendered beside `why`. */
@@ -54,8 +68,14 @@ export interface FrameworkSecret {
   readonly cause: string;
   /** Pasted into a shell, so it is a literal command and never a paraphrase. */
   readonly fix: string;
-  /** False when this deploy's shape never reads the key (object storage configured). */
-  needed(env: EnvTable): boolean;
+  /**
+   * What `app.config.ts` must say for the key to be owed AT ALL — the VAPID pair, only with
+   * `pwa.push`. Absent: always. The ONE rule the example, the drift gate and `x env check` read
+   * (`configOwes`), so a second config-gated key is one line here, never two filters elsewhere.
+   */
+  readonly owedWhen?: (app: AppSecretFacts) => boolean;
+  /** False when this deploy's shape never reads the key (object storage configured, push off). */
+  needed(env: EnvTable, app: AppSecretFacts): boolean;
   /** True while the table would leave the process signing with the shipped development key. */
   unsafe(env: EnvTable): boolean;
 }
@@ -87,7 +107,36 @@ export const FRAMEWORK_SECRETS: readonly FrameworkSecret[] = [
     needed: (env) => !storageIsExternal(env),
     unsafe: (env) => usesDevStorageSecret({ env }),
   },
+  // The VAPID pair, owed only once `pwa.push` is on. Both halves are env (never config) and are
+  // sealed together by `x vapid create`, so the fix is that one command for either half.
+  {
+    key: VAPID_PUBLIC_KEY_ENV,
+    code: 'X_PWA_VAPID_KEY_MISSING',
+    secret: false,
+    why: 'Web Push public key, written into every page as <meta name="x-push-key">. Generate the pair with `x vapid create`.',
+    condition: 'Read only when pwa.push is true.',
+    cause: `${VAPID_PUBLIC_KEY_ENV} is unset, so a push-enabled deploy refuses to boot (X_PWA_VAPID_KEY_MISSING)`,
+    fix: 'x vapid create',
+    owedWhen: (app) => app.push,
+    needed: (_env, app) => app.push,
+    unsafe: (env) => (env[VAPID_PUBLIC_KEY_ENV] ?? '').trim() === '',
+  },
+  {
+    key: VAPID_PRIVATE_KEY_ENV,
+    code: 'X_PWA_VAPID_KEY_MISSING',
+    why: 'Signs every Web Push request (RFC 8292). Generate the pair with `x vapid create`.',
+    condition: 'Read only when pwa.push is true.',
+    cause: `${VAPID_PRIVATE_KEY_ENV} is unset or holds the published development key, so a push-enabled deploy refuses to boot`,
+    fix: 'x vapid create',
+    owedWhen: (app) => app.push,
+    needed: (_env, app) => app.push,
+    unsafe: (env) => usesDevVapidKeys(env),
+  },
 ];
+
+/** Whether this app's config owes `secret` at all — `owedWhen`, else always. */
+export const configOwes = (secret: FrameworkSecret, app: AppSecretFacts): boolean =>
+  secret.owedWhen?.(app) ?? true;
 
 /** The doctor/check finding for one secret — one wording per condition, wherever it is reported. */
 export function frameworkSecretFinding(secret: FrameworkSecret): Finding {
@@ -95,9 +144,13 @@ export function frameworkSecretFinding(secret: FrameworkSecret): Finding {
 }
 
 /** Every secret this table's deploy shape needs and lacks, ungated. */
-const owedFindings = (env: EnvTable, skip: ReadonlySet<string>): readonly Finding[] =>
+const owedFindings = (
+  env: EnvTable,
+  skip: ReadonlySet<string>,
+  app: AppSecretFacts,
+): readonly Finding[] =>
   FRAMEWORK_SECRETS.filter(
-    (secret) => !skip.has(secret.key) && secret.needed(env) && secret.unsafe(env),
+    (secret) => !skip.has(secret.key) && secret.needed(env, app) && secret.unsafe(env),
   ).map((secret) => ({ ...frameworkSecretFinding(secret), at: ENV_EXAMPLE_PATH }));
 
 /**
@@ -109,13 +162,17 @@ const owedFindings = (env: EnvTable, skip: ReadonlySet<string>): readonly Findin
 export function frameworkSecretFindings(
   env: EnvTable,
   skip: ReadonlySet<string> = new Set(),
+  app: AppSecretFacts = NO_APP_FACTS,
 ): readonly Finding[] {
-  return deployed(env) ? owedFindings(env, skip) : [];
+  return deployed(env) ? owedFindings(env, skip, app) : [];
 }
 
 /** `x doctor`'s: the same list and wording, gated by `namedDeployed` — this machine, as named. */
-export function machineSecretFindings(env: EnvTable): readonly Finding[] {
-  return namedDeployed(env) ? owedFindings(env, new Set()) : [];
+export function machineSecretFindings(
+  env: EnvTable,
+  app: AppSecretFacts = NO_APP_FACTS,
+): readonly Finding[] {
+  return namedDeployed(env) ? owedFindings(env, new Set(), app) : [];
 }
 
 /**
@@ -123,19 +180,39 @@ export function machineSecretFindings(env: EnvTable): readonly Finding[] {
  * declares is skipped: one key, one line, and the app's declaration is the one it validates.
  * Blank values only — these are secrets, and this file is committed.
  */
-function frameworkSection(schema: EnvSchema): string {
-  const owed = FRAMEWORK_SECRETS.filter((secret) => !Object.hasOwn(schema, secret.key));
+function frameworkSection(schema: EnvSchema, app: AppSecretFacts): string {
+  // `needed` against an empty table: the example names what a deploy of THIS app owes, so the
+  // config decides (push on or off) and no environment does — object storage is a deploy's choice,
+  // and the disk secret stays listed with its condition.
+  const owed = FRAMEWORK_SECRETS.filter(
+    (secret) => !Object.hasOwn(schema, secret.key) && configOwes(secret, app),
+  );
   if (owed.length === 0) return '';
+  // Each key names its own generator: `openssl` mints a hex secret, and a VAPID pair minted that
+  // way is one the boot refuses — only `x vapid create` makes a P-256 pair. `x doctor` asks of no
+  // config, so it never reports the pair; `x env check` reports every one.
+  const pair = owed.some((secret) => secret.owedWhen !== undefined);
   const lines = [
     '',
     '# --- Framework ---------------------------------------------------------------',
-    '# Required outside development/test, whatever envSchema declares. Generate each with',
-    '# `openssl rand -hex 32`; `x env check` and `x doctor` report one that is missing.',
+    ...(pair
+      ? [
+          '# Required outside development/test, whatever envSchema declares. Generate the hex',
+          '# secrets with `openssl rand -hex 32` and the VAPID pair with `x vapid create`;',
+          '# `x env check` reports one that is missing.',
+        ]
+      : [
+          '# Required outside development/test, whatever envSchema declares. Generate each with',
+          '# `openssl rand -hex 32`; `x env check` and `x doctor` report one that is missing.',
+        ]),
   ];
   for (const secret of owed) {
     lines.push('', `# ${secret.why}`);
     if (secret.condition !== undefined) lines.push(`# ${secret.condition}`);
-    lines.push('# required when deployed · string · secret', `${secret.key}=`);
+    lines.push(
+      `# required when deployed · string${secret.secret === false ? '' : ' · secret'}`,
+      `${secret.key}=`,
+    );
   }
   return `${lines.join('\n')}\n`;
 }
@@ -144,5 +221,5 @@ function frameworkSection(schema: EnvSchema): string {
  * The bytes `.env.example` must hold: the app's declaration, then the framework's keys. The ONE
  * renderer `x env example`, the drift gate and `x new` share, so the three cannot disagree.
  */
-export const appEnvExample = (schema: EnvSchema): string =>
-  `${renderEnvExample(schema)}${frameworkSection(schema)}`;
+export const appEnvExample = (schema: EnvSchema, app: AppSecretFacts = NO_APP_FACTS): string =>
+  `${renderEnvExample(schema)}${frameworkSection(schema, app)}`;

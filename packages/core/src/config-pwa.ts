@@ -45,11 +45,39 @@ export interface PwaOfflineConfig {
   readonly personalPages: 'never' | 'last-member';
 }
 
+/**
+ * Web Push's one piece of configuration that is not a secret. The KEYS are not here: both halves
+ * of the VAPID pair are environment variables (`ULTIMATE_VAPID_PUBLIC_KEY`,
+ * `ULTIMATE_VAPID_PRIVATE_KEY`, sealed together by `x vapid create`), because a public key in
+ * committed config and a private key per deploy are two places that can disagree — and the
+ * disagreement is a 403 from every push service on every send.
+ */
+export interface PwaVapidConfig {
+  /**
+   * `mailto:` or an `https:` URL: who a push service writes to about this server (RFC 8292 §2.1).
+   * Every service requires it; Apple's refuses a token without one.
+   */
+  readonly subject: string;
+  /**
+   * Push services this app sends to BEYOND the built-in ones (`@ultimat3/pwa`'s
+   * `PUSH_SERVICE_HOSTS`: FCM, Mozilla, Apple, WNS). Host names, each admitting its subdomains —
+   * a self-hosted autopush, a test's stub. An endpoint on any other host is refused when it is
+   * stored and never dialled (`X_PWA_PUSH_HOST_UNLISTED`): it came from a request body.
+   */
+  readonly pushHosts?: readonly string[];
+}
+
 export interface PwaConfig {
   readonly enabled: boolean;
   readonly offline: PwaOfflineConfig;
   readonly backgroundSync: boolean;
+  /**
+   * Web Push: the `push` and `notificationclick` handlers in `sw.js`, the subscription runtime the
+   * boot installs, and `<meta name="x-push-key">` on every document. Requires `vapid`.
+   */
   readonly push: boolean;
+  /** Required once `push` is true, refused while it is false (a key with no reader). */
+  readonly vapid?: PwaVapidConfig;
   /**
    * The install title, and the one manifest member nothing can derive. `AppConfig.name` is a slug
    * (`^[a-z][a-z0-9-]{1,63}$`) and an install prompt shows a person a title, so `ledger-demo` is
@@ -216,6 +244,92 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
   manifestIssues(pwa, issues);
   return issues.length > before;
 }
+
+/** Appended only when the push half of the block is what failed. */
+export const PWA_PUSH_FIX =
+  "set pwa.vapid: { subject: 'mailto:ops@example.com' } beside pwa.push: true in app.config.ts — push services write to that address about this server — then x vapid create for the key pair; or set pwa.push: false and delete pwa.vapid";
+
+/**
+ * One `pwa.vapid.pushHosts` entry: a bare DNS name with a dot — no scheme, port, path or wildcard
+ * (a listed name admits its subdomains), never `localhost` or an IP literal, which would hand the
+ * push sender back the hole the list closes. Checked at boot, so `@ultimat3/pwa`'s list holds only
+ * names that passed it.
+ */
+export function pushHostShape(entry: unknown): string | undefined {
+  if (typeof entry !== 'string') return 'is not a string';
+  if (
+    !/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/i.test(
+      entry,
+    )
+  ) {
+    return 'is not a host name like push.example.com (no scheme, port, path or wildcard)';
+  }
+  if (/\.localhost$/i.test(entry)) return 'names this machine';
+  return undefined;
+}
+
+/** `mailto:someone` or an absolute `https:` URL — RFC 8292's two forms, nothing else. */
+const isVapidSubject = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  if (/^mailto:[^\s@]+@[^\s@]+$/.test(value)) return true;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The push rules, apart from `pwaIssues` because their remedy is another sentence. Push asks for
+ * nothing unless the app is installable, exactly like the rest of the block — `enabled: false`
+ * emits no worker for a push handler to live in.
+ */
+export function pwaPushIssues(pwa: PwaConfig, issues: string[]): boolean {
+  if (!pwa.enabled) return false;
+  const before = issues.length;
+  const vapid: unknown = pwa.vapid;
+  if (!pwa.push) {
+    if (vapid !== undefined) {
+      issues.push('pwa.vapid is set while pwa.push is false, so nothing reads it');
+    }
+    return issues.length > before;
+  }
+  // `push: true` with no `vapid` at all booted on 26.0.0, where the key wired nothing — so in 26.x
+  // it still boots, with push left unwired (`pushWired`) and the boot saying so. 27.0.0 refuses it.
+  if (vapid === undefined) return false;
+  const subject: unknown =
+    vapid !== null && typeof vapid === 'object' ? (vapid as { subject?: unknown }).subject : vapid;
+  if (!isVapidSubject(subject)) {
+    issues.push(
+      `pwa.vapid.subject is required when pwa.push is true and must be a mailto: address or an https: URL, and is ${describeValue(subject)}`,
+    );
+  }
+  const hosts: unknown =
+    vapid !== null && typeof vapid === 'object'
+      ? (vapid as { pushHosts?: unknown }).pushHosts
+      : undefined;
+  if (hosts !== undefined) {
+    if (!Array.isArray(hosts)) {
+      issues.push(`pwa.vapid.pushHosts must be a list of host names, not ${describeValue(hosts)}`);
+    } else {
+      for (const host of hosts as readonly unknown[]) {
+        const problem = pushHostShape(host);
+        if (problem !== undefined) {
+          issues.push(`pwa.vapid.pushHosts contains ${describeValue(host)}, which ${problem}`);
+        }
+      }
+    }
+  }
+  return issues.length > before;
+}
+
+/**
+ * Whether this config wires Web Push: an installable app, `push: true`, and a `vapid` block. The
+ * ONE answer the boot, the worker, `.env.example` and the drift gate read — `push: true` without
+ * `vapid` is accepted in 26.x (it was on 26.0.0) and wires nothing.
+ */
+export const pushWired = (pwa: PwaConfig): boolean =>
+  pwa.enabled && pwa.push && pwa.vapid !== undefined;
 
 /** A path the manifest names must be absolute: a relative one resolves against the manifest's URL. */
 const absolute = (value: unknown): boolean => typeof value === 'string' && value.startsWith('/');

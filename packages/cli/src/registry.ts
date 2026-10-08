@@ -37,6 +37,7 @@ import { secretsSpec } from './cmd-secrets-spec';
 import { shotSpec } from './cmd-shot-spec';
 import { tasksSpec } from './cmd-tasks-spec';
 import { testSpec } from './cmd-test-spec';
+import { vapidSpec } from './cmd-vapid-spec';
 import { verifySpec } from './cmd-verify-spec';
 import type { CliCommand } from './command';
 import type { CommandSpec } from './parse';
@@ -87,6 +88,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(envSpec, async () => (await import('./cmd-env')).envCommand),
   lazy(secretsSpec, async () => (await import('./cmd-secrets')).secretsCommand),
   lazy(authSpec, async () => (await import('./cmd-auth')).authCommand),
+  lazy(vapidSpec, async () => (await import('./cmd-vapid')).vapidCommand),
   lazy(manifestSpec, async () => (await import('./cmd-manifest')).manifestCommand),
   lazy(routesSpec, async () => (await import('./cmd-routes')).routesCommand),
   lazy(actionsSpec, async () => (await import('./cmd-registries')).actionsCommand),

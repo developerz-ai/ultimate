@@ -40,6 +40,7 @@ import { selectAppMailDriver } from './runtime-mail';
 import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
 import { installRetentionSweep } from './runtime-purge';
+import { installAppWebPush, selectWebPush } from './runtime-push';
 import type { DevDbClient, SchemaMode } from './runtime-queue';
 import { startQueue } from './runtime-queue';
 import { realtimeConfigOf } from './runtime-realtime';
@@ -342,6 +343,9 @@ export async function startServices(
   // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
   // container it stands in for.
   const realtime = realtimeConfigOf(config);
+  // Fourth: `pwa.push` and its VAPID pair (`runtime-push.ts`). Resolving the pair reads env and
+  // signs one probe — a deploy with no keys, or two halves of different pairs, refuses here.
+  const push = await selectWebPush(config, env);
   const workerConfig = workerConfigOf(config, env);
   const bus: TransportSelection = selectTransport(env, realtime);
   // `env`, not the ambient one: this function is HANDED the boot's environment and every other
@@ -419,6 +423,9 @@ export async function startServices(
       const connectable = transport;
       started.push(registerReadinessCheck('transport', () => connectable.connected));
     }
+    // Before `loadApp` for the auth limiters' reason: `pushSubscribe()` is declared when the app's
+    // modules import, and reads this runtime per call.
+    if (push !== undefined) started.push(await installAppWebPush(push, executor));
     const storage = startStorage(services, env, overrides?.storage);
     // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
     // show what a template renders in every locale without a mailbox or a message escaping to a

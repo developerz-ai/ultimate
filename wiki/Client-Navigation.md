@@ -43,10 +43,11 @@ export const config = defineRoute({ render: 'ssr', …, navigation: 'prefetch' }
 | absent | swaps the page in on a click; never fetches it early | a prefetch gets an empty `204` |
 | `'prefetch'` | also fetches it on hover/focus | a prefetch is answered like a visit |
 | `'document'` | always a real document load; the page itself carries **no router** (`As of 22.8.1`): no script, no navigation metas, none of the router's bytes charged to its budget — a `0b` page stays `0b`, and its own links and forms are plain browser navigations | a soft visit gets `204` + `x-ultimate-location`; the browser's own load runs it once |
+| `'modal'` | shown **over** the page the visitor is on, addressed by the hash (`/runs#/runs/new`) — [Modals](#modals-a-page-over-a-page). A full load of its own URL is still the whole page | as absent: a prefetch gets an empty `204` |
 
 **Use `'document'` for every GET that records something** — a recipient opening a link, a download
 logged as evidence, a one-time token. **Use `'prefetch'` only for a GET that does nothing but
-render.** Declaring either on a surface without client navigation refuses the boot
+render.** Declaring any of the three on a surface without client navigation refuses the boot
 (`X_ROUTE_NAVIGATION_INVALID`).
 
 An opted-in document (every page of the surface except a `'document'` one) carries:
@@ -55,9 +56,10 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 |---|---|
 | `<meta name="ultimate-navigation" content="<app>:<surface>">` | which router may swap it in. The app's `name` is part of it, so two apps on one origin (web and admin) never swap each other's pages |
 | `<meta name="x-ultimate-build" content="…">` | the skew check |
-| `<script src="/_x/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
+| `<script src="/_x/assets/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 
-**Budget:** the router is 19,071 B minified (7,065 B gzip) `As of 22.8.1`. It is **charged** to
+**Budget:** the router is 24,058 B minified (8,836 B gzip) `As of 26.1.0` — 19,966 B before
+route-presented modals and navigating from code (+4,092 B). It is **charged** to
 every route on the surface, like realtime's page boot, because it is interactivity the app opted
 into. Raise a route's `budget.js` by the measured amount (`bun run budget-raises`).
 
@@ -250,6 +252,125 @@ sha256 hashed from that string (`page-speculation.ts`), so the enforced policy n
 | a full load for every link to a page, from anywhere | `navigation: 'document'` on its route |
 | an element that survives navigations | `data-x-persist="<stable id>"` on it, in both pages |
 
+## Modals: a page over a page
+
+`As of 26.1.0`. A create form, an edit step, a confirmation: a page whose route says it is
+presented over another.
+
+```ts
+// app/runs/new/page.tsx
+import { defineRoute } from '@ultimat3/render';
+
+export const config = defineRoute({
+  render: 'ssr',
+  offline: 'network-only',
+  meta: ({ t }) => ({ title: t('runs.new') }),
+  navigation: 'modal',
+});
+```
+
+```tsx
+// app/runs/page.tsx — an ordinary link: without the router it is the whole page
+<a href="/runs/new">New run</a>
+```
+
+**Two routers, one URL.** The PATH is the page on screen, swapped as everywhere else on this page.
+The HASH is the one modal over it, and the hash's path is itself a route of the same surface:
+`/runs#/runs/new`, `/projects/7#/projects/7/members/invite` — any depth, with a query
+(`#/runs/new?bank=ve`). Every other fragment (`#below`) is still a fragment. Link the page's own
+path; the router writes the hash.
+
+| Visit | Result |
+|---|---|
+| a click on a link to a `'modal'` page | its document fetched (one soft GET), its `<main>` shown in a native `<dialog>` over this page; the URL becomes `<this page>#<its path>`, pushed |
+| a reload, a pasted or bookmarked `/runs#/runs/new`, Forward onto it | `/runs` renders; the router opens `/runs/new` over it |
+| a hash typed over the page | the same |
+| a hash naming anything else — a page that is not `'modal'`, a 404, a redirect, another principal's page, `#//host` | **just the page**: the hash is dropped in place. Never followed, loaded, or shown as an error |
+| a full load of `/runs/new` itself, scripting off, `data-x-reload` | the whole page, as before — the server renders one document for both |
+| a link to the page on screen that is itself a `'modal'` route | that page, swapped in as usual |
+
+**Why the route, and not the link (axiom 1).** Presentation is a property of the page: a create
+form is a modal wherever it is reached from, and the one place that can say so for EVERY way of
+reaching it — a link, a redirect after a POST, a pasted hash — is its route. A link attribute
+would be a second declaration two links to one page could disagree on, and a redirect has no link
+to carry it. The server names the page a modal in its own document
+(`<meta name="ultimate-presentation" content="modal">`); the router never decides it.
+
+**Why the whole document, and not a fragment.** The router asks for the page exactly as a full
+load does — same policy, same `load`, same cache headers, no request header that varies the
+answer — and shows its `<main>`. A second shape of one URL would need `Vary`, could not be a
+`static` or `isr` file, and would put two answers under one key in every cache on the way.
+
+### Inside the modal
+
+| Concern | Behaviour |
+|---|---|
+| markup | one `<dialog data-x-modal>` opened with `showModal()`: top layer, `::backdrop`, the page beneath inert, focus moved in. Named by its first `h1`/`h2` (`aria-labelledby`), else by the page's title. The tab's title is the modal's while it is open |
+| the page beneath | untouched: its islands stay mounted, its socket and page store live, its scroll where it was |
+| links and forms | resolved against the MODAL's URL, as on its own page: `href="?step=2"` is `/runs/new?step=2`, a form with no `action` posts to `/runs/new` |
+| islands in the modal | booted by the page's hydration runtime; disposed when the modal closes or its content is replaced |
+| styles | the modal page's stylesheets load first. `@ultimat3/ui`'s `global.scss` styles `dialog[data-x-modal]` as its `Dialog` (`surface-raised` over `scrim`), under `:where()` so an app restyles it at zero specificity; its reset locks the body scroll behind any modal `<dialog>` |
+| one at a time | a link to another `'modal'` page from inside replaces the content of the same dialog and pushes, so Back steps out one level (`#/runs/new` → `#/runs/new/advanced` → Back → `#/runs/new`) |
+
+### Closing
+
+| Gesture | Result |
+|---|---|
+| Escape, a `<form method="dialog">`, any way the browser closes the dialog | **Back**, when the entry is the one the router pushed; otherwise (a cold-loaded address — Back would leave the app) the hash is dropped in place |
+| the browser's Back | the entry beneath has no modal: closed |
+| a link to the page beneath (the page's own **Cancel**, which is also its no-JS way back) | as Escape — nothing is fetched |
+| a link anywhere else | that page swaps in, in place of the modal's entry |
+
+Focus returns to the link or button that opened it; the title returns to the page's.
+
+The router renders **no close button**: it has no catalog to name one in, and a page that is also
+a full page already has its way back. Give the modal page a Cancel link to the page it is opened
+over (or a `<form method="dialog">` button).
+
+### Forms inside
+
+A form inside the modal submits through the router like any other: the POST is sent once, never
+again.
+
+| The server answers | Result |
+|---|---|
+| the modal page again (a `422` re-render with its errors) | shown in the same dialog; the address stays (`replace`) |
+| a redirect to the page beneath (`303 /runs`) | the modal closes and the page is fetched and swapped in — its content refreshed — through Back, so the spent form's entry is not left to reopen |
+| a redirect anywhere else | the target swaps in, in place of the modal's entry |
+| a redirect to another `'modal'` page (create, then confirm) | shown in the same dialog, in place of the form's entry |
+| nothing (the network failed) | `ultimate:navigation-error`, never re-sent; its default reloads the tab — the page and its modal both asked for again, since a hash alone is only scrolled to |
+| anything else (a download, another principal) | as on any page — [What happens to the answer](#what-happens-to-the-answer) |
+
+A `'modal'` page's form on its own full page is an ordinary page form: a re-render there is a
+page, never a modal.
+
+## Navigating from code
+
+`As of 26.1.0`. From an island or an app script, never by clicking a hidden link:
+
+```ts
+import { closeModal, navigate, openModal, refresh } from '@ultimat3/render';
+
+await navigate('/runs/7'); // as a click on a link to it
+await navigate('/runs?status=failed', { replace: true }); // the current entry replaced
+await refresh(); // the page on screen, rendered again, where it is scrolled
+await openModal('/runs/new'); // the `navigation: 'modal'` route over this page: /runs#/runs/new
+closeModal(); // as Escape
+```
+
+| Call | With the router | Without it (a `site/` page, a `'document'` page, the router's script blocked) |
+|---|---|---|
+| `navigate(url, { replace? })` | the router's own navigation: the server's gate and the answer decide swap, modal or full load. Another origin: a document load | `location.assign` / `location.replace` |
+| `refresh()` | the page fetched again (never from the prefetch cache) and swapped in with no history entry, at the visitor's scroll. An open modal is fetched again over it | `location.reload()` |
+| `openModal(path)` | `#<path>` over the page, pushed, so Back closes it. A path that is not a modal of this tab opens nothing, as a stale hash | `location.assign(path)`: the modal route's whole page |
+| `closeModal()` | as Escape: Back through the router's own entry, else the hash dropped in place | nothing — no modal is open |
+
+`openModal` takes the route's own path, as its link would (`'/runs/new'`, `'/runs/new?bank=ve'`); a
+full URL, `//host` or a relative path is a rejected promise, `X_NAVIGATION_MODAL_PATH_INVALID` —
+never a synchronous throw, so `.catch` sees it. On the server
+every call does nothing. The functions import the router's TYPE only: an island that navigates
+ships none of the router's bytes.
+
 ## Events
 
 Dispatched on `document`:
@@ -257,14 +378,15 @@ Dispatched on `document`:
 | Event | When | `detail` |
 |---|---|---|
 | `ultimate:navigate` | before the fetch. **Cancelable**: `preventDefault()` keeps the tab where it is | `{ url, method }` |
-| `ultimate:navigated` | after the swap, the scroll and the new scripts | `{ url }` |
+| `ultimate:navigated` | after the swap, the scroll and the new scripts — and after a modal opens, its `url` the modal's | `{ url }` |
 | `ultimate:navigation-error` | a POST that failed or could not be shown, a swap that failed on a POST. **Cancelable**: the default is a GET of the current page | `{ url, method, reason }` |
 
 The event names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
 `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`, `NAVIGATION_RELOAD_ATTRIBUTE`,
-`NAVIGATION_NO_PREFETCH_ATTRIBUTE`, `NAVIGATION_PERSIST_ATTRIBUTE`, `NAVIGATING_ATTRIBUTE`), with
-the pure rules the router runs (`linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`,
-`mayPrefetch`). The headers are `@ultimat3/core`'s, imported from there only
+`NAVIGATION_NO_PREFETCH_ATTRIBUTE`, `NAVIGATION_PERSIST_ATTRIBUTE`, `NAVIGATING_ATTRIBUTE`,
+`NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE`), with the pure rules the router runs
+(`linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `modalAddress`,
+`presentation`, `modalHistory`, `leaveModal`). The headers are `@ultimat3/core`'s, imported from there only
 (`CLIENT_NAVIGATION_HEADER`, `CLIENT_NAVIGATION_LOCATION_HEADER`, `CLIENT_NAVIGATION_SCOPE_HEADER`,
 `CLIENT_NAVIGATION_SURFACE_HEADER`) — render's `NAVIGATION_*_HEADER` aliases were deleted in 25.0.0. The server half is
 `@ultimat3/http`'s `navigationGate`, `redirectForRouter` and `relocate`.
@@ -273,10 +395,13 @@ the pure rules the router runs (`linkVerdict`, `formVerdict`, `responseVerdict`,
 
 | What | Where |
 |---|---|
-| every client rule, as pure functions | `packages/render/src/navigation-rules.test.ts`, `navigation-cache.test.ts`, `navigation-dom.test.ts`, `route-navigation.test.ts` |
+| every client rule, as pure functions | `packages/render/src/navigation-rules.test.ts`, `navigation-cache.test.ts`, `navigation-dom.test.ts`, `route-navigation.test.ts`, `navigation-modal-rules.test.ts` |
+| a `'modal'` page: never prefetched, one document for a soft and a full load, the meta it carries | `packages/cli/src/page-navigation.test.ts` |
+| modals in a real Chrome: open over a live page, Escape/Back/Cancel, reload and pasted hash, stale hash, nesting, a refused and a redirected submit, a confirmation, `openModal`/`closeModal`/`refresh` from code, scripting off | `packages/cli/e2e/client-navigation-modal.e2e.test.ts` |
+| navigating from code: through the router, the browser's fallbacks, the server, `openModal`'s refusal | `packages/render/src/navigation-api.test.ts` |
 | the server gate and the redirect hand-over, counting handler runs | `packages/http/src/navigation.test.ts` |
 | speculation rules: which pages are candidates, the tag on a router-less document only, the CSP hash of the served bytes | `packages/cli/src/page-speculation.test.ts`, `packages/render/src/speculation-rules.test.ts` |
 | real pages: prefetch and `'document'` run no `load`, another principal or app is refused, a misplaced key refuses the boot | `packages/cli/src/page-navigation.test.ts` |
 | writes announced after they settle | `packages/core/src/client-writes.test.ts` |
 | in a real Chrome, through the real pipeline under an enforced CSP: every rule above, counted in route executions | `packages/cli/e2e/client-navigation-*.e2e.test.ts` |
-| the reference app, opted in: real pages, sign-out, a like after a round trip, scripting off | `examples/dummy/apps/web/e2e/client-navigation.e2e.test.ts` |
+| the reference app, opted in: real pages, sign-out, a like after a round trip, the editor as a modal over the feed, scripting off | `examples/dummy/apps/web/e2e/client-navigation.e2e.test.ts` |

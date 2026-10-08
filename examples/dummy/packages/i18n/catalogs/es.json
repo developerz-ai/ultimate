@@ -122,7 +122,11 @@
       "themeLight": "Claro",
       "themeDark": "Oscuro",
       "digestLabel": "Resumen diario",
-      "digestHelp": "Un correo a las 09:00 de tu hora con lo que publicó tu organización."
+      "digestHelp": "Un correo a las 09:00 de tu hora con lo que publicó tu organización.",
+      "pushLabel": "Avisarme en este navegador",
+      "pushOn": "Este navegador recibirá un aviso cuando alguien comente tus publicaciones.",
+      "pushDenied": "Las notificaciones están bloqueadas para este sitio — permítelas en los ajustes del navegador.",
+      "pushUnavailable": "Este navegador no puede recibir notificaciones de Postly."
     },
     "runs": {
       "metaTitle": "Ejecuciones",
@@ -535,6 +539,12 @@
           "step": "Paso"
         }
       }
+    }
+  },
+  "push": {
+    "commentPosted": {
+      "title": "{commenter} comentó en {title}",
+      "body": "Abre el artículo para leerlo."
     }
   }
 }

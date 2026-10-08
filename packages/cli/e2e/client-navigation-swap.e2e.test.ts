@@ -228,7 +228,7 @@ describe.skipIf(noBrowser)('client navigation · the swap and its fallbacks', ()
       await currentTab().waitFor('document.title === "Doc"', 'the document page');
       expect(await read('window.__xNavigation === undefined')).toBe(true);
       expect(
-        await read('document.querySelectorAll("script[src*=\'/_x/navigation/\']").length'),
+        await read('document.querySelectorAll("script[src*=\'/_x/assets/navigation/\']").length'),
       ).toBe(0);
       await read(MARK);
       ran.length = 0;

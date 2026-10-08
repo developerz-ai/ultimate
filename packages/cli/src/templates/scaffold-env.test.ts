@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { checkEnvExample } from '@ultimat3/core';
 import { envExampleFor } from '../app-env';
+import { NO_APP_FACTS } from '../framework-env';
 import {
   envExampleSource,
   envSchemaSource,
@@ -31,7 +32,7 @@ describe('unit · the scaffold env declaration', () => {
   // #679: what `x new` commits must be the bytes `x env example` would write, framework keys and
   // all — otherwise a fresh app's first `x verify` is X_ENV_EXAMPLE_DRIFT.
   test('the scaffold example is the projection the drift gate holds it to', () => {
-    expect(envExampleSource()).toBe(envExampleFor(SCAFFOLD_ENV_SCHEMA));
+    expect(envExampleSource()).toBe(envExampleFor(SCAFFOLD_ENV_SCHEMA, NO_APP_FACTS));
   });
 
   test('the emitted TypeScript names exactly the variables the schema declares', () => {

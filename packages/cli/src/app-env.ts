@@ -5,10 +5,11 @@
 // why: Bun exposes no path API — the two files this module reads are joined to the app root.
 import { join } from 'node:path';
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
-import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL, parseEnvKeys } from '@ultimat3/core';
-import { appConfigExport } from './app-config-load';
+import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL, parseEnvKeys, pushWired } from '@ultimat3/core';
+import { appConfigExport, loadAppConfig } from './app-config-load';
 import { APP_CONFIG_FILE } from './app-root';
-import { appEnvExample, FRAMEWORK_SECRETS } from './framework-env';
+import type { AppSecretFacts } from './framework-env';
+import { appEnvExample, configOwes, FRAMEWORK_SECRETS } from './framework-env';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
@@ -53,7 +54,17 @@ export async function loadEnvSchema(root: string): Promise<EnvSchema | undefined
  * The bytes `.env.example` must hold: the app's declaration, then the framework's deploy-required
  * keys (`framework-env.ts`). Deterministic, so a rewrite that changes nothing diffs to nothing.
  */
-export const envExampleFor = (schema: EnvSchema): string => appEnvExample(schema);
+export const envExampleFor = (schema: EnvSchema, app: AppSecretFacts): string =>
+  appEnvExample(schema, app);
+
+/**
+ * What `app.config.ts` decides about the framework keys this app owes — `pwa.push` today, off the
+ * one loader, so the example, the drift gate and `x env check` read one answer.
+ */
+export async function appSecretFacts(root: string): Promise<AppSecretFacts> {
+  const pwa = (await loadAppConfig(root))?.pwa;
+  return { push: pwa !== undefined && pushWired(pwa) };
+}
 
 const driftFinding = (cause: string): Finding => ({
   code: 'X_ENV_EXAMPLE_DRIFT',
@@ -73,13 +84,17 @@ const driftFinding = (cause: string): Finding => ({
  */
 export async function envExampleFindings(root: string): Promise<readonly Finding[]> {
   let schema: EnvSchema | undefined;
+  let app: AppSecretFacts;
   try {
     schema = await loadEnvSchema(root);
+    // Inside the `try`: this read runs `defineConfig`, which `loadEnvSchema` does not — a config
+    // it refuses (`pwa.push` with no `vapid.subject`) is a finding here, never a crash of the step.
+    app = await appSecretFacts(root);
   } catch (error) {
     return [{ ...findingFrom(error), at: APP_CONFIG_FILE }];
   }
   if (schema === undefined) return [];
-  const expected = envExampleFor(schema);
+  const expected = envExampleFor(schema, app);
   const file = Bun.file(join(root, ENV_EXAMPLE_PATH));
   if (!(await file.exists())) {
     return [
@@ -94,9 +109,9 @@ export async function envExampleFindings(root: string): Promise<readonly Finding
   const missing = Object.keys(schema).filter((key) => !present.has(key));
   // The framework's keys are owed by every deployed app, whatever its schema says (#679), and an
   // example written before they were part of the contract is missing exactly these.
-  const owed = FRAMEWORK_SECRETS.map((secret) => secret.key).filter(
-    (key) => !Object.hasOwn(schema, key) && !present.has(key),
-  );
+  const owed = FRAMEWORK_SECRETS.filter((secret) => configOwes(secret, app))
+    .map((secret) => secret.key)
+    .filter((key) => !Object.hasOwn(schema, key) && !present.has(key));
   return [
     driftFinding(
       missing.length > 0

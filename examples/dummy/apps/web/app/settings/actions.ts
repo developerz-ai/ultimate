@@ -14,9 +14,11 @@
  * `t` comes from @ultimat3/action, not @ultimat3/schema: an action file imports one package.
  */
 
+import { memberOf } from '@postly/core';
 import { members, tag } from '@postly/db';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
+import { pushSubscribe, pushUnsubscribe } from '@ultimat3/pwa';
 import { memberSelf } from '../orgs/policy';
 
 export const savePreferences = action({
@@ -41,4 +43,21 @@ export const savePreferences = action({
   async handle({ input, ctx }) {
     return ctx.orgs.savePreferences(input);
   },
+});
+
+/**
+ * Web Push for this browser. Factories over `action` — each one is a real action with its route,
+ * typed client and contract tests — storing the subscription against the member the request ran as
+ * (never an id the body names). `member:self` because subscribing is a preference of your own; the
+ * framework refuses an agent whatever the permission says.
+ */
+export const subscribePush = pushSubscribe({
+  permission: 'member:self',
+  check: ({ actor }) => memberOf(actor) !== null,
+});
+
+/** Forget this browser — the caller's own subscription only. */
+export const unsubscribePush = pushUnsubscribe({
+  permission: 'member:self',
+  check: ({ actor }) => memberOf(actor) !== null,
 });

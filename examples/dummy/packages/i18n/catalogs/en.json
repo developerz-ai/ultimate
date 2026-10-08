@@ -122,7 +122,11 @@
       "themeLight": "Light",
       "themeDark": "Dark",
       "digestLabel": "Nightly digest",
-      "digestHelp": "One email at 09:00 your time with what your organisation published."
+      "digestHelp": "One email at 09:00 your time with what your organisation published.",
+      "pushLabel": "Notify me in this browser",
+      "pushOn": "This browser will be notified when someone comments on your posts.",
+      "pushDenied": "Notifications are blocked for this site — allow them in your browser settings.",
+      "pushUnavailable": "This browser cannot receive notifications from Postly."
     },
     "runs": {
       "metaTitle": "Runs",
@@ -535,6 +539,12 @@
           "step": "Step"
         }
       }
+    }
+  },
+  "push": {
+    "commentPosted": {
+      "title": "{commenter} commented on {title}",
+      "body": "Open the post to read it."
     }
   }
 }

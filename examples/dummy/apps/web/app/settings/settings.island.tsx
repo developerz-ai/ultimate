@@ -16,11 +16,13 @@
  * reaches this markup by tag, from the `.editor` wrapper the page renders around it.
  */
 
+import { subscribeToPush } from '@ultimat3/pwa/client';
 import type { JSX } from 'solid-js';
 import { createEffect, createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Api } from '../../api';
 import { browserClient } from '../../shared/browser-client';
+import { pushStatus } from './push-status';
 
 /** The action's own input type — the selects hold strings the server already constrained. */
 type SavePreferencesInput = Parameters<Api['actions']['savePreferences']>[0];
@@ -47,6 +49,11 @@ export interface PreferenceLabels {
   readonly save: string;
   readonly saved: string;
   readonly retry: string;
+  /** The Web Push button, and what it says after: on, blocked, or not possible here. */
+  readonly push: string;
+  readonly pushOn: string;
+  readonly pushDenied: string;
+  readonly pushUnavailable: string;
 }
 
 export interface SettingsProps {
@@ -127,6 +134,24 @@ function Preferences(props: SettingsProps): JSX.Element {
     }
   };
 
+  /**
+   * Web Push for THIS browser, from a click — a permission prompt no gesture asked for is refused.
+   * `@ultimat3/pwa/client` imports nothing; the subscription is saved through the typed client
+   * (`subscribePush`, a `pushSubscribe()` action), against whoever is signed in.
+   */
+  const [push, setPush] = createSignal('');
+  const notify = async (): Promise<void> => {
+    try {
+      const outcome = await subscribeToPush({
+        save: (input) => browserClient.subscribePush(input),
+      });
+      setPush(pushStatus(outcome, props.labels));
+    } catch {
+      // The save (or the browser's push service) failed: retry wording, never "cannot".
+      setPush(pushStatus('failed', props.labels));
+    }
+  };
+
   const status = (): string => {
     if (state() === 'saved') return props.labels.saved;
     return state() === 'failed' ? props.labels.retry : '';
@@ -182,6 +207,13 @@ function Preferences(props: SettingsProps): JSX.Element {
       </button>
       <p data-role="status" role="status" aria-live="polite">
         {status()}
+      </p>
+
+      <button type="button" data-role="push" onClick={() => void notify()}>
+        {props.labels.push}
+      </button>
+      <p data-role="push-status" role="status" aria-live="polite">
+        {push()}
       </p>
     </>
   );

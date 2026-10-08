@@ -116,7 +116,7 @@ Opt-in per entity, and shipped in 21.0.0 (`CHANGELOG.md`). The 20.x shape (`stor
 | a principal change | **within one page** (`rescope()`): the previous principal's rows and queue are wiped, and writes still queued are lost, deliberately. A replay on the wire at that moment is abandoned before its next write: nothing queued by one principal is sent under the next one's session. A write being queued at that moment is refused — `mutate` rejects with `X_OFFLINE_QUEUE_ABANDONED` and its optimistic twin is taken back. **A sign-out that navigates** to a new document (the reference app's idiom: the `endSession` action at `POST /api/sessions/end`, posted by a native form) clears the browser first: its response carries `signOutHeaders()` from `@ultimat3/auth`, whose `Clear-Site-Data: "cache", "storage"` drops IndexedDB, local storage, the service worker and its cache, in a secure context. The next boot is the second line: it wipes every stored scope except the current principal's before restoring anything (`packages/realtime/src/boot.ts`, `wipeOthers`). An unscoped page wipes nothing |
 | blocked storage | memory, plus one `X_LOCAL_STORE_UNAVAILABLE` warning; nothing survives a reload |
 
-The boot runs as **one deferred classic script per page** (`/_x/page-boot/<hash>.js`, from
+The boot runs as **one deferred classic script per page** (`/_x/assets/page-boot/<hash>.js`, from
 `@ultimat3/realtime/boot`). It is rendered only on a scope-tagged (private) document that emitted
 an island reaching `@ultimat3/realtime`. It wipes other scopes, restores this principal's rows,
 and opens the outbox, so a reload that opens no live hook and writes nothing still replays what

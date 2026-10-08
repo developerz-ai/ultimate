@@ -409,7 +409,7 @@ Conflicts resolve through core's `resolveConflict` over rows (`'server-wins'`,
 | `socket-routes.ts` | one membership per topic and live query across ports; every server frame routed only to the ports that want it, never broadcast |
 | `socket-port.ts` | the port messages: `open`, `frame` (a wire frame, encoded as a socket carries it), `close`, `bye` |
 | `socket-host.ts` | the tab side: a `SharedWorker` named `ultimate-sync:<scope>` from `<meta name="ultimate-sync-worker">`, or, when `SharedWorker` is absent or throws, the same engine in the page over a `MessageChannel` |
-| `sync-worker.ts` | the worker entry, served at `/_x/sync-worker/<hash>.js`, `immutable` |
+| `sync-worker.ts` | the worker entry, served at `/_x/assets/sync-worker/<hash>.js`, `immutable` |
 
 Each tab keeps its own page socket (`page-socket.ts`) and record store (`page-store.ts`); to the page
 socket, its port is a socket. A tab sends `bye` on
@@ -424,7 +424,7 @@ tab `bye` the old worker and redial.
 | store | IndexedDB (`local-store-idb.ts`), every entry keyed `[scope, type, key]`; scope `p:<principal>` or `anon`; an unscoped page persists nothing. Blocked storage falls back to memory with one `X_LOCAL_STORE_UNAVAILABLE` warning |
 | persister | `record-persister.ts`: the types a private document lists in `<meta name="ultimate-persist">`, from `entity(name, { persist: true })`. Synced rows only, never an overlay. Debounced 250 ms, flushed on `pagehide` and when hidden |
 | outbox | `page-outbox.ts` over `offline-queue.ts`: one queue per principal, replayed **in order** over HTTP with each write's original idempotency key, on socket up, on `online`, and on the service worker's `OUTBOX_DRAIN_MESSAGE`. A retryable failure stops the pass; a refusal is final and rolls back its overlay |
-| boot | `@ultimat3/realtime/boot`, one deferred classic script per private document (`/_x/page-boot/<hash>.js`): wipes every stored scope except the current principal's, restores this principal's rows before the socket connects, and opens the outbox |
+| boot | `@ultimat3/realtime/boot`, one deferred classic script per private document (`/_x/assets/page-boot/<hash>.js`): wipes every stored scope except the current principal's, restores this principal's rows before the socket connects, and opens the outbox |
 | rescope | in-page: wipes the previous scope's rows and queue |
 | sign-out | the response's `Clear-Site-Data: "cache", "storage"` (`@ultimat3/auth`'s `signOutHeaders()`) first; the boot wipe is the second line |
 

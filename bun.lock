@@ -133,6 +133,7 @@
         "@ultimat3/mail": "26.0.0",
         "@ultimat3/notify": "26.0.0",
         "@ultimat3/policy": "26.0.0",
+        "@ultimat3/pwa": "26.0.0",
         "@ultimat3/query": "26.0.0",
         "@ultimat3/realtime": "26.0.0",
         "@ultimat3/render": "26.0.0",
@@ -454,7 +455,11 @@
       "name": "@ultimat3/pwa",
       "version": "26.0.0",
       "dependencies": {
+        "@ultimat3/action": "26.0.0",
         "@ultimat3/core": "26.0.0",
+        "@ultimat3/i18n": "26.0.0",
+        "@ultimat3/policy": "26.0.0",
+        "@ultimat3/schema": "26.0.0",
       },
     },
     "packages/query": {
@@ -535,6 +540,7 @@
         "@ultimat3/jobs": "26.0.0",
         "@ultimat3/mail": "26.0.0",
         "@ultimat3/policy": "26.0.0",
+        "@ultimat3/pwa": "26.0.0",
         "@ultimat3/query": "26.0.0",
         "@ultimat3/realtime": "26.0.0",
         "@ultimat3/render": "26.0.0",

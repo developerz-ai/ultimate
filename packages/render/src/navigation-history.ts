@@ -12,6 +12,8 @@ export interface EntryState {
   readonly scroll: readonly [number, number];
   /** The document this entry shows — what back/forward compares with the one on screen. */
   readonly doc: string;
+  /** The modal open over `doc` (`navigation-modal-rules.ts`), on an entry this router pushed. */
+  readonly modal?: string;
 }
 
 /** Back/forward, as the router passes it: `none` restores; the others start at the top. */
@@ -38,7 +40,12 @@ export function saveEntryScroll(win: Window, rendered: string): void {
   const state = (win.history.state ?? {}) as Record<string, unknown>;
   const held = entryOf(state)?.doc;
   if (held !== undefined && held !== rendered) return;
-  const entry: EntryState = { scroll: [win.scrollX, win.scrollY], doc: held ?? rendered };
+  // Spread: the entry's modal mark is what lets Escape go Back (`navigation-modal.ts`).
+  const entry: EntryState = {
+    ...entryOf(state),
+    scroll: [win.scrollX, win.scrollY],
+    doc: held ?? rendered,
+  };
   win.history.replaceState({ ...state, [STATE_KEY]: entry }, '');
 }
 

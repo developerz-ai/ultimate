@@ -53,6 +53,11 @@ export const config = defineConfig({
     // and sign-out's `Clear-Site-Data: "cache", "storage"` (`signOutHeaders`) is what empties it.
     offline: { fallback: '/offline', personalPages: 'last-member' },
     backgroundSync: true,
+    // Web Push: a comment on your post reaches every browser you subscribed from the settings page
+    // (`commentPosted`'s push channel). The key PAIR is never here — `x vapid create` seals it, and
+    // `x dev` and the tests sign with the framework's published development pair until then.
+    push: true,
+    vapid: { subject: 'mailto:ops@postly.example' },
     name: 'Ultimate Dummy',
     colors: {
       light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },

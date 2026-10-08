@@ -28,6 +28,7 @@ export const RENDER_ERROR_CODES = [
   'X_ASSET_MISSING',
   'X_ROUTE_POST_INVALID',
   'X_ROUTE_NAVIGATION_INVALID',
+  'X_NAVIGATION_MODAL_PATH_INVALID',
 ] as const;
 
 export type RenderErrorCode = (typeof RENDER_ERROR_CODES)[number];
@@ -53,7 +54,9 @@ export const RENDER_ERROR_TITLES: Readonly<Record<RenderErrorCode, string>> = {
   X_ASSET_MISSING: 'a page names a site asset the app does not have',
   X_ROUTE_POST_INVALID: "a page route's post binding cannot be mounted",
   X_ROUTE_NAVIGATION_INVALID:
-    "a route's navigation is not 'prefetch' or 'document', or its surface has no client navigation",
+    "a route's navigation is not 'prefetch', 'document' or 'modal', or its surface has no client navigation",
+  X_NAVIGATION_MODAL_PATH_INVALID:
+    'openModal was given something that is not a path of this origin',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -205,7 +208,8 @@ export class RoutePostInvalidError extends UltimateError {
 
 /**
  * `defineRoute({ navigation })` that says nothing a process can honour: a value other than
- * `'prefetch'` or `'document'`, or — at boot — a page whose surface has no client navigation.
+ * `'prefetch'`, `'document'` or `'modal'`, or — at boot — a page whose surface has no client
+ * navigation.
  */
 export class RouteNavigationInvalidError extends UltimateError {
   static readonly code = 'X_ROUTE_NAVIGATION_INVALID' as const;
@@ -213,7 +217,19 @@ export class RouteNavigationInvalidError extends UltimateError {
     super({
       code: RouteNavigationInvalidError.code,
       cause,
-      fix: "defineRoute({ ..., navigation: 'prefetch' | 'document' }) on a page whose surface is listed in app.config.ts navigation.client, or remove the key",
+      fix: "defineRoute({ ..., navigation: 'prefetch' | 'document' | 'modal' }) on a page whose surface is listed in app.config.ts navigation.client, or remove the key",
+    });
+  }
+}
+
+/** `openModal(path)` with a path no hash can address on this origin. Thrown in the browser. */
+export class NavigationModalPathInvalidError extends UltimateError {
+  static readonly code = 'X_NAVIGATION_MODAL_PATH_INVALID' as const;
+  constructor(path: string) {
+    super({
+      code: NavigationModalPathInvalidError.code,
+      cause: `openModal(${JSON.stringify(path)}): a modal is addressed by '#<path>', and this is not an absolute path on this origin`,
+      fix: "openModal('/runs/new') — the modal route's own path, as its link carries it; never a full URL or a relative one",
     });
   }
 }

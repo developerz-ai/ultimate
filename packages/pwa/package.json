@@ -14,7 +14,9 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./schema": "./src/push-schema.ts"
   },
   "files": [
     "src",
@@ -32,6 +34,10 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "26.0.0"
+    "@ultimat3/action": "26.0.0",
+    "@ultimat3/core": "26.0.0",
+    "@ultimat3/i18n": "26.0.0",
+    "@ultimat3/policy": "26.0.0",
+    "@ultimat3/schema": "26.0.0"
   }
 }

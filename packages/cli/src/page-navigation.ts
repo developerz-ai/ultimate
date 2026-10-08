@@ -140,7 +140,12 @@ export function navigationTagsOf(
 ): readonly HeadTag[] {
   if (entry.config.navigation === 'document') return [];
   const tags = navigationHeadFor(head, entry.surface);
-  return tags === undefined ? [] : clientNavigationTags(tags);
+  if (tags === undefined) return [];
+  // A modal says so in its own document: the router shows it over the page beneath, never decided
+  // from a link — a redirect's target and a pasted `#/…` address are answered alike.
+  return clientNavigationTags(
+    entry.config.navigation === 'modal' ? { ...tags, modal: true } : tags,
+  );
 }
 
 /** `{ navigation }` for `metaOf`'s spread, or nothing. */

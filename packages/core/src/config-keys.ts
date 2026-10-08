@@ -12,6 +12,7 @@ import type {
   PwaSchemeColors,
   PwaScreenshot,
   PwaShortcut,
+  PwaVapidConfig,
 } from './config-pwa';
 import { ConfigInvalidError } from './errors';
 import { isJsonObject } from './json-object';
@@ -42,6 +43,7 @@ export const SECTION_KEYS: Readonly<Record<string, readonly string[]>> = Object.
     'offline',
     'backgroundSync',
     'push',
+    'vapid',
     'name',
     'colors',
     'id',
@@ -50,6 +52,7 @@ export const SECTION_KEYS: Readonly<Record<string, readonly string[]>> = Object.
     'shortcuts',
     'screenshots',
   ]),
+  'pwa.vapid': keysOf<PwaVapidConfig>()(['subject', 'pushHosts']),
   'pwa.colors': keysOf<PwaColors>()(['light', 'dark']),
   'pwa.colors.light': keysOf<PwaSchemeColors>()(['themeColor', 'backgroundColor']),
   'pwa.colors.dark': keysOf<PwaSchemeColors>()(['themeColor', 'backgroundColor']),

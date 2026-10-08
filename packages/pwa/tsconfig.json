@@ -10,6 +10,18 @@
   "references": [
     {
       "path": "../core"
+    },
+    {
+      "path": "../schema"
+    },
+    {
+      "path": "../i18n"
+    },
+    {
+      "path": "../policy"
+    },
+    {
+      "path": "../action"
     }
   ]
 }

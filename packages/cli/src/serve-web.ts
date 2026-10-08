@@ -6,6 +6,7 @@
 import type { Route } from '@ultimat3/http';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 
+import { installedVapid } from '@ultimat3/pwa';
 import { describePages } from '@ultimat3/render';
 import { apiMountRoutes, apiRoutes, pagePostRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
@@ -96,6 +97,9 @@ export async function webSurface(
             ...sync.scripts,
             ...(navigation.script === undefined ? [] : [navigation.script]),
           ],
+          // The runtime `startServices` installed when `pwa.push` is on: the worker's push
+          // handler and the page's `x-push-key` come from the pair this process signs with.
+          vapid: installedVapid(),
         });
   // The app's own MCP endpoint, through the same call `x dev` makes — see `app-mcp.ts`.
   const mcpMount = await mountAppMcp(options.root);
