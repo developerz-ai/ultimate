@@ -137,8 +137,7 @@ registered under is `X_ROUTE_POST_INVALID` at boot, as is `post` on a `static` p
 | gated (`policy`) | its `cache` is never `public`/`immutable` — one actor's document in a shared cache | `X_ROUTE_MODE_INVALID` |
 | `stream` | at least one `<Suspense>` boundary | `X_ROUTE_MODE_INVALID` |
 
-Plus surface rules: `site/` allows `static | isr | ssr`, `app/` allows `stream | ssr`,
-`api/` renders nothing, and a `site/` route that opts into hydration without a `budget.js`
+Plus surface rules: `site/` allows `static | isr | ssr`, `app/` allows `stream | ssr`, and a `site/` route that opts into hydration without a `budget.js`
 is a build error.
 
 ## The route table is the single source of route truth
@@ -154,11 +153,12 @@ sorted, JSON-safe descriptor list. Every downstream generator reads that one tab
 | `site/blog/[slug]/page.tsx` | `/blog/:slug` |
 | `site/docs/[...path]/page.tsx` | `/docs/*path` — `compilePattern` matches the bare `/docs` too, the path the static build writes for an empty rest |
 | `app/dashboard/page.tsx` | `/dashboard` |
-| `api/posts/route.ts` | `/api/posts` |
 
 The URL is the **directory** path under the surface; the filename names the kind of file, never a
-URL segment. One spelling per surface — `page.tsx` under `site/` and `app/`, `route.ts` under
-`api/` — and `registerRoute` refuses anything else with `X_ROUTE_FILE_INVALID`. `index.tsx` is not
+URL segment. One spelling — `page.tsx` under `site/` and `app/` — and `registerRoute` refuses anything else
+with `X_ROUTE_FILE_INVALID`, a file under `api/` included: `api/` holds the actions and queries
+`defineApi()` collects, and a wire format an action cannot speak is a plain HTTP route in the
+`routes` runtime override. `index.tsx` is not
 a page. Two spellings would make "is this file a route?" undecidable for the module scan, the
 boundary walk, `sw.js` and the author reading the folder; one spelling also co-locates
 `page.tsx` + `page.module.scss` + `page.test.ts`, and gives `[slug]/` its own stylesheet.

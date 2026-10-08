@@ -66,12 +66,12 @@ SQL into \`packages/db/migrations/\`.
 |---|---|---|
 | \`apps/web/site/\` | 0kb JS, may not import \`apps/web/app/\` | the static path pays the app's bundle |
 | \`apps/web/app/\` | authed, streaming, hydrated | — |
-| \`apps/web/api/\` | actions only, \`route.ts\` | a second HTTP surface |
+| \`apps/web/api/\` | actions and queries only, collected by \`defineApi()\` — no route file | a second HTTP surface |
 | \`apps/web/shared/\` | a leaf: imports nothing of yours | an import cycle across surfaces |
 | \`repo.ts\` | the only file that touches the database | authz bypassed by a raw read |
 | routes | call actions and queries, never a repo | policy skipped |
 
-Route files: \`page.tsx\` under \`site/\`/\`app/\`, \`route.ts\` under \`api/\`. **The directory is the URL** —
+Route files: \`page.tsx\` under \`site/\`/\`app/\`, and none under \`api/\`. **The directory is the URL** —
 the filename never is. One interactive control on a 0kb page is an island: \`x g island <name> --at <dir>\`.
 
 ## 4. Gate it

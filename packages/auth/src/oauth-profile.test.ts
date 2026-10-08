@@ -167,7 +167,22 @@ describe('oauthProfile', () => {
   });
 
   test('a provider with neither claims nor a userinfo endpoint says so', async () => {
-    const error = await rejection(oauthProfile('apple', tokensWith(null)));
+    const claimsOnly = registerOAuthProvider({
+      id: 'claims-only-profile-op',
+      authorizeUrl: 'https://claims.test/authorize',
+      tokenUrl: 'https://claims.test/token',
+      // Claims in the id token only: no userinfo endpoint to call.
+      userInfoUrl: null,
+      userEmailsUrl: null,
+      issuers: ['https://claims.test'],
+      jwksUri: 'https://claims.test/keys',
+      scopes: ['openid', 'email'],
+      usesPkce: true,
+      usesNonce: true,
+      clientIdEnv: 'CLAIMS_ONLY_CLIENT_ID',
+      clientSecretEnv: 'CLAIMS_ONLY_CLIENT_SECRET',
+    });
+    const error = await rejection(oauthProfile(claimsOnly.id, tokensWith(null)));
     expect(isUltimateError(error)).toBe(true);
     expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
     expect(isUltimateError(error) && error.cause).toContain('no userinfo endpoint');

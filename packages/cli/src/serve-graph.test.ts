@@ -78,8 +78,10 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
  * raised 629 → 630, measured 630 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
  * columns a transition's policy read, pinned into its compare-and-set (#702).
+ * raised 630 → 631, measured 631 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
+ * the supported log tee, reached through `logger.ts` by every module that logs.
  */
-const MIGRATE_CEILING = 630;
+const MIGRATE_CEILING = 631;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -142,8 +144,10 @@ const MIGRATE_CEILING = 630;
  * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
  * raised 924 → 925, measured 925 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
  * columns a transition's policy read, pinned into its compare-and-set (#702).
+ * raised 925 → 926, measured 926 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
+ * the supported log tee, reached through `logger.ts` by every module that logs.
  */
-const SERVING_ROLE_CEILING = 925;
+const SERVING_ROLE_CEILING = 926;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -195,8 +199,10 @@ const SERVING_ROLE_CEILING = 925;
  * `X_JOB_TENANT_MISMATCH` a webhook delivery or a queued agent refuses a wrong org with.
  * raised 1036 → 1037, measured 1037 (2026-10-07, sweep 14): `entity/src/transition-pins.ts` — the
  * columns a transition's policy read, pinned into its compare-and-set (#702).
+ * raised 1037 → 1038, measured 1038 (2026-10-07, 26.0.0 app feedback): `core/src/log-tee.ts` — `addLogSink`,
+ * the supported log tee, reached through `logger.ts` by every module that logs.
  */
-const WEB_ROLE_CEILING = 1037;
+const WEB_ROLE_CEILING = 1038;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

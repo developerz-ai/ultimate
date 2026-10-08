@@ -162,9 +162,9 @@ name their feature gives them (`app/posts/actions.ts`, `app/digest/jobs.ts`, …
 | a wire format an action cannot speak — a webhook receiver, an OAuth endpoint | a plain HTTP route in the `runtime.routes` override ([Configuration](../../wiki/Configuration.md)) |
 | a page | `page.tsx` under `site/` or `app/` |
 
-`api/**/route.ts` is not a file kind (owner decision 1, #648, `As of 2026-10-07`): a `defineRoute`
-under `api/` is refused with `X_ROUTE_MODE_INVALID`. `ROUTE_FILENAME` still carries an `api` row
-until the 26.0.0 batch (#709) deletes it. `x g route` generates only under `site/` and `app/`.
+`api/**/route.ts` is not a file kind (owner decision 1, #648): any route file under `api/` is
+refused at registration with `X_ROUTE_FILE_INVALID`, and `ROUTE_FILENAME` has no `api` row since
+26.0.0 (#709). `x g route` generates only under `site/` and `app/`.
 
 ## What `x g resource` generates
 

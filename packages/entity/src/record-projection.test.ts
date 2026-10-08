@@ -87,7 +87,7 @@ describe('recordProjection()', () => {
     const refusal = refusalOf(() => recordProjection(memberships).key({ orgId: ORG, role: 'r' }));
     expect(refusal.code).toBe('X_RECORD_KEY_MISSING');
     expect(refusal.cause).toContain('userId');
-    expect(refusal.fix).toContain('x entities describe record_projection_memberships');
+    expect(refusal.fix).toContain('x entities show record_projection_memberships');
   });
 
   test('a null key and a non-scalar key are refused the same way', () => {

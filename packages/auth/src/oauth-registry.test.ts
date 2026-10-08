@@ -56,11 +56,12 @@ describe('the oauth provider registry', () => {
     expect(handshake.verifier.length).toBeGreaterThanOrEqual(43);
   });
 
-  test('the three built-ins are registered through the same call an app uses', () => {
-    for (const id of ['github', 'google', 'apple']) {
+  test('the two built-ins are registered through the same call an app uses', () => {
+    for (const id of ['github', 'google']) {
       expect(hasOAuthProvider(id)).toBe(true);
       expect(providerFor(id).id).toBe(id);
     }
+    expect(hasOAuthProvider('apple')).toBe(false);
     expect(oauthProviderIds()).toContain('bigco-sso');
   });
 

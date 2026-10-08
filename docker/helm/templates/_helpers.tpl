@@ -228,7 +228,9 @@ order it is spent.
                          Web and sync only: every other role drains with NO grace
                          (`lifecycleForRole`, packages/cli/src/serve-boot.ts)
   worker retire          `roles.worker.retireSeconds` — the opt-in SIGUSR2 preStop; worker only, 0 off
-  drain budget           `drain.deadlineSeconds` — app.config.ts `drain.deadlineMs`, every role
+  drain budget           `drain.deadlineSeconds` — app.config.ts `drain.deadlineMs`, every role;
+                         the worker's is `drain.workerDeadlineSeconds` instead when > 0
+                         (app.config.ts `drain.workerDeadlineMs`, up to a day)
   teardown margin        `drain.teardownMarginSeconds` — the release after the drain, and headroom
 
 Defaults: web/sync 5 + 5 + 25 + 10 = 45 (40 below 1.30), worker/scheduler/replicator 25 + 10 = 35.
@@ -239,6 +241,9 @@ roles, sized for none of them once `drain.deadlineMs` moved.
 {{- $drain := .root.Values.drain -}}
 {{- $total := add (int $drain.deadlineSeconds) (int $drain.teardownMarginSeconds) -}}
 {{- if eq .role "worker" -}}
+{{- if gt (int $drain.workerDeadlineSeconds) 0 -}}
+{{- $total = add (int $drain.workerDeadlineSeconds) (int $drain.teardownMarginSeconds) -}}
+{{- end -}}
 {{- $total = add $total (int .cfg.retireSeconds) -}}
 {{- end -}}
 {{- if .cfg.port -}}

@@ -348,7 +348,7 @@ export function describeAction(target: AnyAction): ActionDescriptor {
       // a first honest `expose: false` read as a withdrawn capability and demand a major bump.
       expose: isMcpExposed(mcp),
       // The export name verbatim, which is the only name `@ultimat3/mcp` will answer a
-      // `tools/call` for. A derived one made every descriptor reader — `x actions describe
+      // `tools/call` for. A derived one made every descriptor reader — `x actions show
       // --json`, the `actions.describe` dev tool, the `/_x` panel — name a tool no surface
       // serves. `x.manifest.json` is not among them: it copies `expose` and `description` only.
       tool: name,

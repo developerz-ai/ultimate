@@ -182,9 +182,9 @@ describe('unit · x actions|queries|entities · list', () => {
   });
 });
 
-describe('unit · x actions|queries|entities · describe', () => {
-  test('an action describes as its full ActionDescriptor', async () => {
-    const result = await actionsCommand.run(contextFor('describe', [ACTION_NAME]));
+describe('unit · x actions|queries|entities · show', () => {
+  test('show: an action is its full ActionDescriptor', async () => {
+    const result = await actionsCommand.run(contextFor('show', [ACTION_NAME]));
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(
       msg('cli.registry.described', { kind: 'action', name: ACTION_NAME }),
@@ -192,8 +192,8 @@ describe('unit · x actions|queries|entities · describe', () => {
     expect(emitted(result)).toEqual(getAction(ACTION_NAME)?.describe());
   });
 
-  test('a query describes as its full QueryDescriptor plus the input JSON schema', async () => {
-    const result = await queriesCommand.run(contextFor('describe', [QUERY_NAME]));
+  test('show: a query is its full QueryDescriptor plus the input JSON schema', async () => {
+    const result = await queriesCommand.run(contextFor('show', [QUERY_NAME]));
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(msg('cli.registry.described', { kind: 'query', name: QUERY_NAME }));
     expect(emitted(result)).toEqual({
@@ -203,8 +203,8 @@ describe('unit · x actions|queries|entities · describe', () => {
     expect((result.data as { input?: object }).input).toBeTruthy();
   });
 
-  test('an entity describes as its full EntityDescription', async () => {
-    const result = await entitiesCommand.run(contextFor('describe', [ENTITY_NAME]));
+  test('show: an entity is its full EntityDescription', async () => {
+    const result = await entitiesCommand.run(contextFor('show', [ENTITY_NAME]));
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(
       msg('cli.registry.described', { kind: 'entity', name: ENTITY_NAME }),
@@ -217,37 +217,33 @@ describe('unit · x actions|queries|entities · errors', () => {
   // `MissingPositionalError` raises the same CODE a `BadFlagError` does, so the cause is the only
   // thing that can tell them apart — and the cause is the half that used to name `--name`, a flag
   // no registry command declares, about a missing positional.
-  test('describe with no name names the positional and never a flag', async () => {
-    const actionsThrown = await rejectedBy(() => actionsCommand.run(contextFor('describe', [])));
+  test('show with no name names the positional and never a flag', async () => {
+    const actionsThrown = await rejectedBy(() => actionsCommand.run(contextFor('show', [])));
     expect(actionsThrown).toBeUltimateError('X_CLI_BAD_FLAG');
-    expect(actionsThrown.cause).toBe('"x actions describe" needs a <name> positional and got none');
+    expect(actionsThrown.cause).toBe('"x actions show" needs a <name> positional and got none');
     expect(actionsThrown.fix).toBe('x actions list --json');
 
-    const queriesThrown = await rejectedBy(() => queriesCommand.run(contextFor('describe', [])));
+    const queriesThrown = await rejectedBy(() => queriesCommand.run(contextFor('show', [])));
     expect(queriesThrown).toBeUltimateError('X_CLI_BAD_FLAG');
-    expect(queriesThrown.cause).toBe('"x queries describe" needs a <name> positional and got none');
+    expect(queriesThrown.cause).toBe('"x queries show" needs a <name> positional and got none');
     expect(queriesThrown.fix).toBe('x queries list --json');
 
-    const entitiesThrown = await rejectedBy(() => entitiesCommand.run(contextFor('describe', [])));
+    const entitiesThrown = await rejectedBy(() => entitiesCommand.run(contextFor('show', [])));
     expect(entitiesThrown).toBeUltimateError('X_CLI_BAD_FLAG');
-    expect(entitiesThrown.cause).toBe(
-      '"x entities describe" needs a <name> positional and got none',
-    );
+    expect(entitiesThrown.cause).toBe('"x entities show" needs a <name> positional and got none');
     expect(entitiesThrown.fix).toBe('x entities list --json');
   });
 
-  test('describe <typo> is an unknown-declaration error, and the fix names the nearest real name', async () => {
-    const thrown = await rejectedBy(() =>
-      actionsCommand.run(contextFor('describe', ['publishPst'])),
-    );
+  test('show <typo> is an unknown-declaration error, and the fix names the nearest real name', async () => {
+    const thrown = await rejectedBy(() => actionsCommand.run(contextFor('show', ['publishPst'])));
     expect(thrown).toBeUltimateError('X_DECLARATION_UNKNOWN');
     expect(thrown.cause).toContain('publishPst');
-    expect(thrown.fix).toBe(`x actions describe ${ACTION_NAME}`);
+    expect(thrown.fix).toBe(`x actions show ${ACTION_NAME}`);
   });
 
-  test('describe <unrelated> falls back to list --json when nothing is close enough to suggest', async () => {
+  test('show <unrelated> falls back to list --json when nothing is close enough to suggest', async () => {
     const thrown = await rejectedBy(() =>
-      actionsCommand.run(contextFor('describe', ['completely-unrelated-name'])),
+      actionsCommand.run(contextFor('show', ['completely-unrelated-name'])),
     );
     expect(thrown).toBeUltimateError('X_DECLARATION_UNKNOWN');
     expect(thrown.fix).toBe('x actions list --json');

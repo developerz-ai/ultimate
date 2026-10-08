@@ -9,7 +9,7 @@ import { isFixShellSafe, renderFixShellArg, renderThrowable, UltimateError } fro
 const jobCommand = (verb: string, jobId: string): string =>
   isFixShellSafe(jobId)
     ? `x jobs ${verb} ${renderFixShellArg(jobId, 'id')} --json`
-    : 'x jobs ls --state running --json';
+    : 'x jobs list --state running --json';
 
 /** `remove()` / `removeMany()` reached a job a worker holds. Cancel stops the body; then remove. */
 export class JobNotRemovableError extends UltimateError {
@@ -22,7 +22,7 @@ export class JobNotRemovableError extends UltimateError {
           : `job ${input.jobId} is running, and deleting the row under its body would not stop the body`,
       fix:
         input.jobId === undefined
-          ? 'x jobs ls --state running --json'
+          ? 'x jobs list --state running --json'
           : jobCommand('cancel', input.jobId),
       meta: { ...(input.jobId === undefined ? {} : { jobId: input.jobId }) },
     });
@@ -92,7 +92,7 @@ export class JobPageInvalidError extends UltimateError {
         input.limit === undefined
           ? `${input.subject} was handed ${cursor === 'after' ? 'an after' : 'a before'} cursor that no page produced — ${cursor}: ${source} of a page this driver answered is the only one it reads; omit it for the first page`
           : `${input.subject} limit is ${input.limit}, over MAX_JOB_PAGE (${input.maxPage}) — the rows one page may answer; walk further with after: jobCursor(lastRow), and stop at a page shorter than its limit`,
-      fix: `x jobs ls --limit ${renderFixShellArg(String(input.maxPage), '200')} --json`,
+      fix: `x jobs list --limit ${renderFixShellArg(String(input.maxPage), '200')} --json`,
       meta: {
         maxPage: input.maxPage,
         ...(input.limit === undefined ? {} : { limit: input.limit }),

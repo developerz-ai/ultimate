@@ -211,7 +211,7 @@ describe('a declaration the old scan could not see', () => {
 describe('a vocabulary of ordinary words, compared by NAME', () => {
   test('a second JOB_STATES is reported wherever it is declared', () => {
     // `packages/cli/src/jobs-report.ts` carried one, and it was ONE MEMBER SHORT: `x jobs cancel`
-    // created a state `x jobs ls --state cancelled` then refused to filter on.
+    // created a state `x jobs list --state cancelled` then refused to filter on.
     const copy = asConst('JOB_STATES', ['ready', 'running', 'done']);
     const findings = checkVocabulary([...OWNERS, file('packages/cli/src/jobs-report.ts', copy)]);
     expect(findings).toHaveLength(1);

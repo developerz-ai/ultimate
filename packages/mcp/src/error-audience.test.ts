@@ -104,7 +104,7 @@ describe('an invalid argument', () => {
     const body = text(await call(server, 'publishPost', {}, publisher));
     expect(body).toStartWith('X_INPUT_INVALID');
     expect(body).toInclude('postId');
-    expect(body).not.toInclude('x actions describe');
+    expect(body).not.toInclude('x actions show');
     expect(body).toInclude('published input schema');
   });
 });

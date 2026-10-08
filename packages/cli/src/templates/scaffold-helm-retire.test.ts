@@ -109,5 +109,24 @@ describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both char
       },
       TEST_MS,
     );
+
+    test(
+      `${which}: drain.workerDeadlineSeconds sizes the worker's grace alone`,
+      async () => {
+        const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
+        const rendered = render(chart, [
+          '--set',
+          'drain.workerDeadlineSeconds=7500',
+          '--set',
+          'roles.worker.retireSeconds=7200',
+        ]);
+        // The worker's budget replaces the 25 s one, and the retire still adds to it.
+        expect(rendered.get('worker')?.spec.template.spec.terminationGracePeriodSeconds).toBe(
+          7500 + 10 + 7200,
+        );
+        expect(rendered.get('web')?.spec.template.spec.terminationGracePeriodSeconds).toBe(45);
+      },
+      TEST_MS,
+    );
   }
 });

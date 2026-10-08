@@ -46,7 +46,7 @@ const CATALOG = {
   'cli.db.branch.failed': 'branch command failed',
   'cli.db.branch.listed': '{count} branch(es) of this database',
   'cli.db.branch.none': 'this database has no branch',
-  /** The empty cell in an `x db branch ls` column — a value, not a column key. */
+  /** The empty cell in an `x db branch list` column — a value, not a column key. */
   'cli.db.branch.unknown': '-',
   'cli.db.gen.failed': 'migration not generated',
   'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
@@ -149,7 +149,7 @@ const CATALOG = {
   'cli.jobs.depth':
     '{ready} ready · {running} running · {delayed} delayed · {dead} dead across {queues} queue(s)',
   'cli.jobs.listed': '{count} job(s)',
-  'cli.jobs.nextPage': 'more — next page: x jobs ls --after {cursor}',
+  'cli.jobs.nextPage': 'more — next page: x jobs list --after {cursor}',
   'cli.jobs.noError': 'no error recorded',
   'cli.jobs.paused': 'queue {queue} paused — no worker claims from it; enqueues still land',
   'cli.jobs.pausedQueues': 'paused queue(s): {queues}',

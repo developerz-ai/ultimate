@@ -17,8 +17,8 @@ export const TIERS: Readonly<Record<number, readonly string[]>> = {
   1: ['i18n', 'money', 'time', 'cache', 'seo', 'db', 'storage', 'flags'],
   2: ['entity', 'policy', 'http', 'auth'],
   3: ['action', 'query', 'jobs', 'realtime'],
-  4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail', 'ui', 'notify'],
-  5: ['admin', 'testing', 'cli', 'scraping'],
+  4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail', 'ui', 'notify', 'scraping'],
+  5: ['admin', 'testing', 'cli'],
 };
 
 /**
@@ -55,7 +55,7 @@ export const SIDEWAYS_ALLOW: Readonly<Record<string, readonly string[]>> = {
  *
  * Every reason states what MOVING THE PACKAGE DOWN WOULD LEGALISE, never why the current tier feels
  * right: a floor exception is worth a line only when the tier itself is enforcing something. The
- * five rows here are the whole list `As of 2026-08-22`, and none of them was invented for the rule
+ * four rows here are the whole list `As of 2026-10-07`, and none of them was invented for the rule
  * — each is a sentence one of the package `CLAUDE.md` files already carried.
  *
  * `Object.freeze<Record<…>>({…})`, never an annotated literal: `scripts/frozen-records.ts`.
@@ -79,11 +79,6 @@ export const FLOOR_ABOVE = Object.freeze<Record<string, string>>({
     'import, and `packages/pwa/CLAUDE.md`\'s "Never import render" — the rule that keeps ' +
     '`PwaRoute` a structural view rather than a re-export of the route table — would have nothing ' +
     'enforcing it.',
-  scraping:
-    "Tier 5 reserves room for `recover: 'agent'` to import @ultimat3/ai (tier 4), which a package " +
-    'AT tier 4 could not do. `packages/scraping/CLAUDE.md` wrote that before anything imported ' +
-    'this package. Nothing above it imports it any more: `x shot` drives Chrome over raw CDP ' +
-    '(22.0.0), so the `cli -> scraping` edge this position once charged is gone.',
   ui:
     'Held LEVEL with `render` so `render -> ui` stays refused (both at 4): the static bundle graph ' +
     'may not reach the design system, which is axiom 6 and what `packages/render/CLAUDE.md` ' +

@@ -556,7 +556,7 @@ where a command declares no subcommands at all.
 was never examined and the line resolved clean while running it answers `X_CLI_UNKNOWN_COMMAND` —
 the same blind spot in a second disguise. A closed set means the slot is a verb, so there is
 nothing a reader could substitute that would make it run. `CITATION` therefore matches a
-placeholder in the third slot **only**: `x jobs show <id>` and `x db branch drop <name>` are correct
+placeholder in the third slot **only**: `x jobs show <id>` and `x db branch delete <name>` are correct
 fix lines and must stay invisible to this rule.
 
 `collectDeclaredCodes` is the only answer to "which codes exist, and where is each declared?" — one
@@ -752,7 +752,7 @@ holding the PGlite lock breaks the next command run against this app. A second c
 would be two answers to "which queue is this command talking to".
 
 **`x db branch` takes a VERB, and a branch name can never be one.** `ls`, `create <name>`,
-`drop <name>` — a closed set, declared once in `BRANCH_SUBCOMMANDS` and read three ways: the
+`drop <name>` (`list` and `delete` since 26.0.0, #709) — a closed set, declared once in `BRANCH_SUBCOMMANDS` and read three ways: the
 command validates against it, `dbCommand.spec.subcommandPositionals` declares it so the `errors`
 step can resolve a citation against it, and the refusal for an unknown word lists it. The bare-name
 form it replaces is why: the argument *was* the name, so `x db branch ls --json` — the `fix:` on
@@ -766,7 +766,7 @@ external branch is a database carrying the marker comment `createBranch` writes 
 database's own `<source>_branch_` prefix, an embedded one is a `pgdata-<name>` directory, so the
 shared database this session is connected to is in neither set.
 The typo is impossible rather than the keystroke tedious — and `@ultimat3/db` already ships
-`x db branch drop <name>` as `X_BRANCH_EXISTS`'s `fix:` with no flag on it, so a flag here would
+`x db branch delete <name>` as `X_BRANCH_EXISTS`'s `fix:` with no flag on it, so a flag here would
 break a shipped instruction.
 
 **The prefix half is not decoration, and it is no longer the only source guard.** The marker records
@@ -776,7 +776,7 @@ the base `As of 2026-08-19` — `ultimate:branch:<base>:<iso>`, read back as `Br
 rather than dropped, which leaves `drop` needing an answer that does not depend on a field half the
 branches lack. One Postgres server hosting two Ultimate apps answers `listBranches()` with both
 apps' clones, and `branchNameOf` reduced `postly_branch_feat` and `analytics_branch_feat` to the
-same branch name — so `x db branch drop feat`, run against `postly`, was authorised by
+same branch name — so `x db branch delete feat`, run against `postly`, was authorised by
 `analytics`'s row and then issued `drop database if exists "postly_branch_feat"` against a database
 carrying no marker at all: a `DROP DATABASE` the guard had never approved, and nothing recoverable
 about it. `branchNameIn(source, database)` is the source-scoped inverse of `branchDatabaseName` and
@@ -1192,7 +1192,7 @@ seats. The per-socket 128 stands because a socket is one browser tab.
 catalog readers: `PgReplicationStream` keeps a change only when `#entities.has(relation.name)` and a
 pgoutput Relation message names the table, while `warnPartialIdentity` matches the same list against
 `pg_class.relname`. An entity NAME is the framework's own registry key — a cache tag, a policy and
-`x entities describe` are all keyed by it — and `entity('user', { table: 'users' })` makes the two
+`x entities show` are all keyed by it — and `entity('user', { table: 'users' })` makes the two
 different strings. It passed `.name`, so a renamed table matched on neither side: **every change
 skipped** and a replica-identity warning that could never fire, with no error anywhere. Invisible to
 every fixture in the tree, because `table` defaults to the name verbatim and all six entities in

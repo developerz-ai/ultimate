@@ -358,13 +358,13 @@ describe('policyTestStubFor', () => {
 });
 
 // Security audit of plan 101 sweep 1c: an action NAME is whatever `.named()` was handed — nothing
-// validates its alphabet — and it rides into `x actions describe <name>`.
+// validates its alphabet — and it rides into `x actions show <name>`.
 describe('the OpenAPI drift refusal', () => {
   test('an action name carrying shell syntax never reaches the describe command', () => {
     const fix = documentedDrift('/api/x', 'owner', 'x$(touch pwned)').fix;
-    expect(fix.startsWith('x actions describe <action> --json')).toBe(true);
+    expect(fix.startsWith('x actions show <action> --json')).toBe(true);
     expect(documentedDrift('/api/x', 'owner', 'publishPost').fix).toStartWith(
-      'x actions describe publishPost --json',
+      'x actions show publishPost --json',
     );
     expect(documentedDrift('/api/x', undefined, 'x$(id)').fix).toStartWith('x verify --json');
   });

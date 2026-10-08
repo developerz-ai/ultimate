@@ -248,7 +248,7 @@ export class ErrorCodeUnknownError extends UltimateError {
 }
 
 /**
- * `x actions|queries|entities describe <name>` named a declaration the registries do not hold —
+ * `x actions|queries|entities|tasks show <name>` named a declaration the registries do not hold —
  * a typo, or a module that never imported. `known` is the count, not the list: a 200-action app
  * would bury the fix line under names nobody asked for, and `list` is one command away.
  */
@@ -259,7 +259,7 @@ export class DeclarationUnknownError extends UltimateError {
     name: string;
     known: readonly string[];
     suggestion?: string;
-    /** The subcommand that takes one name. `describe` for the registries, `show` for `x tasks`. */
+    /** The subcommand that takes one name: `show` (#709), or `explain` for `x policy` — the "why". */
     verb?: string;
   }) {
     super({
@@ -268,7 +268,7 @@ export class DeclarationUnknownError extends UltimateError {
       fix:
         input.suggestion === undefined
           ? `x ${input.kind} list --json`
-          : `x ${input.kind} ${input.verb ?? 'describe'} ${input.suggestion}`,
+          : `x ${input.kind} ${input.verb ?? 'show'} ${input.suggestion}`,
     });
   }
 }
@@ -279,7 +279,7 @@ export class JobUnknownError extends UltimateError {
     super({
       code: 'X_JOB_UNKNOWN',
       cause: `the "${input.driver}" queue holds no job with id "${input.id}"`,
-      fix: 'x jobs ls --json',
+      fix: 'x jobs list --json',
     });
   }
 }

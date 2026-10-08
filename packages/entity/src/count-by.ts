@@ -42,7 +42,7 @@ const groupableColumns = <Row>(entity: EntityCore<Row>): readonly string[] =>
  * Not `invariantViolated`: its fix opens `x entity explain`, which describes invariants nobody
  * wrote here. What repairs this is one edit to the call — a different column, named in the message
  * because the entity is the only place the answer lives. Only when this entity offers no such
- * column does the fix become a command, and then it is `x entities describe`, which prints the
+ * column does the fix become a command, and then it is `x entities show`, which prints the
  * kinds: there is no call to suggest, since every column it declares would be refused the same way.
  */
 const notGroupable = <Row>(
@@ -57,7 +57,7 @@ const notGroupable = <Row>(
     cause: `${entity.$name}.${operation}('${property}'): ${reason}`,
     fix:
       first === undefined
-        ? `x entities describe ${entity.$name} --json   # this entity declares no column a count can be keyed by`
+        ? `x entities show ${entity.$name} --json   # this entity declares no column a count can be keyed by`
         : `${entity.$name}.${operation}('${first}')   # group by one of: ${groupableColumns(entity).join(', ')}`,
   });
 };

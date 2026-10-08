@@ -499,4 +499,4 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 ## Boundary
 
-Tier 5. May import tiers 0-4 only — enforced by `bun run scripts/boundaries.ts`.
+Tier 4. May import tiers 0-3 only — enforced by `bun run scripts/boundaries.ts`.

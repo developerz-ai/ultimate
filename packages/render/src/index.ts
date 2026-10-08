@@ -206,6 +206,7 @@ export type {
   BoundaryViolation,
   ImportGraph,
   ImportRef,
+  RouteSurface,
   Surface,
   SurfaceSpec,
 } from './surfaces';

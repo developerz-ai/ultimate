@@ -22,9 +22,7 @@ describe('fixProblem', () => {
   });
 
   test('accepts advice that also names the command to run', () => {
-    expect(
-      fixProblem('check the gateway, then: x actions describe publish --json'),
-    ).toBeUndefined();
+    expect(fixProblem('check the gateway, then: x actions show publish --json')).toBeUndefined();
     // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
     expect(fixProblem('add ${keys} to .env (copy .env.example), then run: x env check')).toBe(
       undefined,
@@ -92,7 +90,7 @@ describe('fixProblem', () => {
     // Naming the observation AND the command is the shape the contract wants — a rule that
     // refused this would push an author into deleting the sentence that says where to look.
     expect(
-      fixProblem('see the docs for the field list, then: x actions describe posts.publish'),
+      fixProblem('see the docs for the field list, then: x actions show posts.publish'),
     ).toBeUndefined();
   });
 
@@ -254,7 +252,7 @@ describe('the checks, over a repo', () => {
     await write(
       'packages/db/src/pglite-branch.ts',
       "import { dbNotImplemented } from './errors';\n" +
-        "dbNotImplemented('pglite has no branches', 'x db branch ls --json');\n",
+        "dbNotImplemented('pglite has no branches', 'x db branch list --json');\n",
     );
     expect(await checkErrorFixes(root)).toEqual([]);
   });

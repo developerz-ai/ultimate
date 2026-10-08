@@ -411,8 +411,8 @@ The shipped surface is `x db branch`, with three verbs. `x branch` (no `db`) is 
 
 ```bash
 x db branch create feat-new-billing --json
-x db branch ls --json
-x db branch drop feat-new-billing --json
+x db branch list --json
+x db branch delete feat-new-billing --json
 ```
 
 | Property | Detail | `As of 2026-08` |
@@ -420,7 +420,7 @@ x db branch drop feat-new-billing --json
 | DB | `CREATE DATABASE "<source>_branch_<slug>" TEMPLATE "<source>"` copy-on-write clone — cheap, isolated, disposable. `<slug>` is the name with every character outside `[A-Za-z0-9_]` replaced by `_` — a hyphen is not legal in an unquoted Postgres identifier — so `create feat-new-billing` clones into `myapp_branch_feat_new_billing`. Embedded: a copied `pgdata-<name>` directory, which keeps the name **as typed** | **shipped** |
 | Migrations | `db.migrate` applies here, never to the shared dev DB (`X_MCP_NOT_BRANCH_DB`) | **shipped** |
 | Preview URL | `http://<name>.localhost:<PORT>`, reported on `data.preview` | **the URL is computed**; nothing routes that subdomain for you |
-| Teardown | `x db branch drop <name>` — it may only drop what `ls` shows | **shipped** |
+| Teardown | `x db branch delete <name>` — it may only delete what `list` shows | **shipped** |
 | **Build ID scopes the SW** | a per-branch build id giving the branch its own SW scope and cache namespace, so a preview can never poison prod cache → [PWA and offline](PWA-And-Offline) | **planned**, part of `x branch` |
 | Scoped MCP socket | `ws://localhost:9229/<name>` | **planned**, part of `x branch` |
 | Agent use | an agent can migrate, seed, test, and browse a preview without risking anything shared | |

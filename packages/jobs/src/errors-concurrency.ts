@@ -67,8 +67,8 @@ export class JobKeyBusyError extends UltimateError {
       // still goes through `renderFixShellArg` — the screen `bun run error-render` looks for —
       // whose placeholder the guard above makes unreachable.
       fix: isFixShellSafe(input.job)
-        ? `x jobs ls --name ${renderFixShellArg(input.job, 'job')} --state running --json`
-        : 'x jobs ls --state running --json',
+        ? `x jobs list --name ${renderFixShellArg(input.job, 'job')} --state running --json`
+        : 'x jobs list --state running --json',
       meta: { job: input.job, key: input.key, limit: input.limit },
     });
   }

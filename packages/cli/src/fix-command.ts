@@ -3,7 +3,7 @@
 // `x trace`, `x metrics`, `x auth whoami` and `x ai prompts` — every one of them passed the
 // `errors` step, because the step checks that a fix NAMES a command, never that the build ships it.
 //
-// It reads THREE words for the same reason it reads two: `x db branch ls --json` shipped as a fix
+// It reads THREE words for the same reason it reads two: `x db branch list --json` shipped as a fix
 // while `x db branch` had no `ls`, because a rule stopping at the subcommand never saw the word
 // that decided what ran.
 
@@ -27,7 +27,7 @@ import { GLOBAL_FLAGS } from './parse';
 // slot where the reader has nothing to substitute, so `x db branch <name>` — two shipped fix lines
 // in `@ultimat3/mcp` — is `X_CLI_UNKNOWN_COMMAND` when run and resolved clean while a placeholder
 // was invisible to the reader. Second and fourth slots are open positionals (`x new my-app`,
-// `x db branch drop <name>`), where a placeholder is exactly right.
+// `x db branch delete <name>`), where a placeholder is exactly right.
 // A `:` is part of a word only when a letter follows it, which is what separates the shipped
 // positional `admin:page` from prose that ends a citation with a colon (`x verify: the gate`).
 // Read without it, `x g admin:page` cites `x g admin` — a positional the CLI does not ship —
@@ -221,7 +221,7 @@ function positionalFault(spec: CommandSpec, sub: string, word: string): Citation
  * Why a citation does not resolve, or `undefined` when it does. FIVE levels, because the drift is
  * mostly BELOW the command name: `x db query` names a real command and an unreal subcommand,
  * `x env check --fix` names both and an unreal flag, `x test summarize` names a first positional
- * that is not a `TestType`, and `x db branch ls` named a real subcommand and a third word that
+ * that is not a `TestType`, and `x db branch list` named a real subcommand and a third word that
  * `x db branch` read as a branch NAME. A rule stopping at the command name accepted all four.
  *
  * The planned check is the one the whole thing exists for: a PLANNED command is in the registry and

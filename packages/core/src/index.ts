@@ -225,7 +225,11 @@ export {
   CursorSecretDevError,
   devSecretsRefused,
 } from './dev-secrets';
-export { DRAIN_DEADLINE_DEFAULT_MS, DRAIN_DEADLINE_MAX_MS } from './drain-deadline';
+export {
+  DRAIN_DEADLINE_DEFAULT_MS,
+  DRAIN_DEADLINE_MAX_MS,
+  WORKER_DRAIN_DEADLINE_MAX_MS,
+} from './drain-deadline';
 export type {
   Env,
   EnvBooleanVar,
@@ -613,8 +617,10 @@ export {
   idleWaiterCount,
   inflightCount,
   isDraining,
+  isRetiring,
   lifecycleState,
   markReady,
+  markRetiring,
   onShutdown,
   readinessCheckCount,
   readinessChecks,
@@ -638,6 +644,8 @@ export type { Direction } from './locale-direction';
 export { directionOf, isRtl } from './locale-direction';
 export type { LocalePathSplit } from './locale-path';
 export { localeSegment, localizePath, splitLocalePath } from './locale-path';
+// The supported tee: every default-writer line, after redaction, beside the streams.
+export { addLogSink } from './log-tee';
 // The process logger's test seam, beside nothing it groups with: where a default-writer line goes.
 export type { LogSink } from './logger';
 export { setLogSink } from './logger';

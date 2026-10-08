@@ -169,7 +169,7 @@ transport — a cap over the ceiling is `X_CONFIG_INVALID` on every branch, memo
 
 ### Delivery events
 
-Imported from **`@ultimat3/mail/events`**, never the barrel: only a webhook route needs them, and every serving role loads `@ultimat3/mail` to send. One receiver per provider, its `receive(request)` mounted as a plain HTTP route through the `routes` runtime override (`apps/<app>/runtime.ts`) — not an `api/**/route.ts`, which cannot register (Known gaps, awaiting owner decision 1); each verifies, then normalises to
+Imported from **`@ultimat3/mail/events`**, never the barrel: only a webhook route needs them, and every serving role loads `@ultimat3/mail` to send. One receiver per provider, its `receive(request)` mounted as a plain HTTP route through the `routes` runtime override (`apps/<app>/runtime.ts`) — not an `api/**/route.ts`, which is refused at registration (`X_ROUTE_FILE_INVALID`); each verifies, then normalises to
 `DeliveryEvent` — `delivered` · `bounced` (`bounce: 'hard' | 'soft'`) · `complained` · `delayed`,
 with `messageId` (= the sending driver's `SendResult.id`), `recipient`, `at`, `eventId` and `raw`.
 One event per recipient; `(eventId, recipient)` is the dedupe key.

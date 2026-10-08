@@ -172,7 +172,7 @@ describe('toProblem carries the issue list', () => {
       new UltimateError({
         code: 'X_INPUT_INVALID',
         cause: `input for action "createPost" failed validation: ${detail}`,
-        fix: 'x actions describe createPost --json  # prints the expected input schema',
+        fix: 'x actions show createPost --json  # prints the expected input schema',
       }),
       list === undefined ? {} : { meta: { issues: list } },
     );

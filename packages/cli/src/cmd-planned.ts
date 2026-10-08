@@ -33,8 +33,8 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
   {
     name: 'branch',
     summary: 'copy-on-write branch environments with a preview URL',
-    usage: 'x branch [<name>|rm <name>] [--json]',
-    fix: 'x db branch ls --json   # the database half: ls, create <name>, drop <name>',
+    usage: 'x branch [<name>|delete <name>] [--json]',
+    fix: 'x db branch list --json   # the database half: list, create <name>, delete <name>',
   },
   {
     name: 'status',
@@ -134,7 +134,7 @@ export const PLANNED_SUBCOMMANDS: readonly PlannedSubcommand[] = [
   {
     command: 'jobs',
     subcommand: 'drain',
-    fix: 'x jobs ls --json   # the queue as it stands; Postgres is the only durable driver, so there is nowhere to drain to',
+    fix: 'x jobs list --json   # the queue as it stands; Postgres is the only durable driver, so there is nowhere to drain to',
   },
 ];
 

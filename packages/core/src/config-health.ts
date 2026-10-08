@@ -40,9 +40,17 @@ export interface DrainConfig {
    * The drain budget: how long a SIGTERM'd process has to finish what it holds — in-flight requests,
    * a running job — after the grace, before the lifecycle abandons the rest. Applied to EVERY role,
    * so this is the knob that gives a long job room to finish on a deploy. Default 25000. A whole
-   * number, 1–3600000. The ONE drain budget, the web role's included.
+   * number, 1–3600000. The ONE drain budget, the web role's included — except the worker's when
+   * `workerDeadlineMs` is set.
    */
   readonly deadlineMs: number;
+  /**
+   * `ROLE=worker`'s drain budget, in place of `deadlineMs`, for a job that must finish rather than
+   * be cut off and replayed and may run past the hour `deadlineMs` is capped at. It also bounds a
+   * retire (SIGUSR2) that a SIGTERM lands in. Unset (the default): the worker drains on
+   * `deadlineMs`. A whole number, 1–86400000. The chart's worker grace period is derived from it.
+   */
+  readonly workerDeadlineMs: number | undefined;
 }
 
 /** Why a value is not a readiness mode, or `undefined` when it is one. */

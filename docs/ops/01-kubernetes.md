@@ -65,7 +65,7 @@ worker Deployment — it serves `jobs.queues` plus every registered job's queue.
 comma-separated queues and no other: jobs on an unlisted queue wait for a worker that lists it, and
 the boot warns `jobs.worker.queue-unserved` naming them (`packages/cli/src/runtime-jobs.ts`). The
 chart's `env:` is release-wide, so each further worker Deployment is a release of its own with every
-other role and `migrate` off (`roles.<role>.enabled`, `migrate.enabled`); `x jobs ls --json` shows a
+other role and `migrate` off (`roles.<role>.enabled`, `migrate.enabled`); `x jobs list --json` shows a
 queue nobody claims.
 
 **The replicator restarts its own stream, and says when it is not replicating** (`As of 2026-10-02`).

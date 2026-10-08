@@ -76,13 +76,15 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `decodeJwtSegment` answers `null` for all three failures; each caller raises its own refusal.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
 - PKCE is not provider-dependent: `OAuthProvider.usesPkce` is the literal `true`.
-- **Providers are a registry, `OAuthProviderId` is `string`.** The three built-ins seed it through
+- **Providers are a registry, `OAuthProviderId` is `string`.** The two built-ins seed it through
   `registerOAuthProvider()`, the call an app makes. `providerFor(id)` throws
   `X_OAUTH_PROVIDER_UNKNOWN`, never `undefined`; a second claim is `X_OAUTH_PROVIDER_DUPLICATE`.
 - **`oauthProviderUnknown(provider, supported)` scopes its list to its reader**: the route passes
   `BUILTIN_OAUTH_PROVIDER_IDS` (an anonymous caller), `providerFor()` passes `oauthProviderIds()`.
 - **`verifyIdToken({ keys })` is required, with no default.** `'token-endpoint-tls'` is the OIDC
-  Core 3.1.3.7 exemption and `exchangeOAuthCode` is its only entitled caller. `HS256` and
+  Core 3.1.3.7 exemption and `exchangeOAuthCode` is its only entitled caller — and since 26.0.0
+  it defaults to the provider's `providerJwks` whenever there is a `jwksUri`, using the exemption
+  only for a provider with none or when the caller names it (`idTokenKeys`). `HS256` and
   `alg: none` are refused in `decodeJwtHeader`. It checks `nbf` and `azp` too.
 - **`resolveGrants` is a seam, never a group-to-role table**, called on EVERY login. Absent leaves
   the row alone. A user created with no roles and no org logs a warning.
@@ -222,7 +224,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `rate-limit-postgres.ts` | the SHARED limiter: one table, one row per key, a one-statement take, over a structural `PgExecutor` |
 | `limiter-install.ts` | the host's one install point for that limiter — the factory, what it built, and the purge over it |
 | `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
-| `oauth-builtins.ts` | the three shipped IdPs, as data. Imports only the type, so no cycle |
+| `oauth-builtins.ts` | the two shipped IdPs (`github`, `google`), as data. Imports only the type, so no cycle |
 | `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |
 | `oauth-discovery.ts` | `/.well-known/openid-configuration` → an `OAuthProvider`. One `fetch` |
 | `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`, one shared in-flight refresh. No dependency |

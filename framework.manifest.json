@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9ab91bb4aebaf4b5ad2ceefba2159d3bf8c5692797be20281a403956a3fa4de4",
+  "buildId": "34266c54780d84010362d775a5b19543a270b2b7ec06e84bd4834d6b6c4a7e33",
   "tiers": {
     "0": [
       "core",
@@ -36,13 +36,13 @@
       "manifest",
       "mail",
       "ui",
-      "notify"
+      "notify",
+      "scraping"
     ],
     "5": [
       "admin",
       "testing",
-      "cli",
-      "scraping"
+      "cli"
     ]
   },
   "packages": [
@@ -197,6 +197,12 @@
       "private": false
     },
     {
+      "name": "@ultimat3/scraping",
+      "version": "25.2.0",
+      "tier": 4,
+      "private": false
+    },
+    {
       "name": "@ultimat3/ui",
       "version": "25.2.0",
       "tier": 4,
@@ -210,12 +216,6 @@
     },
     {
       "name": "@ultimat3/cli",
-      "version": "25.2.0",
-      "tier": 5,
-      "private": false
-    },
-    {
-      "name": "@ultimat3/scraping",
       "version": "25.2.0",
       "tier": 5,
       "private": false

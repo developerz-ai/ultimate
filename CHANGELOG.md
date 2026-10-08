@@ -8,7 +8,38 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+Every breaking entry under Changed has a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `25.x → 26.0.0` section, in
+the same order.
+
+### Changed
+
+Tier 2 — auth.
+
+- **BREAKING — (#1) the OAuth login verifies the id token's signature by default.** `exchangeOAuthCode`, `completeOAuthLogin` and `oauthLogin`'s callback check the id token against the provider's published key set (`providerJwks`, cached per provider) whenever the provider has a `jwksUri`. Google and every `discoverOAuthProvider` provider have one; GitHub issues no id token. 25.x trusted token-endpoint TLS alone (OIDC Core 3.1.3.7), which trusts every hop the response crossed. A bad or missing signature is `X_OAUTH_TOKEN_INVALID` (400) and no session. A JWKS host the process cannot reach is `X_OAUTH_EXCHANGE_FAILED` (stage `jwks`). The override is `oauthLogin(auth, { idTokenKeys: (provider) => IdTokenKeys })`, or `completeOAuthLogin(auth, { idTokenKeys })`, or `exchangeOAuthCode`'s existing `keys`. `'token-endpoint-tls'` is the named opt-out for one provider. A test that fed the exchange an unsigned id token signs it and serves the key set, or names that opt-out.
+- **BREAKING — (#2) Apple leaves the OAuth built-ins.** Apple answers a `form_post` and the callback route is a GET, so the shipped `APPLE_PROVIDER` could never complete a login. `BUILTIN_OAUTH_PROVIDERS` and `BUILTIN_OAUTH_PROVIDER_IDS` are `github` and `google`. Importing `APPLE_PROVIDER` is TS2305, and `'apple'` in `defineAuth({ providers })` names an unknown provider. Delete it, or register your own with `registerOAuthProvider`.
+
+Tier 2 — http.
+
+- **BREAKING — (#3) `ServerHandle.describe()` is deleted.** `x routes` is the one route table. `describeRoutes(table)` stays exported from `@ultimat3/http`. A call is TS2339; read `x routes --json`, or call `describeRoutes(table)`.
+
+Tier 4 — render.
+
+- **BREAKING — (#4) `api/**/route.ts` is not a file kind.** `ROUTE_FILENAME` loses `api` and is `Record<RouteSurface, string>`. `RouteSurface` (`'site' | 'app'`) is a new export of `@ultimat3/render`, and `RouteEntry.surface` and `routePathFromFile().surface` are typed with it. A route file under `api/` is refused `X_ROUTE_FILE_INVALID` (it was `X_ROUTE_MODE_INVALID`). Make it an action, or a plain route in `runtime.routes`.
+
+Tier 4 — scraping.
+
+- **BREAKING — (#5) `recover: 'agent'`, `AgentRecovery` and `Recovery` are deleted, and `@ultimat3/scraping` moves to tier 4.** `recover` takes a `RecoveryHook` function only, and anything else is refused when `scrape()` is called. 25.x threw `X_NOT_IMPLEMENTED` on the first moved selector. Write the hook and call your own `llm()` from it; `import type { Recovery }` becomes `RecoveryHook`.
+
+Tier 5 — cli.
+
+- **BREAKING — (#6) one verb per CLI command.** `x jobs ls` → `x jobs list`, `x jobs rm` → `x jobs delete`, `x actions|queries|entities describe` → `show`, `x db branch ls` → `list`, `x db branch drop` → `delete`. The old verbs answer `X_CLI_UNKNOWN_COMMAND` with a fix naming the new one. A bare `x jobs` still lists, and every `--json` shape is unchanged.
+
+### Added
+
+- `@ultimat3/core`: `addLogSink(sink): () => void` — the supported log tee. Every default-writer line (the process `logger`, its children, `ctx.logger`), after redaction, also goes to `sink`, beside stdout/stderr or a `setLogSink` test seam, never instead. Returns the unsubscribe. A sink that throws is skipped for that line and reported once per sink as `log.sink_failed`; a line a sink logs is written but not teed back into the sinks. `setLogSink` stays the test seam that replaces the streams.
+- `@ultimat3/core`: `isRetiring()` — true from the moment a worker's retire begins for the rest of the process. Before, a SIGUSR2 retire (`ROLE=worker`) only logged, and `isDraining()` turns true only at the drain after the held jobs finish. A heartbeat can now say "finishing, about to exit". `markRetiring()` is the retire's own call. `@ultimat3/cli` sets it at the signal, before the worker is stopped, and on `x dev`'s worker-first restart. `isDraining()` is unchanged.
+- `@ultimat3/core`, `@ultimat3/cli`: `drain.workerDeadlineMs` (whole ms, 1–86400000, unset by default). It is `ROLE=worker`'s drain budget in place of `drain.deadlineMs`, which stays capped at an hour for every other role. Use it for jobs that must finish rather than replay and can run longer than that. It also bounds a retire that a SIGTERM lands in. `x deploy --method helm` passes it as `drain.workerDeadlineSeconds`, and both charts size only the worker's `terminationGracePeriodSeconds` from it. `WORKER_DRAIN_DEADLINE_MAX_MS` is exported.
 
 ## 25.2.0 - 2026-10-07
 

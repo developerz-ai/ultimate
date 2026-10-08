@@ -14,11 +14,12 @@ import {
 } from '@ultimat3/core';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
 import { isRecord } from './json';
-import type { IdTokenKeys } from './jwks';
+import { type IdTokenKeys, providerJwks } from './jwks';
 import {
   assertOAuthCallback,
   type OAuthCallback,
   type OAuthHandshake,
+  type OAuthProvider,
   type OAuthProviderId,
 } from './oauth';
 import { oauthExchangeFailed, restartAt } from './oauth-errors';
@@ -60,10 +61,12 @@ export interface OAuthExchangeOptions {
   readonly fetch?: OAuthFetch | undefined;
   readonly timeoutMs?: number | undefined;
   /**
-   * Defaults to `'token-endpoint-tls'`, and this is the one call site where that default is
-   * correct: the id token below was read off a TLS response from the provider's own token
-   * endpoint, which is the channel OIDC Core 3.1.3.7 exempts. An app that pins the key set anyway
-   * — a corporate egress proxy, a compliance requirement — passes `providerJwks(providerFor(id))`.
+   * Where the id token's signature is checked against. Default (26.0.0): the provider's own
+   * published key set (`providerJwks`, cached per provider) whenever it has a `jwksUri`, and
+   * token-endpoint TLS only for a provider that publishes none. OIDC Core 3.1.3.7 exempts the
+   * token endpoint, but that exemption trusts every hop the response crossed — a TLS-inspecting
+   * egress proxy, a misrouted DNS answer — and a verified signature trusts only the provider.
+   * `'token-endpoint-tls'` is the explicit opt-out; a `jwksClient({ jwksUri })` pins another set.
    */
   readonly keys?: IdTokenKeys | undefined;
 }
@@ -274,6 +277,23 @@ async function postForm(
 }
 
 /**
+ * The provider's key set when it publishes one, else the token-endpoint exemption. An injected
+ * `fetch` (a test, an egress proxy) gets a client of its own, so the key set travels the same
+ * path as the token; the global one shares `providerJwks`'s memo, so a key set is fetched once
+ * per TTL per process, not once per login.
+ */
+function defaultIdTokenKeys(provider: OAuthProvider, options: OAuthExchangeOptions): IdTokenKeys {
+  if (provider.jwksUri === null) return 'token-endpoint-tls';
+  return options.fetch === undefined
+    ? providerJwks(provider)
+    : providerJwks(provider, {
+        fetch: options.fetch,
+        ...(options.clock === undefined ? {} : { clock: options.clock }),
+        ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      });
+}
+
+/**
  * Validates the callback, then trades the code for tokens. PKCE's verifier travels here and
  * nowhere else — it is what proves this exchange belongs to the browser that started the flow.
  */
@@ -341,7 +361,7 @@ export async function exchangeOAuthCode(
             clientId: options.credentials.clientId,
             nonce: handshake.nonce,
             clock,
-            keys: options.keys ?? 'token-endpoint-tls',
+            keys: options.keys ?? defaultIdTokenKeys(provider, options),
           }),
   };
 }

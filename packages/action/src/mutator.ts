@@ -226,7 +226,7 @@ function wrap<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>
   return self;
 }
 
-/** The descriptor's name for a policy — the manifest and `x actions describe` print this. */
+/** The descriptor's name for a policy — the manifest and `x actions show` print this. */
 function strategyOf(conflict: ConflictPolicy): MutatorDescriptor['conflict'] {
   return typeof conflict === 'string' ? conflict : conflict.kind;
 }

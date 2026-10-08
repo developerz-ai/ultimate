@@ -61,6 +61,8 @@ let readinessMode: ReadinessMode = 'dependencies';
 let clock: Clock = systemClock;
 let log: Logger = rootLogger;
 let state: HealthState = 'starting';
+/** One-way: set by a worker's retire, never cleared but by `resetLifecycle()`. */
+let retiring = false;
 let startedAtMono = clock.monotonic();
 let inflight = 0;
 /** Bumped by `resetLifecycle()`: a `beginWork()` finisher only ever counts down its own lifetime. */
@@ -213,6 +215,22 @@ export function beginWork(): () => void {
 /** True when new work must be refused — the HTTP layer answers 503 while this holds. */
 export function isDraining(): boolean {
   return state === 'draining' || state === 'stopped';
+}
+
+/**
+ * True from the moment a worker's retire begins (SIGUSR2, `@ultimat3/cli`'s `serve-retire.ts`) for
+ * the rest of the process. The retire stops claiming and finishes every held job BEFORE the drain,
+ * so `isDraining()` stays false the whole time — this is how the app's own code (a heartbeat, a
+ * status row) tells "finishing up, about to exit" from "serving". Not a drain: `/readyz` and new
+ * work are untouched.
+ */
+export function isRetiring(): boolean {
+  return retiring;
+}
+
+/** The retire's own call, made before it stops the worker. Idempotent; there is no un-retire. */
+export function markRetiring(): void {
+  retiring = true;
 }
 
 function waitForIdle(timeoutMs: number): Promise<boolean> {
@@ -401,6 +419,7 @@ export function resetLifecycle(): void {
   clock = systemClock;
   log = rootLogger;
   state = 'starting';
+  retiring = false;
   startedAtMono = clock.monotonic();
   inflight = 0;
   lifetime += 1;

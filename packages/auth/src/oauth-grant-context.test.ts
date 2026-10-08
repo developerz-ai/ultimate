@@ -11,6 +11,7 @@ import type { OAuthFetch } from './oauth-exchange';
 import { type OAuthGrantContext, oauthGrantContext } from './oauth-grant-context';
 import { completeOAuthLogin } from './oauth-login';
 import { codeOf, credentials, freshAuth, json, NOW, profile, tokens } from './oauth-login-fixture';
+import { registerOAuthProvider } from './oauth-registry';
 
 let auth: Auth;
 
@@ -60,6 +61,9 @@ const google = (userinfo: Readonly<Record<string, unknown>>) => {
       credentials,
       fetch,
       resolveGrants,
+      // The seam, not the signature (`oauth-exchange-signature.test.ts`): the named opt-out keeps
+      // this fixture's endpoint list to the two calls under test.
+      idTokenKeys: 'token-endpoint-tls',
     });
   return { seen, login };
 };
@@ -174,7 +178,22 @@ describe('oauthGrantContext', () => {
 
   test('a provider with no userinfo endpoint refuses with a coded error, before any socket', async () => {
     const fetch: OAuthFetch = async (url) => expect.unreachable(`no request expected: ${url}`);
-    expect(await codeOf(context('apple', fetch).userinfo())).toBe('X_OAUTH_EXCHANGE_FAILED');
+    const claimsOnly = registerOAuthProvider({
+      id: 'claims-only-grant-op',
+      authorizeUrl: 'https://claims.test/authorize',
+      tokenUrl: 'https://claims.test/token',
+      // Claims in the id token only: no userinfo endpoint to call.
+      userInfoUrl: null,
+      userEmailsUrl: null,
+      issuers: ['https://claims.test'],
+      jwksUri: 'https://claims.test/keys',
+      scopes: ['openid', 'email'],
+      usesPkce: true,
+      usesNonce: true,
+      clientIdEnv: 'CLAIMS_ONLY_CLIENT_ID',
+      clientSecretEnv: 'CLAIMS_ONLY_CLIENT_SECRET',
+    });
+    expect(await codeOf(context(claimsOnly.id, fetch).userinfo())).toBe('X_OAUTH_EXCHANGE_FAILED');
   });
 
   test("GitHub's numeric id is its subject, and a failed read is coded, never cached", async () => {

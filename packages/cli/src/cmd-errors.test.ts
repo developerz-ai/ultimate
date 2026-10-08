@@ -71,7 +71,7 @@ describe('unit · x errors explain', () => {
   test('a code added by this task is registered, not humanised', async () => {
     const result = await run(['errors', 'explain', 'X_JOB_UNKNOWN']);
     expect(record(result.data)['cause']).toBe('the queue holds no job with this id');
-    expect(record(result.data)['fix']).toBe('x jobs ls --json');
+    expect(record(result.data)['fix']).toBe('x jobs list --json');
   });
 
   test('an unregistered code is refused, never explained', async () => {

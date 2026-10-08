@@ -38,7 +38,7 @@ function tierZeroFailure(): Error {
     [BRAND]: true,
     code: 'X_VALIDATION_FAILED',
     cause: 'field "title": expected a string, received number',
-    fix: 'x actions describe publishPost --json  # compare the value against `input:`',
+    fix: 'x actions show publishPost --json  # compare the value against `input:`',
   });
 }
 
@@ -203,7 +203,7 @@ describe('routeDataFor', () => {
     const failure = await routeDataFor(config, CTX).catch((error: unknown) => error);
     expect(failure).toBe(thrown);
     expect((failure as UltimateError).code).toBe('X_VALIDATION_FAILED');
-    expect((failure as UltimateError).fix).toContain('x actions describe publishPost');
+    expect((failure as UltimateError).fix).toContain('x actions show publishPost');
   });
 
   test('a non-function load is refused at declaration, not at the first request', async () => {

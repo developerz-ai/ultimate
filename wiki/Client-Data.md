@@ -163,10 +163,10 @@ export async function rename(postId: string, title: string): Promise<void> {
 | `X_CLIENT_TRANSPORT_FAILED` | no usable answer: the network refused, a proxy answered a non-2xx with no framework code, or a 2xx body was not JSON | `x doctor --json` checks the network and the gateway in front of the app, then retry. A write with no `idempotencyKey` may already have landed |
 | `X_CLIENT_SCOPE_CHANGED` | the page changed principal while a read was in flight | `if (isSuperseded(error)) return;`, then read again under the new principal |
 | `X_CLIENT_RECORD_ENVELOPE_INVALID` | a response carried `x-ultimate-records: 1` and a body of the wrong shape | build the body with `encodeRecordEnvelope()` from `@ultimat3/core` in the handler that set the header, or stop setting the header |
-| `X_RECORD_KEY_MISSING` | a returned row lacks a primary-key column | `x entities describe <entity> --json` lists the key. Return the whole row |
+| `X_RECORD_KEY_MISSING` | a returned row lacks a primary-key column | `x entities show <entity> --json` lists the key. Return the whole row |
 | `X_MUTATOR_CLOCK_MISSING` | a mutator declares `conflict: 'last-write-wins'` and its entity has no number `updatedAt`, or its output has no entity row | add `updatedAt` (a number, epoch ms, written by the server) to the entity, or declare `conflict: 'server-wins'` |
 | `X_REALTIME_UNINSTALLED` | a realtime hook ran in an island that never called `installRealtime()` | `x build`. If the island reaches realtime only through a package, call `installRealtime({ signal: createSignal })` in its `mount` |
-| `X_RECORD_REJECTED` | a row reached the store with no key, or not as an object | `x entities describe <entity> --json` lists the key. Return whole rows |
+| `X_RECORD_REJECTED` | a row reached the store with no key, or not as an object | `x entities show <entity> --json` lists the key. Return whole rows |
 | `X_CONTRACT_DRIFT` | the client bundle and the server are on different builds | reload the page to pick up the new client bundle |
 
 Full rows: [Error codes](Error-Codes).

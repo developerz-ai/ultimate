@@ -110,7 +110,7 @@ type Stamp = (file: string) => { readonly lastmod?: string };
 /**
  * The app's `seo.sitemap.extra` paths as records, each resolved to the route that answers it — the
  * most specific match, the router's own tie-break. REFUSED, never skipped, when it names no route,
- * an `api/` route, a gated one or a `site/` page (listed already): a sitemap missing a page its
+ * a gated one or a `site/` page (listed already): a sitemap missing a page its
  * author listed is the silent drop, and a gated page in it is a URL a crawler cannot open.
  */
 function extraRoutes(extra: readonly string[], stamp: Stamp): readonly RouteRecord[] {
@@ -121,9 +121,6 @@ function extraRoutes(extra: readonly string[], stamp: Stamp): readonly RouteReco
       .sort((a, b) => b.pattern.specificity - a.pattern.specificity)[0];
     if (entry === undefined)
       throw new SitemapExtraInvalidError(path, 'no registered route answers');
-    if (entry.surface === 'api') {
-      throw new SitemapExtraInvalidError(path, `is the api/ route ${entry.file}, not a page`);
-    }
     if (entry.surface === 'site') {
       throw new SitemapExtraInvalidError(
         path,

@@ -93,7 +93,7 @@ function reportUnserved(served: readonly string[], registered: readonly string[]
   logger.warn('jobs.worker.queue-unserved', {
     queues,
     served,
-    fix: `x jobs ls --json — every queue listed with no worker needs one: WORKER_QUEUES=<queue>,<queue> on another worker Deployment, or add it to this one's`,
+    fix: `x jobs list --json — every queue listed with no worker needs one: WORKER_QUEUES=<queue>,<queue> on another worker Deployment, or add it to this one's`,
   });
 }
 

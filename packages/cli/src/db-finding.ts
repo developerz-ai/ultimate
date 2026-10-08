@@ -10,7 +10,7 @@ import { findingFrom, isUltimateErrorShape } from './output';
 /**
  * The engine names its own failures — `X_MIGRATION_CONFLICT` carries the ledger row that disagrees,
  * `X_MIGRATION_IRREVERSIBLE` carries the exact `--allow-destructive` line to rerun, and
- * `X_BRANCH_EXISTS` carries the `x db branch drop` that clears it — so those reach the caller
+ * `X_BRANCH_EXISTS` carries the `x db branch delete` that clears it — so those reach the caller
  * verbatim. `X_DB_GEN_FAILED` / `X_DB_MIGRATE_FAILED` / `X_DB_BRANCH_FAILED` are what is left: the
  * step failed for a reason no framework error claimed, and the raw message is all there is.
  */

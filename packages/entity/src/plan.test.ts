@@ -170,7 +170,7 @@ describe('planFor', () => {
     expect(String(refused(5_000_000)?.cause)).toContain('.limit(50)');
     // The fix is a command that runs as written, naming the real entity.
     expect(String(refused(5_000_000)?.fix)).toStartWith(
-      `x entities describe ${posts.$name} --json   # `,
+      `x entities show ${posts.$name} --json   # `,
     );
   });
 

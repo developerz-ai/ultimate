@@ -378,7 +378,7 @@ The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which 
 ```bash
 x db gen "add publish_at" | migrate | reset | studio
      | seed [<name>] [--tier reference|dev] [--dry-run] [--json]
-     | branch ls | branch create <name> | branch drop <name>
+     | branch list | branch create <name> | branch delete <name>
      | backfill --list [--name n] [--status s] [--limit n] [--json]
      | backfill --pending [--json]
      | backfill <name>|--all [--write] [--force] [--json]
@@ -391,9 +391,9 @@ x db gen "add publish_at" | migrate | reset | studio
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `seed [<name>]` | apply the app's seeds — every one this environment takes, or the one named | **replayable**: a second run writes nothing and raises nothing, on Postgres as well as in memory. One transaction per seed, so one bad fixture graph cannot roll back the seeds that already landed. `--dry-run` reports what each would write and writes nothing |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
-| `branch ls` | every **managed** branch of this database: name, location, created-at, size | managed means this framework made it — external, a database carrying `createBranch()`'s `comment on database` marker; embedded, a `pgdata-<name>` directory. A branch cloned by the pre-1.2.x `psql` shell-out carries no marker, so it is absent here and `drop` refuses it → [Known gaps](Known-Gaps). `size` reads `unknown` on the embedded database — measuring it is a full directory walk. The drop path only touches what this lists |
+| `branch list` | every **managed** branch of this database: name, location, created-at, size | managed means this framework made it — external, a database carrying `createBranch()`'s `comment on database` marker; embedded, a `pgdata-<name>` directory. A branch cloned by the pre-1.2.x `psql` shell-out carries no marker, so it is absent here and `delete` refuses it → [Known gaps](Known-Gaps). `size` reads `unknown` on the embedded database — measuring it is a full directory walk. The delete path only touches what this lists |
 | `branch create <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating. An existing name is `X_BRANCH_EXISTS`, never an overwrite |
-| `branch drop <name>` | delete that branch database (PGlite: its `pgdata-<name>` directory) | a name `ls` does not show is refused with `X_DB_BRANCH_FAILED` naming what it *would* have touched — that is the whole guard, and it is why there is no `--force` |
+| `branch delete <name>` | delete that branch database (PGlite: its `pgdata-<name>` directory) | a name `list` does not show is refused with `X_DB_BRANCH_FAILED` naming what it *would* have touched — that is the whole guard, and it is why there is no `--force` |
 | `backfill --list` | print the `x_backfills` ledger — one row per `backfill()` pass, newest first | what has already been swept |
 | `backfill --pending` | every backfill the app **declared**, minus the ones that completed | the alarm: a sweep merged and never enqueued had no ledger row and was invisible everywhere. **Non-zero exit** when anything is unswept, so a cron reads the code and not the table |
 | `backfill <name>` / `backfill --all` | gate one sweep (or every pending one) and enqueue it | **dry run by default** — `--write` is never implied. `--write` enqueues; the workers perform the pass, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero naming each |
@@ -424,13 +424,13 @@ cause names both spellings and the `fix:` is the runnable one.
 **slowest first** — plus the totals, because a seed run that got slow is diagnosed by which file
 took the time. `skipped` is the replay: a row already stored, with no statement sent for it.
 
-**`branch` requires a verb, and the verb set is closed.** The first argument *was* the branch name, so `x db branch ls` cloned a database called `ls` instead of listing anything — and every verb is itself a legal branch name, which is why verb-first is the only shape where a name cannot be read as a subcommand. `As of 2026-08` a bare name is refused: a word outside `ls`, `create` and `drop` is `X_CLI_UNKNOWN_COMMAND`, and its `fix:` hands the caller's own word back inside the command that still creates it.
+**`branch` requires a verb, and the verb set is closed.** The first argument *was* the branch name, so `x db branch` with the word `ls` cloned a database called `ls` instead of listing anything — and every verb is itself a legal branch name, which is why verb-first is the only shape where a name cannot be read as a subcommand. `As of 2026-08` a bare name is refused: a word outside `list`, `create` and `delete` is `X_CLI_UNKNOWN_COMMAND` — `ls` and `drop` included since 26.0.0, one verb each with no alias, and its `fix:` hands the caller's own word back inside the command that still creates it.
 
 Two more facts about the set, both `As of 2026-08`:
 
 | Fact | Why |
 |---|---|
-| an external `create` runs through `@ultimat3/db`, not `psql` | `createBranch()` writes the marker comment `ls` finds branches by. The `psql` shell-out wrote the database and no marker, so every branch the CLI made was invisible to the only lister the framework has |
+| an external `create` runs through `@ultimat3/db`, not `psql` | `createBranch()` writes the marker comment `list` finds branches by. The `psql` shell-out wrote the database and no marker, so every branch the CLI made was invisible to the only lister the framework has |
 | the marker records the **base**, not just the date | `ultimate:branch:<base>:<iso>` `As of 2026-08-19`, and `BranchInfo` carries `base` alongside `createdAt`. `listBranches()` walks `pg_database` for the whole **server**, so two Ultimate apps sharing one Postgres plus one nightly `reapBranches` was the other app's branches dropped — a `DROP DATABASE` nobody asked for and nothing recovers from. The reaper skips any branch whose base is not this database, **and skips a pre-3.x marker that records no base rather than dropping it**: a branch of nothing is not a branch of this database. Self-healing with no migration — the next `createBranch` writes the base down. The payload is split on the ISO tail, not on the first `:`, because a database name may contain one |
 | there is no `reap` verb | `reapBranches()` is a `task` — a nightly sweep with an app-chosen max age. A CLI verb would be a second path to one job, and no default max age is defensible |
 
@@ -464,7 +464,7 @@ $ x db backfill --list
 `started-at` is the ledger's own ISO string, printed verbatim — this repo formats no date without
 an explicit IANA `timeZone`, and not formatting is the one rendering with no zone to get wrong.
 An empty ledger exits **0**: "nothing has swept this database yet" is an answer. `--json` carries
-the same rows plus the definition checksum. The live half of the same ledger is on `x jobs ls`,
+the same rows plus the definition checksum. The live half of the same ledger is on `x jobs list`,
 and `/_x`'s jobs panel carries the whole of it.
 
 **One migration engine, everywhere.** `gen` calls `@ultimat3/db`'s `generateMigration()`;
@@ -1079,12 +1079,12 @@ $ x doctor --json
 ## x actions · x queries · x entities
 
 ```bash
-x actions  [list|describe <name>] [--json]
-x queries  [list|describe <name>] [--json]
-x entities [list|describe <name>] [--json]
+x actions  [list|show <name>] [--json]
+x queries  [list|show <name>] [--json]
+x entities [list|show <name>] [--json]
 ```
 
-The declaration registries, projected. `list` is the default subcommand. Same rows the manifest and the MCP `actions.describe` tool are built from — the CLI keeps no second table.
+The declaration registries, projected. `list` is the default subcommand; `show <name>` is one declaration (it was `describe` until 26.0.0). Same rows the manifest and the MCP `actions.describe` tool are built from — the CLI keeps no second table.
 
 ```bash
 $ x actions list
@@ -1092,7 +1092,7 @@ $ x actions list
   createPost    create   posts     /api/posts/create     post:create   yes
   publishPost   publish  posts     /api/posts/publish    post:publish  yes
 
-$ x entities describe posts --json
+$ x entities show posts --json
 {"ok":true,"command":"entities","summary":"entity posts","data":{"name":"posts","table":"posts",
   "primaryKey":["id"],"columns":[…],"invariants":[…],"softDelete":true,"orgScoped":true}}
 ```
@@ -1102,24 +1102,24 @@ A name nothing registered is `X_DECLARATION_UNKNOWN`, whose `fix` names the near
 ## x jobs
 
 ```bash
-x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|resume <queue>
+x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|pause <queue>|resume <queue>
        |drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor]
        [--from-step name] [--reason text] [--json]
 ```
 
 | Subcommand | Does |
 |---|---|
-| `ls` | queue depth (with a `failed` bucket), ONE page of matching rows, the dead-letter list — a dead job is never filtered out of view — the `backfill()` passes **in flight**, the paused queues and the live workers. `--limit` is 1 to 200 (default 100). `--json` answers the framework's one page shape — `data.rows`, `data.nextCursor`, `data.hasMore` — and `nextCursor` is a string **exactly when another row exists**: the command reads one row past the page (at 200, one probe after it), so a full last page is `hasMore: false` with no cursor, never one that fetches an empty page. Pass `nextCursor` as `--after` while `hasMore` is true. Until 25.0.0 it was `data.next`, guessed from the row count |
+| `list` | queue depth (with a `failed` bucket), ONE page of matching rows, the dead-letter list — a dead job is never filtered out of view — the `backfill()` passes **in flight**, the paused queues and the live workers. `--limit` is 1 to 200 (default 100). `--json` answers the framework's one page shape — `data.rows`, `data.nextCursor`, `data.hasMore` — and `nextCursor` is a string **exactly when another row exists**: the command reads one row past the page (at 200, one probe after it), so a full last page is `hasMore: false` with no cursor, never one that fetches an empty page. Pass `nextCursor` as `--after` while `hasMore` is true. Until 25.0.0 it was `data.next`, guessed from the row count |
 | `show <id>` | state, attempt, every step's result, the payload (`input`, with every key the app declared secret redacted), the failure's `stack`, the last `progress` the body reported, the remaining retry delays, the concurrency key the run counts under (`concurrencyKey` — `concurrency.key(input)`, `null` unless the job declares a keyed cap), and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
 | `retry <id>` | re-queue a job that has FINISHED; a job still `ready`, `delayed` or running is refused with `X_JOB_NOT_REQUEUEABLE`. `--from-step <name>` drops that step and every step that started after it, so they re-execute while everything before it replays from storage |
 | `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
-| `rm <id>` | delete one job and its step records. An unknown id is `X_JOB_UNKNOWN`; a **running** job is refused with `X_JOB_NOT_REMOVABLE`, whose fix is `x jobs cancel <id> --json` — deleting the row under a body does not stop the body |
+| `delete <id>` | delete one job and its step records. An unknown id is `X_JOB_UNKNOWN`; a **running** job is refused with `X_JOB_NOT_REMOVABLE`, whose fix is `x jobs cancel <id> --json` — deleting the row under a body does not stop the body |
 | `promote <id>` | make a job waiting on its run time — delayed at enqueue, or backing off before a retry — due now. Anything else (due, running, finished, suspended in a `step.sleep`) is `X_JOB_NOT_PROMOTABLE`, naming the state |
 | `pause <queue>` | no worker claims from the queue; enqueues still land. A row every worker's next claim reads, so it holds **fleet-wide within one poll interval**. Idempotent. Answers the paused list as the queue now holds it |
 | `resume <queue>` | undo it |
-| `drain` | **planned**, `As of 25.0.0`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs ls --json`. Postgres is the one durable job driver, so there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs on every method — a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back — and 25.0.0 deleted both stubs and the unreachable drain body. 25.0.0 also deleted the `--to` and `--dry-run` flags: the parser refuses them as unknown |
+| `drain` | **planned**, `As of 25.0.0`: exits `X_NOT_IMPLEMENTED` before the queue boots and before a job is leased, pointing at `x jobs list --json`. Postgres is the one durable job driver, so there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were `X_NOT_IMPLEMENTED` stubs on every method — a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back — and 25.0.0 deleted both stubs and the unreachable drain body. 25.0.0 also deleted the `--to` and `--dry-run` flags: the parser refuses them as unknown |
 
-`show`, `retry`, `cancel`, `rm` and `promote` each take **one id positional**; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `ls` only.
+`show`, `retry`, `cancel`, `delete` and `promote` each take **one id positional**; `pause` and `resume` take **one queue positional**. There is no bulk verb here — bulk is `requeueMany` / `removeMany` on `JobIntrospection`, which a dashboard calls. `--queue`, `--state`, `--name`, `--limit` and `--after` narrow `list` only. A bare `x jobs` is `list`. One verb each, no alias: `ls` and `rm` are `X_CLI_UNKNOWN_COMMAND` since 26.0.0.
 
 ```bash
 x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --json
@@ -1127,13 +1127,13 @@ x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --jso
 
 Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `show`, `retry` and `cancel` load the app first, `As of 2026-10`: a trace is the row read through the job's own declaration, so unloaded every run showed `concurrencyKey: null` and no retry delays. An app that half-loads still answers, with those two fields degraded. An `<id>` that is not a uuid is `X_JOB_UNKNOWN` before any statement is sent — `x jobs show nosuch` used to reach Postgres and come back `X_DB_STATEMENT_FAILED [22P02]`.
 
-`ls` reports only the sweeps still **running**, because it is a live view of the queue; the whole
+`list` reports only the sweeps still **running**, because it is a live view of the queue; the whole
 ledger, finished passes included, is `x db backfill --list`. A driver that ships no backfill ledger
 answers with no passes rather than failing the command — the queue is still the question here.
 
 Errors: `X_JOB_UNKNOWN`, `X_JOB_NOT_CANCELLABLE`, `X_JOB_NOT_REMOVABLE`, `X_JOB_NOT_PROMOTABLE`, `X_CLI_BAD_FLAG` (a `--limit` over 200 names the walk), and `X_NOT_IMPLEMENTED` from a driver with no introspection.
 
-A run refused by its concurrency key reads `state: failed` with `X_JOB_KEY_BUSY` in `lastError`; the fix it carries is `x jobs ls --name <job> --state running --json` — the runs holding the key.
+A run refused by its concurrency key reads `state: failed` with `X_JOB_KEY_BUSY` in `lastError`; the fix it carries is `x jobs list --name <job> --state running --json` — the runs holding the key.
 
 ## x tasks
 
@@ -1153,7 +1153,7 @@ x tasks [list|show <name>] [--count n] [--json]
 | `lastFiredAtMs` | when that dispatch happened, on the queue's clock. `lastFiredAtMs - lastMs` is the scheduler's lag |
 
 The last fire is read from the app's queue (`JobIntrospection.taskFires()`), so `x tasks` opens it
-the way `x jobs ls` does: the running one inside `x dev`, the app's own otherwise — about 0.6 s on
+the way `x jobs list` does: the running one inside `x dev`, the app's own otherwise — about 0.6 s on
 an embedded database already initialised, and nothing in an app that declares no task. It is the last
 occurrence that enqueued, never the scheduler's watermark — arming and skipping move that.
 `As of 2026-10`.
@@ -1432,7 +1432,7 @@ The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-plann
 | Command | Purpose | `fix:` today |
 |---|---|---|
 | `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` — then the cache panel at `/_x` |
-| `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch ls --json` — the database half: `ls`, `create <name>`, `drop <name>` |
+| `x branch [<name>\|delete <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch list --json` — the database half: `list`, `create <name>`, `delete <name>` |
 | `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
 | `x upgrade [--dry-run]` | move every `@ultimat3/*` in lockstep, run codemods, then `x verify` | `bun update --latest && x verify` |
 | `x logs tail` | structured logs and spans, filterable | `x dev` — then the timeline panel at `/_x` |

@@ -31,7 +31,7 @@ export class JobNotFoundError extends UltimateError {
     super({
       code: 'X_JOB_NOT_FOUND',
       cause: `the "${input.driver}" queue holds no job with id ${renderCauseValue(input.jobId)} — a mistyped id, a job removed since, or an id from another environment`,
-      fix: 'x jobs ls --json',
+      fix: 'x jobs list --json',
       meta: { jobId: input.jobId },
     });
   }

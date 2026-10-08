@@ -4,7 +4,7 @@
 // login) ran twice. The worker is retired first — `stop()` claims nothing and aborts nothing — and
 // only then is the drain asked to release the port, the lock and the embedded database.
 
-import { drain, logger, renderThrowable } from '@ultimat3/core';
+import { drain, logger, markRetiring, renderThrowable } from '@ultimat3/core';
 import type { Worker } from '@ultimat3/jobs';
 import { msg } from './messages';
 import { writeErrorLine } from './write-line';
@@ -32,6 +32,8 @@ export async function retireThenDrain(
   worker: RetiringWorker | null,
   deps: RetireDeps = DEFAULT_DEPS,
 ): Promise<void> {
+  // The same retire the production SIGUSR2 is (`serve-retire.ts`), so the app reads it the same way.
+  markRetiring();
   try {
     if (worker !== null) {
       const { inFlight } = await worker.stats();

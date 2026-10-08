@@ -12,7 +12,8 @@ const seconds = (ms: number): number => Math.ceil(ms / 1000);
 /**
  * The `--set` pairs, or none when the app declares no budget (the chart's defaults are core's).
  * The chart's `drain.deadlineSeconds` is ONE budget for every role, and so is `drain.deadlineMs`:
- * the web role drains on it too. The margins stay the chart's.
+ * the web role drains on it too — the worker on `drain.workerDeadlineSeconds` instead, when the app
+ * declares `drain.workerDeadlineMs`. The margins stay the chart's.
  *
  * The grace is budgeted at no less than core's production default: the value read here is resolved
  * in THIS process's environment, and an `x deploy` run under `NODE_ENV=development` resolves the
@@ -23,6 +24,10 @@ export function helmDrainOverrides(drain: Partial<DrainConfig> | undefined): rea
   const out: string[] = [];
   if (drain?.deadlineMs !== undefined) {
     out.push('--set', `drain.deadlineSeconds=${seconds(drain.deadlineMs)}`);
+  }
+  // The worker role's own budget: the chart sizes only the worker's grace period from it.
+  if (drain?.workerDeadlineMs !== undefined) {
+    out.push('--set', `drain.workerDeadlineSeconds=${seconds(drain.workerDeadlineMs)}`);
   }
   if (drain === undefined) return out;
   const grace = Math.max(drain.readinessGraceMs ?? 0, READINESS_GRACE_DEFAULT_MS);

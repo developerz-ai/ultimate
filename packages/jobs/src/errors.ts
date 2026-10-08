@@ -196,7 +196,7 @@ export class JobNameTakenError extends UltimateError {
     super({
       code: 'X_JOB_DUPLICATE',
       cause: `two ${input.kind}s claim the name "${input.name}"`,
-      fix: `x jobs ls --json names the one already seated; rename the other's export, or its "name:" if it declares one — a ${input.kind} name is a durable queue key and is globally unique`,
+      fix: `x jobs list --json names the one already seated; rename the other's export, or its "name:" if it declares one — a ${input.kind} name is a durable queue key and is globally unique`,
     });
   }
 }
@@ -434,7 +434,7 @@ export class JobNotCancellableError extends UltimateError {
         input.state === 'missing'
           ? `no job ${input.jobId} exists in this queue`
           : `job ${input.jobId} is "${input.state}" and only a job that has not finished can be cancelled`,
-      fix: `x jobs ls --state running --json`,
+      fix: `x jobs list --state running --json`,
     });
   }
 }

@@ -229,7 +229,7 @@ describe('unit · bytes() and arrayOf()', () => {
     );
   });
 
-  // Never `x entities describe column --json`, which `reject()` emits: there is no entity to
+  // Never `x entities show column --json`, which `reject()` emits: there is no entity to
   // describe at declaration time, so that command is `X_DECLARATION_UNKNOWN` — a fix line that
   // reproduces an error rather than repairing one. And nothing may reach the reader unfinished:
   // an angle-bracket slot is the placeholder form this refusal shipped with.
@@ -241,7 +241,7 @@ describe('unit · bytes() and arrayOf()', () => {
       fixOf(() => arrayOf(arrayOf(text()))),
     ];
     for (const fix of fixes) {
-      expect(fix).not.toContain('x entities describe column');
+      expect(fix).not.toContain('x entities show column');
       expect(fix).not.toMatch(/<[a-z][a-z ]*>/);
     }
   });

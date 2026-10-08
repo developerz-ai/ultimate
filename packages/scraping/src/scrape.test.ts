@@ -94,6 +94,16 @@ describe('unit · scrape() returns a job, not a ninth primitive', () => {
   test('a rate of zero is refused — there is no unpaced mode', () => {
     expect(() => scrape(define({ rate: 0 }))).toThrow(/rate/);
   });
+
+  // `recover: 'agent'` was removed in 26.0.0: a recover hook is a function. Arriving from plain JS
+  // it is refused where it is written, not as a TypeError on the first moved selector.
+  test("recover: 'agent' is refused where it is written — a recover hook is a function", () => {
+    const agent = { recover: 'agent' } as unknown as Partial<
+      ScrapeDefinition<{ page: number }, { id: string }>
+    >;
+    expect(() => scrape(define(agent))).toThrow(/a recover hook is a function/);
+    expect(() => scrape(define({ recover: () => true }))).not.toThrow();
+  });
 });
 
 describe('unit · one attempt, end to end, with no browser', () => {

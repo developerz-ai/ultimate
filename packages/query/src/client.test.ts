@@ -121,7 +121,7 @@ describe('the map-wide read client', () => {
         {
           code: 'X_INPUT_INVALID',
           cause: 'slug is required',
-          fix: 'x queries describe publicPost',
+          fix: 'x queries show publicPost',
         },
         { status: 400, headers: { 'content-type': 'application/problem+json' } },
       );
@@ -130,7 +130,7 @@ describe('the map-wide read client', () => {
     const error = await client.publicPost({ slug: 'hello' }).catch((caught: unknown) => caught);
 
     expect(error).toBeUltimateError('X_INPUT_INVALID');
-    expect((error as { fix: string }).fix).toBe('x queries describe publicPost');
+    expect((error as { fix: string }).fix).toBe('x queries show publicPost');
   });
 
   test('a proxy answering HTML is still a typed failure naming the read', async () => {

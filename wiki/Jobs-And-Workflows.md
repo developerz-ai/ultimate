@@ -348,7 +348,7 @@ export interface JobDriver {
 }
 ```
 
-Three of the four optional members degrade rather than refuse: no `introspect` is `x jobs ls` with nothing to list, no `backfills` is a `backfill()` pass that runs with no bookkeeping, and no `close` is a driver holding nothing to hand back.
+Three of the four optional members degrade rather than refuse: no `introspect` is `x jobs list` with nothing to list, no `backfills` is a `backfill()` pass that runs with no bookkeeping, and no `close` is a driver holding nothing to hand back.
 
 **`leases` is the one that refuses.** The in-process limiter is a fast path over one heap and is multiplied by the replica count, so a driver with no `LeaseStore` can only hold `concurrency.limit` per process. `jobWorker().start()` therefore **throws `X_JOB_CONCURRENCY_UNENFORCEABLE`**, naming every registered job that declared `concurrency`, rather than logging a cap it cannot keep. `postgres` ships one; a driver you write yourself needs one before any job in the tree may declare `concurrency`.
 
@@ -363,7 +363,7 @@ Two implementations ship, `As of 25.0.0`: `postgresJobDriver()` and `memoryJobDr
 
 **The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. There is no Redis or NATS jobs driver. A real one, if it is ever wanted, is [issue #223](https://github.com/developerz-ai/ultimate/issues/223): it would arrive as a minor, through `setJobDriver`, never through config.
 
-**`x jobs drain` is planned, `As of 25.0.0`.** It exits `X_NOT_IMPLEMENTED` before the queue boots, pointing at `x jobs ls --json`: with Postgres the one durable driver, there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were all-throw stubs — until 2026-10 a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back, nothing moved, and no worker could claim those jobs meanwhile. 25.0.0 deleted the stubs and the unreachable drain body behind the planned answer. A drain that returns with a real second driver is new code, and owes the lesson of `--to memory`, a target until 2026-09: `memoryJobDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited.
+**`x jobs drain` is planned, `As of 25.0.0`.** It exits `X_NOT_IMPLEMENTED` before the queue boots, pointing at `x jobs list --json`: with Postgres the one durable driver, there is nowhere to drain to. Its two former `--to` values, `redis` and `nats`, were all-throw stubs — until 2026-10 a drain leased the whole pending batch for five minutes, failed every enqueue and nacked it back, nothing moved, and no worker could claim those jobs meanwhile. 25.0.0 deleted the stubs and the unreachable drain body behind the planned answer. A drain that returns with a real second driver is new code, and owes the lesson of `--to memory`, a target until 2026-09: `memoryJobDriver()` is a `Map` inside the command's own process, so the drain enqueued each job into it, acked the durable row off the source, printed `ok: true`, and lost every copy when the command exited.
 
 So there is no cross-driver migration procedure — and none is needed while `postgres` is the only driver that runs.
 
@@ -376,7 +376,7 @@ So there is no cross-driver migration procedure — and none is needed while `po
 | Inspect | `x jobs show <id> --json` — step results, executions per step, next retry, the failing error |
 | Replay | `x jobs retry <id>` — resumes **from the failed step**, completed steps replay from storage |
 | Stop one | `x jobs cancel <id> --reason "<why>" --json` — exit 0 means it is genuinely stopped; a finished job or a driver that cannot cancel raises `X_JOB_NOT_CANCELLABLE` |
-| Bulk | **not shipped.** `retry` and `cancel` each take one id positional; there is no `--failed-since` and no queue-wide replay. List first (`x jobs ls --state dead --queue integrations --json`), then loop over the ids |
+| Bulk | **not shipped.** `retry` and `cancel` each take one id positional; there is no `--failed-since` and no queue-wide replay. List first (`x jobs list --state dead --queue integrations --json`), then loop over the ids |
 
 Draining a worker mid-job does **not** finish the current step (`As of 2026-09-07`). On SIGTERM the worker aborts each held job's `ctx.signal` with `X_DRAINING`; a body that reads it — `fetch(url, { signal: ctx.signal })`, `throwIfAborted(ctx)` between steps — is **interrupted**: the attempt is uncounted, the lease is released, and the job goes straight back to the ready bucket for the worker replacing this one. That worker resumes from the last step that **completed** — persisted steps replay from storage, the step cut short runs again from its start, and past the abort `step.run` refuses to write (`X_ABORTED`), so a half-finished step is never recorded as done. A body that ignores the signal runs until the drain deadline and is abandoned there: its lease lapses, the queue redelivers it, and the attempt is counted. Only a manual `worker.stop()` waits for the work it holds. Plan a deploy for the interruption, not for the step: keep steps short and idempotent, and pass `ctx.signal` to every outbound call.
 
@@ -385,7 +385,7 @@ Draining a worker mid-job does **not** finish the current step (`As of 2026-09-0
 | Surface | Contents |
 |---|---|
 | `/_x` dev panel | queue depth per queue, in-flight, failed, step timeline per job, and the whole `x_backfills` ledger with a live count |
-| `x jobs ls --json` | one row per job: state, queue, attempts, `runAt`, idempotency key — plus the `backfill()` passes **in flight**, with rows so far and cursor |
+| `x jobs list --json` | one row per job: state, queue, attempts, `runAt`, idempotency key — plus the `backfill()` passes **in flight**, with rows so far and cursor |
 | `x jobs show <id> --json` | machine-readable state, step results, next retry, dead-letter reason, and this run's ledger row under `backfill` when the job is a backfill |
 | `x db backfill --list --json` | the whole ledger: one row per pass, newest first → [CLI reference](CLI-Reference#x-db) |
 | MCP dev tools | `jobs.inspect` (definitions, retry policy, steps) and `queue.depth` (pending/running/failed per queue) — scope `dev:read`, never reachable in `ROLE=web` |

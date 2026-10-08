@@ -348,9 +348,9 @@ describe('unit · a default subcommand that takes the first positional', () => {
     {
       name: 'jobs',
       summary: 'the queue',
-      usage: 'x jobs [ls|show <id>]',
-      subcommands: ['ls', 'show'],
-      defaultSubcommand: 'ls',
+      usage: 'x jobs [list|show <id>]',
+      subcommands: ['list', 'show'],
+      defaultSubcommand: 'list',
     },
   ];
 
@@ -373,7 +373,7 @@ describe('unit · a default subcommand that takes the first positional', () => {
     expect((error as UnknownCommandError).fix).toContain('errors explain');
   });
 
-  test('a command that did not declare it keeps refusing, so x jobs <id> is never a silent ls', () => {
+  test('a command that did not declare it keeps refusing, so x jobs <id> is never a silent list', () => {
     expect(thrownBy(() => parseArgs(['jobs', '4f2a9c'], SPEC))).toBeInstanceOf(UnknownCommandError);
   });
 

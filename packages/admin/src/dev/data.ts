@@ -274,7 +274,7 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
     },
 
     /**
-     * The whole ledger, newest first — not just the passes in flight. `x jobs ls` reports the live
+     * The whole ledger, newest first — not just the passes in flight. `x jobs list` reports the live
      * queue and says so; a panel is read to answer "has this backfill ever run here, and what did
      * it sweep", and the completed rows ARE that answer.
      *

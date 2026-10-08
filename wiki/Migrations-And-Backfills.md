@@ -286,7 +286,7 @@ One projection, four surfaces, so none of them can disagree about how far a pass
 | Surface | Shows |
 |---|---|
 | `x db backfill --list` | the whole ledger, newest first, filterable by name/status |
-| `x jobs ls` | ordinary job rows, plus the `backfill()` passes whose ledger row is **`running`** — `jobs-report.ts` filters `{ status: 'running' }`, so a completed or failed pass is not on this surface |
+| `x jobs list` | ordinary job rows, plus the `backfill()` passes whose ledger row is **`running`** — `jobs-report.ts` filters `{ status: 'running' }`, so a completed or failed pass is not on this surface |
 | `x jobs show <id>` | one job's full state — step trace, next retry — plus this run's ledger row under `backfill` when the job is one |
 | `/_x` jobs panel | the same ledger, live |
 

@@ -72,7 +72,7 @@ export class RecordRejectedError extends RealtimeError {
     super({
       code: 'X_RECORD_REJECTED',
       cause: `a ${args.type === '' ? 'record' : `"${args.type}" record`} was rejected by the page's record store: ${args.reason}`,
-      fix: `x entities describe ${renderFixShellArg(args.type, '<entity>')} --json   # the primary key every row of it must carry; return whole rows from the handler that built this one`,
+      fix: `x entities show ${renderFixShellArg(args.type, '<entity>')} --json   # the primary key every row of it must carry; return whole rows from the handler that built this one`,
     });
   }
 }

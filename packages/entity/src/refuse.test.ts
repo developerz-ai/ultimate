@@ -1,6 +1,6 @@
 // Single responsibility: every refusal a column or an invariant DECLARATION raises hands back an
 // edit that repairs it. The defect this pins (issue #290): all 30 of them emitted
-// `x entities describe column --json`, which answers `X_DECLARATION_UNKNOWN` — no entity is named
+// `x entities show column --json`, which answers `X_DECLARATION_UNKNOWN` — no entity is named
 // `column`, and at declaration time there is no entity at all. A fix line that raises a second
 // error is worse than none, because the reader debugs the wrong subsystem.
 
@@ -144,8 +144,8 @@ describe('unit · every column and invariant refusal hands back an edit', () => 
     for (const [label, run] of SITES) {
       const { code, fix } = refusal(run, label);
       expect(code, label).toBe('X_INVARIANT_VIOLATED');
-      expect(fix, label).not.toContain('x entities describe column');
-      expect(fix, label).not.toContain('x entities describe invariant');
+      expect(fix, label).not.toContain('x entities show column');
+      expect(fix, label).not.toContain('x entities show invariant');
     }
   });
 
@@ -294,7 +294,7 @@ describe('unit · the fix line cannot regress to a lookup', () => {
   /**
    * The mechanical half. A string LITERAL in the entity-name position is exactly the defect:
    * every honest caller passes a value (`entity.$name`, `table`, `name`), and a literal is
-   * someone inventing an entity that `x entities describe` will not find.
+   * someone inventing an entity that `x entities show` will not find.
    */
   test('no invariantViolated() call names its entity with a literal', async () => {
     const offenders: string[] = [];

@@ -125,12 +125,16 @@ securityContext:
 #   deadlineSeconds        app.config.ts `drain.deadlineMs` / 1000 (core's default: 25) — the time
 #                          a running job has to finish on a deploy. `x deploy --method helm` sets
 #                          both from app.config.ts, so the chart cannot fall behind a raised budget
+#   workerDeadlineSeconds  app.config.ts `drain.workerDeadlineMs` / 1000 — the WORKER's budget in
+#                          place of deadlineSeconds, up to a day (0: the worker uses deadlineSeconds).
+#                          Also what bounds a retire a SIGTERM lands in. Set by x deploy too
 #   teardownMarginSeconds  what runs after the deadline: the release floor (5s, cli's
 #                          MIN_RELEASE_MS), the OTel flush and the pool close, plus headroom
 drain:
   preStopSleepSeconds: 5
   readinessGraceSeconds: 5
   deadlineSeconds: 25
+  workerDeadlineSeconds: 0
   teardownMarginSeconds: 10
 
 # How long a new pod must stay Ready before a rollout counts it and stops an old one, on every
@@ -195,7 +199,7 @@ roles:
     # The retire, OFF at 0. Set to the longest a held job may run, in seconds, and the worker's
     # preStop sends its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0
     # (packages/cli/src/serve-retire.ts) — for a job whose side effect must happen at most once and
-    # may outlast drain.deadlineSeconds (at most 1 h). Added to this role's
+    # may outlast its drain budget (drain.workerDeadlineSeconds, else drain.deadlineSeconds). Added to this role's
     # terminationGracePeriodSeconds, which the kubelet counts the preStop against.
     retireSeconds: 0
     resources:

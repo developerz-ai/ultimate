@@ -30,6 +30,24 @@ describe('unit · the chart drain budget', () => {
     expect(helmDrainOverrides(undefined)).toEqual([]);
   });
 
+  test('a worker budget sizes the worker chart role alone', () => {
+    expect(
+      helmDrainOverrides({
+        deadlineMs: 30_000,
+        readinessGraceMs: 5_000,
+        workerDeadlineMs: 7_500_000,
+      }),
+    ).toEqual([
+      '--set',
+      'drain.deadlineSeconds=30',
+      '--set',
+      'drain.workerDeadlineSeconds=7500',
+      '--set',
+      'drain.readinessGraceSeconds=5',
+    ]);
+    expect(helmDrainOverrides({ deadlineMs: 30_000 }).join(' ')).not.toContain('workerDeadline');
+  });
+
   test("a deployed app's drain.deadlineMs is read off its app.config.ts", async () => {
     await rm(ROOT, { recursive: true, force: true });
     await Bun.write(

@@ -1,9 +1,9 @@
 // `ROLE=worker`'s retire, on SIGUSR2 (issue #669): stop claiming, finish every held job however
 // long it takes, abort nothing — then the ordinary drain, so the process exits 0. It is what a
 // Kubernetes `preStop` sends before the SIGTERM a rollout ends in, for a job whose side effect may
-// happen at most once and may outlast `drain.deadlineMs`. Framework-owned: no port, no app code.
+// happen at most once and may outlast the drain budget. Framework-owned: no port, no app code.
 
-import { drain, logger, renderThrowable } from '@ultimat3/core';
+import { drain, logger, markRetiring, renderThrowable } from '@ultimat3/core';
 import type { Worker } from '@ultimat3/jobs';
 
 /** The signal a worker retires on. Free in Bun and Node (SIGUSR1 is the inspector's). */
@@ -43,7 +43,8 @@ const NOTHING: WorkerRetire = Object.freeze({ adopt: () => undefined, disarm: ()
  * Exits rather than holds, decided 2026-10-07: the `preStop` has no channel back but PID 1 itself,
  * so "retired" has to be observable as "PID 1 is gone" — and a pod that has stopped claiming serves
  * nothing it could keep holding for. A SIGTERM landing mid-retire is the ordinary drain: it binds
- * the retire to `drain.deadlineMs` and cuts off at the margin (`packages/jobs/src/worker.ts`).
+ * the retire to the worker's budget — `drain.workerDeadlineMs`, else `drain.deadlineMs` — and cuts
+ * off at the margin (`packages/jobs/src/worker.ts`). `isRetiring()` is true from the signal on.
  */
 export function armWorkerRetire(options: WorkerRetireOptions = {}): WorkerRetire {
   if ((options.platform ?? process.platform) === 'win32') return NOTHING;
@@ -84,6 +85,9 @@ export function armWorkerRetire(options: WorkerRetireOptions = {}): WorkerRetire
   const listener = (): void => {
     if (retiring) return;
     retiring = true;
+    // At the signal, before the worker is awaited or stopped: the app's `isRetiring()` is how its
+    // own code (a heartbeat, a status row) sees a retire that `isDraining()` only shows at the end.
+    markRetiring();
     // Never rejects: `retire` catches its own failure and always reaches the drain.
     void retire();
   };

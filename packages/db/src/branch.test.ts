@@ -51,7 +51,7 @@ describe('listBranches', () => {
       ],
     });
 
-    // The date survives on a pre-4.x branch — `x db branch ls` still shows it — and the base
+    // The date survives on a pre-4.x branch — `x db branch list` still shows it — and the base
     // does not, because nothing ever wrote one. Unknown, never guessed at.
     expect(await listBranches({ client })).toEqual([
       {

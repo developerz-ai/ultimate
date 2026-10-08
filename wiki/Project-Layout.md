@@ -130,8 +130,8 @@ Inside the framework repo, a package may import from **strictly lower** tiers on
 | 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` | tier 0 |
 | 2 | `entity`, `policy`, `http`, `auth` | tier 0–1 |
 | 3 | `action`, `query`, `jobs`, `realtime` | tier 0–2 |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify` | tier 0–3 |
-| 5 | `admin`, `testing`, `cli`, `scraping` | tier 0–4 |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify`, `scraping` | tier 0–3 |
+| 5 | `admin`, `testing`, `cli` | tier 0–4 |
 
 The declared sideways edges are `SIDEWAYS_ALLOW` in [`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts), the executable copy of both tables; [`llms.txt`](https://github.com/developerz-ai/ultimate/blob/main/llms.txt) carries a generated copy of the list. `admin → ui` was deleted 2026-08-19 by moving `ui` from tier 5 to 4 — the edge existed only to undo a placement two tiers above what `ui` actually imports.
 

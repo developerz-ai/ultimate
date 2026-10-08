@@ -326,7 +326,7 @@ export class QueryInputInvalidError extends UltimateError {
     super({
       code: 'X_INPUT_INVALID',
       cause: `input for query "${name}" failed validation: ${detail}`,
-      fix: `x queries describe ${name} --json  # prints the expected input schema`,
+      fix: `x queries show ${name} --json  # prints the expected input schema`,
     });
   }
 }
@@ -341,7 +341,7 @@ export class QueryRowNotFoundError extends UltimateError {
     super({
       code: 'X_NOT_FOUND',
       cause: `query "${name}" is declared single: true and its sql matched no row for this input`,
-      fix: `x queries describe ${name} --json  # prints the SQL — a stale id, another tenant's row or a soft-deleted one matches nothing`,
+      fix: `x queries show ${name} --json  # prints the SQL — a stale id, another tenant's row or a soft-deleted one matches nothing`,
     });
   }
 }

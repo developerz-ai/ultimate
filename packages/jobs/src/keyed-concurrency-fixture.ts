@@ -244,7 +244,9 @@ export function keyedConcurrencyScenarios(label: string, harness: KeyedHarness):
     const row = await rowOf(driver, second);
     expect(row.state).toBe('failed');
     expect(row.lastError).toContain('X_JOB_KEY_BUSY');
-    expect(row.lastError).toContain(`x jobs ls --name ${probe.handle.name} --state running --json`);
+    expect(row.lastError).toContain(
+      `x jobs list --name ${probe.handle.name} --state running --json`,
+    );
     // No attempt ran, so none is counted — and three were allowed: it is not a retryable failure.
     expect(row.attempt).toBe(0);
     expect(await driver.introspect?.deadLetters()).toEqual([]);

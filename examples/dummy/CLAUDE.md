@@ -128,7 +128,7 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   **cursor**, never the page. `app/posts/backfills/post-excerpts.ts` is the worked example, and its
   `.job.test.ts` asserts the projection twice through equals once through.
 - Two policy authoring forms, and the choice is who reads the denial. `can(permission, predicate)`
-  where only an agent does — the reason is `x actions describe`. `definePolicy(permission, { deny,
+  where only an agent does — the reason is `x actions show`. `definePolicy(permission, { deny,
   check })` where a person does: `deny` is a message KEY, so the refusal goes through `t()` like
   every other user-facing string. Same `Policy` object either way, so every surface evaluates them
   identically and neither form is a second authz path.

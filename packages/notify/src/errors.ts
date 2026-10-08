@@ -170,13 +170,13 @@ export class NotifyDeliveryFailedError extends UltimateError {
     super({
       code: 'X_NOTIFY_DELIVERY_FAILED',
       cause: `channel "${input.channel}" of notifier "${input.notifier}" failed for ${String(input.recipients)} recipient(s): ${renderThrowable(input.cause)}`,
-      // `x jobs ls` first, and never `x jobs show` handed a notifier NAME: that command takes a job id
+      // `x jobs list` first, and never `x jobs show` handed a notifier NAME: that command takes a job id
       // positional and resolves it through `inspectJob`, which answers `X_JOB_UNKNOWN` for
       // anything else — so a notifier NAME made the one command this refusal printed fail every
       // time it was run. A `fix:` that fails is worse than none, because the reader spends their
       // trust on it before finding out. The two-step shape is what `wiki/Error-Codes.md` already
       // documents for this code.
-      fix: `x jobs ls --json   # find the run, then: x jobs show <id> --json — the failing step is deliver:${input.channel}`,
+      fix: `x jobs list --json   # find the run, then: x jobs show <id> --json — the failing step is deliver:${input.channel}`,
       meta: { notifier: input.notifier, channel: input.channel },
     });
   }

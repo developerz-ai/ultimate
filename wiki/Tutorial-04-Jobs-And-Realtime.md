@@ -122,7 +122,7 @@ Every instant renders in the task's **own** zone, never a machine-local default.
 ## Inspecting the queue
 
 ```bash
-bunx x jobs ls
+bunx x jobs list
 ```
 
 ```text
@@ -134,7 +134,7 @@ A dead job is never filtered out of view.
 
 | Subcommand | Does |
 |---|---|
-| `ls` | queue depth, matching rows, and the dead-letter list |
+| `list` | queue depth, matching rows, and the dead-letter list |
 | `show <id>` | state, attempt, every step's result, remaining retry delays |
 | `retry <id> --from-step <name>` | drops that step so it re-executes; everything before it replays from storage |
 | `drain --to <driver>` | **planned** — no target ships. Would move `ready`/`delayed`/`suspended` jobs to another **durable** driver; enqueues on the target **before** acking the source. `--to memory` is refused by name (`X_CLI_BAD_FLAG`), `As of 2026-09`: it acked durable rows into a `Map` that died with the command |

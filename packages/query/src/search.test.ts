@@ -188,7 +188,7 @@ describe('search()', () => {
     // `?q=a&_first=2` is a request, and a request the read cannot serve is a 4xx.
     expect(caught).toBeUltimateError('X_INPUT_INVALID');
     expect(caught instanceof UltimateError ? caught.fix : '').toContain(
-      'x queries describe searchPosts --json',
+      'x queries show searchPosts --json',
     );
   });
 

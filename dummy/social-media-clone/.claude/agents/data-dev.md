@@ -36,7 +36,7 @@ to fake a derivation.
   a literal. Same rows, same ids, every run.
 
 **Commands**, from the app root: `x db gen "<msg>"` · `x db migrate` · `x db branch create <name>`
-for anything destructive (`x db branch ls` to see them, `x db branch drop <name>` to clean up —
+for anything destructive (`x db branch list` to see them, `x db branch delete <name>` to clean up —
 `drop` only removes what `ls` shows) · `x entities list --json` · `bunx x test unit --filter <text>`.
 
 Scope every command to the files you edited. Concurrency 1. **Run no git commands** and never

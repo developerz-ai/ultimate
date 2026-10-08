@@ -7,7 +7,7 @@
 // value arrives at a lease deadline, a claim limit and a timer interval intact, and every
 // comparison against it reads FALSE — measured on `memoryJobDriver`: `visibleAt = at + NaN`,
 // the reclaim scan asks `visibleAt <= at`, and a job whose worker died is never claimable again.
-// At-least-once becomes never, with no error and a row `x jobs ls` still prints as `running`.
+// At-least-once becomes never, with no error and a row `x jobs list` still prints as `running`.
 // `slice(0, NaN)` is `[]`, so a `concurrency: NaN` worker claims nothing and reports healthy.
 // Same shape as `concurrencyLimiter`'s `maxTenants` and `backfill()`'s `batch`, refused the same way.
 

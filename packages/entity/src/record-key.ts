@@ -23,7 +23,7 @@ export const recordKeyMissing = (type: string, column: string, value: unknown): 
     // `renderFixShellArg` inside the safe branch is verbatim there; it is the call
     // `bun run fix-shell-arg` recognises as the screen.
     fix: isFixShellSafe(type)
-      ? `x entities describe ${renderFixShellArg(type, 'ENTITY')} --json   # lists the primary key; return the whole row (every primary-key column) from the handler that built this one`
+      ? `x entities show ${renderFixShellArg(type, 'ENTITY')} --json   # lists the primary key; return the whole row (every primary-key column) from the handler that built this one`
       : 'x entities list --json   # find this entity, then return the whole row (every primary-key column) from the handler that built this one',
   });
 

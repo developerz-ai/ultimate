@@ -208,12 +208,9 @@ describe('httpServer', () => {
     expect(() => server().url()).toThrow(/X_SERVER_NOT_STARTED|start\(\)/);
   });
 
-  test('describe() feeds the manifest deterministically', () => {
-    expect(
-      server()
-        .describe()
-        .map((route) => route.name),
-    ).toEqual(['ping', 'posts.show']);
+  // `x routes` is the one served table (#709): the handle carries no second route listing.
+  test('the handle exposes no describe() beside x routes', () => {
+    expect('describe' in server()).toBe(false);
   });
 });
 

@@ -173,7 +173,7 @@ Introspection an agent should use instead of grepping:
 | Want | Command | MCP tool |
 |---|---|---|
 | every action + schemas | `x actions list --json` | `actions.describe` (no arguments — every action and query) |
-| one action in detail | `x actions describe publishPost --json` | `actions.describe`, then pick the entry |
+| one action in detail | `x actions show publishPost --json` | `actions.describe`, then pick the entry |
 | is this protected | `x policy explain publishPost --json` | none — `policies.list` returns the catalog, not the per-declaration matrix |
 | the whole app as data | `x manifest --json` | `manifest.read` |
 | what an `X_*` code means | `x errors explain X_FORBIDDEN` | `errors.explain` |

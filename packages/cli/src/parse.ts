@@ -44,7 +44,7 @@ export interface CommandSpec {
    * than a misspelt one. Declared per command, never inferred, because only some commands can say
    * it truthfully: `x errors X_PERMISSION_UNKNOWN` can only be a code, and `x jobs 4f2a` is
    * genuinely ambiguous with `show`, so an unconditional fallback would turn `x jobs <id>` into a
-   * silent `x jobs ls` that ignores the id.
+   * silent `x jobs list` that ignores the id.
    *
    * `x errors X_PERMISSION_UNKNOWN --json` answered `X_CLI_UNKNOWN_COMMAND … fix: x help`, and
    * `x help` prints `errors  an X_* code, explained` — which reads as exactly the form that was
@@ -65,7 +65,7 @@ export interface CommandSpec {
   /**
    * The same closed set, one level down: the set a named SUBCOMMAND's first positional must come
    * from. `positionalChoices` cannot express it, because `fix-command.ts` only consults that field
-   * where a command declares NO subcommands — so `x db branch ls` resolved as command +
+   * where a command declares NO subcommands — so `x db branch list` resolved as command +
    * subcommand and nothing ever looked at `ls`. That is how a shipped `fix:` told an agent to run
    * a listing while `x db branch` read `ls` as a branch name and created a database from it.
    * Declarative only, exactly like `positionalChoices`: the command still refuses an unknown word
@@ -304,6 +304,27 @@ function splitInline(raw: string): [string, string | undefined] {
   return [raw.slice(0, eq), raw.slice(eq + 1)];
 }
 
+/**
+ * The verbs 26.0.0 retired (#709): one verb each across every `x` registry — `list`, `show <one>`,
+ * `delete` — and no alias, because two spellings of one verb is the ambiguity axiom 1 forbids. A
+ * retired verb is REFUSED, never accepted; this table only lets the refusal name its replacement.
+ */
+export const RETIRED_VERBS = Object.freeze<Record<string, string>>({
+  ls: 'list',
+  rm: 'delete',
+  describe: 'show',
+  drop: 'delete',
+});
+
+/** The verb that replaced `word`, when `word` was retired and its replacement is in `allowed`. */
+export function retiredVerbReplacement(
+  word: string,
+  allowed: readonly string[],
+): string | undefined {
+  const replacement = Object.hasOwn(RETIRED_VERBS, word) ? RETIRED_VERBS[word] : undefined;
+  return replacement !== undefined && allowed.includes(replacement) ? replacement : undefined;
+}
+
 /** Which subcommand ran, and whether the caller's first positional is what named it. */
 interface ResolvedSubcommand {
   readonly name: string | undefined;
@@ -323,7 +344,7 @@ function readSubcommand(spec: CommandSpec, positionals: readonly string[]): Reso
     throw new MissingSubcommandError({ command: spec.name, known: allowed });
   }
   if (allowed.includes(token)) return { name: token, consumed: true };
-  const suggestion = nearestName(token, allowed);
+  const suggestion = retiredVerbReplacement(token, allowed) ?? nearestName(token, allowed);
   // The declared fallback, and only past the near-miss guard: a word within `nearestName`'s edit
   // budget of a real subcommand is a typo, and reading it as the default subcommand's argument
   // would answer a question nobody asked.

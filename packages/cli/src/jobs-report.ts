@@ -1,4 +1,4 @@
-// Pure, driver-injected job operations behind `x jobs`: flag parsing, plus ls / show / retry. No
+// Pure, driver-injected job operations behind `x jobs`: flag parsing, plus list / show / retry. No
 // CLI parsing, no process I/O, no rendering — a test drives every path with `memoryJobDriver()`
 // alone. The `--json` shapes are `jobs-json.ts`, the table `jobs-table.ts`.
 
@@ -105,7 +105,7 @@ async function jobPage(driver: JobDriver, filter: JobFilter): Promise<Page<JobRe
  * `--state ready` filter (or the default 100-row cap) pushes out of view is the exact failure
  * mode this command exists to prevent.
  *
- * Backfills are read `running` only. `x jobs ls` is a LIVE view of the queue — a pass that
+ * Backfills are read `running` only. `x jobs list` is a LIVE view of the queue — a pass that
  * finished last week is history, and `x db backfill --list` is where that question is asked and
  * answered with the whole ledger. A driver with no ledger answers `[]` rather than throwing, so
  * the queue view never fails over a fact nobody asked about.

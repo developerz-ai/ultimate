@@ -34,7 +34,7 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
   action: {
     count: 2,
     reason:
-      '`errors.ts` and `client.ts` splice an ACTION NAME into `x actions describe <name>` / `x mcp tools`. The name comes from the action registry, which is a key an `action()` declaration wrote in this process — never from a request. The day a route name reaches one of these, it is caller data.',
+      '`errors.ts` and `client.ts` splice an ACTION NAME into `x actions show <name>` / `x mcp tools`. The name comes from the action registry, which is a key an `action()` declaration wrote in this process — never from a request. The day a route name reaches one of these, it is caller data.',
   },
   admin: {
     count: 1,
@@ -70,7 +70,7 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
   entity: {
     count: 3,
     reason:
-      '`errors.ts`, `count-by.ts` and `aggregate.ts` splice an ENTITY NAME or a COLUMN NAME into `x db gen` / `x entities describe`. Both are registry keys an `entity()` declaration wrote in this process, and the registry is what the refusal consulted to find them missing.',
+      '`errors.ts`, `count-by.ts` and `aggregate.ts` splice an ENTITY NAME or a COLUMN NAME into `x db gen` / `x entities show`. Both are registry keys an `entity()` declaration wrote in this process, and the registry is what the refusal consulted to find them missing.',
   },
   http: {
     count: 2,
@@ -105,7 +105,7 @@ export const FIX_SHELL_ARG_PINS: Readonly<Record<string, FixShellArgPin>> = {
   query: {
     count: 3,
     reason:
-      '`errors.ts:89,325,340` splice a QUERY NAME into `x policy explain <name>` and `x queries describe <name>`. The name is the key its own `query()` registered under. why: `single: true` added X_QUERY_SINGLE_INVALID, whose fix names the query it refused.',
+      '`errors.ts:89,325,340` splice a QUERY NAME into `x policy explain <name>` and `x queries show <name>`. The name is the key its own `query()` registered under. why: `single: true` added X_QUERY_SINGLE_INVALID, whose fix names the query it refused.',
   },
   realtime: {
     // why: sweep 11 read `export NAME=${…}` as an assignment; errors.ts:374's origin is screened before it is spliced.

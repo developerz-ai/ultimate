@@ -185,7 +185,7 @@ export class IdempotentReplayRedactedError extends UltimateError {
     super({
       code: 'X_IDEMPOTENT_REPLAY_REDACTED',
       cause: `the answer stored for idempotency key "${key}" had a secret-named field redacted when it settled, so it cannot be replayed faithfully`,
-      fix: "x actions describe '<action>' --json   # the call already ran and showed its secret once — read its effect with a query; a new Idempotency-Key runs it again (a second credential)",
+      fix: "x actions show '<action>' --json   # the call already ran and showed its secret once — read its effect with a query; a new Idempotency-Key runs it again (a second credential)",
       meta: { key, replayed: true },
     });
   }

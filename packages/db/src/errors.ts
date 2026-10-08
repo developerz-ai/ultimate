@@ -395,7 +395,7 @@ export const branchExists = (branch: string): DbError =>
   new DbError({
     code: 'X_BRANCH_EXISTS',
     cause: `database "${branch}" already exists`,
-    fix: `x db branch drop ${branch}   # then re-create, or pick another name`,
+    fix: `x db branch delete ${branch}   # then re-create, or pick another name`,
     meta: { branch },
   });
 

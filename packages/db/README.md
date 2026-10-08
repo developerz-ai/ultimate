@@ -574,9 +574,9 @@ job the moment Postgres fails over.
 ```bash
 x db migrate --json
 x db gen "add publish_at"
-x db branch ls --json
+x db branch list --json
 x db branch create feature_x
-x db branch drop feature_x
+x db branch delete feature_x
 ```
 
 **Drift has no subcommand of its own.** The database half runs *inside* `x db migrate`, which calls

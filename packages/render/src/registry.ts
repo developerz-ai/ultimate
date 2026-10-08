@@ -1,6 +1,6 @@
 /**
  * The route table — the single source of route truth. File path → URL conventions for
- * `site/`, `app/` and `api/`, plus `describePages()`, the serializable projection that
+ * `site/` and `app/`, plus `describePages()`, the serializable projection that
  * `x.manifest.json`, the `/_x` routes panel, the sitemap and `sw.js` are all generated
  * from. Nothing downstream may keep its own list of routes.
  */
@@ -31,39 +31,31 @@ import { isRouteConfig, routeTagKeys } from './route';
 import type { RouteComponent } from './route-component';
 import type { CompiledPattern } from './route-pattern';
 import { compilePattern } from './route-pattern';
-import type { Surface } from './surfaces';
+import type { RouteSurface, Surface } from './surfaces';
 import { locateSurface } from './surfaces';
 
 /**
- * The one filename a route may carry, per surface. `shared/` is `Exclude`d rather than merely
- * absent: it is a leaf of helpers with no URL, so a route file there has nowhere to resolve to —
- * and stating that in the key type makes the other three MANDATORY. `Partial<Record<Surface, …>>`
- * said the same thing about `shared` and let any of the three go missing, which only three
- * registration tests would have caught. A dropped `api` row is not a crash: `assertRouteFilename`
- * reads `undefined` as "this file is under shared/", so every `api/` route author would have been
- * told their file is a leaf of helpers.
+ * The one filename a route may carry, per route surface. Keyed by `RouteSurface`, so both rows are
+ * MANDATORY: a dropped row would read as `undefined` in `assertRouteFilename`.
  */
-export const ROUTE_FILENAME = Object.freeze<Record<Exclude<Surface, 'shared'>, string>>({
+export const ROUTE_FILENAME = Object.freeze<Record<RouteSurface, string>>({
   site: 'page.tsx',
   app: 'page.tsx',
-  api: 'route.ts',
 });
 
 /** Stems that already meant "this directory", so the repair is a rename in place, not a new folder. */
 const DIRECTORY_STEMS = new Set(['index', 'page', 'route']);
 
-const API_PREFIX = '/api';
-
 export interface RouteEntry<TData = RouteData> {
   readonly file: string;
   readonly path: string;
-  readonly surface: Surface;
+  readonly surface: RouteSurface;
   readonly config: RouteConfig<TData>;
   readonly suspenseBoundaries: number;
   readonly islands: readonly string[];
   readonly pattern: CompiledPattern;
   /**
-   * The module's page component. Absent for `api/` routes and for a module that exports none —
+   * The module's page component. Absent for a module that exports none —
    * a `spa` shell is the mode that legitimately has no server-rendered body.
    */
   readonly component?: RouteComponent;
@@ -119,9 +111,8 @@ export type { MountedRouteInput, RouteMount, RouteMountInput } from './mounted-r
  * | `site/blog/[slug]/page.tsx` | `/blog/:slug` |
  * | `site/docs/[...path]/page.tsx` | `/docs/*path` |
  * | `app/dashboard/page.tsx` | `/dashboard` |
- * | `api/posts/route.ts` | `/api/posts` |
  */
-export function routePathFromFile(file: string): { surface: Surface; path: string } {
+export function routePathFromFile(file: string): { surface: RouteSurface; path: string } {
   const normalized = file.replace(/\\/g, '/').replace(/^\.\//, '');
   // One reader of the surface segment, and it answers WHERE as well as WHICH. Slicing at
   // `indexOf('app/')` instead matched inside `myapp/`, so `apps/myapp/app/page.tsx` resolved to
@@ -130,10 +121,10 @@ export function routePathFromFile(file: string): { surface: Surface; path: strin
   if (located === null) {
     throw new SurfaceBoundaryError(
       `${file} is not inside a surface directory, so it has no URL and no bundle graph`,
-      `move ${file} under site/, app/ or api/`,
+      `move ${file} under site/ or app/, named page.tsx`,
     );
   }
-  const surface = located.surface;
+  const surface = routeSurfaceOf(normalized, located.surface);
 
   const rawSegments = located.rest.split('/').filter((s) => s.length > 0);
   assertRouteFilename(normalized, surface, rawSegments[rawSegments.length - 1]);
@@ -143,8 +134,7 @@ export function routePathFromFile(file: string): { surface: Surface; path: strin
     .filter((s) => !(s.startsWith('(') && s.endsWith(')')))
     .map(toUrlSegment);
 
-  const base = surface === 'api' ? API_PREFIX : '';
-  const path = `${base}/${urlSegments.join('/')}`.replace(/\/+$/, '') || '/';
+  const path = `/${urlSegments.join('/')}`.replace(/\/+$/, '') || '/';
   return { surface, path };
 }
 
@@ -156,20 +146,37 @@ export function routePathFromFile(file: string): { surface: Surface; path: strin
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 /**
+ * Only `site/` and `app/` hold route files. `shared/` is a leaf of helpers with no URL; `api/` is
+ * the action and query projections `defineApi()` collects — a wire format an action cannot speak
+ * is a plain HTTP route in the `routes` runtime override, never a file under `api/`.
+ */
+function routeSurfaceOf(file: string, surface: Surface): RouteSurface {
+  if (surface === 'shared') {
+    throw new RouteFileInvalidError(
+      `${file} is under shared/, which is a leaf of helpers with no URL — a route cannot live there`,
+      `move ${file} under site/ or app/, named page.tsx`,
+    );
+  }
+  if (surface === 'api') {
+    throw new RouteFileInvalidError(
+      `${file} is under api/, which holds no route file: api/ is the actions and queries defineApi() collects`,
+      `JSON in and out: replace ${file} with an action (x g action <name>) collected by defineApi() in api/index.ts. Another wire format (a webhook, an OAuth endpoint): delete ${file} and add a plain HTTP route to the routes array exported as runtime from apps/<app>/runtime.ts`,
+    );
+  }
+  return surface;
+}
+
+/**
  * Enforced rather than documented (axiom 3): a convention that is not a build error is not a
  * convention. The fix is the move that makes the file a route, spelled out — the directory the
  * author already meant, plus the one filename that surface accepts.
  */
-function assertRouteFilename(file: string, surface: Surface, basename: string | undefined): void {
-  // `shared` is the one surface with no filename, and the key type now says so — which is why
-  // this is a comparison rather than an `undefined` check on the lookup.
-  const expected = surface === 'shared' ? undefined : ROUTE_FILENAME[surface];
-  if (expected === undefined) {
-    throw new RouteFileInvalidError(
-      `${file} is under shared/, which is a leaf of helpers with no URL — a route cannot live there`,
-      `move ${file} under site/, app/ or api/, named page.tsx (site/, app/) or route.ts (api/)`,
-    );
-  }
+function assertRouteFilename(
+  file: string,
+  surface: RouteSurface,
+  basename: string | undefined,
+): void {
+  const expected = ROUTE_FILENAME[surface];
   if (basename === expected) return;
 
   // The directory the author meant is the file's own path minus its extension: `site/pricing.tsx`

@@ -169,7 +169,7 @@ A job that exhausted its retries is **kept**, never dropped: `queue_dead_jobs` c
 
 | # | Step |
 |---|---|
-| 1 | `x jobs ls --json` — the dead letters are listed per queue |
+| 1 | `x jobs list --json` — the dead letters are listed per queue |
 | 2 | `x jobs show <id> --json` — the attempts, each error's code, cause and `fix:` |
 | 3 | fix the cause (the handler, a downstream, a bad input), deploy |
 | 4 | `x jobs retry <id>` — the job runs again under its SAME idempotency key, so a partial side effect is not repeated |

@@ -40,7 +40,7 @@ stop; that answer is worth more than a plan built on a shape the app cannot hold
 |---|---|
 | \`apps/web/site/<path>/page.tsx\` | public, SEO-critical, 0kb JS |
 | \`apps/web/app/<slice>/\` | the feature slice: entity, repo, policy, actions, queries, jobs, UI |
-| \`apps/web/api/<name>/route.ts\` | HTTP surface for actions |
+| \`apps/web/api/index.ts\` | the one \`defineApi()\` collecting every action and query — no route file lives under \`api/\` |
 | \`apps/web/shared/\` | tokens, primitives, the actor type — a leaf, imports nothing of yours |
 | \`packages/db/\` | schema, migrations, seed |
 | \`packages/ui/\` | components with no feature knowledge |
@@ -79,7 +79,7 @@ feature slice. Nothing else. A change outside that set is a collision — report
 | Money | \`{ minor, currency }\` — integer minor units and an ISO code, both, always. Never a float |
 | Time | store UTC; a formatted date always names an explicit IANA time zone |
 
-Inspect before you change: \`x entities list\`, \`x entities describe <name>\`, both with \`--json\`.
+Inspect before you change: \`x entities list\`, \`x entities show <name>\`, both with \`--json\`.
 
 Checks: \`bun test <path>/entity.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
 once when you are otherwise done. Never \`x verify\` — that belongs to whoever coordinates you.
@@ -105,7 +105,7 @@ renders. A change outside that set is a collision — report it, do not make it.
 | Tasks name a time zone | a cron schedule with an ambient zone is a different time twice a year |
 | No \`any\` | \`unknown\` plus a schema parse |
 
-Inspect before you change: \`x actions describe <name>\`, \`x queries describe <name>\`, \`x jobs ls\`,
+Inspect before you change: \`x actions show <name>\`, \`x queries show <name>\`, \`x jobs list\`,
 \`x tasks list\`, \`x policy explain <subject>\` — every one takes \`--json\`.
 
 Checks: \`bun test <path>/<file>.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
@@ -126,7 +126,7 @@ calls. A change outside that set is a collision — report it, do not make it.
 |---|---|
 | \`site/\` is 0kb JS | and may not import from \`app/\`. One interactive control on a static page is an island: \`x g island <name> --at <dir>\` |
 | \`shared/\` is a leaf | tokens, primitives, the actor type. It imports nothing of yours |
-| The directory is the URL | \`page.tsx\` under \`site/\`/\`app/\`, \`route.ts\` under \`api/\`. The filename is never the path |
+| The directory is the URL | \`page.tsx\` under \`site/\`/\`app/\`; \`api/\` holds no route file, only \`defineApi()\`'s actions and queries. The filename is never the path |
 | Every string through \`t()\` | a literal in a component is a string no locale can ever translate |
 | Semantic tokens only | never a raw hex, in a component or a stylesheet |
 | Dates name a zone | explicit IANA time zone at every call site, no ambient default |

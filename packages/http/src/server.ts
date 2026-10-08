@@ -28,7 +28,7 @@ import { type RateLimitStore, rateLimiter } from './rate-limit';
 import { withRouteBuckets } from './rate-limit-buckets';
 import { adoptRateLimitStore } from './rate-limit-installed';
 import { jsonResponse } from './response';
-import { describeRoutes, httpRouter, type Route, type RouteDescription } from './router';
+import { describeRoutes, httpRouter, type Route } from './router';
 
 /**
  * Beside its one caller rather than in `errors.ts`, which is at the 500-line ceiling — the
@@ -142,7 +142,6 @@ export interface ServerHandle {
   state(): LifecycleState;
   /** `http://host:port` once started; throws before `start()`. */
   url(): string;
-  describe(): readonly RouteDescription[];
   start(): ServerHandle;
   /** Runs core's three-phase drain, on the deadline `drain.deadlineMs` set (`lifecycleForRole`). */
   stop(): Promise<void>;
@@ -306,7 +305,6 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
       if (server === undefined) throw serverNotStarted('url()');
       return server.url.origin;
     },
-    describe: () => describeRoutes(table),
     fetch: (request) => dispatch(request),
     start() {
       // FIRST, before the socket. `markReady()` refuses a process whose lifecycle already drained

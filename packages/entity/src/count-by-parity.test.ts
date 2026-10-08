@@ -235,13 +235,13 @@ describe('the refusals both drivers share', () => {
 
   test('an entity with nothing to group by is told to read it, since no call would work', async () => {
     // The one branch where a `fix:` cannot be a call: every column here would be refused the same
-    // way, so it names a command that exists (`x entities describe`, which prints the kinds) rather
+    // way, so it names a command that exists (`x entities show`, which prints the kinds) rather
     // than suggesting a `countBy` that fails identically.
     const refused = await refusal(memoryRepo(ungroupable).countBy('at'));
 
     expect(refused.code).toBe('X_INVARIANT_VIOLATED');
     expect(refused.fix).toBe(
-      'x entities describe count_parity_ungroupable --json   # this entity declares no column a count can be keyed by',
+      'x entities show count_parity_ungroupable --json   # this entity declares no column a count can be keyed by',
     );
   });
 });

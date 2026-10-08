@@ -1,6 +1,6 @@
 # @ultimat3/scraping — boundary
 
-Tier 5. May import tiers 0-4. Never sideways, never upward.
+Tier 4. May import tiers 0-3. Never sideways, never upward.
 
 | Rule | Detail |
 |---|---|
@@ -15,11 +15,11 @@ Commands: `bun test packages/scraping` from the repo root, `bunx tsc --noEmit -p
 Public docs: [`wiki/Scraping.md`](../../wiki/Scraping.md) — the only public surface. A capability this file
 claims and that page does not carry is a capability an app author cannot find.
 
-## Tier 5, and why not lower
+## Tier 4, its floor
 
-`jobs` is tier 3 and `storage` is tier 1, so today's imports would allow tier 4. It sits at 5
-because `recover: 'agent'` is designed to import `@ultimat3/ai` (tier 4), and a package at 4 cannot
-import a package at 4. Moving up later would be a table change with consumers already attached.
+`jobs` is tier 3, so tier 4 is the lowest its imports allow, and it sits there. It sat at 5 to
+reserve room for `recover: 'agent'` to import `@ultimat3/ai`; 26.0.0 deleted that variant (#709). A
+recover hook is a function — one that asks a model is the app's own, wrapping `llm()` (axiom 8).
 
 Nothing in the framework imports it (`x shot` left in 22.0.0), so no sideways edge exists.
 

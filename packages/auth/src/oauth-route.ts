@@ -20,6 +20,7 @@ import {
 } from '@ultimat3/core';
 import type { Auth, LoginResult } from './auth';
 import { AuthError } from './errors';
+import type { IdTokenKeys } from './jwks';
 import { beginOAuth, type OAuthProviderId } from './oauth';
 import { BUILTIN_OAUTH_PROVIDER_IDS } from './oauth-builtins';
 import { clearHandshakeCookie, handshakeCookie, readHandshakeCookie } from './oauth-cookie';
@@ -113,6 +114,13 @@ export interface OAuthLoginOptions {
    * sign-in rather than never.
    */
   readonly resolveGrants?: ResolveOAuthGrants | undefined;
+  /**
+   * What each provider's id token signature is checked against, asked per callback. Omit it and
+   * the callback verifies against the provider's published key set (`providerJwks`) whenever it
+   * has a `jwksUri` — token-endpoint TLS only for one that publishes none. Return
+   * `'token-endpoint-tls'` to opt a provider out, or a `jwksClient({ jwksUri })` to pin another set.
+   */
+  readonly idTokenKeys?: ((provider: OAuthProviderId) => IdTokenKeys) | undefined;
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
@@ -373,6 +381,7 @@ async function callbackHandler(
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.resolveGrants === undefined ? {} : { resolveGrants: options.resolveGrants }),
+      ...(options.idTokenKeys === undefined ? {} : { idTokenKeys: options.idTokenKeys(provider) }),
       ip: options.clientIp?.(request) ?? null,
       userAgent: request.headers.get('user-agent'),
     });

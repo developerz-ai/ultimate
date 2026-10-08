@@ -43,7 +43,7 @@ const SPECS: readonly CommandSpec[] = [
   ),
   spec(
     'db',
-    'x db gen "add publish_at" | migrate | seed [<name>] [--tier reference|dev] | branch ls | branch drop <name>',
+    'x db gen "add publish_at" | migrate | seed [<name>] [--tier reference|dev] | branch list | branch delete <name>',
     {
       subcommands: ['gen', 'migrate', 'seed', 'branch'],
       subcommandPositionals: { branch: ['ls', 'create', 'drop'] },
@@ -77,7 +77,7 @@ describe('a stray positional is a finding', () => {
   test('one word too many past a declared positional', () => {
     expect(fault('x new my-app extra')?.subject).toBe('x new my-app extra');
     expect(fault('x errors explain X_A X_B')?.subject).toBe('x errors explain X_A X_B');
-    expect(fault('x db branch drop main again')?.subject).toBe('x db branch drop main again');
+    expect(fault('x db branch delete main again')?.subject).toBe('x db branch delete main again');
   });
 });
 
@@ -94,8 +94,8 @@ describe('every documented shape still resolves', () => {
     'x verify run',
     'x db gen "add index"',
     'x db seed demo --tier dev',
-    'x db branch ls',
-    'x db branch drop <name>',
+    'x db branch list',
+    'x db branch delete <name>',
     'x help verify',
     'x jobs show 4f2a',
     'x jobs drain --to pg',

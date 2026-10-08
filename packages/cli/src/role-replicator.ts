@@ -73,7 +73,7 @@ const embeddedRefusal = (dev: boolean): BadFlagError | ConfigInvalidError =>
  * Both readers of this list are catalog readers. `PgReplicationStream` keeps a change only when
  * `#entities.has(relation.name)`, and a pgoutput Relation message names the table; `warnPartialIdentity`
  * matches the same list against `pg_class.relname`. An entity NAME is the framework's own registry
- * key — what a cache tag, a policy and `x entities describe` are keyed by — and `entity('user',
+ * key — what a cache tag, a policy and `x entities show` are keyed by — and `entity('user',
  * { table: 'users' })` makes the two different strings. Passing the name meant a renamed table
  * matched nothing on either side: every change SKIPPED, and a replica-identity warning that could
  * never fire. Latent wherever the two agree, which is every entity in `examples/dummy`.

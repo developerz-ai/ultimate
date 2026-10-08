@@ -1128,8 +1128,8 @@ a current fact: the rules that still hold are in that file, and where the two di
 
 - **A refusal raised before any entity exists carries an EDIT, never a lookup** — `refuse.ts`,
   `As of 2026-08-22`. Both `reject()` helpers called `invariantViolated('column', rule, detail)`,
-  whose fix is `x entities describe <entityName> --json`, so 34 column and invariant refusals
-  emitted `x entities describe column --json` — which answers `X_DECLARATION_UNKNOWN`, because no
+  whose fix is `x entities show <entityName> --json`, so 34 column and invariant refusals
+  emitted `x entities show column --json` — which answers `X_DECLARATION_UNKNOWN`, because no
   entity is named `column` and at declaration time there is no entity at all. A fix line that
   raises a second, unrelated error is worse than none: the reader debugs the wrong subsystem, and
   an agent follows it literally. So the fix is a PARAMETER — `refuseColumn(rule, detail, fix)` —

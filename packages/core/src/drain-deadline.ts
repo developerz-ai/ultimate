@@ -1,5 +1,5 @@
-// Single responsibility: the drain budget's default and its domain — `drain.deadlineMs` in
-// `app.config.ts`. One module because the config validator, the lifecycle's own default and the
+// Single responsibility: the drain budget's default and its domain — `drain.deadlineMs` and the
+// worker's `drain.workerDeadlineMs` in `app.config.ts`. One module because the config validator, the lifecycle's own default and the
 // chart's grace period must all mean the same number.
 
 import { countIssue } from './config-count';
@@ -19,7 +19,15 @@ export const DRAIN_DEADLINE_DEFAULT_MS = 25_000;
  */
 export const DRAIN_DEADLINE_MAX_MS = 3_600_000;
 
+/**
+ * A day: `drain.workerDeadlineMs`'s ceiling. The worker is the one role whose in-flight unit — a
+ * job that must not run twice, a bank login — can outlast the hour, and a retired worker
+ * (`SIGUSR2`) is bound by this budget when a SIGTERM lands mid-retire.
+ */
+export const WORKER_DRAIN_DEADLINE_MAX_MS = 86_400_000;
+
 const DEADLINE_KEY = 'drain.deadlineMs';
+const WORKER_DEADLINE_KEY = 'drain.workerDeadlineMs';
 
 /**
  * Why a value is not a drain budget, or `undefined` when it is one. A whole number of milliseconds
@@ -34,10 +42,28 @@ export function drainDeadlineIssue(value: unknown): string | undefined {
     : undefined;
 }
 
+/**
+ * Why a value is not the worker's drain budget, or `undefined` when it is one (or is unset — the
+ * worker then drains on `drain.deadlineMs`). A whole number in `1 ≤ v ≤ 86400000`.
+ */
+export function workerDrainDeadlineIssue(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const count = countIssue(WORKER_DEADLINE_KEY, value, 1);
+  if (count !== undefined) return count;
+  return (value as number) > WORKER_DRAIN_DEADLINE_MAX_MS
+    ? `${WORKER_DEADLINE_KEY} must be at most ${WORKER_DRAIN_DEADLINE_MAX_MS} milliseconds (a day) — a job longer than that belongs in steps, which replay instead of re-running`
+    : undefined;
+}
+
 /** The `drain` section's issues, one per key, for `defineConfig`'s validator. */
 export function drainIssues(drain: {
   readonly readinessGraceMs: unknown;
   readonly deadlineMs: unknown;
+  readonly workerDeadlineMs?: unknown;
 }): readonly (string | undefined)[] {
-  return [readinessGraceIssue(drain.readinessGraceMs), drainDeadlineIssue(drain.deadlineMs)];
+  return [
+    readinessGraceIssue(drain.readinessGraceMs),
+    drainDeadlineIssue(drain.deadlineMs),
+    workerDrainDeadlineIssue(drain.workerDeadlineMs),
+  ];
 }

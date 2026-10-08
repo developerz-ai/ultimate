@@ -28,7 +28,7 @@ Entities + migrations + cache tags + seeds. Nothing else.
 | generate a migration | `x db gen "<message>"` |
 | apply | `x db migrate` |
 | seed | `x db seed dev` |
-| inspect | `x entities describe <name> --json` (or the `schema.describe` MCP tool) |
+| inspect | `x entities show <name> --json` (or the `schema.describe` MCP tool) |
 | typecheck | `bun run --filter @postly/db typecheck` |
 
 ## Conventions

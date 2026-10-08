@@ -10,8 +10,11 @@ describe('@ultimat3/auth public surface', () => {
     expect(auth.BUILTIN_OAUTH_PROVIDER_IDS).toBe(declared);
   });
 
-  test('it is the three shipped ids, frozen', () => {
-    expect([...auth.BUILTIN_OAUTH_PROVIDER_IDS]).toEqual(['github', 'google', 'apple']);
+  // Apple left the built-ins in 26.0.0 (#709): it POSTs its callback, and both callback routes are
+  // GET, so it could never complete a sign-in. An app that wants it registers its own.
+  test('it is the two shipped ids, frozen — apple is not one of them', () => {
+    expect([...auth.BUILTIN_OAUTH_PROVIDER_IDS]).toEqual(['github', 'google']);
+    expect('APPLE_PROVIDER' in auth).toBe(false);
     expect(Object.isFrozen(auth.BUILTIN_OAUTH_PROVIDER_IDS)).toBe(true);
   });
 });

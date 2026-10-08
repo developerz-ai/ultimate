@@ -224,7 +224,7 @@ function toUltimateError(
     issues: issuesFromWire(body['issues']),
     meta: metaFromWire(body['meta']),
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
-    fix: stringOr(body['fix'], `x actions describe ${name} --json`),
+    fix: stringOr(body['fix'], `x actions show ${name} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has
     // still offered one. Both travel, in preference order: `??` picked `docs` on presence alone,
     // so a `javascript:` one hid a perfectly good `type` behind it. `remoteDocs` takes the first

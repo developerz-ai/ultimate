@@ -86,20 +86,21 @@ A hook or request still running at `drain.deadlineMs` is **abandoned** — logge
 
 ### Retiring a worker before SIGTERM
 
-The SIGTERM path above already finishes held jobs — inside `drain.deadlineMs` (at most 1 h, one value per app). A worker that must outlast it — a job whose side effect may happen at most once, on a pod with a 2 h grace — is **retired** instead: send it **SIGUSR2** (`As of 25.0.0`, `ROLE=worker` only, `packages/cli/src/serve-retire.ts`).
+The SIGTERM path above already finishes held jobs — inside the worker's drain budget: `drain.deadlineMs` (at most 1 h), or `drain.workerDeadlineMs` (at most a day, the worker alone) when declared. A worker that must outlast it — a job whose side effect may happen at most once, on a pod with a 2 h grace — is **retired** instead: send it **SIGUSR2** (`As of 25.0.0`, `ROLE=worker` only, `packages/cli/src/serve-retire.ts`).
 
 | Step | What the worker does |
 |---|---|
-| SIGUSR2 | logs `jobs.worker.retiring` (`inFlight`), stops claiming |
+| SIGUSR2 | `isRetiring()` (`@ultimat3/core`) turns true for the rest of the process; logs `jobs.worker.retiring` (`inFlight`), stops claiming |
 | held jobs | every one runs to the end, however long — nothing is aborted, nothing handed back |
 | done | logs `jobs.worker.retired`, then the ordinary drain, then **exits 0** |
 
-It exits rather than holds: the only thing a `preStop` can observe is PID 1 going away, and a worker that claims nothing has nothing left to serve. A second SIGUSR2 joins the first. One during boot waits for the worker, then retires it. A SIGTERM that lands mid-retire is the ordinary drain: the wait is bound to `drain.deadlineMs` and cut off at the margin, as in the table. Outside a pod deletion an exit 0 is restarted by the Deployment like any other: a fresh worker.
+It exits rather than holds: the only thing a `preStop` can observe is PID 1 going away, and a worker that claims nothing has nothing left to serve. A second SIGUSR2 joins the first. One during boot waits for the worker, then retires it. A SIGTERM that lands mid-retire is the ordinary drain: the wait is bound to the worker's budget (`drain.workerDeadlineMs`, else `drain.deadlineMs`) and cut off at the margin, as in the table — so a worker whose jobs outlast the hour declares `drain.workerDeadlineMs`. `isDraining()` stays false until that drain; the app's own code (a heartbeat, a status row) reads `isRetiring()` to say "finishing, about to exit" — `x dev`'s restart, which retires the same way, sets it too. Outside a pod deletion an exit 0 is restarted by the Deployment like any other: a fresh worker.
 
 **The Helm chart wires it behind one value**: `roles.worker.retireSeconds` (0, off, by default). Set it to the longest a held job may run, and the worker's `preStop` sends its PID 1 SIGUSR2 and waits for it to exit; the same seconds are added to its `terminationGracePeriodSeconds`, which the kubelet counts the `preStop` against. The hook is `bun -e`, the one binary every app image carries — the image's `ENTRYPOINT ["bun", "apps/web/server.ts"]` is exec form, so bun **is** PID 1. Outside the chart, the target is the same: `kill -USR2 1` inside the container, or `docker kill --signal USR2 <container>`.
 
 ```bash
-helm upgrade app docker/helm --set roles.worker.retireSeconds=7200   # 2 h worker
+helm upgrade app docker/helm --set roles.worker.retireSeconds=7200 \
+  --set drain.workerDeadlineSeconds=7500   # 2 h worker; x deploy derives the second itself
 ```
 
 **Windows has no SIGUSR2**: there the retire installs nothing and the worker stops only through the drain above (Ctrl-C, Ctrl-Break). A native Windows process is for development and CI.
