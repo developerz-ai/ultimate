@@ -8,11 +8,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 26.1.1 - 2026-10-08
+
 ### Fixed
 
 Tier 4 — render.
 
 - **`@ultimat3/render/client` is the package's browser entry: an island that navigates no longer carries render's error table.** `navigate`, `refresh`, `openModal` and `closeModal` were exported only from `@ultimat3/render`, whose `sideEffects` keeps `errors.ts` — render's code table, registered at import, and core's and schema's titles tables behind it — in every chunk that reaches the barrel: an island whose whole body was `refresh()` bundled to 9,323 B minified (an app measured its island growing 2,291 → 11,250 B). Through `@ultimat3/render/client` the same island is 216 B, `navigation-api.ts` alone. The entry exports `navigate`, `refresh`, `openModal`, `closeModal`, `NavigateToOptions`, `NavigationModalPathInvalidError` and the event names `NAVIGATE_EVENT`, `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`; its graph is the navigation helpers plus `@ultimat3/core/page`, held by `client-bundle.test.ts` (no `errors.ts`, no titles table, no `node:` import). `openModal` still rejects with `X_NAVIGATION_MODAL_PATH_INVALID`: `NavigationModalPathInvalidError` moved to `navigation-errors.ts` over core/page's `UltimateError` and `errors.ts` re-exports it, so it is one class from either entry and `instanceof` agrees; an island that loaded no table titles the code from its name. Additive — every name stays on `@ultimat3/render`; import them from `/client` in an island. [Navigating from code](https://github.com/developerz-ai/ultimate/wiki/Client-Navigation#navigating-from-code).
+
+### Commits
+
+- fix(render): @ultimat3/render/client — navigate() without the error table (#719)
+- test(pwa): wait for the POST to be dialled, never a fixed sleep — CI race (#718)
 
 ## 26.1.0 - 2026-10-08
 
