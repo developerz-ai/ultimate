@@ -424,7 +424,7 @@ cause names both spellings and the `fix:` is the runnable one.
 **slowest first** — plus the totals, because a seed run that got slow is diagnosed by which file
 took the time. `skipped` is the replay: a row already stored, with no statement sent for it.
 
-**`branch` requires a verb, and the verb set is closed.** The first argument *was* the branch name, so `x db branch` with the word `ls` cloned a database called `ls` instead of listing anything — and every verb is itself a legal branch name, which is why verb-first is the only shape where a name cannot be read as a subcommand. `As of 2026-08` a bare name is refused: a word outside `list`, `create` and `delete` is `X_CLI_UNKNOWN_COMMAND` — `ls` and `drop` included since 26.0.0, one verb each with no alias, and its `fix:` hands the caller's own word back inside the command that still creates it.
+**`branch` requires a verb, and the verb set is closed.** The first argument *was* the branch name, so `x db branch` with the word `ls` cloned a database called `ls` instead of listing anything — and every verb is itself a legal branch name, which is why verb-first is the only shape where a name cannot be read as a subcommand. `As of 2026-08` a bare name is refused: a word outside `list`, `create` and `delete` is `X_CLI_UNKNOWN_COMMAND` and its `fix:` hands the caller's own word back inside the command that still creates it (`x db branch create <word>`). The two retired verbs are refused too since 26.0.0, one verb each with no alias, but their `fix:` names the replacement instead — `ls` gets `x db branch list --json`, `drop <name>` gets `x db branch delete <name>` — because `create drop` would clone a database for a caller who asked to delete one.
 
 Two more facts about the set, both `As of 2026-08`:
 

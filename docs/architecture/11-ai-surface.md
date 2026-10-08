@@ -144,12 +144,12 @@ x db branch create feat-new-billing --json
 
 | Check | Detail | `As of 2026-08` |
 |---|---|---|
-| Database name carries `_branch_` | `<source>_branch_<slug>` — the same rule `x db branch create` writes, read back from one module so `ls` and the host cannot disagree | **enforced** |
+| Database name carries `_branch_` | `<source>_branch_<slug>` — the same rule `x db branch create` writes, read back from one module so `list` and the host cannot disagree | **enforced** |
 | Embedded: the data dir is a copy | `pgdata-<name>`, so the dev directory itself is never a branch | **enforced** |
 | Provenance | `createBranch` stamps a `comment on database` marker and `x db branch list` filters on it — the MCP check does **not** read it, so a hand-created `myapp_branch_x` passes on its name alone | **name only** |
 | Production | `DatabaseTarget.production` is hardcoded `false`: this host is whatever `x dev` resolved, and production migrates through `ROLE=migrate` in a deploy hook, never through MCP | **not a check** |
 | Destructive statements | `db.migrate` applies whatever the files hold; the rail is upstream — `x db gen` needs `--allow-destructive` to emit a drop, and `x verify`'s `drift` step refuses a committed `up` that destroys without a `-- destructive: true` line (`X_MIGRATION_DESTRUCTIVE`). The tool's own `destructive: true` is an MCP annotation, not a gate | **enforced upstream** |
-| Teardown | `x db branch delete <name>` — it may only drop what `ls` shows | **shipped** |
+| Teardown | `x db branch delete <name>` — it may only delete what `list` shows | **shipped** |
 | Build id scopes the SW | a per-branch build id, so a preview can never poison prod caches | **planned**, part of `x branch` |
 
 An agent can migrate, seed, test, and browse a preview without risking anything shared. That is what makes "let the agent try it" a safe instruction.

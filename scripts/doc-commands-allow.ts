@@ -59,6 +59,14 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     kind: 'absent',
     why: 'the record is about the fix line `x db branch ls --json` cloning a database called ls; the verb is list since 26.0.0',
   },
+  // The #290 record: 34 refusals emitted `x entities describe column --json`. The emitted string IS
+  // the subject; rewriting it to `show` (26.0.0, #709) would record a fix line nothing ever printed.
+  {
+    path: 'docs/history/entity.md',
+    cites: 'x entities describe',
+    kind: 'absent',
+    why: 'the record quotes the fix line the refusals emitted, x entities describe column --json; the verb is show since 26.0.0',
+  },
   // 5.0.0's upgrade note about a `fix:` line that named a command which does not exist. The whole
   // sentence is "this said `x db replication init`, and there is no such subcommand" — naming it is
   // the point, and a reader who has the old string in a runbook needs to recognise it. It lists the

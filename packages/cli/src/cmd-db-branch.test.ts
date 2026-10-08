@@ -1,8 +1,9 @@
 // `x db branch` end to end, through the real command: a VERB decides what runs, and a branch name
 // can never be one. Every case here is the defect in a different disguise — the argument used to
-// BE the branch name, so `x db branch list --json` (a `fix:` line the planned `x branch`,
-// `X_DB_BRANCH_FAILED` and `@ultimat3/db`'s own X_BRANCH_EXISTS all hand out) cloned a database
-// called `ls` and returned no listing. Embedded only: no case here needs a server.
+// BE the branch name, so the fix line of the day — `x db branch ls --json`, handed out then by the
+// planned `x branch`, `X_DB_BRANCH_FAILED` and `@ultimat3/db`'s own X_BRANCH_EXISTS (`list` since
+// 26.0.0) — cloned a database called `ls` and returned no listing. Embedded only: no case here
+// needs a server.
 
 import { describe, expect, test } from 'bun:test';
 // why: `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.

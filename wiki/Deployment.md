@@ -78,11 +78,11 @@ from the values `x deploy --method helm` passes it; on Compose, `stop_grace_peri
 |---|---|
 | `web` | let in-flight requests and streaming responses finish; a stream past the deadline gets a typed truncation, not a socket reset |
 | `sync` | send every client a `reconnect` frame **with a per-client backoff delay** (see below), then close cleanly |
-| `worker` | stop claiming at step 2 and **cancel nothing**: every held job keeps running, and one that finishes inside the budget is acked. At the cut-off — `drain.deadlineMs` less a margin (2 s, or half of a budget under 4 s) — a job still running has its `ctx.signal` aborted with `X_DRAINING`; a step that completes after that is still recorded. Half a margin later every claim still held is handed back uncounted (`countsAsAttempt: false`), so the replacement worker claims it at once — not after the visibility timeout — and replays every completed step instead of re-running it. A worker started after the signal (a boot still in progress) claims nothing |
+| `worker` | stop claiming at step 2 and **cancel nothing**: every held job keeps running, and one that finishes inside the budget is acked. At the cut-off — the worker's budget (`drain.workerDeadlineMs` when declared, else `drain.deadlineMs`) less a margin (2 s, or half of a budget under 4 s) — a job still running has its `ctx.signal` aborted with `X_DRAINING`; a step that completes after that is still recorded. Half a margin later every claim still held is handed back uncounted (`countsAsAttempt: false`), so the replacement worker claims it at once — not after the visibility timeout — and replays every completed step instead of re-running it. A worker started after the signal (a boot still in progress) claims nothing |
 | `scheduler` | delete the lease row immediately so the standby promotes on its next round rather than waiting out the 30s TTL |
 | `replicator` | flush the change feed to NATS up to the last confirmed LSN, then release the slot |
 
-A hook or request still running at `drain.deadlineMs` is **abandoned** — logged as `X_SHUTDOWN_TIMEOUT` naming it, never thrown, and the process exits clean; requests arriving during the drain get `X_DRAINING`.
+A hook or request still running at `drain.deadlineMs` (the worker's: `drain.workerDeadlineMs` when declared) is **abandoned** — logged as `X_SHUTDOWN_TIMEOUT` naming it, never thrown, and the process exits clean; requests arriving during the drain get `X_DRAINING`.
 
 ### Retiring a worker before SIGTERM
 
@@ -254,7 +254,7 @@ services:
 | `POSTGRES_PASSWORD` in `.env.production`, read through `--env-file` | `x new`'s compose file runs its own `db` service and refuses to start it without one (`${POSTGRES_PASSWORD:?…}`) |
 | every command passes `--env-file .env.production`, before `-f` | Compose interpolates `${VAR:?…}` from the shell and `--env-file` only, **never** from a service's `env_file:`. Without the flag a value set only in `.env.production` reads as missing and the parse fails. `x deploy` passes it on every step (`packages/cli/src/cmd-deploy.ts`, `PROD_ENV_FILE`); a variable set in the shell still wins |
 | `scheduler` and `replicator` at 1 replica | leader lock makes a second one a standby, not throughput |
-| `stop_grace_period` ≥ `drain.readinessGraceMs` + `drain.deadlineMs` + 10 s (`40s` ships, for the defaults) | otherwise SIGKILL truncates the drain and the reconnect fanout. Raise it with `drain.deadlineMs` — nothing derives it on this rung |
+| `stop_grace_period` ≥ `drain.readinessGraceMs` + `drain.deadlineMs` + 10 s (`40s` ships, for the defaults); the worker service's ≥ `drain.workerDeadlineMs` + 10 s when declared | otherwise SIGKILL truncates the drain and the reconnect fanout. Raise it with `drain.deadlineMs` (the worker's with `drain.workerDeadlineMs`) — nothing derives it on this rung |
 | roles that publish no host port are rolled **start-first** | `x deploy` scales the new container up beside the old with `--no-recreate`, waits for its healthcheck, then stops and removes the old one; `web` and `sync` publish one and are recreated stop-first until a proxy fronts them ([`docs/ops/README.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/README.md)) |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
 

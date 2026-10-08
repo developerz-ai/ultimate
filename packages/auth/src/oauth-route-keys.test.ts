@@ -33,7 +33,7 @@ const cookiePair = (setCookie: string): string => setCookie.slice(0, setCookie.i
 /** One Google login through both legs, the token endpoint answering `mint(nonce)`. */
 async function callback(
   mint: (nonce: string) => Promise<string> | string,
-  idTokenKeys?: (provider: OAuthProviderId) => IdTokenKeys,
+  idTokenKeys?: (provider: OAuthProviderId) => IdTokenKeys | undefined,
 ): Promise<Response> {
   let nonce = '';
   const fetch: OAuthFetch = async (url) =>
@@ -102,5 +102,21 @@ describe('unit · oauthLogin verifies the id token signature', () => {
     );
     expect(done.status).toBe(303);
     expect(asked).toEqual(['google']);
+  });
+
+  test('undefined leaves that provider on its published key set — the safe default branch', async () => {
+    // The README's shape: opt one provider out, `undefined` for the rest. Calling
+    // `providerJwks(providerFor(provider))` there instead throws for GitHub (no jwks_uri).
+    const previous = setLogSink(() => undefined);
+    try {
+      const optOut = (provider: OAuthProviderId) =>
+        provider === 'bigco-sso' ? 'token-endpoint-tls' : undefined;
+      const unsigned = await callback((nonce) => unsignedJwt(claims(nonce)), optOut);
+      expect(unsigned.status).toBe(400);
+      const signed = await callback((nonce) => SIGNER.sign(claims(nonce)), optOut);
+      expect(signed.status).toBe(303);
+    } finally {
+      setLogSink(previous);
+    }
   });
 });

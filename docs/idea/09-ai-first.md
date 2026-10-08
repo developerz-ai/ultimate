@@ -171,7 +171,7 @@ pgvector in the same Postgres. No second datastore.
 
 ## Branch environments
 
-The database half ships as `x db branch list | create <name> | drop <name>`. `x branch` — the one command that also builds, routes and scopes a socket — is **planned** and exits `X_NOT_IMPLEMENTED`.
+The database half ships as `x db branch list | create <name> | delete <name>`. `x branch` — the one command that also builds, routes and scopes a socket — is **planned** and exits `X_NOT_IMPLEMENTED`.
 
 | Property | Detail | `As of 2026-08` |
 |---|---|---|

@@ -553,7 +553,7 @@ How a SIGTERM'd process leaves: `DrainConfig` in [`packages/core/src/config-heal
 |---|---|---|---|
 | `drain.readinessGraceMs` | whole ms, `0`–`60000` | `0` in `development`/`test`, `5000` everywhere else (a process naming no environment included) | `/readyz` answers 503 for this long with the listener still open, so endpoints stop routing here before it closes. `web` and `sync` only: every other role drains with no grace |
 | `drain.deadlineMs` | whole ms, `1`–`3600000` | `25000` | the drain budget, after the grace: the time in-flight requests and a **running job** have to finish on a deploy before the lifecycle abandons the rest (`X_SHUTDOWN_TIMEOUT`). Raise it for long jobs. `NaN`, `Infinity`, a fraction, `0` or more than an hour is `X_CONFIG_INVALID` naming the key — past an hour, the job belongs in more steps. `As of 2026-10-05` |
-| `drain.workerDeadlineMs` | whole ms, `1`–`86400000`, or unset | unset | `ROLE=worker`'s budget **in place of** `drain.deadlineMs`, for a job that must finish rather than be cut off and replayed and may run past the hour — a bank login, a payment. Also what bounds a retire (SIGUSR2) that a SIGTERM lands in. Unset: the worker drains on `drain.deadlineMs` like every role. More than a day is `X_CONFIG_INVALID` naming the key. `As of 2026-10-07` |
+| `drain.workerDeadlineMs` | whole ms, `1`–`86400000`, or unset | unset | `ROLE=worker`'s budget **in place of** `drain.deadlineMs`, for a job that must finish rather than be cut off and replayed and may run past the hour — a bank login, a payment. Also what bounds a retire (SIGUSR2) that a SIGTERM lands in. Unset: the worker drains on `drain.deadlineMs` like every role. More than a day is `X_CONFIG_INVALID` naming the key. `As of 2026-10` |
 
 ```ts
 export const config = defineConfig({
@@ -568,7 +568,7 @@ The platform's own kill timer must outlast the sum, or SIGKILL truncates the dra
 | Rung | Who sizes it | Rule |
 |---|---|---|
 | Helm | `x deploy --method helm` passes `drain.deadlineSeconds`, `drain.workerDeadlineSeconds` and `drain.readinessGraceSeconds` from this section; the chart derives each role's `terminationGracePeriodSeconds` | preStop (web/sync, 1.30+) + grace (web/sync) + deadline (the worker's: `workerDeadlineSeconds` when > 0) + retire (worker, `roles.worker.retireSeconds`) + 10 s margin |
-| Compose | you: `stop_grace_period` in `docker-compose.prod.yml` | ≥ grace + deadline + 10 s (`40s` ships, for the defaults) |
+| Compose | you: `stop_grace_period` in `docker-compose.prod.yml` | ≥ grace + deadline + 10 s (`40s` ships, for the defaults); the worker service's ≥ `workerDeadlineMs` + 10 s when declared — the worker drains with no grace |
 
 ```ts
 import { defineConfig } from '@ultimat3/core';

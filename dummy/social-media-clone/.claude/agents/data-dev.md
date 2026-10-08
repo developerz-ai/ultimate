@@ -37,7 +37,7 @@ to fake a derivation.
 
 **Commands**, from the app root: `x db gen "<msg>"` · `x db migrate` · `x db branch create <name>`
 for anything destructive (`x db branch list` to see them, `x db branch delete <name>` to clean up —
-`drop` only removes what `ls` shows) · `x entities list --json` · `bunx x test unit --filter <text>`.
+`delete` only removes what `list` shows) · `x entities list --json` · `bunx x test unit --filter <text>`.
 
 Scope every command to the files you edited. Concurrency 1. **Run no git commands** and never
 `git stash`. Never hand-write a connection string — the harness provisions one.

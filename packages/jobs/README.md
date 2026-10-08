@@ -1195,7 +1195,7 @@ export const syncAccountWatched = job({
 |---|---|
 | a retry, a `step.sleep` / `waitForEvent`, a drain | nobody: the run has not ended |
 | `cancelJob()` / `x jobs cancel` on a queued or running row | the caller of the cancel — the worker's own settle then matches nothing |
-| `x jobs retry`, `rm`, `promote`, `drain` | the operator; a retried run settles again, and is told again |
+| `x jobs retry`, `delete`, `promote`, `drain` | the operator; a retried run settles again, and is told again |
 | a settle that did not land — the lease lapsed and the queue re-delivered | the claim that holds the row now |
 
 | Guarantee | Stated plainly |

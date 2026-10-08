@@ -46,14 +46,14 @@ const SPECS: readonly CommandSpec[] = [
     'x db gen "add publish_at" | migrate | seed [<name>] [--tier reference|dev] | branch list | branch delete <name>',
     {
       subcommands: ['gen', 'migrate', 'seed', 'branch'],
-      subcommandPositionals: { branch: ['ls', 'create', 'drop'] },
+      subcommandPositionals: { branch: ['list', 'create', 'delete'] },
       flags: [{ name: 'tier', type: 'string', summary: '' }],
     },
   ),
   spec('help', 'x help [command] [--json]'),
-  spec('jobs', 'x jobs [ls|show <id>|drain --to <driver>] [--json]', {
-    subcommands: ['ls', 'show', 'drain'],
-    defaultSubcommand: 'ls',
+  spec('jobs', 'x jobs [list|show <id>|drain --to <driver>] [--json]', {
+    subcommands: ['list', 'show', 'drain'],
+    defaultSubcommand: 'list',
     flags: [{ name: 'to', type: 'string', summary: '' }],
   }),
   spec('g', 'x g resource|action <name> [--feature f]', {

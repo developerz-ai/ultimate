@@ -55,7 +55,7 @@ export const SIDEWAYS_ALLOW: Readonly<Record<string, readonly string[]>> = {
  *
  * Every reason states what MOVING THE PACKAGE DOWN WOULD LEGALISE, never why the current tier feels
  * right: a floor exception is worth a line only when the tier itself is enforcing something. The
- * four rows here are the whole list `As of 2026-10-07`, and none of them was invented for the rule
+ * four rows here are the whole list `As of 2026-10`, and none of them was invented for the rule
  * — each is a sentence one of the package `CLAUDE.md` files already carried.
  *
  * `Object.freeze<Record<…>>({…})`, never an annotated literal: `scripts/frozen-records.ts`.

@@ -61,7 +61,7 @@ export function parseLimitFlag(value: string | undefined, command = 'jobs'): num
   return limit;
 }
 
-// ── ls ────────────────────────────────────────────────────────────────────
+// ── list ──────────────────────────────────────────────────────────────────
 
 export interface JobsListFilter {
   readonly queue?: string | undefined;

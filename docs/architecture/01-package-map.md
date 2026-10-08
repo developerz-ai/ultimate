@@ -110,10 +110,10 @@ Arrow = a dependency the importing package's own `package.json` declares, `As of
 graph TD
   create-ultimate["create-ultimate (unlisted)"]
   subgraph T5["tier 5"]
-    cli; testing; admin; scraping
+    cli; testing; admin
   end
   subgraph T4["tier 4"]
-    render; pwa; mcp; ai; manifest; mail; ui; notify
+    render; pwa; mcp; ai; manifest; mail; ui; notify; scraping
   end
   subgraph T3["tier 3"]
     action; query; jobs; realtime

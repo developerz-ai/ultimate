@@ -55,8 +55,9 @@ function render(kubeVersion: string, extra: readonly string[] = []): Map<string,
       ...ALL_ROLES,
       ...extra,
     ],
-    // Bounded: `helm template` renders one chart offline in well under a second.
-    { stdout: 'pipe', stderr: 'pipe', timeout: 30_000 },
+    // Bounded: `helm template` renders one chart offline in well under a second. SIGKILL, because
+    // helm's install path traps SIGTERM and keeps running (scaffold-helm-retire.test.ts).
+    { stdout: 'pipe', stderr: 'pipe', timeout: 30_000, killSignal: 'SIGKILL' },
   );
   if (result.exitCode !== 0)
     return expect.unreachable(`helm template: ${result.stderr.toString()}`);

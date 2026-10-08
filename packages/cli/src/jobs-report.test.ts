@@ -1,4 +1,4 @@
-// Flag parsing plus ls / show / retry, driven through `memoryJobDriver()` — a real driver with
+// Flag parsing plus list / show / retry, driven through `memoryJobDriver()` — a real driver with
 // real introspection and claim/ack/nack, so a dead letter here reached `dead` the way a pg queue
 // would.
 

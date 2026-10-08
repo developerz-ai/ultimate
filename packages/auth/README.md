@@ -276,17 +276,18 @@ signature trusts only the provider. A bad signature is `X_OAUTH_TOKEN_INVALID` (
 |---|---|---|
 | `exchangeOAuthCode(handshake, callback, { keys })` | `keys?: IdTokenKeys` | the provider's key set, else `'token-endpoint-tls'` |
 | `completeOAuthLogin(auth, { idTokenKeys })` | `idTokenKeys?: IdTokenKeys` | same |
-| `oauthLogin(auth, { idTokenKeys })` | `idTokenKeys?: (provider) => IdTokenKeys` — asked per callback | same |
+| `oauthLogin(auth, { idTokenKeys })` | `idTokenKeys?: (provider) => IdTokenKeys \| undefined` — asked per callback; `undefined` = the default | same |
 
 ```ts
-import { type Auth, oauthLogin, providerFor, providerJwks } from '@ultimat3/auth';
+import { type Auth, oauthLogin } from '@ultimat3/auth';
 
 declare const auth: Auth;
 
 // An egress that cannot reach one provider's jwks_uri: name the exemption for that provider only.
+// `undefined` keeps every other provider on the default — never `providerJwks(providerFor(id))`
+// here, which throws for GitHub: it publishes no jwks_uri.
 export const login = oauthLogin(auth, {
-  idTokenKeys: (provider) =>
-    provider === 'bigco-sso' ? 'token-endpoint-tls' : providerJwks(providerFor(provider)),
+  idTokenKeys: (provider) => (provider === 'bigco-sso' ? 'token-endpoint-tls' : undefined),
 });
 ```
 

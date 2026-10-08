@@ -72,7 +72,7 @@ export const SessionSchema = t.object({
 export const AccountSchema = t.object({
   id: t.uuid,
   userId: t.uuid,
-  // Any registered provider id, not the three built-ins: an app that registers its own OP has
+  // Any registered provider id, not the two built-ins: an app that registers its own OP has
   // account rows carrying that id, and an enum of three would refuse to parse its own data.
   provider: t.string,
   providerAccountId: t.string,

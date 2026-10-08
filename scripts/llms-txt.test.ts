@@ -67,6 +67,15 @@ describe('unit · llms.txt lists are generated, and drift is refused', () => {
     ]);
   });
 
+  test('the right entries in the wrong order are X_LLMS_TXT_DRIFT too', () => {
+    const filled = fillBlocks(FILE, { packages: ['- a', '- b'], wiki: [], sideways: [] });
+    const swapped = filled.text.replace('- a\n- b', '- b\n- a');
+    expect(llmsDrift(filled.text, filled.text, filled.missing)).toEqual([]);
+    expect(llmsDrift(swapped, filled.text, filled.missing).map((f) => f.cause)).toEqual([
+      'llms.txt lists the generated entries out of the order the generator writes them',
+    ]);
+  });
+
   test('a block whose markers are gone is refused, never skipped', () => {
     const filled = fillBlocks('# no markers\n', { packages: ['- x'], wiki: [], sideways: [] });
     expect(filled.missing).toEqual(['packages', 'wiki', 'sideways']);

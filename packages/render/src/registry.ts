@@ -55,8 +55,7 @@ export interface RouteEntry<TData = RouteData> {
   readonly islands: readonly string[];
   readonly pattern: CompiledPattern;
   /**
-   * The module's page component. Absent for a module that exports none —
-   * a `spa` shell is the mode that legitimately has no server-rendered body.
+   * The module's page component. Absent for a module that exports none.
    */
   readonly component?: RouteComponent;
 }
