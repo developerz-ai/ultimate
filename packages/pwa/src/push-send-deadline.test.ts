@@ -23,8 +23,15 @@ async function subscriberKeys(): Promise<{ readonly p256dh: string; readonly aut
 test('every POST carries a deadline, and a caller that cancels is not a retryable fault', async () => {
   const vapid = await generateVapidKeys();
   let signal: AbortSignal | null | undefined;
+  // Resolved when the POST is dialled: encryption runs first, and on a slow runner it outlasts any
+  // fixed sleep (CI, 2026-10-08), so wait for the call itself, never for a guessed duration.
+  let dialled: () => void = () => undefined;
+  const called = new Promise<void>((resolve) => {
+    dialled = resolve;
+  });
   const hung = ((_url: string, init?: RequestInit) => {
     signal = init?.signal;
+    dialled();
     return new Promise<Response>((_resolve, reject) =>
       init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)),
     );
@@ -45,7 +52,7 @@ test('every POST carries a deadline, and a caller that cancels is not a retryabl
     () => expect.unreachable('a hung send resolved'),
     (error: unknown) => error,
   );
-  await Bun.sleep(5);
+  await called;
   expect(signal).toBeInstanceOf(AbortSignal);
   // Not the caller's signal itself: the deadline is combined with it.
   expect(signal).not.toBe(caller.signal);
