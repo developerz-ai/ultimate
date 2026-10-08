@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 26.0.0 - 2026-10-08
+
 Every breaking entry under Changed has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `25.x → 26.0.0` section, in
 the same order.
@@ -40,6 +44,10 @@ Tier 5 — cli.
 - `@ultimat3/core`: `addLogSink(sink): () => void` — the supported log tee. Every default-writer line (the process `logger`, its children, `ctx.logger`), after redaction, also goes to `sink`, beside stdout/stderr or a `setLogSink` test seam, never instead. Returns the unsubscribe. A sink that throws is skipped for that line and reported once per sink as `log.sink_failed`; a line a sink logs is written but not teed back into the sinks. `setLogSink` stays the test seam that replaces the streams.
 - `@ultimat3/core`: `isRetiring()` — true from the moment a worker's retire begins for the rest of the process. Before, a SIGUSR2 retire (`ROLE=worker`) only logged, and `isDraining()` turns true only at the drain after the held jobs finish. A heartbeat can now say "finishing, about to exit". `markRetiring()` is the retire's own call. `@ultimat3/cli` sets it at the signal, before the worker is stopped, and on `x dev`'s worker-first restart. `isDraining()` is unchanged.
 - `@ultimat3/core`, `@ultimat3/cli`: `drain.workerDeadlineMs` (whole ms, 1–86400000, unset by default). It is `ROLE=worker`'s drain budget in place of `drain.deadlineMs`, which stays capped at an hour for every other role. Use it for jobs that must finish rather than replay and can run longer than that. It also bounds a retire that a SIGTERM lands in. `x deploy --method helm` passes it as `drain.workerDeadlineSeconds`, and both charts size only the worker's `terminationGracePeriodSeconds` from it. `WORKER_DRAIN_DEADLINE_MAX_MS` is exported.
+
+### Commits
+
+- feat!: app feedback from bank-integrations + the #709 breaking batch (26.0.0) (#714)
 
 ## 25.2.0 - 2026-10-07
 
