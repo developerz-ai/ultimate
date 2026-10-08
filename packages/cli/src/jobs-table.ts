@@ -1,4 +1,4 @@
-// The `x jobs ls` terminal table, and nothing else. Split out of `jobs-report.ts` so that
+// The `x jobs list` terminal table, and nothing else. Split out of `jobs-report.ts` so that
 // deciding how a value LOOKS lives apart from deciding what the queue DOES: a rendering rule
 // (column order, padding, the run-at unit) is reviewed here, once, with no queue logic around it.
 

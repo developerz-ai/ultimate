@@ -33,7 +33,7 @@ export const restartAt = (provider: string): string =>
  *
  * **`supported` is the CALLER's to scope, because the two callers have two audiences.**
  * `oauth-route.ts` passes `BUILTIN_OAUTH_PROVIDER_IDS` — its reader is an anonymous stranger who
- * typed a URL, and the three built-ins are a framework constant already in the public docs, while
+ * typed a URL, and the two built-ins are a framework constant already in the public docs, while
  * the live registry holds whatever internal OP this deployment registered. `providerFor()` passes
  * `oauthProviderIds()` — its reader is a developer holding a stack trace, and there the full list
  * is exactly what makes the fix runnable. Neither ever passes `defineAuth({ providers })`: naming

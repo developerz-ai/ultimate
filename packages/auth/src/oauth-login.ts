@@ -8,6 +8,7 @@ import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
 import { normaliseEmail } from './email';
 import { AuthError, authWriteFailed } from './errors';
+import type { IdTokenKeys } from './jwks';
 import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthCallback, OAuthHandshake } from './oauth';
 import { oauthExchangeFailed, restartAt } from './oauth-errors';
@@ -326,6 +327,11 @@ export interface CompleteOAuthLoginInput {
   readonly userAgent?: string | null | undefined;
   /** The app's grant seam. Called once, after the profile is proven. */
   readonly resolveGrants?: ResolveOAuthGrants | undefined;
+  /**
+   * What the id token's signature is checked against — `exchangeOAuthCode`'s `keys`. Default:
+   * the provider's published key set when it has a `jwksUri`, token-endpoint TLS when it has none.
+   */
+  readonly idTokenKeys?: IdTokenKeys | undefined;
 }
 
 /** Callback → session, in one call: exchange, identify, sign in. */
@@ -339,6 +345,7 @@ export async function completeOAuthLogin(
     clock: auth.clock,
     fetch: input.fetch,
     timeoutMs: input.timeoutMs,
+    keys: input.idTokenKeys,
   });
   const options = { fetch: input.fetch, timeoutMs: input.timeoutMs };
   const { profile, userinfo } = await readOAuthProfile(provider, tokens, options);

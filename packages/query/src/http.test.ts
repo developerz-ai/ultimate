@@ -188,7 +188,7 @@ describe('a query read over the pipeline', () => {
     // `X_BODY_INVALID` here would mean a second parser ran: the same read answers
     // `X_INPUT_INVALID` on every other surface, with the line that prints the schema.
     expect(body.code).toBe('X_INPUT_INVALID');
-    expect(body.fix).toContain('x queries describe orgFeed');
+    expect(body.fix).toContain('x queries show orgFeed');
   });
 
   test('a caller without the permission is denied by that same evaluation', async () => {

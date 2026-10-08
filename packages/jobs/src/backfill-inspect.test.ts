@@ -57,7 +57,7 @@ describe('toBackfillProgress', () => {
 
 describe('inspectBackfills', () => {
   test('a driver that ships no ledger answers an EMPTY list, never a throw', async () => {
-    // `x jobs ls` and the jobs panel report the queue; a queue that failed on "no backfills
+    // `x jobs list` and the jobs panel report the queue; a queue that failed on "no backfills
     // recorded" would be a broken command for a fact nobody asked about.
     // The key is REMOVED, not set to `undefined`: `backfills?: BackfillLedger` under
     // `exactOptionalPropertyTypes` is "absent or a ledger", and a driver that ships no ledger is

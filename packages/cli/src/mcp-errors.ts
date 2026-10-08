@@ -60,7 +60,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_APP_PACKAGE_INVALID: 'bun pm pkg set name=my-app version=0.1.0',
   X_ERROR_CODE_UNKNOWN: 'x errors list --json',
   X_DECLARATION_UNKNOWN: 'x actions list --json',
-  X_JOB_UNKNOWN: 'x jobs ls --json',
+  X_JOB_UNKNOWN: 'x jobs list --json',
   X_FIX_TARGET_UNKNOWN: 'x fix boundary apps/web/site/page.tsx --json',
   X_ERROR_FIX_INVALID: 'x verify --json   # the finding names the file, the line and the fix text',
   X_ERROR_FIX_PATH_MISSING:
@@ -213,7 +213,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_QUERY_SUBSCRIBES_UNKNOWN:
     'x db gen "retry after fixing subscribes" --json   # first edit subscribes: on the query the cause names',
   X_DB_MIGRATE_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
-  X_DB_BRANCH_FAILED: 'x db branch ls --json',
+  X_DB_BRANCH_FAILED: 'x db branch list --json',
   X_DB_STUDIO_FAILED: 'x doctor --json',
   // Runnable first, the narrowing behind a `#`, exactly as X_CLI_UNKNOWN_COMMAND above: naming
   // the tier IS the consent, and which seed to consent to is the one thing this table cannot

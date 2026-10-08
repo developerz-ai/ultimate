@@ -94,7 +94,7 @@ describe('decodeIdToken', () => {
 
   test('email_verified counts only as a real boolean or the string Apple sends', () => {
     expect(idTokenEmailVerified(decodeIdToken('google', unsignedJwt(googleClaims())))).toBe(true);
-    const asString = decodeIdToken('apple', unsignedJwt(googleClaims({ email_verified: 'true' })));
+    const asString = decodeIdToken('google', unsignedJwt(googleClaims({ email_verified: 'true' })));
     expect(idTokenEmailVerified(asString)).toBe(true);
     const asFalse = decodeIdToken('google', unsignedJwt(googleClaims({ email_verified: 'false' })));
     expect(idTokenEmailVerified(asFalse)).toBe(false);

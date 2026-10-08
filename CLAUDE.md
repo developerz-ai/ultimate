@@ -115,8 +115,8 @@ copy of this table, and they must agree.
 | 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` |
 | 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify` |
-| 5 | `admin`, `testing`, `cli`, `scraping` |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify`, `scraping` |
+| 5 | `admin`, `testing`, `cli` |
 
 Declared sideways edges, one line each — the full record per edge is
 [`docs/history/tier-decisions.md`](docs/history/tier-decisions.md):

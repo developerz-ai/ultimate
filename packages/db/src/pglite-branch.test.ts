@@ -88,7 +88,7 @@ describe('branchPglite', () => {
     await branchPglite('feature_x', { from });
     const error = await failure(() => branchPglite('feature_x', { from }));
     expect(error.code).toBe('X_BRANCH_EXISTS');
-    expect(error.fix).toContain('x db branch drop feature_x');
+    expect(error.fix).toContain('x db branch delete feature_x');
   });
 
   test('force replaces the branch outright, leaving no file from the old one', async () => {

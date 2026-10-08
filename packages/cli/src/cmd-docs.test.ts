@@ -47,7 +47,7 @@ describe('unit · x docs', () => {
     expect(error.fix).toContain('x docs');
   });
 
-  // The same `--limit` in the same binary, refused by `x jobs ls` and accepted here: `1e9` parsed
+  // The same `--limit` in the same binary, refused by `x jobs list` and accepted here: `1e9` parsed
   // as 1 and answered with ONE match, and `abc` / `0` / `-3` fell through to the default with no
   // refusal at all — a bound other than the one typed, reported as if it were the one typed.
   test('a --limit the jobs reader refuses is refused here too, and names x docs', async () => {

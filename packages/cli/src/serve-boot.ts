@@ -54,13 +54,19 @@ const LISTENING_ROLES: readonly Role[] = ['web', 'sync'];
  * — it only went on claiming jobs for those seconds, then aborted them at the drain (s1-con #7).
  *
  * The budget (`deadlineMs`) is every role's: it is the time a worker's running job has to finish
- * on a deploy, so it is the one key here a non-listening role needs MOST.
+ * on a deploy, so it is the one key here a non-listening role needs MOST. The worker's alone is
+ * `workerDeadlineMs` when declared — the hour `deadlineMs` is capped at is too short for a job
+ * that must not run twice, and a web role has no business waiting two hours on a request.
  */
 export function lifecycleForRole(
   role: Role,
   drain: Partial<DrainConfig> | undefined,
 ): LifecycleOptions {
-  const budget = drain?.deadlineMs === undefined ? {} : { deadlineMs: drain.deadlineMs };
+  const declared =
+    role === 'worker' && drain?.workerDeadlineMs !== undefined
+      ? drain.workerDeadlineMs
+      : drain?.deadlineMs;
+  const budget = declared === undefined ? {} : { deadlineMs: declared };
   if (!LISTENING_ROLES.includes(role)) return { readinessGraceMs: 0, ...budget };
   return drain?.readinessGraceMs === undefined
     ? budget

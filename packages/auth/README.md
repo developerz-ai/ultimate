@@ -207,7 +207,7 @@ that sweep at boot.
 ## Providers are a registry, not a union
 
 `OAuthProviderId` is `string`, and `registerOAuthProvider()` is the one way a provider gets in —
-the three built-ins go through the same call. Before 1.3.0 the id was `keyof typeof
+the two built-ins go through the same call. Before 1.3.0 the id was `keyof typeof
 OAUTH_PROVIDERS` over `github | google | apple`, so an enterprise OP was **unrepresentable**: the
 constraint was a type, there was no runtime escape, and the only ways out were forking the package
 or bypassing OAuth entirely and losing PKCE, the sealed handshake, issuer pinning and account
@@ -241,7 +241,7 @@ registerOAuthProvider(await discoverOAuthProvider({ id: 'bigco-sso', issuer: 'ht
 | `registerOAuthProvider(provider)` | the frozen provider; `X_OAUTH_PROVIDER_DUPLICATE` on a second claim of one id |
 | `providerFor(id)` | the provider, or throws `X_OAUTH_PROVIDER_UNKNOWN` — never `undefined` |
 | `hasOAuthProvider(id)` | whether the id is registered |
-| `BUILTIN_OAUTH_PROVIDER_IDS` | the three shipped ids — the only list an **anonymous** refusal is built from, and it is named in the `auth.oauth.refused` log line, never in the response body |
+| `BUILTIN_OAUTH_PROVIDER_IDS` | the two shipped ids — the only list an **anonymous** refusal is built from, and it is named in the `auth.oauth.refused` log line, never in the response body |
 | `oauthProviderIds()` | every registered id, live. **NOT** what `defineAuth({ providers })` defaults to — that is `[]`, so an app names what it enabled |
 
 `discoverOAuthProvider` refuses a document with no `jwks_uri`: without a key set there is nothing
@@ -262,8 +262,34 @@ because a default is what silently makes a second door as trusting as the first.
 
 | `keys` | Means |
 |---|---|
-| `'token-endpoint-tls'` | this token came off a TLS response from the provider's own token endpoint — the one case OIDC Core 3.1.3.7 exempts. `exchangeOAuthCode` passes it, and that is the only shipped call site that may |
+| `'token-endpoint-tls'` | this token came off a TLS response from the provider's own token endpoint — the one case OIDC Core 3.1.3.7 exempts. Since 26.0.0 the login flow uses it only for a provider with no `jwksUri`, or when the app names it |
 | a `JwksKeySource` | the signature is checked. `providerJwks(providerFor(id))`, or `jwksClient({ provider, jwksUri })` |
+
+**The login flow verifies the signature by default** (26.0.0). `exchangeOAuthCode`, and with it
+`completeOAuthLogin` and `oauthLogin`'s callback, checks the id token against the provider's
+published key set (`providerJwks`, cached per provider, one fetch per TTL) whenever the provider has
+a `jwksUri` — Google and every discovered provider do; GitHub issues no id token. The token-endpoint
+exemption trusts every hop the response crossed (a TLS-inspecting proxy, a bad DNS answer); a
+signature trusts only the provider. A bad signature is `X_OAUTH_TOKEN_INVALID` (400) and no session.
+
+| Where | Option | Default |
+|---|---|---|
+| `exchangeOAuthCode(handshake, callback, { keys })` | `keys?: IdTokenKeys` | the provider's key set, else `'token-endpoint-tls'` |
+| `completeOAuthLogin(auth, { idTokenKeys })` | `idTokenKeys?: IdTokenKeys` | same |
+| `oauthLogin(auth, { idTokenKeys })` | `idTokenKeys?: (provider) => IdTokenKeys \| undefined` — asked per callback; `undefined` = the default | same |
+
+```ts
+import { type Auth, oauthLogin } from '@ultimat3/auth';
+
+declare const auth: Auth;
+
+// An egress that cannot reach one provider's jwks_uri: name the exemption for that provider only.
+// `undefined` keeps every other provider on the default — never `providerJwks(providerFor(id))`
+// here, which throws for GitHub: it publishes no jwks_uri.
+export const login = oauthLogin(auth, {
+  idTokenKeys: (provider) => (provider === 'bigco-sso' ? 'token-endpoint-tls' : undefined),
+});
+```
 
 ```ts
 const keys = providerJwks(providerFor('bigco-sso'));
@@ -743,14 +769,13 @@ override all three at once.
 |---|---|---|---|
 | `github` | S256 | — profile + verified-emails call | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` |
 | `google` | S256 | required, nonce-bound | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` |
-| `apple` | S256 | required, nonce-bound | `APPLE_CLIENT_ID` / `APPLE_CLIENT_SECRET` |
 
-Apple alone rejects a static secret: `APPLE_CLIENT_SECRET` must hold the ES256 client-secret
-JWT signed with the `.p8` key, which Apple expires every six months.
+Apple is not a built-in (removed in 26.0.0): it POSTs its callback (`response_mode=form_post`) and
+both callback routes are GET. An app that needs it registers its own with `registerOAuthProvider`.
 
 | Step | Does | Fails with |
 |---|---|---|
-| `oauthLogin(auth)` | the two routes: redirect out, session back | `X_OAUTH_PROVIDER_UNKNOWN`, `X_OAUTH_DENIED` |
+| `oauthLogin(auth)` | the two routes: redirect out, session back — the id token's signature verified against the provider's key set (`idTokenKeys` overrides) | `X_OAUTH_PROVIDER_UNKNOWN`, `X_OAUTH_DENIED`, `X_OAUTH_TOKEN_INVALID` |
 | `handshakeCookie` / `readHandshakeCookie` | seals the handshake onto the redirect, opens it on the callback | `X_OAUTH_STATE_INVALID`, `X_ENV_MISSING` |
 | `exchangeOAuthCode` | POSTs the code + PKCE verifier, verifies the id token | `X_OAUTH_EXCHANGE_FAILED`, `X_OAUTH_TOKEN_INVALID` |
 | `oauthProfile` | id-token claims, else userinfo → one normalised identity | `X_OAUTH_EXCHANGE_FAILED` |
@@ -856,7 +881,7 @@ later. In a test the store is `memoryAuthAdapter()` — every `AuthAdapter` is a
 | `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match |
 | `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange, or returned no usable identity |
 | `X_OAUTH_TOKEN_INVALID` | the id token failed its signature, issuer, audience or expiry check, or no key in the published set matched its `kid` |
-| `X_OAUTH_PROVIDER_UNKNOWN` | the URL named a provider nothing registered, one `defineAuth({ providers })` did not enable, or one whose `*_CLIENT_ID`/`*_CLIENT_SECRET` are unset — all three answer 404 with the same body, because telling an anonymous caller which is which describes this deployment for free. The real reason is logged. The refusal lists only the three built-ins, never your registry |
+| `X_OAUTH_PROVIDER_UNKNOWN` | the URL named a provider nothing registered, one `defineAuth({ providers })` did not enable, or one whose `*_CLIENT_ID`/`*_CLIENT_SECRET` are unset — all three answer 404 with the same body, because telling an anonymous caller which is which describes this deployment for free. The real reason is logged. The refusal lists only the two built-ins, never your registry |
 | `X_OAUTH_PROVIDER_DUPLICATE` | two `registerOAuthProvider` calls claimed one id — at boot, never at a login |
 | `X_OAUTH_DENIED` | the user pressed Cancel, or the provider declined — `403`, never a `502` |
 | `X_PASSWORD_WEAK` | strength check rejected the password |

@@ -27,7 +27,7 @@ import {
  * `reap` is deliberately absent: a nightly sweep is a `task` (`reapBranches` from `@ultimat3/db`),
  * and a CLI verb for it would be a second path to one job with a max-age nobody can default.
  */
-export const BRANCH_SUBCOMMANDS = ['ls', 'create', 'drop'] as const;
+export const BRANCH_SUBCOMMANDS = ['list', 'create', 'delete'] as const;
 
 export type BranchSubcommand = (typeof BRANCH_SUBCOMMANDS)[number];
 
@@ -91,7 +91,7 @@ export function branchDatabaseName(source: string, branch: string): string {
  * `db.migrate` is aimed at a private database from a URL alone, with no connection to ask
  * `current_database()` — so "a branch of somebody" is the only question it can pose, and the
  * answer it wants for `analytics_branch_feat` is still "not the shared database". Anything holding
- * a client asks `branchNameIn` instead, which is the question `ls` and `drop` need.
+ * a client asks `branchNameIn` instead, which is the question `list` and `delete` need.
  */
 export const branchNameOf = (database: string): string | null =>
   /_branch_(.+)$/.exec(database)?.[1] ?? null;
@@ -112,7 +112,7 @@ export function branchNameIn(source: string, database: string): string | null {
 /**
  * The embedded peer: `branchPglite` copies `<dir>` to `<dir>-<name>`, so the branch name is the
  * suffix. `pgliteBranchDir` is the forward rule and this is its inverse — written once, because
- * `x db branch ls` and the MCP host's branch check must agree about what a branch directory is.
+ * `x db branch list` and the MCP host's branch check must agree about what a branch directory is.
  */
 export function pgliteBranchName(dir: string, source: string): string | null {
   return dir.startsWith(`${source}-`) ? dir.slice(source.length + 1) : null;
@@ -213,7 +213,7 @@ async function branchesOf(client: DbClient, source: string): Promise<readonly Br
 /**
  * Only databases carrying `createBranch`'s own marker comment, and only branches of the database
  * this session is connected to. A database this listing does not name is one `drop` may not touch,
- * which is what makes "you may only drop what `ls` shows" a guard rather than a courtesy — and a
+ * which is what makes "you may only delete what `list` shows" a guard rather than a courtesy — and a
  * row belonging to another app on the same server made that guard answer for a database it had
  * never seen.
  */
@@ -224,7 +224,7 @@ export async function listExternalBranches(client: DbClient): Promise<readonly B
 /**
  * Through `createBranch`, never a hand-written `CREATE DATABASE`: it validates the name, refuses a
  * database that already exists with `X_BRANCH_EXISTS`, and writes the marker comment that makes
- * the clone visible to `ls`. The CLI shelled out to `psql` until now and wrote no marker at all,
+ * the clone visible to `list`. The CLI shelled out to `psql` until now and wrote no marker at all,
  * so every branch it made was invisible to the only lister the framework has.
  */
 export async function createExternalBranch(client: DbClient, branch: string): Promise<BranchRow> {
@@ -232,7 +232,7 @@ export async function createExternalBranch(client: DbClient, branch: string): Pr
   const database = branchDatabaseName(source, branch);
   const info = await createBranch(database, { client, base: source });
   return {
-    // The name `ls` will show for it, derived the way `ls` derives one — a create that reported a
+    // The name `list` will show for it, derived the way `list` derives one — a create that reported a
     // name the listing then spells differently is a `drop` the caller has to guess at.
     name: branchNameIn(source, database) ?? database,
     location: database,

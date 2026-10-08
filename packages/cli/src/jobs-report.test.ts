@@ -1,4 +1,4 @@
-// Flag parsing plus ls / show / retry, driven through `memoryJobDriver()` — a real driver with
+// Flag parsing plus list / show / retry, driven through `memoryJobDriver()` — a real driver with
 // real introspection and claim/ack/nack, so a dead letter here reached `dead` the way a pg queue
 // would.
 
@@ -59,7 +59,7 @@ describe('unit · jobs flag parsing', () => {
 
   /**
    * `cancelled` is the one this loop could not see while it walked the CLI's own seven-member
-   * copy: `x jobs cancel` CREATES that state and `x jobs ls --state cancelled` refused to filter
+   * copy: `x jobs cancel` CREATES that state and `x jobs list --state cancelled` refused to filter
    * on it. One list, so the two commands cannot disagree about what a job can be.
    */
   test('the state vocabulary is the queue package own list, not a copy of it', () => {

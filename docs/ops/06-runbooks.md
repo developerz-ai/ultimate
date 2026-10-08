@@ -169,7 +169,7 @@ A job that exhausted its retries is **kept**, never dropped: `queue_dead_jobs` c
 
 | # | Step |
 |---|---|
-| 1 | `x jobs ls --json` — the dead letters are listed per queue |
+| 1 | `x jobs list --json` — the dead letters are listed per queue |
 | 2 | `x jobs show <id> --json` — the attempts, each error's code, cause and `fix:` |
 | 3 | fix the cause (the handler, a downstream, a bad input), deploy |
 | 4 | `x jobs retry <id>` — the job runs again under its SAME idempotency key, so a partial side effect is not repeated |
@@ -195,9 +195,10 @@ postgres itself — the app emits no series for it.
 ## `X_SHUTDOWN_TIMEOUT` in the logs on every deploy
 
 A drain hook — a handler, a job step, a socket teardown — was still running at the drain deadline
-(`drain.deadlineMs` in `app.config.ts`, 25 s by default) and was **abandoned**: the process exited without it.
+(`drain.deadlineMs` in `app.config.ts`, 25 s by default; on `ROLE=worker`, `drain.workerDeadlineMs` when declared) and was **abandoned**: the process exited without it.
 
 | Situation | Do |
 |---|---|
-| A long request or job step is expected | raise `drain: { deadlineMs }` in `app.config.ts` (1–3600000, every role). On Kubernetes `x deploy --method helm` carries it into the chart, which derives each role's `terminationGracePeriodSeconds` from it; on Compose raise `stop_grace_period` by hand to at least readiness grace + that deadline + 10 s |
+| A long request is expected | raise `drain: { deadlineMs }` in `app.config.ts` (1–3600000, every role). On Kubernetes `x deploy --method helm` carries it into the chart, which derives each role's `terminationGracePeriodSeconds` from it; on Compose raise `stop_grace_period` by hand to at least readiness grace + that deadline + 10 s |
+| A long job step is expected on the worker | declare `drain: { workerDeadlineMs }` (1–86400000, `ROLE=worker` only, in place of `deadlineMs` there — which stays capped at an hour). `x deploy --method helm` passes it as `drain.workerDeadlineSeconds` and the chart sizes the worker's grace from it; on Compose raise the worker service's `stop_grace_period` to at least that budget + 10 s. A job that must never be cut off at all: the worker's retire ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
 | It is not expected | the log line names the hook (`the "<name>" shutdown hook`): make it return once it stops accepting work, not once all work is done |

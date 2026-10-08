@@ -257,7 +257,7 @@ describe('the backfill ledger source', () => {
       const facts = await defaultDevSources().backfills();
 
       // Filtered to `running`, this panel would report a finished sweep as one that never
-      // happened — which is the question `x jobs ls` deliberately does NOT answer and this one
+      // happened — which is the question `x jobs list` deliberately does NOT answer and this one
       // does. `completed` clears the cursor; the row count is what survives.
       expect(facts.map((fact) => [fact.runId, fact.status, fact.rows])).toEqual([
         ['r2', 'running', 7],

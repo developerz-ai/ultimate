@@ -97,7 +97,7 @@ Mounted for every registered query by `x dev` and by a container, from one compo
 |---|---|
 | Method + path | `GET /_x/query/<kebab-export-name>`, the URL `.client()` derives with no server import |
 | Input | the search string, coerced at the boundary (`t.number` from `"12"`) then validated by the query's own schema. Repeated keys are an array, and keys are sorted so one input is one URL. The typed client sends a `Date` as its ISO instant and nothing for an empty array; the route reads a **required** array nobody sent as `[]`, so `{ tags: [] }` arrives (`As of 2026-10`). An optional or defaulted array keeps the schema's own answer for absence — `[]` passed to one arrives as absent |
-| Bad input | **400** `X_INPUT_INVALID`, with `x queries describe <name> --json` as the fix — the same code and line every other surface of that read answers |
+| Bad input | **400** `X_INPUT_INVALID`, with `x queries show <name> --json` as the fix — the same code and line every other surface of that read answers |
 | Authz | evaluated once, inside the read, from the parsed input. `auth: 'public'` only for `allow()` — anything else is `required`, and an anonymous caller is 401 before the policy is reached |
 | Caching | `no-store`. The URL names no actor while the rows are scoped to one, so a shared cache is something a CDN in front of the app configures knowingly. The read's own `cache:` tags ride along for a purge |
 | Failures | `application/problem+json` carrying the code, cause and fix. A non-framework throw is the server's 500, never dressed as a read failure |
@@ -173,7 +173,7 @@ export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 A page is served `order by <declared keys>, "id" asc`, and so is a live window — `As of 2026-08`,
 the initial window, the matcher's patch positions and the keyset re-read a reconnect resumes with
 are one ordering. A row tied on every declared key lands where its id puts it, not after the tie
-group, and not wherever the database happened to return it. `x queries describe <name> --json`
+group, and not wherever the database happened to return it. `x queries show <name> --json`
 prints the order. A row that reaches the matcher with no `id` is `X_QUERY_NOT_PAGEABLE`, never a
 patch aimed at a position no client holds.
 
@@ -229,7 +229,7 @@ matcher alike. `null` and a column the row omits are the same absence.
 argument is *unknown* in Postgres and unknown is never true, so before this the same read matched
 every row from a memory source and no row from a driver. A cursor across a nullable sort key had
 the defect one page later: page two stopped at the first NULL, and the rows behind it were
-unreachable. `x queries describe <name> --json` prints the SQL that says so.
+unreachable. `x queries show <name> --json` prints the SQL that says so.
 
 **Both pagination systems now answer this the same way, `As of 2026-08-24`.** `@ultimat3/entity`'s
 repo cursor used to refuse a nullable sort key outright rather than answer where a NULL sorts; it
@@ -326,7 +326,7 @@ x verify              # runs all six test types
 | Command | Output |
 |---|---|
 | `x queries list --json` | `name`, `live`, `capability`, `tags`, `ttlMs` — the table header is `cmd-registries.ts`'s own |
-| `x queries describe <name> --json` | generated SQL, tag set, MCP tool shape |
+| `x queries show <name> --json` | generated SQL, tag set, MCP tool shape |
 | `x cache graph --json` | what a write to each tag evicts, including this query's entry |
 
 ## Rules

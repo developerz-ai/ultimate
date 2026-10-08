@@ -126,6 +126,31 @@ describe('drain.readinessGraceMs', () => {
   });
 });
 
+describe('drain.workerDeadlineMs', () => {
+  test('unset by default: the worker drains on drain.deadlineMs like every role', () => {
+    expect(defineConfig({ name: 'app' }).drain.workerDeadlineMs).toBeUndefined();
+  });
+
+  test('a worker budget past the hour drain.deadlineMs is capped at, up to a day', () => {
+    const config = defineConfig({ name: 'app', drain: { workerDeadlineMs: 7_500_000 } });
+    expect(config.drain.workerDeadlineMs).toBe(7_500_000);
+    expect(config.drain.deadlineMs).toBe(25_000);
+    expect(
+      defineConfig({ name: 'app', drain: { workerDeadlineMs: 86_400_000 } }).drain.workerDeadlineMs,
+    ).toBe(86_400_000);
+  });
+
+  test.each([Number.NaN, 0, -1, 1.5, 86_400_001, '2h'])(
+    '%p is refused, naming the key',
+    (value) => {
+      const cause = refusal(() =>
+        defineConfig({ name: 'app', drain: { workerDeadlineMs: value as number } }),
+      );
+      expect(cause).toContain('drain.workerDeadlineMs');
+    },
+  );
+});
+
 describe('drain.deadlineMs', () => {
   test('defaults to the 25 s budget the lifecycle has always drained in', () => {
     expect(defineConfig({ name: 'app' }).drain.deadlineMs).toBe(25_000);

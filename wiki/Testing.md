@@ -746,7 +746,7 @@ finished. stdout stays the one document.
 | Code | Cause | Fix |
 |---|---|---|
 | `X_TEST_NETWORK_SEALED` | a test reached the network without a mock | `mockFetch('<url>', …)`, or `allowHost('<host>')` if the call must be real — both from `@ultimat3/testing`. There is no `x test mock` subcommand |
-| `X_FORBIDDEN` | the actor's policy refused — the assertion target of every denial test | `x actions describe <action> --json` names the capability it enforces: assert the denial with `.rejects.toBeUltimateError('X_FORBIDDEN')`, or grant that capability to the seeded actor's role in `apps/web/shared/policies.ts` |
+| `X_FORBIDDEN` | the actor's policy refused — the assertion target of every denial test | `x actions show <action> --json` names the capability it enforces: assert the denial with `.rejects.toBeUltimateError('X_FORBIDDEN')`, or grant that capability to the seeded actor's role in `apps/web/shared/policies.ts` |
 | `X_INVARIANT` | a domain invariant was violated inside a test fixture | fix the seed or the invariant |
 | `X_CONFIG_INVALID` | test config names an unknown worker count, driver, or test type | `x test --help` |
 | `X_TEST_ISLAND_STATE_UNKNOWN` | an island test named a state its manifest does not declare | name one of the ids the cause lists, or declare the state in the `.island.states.ts` beside the island |

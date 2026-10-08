@@ -32,7 +32,7 @@ export const BANNED_PHRASES: readonly RegExp[] = [
 /**
  * What makes a fix actionable as written: the `x` CLI, a tool the machine already has, a call the
  * reader can paste, or a file they can open. A banned phrase is only a failure without one of
- * these — "check the gateway, then: x actions describe posts.publish --json" names the observation
+ * these — "check the gateway, then: x actions show posts.publish --json" names the observation
  * *and* the command, which is the shape the contract wants.
  */
 export const COMMAND_TOKENS: readonly RegExp[] = [

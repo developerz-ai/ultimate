@@ -52,7 +52,7 @@ const ARRAY_ELEMENT_FIXES = Object.freeze<Record<RefusedElement, string>>({
  * and only a table could show.
  *
  * Not `reject()`: a declaration is repaired by an EDIT, and `reject`'s
- * `x entities describe column --json` is `X_DECLARATION_UNKNOWN` — no entity is named `column`, and
+ * `x entities show column --json` is `X_DECLARATION_UNKNOWN` — no entity is named `column`, and
  * there is no entity at all yet. So each fix is the edit that holds the list instead.
  */
 export const arrayElementRefused = (kind: RefusedElement): EntityError => {

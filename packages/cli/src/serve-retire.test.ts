@@ -3,7 +3,7 @@
 // waits for PID 1 to go away sees the retire finish. Driven through a fake signal source.
 
 import { describe, expect, test } from 'bun:test';
-import { InternalError, setLogSink } from '@ultimat3/core';
+import { InternalError, isRetiring, resetLifecycle, setLogSink } from '@ultimat3/core';
 import type { WorkerStats } from '@ultimat3/jobs';
 import { armWorkerRetire, RETIRE_SIGNAL, type RetireSignals } from './serve-retire';
 
@@ -110,6 +110,34 @@ describe('unit · armWorkerRetire', () => {
       );
     } finally {
       log.restore();
+    }
+  });
+
+  test('the app can read the retire: isRetiring() is true before the worker is stopped', async () => {
+    resetLifecycle();
+    const signals = fakeSignals();
+    const held = heldWorker();
+    let retiringAtStop: boolean | undefined;
+    const retire = armWorkerRetire({ platform: 'linux', signals, drain: () => Promise.resolve() });
+    retire.adopt({
+      stats: held.worker.stats,
+      stop: (reason) => {
+        retiringAtStop = isRetiring();
+        return held.worker.stop(reason);
+      },
+    });
+    try {
+      expect(isRetiring()).toBe(false);
+      signals.raise(RETIRE_SIGNAL);
+      // Synchronously, at the signal — before the worker is even awaited.
+      expect(isRetiring()).toBe(true);
+      await tick();
+      expect(retiringAtStop).toBe(true);
+      held.finish();
+      await tick();
+      expect(isRetiring()).toBe(true);
+    } finally {
+      resetLifecycle();
     }
   });
 

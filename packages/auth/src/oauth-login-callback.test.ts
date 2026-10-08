@@ -3,9 +3,10 @@
 // `oauth-login.test.ts`.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import type { Auth } from './auth';
 import type { IdTokenClaims } from './id-token';
-import { unsignedJwt } from './id-token-fixture';
+import { testSigner } from './id-token-fixture';
 import type { MemoryAuthAdapter } from './memory-adapter';
 import { beginOAuth, type OAuthHandshake } from './oauth';
 import type { OAuthFetch } from './oauth-exchange';
@@ -19,7 +20,11 @@ beforeEach(() => {
   ({ adapter, auth } = freshAuth());
 });
 
-const googleIdToken = (handshake: OAuthHandshake): string => {
+const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
+const GOOGLE_JWKS = 'https://www.googleapis.com/oauth2/v3/certs';
+const SIGNER = await testSigner();
+
+const googleIdToken = async (handshake: OAuthHandshake): Promise<string> => {
   const claims: IdTokenClaims = {
     iss: 'https://accounts.google.com',
     aud: 'client-id',
@@ -30,7 +35,7 @@ const googleIdToken = (handshake: OAuthHandshake): string => {
     email_verified: true,
     name: 'Ada Lovelace',
   };
-  return unsignedJwt(claims);
+  return await SIGNER.sign(claims);
 };
 
 describe('completeOAuthLogin', () => {
@@ -87,7 +92,8 @@ describe('completeOAuthLogin', () => {
     const urls: string[] = [];
     const fetch: OAuthFetch = async (url) => {
       urls.push(url);
-      return json({ access_token: 'ya29.token', id_token: googleIdToken(handshake) });
+      if (url === GOOGLE_JWKS) return json(SIGNER.jwks);
+      return json({ access_token: 'ya29.token', id_token: await googleIdToken(handshake) });
     };
 
     const result = await completeOAuthLogin(auth, {
@@ -97,7 +103,42 @@ describe('completeOAuthLogin', () => {
       fetch,
     });
 
-    expect(urls).toEqual(['https://oauth2.googleapis.com/token']);
+    // The token, then the key set its signature is checked against (26.0.0) — and no userinfo.
+    expect(urls).toEqual([GOOGLE_TOKEN, GOOGLE_JWKS]);
     expect((await adapter.findAccount('google', 'google-sub'))?.userId).toBe(result.actor.id);
+  });
+
+  test('a forged Google id token mints no session: X_OAUTH_TOKEN_INVALID', async () => {
+    const handshake = beginOAuth({
+      provider: 'google',
+      clientId: 'client-id',
+      redirectUri: 'https://app.test/auth/callback',
+    });
+    const forger = await testSigner();
+    const forged = await forger.sign({
+      iss: 'https://accounts.google.com',
+      aud: 'client-id',
+      sub: 'victim-sub',
+      exp: Math.floor(NOW.getTime() / 1000) + 3600,
+      nonce: handshake.nonce,
+      email: 'victim@example.com',
+      email_verified: true,
+    });
+    const fetch: OAuthFetch = async (url) =>
+      url === GOOGLE_JWKS
+        ? json(SIGNER.jwks)
+        : json({ access_token: 'ya29.token', id_token: forged });
+
+    const outcome = await completeOAuthLogin(auth, {
+      handshake,
+      callback: { state: handshake.state, code: 'the-code' },
+      credentials,
+      fetch,
+    }).then(
+      () => 'signed in',
+      (error: unknown) => (isUltimateError(error) ? error.code : 'not coded'),
+    );
+    expect(outcome).toBe('X_OAUTH_TOKEN_INVALID');
+    expect(await adapter.findAccount('google', 'victim-sub')).toBeNull();
   });
 });

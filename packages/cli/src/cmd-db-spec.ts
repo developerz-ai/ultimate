@@ -18,11 +18,11 @@ export const dbSpec: CommandSpec = {
   name: 'db',
   summary: 'gen, migrate, reset, seed, studio, branch, backfill',
   usage:
-    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | studio | branch ls | branch create <name> | branch drop <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
+    'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | studio | branch list | branch create <name> | branch delete <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
   requiresApp: true,
   subcommands: DB_SUBCOMMANDS,
   // Declared from the constant `runBranchCommand` validates against, never a second literal: it
-  // is what lets the `errors` step resolve `x db branch ls` — a fix line three shipped errors
+  // is what lets the `errors` step resolve `x db branch list` — a fix line three shipped errors
   // hand out, which read `ls` as a branch name and cloned a database until 1.2.x.
   subcommandPositionals: { branch: BRANCH_SUBCOMMANDS },
   // Each flag whose summary begins `<subcommand>:` declares that scope, and the parser refuses

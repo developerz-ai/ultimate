@@ -122,7 +122,7 @@ export class WebhookDeliveryFailedError extends UltimateError {
     super({
       code: 'X_WEBHOOK_DELIVERY_FAILED',
       cause: `webhook "${input.webhook}" delivery to ${webhookTarget(input.url)} ${answer}: ${input.detail}`,
-      fix: 'no edit here — the job retries on its declared backoff; watch the endpoint with x jobs ls --json and fix the receiver before it reaches disableAfter',
+      fix: 'no edit here — the job retries on its declared backoff; watch the endpoint with x jobs list --json and fix the receiver before it reaches disableAfter',
       meta: { endpointId: input.endpointId, status: input.status },
     });
   }

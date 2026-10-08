@@ -141,8 +141,8 @@ function requireHandle(ctx: CommandContext): TaskHandle {
   const suggestion = nearestName(name, known);
   throw new DeclarationUnknownError(
     suggestion === undefined
-      ? { kind: 'tasks', singular: 'task', name, known, verb: 'show' }
-      : { kind: 'tasks', singular: 'task', name, known, suggestion, verb: 'show' },
+      ? { kind: 'tasks', singular: 'task', name, known }
+      : { kind: 'tasks', singular: 'task', name, known, suggestion },
   );
 }
 

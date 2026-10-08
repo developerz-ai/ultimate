@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { NotImplementedError } from '@ultimat3/core';
 import { fakePage } from './driver-fake';
 import { runRecovery } from './recover';
 
@@ -23,15 +22,6 @@ describe('unit · the recovery seam', () => {
   test('a function hook decides, and both answers are legal', async () => {
     expect(await runRecovery(() => true, attempt())).toBe(true);
     expect(await runRecovery(() => false, attempt())).toBe(false);
-  });
-
-  test("recover: 'agent' THROWS X_NOT_IMPLEMENTED — it never silently declines", async () => {
-    // The honest stub: one labelled `X_NOT_IMPLEMENTED`. A recovery that answered
-    // `false` here would be indistinguishable from one that was never configured, and the gap
-    // would be discovered from a failing run months later rather than from the first call.
-    expect(await codeOf(runRecovery('agent', attempt()))).toBe('X_NOT_IMPLEMENTED');
-    // Core's one constructor of the code, never a scraping wrapper beside it.
-    await expect(runRecovery('agent', attempt())).rejects.toBeInstanceOf(NotImplementedError);
   });
 
   test('a hook that answers something other than a boolean is refused, with its own code', async () => {

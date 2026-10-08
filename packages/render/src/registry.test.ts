@@ -13,7 +13,7 @@ import {
 import type { RouteMetaFn } from './route';
 import { defineRoute } from './route';
 import { compilePattern } from './route-pattern';
-import type { Surface } from './surfaces';
+import type { RouteSurface } from './surfaces';
 
 /** The thrown error itself, so a test can assert on `code`, `cause` and `fix` together. */
 const thrownBy = (run: () => unknown): UltimateError => {
@@ -83,14 +83,13 @@ beforeEach(() => {
 });
 
 describe('routePathFromFile', () => {
-  test.each<[string, Surface, string]>([
+  test.each<[string, RouteSurface, string]>([
     ['apps/web/site/page.tsx', 'site', '/'],
     ['apps/web/site/pricing/page.tsx', 'site', '/pricing'],
     ['apps/web/site/(marketing)/about/page.tsx', 'site', '/about'],
     ['apps/web/site/blog/[slug]/page.tsx', 'site', '/blog/:slug'],
     ['apps/web/site/docs/[...path]/page.tsx', 'site', '/docs/*path'],
     ['apps/web/app/dashboard/page.tsx', 'app', '/dashboard'],
-    ['apps/web/api/posts/route.ts', 'api', '/api/posts'],
   ])('%s → %s %s', (file, surface, path) => {
     expect(routePathFromFile(file)).toEqual({ surface, path });
   });
@@ -98,11 +97,10 @@ describe('routePathFromFile', () => {
   // The surface is where `surfaceOf`'s ANCHORED regex found it, and the URL is everything after
   // THAT. A bare `indexOf('app/')` matched inside `myapp/` and `offsite/`, so every route in an
   // app directory whose name merely ends in a surface name was served one segment too deep.
-  test.each<[string, Surface, string]>([
+  test.each<[string, RouteSurface, string]>([
     ['apps/myapp/app/page.tsx', 'app', '/'],
     ['apps/myapp/app/dashboard/page.tsx', 'app', '/dashboard'],
     ['packages/offsite/site/pricing/page.tsx', 'site', '/pricing'],
-    ['services/webapi/api/posts/route.ts', 'api', '/api/posts'],
   ])('a directory ending in a surface name is not the surface: %s → %s', (file, surface, path) => {
     expect(routePathFromFile(file)).toEqual({ surface, path });
   });
@@ -127,14 +125,35 @@ describe('one route filename per surface', () => {
   test.each([
     ['apps/web/site/index.tsx', 'apps/web/site/page.tsx'],
     ['apps/web/site/blog/index.tsx', 'apps/web/site/blog/page.tsx'],
-    // `route.ts` is the api/ spelling and `page.tsx` the page one — each is wrong on the other
-    // surface, and both already meant "this directory", so the repair is a rename in place.
+    // `route.ts` already meant "this directory" too, so the repair is a rename in place.
     ['apps/web/app/reports/route.ts', 'apps/web/app/reports/page.tsx'],
-    ['apps/web/api/posts/page.tsx', 'apps/web/api/posts/route.ts'],
   ])('%s already meant its directory, so the fix renames in place', (file, target) => {
     const failure = thrownBy(() => routePathFromFile(file));
     expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
     expect(failure.fix).toBe(`mv -n -- '${file}' '${target}'`);
+  });
+
+  // `api/` is the action and query projections `defineApi()` collects (#709). A route file there,
+  // under any name, is refused, and the fix names the two homes a handler has: an action, or a
+  // plain HTTP route in the `routes` runtime override.
+  test.each([
+    'apps/web/api/posts/route.ts',
+    'apps/web/api/posts/page.tsx',
+    'services/webapi/api/hook/route.ts',
+  ])('%s is refused: api/ holds no route file', (file) => {
+    const failure = thrownBy(() => routePathFromFile(file));
+    expect(failure).toBeInstanceOf(RouteFileInvalidError);
+    expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
+    expect(failure.cause).toContain(`${file} is under api/`);
+    expect(failure.fix).toContain('x g action');
+    expect(failure.fix).toContain('runtime.ts');
+  });
+
+  test('registerRoute refuses an api/ route file, so the table never holds one', () => {
+    expect(() =>
+      registerRoute({ file: 'apps/web/api/posts/route.ts', config: staticConfig }),
+    ).toThrow(RouteFileInvalidError);
+    expect(routeCount()).toBe(0);
   });
 
   test('shared/ is a leaf: no filename makes a route there', () => {
@@ -327,7 +346,7 @@ describe('a file outside every surface has no URL at all', () => {
     const error = thrownBy(() => routePathFromFile(file));
     expect(error.code).toBe('X_SURFACE_BOUNDARY');
     expect(error.cause).toContain(file);
-    expect(error.fix).toContain('site/, app/ or api/');
+    expect(error.fix).toContain('under site/ or app/');
   });
 
   test('registerRoute refuses it too, so nothing lands in the table', () => {

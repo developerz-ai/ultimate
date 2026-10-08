@@ -148,7 +148,7 @@ describe('introspect.list answers newest first', () => {
       clock.advance(1_000);
     }
 
-    // `x jobs ls`, `/_x`'s jobs panel and the MCP tool all read whichever driver the process
+    // `x jobs list`, `/_x`'s jobs panel and the MCP tool all read whichever driver the process
     // wired: ascending here meant an operator comparing a dev list with a production one was
     // shown two different halves of the queue.
     expect(((await driver.introspect?.list()) ?? []).map((row) => row.idempotencyKey)).toEqual([

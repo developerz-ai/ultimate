@@ -249,7 +249,7 @@ describe('LiveRowUnidentifiedError', () => {
 
     const typed = new LiveRowUnidentifiedError({ query: 'feed', keys: ['id'], idType: 'boolean' });
     expect(typed.cause).toContain('whose id is a boolean');
-    expect(typed.fix).toBe('x queries describe feed --json');
+    expect(typed.fix).toBe('x queries show feed --json');
     // A query name is client-reachable data in a command position: it goes through the screen.
     const hostile = new LiveRowUnidentifiedError({ query: '$(id)', keys: [], idType: 'object' });
     expect(hostile.fix).toBe('x queries list --json');

@@ -84,7 +84,7 @@ export const VOCABULARIES: readonly Vocabulary[] = [
   },
   // Two more, added 2026-08-22. Each had a copy that shipped and each was invisible here: the
   // rule only knew the route vocabulary, so `packages/cli/src/jobs-report.ts`'s `JOB_STATES` copy
-  // — one member short, so `x jobs cancel` created a state `x jobs ls --state cancelled` refused
+  // — one member short, so `x jobs cancel` created a state `x jobs list --state cancelled` refused
   // to filter on — was outside its reach by construction.
   { name: 'JOB_STATES', at: 'packages/jobs/src/driver.ts', members: [...JOB_STATES], by: 'name' },
   {

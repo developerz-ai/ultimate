@@ -172,7 +172,7 @@ describe('unit · @ultimat3/notify fix lines resolve as written', () => {
 
     expect(fix).not.toMatch(/x jobs show\s+digest/);
     // The two-step shape the wiki row already documents: list, then show the id you found.
-    expect(fix).toContain('x jobs ls');
+    expect(fix).toContain('x jobs list');
     expect(fix).toContain('x jobs show <id>');
     // The substantive half survives — the failing step is what the reader is looking for.
     expect(fix).toContain('deliver:mail');
@@ -206,9 +206,9 @@ describe('unit · @ultimat3/notify fix lines resolve as written', () => {
     expect(INTERPOLATED_POSITIONAL.test(`x jobs show ${hole} --json — the failing step`)).toBe(
       true,
     );
-    expect(INTERPOLATED_POSITIONAL.test('x jobs ls --json   # then: x jobs show <id> --json')).toBe(
-      false,
-    );
+    expect(
+      INTERPOLATED_POSITIONAL.test('x jobs list --json   # then: x jobs show <id> --json'),
+    ).toBe(false);
     // A FLAG's value is not a positional: `--filter <name>` is a substring match, which resolves.
     expect(INTERPOLATED_POSITIONAL.test(`x test job --filter ${hole}`)).toBe(false);
   });

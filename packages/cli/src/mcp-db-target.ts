@@ -56,7 +56,7 @@ const isProduction = (env: Env): boolean => {
 /**
  * `x db branch create <name>` names an external clone `<source>_branch_<name>`. Both readings come
  * from `db-branch.ts` — the module that also WRITES those names — because a target that disagrees
- * with `x db branch ls` about what a branch is would let `db.migrate` run against a shared
+ * with `x db branch list` about what a branch is would let `db.migrate` run against a shared
  * database on the strength of a naming rule one of the two had drifted away from.
  */
 function postgresBranch(url: string): string | null {

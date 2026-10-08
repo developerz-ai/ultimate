@@ -7,7 +7,7 @@ export class ConnectionNotFound extends UltimateError {
     super({
       code: 'X_CONNECTION_NOT_FOUND',
       cause: `connection ${JSON.stringify(connectionId)} does not exist in the acting org`,
-      fix: 'x queries describe runConnections --json, then pass an id that read returns',
+      fix: 'x queries show runConnections --json, then pass an id that read returns',
     });
   }
 }
@@ -27,7 +27,7 @@ export class RunNotFound extends UltimateError {
     super({
       code: 'X_RUN_NOT_FOUND',
       cause: `run ${JSON.stringify(runId)} does not exist in the acting org`,
-      fix: 'x queries describe liveRunEvents --json, then pass the runId startRun answered',
+      fix: 'x queries show liveRunEvents --json, then pass the runId startRun answered',
     });
   }
 }

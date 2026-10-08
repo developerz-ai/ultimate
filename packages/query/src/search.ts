@@ -116,7 +116,7 @@ const limitSchema = (max: number, fallback: number) =>
  */
 const onePage = <Row extends object>(
   base: Builder<Row>,
-  /** The read's registered name — what the refusal's `fix:` asks `x queries describe` about. */
+  /** The read's registered name — what the refusal's `fix:` asks `x queries show` about. */
   read: string,
   entity: string,
   /** Rows the chain was capped at — this read's `limit` input, and its whole page. */

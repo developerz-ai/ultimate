@@ -1,6 +1,7 @@
-// `x db branch ls|create|drop` — the wiring alone: which verb, which database, which refusal.
+// `x db branch list|create|delete` — the wiring alone: which verb, which database, which refusal.
 // A VERB is required and comes from a closed set, so a branch name can never be read as one:
-// `x db branch ls` used to clone a database called `ls`, because the argument was the name.
+// `x db branch ls` used to clone a database called `ls`, because the argument was the name. One
+// verb each across every `x` registry (#709): `list` and `delete`, no `ls`/`drop` alias.
 // The facts (what a branch is, per mode) are `db-branch.ts`; the client lifetime is here.
 
 import { ERROR_DOCS_URL, nearestName } from '@ultimat3/core';
@@ -26,7 +27,7 @@ import { stepFinding } from './db-finding';
 import { MissingPositionalError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
-import { flagString } from './parse';
+import { flagString, retiredVerbReplacement } from './parse';
 import type { DevServices } from './runtime-bindings';
 import { resolveServices } from './runtime-bindings';
 import { portFromEnv } from './serve';
@@ -35,9 +36,9 @@ import { renderTable } from './table';
 /**
  * Always runnable, always the next thing a caller needs: what branches there are. Spelled twice
  * because `UnknownCommandError` prefixes its `suggestion` with `x ` and `MissingPositionalError`
- * takes a whole invocation — one of them handed back `x x db branch ls --json`.
+ * takes a whole invocation — one of them handed back `x x db branch list --json`.
  */
-const LIST_ARGV = 'db branch ls --json';
+const LIST_ARGV = 'db branch list --json';
 const LIST_FIX = `x ${LIST_ARGV}`;
 
 /**
@@ -47,7 +48,10 @@ const LIST_FIX = `x ${LIST_ARGV}`;
  * `x` excluded — the error class adds it.
  */
 function branchRetry(word: string, name: string | undefined): string {
-  const near = nearestName(word, [...BRANCH_SUBCOMMANDS]);
+  // A retired verb (`ls`, `drop`) is a legal branch NAME too, so without this `drop feat` would be
+  // answered with `create drop` — the exact confusion the closed verb set exists to end.
+  const near =
+    retiredVerbReplacement(word, BRANCH_SUBCOMMANDS) ?? nearestName(word, [...BRANCH_SUBCOMMANDS]);
   if (near !== undefined) return name === undefined ? LIST_ARGV : `db branch ${near} ${name}`;
   return isBranchName(word) ? `db branch create ${word}` : LIST_ARGV;
 }
@@ -101,7 +105,7 @@ export async function runBranchCommand(ctx: CommandContext, root: string): Promi
     });
   }
   const services = resolveServices(root, ctx.env);
-  if (verb === 'ls') return runList(services);
+  if (verb === 'list') return runList(services);
   if (name === undefined) {
     throw new MissingPositionalError({
       command: `db branch ${verb}`,
@@ -109,7 +113,7 @@ export async function runBranchCommand(ctx: CommandContext, root: string): Promi
       example: `x db branch ${verb} feature-x`,
     });
   }
-  return verb === 'create' ? runCreate(ctx, services, name) : runDrop(services, name);
+  return verb === 'create' ? runCreate(ctx, services, name) : runDelete(services, name);
 }
 
 const row = (branch: BranchRow): readonly string[] => [
@@ -174,12 +178,12 @@ async function runCreate(
 }
 
 /**
- * You may only drop what `ls` shows, and that is the whole guard — stronger than a confirmation
+ * You may only delete what `list` shows, and that is the whole guard — stronger than a confirmation
  * flag, because it is the typo that is impossible rather than the keystroke that is tedious. An
  * external branch is a database carrying `createBranch`'s marker comment AND this database's own
  * prefix, so neither the shared database this session is connected to nor another app's clone on
  * the same server is in the set; an embedded one is a `pgdata-<name>` directory, so `pgdata` itself
- * is not either. `@ultimat3/db`'s own `X_BRANCH_EXISTS` fix line is `x db branch drop <name>` with
+ * is not either. `@ultimat3/db`'s own `X_BRANCH_EXISTS` fix line is `x db branch delete <name>` with
  * no flag on it, so a flag here would break a shipped instruction.
  *
  * The check is not made here, and that is the point: `false` from either drop means "there was no
@@ -187,7 +191,7 @@ async function runCreate(
  * earlier. A listing taken here and acted on below is two connections and a window wide enough to
  * hold a whole `create` — and the wiring layer is exactly where a guard must not live.
  */
-async function runDrop(services: DevServices, name: string): Promise<CommandResult> {
+async function runDelete(services: DevServices, name: string): Promise<CommandResult> {
   try {
     const dropped =
       services.db.mode === 'embedded'

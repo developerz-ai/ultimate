@@ -100,7 +100,7 @@ function assertDocumented(target: AnyAction, name: string): void {
 /**
  * The refusal when the published document does not name this action at its route. `name` is
  * whatever `.named()` was handed — nothing validates its alphabet — so it is screened where it
- * enters the `x actions describe` command (security audit of plan 101 sweep 1c).
+ * enters the `x actions show` command (security audit of plan 101 sweep 1c).
  */
 export function documentedDrift(
   path: string,
@@ -113,7 +113,7 @@ export function documentedDrift(
       : `OpenAPI document serves ${path} as ${owner}, so ${name} is not in the published contract`,
     owner === undefined
       ? 'x verify --json   # the contract suite is a step of it'
-      : `x actions describe ${renderFixShellArg(name, '<action>')} --json   # then rename it, or pin its own route with http: { path } in the ${name} definition`,
+      : `x actions show ${renderFixShellArg(name, '<action>')} --json   # then rename it, or pin its own route with http: { path } in the ${name} definition`,
   );
 }
 
@@ -138,7 +138,7 @@ function assertSampleable(target: AnyAction, name: string): void {
   const described = gaps.map((path) => describeSampleGap(target.input, path)).join(', ');
   throw new ContractDriftError(
     `${name}: no value can be synthesized for ${described}, so the denial would be unproven`,
-    `contractTestsFor(${name}, { input: { … } })   # x actions describe ${name} --json prints the schema`,
+    `contractTestsFor(${name}, { input: { … } })   # x actions show ${name} --json prints the schema`,
   );
 }
 
@@ -196,7 +196,7 @@ async function expectDenied(
     if (error.code !== 'X_INPUT_INVALID') throw error;
     throw new ContractDriftError(
       `${name} failed with ${error.code} before its policy decided, so the denial is unproven`,
-      `pass \`input:\` to contractTestsFor(${name}) — x actions describe ${name} --json prints the schema`,
+      `pass \`input:\` to contractTestsFor(${name}) — x actions show ${name} --json prints the schema`,
     );
   }
   throw new ContractDriftError(

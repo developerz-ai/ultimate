@@ -5,6 +5,7 @@ import { assert } from './assert';
 import { type Clock, systemClock } from './clock';
 import { renderCauseValue } from './error-render';
 import { isUltimateError } from './errors';
+import { teeLogLine } from './log-tee';
 import { isSecret, REDACTED } from './secret';
 
 // Re-exported, not redefined: `secret.ts` owns the placeholder because a `Secret` has to render
@@ -219,6 +220,13 @@ export function setLogSink(sink: LogSink | undefined): LogSink | undefined {
  * its log stream, and where there is a `process` this writes to the fd as it always did.
  */
 function defaultWriter(line: string, level: LogLevel): void {
+  streamWriter(line, level);
+  // After the streams, so a sink can never cost a line its stdout (`addLogSink`, `log-tee.ts`).
+  teeLogLine(line, level, streamWriter);
+}
+
+/** The process's streams, or the `setLogSink` seam standing in for them. */
+function streamWriter(line: string, level: LogLevel): void {
   if (logSink !== undefined) {
     logSink(line, level);
     return;

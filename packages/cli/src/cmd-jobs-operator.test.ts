@@ -1,4 +1,4 @@
-// The operator half of `x jobs`: `pause`, `resume`, `rm`, `promote`, paging, and what `show`
+// The operator half of `x jobs`: `pause`, `resume`, `delete`, `promote`, paging, and what `show`
 // carries for an operator — the key, the payload, the stack, the progress. Split off
 // `cmd-jobs.test.ts` at the file-size ceiling; same harness (`cmd-jobs-fixture.ts`).
 
@@ -109,25 +109,25 @@ describe('unit · x jobs show, for an operator', () => {
   // the real spec, then executed. A flag the spec does not declare fails the first half.
   test('the fix X_JOB_KEY_BUSY prints is a command x jobs accepts and answers', async () => {
     const fix = new JobKeyBusyError({ job: 'sync-account', key: 'acct-42', limit: 1 }).fix;
-    expect(fix).toBe('x jobs ls --name sync-account --state running --json');
+    expect(fix).toBe('x jobs list --name sync-account --state running --json');
 
     const args = parseArgs(fix.split(' ').slice(1), [jobsCommand.spec]);
-    expect(args.subcommand).toBe('ls');
+    expect(args.subcommand).toBe('list');
     expect(args.json).toBe(true);
     expect(flagString(args, 'name')).toBe('sync-account');
     expect(flagString(args, 'state')).toBe('running');
 
     const driver = memoryJobDriver();
     const result = await runJobs(driver, {
-      subcommand: 'ls',
+      subcommand: 'list',
       flags: { name: 'sync-account', state: 'running' },
     });
     expect(result.ok).toBe(true);
   });
 });
 
-describe('unit · x jobs pause, resume, rm and promote', () => {
-  test('pause stops every claim on that queue, resume undoes it, and ls reports it', async () => {
+describe('unit · x jobs pause, resume, delete and promote', () => {
+  test('pause stops every claim on that queue, resume undoes it, and list reports it', async () => {
     const driver = memoryJobDriver();
     const id = await enqueue(driver, 'send-email');
     const claim = () =>
@@ -139,7 +139,7 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
     expect(paused.data).toMatchObject({ queue: 'default', paused: true });
     expect(await claim()).toEqual([]);
 
-    const listed = await runJobs(driver, { subcommand: 'ls' });
+    const listed = await runJobs(driver, { subcommand: 'list' });
     expect(listed.data).toMatchObject({ pausedQueues: [{ name: 'default' }], workers: [] });
     expect(listed.lines?.join('\n')).toContain(msg('cli.jobs.pausedQueues', { queues: 'default' }));
 
@@ -157,7 +157,7 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
     }
   });
 
-  test('rm removes a queued job, refuses a running one, and an unknown id is X_JOB_UNKNOWN', async () => {
+  test('delete removes a queued job, refuses a running one, and an unknown id is X_JOB_UNKNOWN', async () => {
     const driver = memoryJobDriver();
     const queued = await enqueue(driver, 'send-email', Date.now() + 60_000);
     const held = await enqueue(driver, 'send-email');
@@ -168,18 +168,18 @@ describe('unit · x jobs pause, resume, rm and promote', () => {
       workerId: 'w',
     });
 
-    const removed = await runJobs(driver, { subcommand: 'rm', positionals: [queued] });
+    const removed = await runJobs(driver, { subcommand: 'delete', positionals: [queued] });
     expect(removed.summary).toBe(msg('cli.jobs.removed', { id: queued, state: 'delayed' }));
     expect(await driver.introspect?.job(queued)).toBeUndefined();
 
-    const running = await runJobs(driver, { subcommand: 'rm', positionals: [held] }).catch(
+    const running = await runJobs(driver, { subcommand: 'delete', positionals: [held] }).catch(
       (error: unknown) => error,
     );
     expect(running).toMatchObject({
       code: 'X_JOB_NOT_REMOVABLE',
       fix: `x jobs cancel ${held} --json`,
     });
-    const unknown = await runJobs(driver, { subcommand: 'rm', positionals: [queued] }).catch(
+    const unknown = await runJobs(driver, { subcommand: 'delete', positionals: [queued] }).catch(
       (error: unknown) => error,
     );
     expect(unknown).toMatchObject({ code: 'X_JOB_UNKNOWN' });

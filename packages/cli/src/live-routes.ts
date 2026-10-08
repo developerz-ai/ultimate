@@ -183,7 +183,6 @@ export async function liveRouteGaps(
   const reported = new Set<string>();
   const gaps: LiveRouteGap[] = [];
   for (const entry of entries) {
-    if (entry.surface === 'api') continue;
     const never = entry.config.hydrate === 'never';
     for (const read of await browserOnlyReads(root, entry.file)) {
       if (reported.has(read.at) || (!never && inBrowser.has(read.at))) continue;

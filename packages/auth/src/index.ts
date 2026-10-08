@@ -176,7 +176,6 @@ export type {
 } from './oauth';
 export { assertOAuthCallback, beginOAuth, pkcePair } from './oauth';
 export {
-  APPLE_PROVIDER,
   BUILTIN_OAUTH_PROVIDER_IDS,
   BUILTIN_OAUTH_PROVIDERS,
   GITHUB_PROVIDER,

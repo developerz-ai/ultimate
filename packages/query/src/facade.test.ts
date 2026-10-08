@@ -148,7 +148,7 @@ describe('the fluent surface', () => {
         {
           code: 'X_INPUT_INVALID',
           cause: 'orgId is not a uuid',
-          fix: 'x queries describe orgFeed --json',
+          fix: 'x queries show orgFeed --json',
         },
         { status: 400, headers: { 'content-type': 'application/problem+json' } },
       );
@@ -157,7 +157,7 @@ describe('the fluent surface', () => {
     const failure = await call({ orgId: 'nope' }).catch((error: unknown) => error);
 
     expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');
-    expect((failure as { fix?: string }).fix).toBe('x queries describe orgFeed --json');
+    expect((failure as { fix?: string }).fix).toBe('x queries show orgFeed --json');
   });
 
   test('a gateway answering instead of the app is X_CLIENT_TRANSPORT_FAILED', async () => {

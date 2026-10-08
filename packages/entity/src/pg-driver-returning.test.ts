@@ -166,7 +166,7 @@ describe('a filtered write over an entity only the app can judge', () => {
     expect(client.texts[0]).toContain('count(*)');
     // And the way out is the call that visits every row without holding them all.
     expect(String(error?.cause)).toContain('.inBatches(1000)');
-    expect(String(error?.fix)).toStartWith(`x entities describe ${tickets.$name} --json   # `);
+    expect(String(error?.fix)).toStartWith(`x entities show ${tickets.$name} --json   # `);
   });
 
   test('inside the bound it writes, and answers with the rows it judged', async () => {
@@ -213,7 +213,7 @@ describe('a filtered write over an entity only the app can judge', () => {
 
     expect(error).toBeUltimateError('X_INVARIANT_VIOLATED');
     expect(String(error?.cause)).toContain('.inBatches(1000)');
-    expect(String(error?.fix)).toStartWith(`x entities describe ${tickets.$name} --json   # `);
+    expect(String(error?.fix)).toStartWith(`x entities show ${tickets.$name} --json   # `);
     // Refused BEFORE the write, exactly as the count comes before the UPDATE: not one of the rows
     // it declined to judge may have been written.
     expect(

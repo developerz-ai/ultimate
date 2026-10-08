@@ -244,11 +244,11 @@ export function operatorSurfaceScenarios(label: string, harness: OperatorHarness
     expect(tooMany.code).toBe('X_JOB_PAGE_INVALID');
     expect(String(tooMany.cause)).toContain(`limit is ${MAX_JOB_PAGE + 1}`);
     expect(String(tooMany.cause)).toContain(`MAX_JOB_PAGE (${MAX_JOB_PAGE})`);
-    expect(tooMany.fix).toBe(`x jobs ls --limit ${MAX_JOB_PAGE} --json`);
+    expect(tooMany.fix).toBe(`x jobs list --limit ${MAX_JOB_PAGE} --json`);
     expect(tooMany.cause).toContain('after: jobCursor(lastRow)');
     const badCursor = await refusalOf(operator.list({ after: 'not-a-cursor' }));
     expect(badCursor.code).toBe('X_JOB_PAGE_INVALID');
-    expect(badCursor.fix).toBe(`x jobs ls --limit ${MAX_JOB_PAGE} --json`);
+    expect(badCursor.fix).toBe(`x jobs list --limit ${MAX_JOB_PAGE} --json`);
     expect(badCursor.cause).toContain('an after cursor');
     // What the caller typed is not echoed: a cursor is input from the far side of a URL.
     expect(String(badCursor.cause)).not.toContain('not-a-cursor');

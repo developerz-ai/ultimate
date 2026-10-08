@@ -66,7 +66,7 @@ describe('a single read over the route', () => {
     const body = (await response.json()) as { code?: string; fix?: string };
     expect(response.status).toBe(404);
     expect(body.code).toBe('X_NOT_FOUND');
-    expect(body.fix).toContain('x queries describe postById');
+    expect(body.fix).toContain('x queries show postById');
   });
 
   test('a page control is refused as a 400, never silently dropped', async () => {

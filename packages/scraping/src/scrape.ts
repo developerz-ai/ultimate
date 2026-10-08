@@ -33,7 +33,7 @@ import type { YieldExpectation, YieldHistory } from './expect';
 import { maxDropFraction } from './expect';
 import type { ScrapeHttp } from './http';
 import type { ScrapePage } from './page';
-import type { Recovery } from './recover';
+import type { RecoveryHook } from './recover';
 import type { ResourceType } from './rings';
 import type { RobotsPolicy } from './robots';
 import { runScrape } from './scrape-run';
@@ -103,7 +103,7 @@ export interface ScrapeDefinition<I, Row> {
   readonly artifacts?: ScrapeArtifacts | undefined;
   /** NAMES, never values. */
   readonly secrets?: readonly string[] | undefined;
-  readonly recover?: Recovery | undefined;
+  readonly recover?: RecoveryHook | undefined;
   /**
    * Session lifecycle: acquire, persist, reuse, validate, burn. Authenticated scraping is the
    * primary case, so this is declared rather than hand-rolled per app. See `auth.ts`.
@@ -194,6 +194,13 @@ export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<
     definition.rate === undefined || (Number.isFinite(definition.rate) && definition.rate > 0),
     `scrape "${definition.name}" declares rate: ${String(definition.rate)} — a rate is navigations per second, greater than zero`,
     `set rate: 1 on scrape("${definition.name}"), or leave it out — to go faster raise the number, there is no unpaced mode`,
+  );
+  // The type says function; this catches plain JS and the removed `recover: 'agent'` (26.0.0),
+  // which would otherwise surface as a TypeError on the first moved selector, mid-session.
+  assert(
+    definition.recover === undefined || typeof definition.recover === 'function',
+    `scrape "${definition.name}" declares recover: ${JSON.stringify(definition.recover)} — a recover hook is a function`,
+    `on scrape("${definition.name}") write recover: ({ page }) => page.waitFor('<the moved selector>').then(() => true) — to ask a model, call your own llm() action inside that function`,
   );
   // Two halves that must be set together. `maxDrop` is a fraction of a trailing median and only
   // `history:` can supply one, so declaring it alone is an alarm that cannot fire — refused here,

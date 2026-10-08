@@ -20,6 +20,7 @@ import {
 } from '@ultimat3/core';
 import type { Auth, LoginResult } from './auth';
 import { AuthError } from './errors';
+import type { IdTokenKeys } from './jwks';
 import { beginOAuth, type OAuthProviderId } from './oauth';
 import { BUILTIN_OAUTH_PROVIDER_IDS } from './oauth-builtins';
 import { clearHandshakeCookie, handshakeCookie, readHandshakeCookie } from './oauth-cookie';
@@ -113,6 +114,15 @@ export interface OAuthLoginOptions {
    * sign-in rather than never.
    */
   readonly resolveGrants?: ResolveOAuthGrants | undefined;
+  /**
+   * What each provider's id token signature is checked against, asked per callback. Omit it and
+   * the callback verifies against the provider's published key set (`providerJwks`) whenever it
+   * has a `jwksUri` — token-endpoint TLS only for one that publishes none. Return
+   * `'token-endpoint-tls'` to opt a provider out, a `jwksClient({ jwksUri })` to pin another set,
+   * or `undefined` to leave that provider on the default. `undefined` is the safe "everyone else"
+   * branch: `providerJwks(providerFor('github'))` throws, because GitHub publishes no `jwks_uri`.
+   */
+  readonly idTokenKeys?: ((provider: OAuthProviderId) => IdTokenKeys | undefined) | undefined;
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
@@ -227,13 +237,22 @@ function providerSegment(request: Request, leg: 'start' | 'callback'): string {
   return segments[index] ?? '';
 }
 
+/** The app's answer for this provider, or nothing — so `undefined` falls through to the default. */
+function idTokenKeysFor(
+  options: OAuthLoginOptions,
+  provider: OAuthProviderId,
+): { readonly idTokenKeys?: IdTokenKeys } {
+  const keys = options.idTokenKeys?.(provider);
+  return keys === undefined ? {} : { idTokenKeys: keys };
+}
+
 /**
  * Both halves of "is this a provider", in one refusal. An unknown segment and a known provider
  * the app left out of `defineAuth({ providers })` are the same 404 on purpose — telling an
  * anonymous caller which of the two it hit describes the app's configuration for free.
  *
- * The list in the refusal is the THREE BUILT-INS, never the live registry and never
- * `defineAuth({ providers })`. Both of the latter are this deployment's own configuration, and
+ * The list in the refusal is the BUILT-INS (`BUILTIN_OAUTH_PROVIDER_IDS`), never the live
+ * registry and never `defineAuth({ providers })`. Both of the latter are this deployment's own configuration, and
  * this caller is an anonymous stranger who typed a URL: an app that registered an internal OP has
  * put its own vocabulary into the registry, and echoing it back names a system the stranger had no
  * way to know exists. The built-in list is a framework constant already in the public docs, so it
@@ -373,6 +392,7 @@ async function callbackHandler(
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.resolveGrants === undefined ? {} : { resolveGrants: options.resolveGrants }),
+      ...idTokenKeysFor(options, provider),
       ip: options.clientIp?.(request) ?? null,
       userAgent: request.headers.get('user-agent'),
     });

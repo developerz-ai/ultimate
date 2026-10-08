@@ -41,7 +41,7 @@ export interface EntityInit<C extends ColumnMap> {
    * cannot cover: `entity('user', { table: 'users', … })` reads and writes the table that is
    * already there, and every statement, index name and foreign key follows it.
    *
-   * The entity NAME stays the framework's key — the registry, the cache tag, `x entities describe`
+   * The entity NAME stays the framework's key — the registry, the cache tag, `x entities show`
    * and every relation are keyed by it — so renaming a table never moves a cache tag or a policy.
    */
   readonly table?: string;

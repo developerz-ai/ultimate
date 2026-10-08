@@ -13,8 +13,8 @@ tier 0  core, schema
 tier 1  i18n, money, time, cache, seo, db, storage, flags   (may import tier 0)
 tier 2  entity, policy, http, auth                   (may import tier 0-1)
 tier 3  action, query, jobs, realtime                (may import tier 0-2)
-tier 4  render, pwa, mcp, ai, manifest, mail, ui, notify  (may import tier 0-3)
-tier 5  admin, testing, cli, scraping               (may import tier 0-4)
+tier 4  render, pwa, mcp, ai, manifest, mail, ui, notify, scraping  (may import tier 0-3)
+tier 5  admin, testing, cli                         (may import tier 0-4)
 ```
 
 [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this block; `bun run boundaries` reads that one. Prose and code must agree.
@@ -50,7 +50,7 @@ Every row states what moving the package **down** would legalise, never why its 
 | `policy` | `entity → policy`, `http → policy` and `auth → policy` become ordinary downward imports, and "never a second authz path" goes back to being prose. All three mirror what they need of policy structurally instead; `@ultimat3/action` is the one package that wires `evaluate()` in |
 | `pwa` | `render → pwa`, so the service-worker generator joins the static bundle graph — axiom 6 |
 | `render` | `pwa → render`, so `packages/pwa/CLAUDE.md`'s "never import render" — the rule keeping `PwaRoute` a structural view rather than a re-export of the route table — has nothing enforcing it |
-| `scraping` | nothing — nothing above imports it since `x shot` moved onto raw CDP (22.0.0). Tier 5 reserves room for `recover: 'agent'` to import `@ultimat3/ai` (tier 4), which a package at 4 could not do |
+| `scraping` | nothing — nothing above imports it since `x shot` moved onto raw CDP (22.0.0). At its floor of 4 since 26.0.0 deleted `recover: 'agent'` (#709) |
 | `ui` | `render → ui`, so the static bundle graph reaches the design system — axiom 6 again. Its floor is tier 2 |
 
 `bun run boundaries --json` re-derives the whole set; nothing here is a number to keep in step by hand. **No package moved when the rule landed**: every row was a sentence that package's own `CLAUDE.md` already carried.
@@ -99,7 +99,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `admin` | 5 | generated admin dashboard, itself an Ultimate app with MCP on | admin screens derived from entities, its MCP surface | bypass `policy`; ship in the app bundle graph |
 | `testing` | 5 | the six test runners, template DB, frozen clock, sealed network | fixture shapes, DB cloning, seeded RNG, egress trap | appear in a production bundle |
 | `cli` | 5 | the `x` binary: generators, dev server, `verify` orchestration | command surface, `--json` output, generator templates, composition wiring | contain framework logic — it delegates |
-| `scraping` | 5 | browser automation as a **job**: one declaration drives a real browser, extracts against a schema and persists the session | `scrape()` (a **job** factory), the CDP port declared structurally (`cdp-port.ts`), session stores | take a runtime dependency on a CDP library — the caller passes its own; hold tier 4's floor against `recover: 'agent'` reaching `@ultimat3/ai` |
+| `scraping` | 4 | browser automation as a **job**: one declaration drives a real browser, extracts against a schema and persists the session | `scrape()` (a **job** factory), the CDP port declared structurally (`cdp-port.ts`), session stores | take a runtime dependency on a CDP library — the caller passes its own; import `@ultimat3/ai` (same tier) — a recover hook that asks a model is the app's own function |
 | `create-ultimate` | unlisted (6) | the published `bunx create-ultimate` shim | the `create-ultimate` bin, argument forwarding into `x new` | reimplement a template `cli` already owns |
 
 ## Dependency graph
@@ -110,10 +110,10 @@ Arrow = a dependency the importing package's own `package.json` declares, `As of
 graph TD
   create-ultimate["create-ultimate (unlisted)"]
   subgraph T5["tier 5"]
-    cli; testing; admin; scraping
+    cli; testing; admin
   end
   subgraph T4["tier 4"]
-    render; pwa; mcp; ai; manifest; mail; ui; notify
+    render; pwa; mcp; ai; manifest; mail; ui; notify; scraping
   end
   subgraph T3["tier 3"]
     action; query; jobs; realtime

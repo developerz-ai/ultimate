@@ -13,7 +13,7 @@ const catalog: CommandCatalog = {
       name: 'jobs',
       summary: '',
       usage: '',
-      subcommands: ['ls', 'show', 'cancel'],
+      subcommands: ['list', 'show', 'cancel'],
       flags: [{ name: 'from-step', type: 'string', summary: '' }],
     },
     {
@@ -21,7 +21,7 @@ const catalog: CommandCatalog = {
       summary: '',
       usage: '',
       subcommands: ['gen', 'migrate', 'studio', 'branch'],
-      subcommandPositionals: { branch: ['ls', 'create', 'drop'] },
+      subcommandPositionals: { branch: ['list', 'create', 'delete'] },
     },
     {
       name: 'new',
@@ -62,9 +62,10 @@ describe('a fix that cites a command this build does not ship', () => {
   });
 
   test('an unknown subcommand is the finding, and it lists the real ones', () => {
-    const problem = citedCommandProblem('x jobs list --state dead --json', catalog);
+    // `ls` was the jobs verb until 26.0.0; one verb each, no alias (#709).
+    const problem = citedCommandProblem('x jobs ls --state dead --json', catalog);
     expect(problem).toContain('no such subcommand');
-    expect(problem).toContain('ls, show, cancel');
+    expect(problem).toContain('list, show, cancel');
   });
 
   test('a planned subcommand is the finding too', () => {
@@ -92,7 +93,7 @@ describe('a fix that cites a command this build does not ship', () => {
     // line verbatim created a stray database instead of listing one.
     const problem = citedCommandProblem('x db branch lst --json', catalog);
     expect(problem).toContain('x db branch lst');
-    expect(problem).toContain('ls, create, drop');
+    expect(problem).toContain('list, create, delete');
   });
 
   test('a PLACEHOLDER in a closed-set slot is the finding — a verb set means a verb', () => {
@@ -102,12 +103,12 @@ describe('a fix that cites a command this build does not ship', () => {
     // a verb — so a placeholder there is always wrong, whatever the reader is meant to put in it.
     const problem = citedCommandProblem('x db branch <name>, then retry db.migrate', catalog);
     expect(problem).toContain('x db branch <name>');
-    expect(problem).toContain('ls, create, drop');
+    expect(problem).toContain('list, create, delete');
   });
 
   test('a placeholder AFTER the verb is fine — that slot is the branch name', () => {
     expect(citedCommandProblem('x db branch create <name>', catalog)).toBeUndefined();
-    expect(citedCommandProblem('x db branch drop <name> --json', catalog)).toBeUndefined();
+    expect(citedCommandProblem('x db branch delete <name> --json', catalog)).toBeUndefined();
     // And a placeholder in an OPEN slot stays fine, which is most fix lines in the repo.
     expect(citedCommandProblem('x jobs show <id> --json', catalog)).toBeUndefined();
   });
@@ -263,12 +264,12 @@ describe('the catalog is the registry, never a copy of it', () => {
   test('every `x db branch <verb>` the framework cites resolves against the real registry', async () => {
     // These four are shipped fix lines, three of them in `@ultimat3/db`'s own error registry and
     // one in the planned table. All four passed while `x db branch` had no verbs at all: drop
-    // `ls` from `BRANCH_SUBCOMMANDS` and this is what notices.
+    // `list` from `BRANCH_SUBCOMMANDS` and this is what notices.
     const real = await loadCommandCatalog();
     for (const fix of [
-      'x db branch ls --json',
+      'x db branch list --json',
       'x db branch create feature_x',
-      'x db branch drop feature_x   # then re-create, or pick another name',
+      'x db branch delete feature_x   # then re-create, or pick another name',
       'x db branch create <name>   # lowercase letters, digits, underscore and dash only',
     ]) {
       expect(citedCommandProblem(fix, real)).toBeUndefined();

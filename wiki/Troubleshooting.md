@@ -80,7 +80,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | Job in dead-letter | `retry.attempts` exhausted | `x jobs show <id> --json` for the step trace, then `x jobs retry <id>` — it replays from the failed step |
 | Nothing is processing | no `worker` for that queue name | check `WORKER_QUEUES` against `jobs.queues` |
 | A job ran but the row it needs doesn't exist | enqueued outside the transaction | enqueue via `<job>.enqueue` inside the action's `handle`; `X_OUTBOX_NO_TX` catches the rest |
-| Cron never fires | no `scheduler`, or another node holds the lease | `scheduler` is fixed at 1 active and leadership is a row: `select * from x_scheduler_leader` names the holder and its `expires_at`. A standby has no `/readyz` to check — it serves the metrics port only — so read the row, or `x jobs ls --json` |
+| Cron never fires | no `scheduler`, or another node holds the lease | `scheduler` is fixed at 1 active and leadership is a row: `select * from x_scheduler_leader` names the holder and its `expires_at`. A standby has no `/readyz` to check — it serves the metrics port only — so read the row, or `x jobs list --json` |
 
 ## Realtime
 

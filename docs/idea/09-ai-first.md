@@ -171,14 +171,14 @@ pgvector in the same Postgres. No second datastore.
 
 ## Branch environments
 
-The database half ships as `x db branch ls | create <name> | drop <name>`. `x branch` — the one command that also builds, routes and scopes a socket — is **planned** and exits `X_NOT_IMPLEMENTED`.
+The database half ships as `x db branch list | create <name> | delete <name>`. `x branch` — the one command that also builds, routes and scopes a socket — is **planned** and exits `X_NOT_IMPLEMENTED`.
 
 | Property | Detail | `As of 2026-08` |
 |---|---|---|
 | DB | `CREATE DATABASE "<source>_branch_<slug>" TEMPLATE "<source>"` copy-on-write clone — cheap, isolated, disposable. `<slug>` is `<name>` with every character outside `[A-Za-z0-9_]` replaced by `_`, because a hyphen is not legal in an unquoted Postgres identifier: `create feat-new-billing` clones into `<source>_branch_feat_new_billing`. Embedded: a copied `pgdata-<name>` directory, which keeps the name **as typed** | **shipped** |
 | Migrations | `db.migrate` applies here, never to the shared dev DB | **shipped** |
 | Preview URL | `http://<name>.localhost:<PORT>`, reported on `data.preview` | **computed**, routed by nothing |
-| Teardown | `x db branch drop <name>` — only what `x db branch ls` shows | **shipped** |
+| Teardown | `x db branch delete <name>` — only what `x db branch list` shows | **shipped** |
 | **Build ID scopes the SW** | the branch gets its own SW scope and cache namespace, so a preview can never poison prod cache ([`08-pwa-offline.md`](./08-pwa-offline.md)) | **planned** |
 | Agent use | an agent can migrate, seed, test, and browse a preview without risking anything shared | |
 

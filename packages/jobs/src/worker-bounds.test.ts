@@ -31,7 +31,7 @@ describe('a worker built on a number that is not a number', () => {
   test('a non-finite visibilityTimeoutMs is refused, not turned into a lease that never expires', () => {
     // MEASURED against `memoryJobDriver`: `visibleAt = at + NaN` is `NaN`, the reclaim scan asks
     // `(record.visibleAt ?? 0) <= at` and `NaN <= at` is FALSE, so a job whose worker died is never
-    // claimable again. At-least-once becomes never, with no error, no log, and a row `x jobs ls`
+    // claimable again. At-least-once becomes never, with no error, no log, and a row `x jobs list`
     // still prints as `running`. The Postgres driver takes the same number into `visible_at`.
     for (const visibilityTimeoutMs of NOT_A_BOUND) {
       const build = (): unknown =>

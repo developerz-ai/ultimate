@@ -275,8 +275,8 @@ describe('the wiki fix cell reads like its neighbours', () => {
 
   test('a bare command is written in backticks', () => {
     expect(cellOf('x db gen')).toBe('`x db gen`');
-    expect(cellOf('x jobs ls --name <job> --state running --json')).toBe(
-      '`x jobs ls --name <job> --state running --json`',
+    expect(cellOf('x jobs list --name <job> --state running --json')).toBe(
+      '`x jobs list --name <job> --state running --json`',
     );
   });
 

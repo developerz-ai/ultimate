@@ -1,4 +1,4 @@
-// `x jobs ls|show|retry|cancel|rm|promote|pause|resume` — introspect and recover the job queue,
+// `x jobs list|show|retry|cancel|delete|promote|pause|resume` — introspect and recover the job queue,
 // bound to `@ultimat3/jobs`'s own introspection so the CLI, `/_x` and MCP report identically;
 // `drain` is planned (`cmd-planned.ts`): Postgres is the one durable driver. CLI wiring only:
 // the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
@@ -56,7 +56,7 @@ function requireIdPositional(ctx: CommandContext, sub: string, driver: JobDriver
     throw new MissingPositionalError({
       command: `jobs ${sub}`,
       positional: 'id',
-      example: 'x jobs ls --json',
+      example: 'x jobs list --json',
     });
   }
   if (!JOB_ID.test(id)) throw new JobUnknownError({ id, driver: driver.name });
@@ -86,11 +86,11 @@ function refuseOversizedPage(limit: string | undefined): void {
     command: 'jobs',
     reason: `one page holds at most ${MAX_JOB_PAGE} jobs`,
     // The bound is the queue's own constant, screened like any value spliced into a command.
-    fix: `x jobs ls --limit ${renderFixShellArg(String(MAX_JOB_PAGE), '200')} --json   # then pass its data.nextCursor as --after while data.hasMore is true`,
+    fix: `x jobs list --limit ${renderFixShellArg(String(MAX_JOB_PAGE), '200')} --json   # then pass its data.nextCursor as --after while data.hasMore is true`,
   });
 }
 
-async function runLs(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
+async function runList(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
   const limit = flagString(ctx.args, 'limit');
   refuseOversizedPage(limit);
   const result = await listJobs(driver, {
@@ -208,8 +208,8 @@ async function runCancel(driver: JobDriver, ctx: CommandContext): Promise<Comman
 }
 
 /** Exit 0 means the row is gone. An id nobody queued is `X_JOB_UNKNOWN`; a running one refuses. */
-async function runRm(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
-  const id = requireIdPositional(ctx, 'rm', driver);
+async function runDelete(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
+  const id = requireIdPositional(ctx, 'delete', driver);
   const removed = await removeJob(driver, id);
   if (removed === undefined) throw new JobUnknownError({ id, driver: driver.name });
   return {
@@ -249,14 +249,14 @@ async function runPause(
   };
 }
 
-/** The subcommands that answer a `JobTrace`. `ls`, `rm`, `promote` and the rest read rows only. */
+/** The subcommands that answer a `JobTrace`. `list`, `delete`, `promote` and the rest read rows only. */
 const TRACE_SUBCOMMANDS: ReadonlySet<string> = new Set(['show', 'retry', 'cancel']);
 
 export const jobsCommand: CliCommand = {
   spec: jobsSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('jobs', ctx.cwd).dir;
-    const sub = ctx.args.subcommand ?? 'ls';
+    const sub = ctx.args.subcommand ?? 'list';
     // BEFORE `withJobDriver`, which boots the source queue: the answer needs no server, so a box
     // whose database is down gets it rather than the boot failure of a queue never to be used —
     // and nothing is leased. 24.x's `--to`/`--dry-run` are deleted, so the parser refuses them
@@ -272,10 +272,10 @@ export const jobsCommand: CliCommand = {
       if (sub === 'show') return runShow(driver, ctx);
       if (sub === 'retry') return runRetry(driver, ctx);
       if (sub === 'cancel') return runCancel(driver, ctx);
-      if (sub === 'rm') return runRm(driver, ctx);
+      if (sub === 'delete') return runDelete(driver, ctx);
       if (sub === 'promote') return runPromote(driver, ctx);
       if (sub === 'pause' || sub === 'resume') return runPause(driver, ctx, sub);
-      return runLs(driver, ctx);
+      return runList(driver, ctx);
     });
   },
 };

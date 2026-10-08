@@ -10,7 +10,7 @@ import { HYDRATE_STRATEGIES, RENDER_MODES, renderCauseValue } from '@ultimat3/co
 import { parseTtlMs } from './duration';
 import { RouteModeInvalidError } from './errors';
 import type { RouteConfig } from './route';
-import type { Surface } from './surfaces';
+import type { RouteSurface, Surface } from './surfaces';
 import { SURFACE_SPECS, surfaceAllows } from './surfaces';
 
 /**
@@ -177,20 +177,13 @@ function hasRevalidateTrigger(config: RouteShape): boolean {
 export interface ModeCheckContext {
   readonly file: string;
   readonly path: string;
-  readonly surface: Surface;
+  readonly surface: RouteSurface;
   /** Counted from the route module's JSX by the build. `stream` needs at least one. */
   readonly suspenseBoundaries: number;
 }
 
 /** Checks that need the surrounding module and surface. Called by `registerRoute`. */
 export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext): void {
-  if (ctx.surface === 'api') {
-    throw new RouteModeInvalidError(
-      `${ctx.file} is in api/, which renders nothing, but declares render: '${config.render}'`,
-      `move ${ctx.file} into site/ or app/, or replace defineRoute with an action`,
-    );
-  }
-
   if (!surfaceAllows(ctx.surface, config.render)) {
     const allowed = SURFACE_SPECS[ctx.surface].allowedModes.join(' | ');
     throw new RouteModeInvalidError(

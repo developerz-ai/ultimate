@@ -154,7 +154,7 @@ export {
   parseHttpRecording,
   parseRecording,
 } from './recording';
-export type { AgentRecovery, Recovery, RecoveryAttempt, RecoveryHook } from './recover';
+export type { RecoveryAttempt, RecoveryHook } from './recover';
 export { runRecovery } from './recover';
 export type {
   ConsoleLine,

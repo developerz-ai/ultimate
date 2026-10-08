@@ -30,14 +30,12 @@ export interface SurfaceDocument {
 }
 
 /**
- * Every surface that renders a document, with the CSS one would carry. `api/` is excluded because
- * it emits no document at all — a surface with nothing to style is not a surface missing its
- * tokens. Read from render's own registry, filled when the CLI loaded the app: a second walk of
+ * Every surface that renders a document, with the CSS one would carry — a route lives on `site/`
+ * or `app/` only, so `api/` (no document) never appears. Read from render's own registry, filled when the CLI loaded the app: a second walk of
  * the app's stylesheets here would be a second answer to "what does this document contain".
  */
 export function documentSurfaces(): readonly SurfaceDocument[] {
   const surfaces = new Set(routeEntries().map((entry) => entry.surface));
-  surfaces.delete('api');
   return [...surfaces]
     .sort()
     .map((surface) => ({ surface, css: stylesFor(surface) }) satisfies SurfaceDocument);

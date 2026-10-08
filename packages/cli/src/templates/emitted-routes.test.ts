@@ -6,7 +6,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
-import type { HydrateStrategy, OfflineStrategy, RenderMode, Surface } from '@ultimat3/render';
+import type { HydrateStrategy, OfflineStrategy, RenderMode, RouteSurface } from '@ultimat3/render';
 import { assertModeInvariants, defineRoute, hydrateRuntimeBytes } from '@ultimat3/render';
 import { scaffoldVariants } from '../scaffold-fixture';
 
@@ -15,7 +15,7 @@ const declared = (source: string, key: string): string | undefined =>
   new RegExp(`\\b${key}: '(?<value>[^']*)'`).exec(source)?.groups?.['value'];
 
 /** `apps/web/site/pricing/page.tsx` → `site`. `apps/admin/app/admin/page.tsx` → `app`. */
-const surfaceOf = (path: string): Surface | undefined => {
+const surfaceOf = (path: string): RouteSurface | undefined => {
   const segment = path.split('/')[2];
   return segment === 'site' || segment === 'app' ? segment : undefined;
 };
@@ -24,7 +24,7 @@ interface EmittedRoute {
   readonly variant: string;
   readonly path: string;
   readonly source: string;
-  readonly surface: Surface;
+  readonly surface: RouteSurface;
 }
 
 const emittedRoutes = (): readonly EmittedRoute[] =>

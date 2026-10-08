@@ -19,7 +19,12 @@ const HELM = Bun.which('helm');
 /**
  * One `helm template` child's budget, and the test's own deadline derived from it: a cold runner's
  * first render took over Bun's default 5 s while the child itself was allowed 30 s, so the TEST
- * died first (CI, 2026-10-07). Each test renders at most twice, plus the scaffold's chart write.
+ * died first (CI, 2026-10-07). Each test renders once; the scaffold's chart is written once.
+ *
+ * The child is killed with SIGKILL, never the default SIGTERM: `helm template` runs helm's install
+ * path, which traps SIGTERM to cancel a context and keeps running, so a wedged render outlived its
+ * 30 s budget — and `spawnSync` holds the event loop, so the test's own timeout never fired either.
+ * The `unit` step's 480 s deadline was the first thing that could stop it (CI, 2026-10-08).
  */
 const HELM_RENDER_MS = 30_000;
 const TEST_MS = 2 * HELM_RENDER_MS + 5_000;
@@ -45,11 +50,17 @@ interface Deployment {
   };
 }
 
-async function scaffoldChart(): Promise<string> {
-  for (const file of helmFiles(names('my-app'))) {
-    await Bun.write(join(SCAFFOLD, file.path), file.contents);
-  }
-  return join(SCAFFOLD, 'docker', 'helm');
+let scaffolded: Promise<string> | undefined;
+
+/** `x new`'s chart, written once per process: three tests read it and none changes it. */
+function scaffoldChart(): Promise<string> {
+  scaffolded ??= (async () => {
+    for (const file of helmFiles(names('my-app'))) {
+      await Bun.write(join(SCAFFOLD, file.path), file.contents);
+    }
+    return join(SCAFFOLD, 'docker', 'helm');
+  })();
+  return scaffolded;
 }
 
 /** Each Deployment by role, `<release>-<chart>-<role>` cut down to the role. */
@@ -68,9 +79,14 @@ function render(chart: string, extra: readonly string[]): Map<string, Deployment
       'image.repository=registry.example.com/app',
       ...extra,
     ],
-    { stdout: 'pipe', stderr: 'pipe', timeout: HELM_RENDER_MS },
+    { stdout: 'pipe', stderr: 'pipe', timeout: HELM_RENDER_MS, killSignal: 'SIGKILL' },
   );
-  if (result.exitCode !== 0) return expect.unreachable(`helm: ${result.stderr.toString()}`);
+  if (result.exitCode !== 0) {
+    const how = result.exitedDueToTimeout
+      ? `killed after ${HELM_RENDER_MS} ms`
+      : (result.signalCode ?? `exit ${result.exitCode}`);
+    return expect.unreachable(`helm (${how}): ${result.stderr.toString()}`);
+  }
   const parsed: unknown = Bun.YAML.parse(result.stdout.toString());
   const docs = (Array.isArray(parsed) ? parsed : [parsed]) as Deployment[];
   return new Map(docs.map((doc) => [doc.metadata.name.split('-').at(-1) ?? '', doc]));
@@ -105,6 +121,25 @@ describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both char
         expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(7200 + 35);
         // The other roles are untouched: the retire is the worker's alone.
         expect(preStopOf(rendered.get('scheduler'))).toBeUndefined();
+        expect(rendered.get('web')?.spec.template.spec.terminationGracePeriodSeconds).toBe(45);
+      },
+      TEST_MS,
+    );
+
+    test(
+      `${which}: drain.workerDeadlineSeconds sizes the worker's grace alone`,
+      async () => {
+        const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
+        const rendered = render(chart, [
+          '--set',
+          'drain.workerDeadlineSeconds=7500',
+          '--set',
+          'roles.worker.retireSeconds=7200',
+        ]);
+        // The worker's budget replaces the 25 s one, and the retire still adds to it.
+        expect(rendered.get('worker')?.spec.template.spec.terminationGracePeriodSeconds).toBe(
+          7500 + 10 + 7200,
+        );
         expect(rendered.get('web')?.spec.template.spec.terminationGracePeriodSeconds).toBe(45);
       },
       TEST_MS,

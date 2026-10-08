@@ -319,7 +319,7 @@ describe('the pg driver`s introspection', () => {
   });
 
   test('every whole-row read projects epoch ms, so a text-decoding client never yields NaN', async () => {
-    // Four of these were `select *` / `returning *`. `x jobs ls` and `x jobs show` then printed
+    // Four of these were `select *` / `returning *`. `x jobs list` and `x jobs show` then printed
     // `NaN` for `runAt`, `createdAt` and `updatedAt` against any executor whose client decodes
     // `timestamptz` as text — which is every client without a type map, and `PgExecutor` accepts
     // all of them. `SQL_CLAIM` had always asked Postgres for the conversion; these had not.

@@ -336,7 +336,8 @@ mechanism. It is a plain function and not a pipeline stage, because the secret i
 and only the route knows which one applies.
 
 ```ts
-// apps/web/api/webhooks/partner/route.ts
+// apps/web/webhooks/partner.ts — mounted as a plain HTTP route through the `routes` runtime
+// override (apps/web/runtime.ts); `api/` holds no route file
 import { verifyWebhookSignature } from '@ultimat3/http';
 
 declare const env: { readonly PARTNER_WEBHOOK_SECRET: string };   // the app's defineEnv() result

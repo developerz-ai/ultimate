@@ -129,8 +129,8 @@ describe('scanFixes · a fix passed positionally into a local error builder', ()
     '}\n';
 
   test('reads the argument in the fix parameter position', () => {
-    expect(fixes(`${BUILDER}rejected('not one statement', 'x db branch ls --json');`)).toEqual([
-      'x db branch ls --json',
+    expect(fixes(`${BUILDER}rejected('not one statement', 'x db branch list --json');`)).toEqual([
+      'x db branch list --json',
     ]);
   });
 

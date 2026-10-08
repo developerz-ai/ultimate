@@ -3,12 +3,16 @@
 
 import type { CommandSpec } from './parse';
 
+/**
+ * One verb each, the same across every `x` registry (#709): `list`, `show <one>`, `delete`. No
+ * `ls`/`rm` aliases — two spellings of one verb is the ambiguity axiom 1 forbids.
+ */
 export const JOBS_SUBCOMMANDS = [
-  'ls',
+  'list',
   'show',
   'retry',
   'cancel',
-  'rm',
+  'delete',
   'promote',
   'pause',
   'resume',
@@ -20,13 +24,13 @@ export const jobsSpec: CommandSpec = {
   // Never ENDING in "(planned)": that suffix is how `x help` and the planned-table tests tell a
   // planned COMMAND from a shipped one, and `x jobs` ships — only its `drain` does not.
   summary:
-    'list, show, retry, cancel, remove and promote jobs; pause and resume a queue (drain is planned)',
+    'list, show, retry, cancel, delete and promote jobs; pause and resume a queue (drain is planned)',
   usage:
-    'x jobs [ls|show <id>|retry <id>|cancel <id>|rm <id>|promote <id>|pause <queue>|resume <queue>|drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor] [--from-step name] [--reason text] [--json]',
+    'x jobs [list|show <id>|retry <id>|cancel <id>|delete <id>|promote <id>|pause <queue>|resume <queue>|drain] [--queue q] [--state s] [--name n] [--limit n] [--after cursor] [--from-step name] [--reason text] [--json]',
   requiresApp: true,
   subcommands: JOBS_SUBCOMMANDS,
   // The bare `x jobs` lists; it never retries, cancels or drains anything.
-  defaultSubcommand: 'ls',
+  defaultSubcommand: 'list',
   flags: [
     { name: 'queue', type: 'string', summary: 'filter by queue name' },
     { name: 'state', type: 'string', summary: 'filter by job state' },
@@ -35,8 +39,8 @@ export const jobsSpec: CommandSpec = {
     {
       name: 'after',
       type: 'string',
-      summary: 'ls: the next page — the cursor the previous page printed',
-      subcommands: ['ls'],
+      summary: 'list: the next page — the cursor the previous page printed',
+      subcommands: ['list'],
     },
     // Each of these is read by ONE subcommand — `retryJob`, `cancelJob` — and says so in its own
     // summary. The scope is what makes the parser refuse it anywhere else instead

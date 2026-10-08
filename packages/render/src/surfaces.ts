@@ -11,6 +11,12 @@ import { SurfaceBoundaryError } from './errors';
 
 export type Surface = 'site' | 'app' | 'api' | 'shared';
 
+/**
+ * The two surfaces a route file lives on. `api/` is a surface for the import boundary only: it holds
+ * the action and query projections `defineApi()` collects, and no route file.
+ */
+export type RouteSurface = Exclude<Surface, 'api' | 'shared'>;
+
 export const SURFACES = ['site', 'app', 'api', 'shared'] as const;
 
 export interface SurfaceSpec {

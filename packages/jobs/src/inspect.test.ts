@@ -156,7 +156,7 @@ function driverWithoutIntrospect(): JobDriver {
 }
 
 const INTROSPECT_FIX =
-  'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect — then: x jobs ls --json';
+  'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect — then: x jobs list --json';
 
 async function expectIntrospectionRequired(call: () => Promise<unknown>): Promise<void> {
   let thrown: unknown;

@@ -349,7 +349,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   `examples/dummy/openapi.json` published — `publish_post`, `create_post`, … — were names
   `tools/call` answers not-found for; the tenth, `summarize`, is single-word and so was already
   its own snake_case form, which is why a count of the wrong names is not a count of the rows. The
-  DESCRIPTOR said the same: `x actions describe --json`, `x actions list --json`, the
+  DESCRIPTOR said the same: `x actions show --json`, `x actions list --json`, the
   `actions.describe` dev MCP tool and the `/_x` Routes panel all read `.mcp.tool`. **Not the app
   manifest** — `ActionFact.mcp` is `{ expose, description? }` and `packages/manifest/src/sources.ts`
   copies only those two, so `x.manifest.json` has never carried a tool name and `grep '"tool"'` on

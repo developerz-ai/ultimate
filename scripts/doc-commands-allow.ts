@@ -24,6 +24,49 @@ export interface DocCommandAllowance {
 }
 
 export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
+  // 26.0.0's migration row for the one-verb rename (#709): its subject is the old verbs a script
+  // still runs, so a reader can recognise each one and swap it for the verb named beside it.
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x jobs ls',
+    kind: 'absent',
+    why: 'the 26.0.0 migration row names the removed verb so a script running it is recognised; the verb is list since 26.0.0',
+  },
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x jobs rm',
+    kind: 'absent',
+    why: 'the 26.0.0 migration row names the removed verb so a script running it is recognised; the verb is delete since 26.0.0',
+  },
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x db branch ls',
+    kind: 'absent',
+    why: 'the 26.0.0 migration row names the removed verb so a script running it is recognised; the verb is list since 26.0.0',
+  },
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x db branch drop',
+    kind: 'absent',
+    why: 'the 26.0.0 migration row names the removed verb so a script running it is recognised; the verb is delete since 26.0.0',
+  },
+  // The record of the bug that made `x db branch` take a verb: its fix line said `ls`, and the old
+  // dispatcher cloned a database called `ls`. The spelling IS the subject; 26.0.0 renamed the verb
+  // to `list` (#709), and rewriting the record to `list` would make it describe a bug `list` never had.
+  {
+    path: 'docs/history/cli.md',
+    cites: 'x db branch ls',
+    kind: 'absent',
+    why: 'the record is about the fix line `x db branch ls --json` cloning a database called ls; the verb is list since 26.0.0',
+  },
+  // The #290 record: 34 refusals emitted `x entities describe column --json`. The emitted string IS
+  // the subject; rewriting it to `show` (26.0.0, #709) would record a fix line nothing ever printed.
+  {
+    path: 'docs/history/entity.md',
+    cites: 'x entities describe',
+    kind: 'absent',
+    why: 'the record quotes the fix line the refusals emitted, x entities describe column --json; the verb is show since 26.0.0',
+  },
   // 5.0.0's upgrade note about a `fix:` line that named a command which does not exist. The whole
   // sentence is "this said `x db replication init`, and there is no such subcommand" — naming it is
   // the point, and a reader who has the old string in a runbook needs to recognise it. It lists the

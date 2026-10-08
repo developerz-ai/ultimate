@@ -389,7 +389,7 @@ export const assertClaimQueues = (driver: string, options: ClaimOptions): void =
  * both drivers already answer it identically. `visibilityTimeoutMs` is a DURATION, so it is
  * screened for finiteness alone, the same rule `worker-options.ts` applies to the same knob: it is
  * on this list because `visibleAt = at + NaN` is never `<= now`, which turns at-least-once into
- * never on a row `x jobs ls` still prints as `running`.
+ * never on a row `x jobs list` still prints as `running`.
  */
 export const assertClaimBounds = (driver: string, options: ClaimOptions): void => {
   finiteCount(`the ${driver} driver claim`, 'limit', options.limit);

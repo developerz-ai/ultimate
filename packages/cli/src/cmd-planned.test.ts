@@ -123,16 +123,16 @@ describe('unit · what a planned command tells the caller', () => {
 
   test('x branch points at the database half that is shipped', () => {
     const planned = PLANNED_COMMANDS.find((entry) => entry.name === 'branch');
-    // `x db branch <name>` pasted into a shell is a redirect; `ls` is the verb that runs. It was
-    // this exact line, against a command whose argument was the branch NAME — so an agent that
-    // followed it verbatim created a branch called `ls` and got no listing.
+    // `x db branch <name>` pasted into a shell is a redirect; `list` is the verb that runs. A line
+    // like this one, against a command whose argument was the branch NAME, once made an agent that
+    // followed it verbatim create a branch called `ls` and get no listing.
     expect(planned?.fix).toBe(
-      'x db branch ls --json   # the database half: ls, create <name>, drop <name>',
+      'x db branch list --json   # the database half: list, create <name>, delete <name>',
     );
   });
 
   test('every planned fix resolves as an invocation, three words deep', async () => {
-    // `runnableOf` above reads the first two words. `x db branch ls` passed that check while
+    // `runnableOf` above reads the first two words. `x db branch list` passed that check while
     // `x db branch` had no verbs at all, because nothing looked at the third.
     const catalog = await loadCommandCatalog();
     for (const planned of PLANNED_COMMANDS) {

@@ -119,6 +119,12 @@ export function llmsDrift(
   for (const line of had) {
     if (!wants.has(line)) findings.push(entry(`carries an entry nothing generates: ${line}`));
   }
+  // Every line present and none extra, yet not the text `--write` emits: an entry hand-moved out
+  // of its tier (or sidebar) slot. A set comparison alone passed `scraping` relabelled tier 4 in
+  // its old tier-5 seat.
+  if (findings.length === 0 && current !== wanted) {
+    findings.push(entry('lists the generated entries out of the order the generator writes them'));
+  }
   return findings;
 }
 

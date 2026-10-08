@@ -27,7 +27,7 @@ import { GLOBAL_FLAGS } from './parse';
 // slot where the reader has nothing to substitute, so `x db branch <name>` — two shipped fix lines
 // in `@ultimat3/mcp` — is `X_CLI_UNKNOWN_COMMAND` when run and resolved clean while a placeholder
 // was invisible to the reader. Second and fourth slots are open positionals (`x new my-app`,
-// `x db branch drop <name>`), where a placeholder is exactly right.
+// `x db branch delete <name>`), where a placeholder is exactly right.
 // A `:` is part of a word only when a letter follows it, which is what separates the shipped
 // positional `admin:page` from prose that ends a citation with a colon (`x verify: the gate`).
 // Read without it, `x g admin:page` cites `x g admin` — a positional the CLI does not ship —

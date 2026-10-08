@@ -7,8 +7,8 @@ import type { CommandSpec } from './parse';
 export const actionsSpec: CommandSpec = {
   name: 'actions',
   summary: 'the action registry: input/output schema, policy, tags, MCP exposure',
-  usage: 'x actions [list|describe <name>] [--json]',
-  subcommands: ['list', 'describe'],
+  usage: 'x actions [list|show <name>] [--json]',
+  subcommands: ['list', 'show'],
   defaultSubcommand: 'list',
   requiresApp: true,
 };
@@ -16,8 +16,8 @@ export const actionsSpec: CommandSpec = {
 export const queriesSpec: CommandSpec = {
   name: 'queries',
   summary: 'the query registry: schema, policy, live, cache tags',
-  usage: 'x queries [list|describe <name>] [--json]',
-  subcommands: ['list', 'describe'],
+  usage: 'x queries [list|show <name>] [--json]',
+  subcommands: ['list', 'show'],
   defaultSubcommand: 'list',
   requiresApp: true,
 };
@@ -25,8 +25,8 @@ export const queriesSpec: CommandSpec = {
 export const entitiesSpec: CommandSpec = {
   name: 'entities',
   summary: 'the entity registry: columns, invariants, indexes, tenancy',
-  usage: 'x entities [list|describe <name>] [--json]',
-  subcommands: ['list', 'describe'],
+  usage: 'x entities [list|show <name>] [--json]',
+  subcommands: ['list', 'show'],
   defaultSubcommand: 'list',
   requiresApp: true,
 };

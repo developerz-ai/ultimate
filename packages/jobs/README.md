@@ -293,7 +293,7 @@ report a different number:
 | Surface | Shows |
 |---|---|
 | `x db backfill --list` | the whole ledger, `--name` / `--status` / `--limit`, and `--json` |
-| `x jobs ls` | the passes **in flight** — rows so far and cursor, beside the queue depth |
+| `x jobs list` | the passes **in flight** — rows so far and cursor, beside the queue depth |
 | `x jobs show <id>` | the ledger row for that run, under `backfill` (`null` for any other job) |
 | `/_x` → jobs | the whole ledger plus a live count, alongside the queues and the step traces |
 
@@ -568,7 +568,7 @@ re-exports (`X_HELPER_COPY`). Same argument `timing-safe-equal.ts` makes for its
 **Upgrading a webhook to `tenant: ({ orgId }) => orgId`.** Deliveries already queued without an
 `orgId` dead-letter on their next attempt with `X_JOB_TENANT_MISMATCH`, and a retry cannot add the
 field. Drain the queue before deploying the new declaration, or re-enqueue what dead-letters with its
-org: `x jobs ls --state dead --name partner.webhooks --json`, then `deliver.enqueue({ endpointId, eventId, orgId })` for each.
+org: `x jobs list --state dead --name partner.webhooks --json`, then `deliver.enqueue({ endpointId, eventId, orgId })` for each.
 
 **Set `timeout` below the drain budget.** A webhook has no timeout unless you declare one, and a
 POST on the wire when SIGTERM lands runs until the receiver answers. With a `timeout`, a drained
@@ -1195,7 +1195,7 @@ export const syncAccountWatched = job({
 |---|---|
 | a retry, a `step.sleep` / `waitForEvent`, a drain | nobody: the run has not ended |
 | `cancelJob()` / `x jobs cancel` on a queued or running row | the caller of the cancel — the worker's own settle then matches nothing |
-| `x jobs retry`, `rm`, `promote`, `drain` | the operator; a retried run settles again, and is told again |
+| `x jobs retry`, `delete`, `promote`, `drain` | the operator; a retried run settles again, and is told again |
 | a settle that did not land — the lease lapsed and the queue re-delivered | the claim that holds the row now |
 
 | Guarantee | Stated plainly |
@@ -1254,13 +1254,13 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 | `X_JOB_LEASE_LOST` | the job was cancelled, or its lease lapsed and the queue re-delivered it, while this worker was still running it |
 | `X_JOB_SLOT_LOST` | the fleet `concurrency` slot this run held was taken by another worker — a different row on a different clock from the lease above |
 | `X_JOB_NOT_CANCELLABLE` | `cancelJob` reached a job that is not live — done, failed, dead or already cancelled — an id no queue holds, or a driver with no `cancel` |
-| `X_JOB_NOT_FOUND` | `requeue` was asked for an id the queue does not hold — one answer on both drivers. Fix: `x jobs ls --json` |
+| `X_JOB_NOT_FOUND` | `requeue` was asked for an id the queue does not hold — one answer on both drivers. Fix: `x jobs list --json` |
 | `X_JOB_CONCURRENCY_UNENFORCEABLE` | a registered job declares `concurrency`, plain or keyed, and the driver has no lease store |
-| `X_JOB_KEY_BUSY` | a run claimed under `whenBusy: 'fail'` while its key already held `limit` runs. Classified `terminal`. Fix: `x jobs ls --name <job> --state running --json` |
+| `X_JOB_KEY_BUSY` | a run claimed under `whenBusy: 'fail'` while its key already held `limit` runs. Classified `terminal`. Fix: `x jobs list --name <job> --state running --json` |
 | `X_JOB_DECLARATION_INVALID` | `job()` is missing a required field, declares a `concurrency` no worker can honour (plain or keyed), or its `concurrency.key` answered an empty, non-string or over-long key at enqueue |
 | `X_JOB_NOT_REMOVABLE` | `remove` / `removeMany` reached a running job. Fix: `x jobs cancel <id> --json` |
 | `X_JOB_NOT_PROMOTABLE` | `promote` reached a job not waiting on its run time |
-| `X_JOB_PAGE_INVALID` | `list()` was asked for more than `MAX_JOB_PAGE` rows, or handed a cursor no page produced. The cause names which cursor (`after` / `before`). Fix: `x jobs ls --limit 200 --json` |
+| `X_JOB_PAGE_INVALID` | `list()` was asked for more than `MAX_JOB_PAGE` rows, or handed a cursor no page produced. The cause names which cursor (`after` / `before`). Fix: `x jobs list --limit 200 --json` |
 | `X_JOB_ON_SETTLED_FAILED` | a declared `onSettled` threw on every one of its tries; logged and reported, never thrown |
 | `X_NOT_IMPLEMENTED` | introspection or the operator surface on a driver with no `introspect` (a hand-rolled one) |
 

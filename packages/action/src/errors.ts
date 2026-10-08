@@ -187,9 +187,9 @@ export class InputInvalidError extends UltimateError {
     super({
       code: 'X_INPUT_INVALID',
       cause: `input for ${subject} "${name}" failed validation: ${detail}`,
-      fix: `x actions describe ${renderFixShellArg(name, '<action-name>')} --json  # prints the expected input schema`,
+      fix: `x actions show ${renderFixShellArg(name, '<action-name>')} --json  # prints the expected input schema`,
       // A remote caller holds the published schema — the MCP `inputSchema`, the OpenAPI request
-      // body — and cannot run `x actions describe`.
+      // body — and cannot run `x actions show`.
       callerFix:
         'correct the fields named in cause to match the published input schema (the tool inputSchema, or the OpenAPI request body) and send again — the same input is refused the same way',
       ...(issues === undefined ? {} : { meta: { issues } }),
@@ -208,7 +208,7 @@ export class OutputInvalidError extends UltimateError {
     super({
       code: 'X_OUTPUT_INVALID',
       cause: `action "${name}" returned a value its output schema rejects: ${detail}`,
-      fix: `x actions describe ${renderFixShellArg(name, '<action-name>')} --json  # compare the handler's return against \`output:\``,
+      fix: `x actions show ${renderFixShellArg(name, '<action-name>')} --json  # compare the handler's return against \`output:\``,
     });
   }
 }
@@ -353,7 +353,7 @@ export class RpcFailedError extends UltimateError {
     super({
       code: 'X_RPC_FAILED',
       cause: `${name} returned HTTP ${status} without a problem+json body`,
-      fix: `check the gateway in front of the app, then: x actions describe ${renderFixShellArg(name, '<action-name>')} --json`,
+      fix: `check the gateway in front of the app, then: x actions show ${renderFixShellArg(name, '<action-name>')} --json`,
       retry: retryForStatus('X_RPC_FAILED', status),
     });
   }

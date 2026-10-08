@@ -99,11 +99,14 @@ securityContext:
 #   readinessGraceSeconds  app.config.ts drain.readinessGraceMs / 1000 (web and sync only)
 #   deadlineSeconds        app.config.ts drain.deadlineMs / 1000 — x deploy --method helm sets
 #                          both from app.config.ts, so a raised budget raises the grace with it
+#   workerDeadlineSeconds  app.config.ts drain.workerDeadlineMs / 1000 — the worker's budget in place
+#                          of deadlineSeconds, up to a day; 0 means the worker uses deadlineSeconds
 #   teardownMarginSeconds  the release after the drain, the telemetry flush, the pool close
 drain:
   preStopSleepSeconds: 5
   readinessGraceSeconds: 5
   deadlineSeconds: 25
+  workerDeadlineSeconds: 0
   teardownMarginSeconds: 10
 
 # How long a new pod must stay Ready before a rollout counts it and stops an old one.
@@ -166,7 +169,7 @@ roles:
     replicas: 2
     # The retire, OFF at 0. Set to the longest a held job may run, in seconds, and the worker's
     # preStop sends its PID 1 SIGUSR2: stop claiming, finish every held job, abort nothing, exit 0
-    # — for a job whose side effect must happen at most once and may outlast drain.deadlineSeconds.
+    # — for a job whose side effect must happen at most once and may outlast its drain budget.
     # Added to this role's terminationGracePeriodSeconds, which the kubelet counts the preStop against.
     retireSeconds: 0
     resources:

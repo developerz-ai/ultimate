@@ -256,7 +256,7 @@ Under the default style:
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
 
 **One name, three surfaces** — `openapi.json`'s `x-ultimate.mcpTool`,
-`describeAction().mcp.tool` (what `x actions describe --json`, `x actions list --json`, the
+`describeAction().mcp.tool` (what `x actions show --json`, `x actions list --json`, the
 `actions.describe` dev MCP tool and the `/_x` Routes panel show) and the catalog `@ultimat3/mcp`
 serves. It was two until 2026-08: a `toToolName()` here snake_cased the published ones to
 `publish_post` while the server answered only `publishPost`, so an agent that read the published
@@ -839,7 +839,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_ACTION_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_RATE_LIMIT_INVALID` | `rateLimit:` with a non-positive or non-finite half — `windowMs: 0` refills infinitely. Owned by `@ultimat3/http`, which owns the conversion | make both positive, or delete the block |
 | `X_ACTION_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
-| `X_INPUT_INVALID` | input failed the Standard Schema. Carries the rejections **twice**: the flattened line in `cause`, and the structured list in `meta.issues` — one value rendered two ways, `As of 2026-08-24` | `x actions describe <name> --json` |
+| `X_INPUT_INVALID` | input failed the Standard Schema. Carries the rejections **twice**: the flattened line in `cause`, and the structured list in `meta.issues` — one value rendered two ways, `As of 2026-08-24` | `x actions show <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
 | `X_IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key:` sent blank (`Headers.get()` answers `''`, not `null`) or past 255 characters | send one unique value per request, or omit the header |
 | `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor, origin, reclaimAfterMs })` at boot |

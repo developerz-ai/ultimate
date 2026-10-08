@@ -55,6 +55,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |
 | structured JSON logging + redaction; `setLogSink(sink)` — the test seam that sends every default-writer line to a sink instead of the process's streams (a test preload drops them; a test asserting on the process logger collects them) | `logger.ts` |
+| `addLogSink(sink)` — the supported tee: every default-writer line, after redaction, to `sink` **beside** the streams (or a `setLogSink` seam), never instead; returns the unsubscribe. A sink that throws is skipped and reported once (`log.sink_failed`); a line a sink logs is not teed back | `log-tee.ts` |
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
 | the sampling decision, and `OTEL_TRACES_SAMPLER*` | `sampler.ts` |
 | OTLP/HTTP JSON: endpoint, headers, value encoding | `otlp.ts` |
@@ -70,7 +71,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | graceful drain, `/healthz`, `/readyz` | `lifecycle.ts` |
 | what a health endpoint tells whom — `healthBody(report, role, detailed)`, `healthPeerListed(peers, address)`, `DEFAULT_HEALTH_DETAIL_PEERS`; the one rule `@ultimat3/http` and the sync node's own listener both call | `health-disclosure.ts` |
 | the readiness grace between `/readyz` → 503 and the listener closing (`drain.readinessGraceMs`) | `lifecycle-grace.ts` |
-| the drain budget's default and domain (`drain.deadlineMs`, 25 s, 1–3600000 ms) — `DRAIN_DEADLINE_DEFAULT_MS`, `DRAIN_DEADLINE_MAX_MS` | `drain-deadline.ts` |
+| the drain budget's default and domain (`drain.deadlineMs`, 25 s, 1–3600000 ms; the worker's optional `drain.workerDeadlineMs`, 1–86400000 ms) — `DRAIN_DEADLINE_DEFAULT_MS`, `DRAIN_DEADLINE_MAX_MS`, `WORKER_DRAIN_DEADLINE_MAX_MS` | `drain-deadline.ts` |
 | `jobs.concurrency`'s default and domain — one slot count for every queue a worker serves, or a table per queue (`{ banks: 4, 'banks-long': 2 }`; a queue the table does not name runs at the default). `JOBS_CONCURRENCY_DEFAULT` (8), `type JobsConcurrency` | `config-jobs.ts` |
 | SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)` | `lifecycle-signals.ts` |
 | is this directory inside a `bun build --compile` binary? `isCompiledBundle(import.meta.dir)` — `/$bunfs/` and Windows' `B:\~BUN\` | `bunfs.ts` |
@@ -485,6 +486,10 @@ match with `sealAll()`; uniqueness cannot be held across keys.
   once has to keep it: a discarded one is a hook per `start()`, each retaining the resource it
   was going to drain, and the next drain runs every one of them against a torn-down copy.
   `shutdownHookCount()` is the test-only probe that makes the leak assertable.
+- `isRetiring()` is true from the moment a worker's retire begins (SIGUSR2 in production, `x dev`'s
+  restart) for the rest of the process — the retire finishes every held job BEFORE the drain, so
+  `isDraining()` is still false the whole time. Read it where the app reports its own state (a
+  heartbeat). `markRetiring()` is the retire's own call; there is no un-retire.
 - `registerReadinessCheck(name, check)` is what makes `/readyz` mean **usable** rather than
   **bound**. `ReadinessCheck` is `() => boolean` and must stay synchronous — a probe that awaits its
   dependency turns a slow dependency into a wedged endpoint and then a restart loop; keep a boolean

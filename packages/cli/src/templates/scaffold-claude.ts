@@ -32,7 +32,7 @@ const settings = (): string => `{
       "Bash(x actions:*)",
       "Bash(x queries:*)",
       "Bash(x entities:*)",
-      "Bash(x jobs ls:*)",
+      "Bash(x jobs list:*)",
       "Bash(x jobs show:*)",
       "Bash(x tasks:*)",
       "Bash(x policy:*)",

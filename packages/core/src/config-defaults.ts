@@ -47,7 +47,12 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
     notify: { inboxReadRetentionMs: undefined, inboxUnreadRetentionMs: undefined },
     ai: { mcp: { expose: true } },
     // Read from the process env when the config is DEFINED — the same env the drain will run in.
-    drain: { readinessGraceMs: defaultReadinessGraceMs(), deadlineMs: DRAIN_DEADLINE_DEFAULT_MS },
+    drain: {
+      readinessGraceMs: defaultReadinessGraceMs(),
+      deadlineMs: DRAIN_DEADLINE_DEFAULT_MS,
+      // Unset: the worker drains on `deadlineMs`, like every role.
+      workerDeadlineMs: undefined,
+    },
     health: { readiness: 'dependencies' },
   };
 }

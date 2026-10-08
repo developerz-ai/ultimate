@@ -282,7 +282,7 @@ export class LiveRowUnidentifiedError extends RealtimeError {
             cause: `live query "${args.query}" returned a row whose id is a ${args.idType}, not text or a safe integer — a live row is addressed by a text id, so project the key as text (a uuid or text column) or drop live: true from the query`,
             // A name the shell would not read verbatim does not travel: the list names it instead.
             fix: isFixShellSafe(args.query)
-              ? `x queries describe ${renderFixShellArg(args.query, 'name')} --json`
+              ? `x queries show ${renderFixShellArg(args.query, 'name')} --json`
               : 'x queries list --json',
           },
     );

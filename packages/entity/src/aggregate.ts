@@ -64,7 +64,7 @@ export const notAggregatable = (
       fn === 'avg' && kind === 'money'
         ? `${entityName}.sum('${property}') and ${entityName}.count() — divide at the call site, where the rounding is a decision somebody made`
         : candidates.length === 0
-          ? `x entities describe ${entityName} --json   # this entity declares no column ${fn} can be applied to`
+          ? `x entities show ${entityName} --json   # this entity declares no column ${fn} can be applied to`
           : `${entityName}.${fn}('${candidates[0]}')   # ${fn} takes one of: ${candidates.join(', ')}`,
   });
 

@@ -677,9 +677,9 @@ original error still reaches the caller; a sink refusing an **allowed** record w
 | `X_MATCHER_UNSUPPORTED` | live query the matcher cannot patch | reshape it, or `live: false` |
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |
 | `X_QUERY_NOT_PAGEABLE` | a paged or live read returned a row with no `id` | select the primary key: `db.<rows>.select({ id: true, … })` |
-| `X_INPUT_INVALID` | input failed the Standard Schema; a page control the wire refuses; a `search()` handed a blank term, a cursor, or a window that would cut rows | `x queries describe <name> --json` |
+| `X_INPUT_INVALID` | input failed the Standard Schema; a page control the wire refuses; a `search()` handed a blank term, a cursor, or a window that would cut rows | `x queries show <name> --json` |
 | `X_QUERY_UNREGISTERED` | used before `registerQueries()` ran | register at boot |
-| `X_NOT_FOUND` | a `single: true` read matched no row — the HTTP route's 404, and the MCP tool's refusal (entity's code) | `x queries describe <name> --json` prints the SQL |
+| `X_NOT_FOUND` | a `single: true` read matched no row — the HTTP route's 404, and the MCP tool's refusal (entity's code) | `x queries show <name> --json` prints the SQL |
 | `X_QUERY_SINGLE_INVALID` | `single:` declared as something other than a boolean | `single: true`, or drop the key |
 | `X_QUERY_FOREIGN` | a look-alike was projected as a query | declare it with `query({ … })` |
 | `X_CLIENT_TRANSPORT_FAILED` | `.client()` got no response, or a non-`problem+json` failure (core's code, since 21.0.0; was `X_RPC_FAILED`) | check the gateway in front of the app: `x doctor --json` |

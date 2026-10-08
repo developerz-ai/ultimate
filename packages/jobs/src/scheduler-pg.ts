@@ -146,7 +146,7 @@ export function postgresLeaseLeader(options: PostgresLeaseLeaderOptions): Leader
   };
 }
 
-/** Exposed so a test — and `x jobs ls` — can say which node currently holds the lease. */
+/** Exposed so a test — and `x jobs list` — can say which node currently holds the lease. */
 export async function currentLeader(
   executor: PgExecutor,
   lockKey = 'scheduler',

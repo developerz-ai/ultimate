@@ -347,47 +347,6 @@ describe('the two shapes a mode declaration can be wrong in', () => {
   });
 });
 
-describe('api/ renders nothing', () => {
-  const config: RouteConfig = defineRoute({
-    render: 'ssr',
-    offline: 'runtime',
-    hydrate: 'idle',
-    meta,
-  });
-
-  // A page under api/ is a route with no HTML and no bundle graph, so the failure names the two
-  // edits that exist — move it, or stop pretending it is a page.
-  test('a defineRoute under api/ is refused before any other mode rule is consulted', () => {
-    let fix = '';
-    let cause = '';
-    try {
-      assertModeInvariants(config, {
-        file: 'apps/web/api/posts/route.ts',
-        path: '/api/posts',
-        surface: 'api',
-        suspenseBoundaries: 0,
-      });
-    } catch (error) {
-      fix = fixOf(error);
-      cause = error instanceof RouteModeInvalidError ? error.cause : '';
-    }
-    expect(cause).toContain('apps/web/api/posts/route.ts');
-    expect(cause).toContain('renders nothing');
-    expect(fix).toContain('replace defineRoute with an action');
-  });
-
-  test('the same config is accepted on app/, so the surface is what refused it', () => {
-    expect(() =>
-      assertModeInvariants(config, {
-        file: 'apps/web/app/posts/page.tsx',
-        path: '/posts',
-        surface: 'app',
-        suspenseBoundaries: 0,
-      }),
-    ).not.toThrow();
-  });
-});
-
 describe('prerender belongs to a prerenderable mode', () => {
   const withPrerender = (render: 'static' | 'isr' | 'stream'): RouteConfig =>
     defineRoute({

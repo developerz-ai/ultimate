@@ -137,7 +137,7 @@ export const postReviewKeep = can<ReviewScope, PostRow>('post:publish', ({ actor
  * rather than a sentence: a refusal a person reads goes through `t()` like every other
  * user-facing string, so it is translatable and two surfaces cannot word one refusal differently.
  * `can()` is the right form where nobody but an agent reads the denial — `postPublish`'s reason
- * is `x actions describe`, not a toast.
+ * is `x actions show`, not a toast.
  *
  * `check` is synchronous for the reason every predicate on this page is: a live query
  * re-evaluates one per subscriber on every change.

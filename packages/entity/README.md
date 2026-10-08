@@ -263,7 +263,7 @@ export const accounts = entity('account', {
 
 | Override | What follows it |
 |---|---|
-| `entity(name, { table })` | every statement, index name and foreign key. The entity NAME stays the framework's key — the registry, the cache tag (`entity:account`), `x entities describe` and every relation are keyed by it, so renaming a table never moves a cache tag or a policy |
+| `entity(name, { table })` | every statement, index name and foreign key. The entity NAME stays the framework's key — the registry, the cache tag (`entity:account`), `x entities show` and every relation are keyed by it, so renaming a table never moves a cache tag or a policy |
 | `.column(name)` | the DDL, the binding, the decoder, the predicate, the sort key, the cursor. Name it LAST in a chain — the link returns the general column, and only `uuid()` and `timestamp()` keep their own methods across it |
 | `money({ columns })` | per part, merged over `<name>_minor` / `<name>_currency` / `<name>_scale`, so a table that renamed one does not restate the other two. `scale: null` says the table has no scale column: every amount is then at the currency's own minor unit, which is what an absent scale already means |
 
@@ -813,7 +813,7 @@ page.rows[0].author;        // the member row, or null — always present
 | Unknown name | `X_PRELOAD_UNKNOWN_RELATION` at `preload()` itself, not a page later |
 | Shape | `belongsTo` attaches the row or `null`; `hasMany` an array — always present |
 | Statements | one extra per relation, resolved concurrently; naming one twice is one statement |
-| Ceiling | `preload('<relation>', { max })` — the most related rows one relation may attach to one page. Default `MAX_PRELOADED_ROWS` (10,000, the largest page a read may ask for). Past it the read is **refused** (`X_INVARIANT_VIOLATED`), never truncated, and it reads at most one row past the ceiling to know. Naming a relation twice is still one statement: a later call that states `max` replaces the earlier one, as a second `.limit()` does, and one that states none leaves it. The refusal's cause spells the call to write (`.preload('<relation>', { max: n })`); its fix is `x entities describe <entity> --json` |
+| Ceiling | `preload('<relation>', { max })` — the most related rows one relation may attach to one page. Default `MAX_PRELOADED_ROWS` (10,000, the largest page a read may ask for). Past it the read is **refused** (`X_INVARIANT_VIOLATED`), never truncated, and it reads at most one row past the ceiling to know. Naming a relation twice is still one statement: a later call that states `max` replaces the earlier one, as a second `.limit()` does, and one that states none leaves it. The refusal's cause spells the call to write (`.preload('<relation>', { max: n })`); its fix is `x entities show <entity> --json` |
 | Tenancy | carried onto the related read only when the other entity's tenant column shares the name; otherwise `X_TENANCY_UNSCOPED` refuses the related read rather than guess |
 | Terminals | `page()`, `all()`, `one()` preload; `count()`, `countBy()` and `plan()` don't — none reads a row to attach one to |
 

@@ -247,7 +247,7 @@ export function driverLifecycleScenarios(label: string, harness: OperatorHarness
       expect(refusal.code).toBe('X_JOB_NOT_FOUND');
       expect(String(refusal.cause)).toContain(NO_SUCH_JOB);
       expect(String(refusal.cause)).toContain(driver.name);
-      expect(refusal.fix).toBe('x jobs ls --json');
+      expect(refusal.fix).toBe('x jobs list --json');
     }
   });
 

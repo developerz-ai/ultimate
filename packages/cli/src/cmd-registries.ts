@@ -2,7 +2,7 @@
 // Replaces grepping a source tree, which is what an agent does when the framework has no answer
 // to "what actions/queries/entities exist". One table, one generic command body: the three
 // commands differ only in which registry they read, a row's columns, and (for a query only) the
-// one extra field `describe` surfaces that its descriptor does not already carry.
+// one extra field `show` surfaces that its descriptor does not already carry.
 
 import type { ActionDescriptor, AnyAction } from '@ultimat3/action';
 import { describeActions, getAction, jsonSchemaOf } from '@ultimat3/action';
@@ -35,7 +35,7 @@ const detailLines = (payload: Readonly<Record<string, JsonValue>>): readonly str
   Object.entries(payload).map(([key, value]) => `  ${key}: ${formatValue(value)}`);
 
 /**
- * One config per registry: how `list` renders a row, and what `describe` adds beyond the
+ * One config per registry: how `list` renders a row, and what `show` adds beyond the
  * descriptor itself — only a query's input schema does (`QUERIES.extra`); `ActionDescriptor`
  * already carries `input`/`output`, and an entity has no invocation shape to surface.
  */
@@ -116,7 +116,7 @@ function listResult<D extends { readonly name: string }, Raw extends { describe(
   };
 }
 
-function describeResult<D extends { readonly name: string }, Raw extends { describe(): D }>(
+function showResult<D extends { readonly name: string }, Raw extends { describe(): D }>(
   kind: RegistryKind<D, Raw>,
   ctx: CommandContext,
   findings: readonly Finding[],
@@ -126,7 +126,7 @@ function describeResult<D extends { readonly name: string }, Raw extends { descr
     // A positional, so `MissingPositionalError` — `--name on "x actions"` named a flag no registry
     // command declares, and reading it as one is a second refusal for the first one's advice.
     throw new MissingPositionalError({
-      command: `${kind.kind} describe`,
+      command: `${kind.kind} show`,
       positional: 'name',
       example: `x ${kind.kind} list --json`,
     });
@@ -158,8 +158,8 @@ async function runRegistryCommand<
 >(kind: RegistryKind<D, Raw>, ctx: CommandContext): Promise<CommandResult> {
   const root = requireAppRoot(kind.kind, ctx.cwd).dir;
   const { findings } = await loadApp(root);
-  return ctx.args.subcommand === 'describe'
-    ? describeResult(kind, ctx, findings)
+  return ctx.args.subcommand === 'show'
+    ? showResult(kind, ctx, findings)
     : listResult(kind, findings);
 }
 

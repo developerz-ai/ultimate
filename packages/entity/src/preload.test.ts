@@ -261,7 +261,7 @@ describe('a preload is bounded', () => {
     expect(cause).toContain(`.preload('${BY_AUTHOR}', { max: 4 })`);
     // The fix is a command that runs as written, naming the real entity — never `db.<entity>…`
     // spelled as though the entity name were the caller's variable, or an undefined `ids`.
-    expect(fix).toStartWith('x entities describe preload_test_members --json   # ');
+    expect(fix).toStartWith('x entities show preload_test_members --json   # ');
     expect(fix).not.toContain('ids');
   });
 
@@ -274,7 +274,7 @@ describe('a preload is bounded', () => {
     }
     const { cause, fix } = error as { cause: string; fix: string };
     expect(cause).toContain(`.preload('${BY_AUTHOR}', { max: ${MAX_PRELOADED_ROWS} })`);
-    expect(fix).toStartWith('x entities describe preload_test_members --json   # ');
+    expect(fix).toStartWith('x entities show preload_test_members --json   # ');
   });
 
   // A relation named twice is one statement, and `max` is one setting: the later call that STATES

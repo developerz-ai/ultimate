@@ -22,7 +22,7 @@ import type { JobOutcome } from './execute';
  * `step.sleep` read as a finished job and make the failure ratio meaningless. `interrupted` for
  * the same reason: a deploy cutting a job short is the process's doing, and a failure ratio that
  * spikes on every rollout is a page nobody answers. `refused` is `failed` because the ROW is: the
- * counter says what `x jobs ls --state failed` says, and never `dead` — a key refusal is not in
+ * counter says what `x jobs list --state failed` says, and never `dead` — a key refusal is not in
  * the dead-letter queue, so it must not move the gauge beside this one. Read by the worker's
  * `recordJob` sites.
  */

@@ -44,7 +44,7 @@ export function toBackfillProgress(run: BackfillRun): BackfillProgress {
 
 /**
  * Every pass the ledger holds, newest first. An EMPTY list on a driver that ships no ledger, and
- * deliberately not a throw: `x jobs ls` and the jobs panel report the queue, and a queue that
+ * deliberately not a throw: `x jobs list` and the jobs panel report the queue, and a queue that
  * answers everything except "no backfills recorded" is a broken command for a fact nobody asked
  * about. `x db backfill --list` says so in its own summary instead, where it IS the question.
  */

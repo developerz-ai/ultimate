@@ -24,6 +24,11 @@ test('the declared readiness grace and drain budget are read off app.config.ts',
   expect(await loadDrainConfig(root)).toEqual({ readinessGraceMs: 7000, deadlineMs: 120_000 });
 });
 
+test('the worker budget is read off app.config.ts beside the one every role drains on', async () => {
+  const root = appWith('{ name: "demo", drain: { workerDeadlineMs: 7500000 } }');
+  expect((await loadDrainConfig(root))?.workerDeadlineMs).toBe(7_500_000);
+});
+
 test('no drain section is core default; no config at all leaves the default to core', async () => {
   expect(await loadDrainConfig(appWith('{ name: "demo" }'))).toEqual({
     readinessGraceMs: defaultReadinessGraceMs(),

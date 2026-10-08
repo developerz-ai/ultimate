@@ -223,7 +223,8 @@ describe('exchangeOAuthCode', () => {
     const tokens = await exchangeOAuthCode(
       handshake,
       { state: handshake.state, code: 'the-code' },
-      { credentials, clock, fetch },
+      // Claims, not the signature (`oauth-exchange-signature.test.ts`): the named opt-out.
+      { credentials, clock, fetch, keys: 'token-endpoint-tls' },
     );
     expect(tokens.refreshToken).toBe('1//refresh');
     expect(tokens.claims?.sub).toBe('google-sub');
@@ -255,7 +256,8 @@ describe('exchangeOAuthCode', () => {
         exchangeOAuthCode(
           handshake,
           { state: handshake.state, code: 'the-code' },
-          { credentials, clock, fetch },
+          // Claims, not the signature (`oauth-exchange-signature.test.ts`): the named opt-out.
+          { credentials, clock, fetch, keys: 'token-endpoint-tls' },
         ),
       ),
     ).toBe('X_OAUTH_STATE_INVALID');

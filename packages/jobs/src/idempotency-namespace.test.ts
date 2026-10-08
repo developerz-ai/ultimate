@@ -23,7 +23,7 @@ describe('the idempotency namespace', () => {
     // The scenario: team A ships sendWelcomeEmail with `user:${id}`, team B ships
     // provisionWorkspace six months later with the same natural key, one signup enqueues both.
     // Before this, the second enqueue deduped into the first job's row and returned ITS id — the
-    // workspace was never provisioned, nothing was raised, and `x jobs ls` showed one healthy job.
+    // workspace was never provisioned, nothing was raised, and `x jobs list` showed one healthy job.
     const driver = memoryJobDriver();
 
     const welcome = await driver.enqueue(enqueue('sendWelcomeEmail', 'user:42'));

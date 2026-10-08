@@ -186,7 +186,7 @@ export function openHandshake(
  * session cookie's: the callback is a top-level cross-site GET from the provider, which `Lax`
  * still attaches the cookie to and `Strict` would strip — leaving every login to fail its state
  * check. A provider answering with `response_mode=form_post` POSTs instead, and this cookie
- * would not reach it; none of the three built-in providers is configured that way.
+ * would not reach it; neither built-in provider is configured that way.
  */
 export function handshakeCookie(
   handshake: OAuthHandshake,

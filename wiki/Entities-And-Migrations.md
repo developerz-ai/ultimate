@@ -665,7 +665,7 @@ export const accounts = entity('account', {
 
 | Override | What follows it | What does not |
 |---|---|---|
-| `entity(name, { table })` | every statement, index name and foreign key | the entity NAME stays the key: the registry, the cache tag `entity:account`, `x entities describe`, every relation and every policy |
+| `entity(name, { table })` | every statement, index name and foreign key | the entity NAME stays the key: the registry, the cache tag `entity:account`, `x entities show`, every relation and every policy |
 | `.column(name)` | the DDL, the binding, the decoder, predicates, sort keys, cursors | nothing — name it LAST in a chain, since the link returns the general column; `uuid()` and `timestamp()` keep their own methods across it |
 | `money({ columns })` | the three physical columns, per part, merged over the defaults | `scale: null` says the table has no scale column: every amount is then at the currency's own minor unit, which is what an absent scale already meant |
 
@@ -818,7 +818,7 @@ X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
 
 ## Branch DBs for agents
 
-The shipped command is `x db branch`, and it takes a verb from a closed set — `ls`, `create <name>`, `drop <name>`. `x branch` (no `db`) is **planned** and exits `X_NOT_IMPLEMENTED`; the build and MCP-socket halves of the design below are what it will add.
+The shipped command is `x db branch`, and it takes a verb from a closed set — `list`, `create <name>`, `delete <name>`. `x branch` (no `db`) is **planned** and exits `X_NOT_IMPLEMENTED`; the build and MCP-socket halves of the design below are what it will add.
 
 ```bash
 x db branch create feat-new-billing --json
@@ -835,8 +835,8 @@ x db branch create feat-new-billing --json
 | Mechanism | `CREATE DATABASE "<source>_branch_<slug>" TEMPLATE "<source>"` — Postgres file-copies, cheap, isolated, disposable. `<slug>` is the name with every character outside `[A-Za-z0-9_]` replaced by `_` (`branchDatabaseName`), because a hyphen is not legal in an unquoted identifier — hence `myapp_branch_feat_new_billing` above. On the embedded database it is `branchPglite()`, a data-directory copy named `pgdata-<name>`, which keeps the name as typed | **shipped** |
 | Writes | the MCP `db.migrate` tool applies **only** in a branch DB, never the shared dev DB (`X_MCP_NOT_BRANCH_DB`) | **shipped** |
 | Preview URL | reported in `data.preview`, subdomain-routed off `PORT` | **the URL is computed**; nothing routes that subdomain for you |
-| Listing | `x db branch ls` — name, location, created-at, size, over either database. **Managed branches only**: external, a database carrying `createBranch()`'s marker comment (`listBranches()` is that read); embedded, a `pgdata-<name>` directory under the state dir (`listPgliteBranches()`, in the CLI). A branch cloned by the pre-1.2.x `psql` path carries no marker and is invisible → [Known gaps](Known-Gaps). `created-at` and `size` read `unknown` where nothing recorded one — always the size on the embedded side, since measuring it is a full directory walk | **shipped** |
-| Teardown | `x db branch drop <name>`. It may only drop what `ls` shows, and that guard lives in the **CLI** (`runDrop` lists first, then drops): the shared database this session is connected to carries no marker, so it is not in the set, and there is no `--force` to get it wrong with. `@ultimat3/db`'s `dropBranch()` is the statement underneath, not the same operation — it takes the **database** name (`<source>_branch_<slug>`), reads no marker, and will drop any database but the current one. Its `force: true` means "terminate other sessions first", which the CLI always passes; it is not an override of the guard | **shipped** |
+| Listing | `x db branch list` — name, location, created-at, size, over either database. **Managed branches only**: external, a database carrying `createBranch()`'s marker comment (`listBranches()` is that read); embedded, a `pgdata-<name>` directory under the state dir (`listPgliteBranches()`, in the CLI). A branch cloned by the pre-1.2.x `psql` path carries no marker and is invisible → [Known gaps](Known-Gaps). `created-at` and `size` read `unknown` where nothing recorded one — always the size on the embedded side, since measuring it is a full directory walk | **shipped** |
+| Teardown | `x db branch delete <name>`. It may only delete what `list` shows, and that guard lives in the **CLI** (`runDelete`): the shared database this session is connected to carries no marker, so it is not in the set, and there is no `--force` to get it wrong with. `@ultimat3/db`'s `dropBranch()` is the statement underneath, not the same operation — it takes the **database** name (`<source>_branch_<slug>`), reads no marker, and will drop any database but the current one. Its `force: true` means "terminate other sessions first", which the CLI always passes; it is not an override of the guard | **shipped** |
 | Reaping | `reapBranches({ maxAgeMs })` drops **branches of this database only**, `As of 2026-08-19`. The marker is `ultimate:branch:<base>:<iso>` and `BranchInfo` carries `base`; a branch whose base is not `current_database()` is skipped, and so is a pre-3.x marker that records no base at all. A `createdAt` that is not finite, or that does not round-trip through `toISOString()`, is also skipped — a truncated comment used to read as an infinitely old branch and be dropped on the next sweep whatever `maxAgeMs` said | **shipped** |
 | Build + scoped MCP socket | a per-branch build id scoping the service worker, and `ws://localhost:9229/<branch>` | **planned**, part of `x branch` |
 

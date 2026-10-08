@@ -16,13 +16,13 @@ afterEach(() => {
 });
 
 describe('unit · x jobs spec', () => {
-  test('names every subcommand, ls first, with every documented flag', () => {
+  test('names every subcommand, list first, with every documented flag', () => {
     expect(JOBS_SUBCOMMANDS).toEqual([
-      'ls',
+      'list',
       'show',
       'retry',
       'cancel',
-      'rm',
+      'delete',
       'promote',
       'pause',
       'resume',
@@ -37,12 +37,12 @@ describe('unit · x jobs spec', () => {
   });
 });
 
-describe('unit · x jobs ls rendering', () => {
+describe('unit · x jobs list rendering', () => {
   test('the row count, the table and the depth summary all come from the catalog', async () => {
     const driver = memoryJobDriver();
     await enqueue(driver, 'send-email');
 
-    const result = await runJobs(driver, { subcommand: 'ls' });
+    const result = await runJobs(driver, { subcommand: 'list' });
 
     expect(result.ok).toBe(true);
     expect(result.lines?.[0]).toBe(`  ${msg('cli.jobs.listed', { count: 1 })}`);
@@ -61,7 +61,7 @@ describe('unit · x jobs ls rendering', () => {
     });
     await driver.nack(id, { workerId: 'w', claim: 1, delayMs: 0, deadLetter: true }); // no `error`: nothing was recorded
 
-    const result = await runJobs(driver, { subcommand: 'ls' });
+    const result = await runJobs(driver, { subcommand: 'list' });
     const rendered = (result.lines ?? []).join('\n');
 
     expect(rendered).toContain(msg('cli.jobs.deadLetters', { count: 1 }));
@@ -88,7 +88,7 @@ describe('unit · x jobs ls rendering', () => {
     });
     await driver.backfills?.finish('run_old', { status: 'completed', rows: 900 });
 
-    const result = await runJobs(driver, { subcommand: 'ls' });
+    const result = await runJobs(driver, { subcommand: 'list' });
     const rendered = (result.lines ?? []).join('\n');
 
     expect(rendered).toContain(msg('cli.jobs.backfills', { count: 1 }));
@@ -96,7 +96,7 @@ describe('unit · x jobs ls rendering', () => {
       msg('cli.jobs.backfillRow', { name: 'reindex-posts', rows: 250, cursor: 'post_250' }),
     );
     expect(rendered).toContain('run_live');
-    // `x jobs ls` is the LIVE queue — a pass that finished is `x db backfill --list`'s answer.
+    // `x jobs list` is the LIVE queue — a pass that finished is `x db backfill --list`'s answer.
     expect(rendered).not.toContain('recount-likes');
     expect(rendered).not.toContain('⟦');
     expect(result.data).toMatchObject({ backfills: [{ runId: 'run_live', status: 'running' }] });
@@ -111,7 +111,7 @@ describe('unit · x jobs ls rendering', () => {
       appVersion: '1.2.0',
     });
 
-    const rendered = ((await runJobs(driver, { subcommand: 'ls' })).lines ?? []).join('\n');
+    const rendered = ((await runJobs(driver, { subcommand: 'list' })).lines ?? []).join('\n');
 
     expect(rendered).toContain(msg('cli.jobs.backfillNoCursor'));
     expect(rendered).not.toContain('null');
@@ -121,7 +121,7 @@ describe('unit · x jobs ls rendering', () => {
     const driver = memoryJobDriver();
     await enqueue(driver, 'send-email');
 
-    const result = await runJobs(driver, { subcommand: 'ls' });
+    const result = await runJobs(driver, { subcommand: 'list' });
 
     expect((result.lines ?? []).join('\n')).not.toContain(msg('cli.jobs.backfills', { count: 0 }));
     expect(result.data).toMatchObject({ backfills: [] });
@@ -129,7 +129,7 @@ describe('unit · x jobs ls rendering', () => {
 
   test('a bad --limit fails the command through X_CLI_BAD_FLAG', async () => {
     const driver = memoryJobDriver();
-    await expect(runJobs(driver, { subcommand: 'ls', flags: { limit: '0' } })).rejects.toThrow(
+    await expect(runJobs(driver, { subcommand: 'list', flags: { limit: '0' } })).rejects.toThrow(
       BadFlagError,
     );
   });
@@ -163,7 +163,7 @@ describe('unit · x jobs show and retry rendering', () => {
         subcommand,
         `"x jobs ${subcommand}" needs a <id> positional and got none`,
       ]);
-      expect(error.fix).toBe('x jobs ls --json');
+      expect(error.fix).toBe('x jobs list --json');
     }
   });
 
@@ -171,7 +171,7 @@ describe('unit · x jobs show and retry rendering', () => {
   // `X_DB_STATEMENT_FAILED [22P02]` with a psql fix. An id no driver could hold is answered at the
   // door, before a statement is sent — for every subcommand that takes one.
   test('an id that is not a job id is X_JOB_UNKNOWN, and no driver is asked', async () => {
-    for (const subcommand of ['show', 'retry', 'cancel', 'rm', 'promote']) {
+    for (const subcommand of ['show', 'retry', 'cancel', 'delete', 'promote']) {
       const driver = memoryJobDriver();
       const asked: string[] = [];
       const introspect = driver.introspect;
@@ -324,6 +324,6 @@ describe('unit · x jobs drain is planned', () => {
       () => undefined,
       (error: unknown) => error,
     );
-    expect((thrown as { fix?: string }).fix).toStartWith('x jobs ls');
+    expect((thrown as { fix?: string }).fix).toStartWith('x jobs list');
   });
 });

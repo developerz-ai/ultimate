@@ -1,7 +1,7 @@
 // The two refusals raised while a SCHEMA is still being written — a column and an invariant — and
 // why neither goes through `invariantViolated`: that builder's fix is
-// `x entities describe <entityName> --json`, which needs an entity that exists. Passing the
-// literal `'column'` emitted `x entities describe column --json`, which answers
+// `x entities show <entityName> --json`, which needs an entity that exists. Passing the
+// literal `'column'` emitted `x entities show column --json`, which answers
 // `X_DECLARATION_UNKNOWN` — a fix line that raises a second, unrelated error (issue #290).
 //
 // So the fix is a parameter: every caller supplies the EDIT that repairs its own refusal, the

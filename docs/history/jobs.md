@@ -46,7 +46,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   `sendWelcomeEmail` and `provisionWorkspace` both keyed `user:${id}` — shared one namespace, so
   the second enqueue hit `on conflict do nothing`, fell through to `SQL_FIND_LIVE_BY_KEY`, found
   the FIRST job's row and returned `{ id: <A's>, deduped: true }`. The workspace was never
-  provisioned and `x jobs ls` showed one healthy job.
+  provisioned and `x jobs list` showed one healthy job.
 
   Then it was name-only, while the row already carried `tenant_id` as `$9` of the same insert.
   Every natural key the docs suggest is unique only WITHIN a tenant — `` `invoice:${input.invoiceId}` ``,
@@ -130,7 +130,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   own two.
   Measured: `visibilityTimeoutMs: NaN` makes `visibleAt` `NaN`, the reclaim scan asks
   `visibleAt <= now`, and a job whose worker DIED is never claimable again — at-least-once becomes
-  never, on a row `x jobs ls` still prints as `running`. `concurrency: NaN` slices `(0, NaN)`, so
+  never, on a row `x jobs list` still prints as `running`. `concurrency: NaN` slices `(0, NaN)`, so
   the worker claims nothing and reports healthy; `pollIntervalMs: NaN` is `setTimeout(fn, 0)`, so
   the claim loop spins on the database. `??` guards only nullish and `Math.max`/`Math.floor`
   propagate `NaN`: `Number(process.env.X)` on an unset variable arrives intact. Same refusal
@@ -711,11 +711,11 @@ a current fact: the rules that still hold are in that file, and where the two di
 
 - **`inspectBackfills()` is the ONE projection of the ledger, and there is no second reader.**
   `backfill-inspect.ts` maps a `BackfillRun` to a plain JSON object (epochs to ISO, absent to
-  `null`) for `x db backfill --list`, `x jobs ls`, `x jobs show` and `/_x`'s jobs panel — four
+  `null`) for `x db backfill --list`, `x jobs list`, `x jobs show` and `/_x`'s jobs panel — four
   surfaces that must not disagree about how many rows a pass has swept. It reads no clock: a
   running row's elapsed time is a different number in every process that asks, so `durationMs` is
   the pass's own completed span or `null`. It answers `[]` — never a throw — for a driver with no
-  ledger, because `x jobs ls` is asked about the queue and must not fail over a fact nobody asked
+  ledger, because `x jobs list` is asked about the queue and must not fail over a fact nobody asked
   for; the surface that IS asking (`x db backfill --list`) says so in its own summary. `JobTrace`
   carries `backfill` for the same reason `steps` is on it: a step trace says which batch is next,
   the ledger row says what is behind it.
@@ -832,7 +832,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   `driver-parity.test.ts` asserts the memory driver's behaviour and the SQL that has to mean the
   same thing in a single test, so neither side can move alone. `introspect.list` answered
   `createdAt` ASCENDING in memory and `created_at desc` in pg — one call, two answers, and because
-  the limit lands after the sort, `x jobs ls` against `x dev` paged the hundred OLDEST rows. The
+  the limit lands after the sort, `x jobs list` against `x dev` paged the hundred OLDEST rows. The
   `attempt` floor is the same shape: `greatest(attempt - 1, 0)` in pg, `Math.max(0, …)` in memory,
   with the settle fence in front of both. Two more closed `As of 2026-08`, and in BOTH the memory
   driver was the correct side:
@@ -889,7 +889,7 @@ a current fact: the rules that still hold are in that file, and where the two di
   `Number('2026-01-01 00:00:00+00')` and answered `NaN`. Six statements were `select *` /
   `returning *` and shipped that way: `pgStepStore.list`, `introspect.job`, `introspect.list`,
   `introspect.deadLetters`, `introspect.requeue` and `SQL_CANCEL`. Every one of them feeds a
-  surface an operator reads — `x jobs ls`, `x jobs show`, `x jobs cancel` — and `SQL_CLAIM` had
+  surface an operator reads — `x jobs list`, `x jobs show`, `x jobs cancel` — and `SQL_CLAIM` had
   projected epoch ms all along, so the driver disagreed with itself. The guard is a scan of every
   production file in this directory, DISCOVERED rather than listed and with comments stripped: a
   `select *` anywhere in them, in either case, is a failing test rather than a review note. It

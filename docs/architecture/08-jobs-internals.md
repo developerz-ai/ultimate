@@ -54,7 +54,7 @@ Worked trace for the canonical job:
 
 One interface, four implementations — three for production plus `memory`, which is the one every framework test and `x dev` run against. **Job code never changes.**
 
-Six required methods, the `steps` store, and three optional members. A driver that ships none of the three is still a working queue: `introspect` absent is `x jobs ls` with nothing to list, `backfills` absent is a `backfill()` pass that runs with no bookkeeping rather than one that is refused, and `close` absent is a driver holding nothing to hand back.
+Six required methods, the `steps` store, and three optional members. A driver that ships none of the three is still a working queue: `introspect` absent is `x jobs list` with nothing to list, `backfills` absent is a `backfill()` pass that runs with no bookkeeping rather than one that is refused, and `close` absent is a driver holding nothing to hand back.
 
 ```ts
 export interface JobDriver {
@@ -223,7 +223,7 @@ export const syncCrm = job({
 |---|---|---|
 | `concurrency: 4` / `concurrency: { key, limit }` | one row per HELD SLOT in `x_job_leases`, taken after the claim by `SQL_LEASE_ACQUIRE` — the `(lease_key, slot)` primary key serialises two workers. Lease key `job:<name>`, or `job-key:<encoded name>:<key(input)>` for a keyed cap. TTL is the worker's `visibilityTimeoutMs`, renewed on the heartbeat interval. There is no `concurrency_key` column and no count inside the claim | `whenBusy: 'wait'` (default, and always for a plain number): nacked back `ready`, attempt uncounted. `whenBusy: 'fail'`: settled `failed` with `X_JOB_KEY_BUSY`, body never run — unless the only holder is this run's own earlier claim (`SQL_LEASE_HOLDERS`), which waits |
 | `concurrencyLimiter({ perTenant, perQueue, global, ratePerTenant })` | three `Map`s in the worker's heap (`limits.ts`). **Per process**: multiplied by the replica count. `ratePerTenant` stamps a START and the stamp is a reservation: a lease handed back for a run that never started (`Lease.abandon()` — shed over `job.concurrency`, refused by its key) takes its stamp with it. There is no `rateLimit:` on a job and no `x_rate_buckets` table, `As of 2026-10` | handed straight back: `ready`, attempt uncounted, `jobs.worker.shed` |
-| `queue` | named pool; `WORKER_QUEUES=default,integrations` is the exact set a worker Deployment claims, never widened by the registered jobs' queues (unset: `jobs.queues` plus every registered job's queue — `workerQueuesFor`, `packages/cli/src/runtime-jobs.ts`) | a queue with no worker is visible in `x jobs ls --json`, not silently stalled; a worker that leaves a registered queue unclaimed warns `jobs.worker.queue-unserved` at boot |
+| `queue` | named pool; `WORKER_QUEUES=default,integrations` is the exact set a worker Deployment claims, never widened by the registered jobs' queues (unset: `jobs.queues` plus every registered job's queue — `workerQueuesFor`, `packages/cli/src/runtime-jobs.ts`) | a queue with no worker is visible in `x jobs list --json`, not silently stalled; a worker that leaves a registered queue unclaimed warns `jobs.worker.queue-unserved` at boot |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, in the driver scheduler. The curve is `@ultimat3/core`'s `backoffDelay` since 2026-08-23; what stays here is `DurationInput` (`'30s'`), the `DEFAULT_RETRY` fallbacks, and this package's public `jitter: boolean` | after `attempts`, dead-letter with the full step trace |
 | `retry.jitter` | **equal** jitter — half fixed, half rolled — and `true` by default. Never `full`: a job that has already failed twice must not be handed a near-zero wait | a burst of failures retries spread out rather than in lockstep |
 | the thrown code's `retry` classification | `nextRetryForError` (`packages/jobs/src/retry-classification.ts`), read at `execute.ts` before the attempt count | a **`terminal`** code stops on the attempt that failed — the remaining attempts are a queue slot and a provider bill. `retry-after` replaces the delay, clamped by `maxDelay`, never the ceiling. An **unclassified** code takes exactly the path it took before the reader existed |
@@ -314,7 +314,7 @@ Rule: after the queue is wiped, the business must be reconstructible from Postgr
 | `X_JOB_MAX_ATTEMPTS` | the job exhausted its retries | `x jobs retry <id>` |
 | `X_JOB_TIMEOUT` | the job exceeded its wall-clock limit | `raise timeout on the job definition, or split the work into step.run() calls` |
 | `X_JOB_LEASE_LOST` | the queue took this job back mid-run | `x jobs show <id> --json` |
-| `X_JOB_SLOT_LOST` | the fleet concurrency slot was taken by another worker | `x jobs ls --state running --json` |
+| `X_JOB_SLOT_LOST` | the fleet concurrency slot was taken by another worker | `x jobs list --state running --json` |
 | `X_JOB_NOT_CANCELLABLE` | the driver cannot cancel | `call setJobDriver(postgresJobDriver({ executor })) at boot, then: x jobs cancel <id> --json` |
 | `X_JOB_TENANT_REQUIRED` | the job declares no tenant | `add tenant: (input) => input.orgId to the job — or tenant: 'none', which declares NO org` |
 | `X_JOB_CONCURRENCY_UNENFORCEABLE` | `concurrency` declared on a driver that cannot enforce it | `remove concurrency from the job, or call setJobDriver(postgresJobDriver({ executor }))` |

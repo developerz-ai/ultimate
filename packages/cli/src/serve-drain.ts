@@ -9,7 +9,11 @@ export async function loadDrainConfig(root: string): Promise<Partial<DrainConfig
   const drain = (await loadAppConfig(root))?.drain;
   return drain === undefined
     ? undefined
-    : { readinessGraceMs: drain.readinessGraceMs, deadlineMs: drain.deadlineMs };
+    : {
+        readinessGraceMs: drain.readinessGraceMs,
+        deadlineMs: drain.deadlineMs,
+        workerDeadlineMs: drain.workerDeadlineMs,
+      };
 }
 
 /** `health.readiness`, or `undefined` for a root with no config file (core keeps its default). */

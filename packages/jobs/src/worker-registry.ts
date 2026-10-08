@@ -113,6 +113,6 @@ export function reportUnregisteredQueues(workerId: string, queues: readonly stri
   logger.info('jobs.worker.queue-unregistered', {
     workerId,
     queues: unnamed,
-    fix: 'remove the queue from jobs.queues in app.config.ts, or set queue on the job that should run there — x jobs ls --json shows what each queue holds',
+    fix: 'remove the queue from jobs.queues in app.config.ts, or set queue on the job that should run there — x jobs list --json shows what each queue holds',
   });
 }

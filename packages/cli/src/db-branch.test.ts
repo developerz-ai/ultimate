@@ -38,7 +38,7 @@ function stateDir(): { readonly dir: string; readonly url: string } {
 
 describe('unit · the verb set is closed', () => {
   test('every verb is a legal branch name, which is exactly why the verb comes first', () => {
-    // `ls`, `create` and `drop` all pass `assertBranchName`, so a command that read its argument
+    // `list`, `create` and `delete` all pass `assertBranchName`, so a command that read its argument
     // as a name could never have told them apart from one. Requiring the verb is what does.
     for (const verb of BRANCH_SUBCOMMANDS) {
       expect(isBranchName(verb)).toBe(true);
@@ -58,7 +58,7 @@ describe('unit · the two directions of a branch name', () => {
   });
 
   test('asked of ONE source, a name is the exact inverse of the database it names', () => {
-    // What `ls` shows is what `drop` derives its target from, so the two must be inverses or the
+    // What `list` shows is what `delete` derives its target from, so the two must be inverses or the
     // listing is a set of names the command cannot act on.
     for (const branch of ['feat_x', 'a_branch_b', 'x']) {
       expect(branchNameIn('postly', branchDatabaseName('postly', branch))).toBe(branch);
@@ -89,7 +89,7 @@ describe('unit · the embedded database', () => {
     const { dir, url } = stateDir();
     try {
       expect(await listPgliteBranches(url)).toEqual([]);
-      // A directory that does not exist at all is the same answer, not a throw: `x db branch ls`
+      // A directory that does not exist at all is the same answer, not a throw: `x db branch list`
       // has to be runnable before `x dev` has ever booted.
       expect(await listPgliteBranches('pglite:///nope/pgdata')).toEqual([]);
     } finally {
@@ -107,7 +107,7 @@ describe('unit · the embedded database', () => {
       const listed = await listPgliteBranches(url);
       expect(listed.map((branch) => branch.name)).toEqual(['feat-x']);
       // `pgdata` itself shares the prefix and is deliberately not a branch of itself — the whole
-      // reason `drop` can be told "you may only drop what ls shows".
+      // reason `delete` can be told "you may only delete what list shows".
       expect(listed.map((branch) => branch.location)).not.toContain(join(dir, 'pgdata'));
 
       expect(await dropPgliteBranch(url, 'feat-x')).toBe(true);
@@ -136,7 +136,7 @@ describe('unit · the embedded database', () => {
 
 describe('unit · the database a connection URL names', () => {
   // The bug this guards: `url.split('/').at(-1)` took the query string with it, so the refusal on
-  // `x db branch drop` named `postly?sslmode=require_branch_x` — a database that does not exist,
+  // `x db branch delete` named `postly?sslmode=require_branch_x` — a database that does not exist,
   // in a message whose whole job is to be checkable.
   test('the name is the path, never the path plus the query string', () => {
     expect(databaseNameOf('postgres://u:p@host:5432/postly?sslmode=require')).toBe('postly');
@@ -167,7 +167,7 @@ describe('unit · the external database', () => {
     });
 
     // The shared database is right there in `pg_database` and is not in the answer: that is what
-    // stops `x db branch drop postly` from ever being attempted.
+    // stops `x db branch delete postly` from ever being attempted.
     expect(await listExternalBranches(client)).toEqual([
       {
         name: 'feat_x',
@@ -182,7 +182,7 @@ describe('unit · the external database', () => {
    * One Postgres server, two Ultimate apps. The marker records WHEN a clone was made and never
    * what it was cloned FROM, so `listBranches()` answers with every marked database on the server
    * — and both `postly_branch_feat` and `analytics_branch_feat` reduced to the branch name `feat`.
-   * The listing is the whole of `drop`'s guard, so a row belonging to another app authorised a
+   * The listing is the whole of `delete`'s guard, so a row belonging to another app authorised a
    * `drop database` this session's own listing had never approved.
    */
   const twoApps = (): ReturnType<typeof recordingClient> => {

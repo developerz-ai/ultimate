@@ -270,7 +270,7 @@ describe('the mask and the scope', () => {
       scan(`
         export class QueryInputInvalidError extends UltimateError {
           constructor(name: string, detail: string) {
-            super({ cause: \`input for "\${name}" failed: \${detail}\`, fix: 'x queries describe' });
+            super({ cause: \`input for "\${name}" failed: \${detail}\`, fix: 'x queries show' });
           }
         }
         interface Shape { readonly detail?: unknown }

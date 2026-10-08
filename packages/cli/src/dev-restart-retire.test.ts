@@ -2,7 +2,7 @@
 // first — stop claiming, finish what it holds — and only then does the process drain and exit.
 
 import { describe, expect, test } from 'bun:test';
-import { InternalError } from '@ultimat3/core';
+import { InternalError, isRetiring, resetLifecycle } from '@ultimat3/core';
 import type { WorkerStats } from '@ultimat3/jobs';
 import { type RetiringWorker, retireThenDrain } from './dev-restart-retire';
 
@@ -110,5 +110,29 @@ describe('unit · retireThenDrain', () => {
       say: () => undefined,
     });
     expect(drained).toEqual(['restart']);
+  });
+
+  test('the restart is a retire the app can read: isRetiring() is true when the worker stops', async () => {
+    resetLifecycle();
+    try {
+      const held = heldWorker(1);
+      let retiringAtStop: boolean | undefined;
+      const done = retireThenDrain(
+        {
+          stats: held.worker.stats,
+          stop: (reason) => {
+            retiringAtStop = isRetiring();
+            return held.worker.stop(reason);
+          },
+        },
+        { drain: () => Promise.resolve(), say: () => undefined },
+      );
+      await tick();
+      expect(retiringAtStop).toBe(true);
+      held.finish();
+      await done;
+    } finally {
+      resetLifecycle();
+    }
   });
 });

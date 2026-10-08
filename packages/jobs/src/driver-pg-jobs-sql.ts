@@ -1,7 +1,7 @@
 // Every statement returning a WHOLE `x_jobs` row, and the one column list they share. They ask
 // Postgres for epoch ms because `select *` left the decoding to the client's type map: one with
 // none decodes `timestamptz` as TEXT, so `toJobRecord` read `Number('2026-01-01 00:00:00+00')`
-// and `x jobs ls` / `show` / `cancel` printed `NaN` for every timestamp.
+// and `x jobs list` / `show` / `cancel` printed `NaN` for every timestamp.
 
 import { JOBS_WAKE_CHANNEL } from './driver-pg-wake-sql';
 

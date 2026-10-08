@@ -46,7 +46,7 @@ of that user — all of them when no session of theirs is passed, as in a reset.
 
 ## OAuth
 
-`github`, `google` and `apple` ship; `registerOAuthProvider` adds one. PKCE is mandatory on every
+`github` and `google` ship; `registerOAuthProvider` adds one. PKCE is mandatory on every
 provider — `usesPkce: false` does not typecheck — and the handshake is a signed `__Host-` cookie
 bound to its provider. An id token is verified against the provider's JWKS. An identity links to an
 **existing** account only when both the provider and that account have verified the address
@@ -58,7 +58,7 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 | `redirect_uri` origin | `oauthLogin(auth, { baseUrl })`, else `APP_URL`. With neither the start leg answers `X_ENV_MISSING` — never the request's `Host` |
 | a refused leg's body | `code`, `title`, `docs`, one fixed `cause`, `fix: x errors explain <CODE> --json`. The authored cause and fix are the `auth.oauth.refused` log line |
 | `discoverOAuthProvider` | refuses a document whose `issuer` is not the one asked for (a trailing slash aside) |
-| `apple` | unproven: no sign-in has completed against it, and the callback is GET-only while Apple POSTs. **Removed from the built-ins in 26.0.0** (owner decision 14, [#709](https://github.com/developerz-ai/ultimate/issues/709)): an app that needs it registers its own with `registerOAuthProvider` |
+| `apple` | not a built-in since 26.0.0 ([#709](https://github.com/developerz-ai/ultimate/issues/709)): Apple POSTs its callback and both callback routes are GET, so it could never complete a sign-in. An app that needs it registers its own with `registerOAuthProvider` |
 
 ## MFA, verification, API keys, workloads
 

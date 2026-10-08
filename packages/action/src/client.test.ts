@@ -70,7 +70,7 @@ describe('typed client', () => {
           status: 400,
           code: 'X_INPUT_INVALID',
           cause: 'postId is not a uuid',
-          fix: 'x actions describe publishPost --json',
+          fix: 'x actions show publishPost --json',
         },
         { status: 400, headers: { 'content-type': 'application/problem+json' } },
       );
@@ -78,7 +78,7 @@ describe('typed client', () => {
     const api = rpc<typeof actions>({ baseUrl: 'https://app.test', fetch: fetchStub });
     const failure = await api.publishPost({ postId: 'nope' }).catch((error: unknown) => error);
     expect((failure as { code?: string }).code).toBe('X_INPUT_INVALID');
-    expect((failure as { fix?: string }).fix).toBe('x actions describe publishPost --json');
+    expect((failure as { fix?: string }).fix).toBe('x actions show publishPost --json');
   });
 
   test('a registered code keeps the docs link this build declared for it', async () => {
@@ -214,7 +214,7 @@ describe('a rejection’s per-field issues, off the wire', () => {
   const problem = (issues: unknown): Readonly<Record<string, unknown>> => ({
     code: 'X_INPUT_INVALID',
     cause: 'input for action "publishPost" failed validation: postId: expected a uuid',
-    fix: 'x actions describe publishPost --json',
+    fix: 'x actions show publishPost --json',
     issues,
   });
 

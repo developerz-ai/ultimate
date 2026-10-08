@@ -50,6 +50,27 @@ describe('unit · the drain each role runs', () => {
     }
   });
 
+  test("drain.workerDeadlineMs is the worker's budget, and no other role's", () => {
+    const drain = { readinessGraceMs: 4_000, deadlineMs: 90_000, workerDeadlineMs: 7_500_000 };
+    expect(lifecycleForRole('worker', drain)).toEqual({
+      readinessGraceMs: 0,
+      deadlineMs: 7_500_000,
+    });
+    expect(lifecycleForRole('worker', { workerDeadlineMs: 7_500_000 })).toEqual({
+      readinessGraceMs: 0,
+      deadlineMs: 7_500_000,
+    });
+    for (const role of ['scheduler', 'replicator'] as const) {
+      expect(lifecycleForRole(role, drain)).toEqual({ readinessGraceMs: 0, deadlineMs: 90_000 });
+    }
+    for (const role of ['web', 'sync'] as const) {
+      expect(lifecycleForRole(role, drain)).toEqual({
+        readinessGraceMs: 4_000,
+        deadlineMs: 90_000,
+      });
+    }
+  });
+
   test('a listening role keeps the declared grace, and the default when none is declared', () => {
     for (const role of ['web', 'sync'] as const) {
       expect(lifecycleForRole(role, { readinessGraceMs: 4_000 })).toEqual({

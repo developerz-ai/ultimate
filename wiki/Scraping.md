@@ -60,7 +60,7 @@ export const dailyOrders = scrape({
 | `auth` / `prompt` | — | session lifecycle, and where an out-of-band code comes from — see [A session a service is built on](#a-session-a-service-is-built-on) |
 | `egress` | — | `(input, ctx) => string \| undefined`, sync or async: the proxy URL THIS run leaves through, looked up in the worker. Wins over the driver's `proxy` |
 | `onSettled` | — | how the run ended, told once: the `ScrapeReport` on `completed`, the `code` and the last attempt's `usage` otherwise — see [Usage](#usage) |
-| `recover` | — | a hook, or `'agent'` — see [Recovery](#recovery) |
+| `recover` | — | a function — see [Recovery](#recovery) |
 | `artifacts` | — | where a failed run's HTML is written: `{ storage: () => disk('artifacts') }` — a thunk, read per write |
 | `driver` | — | which browser. Absent uses the process-wide `setScrapeDriver()` |
 | `watchdog` | — | `{ idleMs, graceMs }`, defaults `120000` / `5000` |
@@ -70,7 +70,7 @@ export const dailyOrders = scrape({
 The CLI has no scrape command and no scrape generator `As of 2026-08-20` — `g` ships thirteen positionals and `scrape` is not one of them. A scrape is reached through the job CLI:
 
 ```bash
-x jobs ls --name orders.daily --json
+x jobs list --name orders.daily --json
 x jobs show <id> --json
 x jobs retry <id> --from-step list --json
 ```
@@ -409,7 +409,7 @@ a provider's connect URL is its access token.
 recover: async ({ page, failure, attempt }) => { /* return true to re-run the body once */ }
 ```
 
-`recover: 'agent'` is **declared and not implemented** `As of 2026-08-20`. It throws `X_NOT_IMPLEMENTED` rather than answering `false`, because a recovery that silently declines is indistinguishable from one that was never configured. A hook that answers anything other than a boolean is `X_SCRAPE_RECOVER_REFUSED`.
+A recover hook is a function, and only a function: `recover: 'agent'` was removed in 26.0.0, and anything but a function is refused at `scrape()`. A recovery that asks a model to re-derive the selector is your own hook calling your own `llm()` action with `page.html()`. A hook that answers anything other than a boolean is `X_SCRAPE_RECOVER_REFUSED`.
 
 ## Error codes
 
@@ -434,7 +434,6 @@ Everything else is terminal, including `X_SCRAPE_SELECTOR_MISSING` (the markup c
 
 | Not shipped | Detail |
 |---|---|
-| `recover: 'agent'` | throws `X_NOT_IMPLEMENTED` |
 | Browser-leg bytes in `usage.bytesIn` | the CDP port subscribes to requests, not to their sizes. `bytesIn` is the HTTP leg alone |
 | Usage on a FAILED run's result | a failed run has no report. Its counts are on the `scrape.failed` log line |
 | A vendor | no browser provider, proxy inventory, captcha or OTP relay. `CdpResolver`, `egress` and `PromptHandler` are the seams |

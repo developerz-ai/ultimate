@@ -52,13 +52,13 @@ Same code, three encodings.
 ```
 X_FORBIDDEN: policy denied the request
   cause: actor user_2 (roles: editor) lacks post:publish on post_9
-  fix:   x actions describe publishPost --json   # the capability it enforces; grant post:publish to editor in apps/web/shared/policies.ts
+  fix:   x actions show publishPost --json   # the capability it enforces; grant post:publish to editor in apps/web/shared/policies.ts
 ```
 
 ```json
 { "code": "X_FORBIDDEN",
   "cause": "actor user_2 (roles: editor) lacks post:publish on post_9",
-  "fix": "x actions describe publishPost --json   # the capability it enforces; grant post:publish to editor in apps/web/shared/policies.ts",
+  "fix": "x actions show publishPost --json   # the capability it enforces; grant post:publish to editor in apps/web/shared/policies.ts",
   "docs": "https://github.com/developerz-ai/ultimate/wiki/Error-Codes" }
 ```
 

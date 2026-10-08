@@ -52,4 +52,4 @@ Its MCP surface exposes exactly the tools that actor could have clicked, with th
 
 ## Commands
 
-`x dev` then open `/admin` · `x policy explain <subject>` · `x entities describe <name> --json`
+`x dev` then open `/admin` · `x policy explain <subject>` · `x entities show <name> --json`

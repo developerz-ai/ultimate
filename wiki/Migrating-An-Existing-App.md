@@ -216,7 +216,7 @@ orders.$cacheTag;  // 'entity:order'  — keyed by the NAME, so renaming a table
 
 | Override | Declares |
 |---|---|
-| `entity(name, { table })` | the physical table, when it is not the entity's own name. **The entity name stays the framework's key** — the registry, the cache tag, `x entities describe`, every relation and every policy are keyed by it, so renaming a table never moves a cache tag or a policy. Index names follow the **table**, because an index is a physical object |
+| `entity(name, { table })` | the physical table, when it is not the entity's own name. **The entity name stays the framework's key** — the registry, the cache tag, `x entities show`, every relation and every policy are keyed by it, so renaming a table never moves a cache tag or a policy. Index names follow the **table**, because an index is a physical object |
 | `.column('<physical>')` | one column's physical name. Name it **last** in the chain — that link returns the general column, so a builder's own methods (`defaultNow()`, a uuid key's narrowed `primaryKey()`) come first. `uuid()` and `timestamp()` override it to keep theirs |
 | `money({ columns: { minor, currency, scale } })` | where the money columns already live, merged **per part** over the `<name>_minor` / `<name>_currency` / `<name>_scale` defaults. `scale: null` says the table has no scale column, which means every amount is at the currency's own minor unit |
 
