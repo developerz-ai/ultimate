@@ -237,6 +237,15 @@ function providerSegment(request: Request, leg: 'start' | 'callback'): string {
   return segments[index] ?? '';
 }
 
+/** The app's answer for this provider, or nothing — so `undefined` falls through to the default. */
+function idTokenKeysFor(
+  options: OAuthLoginOptions,
+  provider: OAuthProviderId,
+): { readonly idTokenKeys?: IdTokenKeys } {
+  const keys = options.idTokenKeys?.(provider);
+  return keys === undefined ? {} : { idTokenKeys: keys };
+}
+
 /**
  * Both halves of "is this a provider", in one refusal. An unknown segment and a known provider
  * the app left out of `defineAuth({ providers })` are the same 404 on purpose — telling an
@@ -253,15 +262,6 @@ function providerSegment(request: Request, leg: 'start' | 'callback'): string {
  * `providerFor()` keeps the full registered list for the same reason in reverse: its reader is a
  * developer holding a stack trace, and there the list is exactly what makes the fix runnable.
  */
-/** The app's answer for this provider, or nothing — so `undefined` falls through to the default. */
-function idTokenKeysFor(
-  options: OAuthLoginOptions,
-  provider: OAuthProviderId,
-): { readonly idTokenKeys?: IdTokenKeys } {
-  const keys = options.idTokenKeys?.(provider);
-  return keys === undefined ? {} : { idTokenKeys: keys };
-}
-
 function assertEnabled(auth: Auth, segment: string): OAuthProviderId {
   const supported = BUILTIN_OAUTH_PROVIDER_IDS;
   if (!hasOAuthProvider(segment)) throw oauthProviderUnknown(segment, supported);
