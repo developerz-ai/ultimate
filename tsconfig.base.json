@@ -19,6 +19,7 @@
       "@ultimat3/entity/record": ["./packages/entity/src/record.ts"],
       "@ultimat3/query/client": ["./packages/query/src/client.ts"],
       "@ultimat3/realtime/server": ["./packages/realtime/src/server.ts"],
+      "@ultimat3/render/client": ["./packages/render/src/client.ts"],
       "@ultimat3/render/server": ["./packages/render/src/server.ts"],
       "@ultimat3/testing/test-types": ["./packages/testing/src/test-types.ts"],
       "@ultimat3/ui/icons/*": ["./packages/ui/src/icons/glyphs/*"],

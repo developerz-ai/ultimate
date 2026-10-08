@@ -107,7 +107,11 @@ export {
   defaultIslandBudget,
   MODE_SPECS,
 } from './modes';
-/** Navigating from code — through the router when the page has one, the browser's load when not. */
+/**
+ * Navigating from code — through the router when the page has one, the browser's load when not.
+ * Kept here for compatibility; an island imports them from `@ultimat3/render/client` (`client.ts`),
+ * whose graph does not retain this barrel's `errors.ts` and the code tables behind it.
+ */
 export type { NavigateToOptions } from './navigation-api';
 export { closeModal, navigate, openModal, refresh } from './navigation-api';
 /** Client-side navigation over server-rendered documents — `navigation: { client }` surfaces. */

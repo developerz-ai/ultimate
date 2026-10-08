@@ -346,10 +346,11 @@ page, never a modal.
 
 ## Navigating from code
 
-`As of 26.1.0`. From an island or an app script, never by clicking a hidden link:
+`As of 26.1.1`. From an island or an app script, never by clicking a hidden link — imported from
+`@ultimat3/render/client`, the package's browser entry:
 
 ```ts
-import { closeModal, navigate, openModal, refresh } from '@ultimat3/render';
+import { closeModal, navigate, openModal, refresh } from '@ultimat3/render/client';
 
 await navigate('/runs/7'); // as a click on a link to it
 await navigate('/runs?status=failed', { replace: true }); // the current entry replaced
@@ -371,6 +372,13 @@ never a synchronous throw, so `.catch` sees it. On the server
 every call does nothing. The functions import the router's TYPE only: an island that navigates
 ships none of the router's bytes.
 
+Import them from `/client`, never from `@ultimat3/render`: the barrel keeps render's whole error
+table in any chunk that reaches it. An island whose body is `refresh()` is 216 B minified from
+`/client` and was 9,323 B from the barrel (`packages/render/src/client-bundle.test.ts`, `As of
+2026-10-08`). The barrel still exports them, for compatibility. The rejection is
+`NavigationModalPathInvalidError`, one class from either entry, so `instanceof` holds whichever an
+app imports; read `.code` when the two halves of an app may disagree on where they import from.
+
 ## Events
 
 Dispatched on `document`:
@@ -381,7 +389,8 @@ Dispatched on `document`:
 | `ultimate:navigated` | after the swap, the scroll and the new scripts — and after a modal opens, its `url` the modal's | `{ url }` |
 | `ultimate:navigation-error` | a POST that failed or could not be shown, a swap that failed on a POST. **Cancelable**: the default is a GET of the current page | `{ url, method, reason }` |
 
-The event names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
+The three event names are on `@ultimat3/render/client` too — what an island listens with. The event
+names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
 `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`, `NAVIGATION_RELOAD_ATTRIBUTE`,
 `NAVIGATION_NO_PREFETCH_ATTRIBUTE`, `NAVIGATION_PERSIST_ATTRIBUTE`, `NAVIGATING_ATTRIBUTE`,
 `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE`), with the pure rules the router runs

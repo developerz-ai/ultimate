@@ -143,8 +143,9 @@ reaching a page — a link, a redirect after a POST, a pasted hash.
 
 From code — an island, an app script — `navigate(url, { replace? })`, `refresh()`,
 `openModal(path)` and `closeModal()` go through the router when the page has one and fall back to
-`location.assign`/`replace`/`reload` when it does not; they import the router's type only.
-[Navigating from code](../../wiki/Client-Navigation.md#navigating-from-code).
+`location.assign`/`replace`/`reload` when it does not; they import the router's type only. An
+island imports them from **`@ultimat3/render/client`**, never the barrel — see
+[Two entry points](#two-entry-points). [Navigating from code](../../wiki/Client-Navigation.md#navigating-from-code).
 
 ## Mode invariants, checked at registration
 
@@ -483,6 +484,19 @@ does.
 side effect. Anything that loads an app's source — `x dev`, `x build`, `server.ts`, a test that
 `await import()`s a `page.tsx` — reaches it before the module it loads.
 
+`@ultimat3/render/client` is the **browser** entry — what an island or a page script calls:
+`navigate`, `refresh`, `openModal`, `closeModal`, `NavigateToOptions`,
+`NavigationModalPathInvalidError`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`.
+The barrel bundles for the browser but its `sideEffects` keeps `errors.ts` — render's code table,
+and core's and schema's titles tables behind it — in every chunk that reaches it; this entry's
+graph is the navigation helpers plus `@ultimat3/core/page` (`client-bundle.test.ts`). `As of
+2026-10-08`, an island whose body is `refresh()`: 9,323 B minified from the barrel, 216 B from
+`/client`. The barrel keeps the same names, for compatibility.
+
+```ts
+import { navigate, refresh } from '@ultimat3/render/client';
+```
+
 ## Error classes
 
 Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or
@@ -495,7 +509,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `IslandInvalidError` | `X_ISLAND_INVALID` | `src/errors.ts` |
 | `IslandNotHydratedError` | `X_ISLAND_NOT_HYDRATED` | `src/errors.ts` |
 | `IslandPropsInvalidError` | `X_ISLAND_PROPS_INVALID` | `src/errors.ts` |
-| `NavigationModalPathInvalidError` | `X_NAVIGATION_MODAL_PATH_INVALID` | `src/errors.ts` |
+| `NavigationModalPathInvalidError` | `X_NAVIGATION_MODAL_PATH_INVALID` | `src/navigation-errors.ts` (re-exported by `src/errors.ts`; also on `/client`) |
 | `PrerenderFailedError` | `X_PRERENDER_FAILED` | `src/errors.ts` |
 | `RouteDuplicateError` | `X_ROUTE_DUPLICATE` | `src/errors.ts` |
 | `RouteFileInvalidError` | `X_ROUTE_FILE_INVALID` | `src/errors.ts` |
@@ -509,7 +523,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 ## Public API
 
-`†` marks a name on `@ultimat3/render/server`.
+`†` marks a name on `@ultimat3/render/server`; `‡` a name also on `@ultimat3/render/client`.
 
 | Export | Owns |
 |---|---|
@@ -533,8 +547,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `ISLAND_HOLD_ATTRIBUTE`, `ISLAND_HOLD_MS`, `ISLAND_HOLD_REVEAL` | a held island's marker, and the cap after which it shows its server markup regardless |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
-| `clientNavigationTags`, `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `NAVIGATION_*`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT` | the client router's document tags and its pure rules; the router itself is `@ultimat3/render/navigation`, built and served by the CLI |
-| `navigate`, `refresh`, `openModal`, `closeModal`, `NavigateToOptions` | navigating from code: the router when the page has one, the browser's own load when not |
+| `clientNavigationTags`, `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `NAVIGATION_*` (`NAVIGATION_ERROR_EVENT`‡), `NAVIGATE_EVENT`‡, `NAVIGATED_EVENT`‡ | the client router's document tags and its pure rules; the router itself is `@ultimat3/render/navigation`, built and served by the CLI |
+| `navigate`‡, `refresh`‡, `openModal`‡, `closeModal`‡, `NavigateToOptions`‡, `NavigationModalPathInvalidError`‡ | navigating from code: the router when the page has one, the browser's own load when not. Import from `/client` in an island |
 | `modalAddress`, `modalLocation`, `addressOf`, `presentation`, `modalHistory`, `leaveModal`, `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE` | route-presented modals (`navigation: 'modal'`): the hash grammar, when an answer is a modal, and what leaving one does to history |
 | `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |
 
