@@ -8,8 +8,10 @@ Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cach
 `notify` (sideways), never `ui`/`cli` (upward). Tier 4 is its FLOOR since 26.1.0 — `pushSubscribe`
 builds an `action` — so it has no `FLOOR_ABOVE` row; `render` keeps one and holds the pair level.
 
-Three entry points: `.` (server), `./client` (`push-client.ts` — the browser half of push, imports
-NOTHING, so an island pays for it alone) and `./schema` (`push-schema.ts` — the one DDL leaf every
+Three entry points: `.` (server), `./client` (`client.ts` — THE browser entry: install prompt,
+skew, the browser half of push; its graph is `install.ts`, `skew.ts`, `push-client.ts` and
+`@ultimat3/core/page`, held by `client-bundle.test.ts` — never import `@ultimat3/core`'s barrel or
+`errors.ts` from those three) and `./schema` (`push-schema.ts` — the one DDL leaf every
 role's boot loads, `@ultimat3/mcp/schema`'s shape; `serve-graph.test.ts` exempts it by name).
 
 | Rule | Detail |

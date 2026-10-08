@@ -1,7 +1,7 @@
 // Single responsibility: the BROWSER half of Web Push — ask for permission, subscribe with the
 // server's VAPID public key, hand the subscription to the app's `pushSubscribe()` action, and undo
-// it. `@ultimat3/pwa/client`, a subpath of its own with NO imports, so an island that offers a
-// "notify me" button pays for these lines and nothing of the server package.
+// it. Re-exported by `@ultimat3/pwa/client` (`client.ts`); this file imports NOTHING, so an island
+// that offers a "notify me" button pays for these lines and nothing of the server package.
 //
 //   import { subscribeToPush } from '@ultimat3/pwa/client';
 //   import { client } from '../../shared/browser-client';

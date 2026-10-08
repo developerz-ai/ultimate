@@ -69,7 +69,7 @@ export type {
   IosGuidance,
   ReadSignal,
 } from './install';
-export { installController, iosInstallGuidance } from './install';
+export { installController, iosInstallGuidance, MIN_ENGAGEMENT_MS } from './install';
 export type {
   DisplayMode,
   FileHandler,
@@ -112,7 +112,7 @@ export {
 } from './push';
 export type { PushSubscriptionActionOptions } from './push-actions';
 export { pushSubscribe, pushUnsubscribe } from './push-actions';
-// The browser half is `@ultimat3/pwa/client` (`push-client.ts`), never this barrel: an island
+// The browser entry is `@ultimat3/pwa/client` (`client.ts`), never this barrel: an island
 // importing it would pull the service-worker generator into a page bundle. Its meta name is
 // re-exported here because the SERVER writes the tag the client reads.
 export { PUSH_KEY_META } from './push-client';
@@ -144,6 +144,13 @@ export type { RouteRule } from './route-rules';
 export { assetRules, routeRules } from './route-rules';
 export type { ServiceWorkerConfig, ServiceWorkerOutput } from './service-worker';
 export { assertScope, generateServiceWorker, PRECACHE_CONCURRENCY } from './service-worker';
+// The forced-reload half of this module is gone as of 9.0.0 — `updateSignal`, `updatePolicy`,
+// `DEFAULT_GRACE_MS`, `ForceReason`, `UpdatePolicy`, `UpdatePolicyInput`, `UpdateSignalInput`.
+// It computed `forced`/`deadlineAt` for a client-side reload no code in the framework performed,
+// from a caller that never existed. What remains is what runs: an id, a comparison, a retention
+// plan, and the message the generated worker really posts.
+export type { AppUpdateAvailable, SkewState } from './skew';
+export { detectSkew } from './skew';
 export type {
   PwaRoute,
   StrategyCache,
@@ -173,25 +180,7 @@ export {
 } from './vapid';
 export type { ResolvedVapidKeys } from './vapid-keys';
 export { DEV_VAPID_KEYS, resolveVapidKeys, usesDevVapidKeys } from './vapid-keys';
-// The forced-reload half of this module is gone as of 9.0.0 — `updateSignal`, `updatePolicy`,
-// `DEFAULT_GRACE_MS`, `ForceReason`, `UpdatePolicy`, `UpdatePolicyInput`, `UpdateSignalInput`.
-// It computed `forced`/`deadlineAt` for a client-side reload no code in the framework performed,
-// from a caller that never existed. What remains is what runs: an id, a comparison, a retention
-// plan, and the message the generated worker really posts.
-export type {
-  AppUpdateAvailable,
-  BuildIdInput,
-  Deploy,
-  DeployChannel,
-  RetentionPlan,
-  SkewState,
-} from './version-skew';
-export {
-  assertBuildId,
-  buildId,
-  cacheNamespace,
-  detectSkew,
-  retentionPlan,
-} from './version-skew';
+export type { BuildIdInput, Deploy, DeployChannel, RetentionPlan } from './version-skew';
+export { assertBuildId, buildId, cacheNamespace, retentionPlan } from './version-skew';
 export type { PushNotification, PushReport, WebPusher } from './web-push';
 export { pushToActor, webPush } from './web-push';

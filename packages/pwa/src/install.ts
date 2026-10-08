@@ -5,7 +5,8 @@
  * permanently on some platforms.
  */
 
-import { finiteCount } from '@ultimat3/core';
+// `/page`: the browser-safe subpath — this file is in `@ultimat3/pwa/client`'s graph.
+import { finiteCount } from '@ultimat3/core/page';
 
 /** A minimal signal so this file needs no framework runtime. */
 export interface ReadSignal<T> {

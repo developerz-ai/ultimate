@@ -8,6 +8,32 @@ the second copy is the one nobody updates.
 const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);
 ```
 
+## Browser entry: `@ultimat3/pwa/client`
+
+`As of 26.1.0`. Everything a page or an island calls comes from **`@ultimat3/pwa/client`**, never
+from `@ultimat3/pwa`: the barrel reaches the icon pipeline (core's image transform, Node-only), the
+service-worker generator and the push sender, and an island importing it does not build.
+
+```ts
+import {
+  detectSkew,
+  installController,
+  MIN_ENGAGEMENT_MS,
+  subscribeToPush,
+} from '@ultimat3/pwa/client';
+import { APP_UPDATE_MESSAGE, CLIENT_BUILD_META } from '@ultimat3/core/page';
+```
+
+| Need | From `@ultimat3/pwa/client` |
+|---|---|
+| the install prompt, never on first paint | `installController` (+ `InstallOptions`, `InstallHost`, `InstallController`, `InstallOutcome`, `BeforeInstallPromptEventLike`, `ReadSignal`), `iosInstallGuidance` (+ `IosGuidance`), `MIN_ENGAGEMENT_MS` (30 000 — the default `minEngagementMs`) |
+| "a new version is live" | `AppUpdateAvailable` (the worker's message), `detectSkew` (+ `SkewState`). The message's `type` value is core's `APP_UPDATE_MESSAGE`, from `@ultimat3/core/page` — one name, one home |
+| Web Push | `subscribeToPush`, `unsubscribeFromPush`, `pushPermission`, `browserPushHost`, `PUSH_KEY_META` (+ their types) |
+
+Its graph is three modules of this package plus `@ultimat3/core/page`; `client-bundle.test.ts`
+bundles it for the browser and refuses a fourth, an image module or a `node:` import. The server
+barrel keeps exporting the same names for server code and tests.
+
 ## Render mode → runtime strategy
 
 | Render mode | Strategy | Why |
@@ -104,7 +130,7 @@ export const unsubscribePush = pushUnsubscribe({ permission: 'push:subscribe' })
 ```
 
 ```ts
-// an island, on a click — `@ultimat3/pwa/client` imports nothing.
+// an island, on a click — the browser entry, `@ultimat3/pwa/client`.
 import { subscribeToPush } from '@ultimat3/pwa/client';
 
 declare const client: { subscribePush(input: unknown): Promise<unknown> };
@@ -169,7 +195,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `routeRules`, `assetRules` | the worker's rule list: routes most specific first, runtime asset prefixes (`/islands/`) ahead of them. `routeRules(routes, personalPages)` — `'last-member'` gives a personal page a `pages` rule; a pattern matches the browser's percent-encoded pathname, and a catch-all its bare prefix |
 | `CLEAR_PAGES_MESSAGE`, `PAGES_CLEARED_MESSAGE` | `{ type: 'clear-pages' }` — post it to the worker on sign-out; it empties every pages cache and answers `{ type: 'pages-cleared' }` |
 | `buildPrecacheManifest` | precache entries (url + content-hash revision), size warnings |
-| `buildId`, `detectSkew`, `retentionPlan` | version skew |
+| `buildId`, `detectSkew`, `retentionPlan` | version skew (`detectSkew` also on `./client`) |
 | `generateWebManifest` | the manifest + `theme-color` metas for both schemes, from a `WebManifestInput`. Called by `@ultimat3/cli` (`pwa-artifacts.ts`) `As of 2026-08-27`, so `x dev`, the container and the static export all emit `manifest.webmanifest` |
 | `planIcons`, `requireSourceIcon`, `maskableSafeZone` | icons and splashes from one source |
 | `BuiltinImagePipeline` | renders that plan: one square PNG per entry, deterministic |
@@ -182,8 +208,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `installWebPush`, `installedVapid`, `webPushRuntime`, `resetWebPush` | the runtime the boot installs (store, signer, transport, translator) |
 | `memoryPushSubscriptionStore`, `postgresPushSubscriptionStore` | where subscriptions live; `x_push_subscriptions` DDL is `@ultimat3/pwa/schema` |
 | `resolveVapidKeys`, `generateVapidKeys`, `assertVapidPair`, `DEV_VAPID_KEYS` | the key pair: from env, minted, checked, and the published development one |
-| `@ultimat3/pwa/client`: `subscribeToPush`, `unsubscribeFromPush`, `pushPermission` | the browser half, import-free |
-| `installController`, `iosInstallGuidance` | install prompt, never on first paint |
+| `@ultimat3/pwa/client` | THE browser entry — [Browser entry](#browser-entry-ultimat3pwaclient) |
+| `installController`, `iosInstallGuidance`, `MIN_ENGAGEMENT_MS` | install prompt, never on first paint (also on `./client`) |
 | `PwaStrategyExhaustedError` and the other `errors.ts` classes | the codes this package throws, catchable by an app |
 
 ## Notes

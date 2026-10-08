@@ -19,6 +19,7 @@ Tier 4 — pwa, notify; tier 5 — cli, testing.
 - **`x vapid show|create`** — which Web Push key pair this app signs with, or mint one and seal both halves.
 - **`@ultimat3/testing`: a `push` fixture** — the push service and the device played in-process: `subscribe(actorId, { locale })`, `sent()` (what each device would show, decrypted with its own key), `answerOnce(410 | 429 | …)`.
 - **New codes:** `X_PWA_VAPID_KEY_MISSING`, `X_PWA_VAPID_KEY_INVALID`, `X_PWA_PUSH_UNCONFIGURED`, `X_PWA_PUSH_FAILED`, `X_PWA_PUSH_REJECTED`, `X_PWA_PUSH_PAYLOAD_TOO_LARGE`, `X_PWA_PUSH_SUBSCRIPTION_INVALID`.
+- **`@ultimat3/pwa/client` is the package's browser entry.** An island could not import `installController` or `detectSkew` from `@ultimat3/pwa`: the barrel reaches the Node-only image pipeline. The entry now exports `installController` (+ `InstallOptions`, `InstallHost`, `InstallController`, `InstallOutcome`, `BeforeInstallPromptEventLike`, `ReadSignal`), `iosInstallGuidance` (+ `IosGuidance`), `MIN_ENGAGEMENT_MS` (also newly on the barrel), `detectSkew` (+ `SkewState`) and `AppUpdateAvailable` beside the push client; the message's `type` stays core's `APP_UPDATE_MESSAGE`, from `@ultimat3/core/page`. Its graph is three modules plus `@ultimat3/core/page`, held by `client-bundle.test.ts` (no image module, no `node:` import).
 - **`serviceWorkerWarnings` reports `pwa.push` only for a static export**, where no server can hold subscriptions or send.
 
 Tier 4 — render, ui.

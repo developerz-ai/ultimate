@@ -7,8 +7,10 @@ import { describe, expect, test } from 'bun:test';
 import { APP_UPDATE_MESSAGE } from '@ultimat3/core';
 import { BuildIdMissingError } from './errors';
 import { generateServiceWorker } from './service-worker';
-import type { AppUpdateAvailable, Deploy } from './version-skew';
-import { buildId, cacheNamespace, detectSkew, retentionPlan } from './version-skew';
+import type { AppUpdateAvailable } from './skew';
+import { detectSkew } from './skew';
+import type { Deploy } from './version-skew';
+import { buildId, cacheNamespace, retentionPlan } from './version-skew';
 
 describe('buildId', () => {
   test('is deterministic and scoped by channel so previews never collide', () => {
