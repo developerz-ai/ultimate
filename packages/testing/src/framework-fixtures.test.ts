@@ -263,6 +263,23 @@ describe(testName('unit', 'the push fixture'), () => {
     });
   });
 
+  bunTest(
+    'the runtime reads the frozen clock the `clock` fixture moves, never the wall clock',
+    async () => {
+      const { webPushRuntime } = await import('@ultimat3/pwa');
+      using _push = await testPush();
+      const runtime = webPushRuntime('the push fixture test');
+      const before = runtime.clock.monotonic();
+      setFrozenClock(frozenNow().getTime() + 172_800_000);
+      try {
+        expect(runtime.clock.monotonic() - before).toBe(172_800_000);
+        expect(runtime.clock.now().getTime()).toBe(frozenNow().getTime());
+      } finally {
+        setFrozenClock(frozenNow().getTime() - 172_800_000);
+      }
+    },
+  );
+
   bunTest('answerOnce(410) deletes the device; a 429 is the job retrying', async () => {
     const { pushToActor } = await import('@ultimat3/pwa');
     using push = await testPush();

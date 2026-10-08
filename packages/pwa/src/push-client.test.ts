@@ -7,6 +7,13 @@ import type { PushClientHost, PushSubscriptionInput, PushSubscriptionLike } from
 import { pushPermission, subscribeToPush, unsubscribeFromPush } from './push-client';
 import { DEV_VAPID_KEYS } from './vapid-keys';
 
+/** The page's key as the bytes `pushManager.subscribe` takes. */
+const base64urlBytes = (text: string): Uint8Array => {
+  const standard = text.replaceAll('-', '+').replaceAll('_', '/');
+  const binary = atob(standard.padEnd(Math.ceil(standard.length / 4) * 4, '='));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+};
+
 interface Recorder {
   readonly log: string[];
   subscribedWith?: Uint8Array;
@@ -17,11 +24,16 @@ function host(
     readonly permission?: 'default' | 'denied' | 'granted';
     readonly answer?: 'default' | 'denied' | 'granted';
     readonly existing?: boolean;
+    /** The server key the existing subscription was made with. */
+    readonly existingKey?: Uint8Array;
   },
   recorder: Recorder,
 ): PushClientHost {
   const subscription: PushSubscriptionLike = {
     endpoint: 'https://fcm.example.test/send/1',
+    ...(overrides.existingKey === undefined
+      ? {}
+      : { options: { applicationServerKey: overrides.existingKey.slice().buffer } }),
     toJSON: () => ({
       endpoint: 'https://fcm.example.test/send/1',
       expirationTime: null,
@@ -115,6 +127,28 @@ describe('unit · @ultimat3/pwa/client', () => {
     });
     expect(pushPermission(host({ notification: undefined }, recorder))).toBe('unsupported');
     expect(pushPermission(host({ permission: 'default' }, recorder))).toBe('prompt');
+  });
+
+  test('after a key rotation the old subscription is unsubscribed and replaced, never re-saved', async () => {
+    const run = async (existingKey: Uint8Array) => {
+      const recorder: Recorder = { log: [] };
+      await subscribeToPush(
+        { save: async () => void recorder.log.push('save') },
+        host({ permission: 'granted', existing: true, existingKey }, recorder),
+      );
+      return recorder.log;
+    };
+    const current = base64urlBytes(DEV_VAPID_KEYS.publicKey);
+    const rotated = current.slice();
+    rotated[64] = (rotated[64] ?? 0) ^ 0xff;
+    // Made with the key the page names: kept and re-saved.
+    expect(await run(current)).toEqual(['save']);
+    // Made with another: gone from the browser, subscribed anew, and only THAT saved.
+    expect(await run(rotated)).toEqual([
+      'browser:unsubscribe',
+      'subscribe:userVisibleOnly=true',
+      'save',
+    ]);
   });
 
   test('unsubscribe tells the server first, then the browser', async () => {

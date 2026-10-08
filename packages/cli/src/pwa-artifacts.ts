@@ -18,7 +18,7 @@
 // why: Bun exposes no path-join primitive, and the export writes each icon under an out directory.
 import { join } from 'node:path';
 import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
-import { escapeHtml, localeSegment } from '@ultimat3/core';
+import { escapeHtml, localeSegment, pushWired } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
@@ -117,7 +117,7 @@ async function loadInstallable(root: string): Promise<InstallableApp | undefined
     locales: appLocales(await appLocaleSet(root)),
     offline: pwa.offline,
     backgroundSync: pwa.backgroundSync,
-    push: pwa.push,
+    push: pushWired(pwa),
   };
 }
 

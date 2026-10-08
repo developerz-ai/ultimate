@@ -1,10 +1,11 @@
-// The push half of the `pwa` block: `push: true` needs a `vapid.subject` a push service accepts,
-// a `vapid` with no `push` is a key nothing reads, and both refusals carry the push remedy — not
-// the install block's. The KEYS are never config (`config-pwa.ts`'s `PwaVapidConfig` says why).
+// The push half of the `pwa` block: `push: true` with a `vapid` needs a subject a push service
+// accepts (with no `vapid` it boots unwired, as 26.0.0 did), a `vapid` with no `push` is a key
+// nothing reads, and both refusals carry the push remedy — not the install block's. The KEYS are never config (`config-pwa.ts`'s `PwaVapidConfig` says why).
 
 import { describe, expect, test } from 'bun:test';
 import type { PwaConfigInput } from './config';
 import { defineConfig } from './config';
+import { pushWired } from './config-pwa';
 import { isUltimateError } from './errors';
 
 const INSTALLABLE = {
@@ -38,8 +39,23 @@ describe('defineConfig · pwa.push and pwa.vapid', () => {
     }
   });
 
-  test('push with no vapid is refused at boot, naming the key and the push remedy', () => {
-    const { code, cause, fix } = refusal({ ...INSTALLABLE, push: true });
+  test('push with no vapid still boots, as on 26.0.0 — and wires nothing (27.0.0 refuses it)', () => {
+    const config = defineConfig({ name: 'myapp', pwa: { ...INSTALLABLE, push: true } });
+    expect(config.pwa.push).toBe(true);
+    expect(pushWired(config.pwa)).toBe(false);
+    const wired = defineConfig({
+      name: 'myapp',
+      pwa: { ...INSTALLABLE, push: true, vapid: { subject: 'mailto:ops@example.com' } },
+    });
+    expect(pushWired(wired.pwa)).toBe(true);
+  });
+
+  test('a vapid block whose subject is missing is refused, naming the key and the push remedy', () => {
+    const { code, cause, fix } = refusal({
+      ...INSTALLABLE,
+      push: true,
+      vapid: {} as unknown as { subject: string },
+    });
     expect(code).toBe('X_CONFIG_INVALID');
     expect(cause).toContain('pwa.vapid.subject is required when pwa.push is true');
     expect(fix).toContain("vapid: { subject: 'mailto:");

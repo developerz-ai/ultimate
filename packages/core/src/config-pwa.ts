@@ -268,6 +268,9 @@ export function pwaPushIssues(pwa: PwaConfig, issues: string[]): boolean {
     }
     return issues.length > before;
   }
+  // `push: true` with no `vapid` at all booted on 26.0.0, where the key wired nothing — so in 26.x
+  // it still boots, with push left unwired (`pushWired`) and the boot saying so. 27.0.0 refuses it.
+  if (vapid === undefined) return false;
   const subject: unknown =
     vapid !== null && typeof vapid === 'object' ? (vapid as { subject?: unknown }).subject : vapid;
   if (!isVapidSubject(subject)) {
@@ -277,6 +280,14 @@ export function pwaPushIssues(pwa: PwaConfig, issues: string[]): boolean {
   }
   return issues.length > before;
 }
+
+/**
+ * Whether this config wires Web Push: an installable app, `push: true`, and a `vapid` block. The
+ * ONE answer the boot, the worker, `.env.example` and the drift gate read — `push: true` without
+ * `vapid` is accepted in 26.x (it was on 26.0.0) and wires nothing.
+ */
+export const pushWired = (pwa: PwaConfig): boolean =>
+  pwa.enabled && pwa.push && pwa.vapid !== undefined;
 
 /** A path the manifest names must be absolute: a relative one resolves against the manifest's URL. */
 const absolute = (value: unknown): boolean => typeof value === 'string' && value.startsWith('/');

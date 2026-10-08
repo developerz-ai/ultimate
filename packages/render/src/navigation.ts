@@ -22,7 +22,6 @@ import {
   handOver,
   intentUrl,
   linkFacts,
-  type RunningTransition,
   submitFacts,
   transition,
 } from './navigation-dom';
@@ -42,6 +41,7 @@ import {
 } from './navigation-history';
 import { modalController } from './navigation-modal';
 import { addressOf, modalAddress, modalHistory } from './navigation-modal-rules';
+import { pressTracker } from './navigation-press';
 import {
   answerMovesTab,
   formVerdict,
@@ -112,12 +112,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   let rendered = withoutFragment(win.location.href);
   /** The URL a navigation in flight is fetching: a prefetch never asks for it a second time. */
   let navigatingTo: string | undefined;
-  /** The view transition still animating — skipped only for a click it swallowed (`onClick`). */
-  let animating: RunningTransition | undefined;
-  /** Between a press and its click: the focus the press gives a link is not a hover. */
-  let pressed = false;
-  /** The press landed while a transition was painting over the page (see `onClick`). */
-  let pressedOverTransition = false;
+  const press = pressTracker(doc);
   /** The pending prefetch of a hover, cancelled by anything that navigates. */
   let intent: number | undefined;
   let untrusted = false;
@@ -272,10 +267,6 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         }
         modal.dismiss();
         let swapped: ReturnType<typeof swapDocument> | undefined;
-        const track = (running: RunningTransition, finished: boolean): void => {
-          if (!finished) animating = running;
-          else if (animating === running) animating = undefined;
-        };
         await transition(
           win,
           () => {
@@ -295,7 +286,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
             // Inside the swap, so a view transition's "after" frame is already where the page lands.
             scrollAfter(win, doc, landed, history);
           },
-          track,
+          press.track,
         );
         const done = swapped;
         if (done === undefined) return;
@@ -331,32 +322,15 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   };
 
   const onPress = (): void => {
-    pressed = true;
-    pressedOverTransition = animating !== undefined;
+    press.onPress();
     // A press is not a hover: the click it becomes navigates, and a guess on its heels is a
-    // second request for the same page. A press alone never skips the running transition — that
-    // snapped every named element to its end mid-glide (#621); only the click below may.
+    // second request for the same page.
     win.clearTimeout(intent);
-  };
-  const onRelease = (): void => {
-    pressed = false;
   };
 
   const onClick = (event: MouseEvent): void => {
     win.clearTimeout(intent);
-    // While a view transition paints, the browser hit-tests every press to `<html>` — Chrome does
-    // so whatever `pointer-events` the `::view-transition` overlay has — so the click reached
-    // nothing: the visitor's first click after a swap was lost. It is given to the element under
-    // the pointer, whatever it is: a link, a submit button, an island's own control. Only a
-    // skipped transition hit-tests the page, so the skip happens HERE, at the click, never at
-    // the press; when the animation already ended between the two, there is nothing to skip.
-    if (pressedOverTransition && event.target === doc.documentElement) {
-      pressedOverTransition = false;
-      animating?.skipTransition?.();
-      const hit = doc.elementFromPoint(event.clientX, event.clientY);
-      if (hit !== null && hit !== doc.documentElement && hit instanceof HTMLElement) hit.click();
-      return;
-    }
+    if (press.overlayClick(event)) return;
     const anchor = anchorOf(event.target);
     if (anchor === null) return;
     const verdict = linkVerdict(linkFacts(win, anchor, event));
@@ -388,7 +362,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
 
   const onIntent = (event: Event): void => {
     // The focus a press gives a link: its click is a moment away, and it navigates.
-    if (event.type === 'focusin' && pressed) return;
+    if (event.type === 'focusin' && press.pressed()) return;
     const url = intentUrl(win, event.target);
     if (url === undefined) return;
     win.clearTimeout(intent);
@@ -459,8 +433,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     [win, 'popstate', onPop as EventListener],
     [win, 'hashchange', reconcile],
     [doc, 'pointerdown', onPress, pressing],
-    [doc, 'pointerup', onRelease, pressing],
-    [doc, 'pointercancel', onRelease, pressing],
+    [doc, 'pointerup', press.onRelease, pressing],
+    [doc, 'pointercancel', press.onRelease, pressing],
   ];
   for (const [target, type, listener, options] of listeners) {
     target.addEventListener(type, listener, options);

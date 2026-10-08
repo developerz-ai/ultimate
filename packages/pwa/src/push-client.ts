@@ -65,6 +65,8 @@ export interface PushRegistrationLike {
 
 export interface PushSubscriptionLike {
   readonly endpoint: string;
+  /** The key it was made with — a browser always says; absent here means "cannot tell". */
+  readonly options?: { readonly applicationServerKey?: ArrayBuffer | null } | undefined;
   toJSON(): {
     endpoint?: string;
     expirationTime?: number | null;
@@ -78,7 +80,11 @@ export function browserPushHost(): PushClientHost {
   const nav = globalThis.navigator as Navigator | undefined;
   const supported =
     nav !== undefined && 'serviceWorker' in nav && typeof globalThis.PushManager === 'function';
-  const meta = globalThis.document?.querySelector(`meta[name="${PUSH_KEY_META}"]`);
+  // Read only where push can happen at all: a runtime with no service worker answers
+  // `unsupported`, never a throw from a document that is not a browser's.
+  const meta = supported
+    ? globalThis.document?.querySelector(`meta[name="${PUSH_KEY_META}"]`)
+    : undefined;
   return {
     serviceWorker: supported
       ? (nav.serviceWorker as unknown as PushClientHost['serviceWorker'])
@@ -88,7 +94,7 @@ export function browserPushHost(): PushClientHost {
         ? (globalThis.Notification as unknown as PushClientHost['notification'])
         : undefined,
     pushKey: meta?.getAttribute('content') ?? null,
-    locale: globalThis.document?.documentElement.lang || 'en',
+    locale: globalThis.document?.documentElement?.lang || 'en',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
@@ -108,10 +114,20 @@ function keyBytes(text: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/** Whether `subscription` was made with `key`; one that does not say is taken at its word. */
+function madeWith(subscription: PushSubscriptionLike, key: Uint8Array): boolean {
+  const held = subscription.options?.applicationServerKey;
+  if (held === undefined || held === null) return true;
+  const bytes = new Uint8Array(held);
+  return bytes.length === key.length && bytes.every((byte, i) => byte === key[i]);
+}
+
 /**
  * Ask, subscribe, save. Call it from a click: browsers refuse a permission prompt that no user
  * gesture asked for. An existing subscription is saved again rather than replaced — it re-binds
- * the device to whoever is signed in now, and keeps the locale current.
+ * the device to whoever is signed in now, and keeps the locale current — UNLESS it was made with
+ * another server key (a VAPID rotation): no message signed with the new key can reach it, so it is
+ * unsubscribed and replaced, never re-saved as if it worked.
  */
 export async function subscribeToPush(
   options: { readonly save: (input: PushSubscriptionInput) => Promise<unknown> },
@@ -127,12 +143,16 @@ export async function subscribeToPush(
       : host.notification.permission;
   if (permission !== 'granted') return { status: 'denied' };
   const registration = await host.serviceWorker.ready;
-  const subscription =
-    (await registration.pushManager.getSubscription()) ??
-    (await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: keyBytes(host.pushKey),
-    }));
+  const key = keyBytes(host.pushKey);
+  let subscription = await registration.pushManager.getSubscription();
+  if (subscription !== null && !madeWith(subscription, key)) {
+    await subscription.unsubscribe();
+    subscription = null;
+  }
+  subscription ??= await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: key,
+  });
   const json = subscription.toJSON();
   await options.save({
     endpoint: subscription.endpoint,

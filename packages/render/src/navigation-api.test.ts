@@ -87,16 +87,18 @@ describe('without the router', () => {
 });
 
 test.each([['runs/new'], ['//evil.test/x'], ['https://app.test/runs/new'], ['/\\evil.test']])(
-  'openModal(%p) is refused by code',
-  (path) => {
+  'openModal(%p) is refused by code — a rejection, never a synchronous throw',
+  async (path) => {
     install(true);
-    try {
-      void openModal(path);
-    } catch (error) {
-      if (!isUltimateError(error)) return expect.unreachable('a coded refusal');
-      expect(error.code).toBe('X_NAVIGATION_MODAL_PATH_INVALID');
-      return;
-    }
-    expect.unreachable(`openModal(${path}) was accepted`);
+    let pending: Promise<void> | undefined;
+    expect(() => {
+      pending = openModal(path);
+    }).not.toThrow();
+    const refused = await (pending ?? Promise.resolve()).then(
+      () => expect.unreachable(`openModal(${path}) was accepted`),
+      (error: unknown) => error,
+    );
+    if (!isUltimateError(refused)) return expect.unreachable('a coded refusal');
+    expect(refused.code).toBe('X_NAVIGATION_MODAL_PATH_INVALID');
   },
 );

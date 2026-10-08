@@ -113,8 +113,18 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH: 409,
   // @ultimat3/ai — a model call named no model
   X_AI_MODEL_UNRESOLVED: 500,
-  // @ultimat3/pwa — push is not configured in this process
-  X_PWA_PUSH_UNCONFIGURED: 503,
+  // @ultimat3/pwa — push is not configured in this process. A declaration fault (the fix is an
+  // `app.config.ts` edit) registered `terminal`, the class `X_MAIL_CREDENTIAL_MISSING` is: 500,
+  // never a 503 that tells every client and proxy a retry could install a runtime.
+  X_PWA_PUSH_UNCONFIGURED: 500,
   // @ultimat3/pwa — the push subscription is not one a browser produced
   X_PWA_PUSH_SUBSCRIPTION_INVALID: 422,
+  // @ultimat3/pwa — the three send-time faults. Raised by `pushToActor`, normally inside the job
+  // a notifier runs; but `webPush()` is an app's to call, and a handler that sends inline puts them
+  // on a request. The push service is this server's upstream: unreachable or 429/5xx is a
+  // transient upstream fault (503, retryable — the code is), a refusal is a bad gateway answer
+  // that no retry changes (502), and a message over the record is the app's own payload (500).
+  X_PWA_PUSH_FAILED: 503,
+  X_PWA_PUSH_REJECTED: 502,
+  X_PWA_PUSH_PAYLOAD_TOO_LARGE: 500,
 } satisfies Readonly<Record<string, number>>;

@@ -22,6 +22,7 @@ import { createEffect, createSignal, For } from 'solid-js';
 import { render } from 'solid-js/web';
 import type { Api } from '../../api';
 import { browserClient } from '../../shared/browser-client';
+import { pushStatus } from './push-status';
 
 /** The action's own input type — the selects hold strings the server already constrained. */
 type SavePreferencesInput = Parameters<Api['actions']['savePreferences']>[0];
@@ -144,11 +145,10 @@ function Preferences(props: SettingsProps): JSX.Element {
       const outcome = await subscribeToPush({
         save: (input) => browserClient.subscribePush(input),
       });
-      if (outcome.status === 'subscribed') setPush(props.labels.pushOn);
-      else if (outcome.status === 'denied') setPush(props.labels.pushDenied);
-      else setPush(props.labels.pushUnavailable);
+      setPush(pushStatus(outcome, props.labels));
     } catch {
-      setPush(props.labels.pushUnavailable);
+      // The save (or the browser's push service) failed: retry wording, never "cannot".
+      setPush(pushStatus('failed', props.labels));
     }
   };
 

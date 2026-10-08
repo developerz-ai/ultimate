@@ -124,6 +124,53 @@ describe('unit · the .env.example drift gate', () => {
     expect(rendered).toContain('secret');
   });
 
+  /** `pwa.push` on: the app owes the VAPID pair, which the example must carry. */
+  const pushConfig = (vapid: string) => `export const envSchema = {
+  DATABASE_URL: { type: 'url', description: 'Postgres connection URL' },
+};
+export const config = {
+  name: 'fixture',
+  pwa: {
+    enabled: true,
+    name: 'Fixture',
+    colors: {
+      light: { themeColor: '#111111', backgroundColor: '#ffffff' },
+      dark: { themeColor: '#eeeeee', backgroundColor: '#000000' },
+    },
+    offline: { fallback: '/offline' },
+    push: true,${vapid}
+  },
+};
+`;
+
+  test('a push app owes the VAPID pair: read off app.config.ts, named when the example lacks it', async () => {
+    const config = pushConfig(" vapid: { subject: 'mailto:ops@example.com' },");
+    const schema = await loadEnvSchema(await appRoot('push-owed', config));
+    const stale = await appRoot('push-owed', config, envExampleFor(schema ?? {}, NO_APP_FACTS));
+    const [finding] = await envExampleFindings(stale);
+    expect(finding?.code).toBe('X_ENV_EXAMPLE_DRIFT');
+    expect(finding?.cause).toContain('ULTIMATE_VAPID_PUBLIC_KEY, ULTIMATE_VAPID_PRIVATE_KEY');
+    const current = await appRoot(
+      'push-current',
+      config,
+      envExampleFor(schema ?? {}, { push: true }),
+    );
+    expect(await envExampleFindings(current)).toEqual([]);
+    // The header names each key's own generator: `openssl` cannot mint a P-256 pair.
+    expect(envExampleFor(schema ?? {}, { push: true })).toContain('`x vapid create`');
+  });
+
+  test('a config defineConfig refuses is a finding at the config, never a crash of the step', async () => {
+    const root = await appRoot(
+      'push-bad-subject',
+      pushConfig(" vapid: { subject: 'ops@example.com' },"),
+      '',
+    );
+    const [finding] = await envExampleFindings(root);
+    expect(finding?.code).toBe('X_CONFIG_INVALID');
+    expect(finding?.at).toBe('app.config.ts');
+  });
+
   test('a config that will not import is reported at the config, never swallowed', async () => {
     const root = await appRoot('broken', "throw new RangeError('boom');\n");
     const [finding] = await envExampleFindings(root);

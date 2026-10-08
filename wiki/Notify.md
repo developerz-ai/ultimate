@@ -71,14 +71,23 @@ locale that browser subscribed with. `As of 26.1.0`. The transport is `@ultimat3
 RFC 8291 encryption and an RFC 8292 (VAPID, ES256) token, on WebCrypto — no dependency.
 
 ```ts
+import type { Recipient } from '@ultimat3/notify';
 import { notifier, pushChannel, t } from '@ultimat3/notify';
 import { webPush } from '@ultimat3/pwa';
+
+// The app's own read: who follows a post. A notifier never touches the database itself.
+declare const posts: {
+  subscribers(postId: string, signal: AbortSignal): Promise<readonly Recipient[]>;
+};
 
 export const commentPushed = notifier({
   name: 'post.commented.push',
   input: t.object({ postId: t.uuid, commenter: t.string }),
   tenant: 'none',
   key: (params) => `comment-push:${params.postId}`,
+  // The audience — every device of each of them is reached. Omitted, the audience is empty and
+  // nothing is sent unless every enqueue names its own `recipients`.
+  recipients: ({ input, ctx }) => posts.subscribers(input.postId, ctx.signal),
   deliver: [
     {
       channel: pushChannel<{ postId: string; commenter: string }>({
@@ -112,7 +121,8 @@ What each push-service answer does:
 | 201 | delivered |
 | 404 / 410, or an expired subscription | the subscription is deleted; nothing is retried |
 | 429 / 5xx / no connection | `X_PWA_PUSH_FAILED` — thrown after every other device was tried, so the delivery fails as `X_NOTIFY_DELIVERY_FAILED` and the notifier job retries on its own backoff |
-| 400 / 401 / 403 / 413 | `X_PWA_PUSH_REJECTED` — logged and counted, never retried |
+| 400 / 413 | `X_PWA_PUSH_REJECTED` — logged and counted, never retried |
+| 401 / 403 | `X_PWA_PUSH_REJECTED`, and the subscription is deleted: it was made with a VAPID key this server no longer signs with. `subscribeToPush` replaces such a browser's subscription the next time it asks |
 
 A retry re-sends to the devices that already got it; the `tag` makes that a replacement on the device
 rather than a second notification. `renotify` without a `tag` is dropped with a warning — the spec

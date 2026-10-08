@@ -3,7 +3,7 @@
 // throws is the run's retry like any channel's — while a replayed run sends nothing twice.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { resetJobs } from '@ultimat3/jobs';
+import { memoryStepStore, resetJobs } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import type { NotifyPushMessage, Pusher } from './channel-push';
 import { PUSH_CHANNEL, pushChannel } from './channel-push';
@@ -77,6 +77,19 @@ describe('unit · the push channel', () => {
     ]);
     const message: NotifyPushMessage = { titleKey: 'a', bodyKey: 'b', url: '/' };
     expect(pushChannel({ pusher: recording([]), message: () => message }).name).toBe(PUSH_CHANNEL);
+  });
+
+  test('a replayed run sends nothing twice — the step checkpoint, then the ledger', async () => {
+    const sent: { to: string; message: NotifyPushMessage }[] = [];
+    const handle = liked(recording(sent));
+    const run = { params, recipients: [{ id: 'ana' }] };
+    const store = memoryStepStore();
+    await driver({ store }).finish(handle, run);
+    // The same run again: every step answers from its checkpoint.
+    await driver({ store }).finish(handle, run);
+    // Another run of the same event (a requeue that lost its checkpoints): the ledger's claim.
+    await driver({ runId: 'run-replayed' }).finish(handle, run);
+    expect(sent.map((one) => one.to)).toEqual(['ana']);
   });
 
   test('a pusher that throws is X_NOTIFY_DELIVERY_FAILED — the job’s retry, not a lost push', async () => {

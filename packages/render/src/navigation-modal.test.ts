@@ -1,8 +1,7 @@
-// Route-presented modals over the fake DOM and a `fetch` the test answers: a modal page opens over
-// the page in one `<dialog>`, addressed by the hash; Escape, a native close, the link beneath and
-// Back close it; a stale hash degrades; a form re-renders in place or leaves through Back; and the
-// router's own `refresh`/`openModal`/`closeModal`. What a real browser does with the dialog is
-// proven in Chrome (`packages/cli/e2e/client-navigation-modal.e2e.test.ts`).
+// Every branch of the modal controller, where Chrome cannot reach them cheaply or deterministically:
+// a fake DOM whose history, dialog events and timing the test drives, so a race the e2e suite meets
+// once in twenty runs is a line here that fails on every run. What a real browser does with the
+// dialog stays proven in Chrome (`packages/cli/e2e/client-navigation-modal.e2e.test.ts`).
 import { afterEach, describe, expect, test } from 'bun:test';
 import { startNavigation } from './navigation';
 import {
@@ -137,6 +136,24 @@ describe('opening', () => {
     expect(win.entries).toHaveLength(3);
   });
 
+  test('replacing the content never reads its own close as the visitor closing', async () => {
+    const { win } = open();
+    click(win, 'to-m');
+    await settle();
+    const dialog = modal(win);
+    if (dialog === null) return expect.unreachable('the modal opened');
+    // An engine that fires `close` at once, inside `close()`.
+    dialog.close = function closeNow(this: FakeElement & { open: boolean }) {
+      this.open = false;
+      this.dispatchEvent(new Event('close'));
+    };
+    click(win, 'deeper');
+    await settle();
+    expect(modal(win)?.open).toBe(true);
+    expect(modal(win)?.querySelector('h1')?.textContent).toBe('Deeper');
+    expect(win.location.href).toBe('https://app.test/a#/m/deeper');
+  });
+
   test('a reload of the address reopens it; a hash naming no modal is dropped in place', async () => {
     const { win, calls } = cold('https://app.test/a#/m');
     await settle();
@@ -254,6 +271,25 @@ describe('a form inside', () => {
     // Back to the entry beneath — never reopened by the hash it left.
     expect(win.index).toBe(0);
     expect(win.location.href).toBe('https://app.test/a');
+  });
+
+  test('once that Back has landed, the hash drives the modal again', async () => {
+    const { win, calls } = open({
+      '/m': (init) =>
+        init?.method === 'POST'
+          ? new Response(null, { status: 204, headers: { 'x-ultimate-location': '/a' } })
+          : htmlAnswer('modal:M', modalPage('M')),
+    });
+    click(win, 'to-m');
+    await settle();
+    submit(win);
+    await settle();
+    // A hash typed over the page afterwards: held only while the router's own Back traversed.
+    win.history.pushState(null, '', 'https://app.test/a#/m');
+    win.dispatchEvent(new Event('hashchange'));
+    await settle();
+    expect(modal(win)?.open).toBe(true);
+    expect(calls.at(-1)).toBe('GET /m soft');
   });
 
   test('a POST that fails on the network reloads the page and its modal', async () => {

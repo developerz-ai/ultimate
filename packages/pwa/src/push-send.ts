@@ -3,7 +3,12 @@
 // a coded refusal saying whether a retry can help.
 
 import type { Clock } from '@ultimat3/core';
-import { isRetryableStatus, renderThrowable, retryAfterSecondsOf } from '@ultimat3/core';
+import {
+  classifyAddress,
+  isRetryableStatus,
+  renderThrowable,
+  retryAfterSecondsOf,
+} from '@ultimat3/core';
 import {
   PwaPushFailedError,
   PwaPushRejectedError,
@@ -62,13 +67,15 @@ export type PushSendOutcome =
   /** 404/410: the subscription is dead. Delete it; never retry it. */
   | { readonly kind: 'gone'; readonly status: 404 | 410 };
 
-const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+/** How long one push service may take to answer before the fan-out moves on (retryable). */
+export const PUSH_SEND_TIMEOUT_MS = 30_000;
 
 /**
- * `https:` — every push service is — or `http:` to a loopback host, which is a test's stub push
- * service and nothing a browser ever hands out. Anything else is refused before a byte is sent:
- * the endpoint came from a request body, and an `http:` endpoint on another host is a request this
- * server would make, in the clear, to wherever a caller pointed it.
+ * `https:` to a host on the public internet — every push service a browser hands out is one. The
+ * endpoint came from a REQUEST BODY, so it is where a signed-in caller points this server: `http:`
+ * would send in the clear, and `localhost` or an IP literal that is not public (loopback, private,
+ * link-local, the metadata address) would make the server POST to its own side of the network.
+ * No carve-out for tests: a stub push service is an injected `fetch` over an `https:` URL.
  */
 export function pushEndpointProblem(endpoint: string): string | undefined {
   let url: URL;
@@ -77,9 +84,12 @@ export function pushEndpointProblem(endpoint: string): string | undefined {
   } catch {
     return 'is not an absolute URL';
   }
-  if (url.protocol === 'https:') return undefined;
-  if (url.protocol === 'http:' && LOOPBACK.has(url.hostname)) return undefined;
-  return 'is not an https URL';
+  if (url.protocol !== 'https:') return 'is not an https URL';
+  const host = url.hostname.toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return 'names this machine';
+  const kind = classifyAddress(host);
+  if (kind !== undefined && kind !== 'public') return `is a ${kind} address`;
+  return undefined;
 }
 
 async function topicHeader(topic: string): Promise<string> {
@@ -126,9 +136,17 @@ export async function sendPushMessage(input: PushSendInput): Promise<PushSendOut
       body,
       // Never followed: a redirect would carry a token signed for one origin to another.
       redirect: 'manual',
-      ...(input.signal === undefined ? {} : { signal: input.signal }),
+      // A deadline: one service that accepts and never answers must not hold the rest of the
+      // fan-out — every later device of this person waits behind it.
+      signal:
+        input.signal === undefined
+          ? AbortSignal.timeout(PUSH_SEND_TIMEOUT_MS)
+          : AbortSignal.any([input.signal, AbortSignal.timeout(PUSH_SEND_TIMEOUT_MS)]),
     });
   } catch (error) {
+    // The CALLER cancelled: not the push service's fault, so not the retryable class — a retry
+    // would re-deliver to every device already served. Rethrown as is; the fan-out stops.
+    if (input.signal?.aborted === true) throw error;
     throw new PwaPushFailedError({ origin, status: null, detail: renderThrowable(error) });
   }
   if (response.status >= 200 && response.status < 300) {

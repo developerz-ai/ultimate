@@ -942,10 +942,16 @@ $ x vapid create --json
 ```
 
 A key pair minted elsewhere (`web-push generate-vapid-keys`) is the same format: set the two variables
-directly. `x env example` lists both in the Framework section once `pwa.push` is on, and `x env check`
-reports a deployed table that lacks them (`X_PWA_VAPID_KEY_MISSING`).
+directly. `x env example` lists both in the Framework section once `pwa.push` is wired (`pwa.vapid`
+set), and `x env check` reports a deployed table that lacks them (`X_PWA_VAPID_KEY_MISSING`).
 
-Errors: `X_SECRETS_KEY_MISSING` (`create` with no `x secrets init`), `X_GENERATE_CONFLICT`, `X_NOT_IN_APP`.
+`show` reads `development` only when there is nothing sealed to read — no `secrets.enc.json`, or no
+master key for it. A sealed file it cannot open is that refusal, with its own fix
+(`X_SECRETS_TAMPERED`, `X_SECRETS_KEY_MISMATCH`, `X_SECRETS_FILE_INVALID`): the pair is there, and
+`create` would refuse it.
+
+Errors: `X_SECRETS_KEY_MISSING` (`create` with no `x secrets init`), `X_GENERATE_CONFLICT`, `X_NOT_IN_APP`,
+and the `X_SECRETS_*` refusals above.
 
 ## x manifest
 

@@ -4,7 +4,13 @@
 // The private key is never printed, in either renderer — `x secrets`' rule.
 
 import type { MasterKeyRef, SecretValues } from '@ultimat3/core';
-import { readSecretsFile, requireMasterKey, SECRETS_FILE, writeSecretsFile } from '@ultimat3/core';
+import {
+  isUltimateError,
+  readSecretsFile,
+  requireMasterKey,
+  SECRETS_FILE,
+  writeSecretsFile,
+} from '@ultimat3/core';
 import {
   DEV_VAPID_KEYS,
   generateVapidKeys,
@@ -103,12 +109,21 @@ async function show(ctx: CommandContext): Promise<CommandResult> {
   };
 }
 
-/** The sealed values, or `undefined` when this checkout has no secrets file or no key to open it. */
+/** Absent, not broken: no secrets file, or no key to open one — the development pair is in force. */
+const ABSENT: ReadonlySet<string> = new Set(['X_SECRETS_FILE_MISSING', 'X_SECRETS_KEY_MISSING']);
+
+/**
+ * The sealed values, or `undefined` when this checkout has no secrets file or no key to open it.
+ * Every other refusal — a tampered file, a key for another file, a file that is not one, a rotation
+ * that cannot be finished — is thrown with its own fix: a sealed pair is THERE but unreadable, and
+ * reporting `development` would send the reader to `x vapid create`, which refuses the pair.
+ */
 async function readSealed(root: string, ctx: CommandContext): Promise<SecretValues | undefined> {
   try {
     return await readSecretsFile(root, await secretsKeyFor(root, ctx.env));
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (isUltimateError(error) && ABSENT.has(error.code)) return undefined;
+    throw error;
   }
 }
 

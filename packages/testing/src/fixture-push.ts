@@ -5,6 +5,7 @@
 // the bytes. Nothing reaches the network.
 
 import type { PushReceiverKeys } from '@ultimat3/pwa';
+import { frozenNow } from './determinism';
 
 /** One delivery, as the device received it. */
 export interface TestPushMessage {
@@ -62,6 +63,9 @@ export async function testPush(): Promise<TestPush> {
     keys: pwa.DEV_VAPID_KEYS,
     subject: 'mailto:push@example.test',
     fetch: pushService,
+    // The clock the `clock` fixture moves — never the wall clock: a VAPID token's `exp` and a
+    // subscription's `expirationTime` are read against it, so `clock.advance('2d')` reaches both.
+    clock: { now: frozenNow, monotonic: () => frozenNow().getTime() },
   });
 
   return {

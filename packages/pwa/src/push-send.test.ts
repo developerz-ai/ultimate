@@ -254,6 +254,70 @@ describe('unit · one message to one subscription', () => {
   });
 });
 
+describe('unit · where the server may be pointed, and when it stops', () => {
+  const signer = async () => {
+    const vapid = await generateVapidKeys();
+    return {
+      keys: await importVapidKeys(vapid),
+      publicKey: vapid.publicKey,
+      subject: 'mailto:a@b.c',
+    };
+  };
+
+  test.each([
+    ['http://127.0.0.1:9901/quitquitquit'],
+    ['http://localhost/x'],
+    ['https://localhost/x'],
+    ['https://push.localhost/x'],
+    ['https://127.0.0.1/x'],
+    ['https://[::1]/x'],
+    ['https://10.0.0.7/x'],
+    ['https://169.254.169.254/latest/meta-data'],
+  ])('%p is never dialled: the endpoint came from a request body', async (endpoint) => {
+    const ua = await userAgent();
+    const refused = (await codeOf(() =>
+      sendPushMessage({
+        target: { endpoint, keys: ua.keys },
+        plaintext: new Uint8Array(1),
+        vapid: undefined as never,
+        fetch: pushService,
+      }),
+    )) as { code: string };
+    expect(refused.code).toBe('X_PWA_PUSH_SUBSCRIPTION_INVALID');
+    expect(seen).toEqual([]);
+  });
+
+  test('every POST carries a deadline, and a caller that cancels is not a retryable fault', async () => {
+    const ua = await userAgent();
+    const vapid = await signer();
+    let signal: AbortSignal | null | undefined;
+    const hung = ((_url: string, init?: RequestInit) => {
+      signal = init?.signal;
+      return new Promise<Response>((_resolve, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)),
+      );
+    }) as unknown as typeof fetch;
+    const caller = new AbortController();
+    const sending = codeOf(() =>
+      sendPushMessage({
+        target: { endpoint: `${base}/hangs`, keys: ua.keys },
+        plaintext: new Uint8Array(1),
+        vapid,
+        fetch: hung,
+        signal: caller.signal,
+      }),
+    );
+    await Bun.sleep(5);
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal).not.toBe(caller.signal);
+    caller.abort(new DOMException('cancelled', 'AbortError'));
+    // The caller's own reason, as is — never `X_PWA_PUSH_FAILED`, which the job would retry.
+    const thrown = await sending;
+    expect(thrown).toBeInstanceOf(DOMException);
+    expect((thrown as DOMException).name).toBe('AbortError');
+  });
+});
+
 describe('unit · one notification to every device of one person', () => {
   const catalogs: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     en: { 'push.title': 'New comment', 'push.body': '{who} replied' },
@@ -339,11 +403,11 @@ describe('unit · one notification to every device of one person', () => {
       body: 'Mira replied',
       lang: 'en',
     });
+    // Gone and refused-for-this-key (403) are deleted; the busy one waits for the retry.
     expect((await store.listFor('ana')).map((row) => row.endpoint)).toEqual([
       `${base}/a-de`,
       `${base}/b-en`,
       `${base}/busy`,
-      `${base}/wrong-key`,
     ]);
   });
 

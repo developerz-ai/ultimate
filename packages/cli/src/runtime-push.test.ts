@@ -31,6 +31,10 @@ describe('unit · web push at boot', () => {
   test('push off, or no installable app, owes no runtime and reads no key', async () => {
     expect(pushSubjectOf(defineConfig({ name: 'fixture' }))).toBeUndefined();
     expect(pushSubjectOf(defineConfig({ name: 'fixture', pwa: PWA }))).toBeUndefined();
+    // `push: true` with no `vapid` (it booted on 26.0.0): accepted, unwired, and said at boot.
+    const unwired = defineConfig({ name: 'fixture', pwa: { ...PWA, push: true } });
+    expect(pushSubjectOf(unwired)).toBeUndefined();
+    expect(await selectWebPush(unwired, {})).toBeUndefined();
     expect(await selectWebPush(defineConfig({ name: 'fixture' }), {})).toBeUndefined();
   });
 

@@ -136,4 +136,29 @@ describe('unit · x vapid show', () => {
       privateKey: false,
     });
   });
+
+  test('a sealed file it cannot open is that refusal — never "the development pair"', async () => {
+    const root = await initialized('tampered');
+    await vapidCommand.run(context(['vapid', 'create'], root));
+    const path = join(root, SECRETS_FILE);
+    const text = await Bun.file(path).text();
+    // One character of the ciphertext changed: the file is there, and it is not the one sealed.
+    const at = text.lastIndexOf('"') - 2;
+    await Bun.write(
+      path,
+      `${text.slice(0, at)}${text[at] === 'A' ? 'B' : 'A'}${text.slice(at + 1)}`,
+    );
+    let code: string | undefined;
+    try {
+      await vapidCommand.run(context(['vapid', 'show'], root));
+    } catch (error) {
+      code = (error as { code?: string }).code;
+    }
+    expect(code).toStartWith('X_SECRETS_');
+    // No secrets set up at all is absence: the development pair, as before.
+    const bare = join(base, 'bare-vapid');
+    await Bun.write(join(bare, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
+    const dev = await vapidCommand.run(context(['vapid'], bare));
+    expect(record(dev.data)['source']).toBe('development');
+  });
 });

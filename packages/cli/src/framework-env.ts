@@ -68,6 +68,12 @@ export interface FrameworkSecret {
   readonly cause: string;
   /** Pasted into a shell, so it is a literal command and never a paraphrase. */
   readonly fix: string;
+  /**
+   * What `app.config.ts` must say for the key to be owed AT ALL — the VAPID pair, only with
+   * `pwa.push`. Absent: always. The ONE rule the example, the drift gate and `x env check` read
+   * (`configOwes`), so a second config-gated key is one line here, never two filters elsewhere.
+   */
+  readonly owedWhen?: (app: AppSecretFacts) => boolean;
   /** False when this deploy's shape never reads the key (object storage configured, push off). */
   needed(env: EnvTable, app: AppSecretFacts): boolean;
   /** True while the table would leave the process signing with the shipped development key. */
@@ -111,6 +117,7 @@ export const FRAMEWORK_SECRETS: readonly FrameworkSecret[] = [
     condition: 'Read only when pwa.push is true.',
     cause: `${VAPID_PUBLIC_KEY_ENV} is unset, so a push-enabled deploy refuses to boot (X_PWA_VAPID_KEY_MISSING)`,
     fix: 'x vapid create',
+    owedWhen: (app) => app.push,
     needed: (_env, app) => app.push,
     unsafe: (env) => (env[VAPID_PUBLIC_KEY_ENV] ?? '').trim() === '',
   },
@@ -121,10 +128,15 @@ export const FRAMEWORK_SECRETS: readonly FrameworkSecret[] = [
     condition: 'Read only when pwa.push is true.',
     cause: `${VAPID_PRIVATE_KEY_ENV} is unset or holds the published development key, so a push-enabled deploy refuses to boot`,
     fix: 'x vapid create',
+    owedWhen: (app) => app.push,
     needed: (_env, app) => app.push,
     unsafe: (env) => usesDevVapidKeys(env),
   },
 ];
+
+/** Whether this app's config owes `secret` at all — `owedWhen`, else always. */
+export const configOwes = (secret: FrameworkSecret, app: AppSecretFacts): boolean =>
+  secret.owedWhen?.(app) ?? true;
 
 /** The doctor/check finding for one secret — one wording per condition, wherever it is reported. */
 export function frameworkSecretFinding(secret: FrameworkSecret): Finding {
@@ -173,15 +185,26 @@ function frameworkSection(schema: EnvSchema, app: AppSecretFacts): string {
   // config decides (push on or off) and no environment does — object storage is a deploy's choice,
   // and the disk secret stays listed with its condition.
   const owed = FRAMEWORK_SECRETS.filter(
-    (secret) =>
-      !Object.hasOwn(schema, secret.key) && (secret.code !== 'X_PWA_VAPID_KEY_MISSING' || app.push),
+    (secret) => !Object.hasOwn(schema, secret.key) && configOwes(secret, app),
   );
   if (owed.length === 0) return '';
+  // Each key names its own generator: `openssl` mints a hex secret, and a VAPID pair minted that
+  // way is one the boot refuses — only `x vapid create` makes a P-256 pair. `x doctor` asks of no
+  // config, so it never reports the pair; `x env check` reports every one.
+  const pair = owed.some((secret) => secret.owedWhen !== undefined);
   const lines = [
     '',
     '# --- Framework ---------------------------------------------------------------',
-    '# Required outside development/test, whatever envSchema declares. Generate each with',
-    '# `openssl rand -hex 32`; `x env check` and `x doctor` report one that is missing.',
+    ...(pair
+      ? [
+          '# Required outside development/test, whatever envSchema declares. Generate the hex',
+          '# secrets with `openssl rand -hex 32` and the VAPID pair with `x vapid create`;',
+          '# `x env check` reports one that is missing.',
+        ]
+      : [
+          '# Required outside development/test, whatever envSchema declares. Generate each with',
+          '# `openssl rand -hex 32`; `x env check` and `x doctor` report one that is missing.',
+        ]),
   ];
   for (const secret of owed) {
     lines.push('', `# ${secret.why}`);

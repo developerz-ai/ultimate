@@ -132,6 +132,7 @@ export type {
 } from './push-send';
 export {
   DEFAULT_PUSH_TTL_SECONDS,
+  PUSH_SEND_TIMEOUT_MS,
   PUSH_URGENCIES,
   pushEndpointProblem,
   sendPushMessage,

@@ -208,7 +208,8 @@ export class RoutePostInvalidError extends UltimateError {
 
 /**
  * `defineRoute({ navigation })` that says nothing a process can honour: a value other than
- * `'prefetch'` or `'document'`, or — at boot — a page whose surface has no client navigation.
+ * `'prefetch'`, `'document'` or `'modal'`, or — at boot — a page whose surface has no client
+ * navigation.
  */
 export class RouteNavigationInvalidError extends UltimateError {
   static readonly code = 'X_ROUTE_NAVIGATION_INVALID' as const;

@@ -58,8 +58,8 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 | `<meta name="x-ultimate-build" content="…">` | the skew check |
 | `<script src="/_x/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 
-**Budget:** the router is 23,815 B minified (8,745 B gzip) `As of 26.1.0` — 19,966 B before
-route-presented modals and navigating from code (+3,849 B). It is **charged** to
+**Budget:** the router is 24,058 B minified (8,836 B gzip) `As of 26.1.0` — 19,966 B before
+route-presented modals and navigating from code (+4,092 B). It is **charged** to
 every route on the surface, like realtime's page boot, because it is interactivity the app opted
 into. Raise a route's `budget.js` by the measured amount (`bun run budget-raises`).
 
@@ -366,7 +366,8 @@ closeModal(); // as Escape
 | `closeModal()` | as Escape: Back through the router's own entry, else the hash dropped in place | nothing — no modal is open |
 
 `openModal` takes the route's own path, as its link would (`'/runs/new'`, `'/runs/new?bank=ve'`); a
-full URL, `//host` or a relative path is refused, `X_NAVIGATION_MODAL_PATH_INVALID`. On the server
+full URL, `//host` or a relative path is a rejected promise, `X_NAVIGATION_MODAL_PATH_INVALID` —
+never a synchronous throw, so `.catch` sees it. On the server
 every call does nothing. The functions import the router's TYPE only: an island that navigates
 ships none of the router's bytes.
 

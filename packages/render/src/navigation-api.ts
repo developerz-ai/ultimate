@@ -67,7 +67,8 @@ export function openModal(path: string): Promise<void> {
   const win = page();
   const base = win?.location.href ?? 'http://localhost/';
   if (!path.startsWith('/') || modalAddress(`#${path}`, base) === null) {
-    throw new NavigationModalPathInvalidError(path);
+    // Rejected, never thrown: one failure channel for an async call — `.catch` sees it.
+    return Promise.reject(new NavigationModalPathInvalidError(path));
   }
   if (win === undefined) return Promise.resolve();
   if (win.__xNavigation === undefined) {

@@ -7,15 +7,16 @@
 // into a worker or a migrate pod (`serve-graph.test.ts`), exactly as the nats client is opened.
 
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
-import { logger } from '@ultimat3/core';
+import { logger, PWA_PUSH_FIX, pushWired } from '@ultimat3/core';
 import type { ResolvedVapidKeys } from '@ultimat3/pwa';
 import type { Env } from './runtime-bindings';
 
 /** `pwa.vapid.subject` when this app's boot owes a push runtime, else `undefined`. */
 export function pushSubjectOf(config: AppConfig | undefined): string | undefined {
   const pwa = config?.pwa;
-  if (pwa === undefined || !pwa.enabled || !pwa.push) return undefined;
-  // `defineConfig` refuses push without a subject (`pwaPushIssues`), so this is the type's guard.
+  if (pwa === undefined || !pushWired(pwa)) return undefined;
+  // `pushWired` checked the block is there; `defineConfig` checked its subject is one a push
+  // service takes (`pwaPushIssues`).
   return pwa.vapid?.subject;
 }
 
@@ -34,7 +35,18 @@ export async function selectWebPush(
   env: Env,
 ): Promise<PushSelection | undefined> {
   const subject = pushSubjectOf(config);
-  if (subject === undefined) return undefined;
+  if (subject === undefined) {
+    const pwa = config?.pwa;
+    // Accepted for 26.0.0's sake, and never silent: the app asked for push and gets none.
+    if (pwa?.enabled === true && pwa.push) {
+      logger.warn('pwa.push unwired', {
+        cause:
+          'pwa.push is true and pwa.vapid is unset, so no push runtime, handler or key is wired',
+        fix: PWA_PUSH_FIX,
+      });
+    }
+    return undefined;
+  }
   const { resolveVapidKeys } = await import('@ultimat3/pwa');
   return { subject, resolved: await resolveVapidKeys(env) };
 }

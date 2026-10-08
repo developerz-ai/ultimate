@@ -158,8 +158,9 @@ export const OFF_SOCKET: Pins = {
     'X_MCP_TOOL_UNSAFE',
     'X_MCP_CONFIRMATION_TOOL_UNKNOWN',
   ],
-  // tier 4 — the service worker and the PWA manifest: build-time rules plus faults raised in
-  // the BROWSER, where there is no response to give a status to.
+  // tier 4 — the service worker and the PWA manifest: build-time rules, faults raised in the
+  // BROWSER, where there is no response to give a status to, and the VAPID pair refused at BOOT,
+  // before a listener exists. The send-time push faults have rows (`error-map-tier-4.ts`).
   pwa: [
     'X_BUILD_ID_MISSING',
     'X_PWA_ICON_MISSING',
@@ -171,9 +172,6 @@ export const OFF_SOCKET: Pins = {
     'X_SW_SCOPE_INVALID',
     'X_PWA_VAPID_KEY_MISSING',
     'X_PWA_VAPID_KEY_INVALID',
-    'X_PWA_PUSH_FAILED',
-    'X_PWA_PUSH_REJECTED',
-    'X_PWA_PUSH_PAYLOAD_TOO_LARGE',
   ],
   // tier 4 — the build's budget, a route file refused by `registerRoute`, and `openModal`'s
   // refusal, thrown in the browser by the code that called it — no request carries it.

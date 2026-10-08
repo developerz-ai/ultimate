@@ -170,7 +170,10 @@ export function modalController(
       doc.body.append(open);
     } else {
       // One modal at a time: the next address replaces this one's content, in the same dialog.
+      // Closed as `dismiss` closes it — no longer `dialog` — so its own `close` event, queued or
+      // (in any engine that fires it at once) synchronous, is never read as the visitor closing.
       disposeIslands(open, () => false);
+      dialog = undefined;
       if (open.open) open.close();
     }
     dialog = open;

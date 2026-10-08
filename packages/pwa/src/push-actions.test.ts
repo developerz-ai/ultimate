@@ -122,8 +122,17 @@ describe('unit · pushSubscribe / pushUnsubscribe', () => {
       'subscribePush',
       pushSubscribe({ permission: 'push:subscribe' }),
     );
+    const unsubscribe = registerAction(
+      'unsubscribePush',
+      pushUnsubscribe({ permission: 'push:subscribe' }),
+    );
     expect(await refusal(async () => subscribe.as(ana, await body()))).toBe(
       'X_PWA_PUSH_UNCONFIGURED',
     );
+    expect(
+      await refusal(async () =>
+        unsubscribe.as(ana, { endpoint: 'https://fcm.example.test/send/abc' }),
+      ),
+    ).toBe('X_PWA_PUSH_UNCONFIGURED');
   });
 });

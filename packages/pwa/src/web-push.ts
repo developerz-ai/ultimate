@@ -6,6 +6,7 @@
 // structurally (notify cannot import this package: same tier), so `notify(user, …)` reaches every
 // subscription that user holds with no glue in the app.
 
+import type { UltimateError } from '@ultimat3/core';
 import { isUltimateError, logger } from '@ultimat3/core';
 import type { PushPayload } from './push';
 import { renderPushPayload, serializePushMessage, subscriptionState } from './push';
@@ -77,9 +78,10 @@ export async function pushToActor(
       }
       if (!isUltimateError(error)) throw error;
       refused += 1;
-      // A stored subscription with a malformed key is one no send will ever reach: deleted, so
-      // the next notification does not pay for it again.
-      if (error.code === 'X_PWA_PUSH_SUBSCRIPTION_INVALID') {
+      // A stored subscription no send will ever reach is deleted, so the next notification does
+      // not pay for it again: a malformed key, or a 401/403 — made with a VAPID key this server no
+      // longer signs with. That browser re-subscribes under the new key the next time it asks.
+      if (error.code === 'X_PWA_PUSH_SUBSCRIPTION_INVALID' || unreachableUnderThisKey(error)) {
         await runtime.store.remove(subscription.endpoint);
       }
       logger.error('pwa.push.refused', { code: error.code, cause: error.cause, fix: error.fix });
@@ -88,6 +90,12 @@ export async function pushToActor(
   if (retry !== undefined) throw retry;
   return { delivered, removed, refused };
 }
+
+/** A push service's 401/403: the subscription belongs to another VAPID key, for good. */
+const unreachableUnderThisKey = (error: UltimateError): boolean => {
+  const status = (error.meta as { readonly status?: unknown } | undefined)?.status;
+  return error.code === 'X_PWA_PUSH_REJECTED' && (status === 401 || status === 403);
+};
 
 /** The structural shape `@ultimat3/notify`'s `Pusher` declares. */
 export interface WebPusher {
