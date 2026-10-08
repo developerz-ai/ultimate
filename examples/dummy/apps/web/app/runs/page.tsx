@@ -79,8 +79,14 @@ export const config = defineRoute({
    * +1,575 B is the page boot carrying the outbox's pending count (`OutboxHandle.size`/`subscribe`/
    * `refresh`, read by `useOutbox()`) and its cross-tab sync, which every page's islands share; this
    * route's own island is unchanged.
+   * raised 167kb → 170kb (26.1.0, route-presented modals). measured: 173,231 B (2026-10-08;
+   * `x build --target static`), against 174,080. why: the client router grew 19,966 → 23,815 B
+   * (+3,849): `navigation: 'modal'` — a hash-addressed `<dialog>` over the page, reopened by a
+   * reload, Back/Forward or a pasted URL, its forms posted through the router, and the router's
+   * `refresh`/`openModal`/`closeModal` for navigating from code; charged to every
+   * `app/` document, as the router is.
    */
-  budget: { js: '167kb' },
+  budget: { js: '170kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

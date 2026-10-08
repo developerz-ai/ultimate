@@ -14,21 +14,25 @@
  * on documents whose surface opted in (`navigation: { client: [...] }` in `app.config.ts`).
  */
 
-import { CLIENT_BUILD_META, CLIENT_SCOPE_META } from '@ultimat3/core/page';
 import { navigationCache } from './navigation-cache';
 import {
   anchorOf,
   announcer,
   focusMain,
-  formAction,
-  formFields,
-  formPairs,
   handOver,
+  intentUrl,
   linkFacts,
   type RunningTransition,
+  submitFacts,
   transition,
 } from './navigation-dom';
-import { type Answer, fetchDocument, metaOf } from './navigation-fetch';
+import {
+  type Answer,
+  fetchDocument,
+  heldOrFetched,
+  metaOf,
+  responseFactsOf,
+} from './navigation-fetch';
 import {
   type EntryState,
   entryOf,
@@ -36,25 +40,21 @@ import {
   scrollAfter,
   withoutFragment,
 } from './navigation-history';
+import { modalController } from './navigation-modal';
+import { addressOf, modalAddress, modalHistory } from './navigation-modal-rules';
 import {
   answerMovesTab,
-  type FormFacts,
   formVerdict,
   linkVerdict,
-  mayPrefetch,
   NAVIGATE_EVENT,
   NAVIGATED_EVENT,
   NAVIGATING_ATTRIBUTE,
   NAVIGATION_ERROR_EVENT,
   NAVIGATION_MAX_HOPS,
   NAVIGATION_META,
-  NAVIGATION_NO_PREFETCH_ATTRIBUTE,
   NAVIGATION_PREFETCH_DELAY_MS,
   NAVIGATION_PROGRESS_DELAY_MS,
-  NAVIGATION_RELOAD_ATTRIBUTE,
-  type ResponseFacts,
   responseVerdict,
-  reusable,
 } from './navigation-rules';
 import { scrollKeeper } from './navigation-scroll';
 import {
@@ -74,11 +74,19 @@ export interface NavigateOptions {
   readonly history?: 'push' | 'replace' | 'none';
   /** Redirects already followed for this navigation. */
   readonly hops?: number;
+  /** The URL's hash addressed it: a modal, or nothing — never a page (`presentation`). */
+  readonly fromHash?: boolean;
 }
 
 export interface NavigationRouter {
   navigate(url: string, options?: NavigateOptions): Promise<void>;
   prefetch(url: string): void;
+  /** The page on screen, fetched again and swapped in where it is scrolled. */
+  refresh(): Promise<void>;
+  /** `path` as the modal over this page (`#<path>`); anything but a modal of this tab: nothing. */
+  openModal(path: string): Promise<void>;
+  /** As Escape: Back through the router's own entry, else the hash dropped in place. */
+  closeModal(): void;
   stop(): void;
 }
 
@@ -120,6 +128,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   const tabs = tabSync(win, () => cache.clear());
   const forget = tabs.forget;
   const scroll = scrollKeeper(win, () => rendered);
+  const modal = modalController(win, () => rendered, ran, owned);
 
   const request = (url: string, purpose: 'soft' | 'prefetch', init?: RequestInit) =>
     fetchDocument(win, doc, url, purpose, init);
@@ -138,7 +147,11 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   const failed = (url: string, method: string, reason: string): void => {
     const detail = { url, method, reason };
     const event = new CustomEvent(NAVIGATION_ERROR_EVENT, { detail, cancelable: true });
-    if (doc.dispatchEvent(event)) win.location.assign(win.location.href);
+    if (!doc.dispatchEvent(event)) return;
+    // Under a modal the URL differs only by its hash, which `assign` merely scrolls to: reloaded,
+    // the page and its modal are both asked for again (the entry is the router's own GET).
+    if (modal.address === undefined) win.location.assign(win.location.href);
+    else win.location.reload();
   };
 
   const answerFor = (
@@ -154,22 +167,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       const body = options.body === undefined ? {} : { body: options.body };
       return request(url, 'soft', { method, ...body, signal }).finally(forget);
     }
-    const held = cache.peek(url);
-    cache.delete(url);
-    if (held === undefined) return request(url, 'soft', { signal });
-    return held.value.then(
-      (answer) =>
-        reusable({
-          status: answer.status,
-          html: answer.html !== null,
-          location: answer.location,
-          noStore: answer.noStore,
-          ageMs: held.ageMs,
-        })
-          ? answer
-          : request(url, 'soft', { signal }),
-      () => request(url, 'soft', { signal }),
-    );
+    return heldOrFetched(cache, url, () => request(url, 'soft', { signal }));
   };
 
   const navigate = async (url: string, options: NavigateOptions = {}): Promise<void> => {
@@ -183,7 +181,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     // After an answer for another principal or build was shown in place, this tab is no longer
     // trusted to swap: every navigation is a real load (`answerMovesTab`).
     if (untrusted && method === 'GET') {
-      win.location.assign(url);
+      if (options.fromHash === true) modal.clear();
+      else win.location.assign(url);
       return;
     }
     const detail = { url, method };
@@ -212,22 +211,20 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       if (mine.signal.aborted) return;
       const next =
         answer.html === null ? null : new DOMParser().parseFromString(answer.html, 'text/html');
-      const facts: ResponseFacts = {
-        method,
-        requested: url,
-        status: answer.status,
-        opaqueRedirect: answer.opaqueRedirect,
-        location: answer.location,
-        contentType: answer.contentType,
-        hops,
-        surface: metaOf(doc, NAVIGATION_META),
-        nextSurface: next === null ? null : metaOf(next, NAVIGATION_META),
-        build: metaOf(doc, CLIENT_BUILD_META),
-        nextBuild: answer.build ?? (next === null ? null : metaOf(next, CLIENT_BUILD_META)),
-        scope: metaOf(doc, CLIENT_SCOPE_META),
-        nextScope: next === null ? null : metaOf(next, CLIENT_SCOPE_META),
-      };
+      const facts = responseFactsOf(doc, next, answer, { method, requested: url, hops });
       const verdict = responseVerdict(facts);
+      const landed = `${withoutFragment(url)}${new URL(url).hash}`;
+      const shown = modal.presentationOf(next, landed, {
+        fromHash: options.fromHash === true,
+        method,
+        verdict: verdict.kind,
+        status: answer.status,
+        movesTab: answerMovesTab(facts),
+      });
+      if (shown === 'degrade') {
+        modal.clear();
+        return;
+      }
       switch (verdict.kind) {
         case 'stay':
           return;
@@ -242,7 +239,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           return;
         case 'follow':
           await navigate(verdict.url, {
-            history: options.history === 'none' ? 'replace' : 'push',
+            // Out of a modal, a redirect's target takes the modal's entry: Back never reopens it.
+            history: options.history === 'none' || modal.address !== undefined ? 'replace' : 'push',
             hops: hops + 1,
           });
           return;
@@ -253,13 +251,22 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           break;
       }
       if (next === null) return;
-      const landed = `${withoutFragment(url)}${new URL(url).hash}`;
+      // A page answered while a modal is open: the modal goes, and so does its history entry.
+      const leave = shown === 'page' ? modal.leaveFor(options.history, landed) : undefined;
+      const history = leave === undefined ? options.history : leave === 'back' ? 'none' : leave;
       try {
         // Owned from the moment they are appended: a navigation aborted after this point left its
         // sheets in the head for good, styling every page after it — the next swap retires an
         // owned sheet its page does not link.
         await loadStylesheets(doc, missingStylesheets(doc, next), owned);
         if (mine.signal.aborted) return;
+        if (shown === 'modal') {
+          await modal.present(next, addressOf(landed), landed, modalHistory(method, history));
+          doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
+          return;
+        }
+        if (leave === 'back') win.history.back();
+        modal.dismiss();
         let swapped: ReturnType<typeof swapDocument> | undefined;
         const track = (running: RunningTransition, finished: boolean): void => {
           if (!finished) animating = running;
@@ -275,14 +282,14 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
             live.textContent = '';
             swapped.body.append(live);
             rendered = withoutFragment(landed);
-            if (options.history !== 'none') {
-              const same = landed === win.location.href || options.history === 'replace';
+            if (history !== 'none') {
+              const same = landed === win.location.href || history === 'replace';
               const state = { [STATE_KEY]: { scroll: [0, 0], doc: rendered } satisfies EntryState };
               if (same) win.history.replaceState(state, '', landed);
               else win.history.pushState(state, '', landed);
             }
             // Inside the swap, so a view transition's "after" frame is already where the page lands.
-            scrollAfter(win, doc, landed, options.history);
+            scrollAfter(win, doc, landed, history);
           },
           track,
         );
@@ -302,6 +309,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         focusMain(doc);
         live.textContent = doc.title;
         doc.dispatchEvent(new CustomEvent(NAVIGATED_EVENT, { detail: { url: landed } }));
+        reconcile();
       } catch {
         // A swap that failed part-way leaves a page nobody rendered: a GET is loaded for real; a
         // POST's answer cannot be asked for again, so the visitor is told and shown this page.
@@ -350,33 +358,16 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     const verdict = linkVerdict(linkFacts(win, anchor, event));
     if (verdict.kind !== 'soft') return;
     event.preventDefault();
-    void navigate(verdict.url);
+    // A link to the page beneath an open modal (its Cancel) closes the modal: nothing is fetched.
+    if (modal.address !== undefined && withoutFragment(verdict.url) === rendered) modal.close();
+    else void navigate(verdict.url);
   };
 
   const onSubmit = (event: SubmitEvent): void => {
     const form = event.target;
     // An untrusted tab (`answerMovesTab`) leaves every form to the browser.
     if (!(form instanceof HTMLFormElement) || untrusted) return;
-    const submitter = event.submitter;
-    const fields = formFields(form, submitter);
-    const say = (attr: string, fallback: string): string =>
-      submitter?.getAttribute(`form${attr}`) ?? form.getAttribute(attr) ?? fallback;
-    const facts: FormFacts = {
-      action: formAction(say('action', ''), win.location.href, doc.baseURI),
-      current: win.location.href,
-      method: say('method', 'get').toLowerCase(),
-      enctype: say('enctype', 'application/x-www-form-urlencoded').toLowerCase(),
-      target: say('target', ''),
-      defaultPrevented: event.defaultPrevented,
-      reload:
-        form.hasAttribute(NAVIGATION_RELOAD_ATTRIBUTE) ||
-        submitter?.hasAttribute(NAVIGATION_RELOAD_ATTRIBUTE) === true,
-      // `unknown`: a browser yields a `File` for a file input, whatever a server-side type says.
-      hasFile: [...fields.values()].some(
-        (value: unknown) => value instanceof File && value.name !== '',
-      ),
-      fields: formPairs(fields),
-    };
+    const { facts, fields } = submitFacts(win, form, event.submitter, event.defaultPrevented);
     const verdict = formVerdict(facts);
     if (verdict.kind === 'native') return;
     event.preventDefault();
@@ -394,26 +385,11 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   const onIntent = (event: Event): void => {
     // The focus a press gives a link: its click is a moment away, and it navigates.
     if (event.type === 'focusin' && pressed) return;
-    const anchor = anchorOf(event.target);
-    if (anchor === null) return;
-    const verdict = linkVerdict(linkFacts(win, anchor));
-    const connection = (
-      win.navigator as { connection?: { saveData?: boolean; effectiveType?: string } }
-    ).connection;
-    if (
-      verdict.kind !== 'soft' ||
-      !mayPrefetch({
-        url: verdict.url,
-        noPrefetch: anchor.hasAttribute(NAVIGATION_NO_PREFETCH_ATTRIBUTE),
-        saveData: connection?.saveData,
-        effectiveType: connection?.effectiveType,
-      })
-    ) {
-      return;
-    }
+    const url = intentUrl(win, event.target);
+    if (url === undefined) return;
     win.clearTimeout(intent);
     const delay = event.type === 'pointerover' ? NAVIGATION_PREFETCH_DELAY_MS : 0;
-    intent = win.setTimeout(() => prefetch(verdict.url), delay);
+    intent = win.setTimeout(() => prefetch(url), delay);
   };
   const onLeave = (): void => win.clearTimeout(intent);
 
@@ -424,7 +400,9 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
    */
   const onPop = (event: PopStateEvent): void => {
     scroll.cancel();
-    const url = win.location.href;
+    // The page is the PATH: a modal's hash is the modal's (`reconcile`), never the page's fragment.
+    const at = win.location.href;
+    const url = modalAddress(new URL(at).hash, at) === null ? at : withoutFragment(at);
     const entry = entryOf(event.state);
     const wanted = entry?.doc ?? withoutFragment(url);
     const same =
@@ -442,40 +420,74 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         behavior: 'instant' as ScrollBehavior,
       });
     }
+    reconcile();
   };
+
+  /**
+   * The modal follows the URL's hash, once the page on screen is the URL's: opened (fetched, as a
+   * hash address, so a stale one degrades), kept, or dismissed. On start, on Back/Forward, on a
+   * typed hash, and after every page swap — a Back onto a modal's entry swaps its page first.
+   */
+  function reconcile(): void {
+    const at = win.location.href;
+    if (withoutFragment(at) !== rendered) return;
+    const wanted = modalAddress(new URL(at).hash, at);
+    if (wanted === null) modal.dismiss();
+    else if (wanted !== modal.address) {
+      void navigate(new URL(wanted, at).href, { history: 'none', fromHash: true });
+    }
+  }
 
   // `window`, bubble phase: after every handler on the page — Solid delegates to `document` — has
   // had its chance to `preventDefault`, which the rules then honour.
-  win.addEventListener('click', onClick);
-  win.addEventListener('submit', onSubmit);
-  doc.addEventListener('pointerover', onIntent, { passive: true });
-  doc.addEventListener('pointerout', onLeave, { passive: true });
-  doc.addEventListener('focusin', onIntent);
-  doc.addEventListener('touchstart', onIntent, { passive: true });
-  win.addEventListener('popstate', onPop);
-  doc.addEventListener('pointerdown', onPress, { capture: true, passive: true });
-  doc.addEventListener('pointerup', onRelease, { capture: true, passive: true });
-  doc.addEventListener('pointercancel', onRelease, { capture: true, passive: true });
+  const passive = { passive: true };
+  const pressing = { capture: true, passive: true };
+  const listeners: readonly (readonly [EventTarget, string, EventListener, object?])[] = [
+    [win, 'click', onClick as EventListener],
+    [win, 'submit', onSubmit as EventListener],
+    [doc, 'pointerover', onIntent, passive],
+    [doc, 'pointerout', onLeave, passive],
+    [doc, 'focusin', onIntent],
+    [doc, 'touchstart', onIntent, passive],
+    [win, 'popstate', onPop as EventListener],
+    [win, 'hashchange', reconcile],
+    [doc, 'pointerdown', onPress, pressing],
+    [doc, 'pointerup', onRelease, pressing],
+    [doc, 'pointercancel', onRelease, pressing],
+  ];
+  for (const [target, type, listener, options] of listeners) {
+    target.addEventListener(type, listener, options);
+  }
 
   const router: NavigationRouter = {
     navigate,
     prefetch,
+    refresh() {
+      // A fresh answer for the page on screen, landing where the visitor is scrolled.
+      cache.delete(rendered);
+      scroll.save();
+      return navigate(rendered, { history: 'none' });
+    },
+    openModal(path) {
+      const address = modalAddress(`#${path}`, win.location.href);
+      if (address === null) return Promise.resolve();
+      return navigate(new URL(address, win.location.href).href, {
+        fromHash: true,
+        history: 'push',
+      });
+    },
+    closeModal: () => modal.close(),
     stop() {
-      win.removeEventListener('click', onClick);
-      win.removeEventListener('submit', onSubmit);
-      doc.removeEventListener('pointerover', onIntent);
-      doc.removeEventListener('pointerout', onLeave);
-      doc.removeEventListener('focusin', onIntent);
-      doc.removeEventListener('touchstart', onIntent);
-      win.removeEventListener('popstate', onPop);
-      doc.removeEventListener('pointerdown', onPress, { capture: true });
-      doc.removeEventListener('pointerup', onRelease, { capture: true });
-      doc.removeEventListener('pointercancel', onRelease, { capture: true });
+      for (const [target, type, listener, options] of listeners) {
+        target.removeEventListener(type, listener, options);
+      }
+      modal.dismiss();
       scroll.stop();
       tabs.stop();
       delete win.__xNavigation;
     },
   };
   win.__xNavigation = router;
+  reconcile();
   return router;
 }

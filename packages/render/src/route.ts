@@ -191,11 +191,19 @@ export type RouteCache = 'no-store' | Omit<CacheHint, 'tags'>;
  * in on a click, never fetched before one. `'prefetch'`: may also be fetched on intent — only for a
  * page whose GET does nothing but render. `'document'`: always a real document load, the route run
  * once by the browser — for a GET that records something (an open, a download, a token consumed).
- * The server enforces both before `load` (`@ultimat3/http`'s navigation gate).
+ * `'modal'`: presented OVER the page a visitor came from, addressed by the hash
+ * (`/runs#/runs/new`) — a create form, a confirmation; a full load of its own URL is still the
+ * whole page. Never fetched before a click. The server enforces all three before `load`
+ * (`@ultimat3/http`'s navigation gate) and names a modal in its document
+ * (`NAVIGATION_PRESENTATION_META`).
  */
-export type RouteNavigationMode = 'prefetch' | 'document';
+export type RouteNavigationMode = 'prefetch' | 'document' | 'modal';
 
-export const ROUTE_NAVIGATION_MODES: readonly RouteNavigationMode[] = ['prefetch', 'document'];
+export const ROUTE_NAVIGATION_MODES: readonly RouteNavigationMode[] = [
+  'prefetch',
+  'document',
+  'modal',
+];
 
 /** The input shape of `defineRoute` — exactly the contract's twelve keys, nothing else. */
 export interface RouteDefinition<TData = RouteData> {

@@ -14,7 +14,8 @@ import {
   CLIENT_NAVIGATION_SURFACE_HEADER,
   CLIENT_SCOPE_META,
 } from '@ultimat3/core/page';
-import { NAVIGATION_META } from './navigation-rules';
+import type { NavigationCache } from './navigation-cache';
+import { NAVIGATION_META, type ResponseFacts, reusable } from './navigation-rules';
 
 /** One fetched answer, read once — a prefetch and the click after it share it. */
 export interface Answer {
@@ -84,4 +85,54 @@ export function fetchDocument(
         disposition: response.headers.get('content-disposition') ?? '',
       };
     });
+}
+
+/**
+ * A GET's answer: the prefetch held for `url` when it may stand in for the click (`reusable`), else
+ * `fetchAgain()`. Taken out of the cache either way — a held answer answers one click.
+ */
+export function heldOrFetched(
+  cache: NavigationCache<Answer>,
+  url: string,
+  fetchAgain: () => Promise<Answer>,
+): Promise<Answer> {
+  const held = cache.peek(url);
+  cache.delete(url);
+  if (held === undefined) return fetchAgain();
+  return held.value.then(
+    (answer) =>
+      reusable({
+        status: answer.status,
+        html: answer.html !== null,
+        location: answer.location,
+        noStore: answer.noStore,
+        ageMs: held.ageMs,
+      })
+        ? answer
+        : fetchAgain(),
+    fetchAgain,
+  );
+}
+
+/** What `responseVerdict` reads, off the answer, this document and the next one. */
+export function responseFactsOf(
+  doc: Document,
+  next: Document | null,
+  answer: Answer,
+  asked: Pick<ResponseFacts, 'method' | 'requested' | 'hops'>,
+): ResponseFacts {
+  const nextMeta = (name: string): string | null => (next === null ? null : metaOf(next, name));
+  return {
+    ...asked,
+    status: answer.status,
+    opaqueRedirect: answer.opaqueRedirect,
+    location: answer.location,
+    contentType: answer.contentType,
+    surface: metaOf(doc, NAVIGATION_META),
+    nextSurface: nextMeta(NAVIGATION_META),
+    build: metaOf(doc, CLIENT_BUILD_META),
+    nextBuild: answer.build ?? nextMeta(CLIENT_BUILD_META),
+    scope: metaOf(doc, CLIENT_SCOPE_META),
+    nextScope: nextMeta(CLIENT_SCOPE_META),
+  };
 }

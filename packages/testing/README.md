@@ -92,6 +92,7 @@ with `{ runJobs }` — never `describe(testName('unit', …))` around a bare `te
 | `clock` | `now()` · `advance('3d')` · `set(instant)` on the frozen clock | the preload |
 | `mail` | `outbox()` · `lastTo(address)` · `failOnce(mail)` over an in-memory transport | the preload |
 | `network` | `offline()` · `drop()` · `online()` · `state()` over the sealed network | the preload |
+| `push` | a Web Push runtime with the push service and the device played in-process: `subscribe(actorId, { locale })` gives that person a browser, `sent()` is what each device would SHOW (decrypted with its own key), `answerOnce(410 \| 429 \| …)` scripts the push service | the preload |
 | `runJobs` | a worker: call it to enqueue+drain, then `enqueue()` `drain()` `due()` `inFlight()` `depth()` — see [below](#a-job-under-runjobs) | the preload |
 | `statements` | every statement the test issued: `all()` `count(fingerprint?)` `shapes()` — and an N+1 throws | the preload |
 | `page` | the browser: `goto` `gotoStreamed` `getByRole` `evaluate` `waitForServiceWorker({ timeoutMs? })` — an uncontrolled first page is reloaded once for its worker (`e2e-service-worker.ts`) | a browser driver |

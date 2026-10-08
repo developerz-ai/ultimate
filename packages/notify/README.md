@@ -170,15 +170,15 @@ A read row ages from `read_at` and an unread one from `created_at` — ageing a 
 ```ts
 import { bulkChannel, deliveryChannel } from '@ultimat3/notify';
 
-// The app's push vendor and its Slack webhook — a channel is where an SDK belongs.
-declare const pushService: {
-  send(token: string, payload: unknown, init: { signal: AbortSignal }): Promise<void>;
+// The app's SMS vendor and its Slack webhook — a channel is where an SDK belongs.
+declare const smsService: {
+  send(to: string, payload: unknown, init: { signal: AbortSignal }): Promise<void>;
 };
 declare const SLACK_URL: string;
 
 // One call per recipient. The retry unit is one address.
-export const push = deliveryChannel('push', async ({ recipient, event, signal }) => {
-  await pushService.send(recipient.to ?? '', event.params, { signal });
+export const sms = deliveryChannel('sms', async ({ recipient, event, signal }) => {
+  await smsService.send(recipient.to ?? '', event.params, { signal });
 });
 
 // ONE call for the whole audience — a Slack post, a webhook, a digest to an ops channel.
@@ -191,8 +191,55 @@ export const slack = bulkChannel('slack', async ({ recipients, event, signal }) 
 });
 ```
 
-`inAppChannel()` and `mailChannel({ mailer })` ship. `mailChannel` takes a **structural** `Mailer` —
-one method, no dependency on `@ultimat3/mail`, which is the same tier.
+`inAppChannel()`, `mailChannel({ mailer })` and `pushChannel({ pusher, message })` ship. `mailChannel`
+takes a **structural** `Mailer` — one method, no dependency on `@ultimat3/mail`, which is the same
+tier — and `pushChannel` a structural `Pusher`, for the same reason about `@ultimat3/pwa`.
+
+### Push
+
+`pushChannel` sends one notification to **every device the recipient subscribed**, each rendered in
+the locale that browser subscribed with. `@ultimat3/pwa`'s `webPush()` is the pusher: RFC 8291
+encryption and RFC 8292 (VAPID) signing on WebCrypto, over the runtime the boot installs once
+`app.config.ts` says `pwa: { push: true, vapid: { subject } }`.
+
+```ts
+import { notifier, pushChannel, t } from '@ultimat3/notify';
+import { webPush } from '@ultimat3/pwa';
+
+export const commentPushed = notifier({
+  name: 'post.commented.push',
+  input: t.object({ postId: t.uuid, author: t.string }),
+  tenant: 'none',
+  key: (params) => `comment-push:${params.postId}`,
+  deliver: [
+    {
+      channel: pushChannel<{ postId: string; author: string }>({
+        pusher: webPush(),
+        // Catalog KEYS, never text. `tag` is the device's collapse key — set it: a retried delivery
+        // re-sends to the devices that already got it, and the tag makes that a replacement.
+        message: ({ event }) => ({
+          titleKey: 'push.comment.title',
+          bodyKey: 'push.comment.body',
+          params: { who: event.params.author },
+          url: `/posts/${event.params.postId}`,
+          tag: `post:${event.params.postId}`,
+        }),
+      }),
+    },
+  ],
+});
+```
+
+| `NotifyPushMessage` | |
+|---|---|
+| `titleKey`, `bodyKey`, `params`, `actions[].titleKey` | catalog keys, rendered per subscription |
+| `url` | a path on this app — a tap opens it, anything else opens the root |
+| `tag`, `renotify`, `requireInteraction`, `icon`, `badge` | the Notifications API's, as the worker shows them; `renotify` needs a `tag` |
+| `ttlSeconds`, `urgency`, `topic` | RFC 8030 — how long the push service holds it, how hard it wakes the device, and its collapse key while the device is offline |
+
+A recipient with no subscription is not a failure: the delivery settles, as `mailChannel` settles an
+addressless recipient. A push service that answers 429 or 5xx throws `X_PWA_PUSH_FAILED` after every
+other device was tried, so the job retries; 404/410 deletes the subscription.
 
 ## The inbox
 

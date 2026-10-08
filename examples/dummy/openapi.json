@@ -1673,6 +1673,77 @@
         ],
         "type": "object"
       },
+      "SubscribePushInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expirationTime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "keys": {
+            "additionalProperties": false,
+            "properties": {
+              "auth": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              "p256dh": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "p256dh",
+              "auth"
+            ],
+            "type": "object"
+          },
+          "locale": {
+            "format": "bcp47-locale",
+            "type": "string"
+          },
+          "timeZone": {
+            "format": "iana-time-zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "expirationTime",
+          "keys",
+          "locale",
+          "timeZone"
+        ],
+        "type": "object"
+      },
+      "SubscribePushOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "type": "object"
+      },
       "SummarizeInput": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
@@ -2000,6 +2071,34 @@
           "theme",
           "digestOptIn",
           "createdAt"
+        ],
+        "type": "object"
+      },
+      "UnsubscribePushInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "type": "object"
+      },
+      "UnsubscribePushOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
         ],
         "type": "object"
       },
@@ -5325,6 +5424,186 @@
         }
       }
     },
+    "/api/pushes/subscribe": {
+      "post": {
+        "operationId": "subscribePush",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscribePushInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscribePushOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "subscribePush",
+        "tags": [
+          "pushes"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/pushes/unsubscribe": {
+      "post": {
+        "operationId": "unsubscribePush",
+        "parameters": [
+          {
+            "description": "Replays the first response for a repeated key.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 255,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnsubscribePushInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnsubscribePushOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "unsubscribePush",
+        "tags": [
+          "pushes"
+        ],
+        "x-ultimate": {
+          "capability": "member:self",
+          "idempotent": true,
+          "invalidates": [],
+          "mcpTool": null,
+          "rateLimit": null
+        }
+      }
+    },
     "/api/run-keys/issue": {
       "post": {
         "operationId": "issueRunKey",
@@ -6194,6 +6473,9 @@
     },
     {
       "name": "prompts"
+    },
+    {
+      "name": "pushes"
     },
     {
       "name": "run-keys"

@@ -126,6 +126,26 @@ posted fields (query wins). An RFC 8058 one-click `POST /correos/baja?t=…` wit
 `GET` stays the confirm page. `@ultimat3/cli` mounts it in both boots; a name no action is
 registered under is `X_ROUTE_POST_INVALID` at boot, as is `post` on a `static` page.
 
+## `navigation` — how the client router treats a page
+
+On a surface listed in `app.config.ts`'s `navigation.client` only (elsewhere it refuses the boot,
+`X_ROUTE_NAVIGATION_INVALID`). Absent: swapped in on a click, never prefetched. Full rules:
+[Client Navigation](../../wiki/Client-Navigation.md).
+
+| `navigation` | The page |
+|---|---|
+| `'prefetch'` | may also be fetched on hover/focus — a GET that does nothing but render |
+| `'document'` | always a real document load; carries no router |
+| `'modal'` | `As of 26.1.0`. Shown OVER the page a visitor is on, in a native `<dialog>`, addressed by the hash (`/runs#/runs/new`); reload, Back/Forward and a pasted URL reopen it, a stale hash is just the page. A full load of its own URL is still the whole page — the server renders one document for both and names it a modal (`NAVIGATION_PRESENTATION_META`) |
+
+Declared on the route, never on a link: the route is the one place that covers every way of
+reaching a page — a link, a redirect after a POST, a pasted hash.
+
+From code — an island, an app script — `navigate(url, { replace? })`, `refresh()`,
+`openModal(path)` and `closeModal()` go through the router when the page has one and fall back to
+`location.assign`/`replace`/`reload` when it does not; they import the router's type only.
+[Navigating from code](../../wiki/Client-Navigation.md#navigating-from-code).
+
 ## Mode invariants, checked at registration
 
 | Mode | Invariant | Error if violated |
@@ -475,6 +495,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `IslandInvalidError` | `X_ISLAND_INVALID` | `src/errors.ts` |
 | `IslandNotHydratedError` | `X_ISLAND_NOT_HYDRATED` | `src/errors.ts` |
 | `IslandPropsInvalidError` | `X_ISLAND_PROPS_INVALID` | `src/errors.ts` |
+| `NavigationModalPathInvalidError` | `X_NAVIGATION_MODAL_PATH_INVALID` | `src/errors.ts` |
 | `PrerenderFailedError` | `X_PRERENDER_FAILED` | `src/errors.ts` |
 | `RouteDuplicateError` | `X_ROUTE_DUPLICATE` | `src/errors.ts` |
 | `RouteFileInvalidError` | `X_ROUTE_FILE_INVALID` | `src/errors.ts` |
@@ -512,6 +533,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `ISLAND_HOLD_ATTRIBUTE`, `ISLAND_HOLD_MS`, `ISLAND_HOLD_REVEAL` | a held island's marker, and the cap after which it shows its server markup regardless |
 | `parseByteBudget`, `defaultIslandBudget` | the `'40kb'` budget grammar, and the ceiling a declared island earns |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
+| `clientNavigationTags`, `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `NAVIGATION_*`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT` | the client router's document tags and its pure rules; the router itself is `@ultimat3/render/navigation`, built and served by the CLI |
+| `navigate`, `refresh`, `openModal`, `closeModal`, `NavigateToOptions` | navigating from code: the router when the page has one, the browser's own load when not |
+| `modalAddress`, `modalLocation`, `addressOf`, `presentation`, `modalHistory`, `leaveModal`, `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE` | route-presented modals (`navigation: 'modal'`): the hash grammar, when an answer is a modal, and what leaving one does to history |
 | `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |
 
 ## Notes

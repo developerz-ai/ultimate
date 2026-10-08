@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { CURSOR_SECRET_FIX, parseEnvKeys, renderEnvExample } from '@ultimat3/core';
+import { DEV_VAPID_KEYS } from '@ultimat3/pwa';
 import { DEV_SIGNING_SECRET } from '@ultimat3/storage';
 import {
   appEnvExample,
@@ -142,7 +143,57 @@ describe('unit · what a deployed process would refuse', () => {
 
   test('every fix is a literal command that mints the key it names', () => {
     for (const secret of FRAMEWORK_SECRETS) {
-      expect(secret.fix).toBe(`export ${secret.key}="$(openssl rand -hex 32)"`);
+      // A key PAIR is not 32 random bytes: one command mints and seals both halves together.
+      const fix =
+        secret.code === 'X_PWA_VAPID_KEY_MISSING'
+          ? 'x vapid create'
+          : `export ${secret.key}="$(openssl rand -hex 32)"`;
+      expect(secret.fix).toBe(fix);
     }
+  });
+});
+
+describe('unit · the VAPID pair, owed once pwa.push is on', () => {
+  const PUSH = { push: true } as const;
+
+  test('push off: neither key is in the contract or a finding — a key with no reader is noise', () => {
+    expect(parseEnvKeys(appEnvExample(SCHEMA))).not.toContain('ULTIMATE_VAPID_PRIVATE_KEY');
+    expect(frameworkSecretFindings({}).map((finding) => finding.code)).not.toContain(
+      'X_PWA_VAPID_KEY_MISSING',
+    );
+  });
+
+  test('push on: both halves render after the framework secrets, the public one not as a secret', () => {
+    const text = appEnvExample(SCHEMA, PUSH);
+    expect(parseEnvKeys(text)).toEqual([
+      'DATABASE_URL',
+      'ULTIMATE_CURSOR_SECRET',
+      'STORAGE_SIGNING_SECRET',
+      'ULTIMATE_VAPID_PUBLIC_KEY',
+      'ULTIMATE_VAPID_PRIVATE_KEY',
+    ]);
+    expect(text).toContain('# required when deployed · string\nULTIMATE_VAPID_PUBLIC_KEY=\n');
+    expect(text).toContain(
+      '# required when deployed · string · secret\nULTIMATE_VAPID_PRIVATE_KEY=\n',
+    );
+    expect(text).toContain('x vapid create');
+  });
+
+  test('a deployed table with push on owes both — and the published development key counts as none', () => {
+    const owed = (env: Record<string, string>) =>
+      frameworkSecretFindings(env, new Set(), PUSH)
+        .filter((finding) => finding.code === 'X_PWA_VAPID_KEY_MISSING')
+        .map((finding) => finding.cause.split(' ')[0]);
+    expect(owed({})).toEqual(['ULTIMATE_VAPID_PUBLIC_KEY', 'ULTIMATE_VAPID_PRIVATE_KEY']);
+    expect(
+      owed({
+        ULTIMATE_VAPID_PUBLIC_KEY: DEV_VAPID_KEYS.publicKey,
+        ULTIMATE_VAPID_PRIVATE_KEY: DEV_VAPID_KEYS.privateKey,
+      }),
+    ).toEqual(['ULTIMATE_VAPID_PRIVATE_KEY']);
+    expect(
+      owed({ ULTIMATE_VAPID_PUBLIC_KEY: 'B-real', ULTIMATE_VAPID_PRIVATE_KEY: 'real-private' }),
+    ).toEqual([]);
+    expect(frameworkSecretFindings({ ULTIMATE_ENV: 'development' }, new Set(), PUSH)).toEqual([]);
   });
 });

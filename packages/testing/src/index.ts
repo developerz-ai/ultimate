@@ -202,6 +202,8 @@ export type { MailRef, TestMail } from './fixture-mail';
 export { testMail } from './fixture-mail';
 export type { TestNetwork } from './fixture-network';
 export { testNetwork } from './fixture-network';
+export type { TestPush, TestPushMessage } from './fixture-push';
+export { testPush } from './fixture-push';
 export type { ObservedStatement, StatementShape, TestStatements } from './fixture-statements';
 export { testStatements } from './fixture-statements';
 export type { SubscribeDriver } from './fixture-subscribe';

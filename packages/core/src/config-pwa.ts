@@ -45,11 +45,32 @@ export interface PwaOfflineConfig {
   readonly personalPages: 'never' | 'last-member';
 }
 
+/**
+ * Web Push's one piece of configuration that is not a secret. The KEYS are not here: both halves
+ * of the VAPID pair are environment variables (`ULTIMATE_VAPID_PUBLIC_KEY`,
+ * `ULTIMATE_VAPID_PRIVATE_KEY`, sealed together by `x vapid create`), because a public key in
+ * committed config and a private key per deploy are two places that can disagree — and the
+ * disagreement is a 403 from every push service on every send.
+ */
+export interface PwaVapidConfig {
+  /**
+   * `mailto:` or an `https:` URL: who a push service writes to about this server (RFC 8292 §2.1).
+   * Every service requires it; Apple's refuses a token without one.
+   */
+  readonly subject: string;
+}
+
 export interface PwaConfig {
   readonly enabled: boolean;
   readonly offline: PwaOfflineConfig;
   readonly backgroundSync: boolean;
+  /**
+   * Web Push: the `push` and `notificationclick` handlers in `sw.js`, the subscription runtime the
+   * boot installs, and `<meta name="x-push-key">` on every document. Requires `vapid`.
+   */
   readonly push: boolean;
+  /** Required once `push` is true, refused while it is false (a key with no reader). */
+  readonly vapid?: PwaVapidConfig;
   /**
    * The install title, and the one manifest member nothing can derive. `AppConfig.name` is a slug
    * (`^[a-z][a-z0-9-]{1,63}$`) and an install prompt shows a person a title, so `ledger-demo` is
@@ -214,6 +235,46 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
     }
   }
   manifestIssues(pwa, issues);
+  return issues.length > before;
+}
+
+/** Appended only when the push half of the block is what failed. */
+export const PWA_PUSH_FIX =
+  "set pwa.vapid: { subject: 'mailto:ops@example.com' } beside pwa.push: true in app.config.ts — push services write to that address about this server — then x vapid create for the key pair; or set pwa.push: false and delete pwa.vapid";
+
+/** `mailto:someone` or an absolute `https:` URL — RFC 8292's two forms, nothing else. */
+const isVapidSubject = (value: unknown): boolean => {
+  if (typeof value !== 'string') return false;
+  if (/^mailto:[^\s@]+@[^\s@]+$/.test(value)) return true;
+  try {
+    return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * The push rules, apart from `pwaIssues` because their remedy is another sentence. Push asks for
+ * nothing unless the app is installable, exactly like the rest of the block — `enabled: false`
+ * emits no worker for a push handler to live in.
+ */
+export function pwaPushIssues(pwa: PwaConfig, issues: string[]): boolean {
+  if (!pwa.enabled) return false;
+  const before = issues.length;
+  const vapid: unknown = pwa.vapid;
+  if (!pwa.push) {
+    if (vapid !== undefined) {
+      issues.push('pwa.vapid is set while pwa.push is false, so nothing reads it');
+    }
+    return issues.length > before;
+  }
+  const subject: unknown =
+    vapid !== null && typeof vapid === 'object' ? (vapid as { subject?: unknown }).subject : vapid;
+  if (!isVapidSubject(subject)) {
+    issues.push(
+      `pwa.vapid.subject is required when pwa.push is true and must be a mailto: address or an https: URL, and is ${describeValue(subject)}`,
+    );
+  }
   return issues.length > before;
 }
 

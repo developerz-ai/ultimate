@@ -42,6 +42,7 @@ export const config = {
     offline: { fallback: '/offline', neverCache: ['/api/*'], personalPages: 'last-member' },
     backgroundSync: true,
     push: true,
+    vapid: { subject: 'mailto:ops@example.com' },
   },
   cache: { tiers: ['request-memo'] },
   jobs: { queues: ['mail'], concurrency: 3, visibilityTimeoutMs: 45000 },

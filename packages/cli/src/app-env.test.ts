@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseEnvKeys, renderEnvExample } from '@ultimat3/core';
 import { envExampleFindings, envExampleFor, isEnvSchema, loadEnvSchema } from './app-env';
+import { NO_APP_FACTS } from './framework-env';
 
 const SCHEMA = `export const envSchema = {
   DATABASE_URL: { type: 'url', description: 'Postgres connection URL' },
@@ -61,7 +62,7 @@ describe('unit · reading the app env declaration', () => {
 describe('unit · the .env.example drift gate', () => {
   test('the projection and the committed file agreeing is silence', async () => {
     const schema = await loadEnvSchema(await appRoot('fresh', SCHEMA));
-    const root = await appRoot('fresh', SCHEMA, envExampleFor(schema ?? {}));
+    const root = await appRoot('fresh', SCHEMA, envExampleFor(schema ?? {}, NO_APP_FACTS));
     expect(await envExampleFindings(root)).toEqual([]);
   });
 
@@ -78,7 +79,7 @@ describe('unit · the .env.example drift gate', () => {
   // it is required and its default; all three can rot while every key is still present.
   test('a description that moved is drift even though no key is missing', async () => {
     const schema = await loadEnvSchema(await appRoot('stale-text', SCHEMA));
-    const stale = envExampleFor(schema ?? {}).replace(
+    const stale = envExampleFor(schema ?? {}, NO_APP_FACTS).replace(
       'Postgres connection URL',
       'something else entirely',
     );
@@ -101,7 +102,7 @@ describe('unit · the .env.example drift gate', () => {
 
   test('the projection carries the framework keys after the app’s', async () => {
     const schema = await loadEnvSchema(await appRoot('framework-render', SCHEMA));
-    expect(parseEnvKeys(envExampleFor(schema ?? {}))).toEqual([
+    expect(parseEnvKeys(envExampleFor(schema ?? {}, NO_APP_FACTS))).toEqual([
       'DATABASE_URL',
       'API_TOKEN',
       'ULTIMATE_CURSOR_SECRET',
@@ -118,7 +119,7 @@ describe('unit · the .env.example drift gate', () => {
 
   test('a secret never reaches the committed file, default or not', async () => {
     const schema = await loadEnvSchema(await appRoot('secret', SCHEMA));
-    const rendered = envExampleFor(schema ?? {});
+    const rendered = envExampleFor(schema ?? {}, NO_APP_FACTS);
     expect(rendered).toContain('API_TOKEN=\n');
     expect(rendered).toContain('secret');
   });

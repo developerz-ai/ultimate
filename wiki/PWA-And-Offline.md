@@ -26,11 +26,9 @@
 > edit; the old `offline: 'runtime'` was an app-wide default for a field `defineRoute` makes
 > required on every route, so it defaulted nothing and was read by nobody.
 >
-> **Still not wired: `pwa.push`. Wiring it is decided** (owner decision 11, [#648](https://github.com/developerz-ai/ultimate/issues/648)) and
-> tracked in [#710](https://github.com/developerz-ai/ultimate/issues/710) — [below](#push-is-decided-not-built). `generateServiceWorker` emits a push handler only when a VAPID
-> key comes with the capability, there is no `pwa.vapid` config key, and it drops the handler in
-> silence otherwise. `x build --json` now reports that as a `serviceWorkerWarnings` entry rather than
-> leaving the switch quietly inert.
+> **`pwa.push` is wired too, `As of 26.1.0`** ([#710](https://github.com/developerz-ai/ultimate/issues/710)):
+> a `pwa.vapid` key, a VAPID pair the boot resolves (or refuses), the worker's push handler, a
+> subscription action pair and a notify channel — [Push](#push).
 
 `sw.js` is a build artifact, generated from the route table and written by `x build`. Hand-editing one is **not** caught, and it does not survive either: `As of 2026-08` `sw.js` carries no checksum, so the next build overwrites the edit in silence — no warning, no diff, nothing in `--json`. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)).
 
@@ -273,7 +271,8 @@ pwa: {
   enabled: true,
   offline: { fallback: '/offline' },
   backgroundSync: true,
-  push: true, // read, and wires nothing: no config key can supply a VAPID key — see below
+  push: true, // Web Push — requires vapid; the key pair is env (`x vapid create`), see below
+  vapid: { subject: 'mailto:ops@example.com' },
 }
 ```
 
@@ -285,7 +284,7 @@ accepted.
 
 | Flag | Generates | Cost of enabling |
 |---|---|---|
-| `push` | **nothing through `x build` yet** — wiring it is decided and tracked in [#710](https://github.com/developerz-ai/ultimate/issues/710); see [Push is decided, not built](#push-is-decided-not-built). `pushSource`'s SW `push` and `notificationclick` handlers are emitted only when `generateServiceWorker` is also handed a `vapid` key, and `x build` never is: there is no `pwa.vapid` key, so it emits neither and files a `serviceWorkerWarnings` entry (`cli.build.pushUnwired`, `packages/cli/src/sw-artifacts.ts`). No subscription endpoint, no send job. Called directly with a key, a tap opens a same-origin URL only; any other opens the app root | notification permission prompt; VAPID keys the build has no way to take |
+| `push` | the SW `push` and `notificationclick` handlers, `<meta name="x-push-key">` on every document, and the push runtime every role's boot installs — on a served boot (`x dev`, the container). A static export serves no subscribe action, so it emits no handler and files a `serviceWorkerWarnings` entry (`cli.build.pushUnwired`). A tap opens a same-origin URL only; any other opens the app root | notification permission prompt (from a click); a VAPID key pair (`x vapid create`) |
 | `backgroundSync` | a SW `sync` listener that posts `OUTBOX_DRAIN_MESSAGE` to every open tab, and the page registration with an `online` fallback where the Background Sync API is missing | replay must be idempotent. By design each queued write carries an idempotency key, so `action`'s idempotency store answers a replay rather than applying it twice. The queue is IndexedDB-backed, per principal |
 | `badging` | badge update from a live query — **only alongside `push`** `As of 2026-08-20`: the badge call is emitted inside the push block, so `badging: true` on its own changes nothing while `capabilities.badging` still reports `true` | Chromium-only surface |
 | `shareTarget` | the `share_target` manifest member, from `generateWebManifest`'s `shareTarget` input — nothing else: no route, no policy, no worker code. `x build` passes neither the flag nor the input, so no app's manifest carries it, `As of 2026-10-02` | the app serves the target route itself and must treat its payload as untrusted |
@@ -294,17 +293,26 @@ accepted.
 
 All of them are `route` / `action` / `job` primitives underneath ([The eight primitives](The-Eight-Primitives)) — a push send would be a job, a share target is a route the app serves. No PWA-specific concept escapes into the app's mental model.
 
-### Push is decided, not built
+### Push
 
-**`pwa.push` will be wired, and is not yet.** `As of 2026-10-07`. Owner decision 11 in [#648](https://github.com/developerz-ai/ultimate/issues/648) chose to finish it: a `pwa.vapid` key, a subscription action, a notify delivery channel and Web Push signing on WebCrypto, tracked in [#710](https://github.com/developerz-ai/ultimate/issues/710).
+**Web Push, end to end, with no dependency** — RFC 8291 message encryption and RFC 8292 (VAPID,
+ES256) signing on WebCrypto. `As of 26.1.0`.
 
-| Exists today | Missing for a working push |
-|---|---|
-| `pwa.push` in `app.config.ts`, read by `x build` — and it only adds a `serviceWorkerWarnings` entry | a config key carrying the VAPID public key and subject |
-| `@ultimat3/pwa`'s `push.ts`: subscription records with their locale, `VapidConfig`, typed payloads | a subscription endpoint the browser posts to |
-| `pushSource`, emitted by `generateServiceWorker` only when handed a `vapid` key | a send job, and the Web Push signing behind it |
+| Piece | What | Where |
+|---|---|---|
+| config | `pwa: { push: true, vapid: { subject: 'mailto:ops@example.com' } }` — a `subject` push services accept (`mailto:` or `https:`), required with `push`, refused without it | [Configuration](Configuration) |
+| key pair | `ULTIMATE_VAPID_PUBLIC_KEY` + `ULTIMATE_VAPID_PRIVATE_KEY`, never config. `x vapid create` mints a P-256 pair and seals BOTH into `secrets.enc.json` in one write; `x vapid show` names the pair in force. Locally, neither set signs with a published development pair; a deployed boot refuses it, half a pair, or two halves that do not sign for each other (`X_PWA_VAPID_KEY_MISSING`, `X_PWA_VAPID_KEY_INVALID`) — at boot, before any service starts | [CLI reference](CLI-Reference#x-vapid) |
+| subscriptions | `x_push_subscriptions`, a framework table every boot applies; keyed by endpoint (a browser subscribed by a second person is theirs now), with the locale and zone it subscribed in | `@ultimat3/pwa/schema` |
+| subscribe | `pushSubscribe({ permission })` / `pushUnsubscribe({ permission })` — factories returning real actions an app exports from its own actions module: route, OpenAPI, typed client, contract tests, the one policy path. Stored against `ctx.actor.id`; an agent is refused | `apps/web/app/<slice>/actions.ts` |
+| the button | `subscribeToPush({ save: client.subscribePush })` from `@ultimat3/pwa/client` (an import-free subpath an island can afford), on a click; answers `subscribed`, `denied`, `unsupported` or `unconfigured` | an island |
+| send | `pushChannel({ pusher: webPush(), message })` in a notifier — every device of the recipient, each in its own locale; or `pushToActor(id, notification)` directly | [Notify](Notify#push) |
+| the device | the emitted `push` handler shows `title`/`body`/`tag`/`actions` from the body; `notificationclick` focuses or opens the URL, same origin only | `sw.js` |
 
-Until #710 lands: do not set `pwa.push` expecting notifications. An app that needs push today owns all three missing pieces — the route, the action storing subscriptions and the job sending them — and its own service worker handler.
+Push strings are catalog KEYS (`titleKey`, `bodyKey`), rendered server-side per subscription locale —
+the sending server has no request to read a language off. One message is one 4096-byte record
+(`X_PWA_PUSH_PAYLOAD_TOO_LARGE` past 3993 bytes of notification): send a path to the content, never
+the content. `ttlSeconds` (default a day), `urgency` and `topic` (the push service's collapse key)
+travel as RFC 8030 headers.
 
 ## What is checked, and where
 

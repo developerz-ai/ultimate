@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "965d3488c91a3bed",
+  "buildId": "95ae72916008b58d",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -427,7 +427,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "153.5kb"
+        "js": "157kb"
       }
     },
     {
@@ -460,7 +460,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "22kb"
+        "js": "26kb"
       }
     },
     {
@@ -484,7 +484,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "167kb"
+        "js": "170kb"
       }
     },
     {
@@ -495,7 +495,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "61kb"
+        "js": "66kb"
       }
     }
   ],
@@ -3154,6 +3154,88 @@
       }
     },
     {
+      "name": "subscribePush",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          },
+          "expirationTime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "keys": {
+            "type": "object",
+            "properties": {
+              "p256dh": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "auth": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "required": [
+              "p256dh",
+              "auth"
+            ],
+            "additionalProperties": false
+          },
+          "locale": {
+            "type": "string",
+            "format": "bcp47-locale"
+          },
+          "timeZone": {
+            "type": "string",
+            "format": "iana-time-zone"
+          }
+        },
+        "required": [
+          "endpoint",
+          "expirationTime",
+          "keys",
+          "locale",
+          "timeZone"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "summarize",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3521,6 +3603,45 @@
         "description": "Toggle the acting member’s digest subscription"
       },
       "mutator": true
+    },
+    {
+      "name": "unsubscribePush",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "endpoint"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "removed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
     },
     {
       "name": "upgradePlan",
@@ -5946,7 +6067,9 @@
         "action:memberAvatar",
         "action:savePreferences",
         "action:setTheme",
-        "action:toggleDigestOptIn"
+        "action:subscribePush",
+        "action:toggleDigestOptIn",
+        "action:unsubscribePush"
       ]
     },
     {

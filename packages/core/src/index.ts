@@ -171,6 +171,7 @@ export type {
   PwaScreenshot,
   PwaShortcut,
   PwaText,
+  PwaVapidConfig,
 } from './config-pwa';
 export { isSameOriginPath, PWA_COLOR_KEYS, PWA_SCHEMES } from './config-pwa';
 export type {

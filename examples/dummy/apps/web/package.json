@@ -37,6 +37,7 @@
     "@ultimat3/mail": "26.0.0",
     "@ultimat3/notify": "26.0.0",
     "@ultimat3/policy": "26.0.0",
+    "@ultimat3/pwa": "26.0.0",
     "@ultimat3/query": "26.0.0",
     "@ultimat3/realtime": "26.0.0",
     "@ultimat3/render": "26.0.0",

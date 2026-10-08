@@ -210,6 +210,8 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/jobs.webhook:job',
       '@ultimat3/mcp.mcpConfirmations:action',
       '@ultimat3/notify.notifier:job',
+      '@ultimat3/pwa.pushSubscribe:action',
+      '@ultimat3/pwa.pushUnsubscribe:action',
       '@ultimat3/scraping.scrape:job',
     ]);
     expect(declared).toHaveLength(PRIMITIVE_FACTORIES.length);

@@ -6,8 +6,9 @@
 import { join } from 'node:path';
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
 import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL, parseEnvKeys } from '@ultimat3/core';
-import { appConfigExport } from './app-config-load';
+import { appConfigExport, loadAppConfig } from './app-config-load';
 import { APP_CONFIG_FILE } from './app-root';
+import type { AppSecretFacts } from './framework-env';
 import { appEnvExample, FRAMEWORK_SECRETS } from './framework-env';
 import type { Finding } from './output';
 import { findingFrom } from './output';
@@ -53,7 +54,17 @@ export async function loadEnvSchema(root: string): Promise<EnvSchema | undefined
  * The bytes `.env.example` must hold: the app's declaration, then the framework's deploy-required
  * keys (`framework-env.ts`). Deterministic, so a rewrite that changes nothing diffs to nothing.
  */
-export const envExampleFor = (schema: EnvSchema): string => appEnvExample(schema);
+export const envExampleFor = (schema: EnvSchema, app: AppSecretFacts): string =>
+  appEnvExample(schema, app);
+
+/**
+ * What `app.config.ts` decides about the framework keys this app owes — `pwa.push` today, off the
+ * one loader, so the example, the drift gate and `x env check` read one answer.
+ */
+export async function appSecretFacts(root: string): Promise<AppSecretFacts> {
+  const pwa = (await loadAppConfig(root))?.pwa;
+  return { push: pwa?.enabled === true && pwa.push };
+}
 
 const driftFinding = (cause: string): Finding => ({
   code: 'X_ENV_EXAMPLE_DRIFT',
@@ -79,7 +90,8 @@ export async function envExampleFindings(root: string): Promise<readonly Finding
     return [{ ...findingFrom(error), at: APP_CONFIG_FILE }];
   }
   if (schema === undefined) return [];
-  const expected = envExampleFor(schema);
+  const app = await appSecretFacts(root);
+  const expected = envExampleFor(schema, app);
   const file = Bun.file(join(root, ENV_EXAMPLE_PATH));
   if (!(await file.exists())) {
     return [
@@ -94,9 +106,11 @@ export async function envExampleFindings(root: string): Promise<readonly Finding
   const missing = Object.keys(schema).filter((key) => !present.has(key));
   // The framework's keys are owed by every deployed app, whatever its schema says (#679), and an
   // example written before they were part of the contract is missing exactly these.
-  const owed = FRAMEWORK_SECRETS.map((secret) => secret.key).filter(
-    (key) => !Object.hasOwn(schema, key) && !present.has(key),
-  );
+  const owed = FRAMEWORK_SECRETS.filter(
+    (secret) => secret.code !== 'X_PWA_VAPID_KEY_MISSING' || app.push,
+  )
+    .map((secret) => secret.key)
+    .filter((key) => !Object.hasOwn(schema, key) && !present.has(key));
   return [
     driftFinding(
       missing.length > 0

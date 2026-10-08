@@ -138,14 +138,47 @@ describe('serviceWorkerArtifacts', () => {
     expect(build({ backgroundSync: true }).source).toContain("addEventListener('sync'");
   });
 
-  test('pwa.push with no VAPID key is a WARNING, because the generator drops it in silence', () => {
+  test('pwa.push with a runtime behind it: the push handler, the key meta, and NO warning', () => {
+    const vapid = { publicKey: 'BKey-1"<', subject: 'mailto:ops@example.test' };
+    const built = serviceWorkerArtifacts({
+      pwa: pwa({ push: true }),
+      buildId: BUILD_ID,
+      routes: ROUTES,
+      islands: islandBundle([]),
+      styles: styleBundleOf([]),
+      vapid,
+    });
+    if (built === undefined) return expect.unreachable('an app with a fallback got no worker');
+    expect(built.source).toContain("addEventListener('push'");
+    expect(built.source).toContain("addEventListener('notificationclick'");
+    expect(built.warnings).toEqual([]);
+    // Escaped: the key is public, and still never raw text in an attribute.
+    expect(built.head).toContain('<meta name="x-push-key" content="BKey-1&quot;&lt;">');
+  });
+
+  test('pwa.push with NO runtime (a static export) is a warning, and no handler or meta', () => {
     // `generateServiceWorker` emits a push handler only when a VAPID key comes with the
-    // capability. There is no `pwa.vapid` key yet, so `push: true` wires nothing — and wiring
-    // nothing while reporting nothing is `jobs.driver`'s shape one package over.
+    // capability. A served boot always installs one when the flag is on, so only a build with no
+    // runtime behind it reaches here — and wiring nothing while reporting nothing is
+    // `jobs.driver`'s shape one package over.
     expect(build().source).not.toContain("addEventListener('push'");
     expect(build({ push: true }).source).not.toContain("addEventListener('push'");
-    expect(build({ push: true }).warnings.join(' ')).toContain('no VAPID key is configured');
+    expect(build({ push: true }).head).not.toContain('x-push-key');
+    expect(build({ push: true }).warnings.join(' ')).toContain('no Web Push runtime');
     expect(build().warnings).toEqual([]);
+  });
+
+  test('a runtime with pwa.push off emits nothing of push — the flag decides, not the key', () => {
+    const built = serviceWorkerArtifacts({
+      pwa: pwa({ push: false }),
+      buildId: BUILD_ID,
+      routes: ROUTES,
+      islands: islandBundle([]),
+      styles: styleBundleOf([]),
+      vapid: { publicKey: 'BKey', subject: 'mailto:ops@example.test' },
+    });
+    expect(built?.source).not.toContain("addEventListener('push'");
+    expect(built?.head).not.toContain('x-push-key');
   });
 
   test('neverCache reaches the worker, so an auth path is never answered from a cache', () => {

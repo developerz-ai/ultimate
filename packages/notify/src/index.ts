@@ -21,6 +21,8 @@ export type { InAppChannelOptions } from './channel-in-app';
 export { IN_APP_CHANNEL, inAppChannel } from './channel-in-app';
 export type { MailChannelOptions, Mailer, NotifyMail } from './channel-mail';
 export { MAIL_CHANNEL, mailChannel } from './channel-mail';
+export type { NotifyPushMessage, PushChannelOptions, Pusher } from './channel-push';
+export { PUSH_CHANNEL, pushChannel } from './channel-push';
 export type {
   DigestAppend,
   DigestBucket,

@@ -17,6 +17,7 @@ import {
   SQL_NOTIFY_DIGESTS_TABLE,
   SQL_NOTIFY_INBOX_TABLE,
 } from '@ultimat3/notify';
+import { PUSH_SUBSCRIPTIONS_TABLE, SQL_PUSH_SUBSCRIPTIONS_TABLE } from '@ultimat3/pwa/schema';
 import { FrameworkSchemaFailedError } from './schema-errors';
 
 export interface FrameworkSchema {
@@ -145,6 +146,17 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/mcp',
     tables: Object.freeze([MCP_CONFIRMATIONS_TABLE]),
     ddl: Object.freeze([SQL_MCP_CONFIRMATIONS_TABLE]),
+  }),
+  /**
+   * Web Push subscriptions — what `postgresPushSubscriptionStore()` reads and the boot installs
+   * once `pwa.push` is on. Applied whether or not it is, for every row's reason: turning push on
+   * must not be the deploy that discovers the table was never created. Through
+   * `@ultimat3/pwa/schema`, a leaf, for the admin and mcp rows' reason.
+   */
+  Object.freeze({
+    pkg: '@ultimat3/pwa',
+    tables: Object.freeze([PUSH_SUBSCRIPTIONS_TABLE]),
+    ddl: Object.freeze([SQL_PUSH_SUBSCRIPTIONS_TABLE]),
   }),
 ]);
 

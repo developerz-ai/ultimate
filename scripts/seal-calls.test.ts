@@ -9,6 +9,7 @@ import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { SealSource } from './seal-calls';
 import {
   SEAL_SEAM,
+  STANDARD_CIPHERS,
   sealCallFinding,
   sealCallFindings,
   sealCallResult,
@@ -87,6 +88,7 @@ describe('what is not sealing, and is never reported', () => {
   test('the seam itself, and a test', () => {
     const source = "await crypto.subtle.encrypt({ name: 'AES-GCM' }, key, data);";
     for (const path of SEAL_SEAM) expect(kinds(source, path)).toEqual([]);
+    for (const path of Object.keys(STANDARD_CIPHERS)) expect(kinds(source, path)).toEqual([]);
     expect(kinds(source, 'packages/entity/src/sealed.test.ts')).toEqual([]);
     expect(kinds(source, 'packages/core/src/other.ts')).toHaveLength(2);
   });

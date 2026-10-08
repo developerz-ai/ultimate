@@ -4,12 +4,18 @@
  * `notifySubscribers`) writes by hand — one durable step per recipient and channel, a delivery
  * ledger that makes a replayed run send nothing twice, and a preference gate.
  *
- * `t` comes from @ultimat3/notify, not @ultimat3/schema: a notifier file imports one package.
+ * `t` comes from @ultimat3/notify, not @ultimat3/schema: a notifier file imports one package — and
+ * the push transport from @ultimat3/pwa, because `pushChannel` takes it structurally.
  */
 
 import { memberId as toMemberId, orgId as toOrgId, postId as toPostId } from '@postly/domain';
+// The push renders its catalog keys HERE, on the worker, per subscription locale: importing the app
+// catalog is what registers it (`@postly/i18n`'s own header). A boot imports it anyway; a job test
+// that drives this notifier alone would otherwise render every push as `⟦key⟧`.
+import '@postly/i18n';
 import { send } from '@ultimat3/mail';
-import { mailChannel, notifier, t } from '@ultimat3/notify';
+import { mailChannel, notifier, pushChannel, t } from '@ultimat3/notify';
+import { webPush } from '@ultimat3/pwa';
 import { type CommentPostedData, commentPostedMail } from './mail';
 
 /** What `createComment` enqueues: the ids the audience is resolved from, and the mail's two names. */
@@ -46,6 +52,22 @@ export const commentPosted = notifier({
     return [{ id: author.id, to: author.email, locale: author.locale, tz: author.tz }];
   },
   deliver: [
+    // Every browser the author subscribed (settings → notifications), each in the locale it
+    // subscribed in. The tag is the post: a second comment REPLACES the first notification, and a
+    // retried delivery replaces itself instead of showing twice.
+    {
+      channel: pushChannel<CommentPosted>({
+        pusher: webPush(),
+        message: ({ event }) => ({
+          titleKey: 'push.commentPosted.title',
+          bodyKey: 'push.commentPosted.body',
+          params: { commenter: event.params.commenter, title: event.params.title },
+          url: `/posts/${event.params.postId}`,
+          tag: `post:${event.params.postId}`,
+          renotify: true,
+        }),
+      }),
+    },
     {
       channel: mailChannel<CommentPosted>({
         mailer: {

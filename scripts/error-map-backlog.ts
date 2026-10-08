@@ -169,9 +169,20 @@ export const OFF_SOCKET: Pins = {
     'X_PWA_SYNC_FLUSH_FAILED',
     'X_PWA_SYNC_INCOMPLETE',
     'X_SW_SCOPE_INVALID',
+    'X_PWA_VAPID_KEY_MISSING',
+    'X_PWA_VAPID_KEY_INVALID',
+    'X_PWA_PUSH_FAILED',
+    'X_PWA_PUSH_REJECTED',
+    'X_PWA_PUSH_PAYLOAD_TOO_LARGE',
   ],
-  // tier 4 — the build's budget, and a route file refused by `registerRoute`.
-  render: ['X_BUDGET_EXCEEDED', 'X_ROUTE_DUPLICATE', 'X_ROUTE_FILE_INVALID'],
+  // tier 4 — the build's budget, a route file refused by `registerRoute`, and `openModal`'s
+  // refusal, thrown in the browser by the code that called it — no request carries it.
+  render: [
+    'X_BUDGET_EXCEEDED',
+    'X_ROUTE_DUPLICATE',
+    'X_ROUTE_FILE_INVALID',
+    'X_NAVIGATION_MODAL_PATH_INVALID',
+  ],
   // tier 4 since 26.0.0 (#709) — `scrape()` returns a job: every code is raised in the worker,
   // which opens no HTTP port, or at declaration, at boot.
   scraping: [

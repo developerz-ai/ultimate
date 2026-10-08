@@ -102,8 +102,14 @@ export const config = defineRoute({
    * `BroadcastChannel`, a read-only `refresh()`, so another tab's drain clears this tab's count and
    * a write never overtakes one another tab queued): +321 B feed island, +1,575 B page boot.
    * `shared/queued-writes.ts`, the app's workaround, is deleted.
+   * raised 153.5kb → 157kb (26.1.0, route-presented modals). measured: 159,745 B (2026-10-08;
+   * `x build --target static`), against 160,768. why: the client router grew 19,966 → 23,815 B
+   * (+3,849): `navigation: 'modal'` — a hash-addressed `<dialog>` over the page, reopened by a
+   * reload, Back/Forward or a pasted URL, its forms posted through the router, and the router's
+   * `refresh`/`openModal`/`closeModal` for navigating from code; charged to every
+   * `app/` document, as the router is.
    */
-  budget: { js: '153.5kb' },
+  budget: { js: '157kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

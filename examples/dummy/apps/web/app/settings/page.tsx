@@ -104,8 +104,14 @@ export const config = defineRoute({
    * `x build --target static`), against 62,464. why: +59 B in the inline `idle` runtime — `catchUp`
    * lets go of a press after a mount it did not flush (a held island's first click ran twice, #506);
    * the other +998 B is the settings island's growth from the rest of sweep 9, measured here.
+   * raised 61kb → 66kb (26.1.0). measured: 67,360 B (2026-10-08; `x build --target static`),
+   * against 67,584. why: the client router grew 19,966 → 23,815 B (+3,849) — `navigation: 'modal'`,
+   * a hash-addressed `<dialog>` over the page, and `refresh`/`openModal`/`closeModal` for
+   * navigating from code — charged to every `app/` document; and the settings island grew
+   * 39,182 → 41,023 B (+1,841) for its Web Push button: `@ultimat3/pwa/client`'s
+   * `subscribeToPush` and the `subscribePush` action through the typed client.
    */
-  budget: { js: '61kb' },
+  budget: { js: '66kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
@@ -159,6 +165,10 @@ export function Page(): JSX.Element {
               save: t('common.save'),
               saved: t('common.saved'),
               retry: t('common.retry'),
+              push: t('app.settings.pushLabel'),
+              pushOn: t('app.settings.pushOn'),
+              pushDenied: t('app.settings.pushDenied'),
+              pushUnavailable: t('app.settings.pushUnavailable'),
             }}
           >
             {/*

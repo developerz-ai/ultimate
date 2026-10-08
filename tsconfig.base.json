@@ -11,6 +11,8 @@
       "@ultimat3/admin/schema": ["./packages/admin/src/audit-schema.ts"],
       "@ultimat3/mail/events": ["./packages/mail/src/events.ts"],
       "@ultimat3/mcp/schema": ["./packages/mcp/src/confirmation-schema.ts"],
+      "@ultimat3/pwa/client": ["./packages/pwa/src/push-client.ts"],
+      "@ultimat3/pwa/schema": ["./packages/pwa/src/push-schema.ts"],
       "@ultimat3/cli/serve": ["./packages/cli/src/serve-entry.ts"],
       "@ultimat3/core/page": ["./packages/core/src/page.ts"],
       "@ultimat3/db/schema-dump": ["./packages/db/src/schema-dump-entry.ts"],

@@ -113,4 +113,8 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH: 409,
   // @ultimat3/ai — a model call named no model
   X_AI_MODEL_UNRESOLVED: 500,
+  // @ultimat3/pwa — push is not configured in this process
+  X_PWA_PUSH_UNCONFIGURED: 503,
+  // @ultimat3/pwa — the push subscription is not one a browser produced
+  X_PWA_PUSH_SUBSCRIPTION_INVALID: 422,
 } satisfies Readonly<Record<string, number>>;

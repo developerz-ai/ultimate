@@ -22,6 +22,7 @@ import {
   clearRoutes,
   defineRoute,
   NAVIGATION_META,
+  NAVIGATION_PRESENTATION_META,
   registerRoute,
   routeEntries,
 } from '@ultimat3/render';
@@ -112,6 +113,30 @@ describe('unit · the gate over real pages — what a router request may run', (
     expect(answer.status).toBe(204);
     expect(answer.headers.get('x-ultimate-location')).toBe('/r/abc');
     expect(loads).toEqual([]);
+  });
+
+  test("navigation: 'modal' — never prefetched; a soft visit is the WHOLE page, once, as a full load is", async () => {
+    page('apps/web/app/runs/new/page.tsx', { navigation: 'modal' });
+    loads.length = 0;
+    const server = serverFor();
+    const guess = await server.fetch(
+      new Request('http://dev.test/runs/new', { headers: router('prefetch') }),
+    );
+    expect(guess.status).toBe(204);
+    expect(loads).toEqual([]);
+    const soft = await server.fetch(
+      new Request('http://dev.test/runs/new', { headers: router('soft') }),
+    );
+    const full = await server.fetch(new Request('http://dev.test/runs/new'));
+    expect(loads).toEqual(['/runs/new', '/runs/new']);
+    // One document for both: the router takes its `<main>`, so no header varies the answer and no
+    // cache holds two shapes of one URL.
+    expect(soft.status).toBe(200);
+    expect(soft.headers.get('cache-control')).toBe(full.headers.get('cache-control'));
+    expect(soft.headers.get('vary')).toBe(full.headers.get('vary'));
+    const meta = `<meta name="${NAVIGATION_PRESENTATION_META}" content="modal">`;
+    expect(await soft.text()).toContain(meta);
+    expect(await full.text()).toContain(meta);
   });
 
   test("a page of another app on the same origin is not this router's to swap", async () => {
@@ -288,5 +313,7 @@ describe('unit · the router route and the document that names it', () => {
     expect(app).toContain('<script src="/_x/navigation/n.js" defer></script>');
     expect(site).not.toContain(NAVIGATION_META);
     expect(site).not.toContain('/_x/navigation/');
+    // Only a `navigation: 'modal'` route says it is presented over another page.
+    expect(app).not.toContain(NAVIGATION_PRESENTATION_META);
   });
 });

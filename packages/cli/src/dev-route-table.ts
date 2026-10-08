@@ -5,6 +5,7 @@
 import type { RealtimeConfig } from '@ultimat3/core';
 import type { RateLimitStore, Route } from '@ultimat3/http';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
+import { installedVapid } from '@ultimat3/pwa';
 import { describePages } from '@ultimat3/render';
 import type { IsrController } from '@ultimat3/render/server';
 import type { ImageTransformDriver } from '@ultimat3/seo';
@@ -122,6 +123,9 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
             ...sync.scripts,
             ...(navigation.script === undefined ? [] : [navigation.script]),
           ],
+          // The runtime `startServices` installed when `pwa.push` is on: the worker's push
+          // handler and the page's `x-push-key` come from the pair this process signs with.
+          vapid: installedVapid(),
         });
 
   // The app's own MCP endpoint, discovered from `apps/<app>/mcp.ts` and mounted through the SAME

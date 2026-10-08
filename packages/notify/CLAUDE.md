@@ -12,7 +12,7 @@ returns a `job`, which is the whole design.
 | Never | Because |
 |---|---|
 | `@ultimat3/mail` | Same tier (4). A `Mailer` is declared **structurally** in `channel-mail.ts` — one method, no dependency — exactly as `PgExecutor` (`@ultimat3/core`) mirrors `@ultimat3/db`. Moving `notify` to tier 5 to legalise the import would put notifications above `render`, `pwa` and `ui` for one channel's transport, and would then need a `cli → notify` edge the way `cli → scraping` does. |
-| `@ultimat3/render`, `@ultimat3/ui`, `@ultimat3/ai`, `@ultimat3/mcp`, `@ultimat3/pwa` | Same tier. A notification has no view — the inbox is rendered by the app's page out of `InboxStore.list`, which is data. |
+| `@ultimat3/render`, `@ultimat3/ui`, `@ultimat3/ai`, `@ultimat3/mcp`, `@ultimat3/pwa` | Same tier. A notification has no view — the inbox is rendered by the app's page out of `InboxStore.list`, which is data. `pushChannel` takes a STRUCTURAL `Pusher` (`channel-push.ts`), exactly as `mailChannel` takes a `Mailer`: `@ultimat3/pwa`'s `webPush()` satisfies it, and `NotifyPushMessage` mirrors pwa's `PushNotification` field for field — catalog keys, never text. |
 | `@ultimat3/db`, `@ultimat3/entity` | Legal downward, and deliberately not taken. The three tables this package owns are **DDL constants applied by the boot** (`SQL_NOTIFY_DELIVERIES_TABLE`, `SQL_NOTIFY_INBOX_TABLE`, `SQL_NOTIFY_DIGESTS_TABLE`), the way `x_jobs`, `x_idempotency` and `x_audit` are — never `entity()` declarations, which would put framework tables in the app's migration graph and make an app's `x db gen` responsible for them. The Postgres stores take a structural `PgExecutor`, imported as a **type** from `@ultimat3/core` (its one declaration; `bun run flight-copies` refuses another, `X_HELPER_COPY`). |
 | `@ultimat3/policy` | A notification is addressed to exactly one person and the audience is `recipients`. There is no row a policy could decide about here. The **inbox read surface** is where authz belongs, and that is the app's query. |
 
@@ -87,7 +87,7 @@ so an `open` checkpointed with duplicates by an earlier version is repaired on r
 | `fanout.ts` | the run body: audience, wait order, gates, delivery |
 | `fanout-digest.ts` · `fanout-walk.ts` | the digest branch, and the state both halves share |
 | `attempt.ts` | claim → send → settle, once |
-| `channel.ts` · `channel-in-app.ts` · `channel-mail.ts` | the seam and the two shipped channels |
+| `channel.ts` · `channel-in-app.ts` · `channel-mail.ts` · `channel-push.ts` | the seam and the three shipped channels |
 | `ledger.ts` · `ledger-pg.ts` | the delivery ledger, memory and Postgres |
 | `inbox.ts` · `inbox-pg.ts` | the in-app inbox, memory and Postgres |
 | `preferences.ts` · `digest.ts` | the gate and the window, as seams |

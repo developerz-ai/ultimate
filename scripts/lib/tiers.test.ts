@@ -121,9 +121,10 @@ describe('the tier table against the tree it describes', () => {
     expect(checkFloors(edges, FLOOR_ABOVE)).toEqual([]);
   });
 
-  test('FLOOR_ABOVE holds exactly the four packages above their floor', () => {
+  test('FLOOR_ABOVE holds exactly the packages above their floor', () => {
     // Named, so moving one of them is a deliberate edit here rather than a row that quietly rots.
-    expect(Object.keys(FLOOR_ABOVE).sort()).toEqual(['policy', 'pwa', 'render', 'ui']);
+    // `pwa` left on 2026-10-08: building the push subscription actions put it at its floor.
+    expect(Object.keys(FLOOR_ABOVE).sort()).toEqual(['policy', 'render', 'ui']);
   });
 
   test('the package count in this file’s own doc block is the one the table holds', async () => {

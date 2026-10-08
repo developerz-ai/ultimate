@@ -283,7 +283,7 @@ seo: {
 
 ## `pwa`
 
-`offline` is a **block**, not a string, `As of 2026-08` — see [Upgrading](Upgrading). Two booleans, one block; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required.
+`offline` is a **block**, not a string, `As of 2026-08` — see [Upgrading](Upgrading). Two booleans, two blocks; every field is optional except `pwa.name`, `pwa.colors` and `pwa.offline.fallback`, which `enabled: true` makes required, and `pwa.vapid.subject`, which `push: true` does.
 
 ```ts
 pwa: {
@@ -294,6 +294,9 @@ pwa: {
     light: { themeColor: '#1b1f3b', backgroundColor: '#ffffff' },
     dark: { themeColor: '#1b1f3b', backgroundColor: '#0b0d1a' },
   },
+  // Web Push — the key pair is env (`x vapid create`), never here.
+  push: true,
+  vapid: { subject: 'mailto:ops@example.com' },
 },
 ```
 
@@ -308,7 +311,8 @@ pwa: {
 | `pwa.offline.neverCache` | `string[]` | `[]` | **read** — path prefixes the worker passes straight through. Auth and payments belong here: a stale 200 is worse than a failure |
 | ~~`pwa.offline` as a string~~ | — | — | **Changed in the release that closed [#390](https://github.com/developerz-ai/ultimate/issues/390).** It was `'precache' \| 'runtime' \| 'network-only'`, an app-wide default for a field `defineRoute` makes **required** on every route — so it defaulted nothing and was read by nobody. Migration: `offline: 'runtime'` → `offline: { fallback: '/offline' }`, plus a route at that path ([Upgrading](Upgrading)) |
 | `pwa.backgroundSync` | `boolean` | `false` | **read**. The emitted worker's `sync` event posts `OUTBOX_DRAIN_MESSAGE` to every open tab, which drains realtime's outbox (21.0.0) |
-| `pwa.push` | `boolean` | `false` | **read, and it wires nothing yet** — `generateServiceWorker` emits a push handler only when a VAPID key comes with the capability, and there is no `pwa.vapid` key. Setting it makes `x build --json` report a `serviceWorkerWarnings` entry saying so, rather than leaving the switch quietly inert |
+| `pwa.push` | `boolean` | `false` | **read** `As of 26.1.0` — Web Push, end to end: every role's boot resolves the VAPID pair and installs the push runtime (refused with `X_PWA_VAPID_KEY_MISSING` in a deployed environment with no keys), `sw.js` carries the `push` and `notificationclick` handlers, every document carries `<meta name="x-push-key">`, and `pushSubscribe()` / `pushUnsubscribe()` / `webPush()` work. **Requires `pwa.vapid`.** A static export has no runtime behind it, so it emits no handler and says so in `serviceWorkerWarnings`. [Notify](Notify#push) |
+| `pwa.vapid.subject` | `string` | — | **read** — `mailto:` or an `https:` URL: who a push service writes to about this server (RFC 8292). **Required when `pwa.push` is true, refused when it is false** (a key with no reader). The KEYS are never config: `ULTIMATE_VAPID_PUBLIC_KEY` and `ULTIMATE_VAPID_PRIVATE_KEY` are environment variables, sealed together by `x vapid create`, because a public key in committed config and a private key per deploy are two places that can disagree. A development or test process with neither set signs with a published development pair |
 | ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Refused at boot since 25.0.0 (`X_CONFIG_INVALID`, naming the replacement). Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `installController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `installController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
 ## `navigation`

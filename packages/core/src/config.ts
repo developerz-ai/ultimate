@@ -20,7 +20,7 @@ import { type Input, lastSaid, layered } from './config-merge';
 import type { NavigationConfig, NavigationSectionInput } from './config-navigation';
 import { mergeNavigation, navigationIssues } from './config-navigation';
 import type { PwaConfig, PwaOfflineConfig } from './config-pwa';
-import { PWA_FIX, pwaIssues } from './config-pwa';
+import { PWA_FIX, PWA_PUSH_FIX, pwaIssues, pwaPushIssues } from './config-pwa';
 import { removedKeyFix, removedKeyIssue, removedKeysIn } from './config-removed';
 import {
   booleanIssue,
@@ -318,6 +318,7 @@ function validate(config: AppConfig): void {
   // What an install needs, asked at BOOT and not at emit — `config-pwa.ts` owns the rules and the
   // remedy: `pwa.enabled` turning four other requirements on is a question about that block alone.
   if (pwaIssues(config.pwa, issues)) pwaFix.push(PWA_FIX);
+  if (pwaPushIssues(config.pwa, issues)) pwaFix.push(PWA_PUSH_FIX);
   siteIssues(config, issues);
   navigationIssues(config, issues);
   islandsIssues(config, issues);
