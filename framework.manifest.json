@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "8c6669a83519174756796b3155bc981fae8db4e0ebfbff96935f97de4070a711",
+  "buildId": "16f0de4031d110d69d52b14ba33a46d15b90450f8a1ccb346576877739e5265c",
   "tiers": {
     "0": [
       "core",
@@ -2906,6 +2906,11 @@
     },
     {
       "code": "X_PWA_PUSH_FAILED",
+      "owner": "pwa",
+      "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_PWA_PUSH_HOST_UNLISTED",
       "owner": "pwa",
       "at": "packages/pwa/src/errors.ts"
     },

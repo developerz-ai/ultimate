@@ -15,10 +15,9 @@ import { action } from '@ultimat3/action';
 import type { KnownPermission, PolicyArgs, PolicyDecision } from '@ultimat3/policy';
 import { can, denied } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { PwaPushSubscriptionInvalidError } from './errors';
 import { subscriptionKeyBytes } from './push-encrypt';
 import { webPushRuntime } from './push-runtime';
-import { pushEndpointProblem } from './push-send';
+import { assertPushEndpoint } from './push-send';
 
 /** `PushSubscription.toJSON()`, plus the two facts a server-rendered notification needs. */
 const subscribeInput = () =>
@@ -68,10 +67,9 @@ export function pushSubscribe(
     idempotent: true,
     async handle({ input, ctx }) {
       const runtime = webPushRuntime('pushSubscribe');
-      const problem = pushEndpointProblem(input.endpoint);
-      if (problem !== undefined) {
-        throw new PwaPushSubscriptionInvalidError({ field: 'endpoint', reason: problem });
-      }
+      // Refused before it is stored: an endpoint is where this server will POST, and only a push
+      // service the app sends to is ever one (`push-hosts.ts`).
+      assertPushEndpoint(input.endpoint, runtime.pushHosts);
       // Refused HERE rather than at the first send: a key no message can be encrypted for is a
       // subscription that fails every notification, silently, on a device that thinks it is on.
       subscriptionKeyBytes(input.keys);

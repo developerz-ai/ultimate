@@ -64,6 +64,7 @@ export async function pushToActor(
         fetch: runtime.fetch,
         clock: runtime.clock,
         signal,
+        pushHosts: runtime.pushHosts,
       });
       if (outcome.kind === 'gone') {
         await runtime.store.remove(subscription.endpoint);
@@ -81,7 +82,11 @@ export async function pushToActor(
       // A stored subscription no send will ever reach is deleted, so the next notification does
       // not pay for it again: a malformed key, or a 401/403 — made with a VAPID key this server no
       // longer signs with. That browser re-subscribes under the new key the next time it asks.
-      if (error.code === 'X_PWA_PUSH_SUBSCRIPTION_INVALID' || unreachableUnderThisKey(error)) {
+      if (
+        error.code === 'X_PWA_PUSH_SUBSCRIPTION_INVALID' ||
+        error.code === 'X_PWA_PUSH_HOST_UNLISTED' ||
+        unreachableUnderThisKey(error)
+      ) {
         await runtime.store.remove(subscription.endpoint);
       }
       logger.error('pwa.push.refused', { code: error.code, cause: error.cause, fix: error.fix });

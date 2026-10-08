@@ -24,6 +24,8 @@ export interface WebPushOptions {
   readonly subject: string;
   readonly fetch?: typeof fetch | undefined;
   readonly clock?: Clock | undefined;
+  /** `pwa.vapid.pushHosts`: push services beyond the built-in list, at subscribe and at send. */
+  readonly pushHosts?: readonly string[] | undefined;
   /**
    * The catalog a subscriber's locale renders from. `@ultimat3/i18n`'s `translatorFor` — the app's
    * registered catalogs — unless a test hands its own.
@@ -37,6 +39,7 @@ export interface WebPushRuntime {
   readonly fetch: typeof fetch;
   readonly clock: Clock;
   readonly translate: (locale: string) => Translate;
+  readonly pushHosts: readonly string[];
 }
 
 let installed: WebPushRuntime | undefined;
@@ -54,6 +57,7 @@ export async function installWebPush(options: WebPushOptions): Promise<() => voi
     fetch: options.fetch ?? fetch,
     clock: options.clock ?? systemClock,
     translate: options.translate ?? ((locale) => translatorFor(locale)),
+    pushHosts: options.pushHosts ?? [],
   };
   installed = runtime;
   return () => {

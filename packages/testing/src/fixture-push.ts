@@ -63,6 +63,8 @@ export async function testPush(): Promise<TestPush> {
     keys: pwa.DEV_VAPID_KEYS,
     subject: 'mailto:push@example.test',
     fetch: pushService,
+    // The stub push service's host: not a real one, so the app's list names it, as an app would.
+    pushHosts: [new URL(PUSH_SERVICE).hostname],
     // The clock the `clock` fixture moves — never the wall clock: a VAPID token's `exp` and a
     // subscription's `expirationTime` are read against it, so `clock.advance('2d')` reaches both.
     clock: { now: frozenNow, monotonic: () => frozenNow().getTime() },

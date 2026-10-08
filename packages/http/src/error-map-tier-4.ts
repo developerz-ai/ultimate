@@ -127,4 +127,6 @@ export const TIER_4_ERROR_STATUS = {
   X_PWA_PUSH_FAILED: 503,
   X_PWA_PUSH_REJECTED: 502,
   X_PWA_PUSH_PAYLOAD_TOO_LARGE: 500,
+  // @ultimat3/pwa — the push endpoint is not on a push service this app sends to
+  X_PWA_PUSH_HOST_UNLISTED: 422,
 } satisfies Readonly<Record<string, number>>;

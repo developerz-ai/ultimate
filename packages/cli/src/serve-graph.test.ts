@@ -220,8 +220,11 @@ const SERVING_ROLE_CEILING = 929;
  * raised 1053 → 1054, measured 1054 (2026-10-08, 26.1.0 browser entry): `pwa/src/skew.ts` —
  * `detectSkew` and `AppUpdateAvailable`, split from `version-skew.ts` so `@ultimat3/pwa/client`
  * carries them without the error table; the web role reaches it through the pwa barrel.
+ * raised 1054 → 1055, measured 1055 (2026-10-08, 26.1.0): `pwa/src/push-hosts.ts` — the push
+ * services the sender may dial, checked at subscribe and at send (an endpoint from a request body
+ * resolves wherever its owner points it), reached through `push-send.ts`.
  */
-const WEB_ROLE_CEILING = 1054;
+const WEB_ROLE_CEILING = 1055;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

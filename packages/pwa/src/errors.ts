@@ -24,6 +24,7 @@ export const PWA_OWNED_ERROR_CODES = [
   'X_PWA_PUSH_REJECTED',
   'X_PWA_PUSH_PAYLOAD_TOO_LARGE',
   'X_PWA_PUSH_SUBSCRIPTION_INVALID',
+  'X_PWA_PUSH_HOST_UNLISTED',
 ] as const;
 
 /**
@@ -55,6 +56,7 @@ export const PWA_ERROR_TITLES: Readonly<Record<PwaOwnedErrorCode, string>> = {
   X_PWA_PUSH_REJECTED: 'the push service refused the message and will refuse it again',
   X_PWA_PUSH_PAYLOAD_TOO_LARGE: 'the push message does not fit one 4096-byte record',
   X_PWA_PUSH_SUBSCRIPTION_INVALID: 'the push subscription is not one a browser produced',
+  X_PWA_PUSH_HOST_UNLISTED: 'the push endpoint is not on a push service this app sends to',
 };
 
 // One unconditional call, so a second package claiming one of pwa's codes throws
@@ -154,6 +156,7 @@ registerErrorRetry({
   X_PWA_PUSH_REJECTED: 'terminal',
   X_PWA_PUSH_PAYLOAD_TOO_LARGE: 'terminal',
   X_PWA_PUSH_SUBSCRIPTION_INVALID: 'terminal',
+  X_PWA_PUSH_HOST_UNLISTED: 'terminal',
   X_PWA_VAPID_KEY_MISSING: 'terminal',
   X_PWA_VAPID_KEY_INVALID: 'terminal',
   X_PWA_PUSH_UNCONFIGURED: 'terminal',
@@ -262,6 +265,24 @@ export class PwaPushSubscriptionInvalidError extends UltimateError {
       cause: `${input.field} ${input.reason}`,
       fix: "import { subscribeToPush } from '@ultimat3/pwa/client';   // it sends PushSubscription.toJSON() unchanged",
       meta: { field: input.field },
+    });
+  }
+}
+
+/**
+ * An endpoint whose host is not a push service this app sends to. The endpoint arrives in a request
+ * body, and a hostname can resolve anywhere — a private address, the metadata service — so the one
+ * screen that holds is a list of the services themselves (`push-hosts.ts`), not a check of where a
+ * name points today.
+ */
+export class PwaPushHostUnlistedError extends UltimateError {
+  static readonly code = 'X_PWA_PUSH_HOST_UNLISTED' as const;
+  constructor(input: { host: string }) {
+    super({
+      code: PwaPushHostUnlistedError.code,
+      cause: `the endpoint's host ${input.host} is neither a built-in push service (PUSH_SERVICE_HOSTS: FCM, Mozilla, Apple, WNS, or a subdomain of one) nor listed in pwa.vapid.pushHosts`,
+      fix: "vapid: { subject: 'mailto:ops@example.com', pushHosts: ['push.example.com'] }   # pwa.vapid.pushHosts in app.config.ts, for a push service the built-in list does not name",
+      meta: { host: input.host },
     });
   }
 }

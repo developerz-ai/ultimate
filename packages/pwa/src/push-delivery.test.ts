@@ -151,6 +151,7 @@ describe('integration · a push, from pushToActor to the device', () => {
       expirationTime: null,
     });
     await installWebPush({
+      pushHosts: ['push.example.test'],
       store,
       keys: DEV_VAPID_KEYS,
       subject: 'mailto:ops@example.test',

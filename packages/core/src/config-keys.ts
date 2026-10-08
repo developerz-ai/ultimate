@@ -52,7 +52,7 @@ export const SECTION_KEYS: Readonly<Record<string, readonly string[]>> = Object.
     'shortcuts',
     'screenshots',
   ]),
-  'pwa.vapid': keysOf<PwaVapidConfig>()(['subject']),
+  'pwa.vapid': keysOf<PwaVapidConfig>()(['subject', 'pushHosts']),
   'pwa.colors': keysOf<PwaColors>()(['light', 'dark']),
   'pwa.colors.light': keysOf<PwaSchemeColors>()(['themeColor', 'backgroundColor']),
   'pwa.colors.dark': keysOf<PwaSchemeColors>()(['themeColor', 'backgroundColor']),

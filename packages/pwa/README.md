@@ -164,7 +164,7 @@ export const channel = pushChannel<{ postId: string }>({
 | Travel | `ttlSeconds` (default 86 400), `urgency`, `topic` — RFC 8030 headers; the topic is any string, sent as 32 URL-safe characters of its SHA-256 |
 | 201 / 404, 410 / 429, 5xx / 400, 401, 403, 413 | delivered / subscription deleted / `X_PWA_PUSH_FAILED`, retried by the job after every other device was tried / `X_PWA_PUSH_REJECTED`, logged, never retried — and on 401/403 the subscription is deleted: it was made with a key this server no longer signs with |
 | Key rotation | `subscribeToPush` compares a browser's existing subscription with the page's `x-push-key`; one made with another key is unsubscribed and replaced, never re-saved |
-| Endpoints | dialled only when `https:` to a public host — not `localhost`, not a loopback, private or link-local IP literal: the endpoint came from a request body. One POST waits at most `PUSH_SEND_TIMEOUT_MS` (30 s); a caller's abort is rethrown as is, never the retryable class |
+| Endpoints | dialled only on a push service: `https:`, and a host that is one of `PUSH_SERVICE_HOSTS` (FCM, Mozilla, Apple, WNS) or `pwa.vapid.pushHosts`, or a subdomain of one on a dot boundary — checked when stored and before every send (`assertPushEndpoint`), never by where the name resolves, since the endpoint came from a request body (`X_PWA_PUSH_HOST_UNLISTED`; a stored one is deleted unsent). One POST waits at most `PUSH_SEND_TIMEOUT_MS` (30 s); a caller's abort is rethrown as is, never the retryable class |
 | `renotify` | dropped, with a warning, without a `tag` — at both ends |
 
 ## Error classes

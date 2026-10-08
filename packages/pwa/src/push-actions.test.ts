@@ -42,7 +42,13 @@ async function surface(): Promise<{
   readonly unsubscribe: ReturnType<typeof pushUnsubscribe>;
 }> {
   const store = memoryPushSubscriptionStore();
-  await installWebPush({ store, keys: DEV_VAPID_KEYS, subject: 'mailto:ops@example.test' });
+  await installWebPush({
+    store,
+    keys: DEV_VAPID_KEYS,
+    subject: 'mailto:ops@example.test',
+    // The test's push service is not a real one: listed, as an app lists a self-hosted one.
+    pushHosts: ['fcm.example.test'],
+  });
   const subscribe = registerAction(
     'subscribePush',
     pushSubscribe({ permission: 'push:subscribe' }),
@@ -104,6 +110,11 @@ describe('unit · pushSubscribe / pushUnsubscribe', () => {
     expect(
       await refusal(() => subscribe.as(ana, { ...good, keys: { ...good.keys, auth: 'AAAA' } })),
     ).toBe('X_PWA_PUSH_SUBSCRIPTION_INVALID');
+    // A well-formed https URL on a host that is not a push service — a name that may resolve to
+    // a private address: refused before it is stored, so the sender never meets it.
+    expect(
+      await refusal(() => subscribe.as(ana, { ...good, endpoint: 'https://evil.example/x' })),
+    ).toBe('X_PWA_PUSH_HOST_UNLISTED');
     expect(await store.listFor('ana')).toEqual([]);
   });
 

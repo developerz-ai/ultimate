@@ -11,12 +11,14 @@ import {
 } from '@ultimat3/core';
 import {
   PwaPushFailedError,
+  PwaPushHostUnlistedError,
   PwaPushRejectedError,
   PwaPushSubscriptionInvalidError,
 } from './errors';
 import { encodeBase64Url } from './push-bytes';
 import type { PushEncryptionKeys } from './push-encrypt';
 import { encryptPushMessage } from './push-encrypt';
+import { pushHostAllowed } from './push-hosts';
 import { vapidAuthorization } from './vapid';
 
 /** RFC 8030 §5.3. `high` wakes a sleeping phone; reserve it for what a person is waiting on. */
@@ -60,6 +62,8 @@ export interface PushSendInput {
   readonly fetch?: typeof fetch | undefined;
   readonly clock?: Clock | undefined;
   readonly signal?: AbortSignal | undefined;
+  /** `pwa.vapid.pushHosts`: push services beyond the built-in list (`push-hosts.ts`). */
+  readonly pushHosts?: readonly string[] | undefined;
 }
 
 export type PushSendOutcome =
@@ -104,12 +108,24 @@ const ttlOf = (delivery: PushDelivery | undefined): number => {
   return Number.isFinite(ttl) && ttl >= 0 ? Math.floor(ttl) : DEFAULT_PUSH_TTL_SECONDS;
 };
 
-/** Delivered, gone, or a coded throw: `X_PWA_PUSH_FAILED` (retry) / `X_PWA_PUSH_REJECTED` (don't). */
-export async function sendPushMessage(input: PushSendInput): Promise<PushSendOutcome> {
-  const problem = pushEndpointProblem(input.target.endpoint);
+/**
+ * The screen an endpoint passes before it is stored and before every send: a well-formed public
+ * `https:` URL (`X_PWA_PUSH_SUBSCRIPTION_INVALID`) on a push service this app sends to
+ * (`X_PWA_PUSH_HOST_UNLISTED`). The list, not the name's shape, is what stops a hostname that
+ * resolves to a private address: shape alone is checked before DNS, and DNS answers the attacker.
+ */
+export function assertPushEndpoint(endpoint: string, pushHosts: readonly string[] = []): void {
+  const problem = pushEndpointProblem(endpoint);
   if (problem !== undefined) {
     throw new PwaPushSubscriptionInvalidError({ field: 'endpoint', reason: problem });
   }
+  const host = new URL(endpoint).hostname;
+  if (!pushHostAllowed(host, pushHosts)) throw new PwaPushHostUnlistedError({ host });
+}
+
+/** Delivered, gone, or a coded throw: `X_PWA_PUSH_FAILED` (retry) / `X_PWA_PUSH_REJECTED` (don't). */
+export async function sendPushMessage(input: PushSendInput): Promise<PushSendOutcome> {
+  assertPushEndpoint(input.target.endpoint, input.pushHosts);
   const origin = new URL(input.target.endpoint).origin;
   const body = await encryptPushMessage(input.target.keys, input.plaintext);
   const headers: Record<string, string> = {

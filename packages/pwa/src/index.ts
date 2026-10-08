@@ -31,6 +31,7 @@ export {
   // two X_PWA_SYNC_* classes are not here on purpose: the emitted `sw.js` builds its own local
   // class in a realm with no bundler, so no instance of theirs can ever reach an app.
   PwaPushFailedError,
+  PwaPushHostUnlistedError,
   PwaPushPayloadTooLargeError,
   PwaPushRejectedError,
   PwaPushSubscriptionInvalidError,
@@ -120,6 +121,7 @@ export type { PushReceiverKeys } from './push-decrypt';
 export { decryptPushMessage } from './push-decrypt';
 export type { PushEncryptionKeys, PushEncryptOptions } from './push-encrypt';
 export { encryptPushMessage, PUSH_RECORD_SIZE, pushMessageCapacity } from './push-encrypt';
+export { PUSH_SERVICE_HOSTS, pushHostAllowed } from './push-hosts';
 export type { WebPushOptions, WebPushRuntime } from './push-runtime';
 export { installedVapid, installWebPush, resetWebPush, webPushRuntime } from './push-runtime';
 export type {
@@ -131,6 +133,7 @@ export type {
   VapidSigner,
 } from './push-send';
 export {
+  assertPushEndpoint,
   DEFAULT_PUSH_TTL_SECONDS,
   PUSH_SEND_TIMEOUT_MS,
   PUSH_URGENCIES,

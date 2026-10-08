@@ -72,6 +72,48 @@ describe('defineConfig · pwa.push and pwa.vapid', () => {
     }
   });
 
+  test('pwa.vapid.pushHosts takes bare host names, and refuses what would reopen the hole', () => {
+    const config = defineConfig({
+      name: 'myapp',
+      pwa: {
+        ...INSTALLABLE,
+        push: true,
+        vapid: { subject: 'mailto:ops@example.com', pushHosts: ['push.example.com'] },
+      },
+    });
+    expect(config.pwa.vapid?.pushHosts).toEqual(['push.example.com']);
+    for (const host of [
+      'https://push.example.com',
+      '*.example.com',
+      'push.example.com:443',
+      'push.example.com/x',
+      'localhost',
+      'app.localhost',
+      '127.0.0.1',
+      '10.0.0.7',
+      '[::1]',
+      '',
+    ]) {
+      expect(
+        refusal({
+          ...INSTALLABLE,
+          push: true,
+          vapid: { subject: 'mailto:ops@example.com', pushHosts: [host] },
+        }).cause,
+      ).toContain('pwa.vapid.pushHosts contains');
+    }
+    expect(
+      refusal({
+        ...INSTALLABLE,
+        push: true,
+        vapid: {
+          subject: 'mailto:ops@example.com',
+          pushHosts: 'push.example.com' as unknown as string[],
+        },
+      }).cause,
+    ).toContain('pwa.vapid.pushHosts must be a list');
+  });
+
   test('vapid without push is a key with no reader, and is refused', () => {
     expect(
       refusal({ ...INSTALLABLE, push: false, vapid: { subject: 'mailto:ops@example.com' } }).cause,

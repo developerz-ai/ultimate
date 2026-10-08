@@ -58,6 +58,13 @@ export interface PwaVapidConfig {
    * Every service requires it; Apple's refuses a token without one.
    */
   readonly subject: string;
+  /**
+   * Push services this app sends to BEYOND the built-in ones (`@ultimat3/pwa`'s
+   * `PUSH_SERVICE_HOSTS`: FCM, Mozilla, Apple, WNS). Host names, each admitting its subdomains —
+   * a self-hosted autopush, a test's stub. An endpoint on any other host is refused when it is
+   * stored and never dialled (`X_PWA_PUSH_HOST_UNLISTED`): it came from a request body.
+   */
+  readonly pushHosts?: readonly string[];
 }
 
 export interface PwaConfig {
@@ -242,6 +249,25 @@ export function pwaIssues(pwa: PwaConfig, issues: string[]): boolean {
 export const PWA_PUSH_FIX =
   "set pwa.vapid: { subject: 'mailto:ops@example.com' } beside pwa.push: true in app.config.ts — push services write to that address about this server — then x vapid create for the key pair; or set pwa.push: false and delete pwa.vapid";
 
+/**
+ * One `pwa.vapid.pushHosts` entry: a bare DNS name with a dot — no scheme, port, path or wildcard
+ * (a listed name admits its subdomains), never `localhost` or an IP literal, which would hand the
+ * push sender back the hole the list closes. Checked at boot, so `@ultimat3/pwa`'s list holds only
+ * names that passed it.
+ */
+export function pushHostShape(entry: unknown): string | undefined {
+  if (typeof entry !== 'string') return 'is not a string';
+  if (
+    !/^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/i.test(
+      entry,
+    )
+  ) {
+    return 'is not a host name like push.example.com (no scheme, port, path or wildcard)';
+  }
+  if (/\.localhost$/i.test(entry)) return 'names this machine';
+  return undefined;
+}
+
 /** `mailto:someone` or an absolute `https:` URL — RFC 8292's two forms, nothing else. */
 const isVapidSubject = (value: unknown): boolean => {
   if (typeof value !== 'string') return false;
@@ -277,6 +303,22 @@ export function pwaPushIssues(pwa: PwaConfig, issues: string[]): boolean {
     issues.push(
       `pwa.vapid.subject is required when pwa.push is true and must be a mailto: address or an https: URL, and is ${describeValue(subject)}`,
     );
+  }
+  const hosts: unknown =
+    vapid !== null && typeof vapid === 'object'
+      ? (vapid as { pushHosts?: unknown }).pushHosts
+      : undefined;
+  if (hosts !== undefined) {
+    if (!Array.isArray(hosts)) {
+      issues.push(`pwa.vapid.pushHosts must be a list of host names, not ${describeValue(hosts)}`);
+    } else {
+      for (const host of hosts as readonly unknown[]) {
+        const problem = pushHostShape(host);
+        if (problem !== undefined) {
+          issues.push(`pwa.vapid.pushHosts contains ${describeValue(host)}, which ${problem}`);
+        }
+      }
+    }
   }
   return issues.length > before;
 }

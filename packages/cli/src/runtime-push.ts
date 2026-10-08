@@ -23,6 +23,8 @@ export function pushSubjectOf(config: AppConfig | undefined): string | undefined
 export interface PushSelection {
   readonly subject: string;
   readonly resolved: ResolvedVapidKeys;
+  /** `pwa.vapid.pushHosts`: push services beyond the built-in list. */
+  readonly pushHosts: readonly string[];
 }
 
 /**
@@ -48,7 +50,11 @@ export async function selectWebPush(
     return undefined;
   }
   const { resolveVapidKeys } = await import('@ultimat3/pwa');
-  return { subject, resolved: await resolveVapidKeys(env) };
+  return {
+    subject,
+    resolved: await resolveVapidKeys(env),
+    pushHosts: config?.pwa.vapid?.pushHosts ?? [],
+  };
 }
 
 /** Install the runtime over the boot's executor; answers its release. */
@@ -69,5 +75,6 @@ export async function installAppWebPush(
     store: postgresPushSubscriptionStore({ executor }),
     keys: selection.resolved.keys,
     subject: selection.subject,
+    pushHosts: selection.pushHosts,
   });
 }
