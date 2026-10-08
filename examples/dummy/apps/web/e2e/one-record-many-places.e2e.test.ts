@@ -307,7 +307,9 @@ describe.skipIf(noBrowser)('one record, many places: the echo and the runtime', 
       const scripts = loaded
         .map(String)
         .filter((url) => new URL(url).origin === origin && new URL(url).pathname.endsWith('.js'));
-      const boots = scripts.filter((url) => new URL(url).pathname.startsWith('/_x/page-boot/'));
+      const boots = scripts.filter((url) =>
+        new URL(url).pathname.startsWith('/_x/assets/page-boot/'),
+      );
       const islands = scripts.filter((url) => new URL(url).pathname.startsWith('/islands/'));
       expect(boots).toHaveLength(1);
       expect(islands.length).toBeGreaterThanOrEqual(2);

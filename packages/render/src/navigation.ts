@@ -10,8 +10,9 @@
  * over instead of letting `fetch` follow it, and a POST is never re-submitted — after a failed
  * one, only the server knows what landed.
  *
- * Loaded as one deferred classic script (`@ultimat3/cli` builds it to `/_x/navigation/<hash>.js`)
- * on documents whose surface opted in (`navigation: { client: [...] }` in `app.config.ts`).
+ * Loaded as one deferred classic script (`@ultimat3/cli` builds it to
+ * `/_x/assets/navigation/<hash>.js`) on documents whose surface opted in (`navigation: { client:
+ * [...] }` in `app.config.ts`).
  */
 
 import { navigationCache } from './navigation-cache';

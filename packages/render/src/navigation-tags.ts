@@ -14,7 +14,7 @@ export interface ClientNavigationHead {
   /** The surface this document belongs to — a link that lands on another is a full load. */
   readonly surface: string;
   readonly buildId: string;
-  /** `/_x/navigation/<hash>.js`, content-addressed and served `immutable`. */
+  /** `/_x/assets/navigation/<hash>.js`, content-addressed and served `immutable`. */
   readonly scriptUrl: string;
   /** The route declared `navigation: 'modal'`: the router shows it over the page beneath. */
   readonly modal?: boolean;

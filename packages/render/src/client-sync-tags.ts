@@ -11,7 +11,7 @@ export interface ClientSyncHead {
   readonly syncUrl: string;
   readonly buildId: string;
   readonly workerUrl?: string | undefined;
-  /** `/_x/page-boot/<hash>.js` — realtime's page boot, when the app has realtime. */
+  /** `/_x/assets/page-boot/<hash>.js` — realtime's page boot, when the app has realtime. */
   readonly bootUrl?: string | undefined;
 }
 

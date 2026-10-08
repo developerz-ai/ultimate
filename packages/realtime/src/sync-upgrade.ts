@@ -115,8 +115,25 @@ export interface UpgradeDeps {
 /**
  * `undefined` means the upgrade took and Bun owns the connection now. Async because `authenticate`
  * is: the credential is decided *before* `server.upgrade`, so a refused one never costs a websocket.
+ *
+ * Every answer that is NOT a socket is `no-store`, whatever it is: a response with no
+ * `cache-control` is one a CDN applies its own default TTL to, and this role sits behind an
+ * operator's routing rule that can send it what it does not serve — a page asset misrouted here
+ * came back `404 not found`, and the edge kept that miss for four hours after the fix.
  */
 export async function handleUpgrade(
+  deps: UpgradeDeps,
+  request: Request,
+  server: UpgradeTarget,
+): Promise<Response | undefined> {
+  const response = await answerUpgrade(deps, request, server);
+  if (response !== undefined && !response.headers.has('cache-control')) {
+    response.headers.set('cache-control', 'no-store');
+  }
+  return response;
+}
+
+async function answerUpgrade(
   deps: UpgradeDeps,
   request: Request,
   server: UpgradeTarget,

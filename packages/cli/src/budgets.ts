@@ -212,7 +212,8 @@ export async function readBuildStats(root: string): Promise<BuildStats | undefin
 export interface MeasureOptions {
   /**
    * Scripts a document names that the PROCESS serves and the static artifact does not carry, by
-   * URL: the page boot (`/_x/page-boot/<id>.js`). Charged like any `<script src>` — ledger #28.
+   * URL: the page boot (`/_x/assets/page-boot/<id>.js`). Charged like any `<script src>` —
+   * ledger #28.
    */
   readonly served?: ReadonlyMap<string, string>;
   /**

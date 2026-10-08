@@ -202,7 +202,7 @@ export function mount(): void {
     const row = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/live');
     const urls = (row?.charged ?? []).map((one) => one.url);
 
-    expect(urls.some((url) => url.startsWith('/_x/page-boot/'))).toBe(true);
+    expect(urls.some((url) => url.startsWith('/_x/assets/page-boot/'))).toBe(true);
     expect(urls.some((url) => url.startsWith('/islands/live-'))).toBe(true);
     expect(urls.some(isRuntimeChunk)).toBe(false);
   });
@@ -220,6 +220,6 @@ export function mount(): void {
     const urls = (row?.charged ?? []).map((one) => one.url);
 
     expect(urls.some(isRuntimeChunk)).toBe(true);
-    expect(urls.some((url) => url.startsWith('/_x/page-boot/'))).toBe(false);
+    expect(urls.some((url) => url.startsWith('/_x/assets/page-boot/'))).toBe(false);
   });
 });

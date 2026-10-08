@@ -26,9 +26,11 @@ test('the scripts it serves are the scripts it hands the service worker to preca
   // The checkout's own realtime resolves from here, so both scripts are built.
   const sync = await pageSync(`${import.meta.dir}/../../realtime`, {}, 'build-under-test', ON);
   const urls = sync.scripts.map((script) => script.url);
-  expect(urls.some((url) => url.startsWith('/_x/page-boot/'))).toBe(true);
-  expect(urls.some((url) => url.startsWith('/_x/sync-worker/'))).toBe(true);
-  expect(sync.head?.bootUrl).toBe(urls.find((url) => url.startsWith('/_x/page-boot/')) ?? '');
+  expect(urls.some((url) => url.startsWith('/_x/assets/page-boot/'))).toBe(true);
+  expect(urls.some((url) => url.startsWith('/_x/assets/sync-worker/'))).toBe(true);
+  expect(sync.head?.bootUrl).toBe(
+    urls.find((url) => url.startsWith('/_x/assets/page-boot/')) ?? '',
+  );
 });
 
 // Reported by an app with `realtime: { enabled: false }`: no sync node is started (`role-realtime.ts`),

@@ -9,9 +9,13 @@ import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { processRoot } from './process-root-fixture';
+import { SYNC_PATH, SYNC_PROXY_PATTERN } from './sync-url';
 import {
   buildPageBoot,
   buildSyncWorker,
+  FRAMEWORK_ASSET_BASE_PATH,
+  NAVIGATION_BASE_PATH,
+  navigationRoutes,
   PAGE_BOOT_BASE_PATH,
   pageBootRoutes,
   SYNC_WORKER_BASE_PATH,
@@ -100,6 +104,36 @@ describe('syncWorkerRoutes', () => {
     );
 
     expect(response.status).toBe(404);
+    // Never a cacheable miss: a CDN that kept it would serve the 404 for hours after the fix.
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+});
+
+describe('every framework script lives under the ONE asset prefix, and outside the socket', () => {
+  const script = { url: '', code: '', bytes: 0 };
+  const routes = [
+    ...syncWorkerRoutes(() => script),
+    ...pageBootRoutes(() => script),
+    ...navigationRoutes(() => script),
+  ];
+
+  test('each route and each URL it serves is under /_x/assets/', () => {
+    for (const base of [SYNC_WORKER_BASE_PATH, PAGE_BOOT_BASE_PATH, NAVIGATION_BASE_PATH]) {
+      expect(base.startsWith(`${FRAMEWORK_ASSET_BASE_PATH}/`)).toBe(true);
+      expect(`${base}/0123abcd.js`.startsWith(`${FRAMEWORK_ASSET_BASE_PATH}/`)).toBe(true);
+    }
+    for (const route of routes)
+      expect(route.path.startsWith(`${FRAMEWORK_ASSET_BASE_PATH}/`)).toBe(true);
+  });
+
+  test("a proxy's rule for the socket — ^/_x/sync(/.*)?$ — catches the socket and no script", () => {
+    expect(SYNC_PROXY_PATTERN.test(SYNC_PATH)).toBe(true);
+    expect(SYNC_PROXY_PATTERN.test(`${SYNC_PATH}/anything`)).toBe(true);
+    for (const base of [SYNC_WORKER_BASE_PATH, PAGE_BOOT_BASE_PATH, NAVIGATION_BASE_PATH]) {
+      expect(SYNC_PROXY_PATTERN.test(`${base}/0123abcd.js`)).toBe(false);
+      // The operator's looser prefix rule, too: `^/_x/sync` with no end anchor.
+      expect(/^\/_x\/sync/.test(`${base}/0123abcd.js`)).toBe(false);
+    }
   });
 });
 

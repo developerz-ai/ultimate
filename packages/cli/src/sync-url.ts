@@ -12,6 +12,15 @@ import { ConfigInvalidError } from '@ultimat3/core';
 export const SYNC_PATH = '/_x/sync';
 
 /**
+ * Exactly what a proxy routes to the `sync` role: the socket's path, and anything under it. No
+ * other framework route matches it — scripts live under `FRAMEWORK_ASSET_BASE_PATH`
+ * (`/_x/assets/…`) — so an operator's ordinary prefix rule can never swallow a page's asset.
+ * `wiki/Deployment.md` prints this pattern; `worker-bundle.test.ts` holds every framework route
+ * outside it.
+ */
+export const SYNC_PROXY_PATTERN = /^\/_x\/sync(\/.*)?$/;
+
+/**
  * `SYNC_URL` verbatim when the deployment states one — the Compose rung publishes `sync` on its
  * own port with no proxy in front, so only the deployment knows that URL — else `SYNC_PATH`,
  * resolved by the browser against its own origin. Never derived from a port: behind any ingress a

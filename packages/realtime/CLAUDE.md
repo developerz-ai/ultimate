@@ -284,7 +284,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## The page boot
 
-- **The disk boot is ONE page script (`boot.ts`, `./boot`)**, served at `/_x/page-boot/<hash>.js`
+- **The disk boot is ONE page script (`boot.ts`)**, at `/_x/assets/page-boot/<hash>.js`
   on a document with the scope tag and a realtime island; it installs the runtime, wipes every other
   principal's stored scope (read at the wipe), then restores. `booted` reads its promise off
   `Symbol.for('ultimate.page-boot')`. No boot: islands load its chunk.

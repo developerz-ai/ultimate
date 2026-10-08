@@ -7,8 +7,8 @@ import { deferredScriptsPending, peekPageRealtime } from './page-store';
 
 export interface AwaitPageRuntimeOptions {
   /**
-   * The path every page boot is served under (`/_x/page-boot/`). A `<script>` whose `src` starts
-   * with it is the boot this document carries, and the runtime is coming with it.
+   * The path every page boot is served under (`/_x/assets/page-boot/`). A `<script>` whose `src`
+   * starts with it is the boot this document carries, and the runtime is coming with it.
    */
   readonly boot: string;
   /** Imports the runtime chunk — only on a page whose boot is absent, or never ran. */

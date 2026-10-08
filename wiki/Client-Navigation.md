@@ -56,7 +56,7 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 |---|---|
 | `<meta name="ultimate-navigation" content="<app>:<surface>">` | which router may swap it in. The app's `name` is part of it, so two apps on one origin (web and admin) never swap each other's pages |
 | `<meta name="x-ultimate-build" content="…">` | the skew check |
-| `<script src="/_x/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
+| `<script src="/_x/assets/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
 
 **Budget:** the router is 24,058 B minified (8,836 B gzip) `As of 26.1.0` — 19,966 B before
 route-presented modals and navigating from code (+4,092 B). It is **charged** to
