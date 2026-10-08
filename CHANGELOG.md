@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 26.1.0 - 2026-10-08
+
 ### Added
 
 Tier 4 — pwa, notify; tier 5 — cli, testing.
@@ -33,6 +37,10 @@ Tier 3 — realtime; tier 5 — cli.
 
 - **The sync worker no longer shares a prefix with the socket: framework scripts live under `/_x/assets/`.** The worker was served at `/_x/sync-worker/<hash>.js`, so a proxy rule an operator writes for the socket (`^/_x/sync` → the sync role) sent it to a process that serves only the socket: no page got its shared worker, so no realtime. Every framework-served, content-addressed script now lives under one asset prefix no live endpoint shares, the Rails way — `/_x/assets/sync-worker/<hash>.js`, `/_x/assets/page-boot/<hash>.js`, `/_x/assets/navigation/<hash>.js`, still `immutable` and a new URL per build (`FRAMEWORK_ASSET_BASE_PATH`; `worker-bundle.test.ts` holds every one outside `^/_x/sync(/.*)?$`). Old URLs are not served: each named one build's file. [Deployment](https://github.com/developerz-ai/ultimate/wiki/Deployment#routing-a-proxy-to-the-sync-role) gives the exact rule: `^/_x/sync(/.*)?$` to `sync`, everything else to `web`.
 - **Every answer of the sync role that is not a socket is `cache-control: no-store`.** Its `404 not found` (and its `426` and shed `503`) carried no `cache-control`, so a CDN applied its default TTL — Cloudflare kept the misrouted worker's 404 for four hours after the routing was fixed. A miss on a framework script's content-addressed URL says `no-store` itself too.
+
+### Commits
+
+- feat: route-presented modals, navigate() from code, Web Push end to end (26.1.0) (#716)
 
 ## 26.0.0 - 2026-10-08
 
