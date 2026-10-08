@@ -10,7 +10,12 @@ loaders that make an app's `.tsx` and `.scss` runnable**.
 `node:url`, which a browser build cannot link; no `sideEffects` value repairs that). Never re-export
 a name from both barrels: `index.test.ts` asserts the empty name intersection and that `index.ts`'s
 runtime import graph reaches none of those seven modules; `scripts/browser-barrel.test.ts` holds
-the end property.
+the end property. **`"./client"` (`client.ts`) is THE browser entry** for what an island calls
+(`navigate`, `refresh`, `openModal`, `closeModal`, the modal refusal, the three event names): its
+graph never reaches `errors.ts` (the barrel's `sideEffects` keeps that table in every chunk), held
+by `client-bundle.test.ts`. A name there stays on `.` too (additive); a refusal it can construct
+lives in its own module over `@ultimat3/core/page`'s `UltimateError` (`navigation-errors.ts`) and
+`errors.ts` re-exports it — one class, never two.
 
 `island()` is a **factory over the route's own `hydrate`**, not a ninth primitive and not a second
 render mode. It adds no key to `defineRoute`.

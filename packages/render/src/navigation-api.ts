@@ -7,8 +7,8 @@
  * only: an island that navigates never ships the router.
  */
 
-import { NavigationModalPathInvalidError } from './errors';
 import type { NavigationRouter } from './navigation';
+import { NavigationModalPathInvalidError } from './navigation-errors';
 import { modalAddress } from './navigation-modal-rules';
 
 export interface NavigateToOptions {

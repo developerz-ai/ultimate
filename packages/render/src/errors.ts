@@ -222,17 +222,10 @@ export class RouteNavigationInvalidError extends UltimateError {
   }
 }
 
-/** `openModal(path)` with a path no hash can address on this origin. Thrown in the browser. */
-export class NavigationModalPathInvalidError extends UltimateError {
-  static readonly code = 'X_NAVIGATION_MODAL_PATH_INVALID' as const;
-  constructor(path: string) {
-    super({
-      code: NavigationModalPathInvalidError.code,
-      cause: `openModal(${JSON.stringify(path)}): a modal is addressed by '#<path>', and this is not an absolute path on this origin`,
-      fix: "openModal('/runs/new') — the modal route's own path, as its link carries it; never a full URL or a relative one",
-    });
-  }
-}
+// `openModal(path)` with a path no hash can address on this origin. Re-exported, never re-declared:
+// the class lives in `navigation-errors.ts` so `@ultimat3/render/client` constructs it without this
+// module's table. One class, so `instanceof` holds from either entry.
+export { NavigationModalPathInvalidError } from './navigation-errors';
 
 export class RouteLoadInvalidError extends UltimateError {
   static readonly code = 'X_ROUTE_LOAD_INVALID' as const;
