@@ -2,8 +2,8 @@
 // because that is the one an agent hits by accident — a typo'd flag, a typo'd command — and it is
 // the one branch that has no `ParsedArgs` to read `--json` off.
 
-import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs'; // why: Bun has no mkdtemp.
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: `node:process`, and unavoidable: the assertion below is about which of the process's OWN
@@ -16,6 +16,17 @@ import { PLANNED_COMMANDS } from './cmd-planned';
 import { dispatch, sinkFor } from './dispatch';
 import type { CommandResult } from './output';
 import { SPECS } from './registry';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+const trackedDirSync = (prefix: string): string => {
+  const dir = mkdtempSync(prefix);
+  madeDirs.push(dir);
+  return dir;
+};
 
 async function run(
   argv: readonly string[],
@@ -41,7 +52,7 @@ const parsed = (out: string): { ok: boolean; findings?: { code: string }[] } =>
 // refusal at all, which is the one thing a declaration exists to make impossible.
 describe('unit · the dispatcher is what enforces requiresApp', () => {
   /** No `app.config.ts` at or above it — `/tmp/x-no-app-*` walks up to `/`. */
-  const outsideAnApp = (): string => mkdtempSync(`${tmpdir()}/x-no-app-`);
+  const outsideAnApp = (): string => trackedDirSync(`${tmpdir()}/x-no-app-`);
 
   // `x secrets set` is the proof BECAUSE it checks its own positional before it resolves a root:
   // outside an app it answered X_CLI_BAD_FLAG — "you left out the name" — about an invocation that

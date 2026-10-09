@@ -341,6 +341,10 @@ const CATALOG = {
     'coverage: this shard measured its own slice — x verify merge folds every shard and judges the floor',
   'cli.verify.serial': 'serial',
   'cli.verify.workers': '{workers} workers',
+  'cli.clean.nothing': 'nothing to clean: no test leftovers under this app',
+  'cli.clean.removed': 'removed {paths} path(s) and {databases} probe database(s)',
+  'cli.clean.would':
+    'would remove {paths} path(s) and {databases} probe database(s) — --dry-run removed nothing',
   'cli.env.checked': '{count} declared variable(s), all present and valid',
   'cli.env.invalid': '{count} of {total} declared variable(s) missing or malformed',
   'cli.env.wrote': 'wrote {path} — {count} declared variable(s)',

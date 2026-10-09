@@ -4,8 +4,8 @@
 // so no test here pays for the `initdb` the cache exists to skip.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-// why: Bun has no temp-directory API, no directory listing, no recursive remove and no chmod.
-import { chmodSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+// why: Bun has no temp-directory API, no directory listing, no recursive remove, no chmod, no utimes.
+import { chmodSync, mkdtempSync, readdirSync, rmSync, utimesSync } from 'node:fs';
 // why: Bun exposes no tmpdir().
 import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
@@ -113,6 +113,31 @@ describe('readSnapshot / writeSnapshot', () => {
     await writeSnapshot(file, key, blobOf('bytes'));
     forgetSnapshot(key);
     expect(await readSnapshot(file, key)).toBeUndefined();
+  });
+});
+
+// #738: one snapshot per PGlite version, and nothing evicted the last version's — a cache that
+// only grows. Writing one keeps it and the newest previous one (a second checkout may still be on
+// the older PGlite), and the rest go.
+describe('writeSnapshot evicts the snapshots of older versions', () => {
+  test('the current one and the newest previous one stay; older ones and other files are kept apart', async () => {
+    for (const [index, version] of ['0.1.0', '0.2.0', '0.3.0'].entries()) {
+      await writeSnapshot(snapshotFile(dir, keyFor(version)), keyFor(version), blobOf(version));
+      // Distinct mtimes, oldest first, whatever the filesystem's resolution.
+      const at = (Date.now() - (3 - index) * 60_000) / 1000;
+      utimesSync(snapshotFile(dir, keyFor(version)), at, at);
+    }
+    await Bun.write(join(dir, 'unrelated.txt'), 'kept');
+    await writeSnapshot(snapshotFile(dir, keyFor('0.4.0')), keyFor('0.4.0'), blobOf('0.4.0'));
+    expect(readdirSync(dir).sort()).toEqual(
+      [
+        snapshotFile(dir, keyFor('0.3.0')),
+        snapshotFile(dir, keyFor('0.4.0')),
+        join(dir, 'unrelated.txt'),
+      ]
+        .map((path) => path.slice(dir.length + 1))
+        .sort(),
+    );
   });
 });
 

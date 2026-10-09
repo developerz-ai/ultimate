@@ -6,7 +6,8 @@
 // why: Bun has no rename and no recursive remove; the write is a temp name then an atomic rename.
 import { rename, rm } from 'node:fs/promises';
 // why: Bun ships no path joiner.
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { evictCacheFiles } from '@ultimat3/core';
 import { PGLITE_PACKAGE } from './pglite-package';
 
 /** Bumped when the file layout below changes, so an old file is a miss rather than a misread. */
@@ -48,6 +49,10 @@ export const snapshotKey = (version: string): string => `${version}-f${SNAPSHOT_
 
 export const snapshotFile = (dir: string, key: string): string =>
   join(dir, `pglite-${key}.snapshot`);
+
+/** A snapshot file of any key, and the temp name `writeSnapshot` writes it under first. */
+const isSnapshot = (name: string): boolean => /^pglite-.+\.snapshot$/.test(name);
+const isSnapshotTemp = (name: string): boolean => /^pglite-.+\.snapshot\..+\.tmp$/.test(name);
 
 /** One snapshot per key for the life of the process: the second scratch boot never touches disk. */
 const memo = new Map<string, Blob>();
@@ -112,7 +117,17 @@ export async function writeSnapshot(file: string, key: string, blob: Blob): Prom
     await rename(temp, file);
   } catch {
     await rm(temp, { force: true }).catch(() => undefined);
+    return;
   }
+  // One file per PGlite version, and nothing else ever removes an old version's (#738): keep this
+  // one and the newest previous one, which a second checkout on the older PGlite may be reading.
+  // A reader loads the whole file in one read and takes a missing one as a miss, so no lock.
+  await evictCacheFiles({
+    dir: dirname(file),
+    current: basename(file),
+    matches: isSnapshot,
+    temporary: isSnapshotTemp,
+  });
 }
 
 export async function discardSnapshot(file: string, key: string): Promise<void> {

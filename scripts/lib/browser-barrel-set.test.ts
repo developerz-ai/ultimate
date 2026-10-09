@@ -1,10 +1,10 @@
 // The derivation, over synthetic trees with a known answer and over this one — so "it names the
 // right packages today" and "it would name a new one tomorrow" stay separate claims.
 
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `mkdtemp` is the only temp-directory API in the runtime, and a synthetic tree is what makes
 // each half of the derivation provable without editing a package another agent holds.
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -20,12 +20,23 @@ import {
 } from './browser-barrel-set';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(async () => {
+  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+const trackedDir = async (prefix: string): Promise<string> => {
+  const dir = await mkdtemp(prefix);
+  madeDirs.push(dir);
+  return dir;
+};
+
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
 // to take minutes, and a test that does has hung.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const tree = (name: string): Promise<string> => mkdtemp(join(tmpdir(), `ultimate-${name}-`));
+const tree = (name: string): Promise<string> => trackedDir(join(tmpdir(), `ultimate-${name}-`));
 
 describe('the seam half', () => {
   /**

@@ -2,12 +2,12 @@
 // detail view, and the error paths — driven against `@ultimat3/jobs`'s real registries so a
 // broken table column or a wrong fix line fails here, not just in `tasks-facts.test.ts`.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API and no path API: `mkdtempSync`/`tmpdir`/`join` are the only
 // way to build the throwaway app root `requireAppRoot` has to find on disk.
 // `mkdirSync`/`writeFileSync` stay with them because `Bun.write` is async and these run inside
 // synchronous fixture helpers.
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -29,8 +29,19 @@ import type { CommandContext } from './command';
 import { msg } from './messages';
 import type { ThrownShape } from './thrown-by-fixture';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+const trackedDirSync = (prefix: string): string => {
+  const dir = mkdtempSync(prefix);
+  madeDirs.push(dir);
+  return dir;
+};
+
 function appRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'x-tasks-'));
+  const dir = trackedDirSync(join(tmpdir(), 'x-tasks-'));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 }

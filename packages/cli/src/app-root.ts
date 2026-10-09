@@ -1,11 +1,11 @@
 // Locating the app. `app.config.ts` is the one config file, so it is also the one root marker —
 // commands that need an app resolve it here and nowhere else, and the failure names the fix.
 
-import { existsSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import { APP_CONFIG_FILE, appDirOf } from '@ultimat3/core';
 import { BunVersionError, NotInAppError } from './errors';
 
-export const APP_CONFIG_FILE = 'app.config.ts';
+export { APP_CONFIG_FILE };
 
 /**
  * The one file `defineApi` is called from in a scaffolded app — here, beside the config file, so
@@ -46,18 +46,12 @@ export interface AppRoot {
   readonly manifestPath: string;
 }
 
-/** Walk up from `from` looking for `app.config.ts`. Returns undefined outside an app. */
+/** Walk up from `from` looking for `app.config.ts` (core's `appDirOf`). Undefined outside an app. */
 export function findAppRoot(from: string): AppRoot | undefined {
-  let dir = resolve(from);
-  for (;;) {
-    const configPath = join(dir, APP_CONFIG_FILE);
-    if (existsSync(configPath)) {
-      return { dir, configPath, manifestPath: join(dir, MANIFEST_FILE) };
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
+  const dir = appDirOf(from);
+  return dir === undefined
+    ? undefined
+    : { dir, configPath: join(dir, APP_CONFIG_FILE), manifestPath: join(dir, MANIFEST_FILE) };
 }
 
 export function requireAppRoot(command: string, from: string): AppRoot {

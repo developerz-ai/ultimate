@@ -3,9 +3,9 @@
 // while a slow UPDATE runs against a database still serving the previous build, which is the one
 // arrangement this file exists to keep out.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, and Bun.write is async in these synchronous fixture helpers.
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -19,6 +19,17 @@ import { parseArgs } from './parse';
 import { SPECS } from './registry';
 import { names } from './templates/naming';
 import { containerFiles } from './templates/scaffold-container';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+const trackedDirSync = (prefix: string): string => {
+  const dir = mkdtempSync(prefix);
+  madeDirs.push(dir);
+  return dir;
+};
 
 /** A helm target as `x deploy` resolves one with no flags: the app's name, no namespace, 15m. */
 const HELM = { release: 'demo-app', namespace: undefined, timeout: '15m' } as const;
@@ -70,7 +81,7 @@ describe('unit · the deploy plan', () => {
 
 /** An app root, because `x deploy` resolves one before it reads a single flag. */
 function appRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'x-deploy-'));
+  const dir = trackedDirSync(join(tmpdir(), 'x-deploy-'));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'demo-app' };\n");
   return dir;
 }
