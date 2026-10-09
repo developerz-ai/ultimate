@@ -8,6 +8,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+Tier 3 — jobs. Tier 5 — testing.
+
+- **`redisJobDriver()` — a Redis queue on `Bun.redis` (#710, owner decision 5).** `setJobDriver(redisJobDriver())`, or `ServeOptions.runtime.jobs`; options `client`, `prefix` (default `x:jobs`), `clock`, `doneTtlMs` (default a week; `0` keeps finished rows). Every operation is one Lua script, every key under one `{prefix}` hash tag, so it runs on Redis Cluster and Dragonfly. It passes `@ultimat3/testing`'s `jobDriverConformance` — the suite memory and pg pass — against the CI Redis, and a second live suite runs one script of operations on it and on the memory driver under one frozen clock and compares every answer. It carries no `introspect` (`x jobs show`/`retry`/`cancel`, queue pauses), no `backfills` ledger and no `leases`, so a job declaring `concurrency` still refuses `jobWorker().start()` on it.
+
 ### Fixed
 
 Tier 2 — http. Tier 3 — realtime. Tier 5 — cli.

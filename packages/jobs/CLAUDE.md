@@ -54,6 +54,11 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`ack`, `nack`, `heartbeat` and `recordProgress` are FENCED on `state = 'running'` AND the
   CLAIM** — `{ workerId, claim }`, `claimOf(claimed)`; `x_jobs.claims` is moved by the claim and
   never reset. `heartbeat` answers a boolean, read as `held === false` (never `!held`).
+- **`redisJobDriver` is one Lua script per operation** (`driver-redis-scripts.ts`), every key under
+  one `{prefix}` hash tag; `KEYS[1]` routes, the rest are built in-slot. It is held by
+  `jobDriverConformance` (`@ultimat3/testing`) and by `driver-redis.live.test.ts`, which runs one
+  operation script on it and on memory and compares every answer — a semantic change lands in
+  memory, pg AND the scripts. No `introspect`/`backfills`/`leases`; `done` rows expire (`doneTtlMs`).
 - **A driver's semantics are pinned beside the pg statement** (`driver-parity*.test.ts`);
   `driver-*-fixture.ts` scenarios run on memory AND Postgres.
 - **The claim BURIES a lease that lapsed on the final attempt** (`attempt >= max_attempts`): `dead`

@@ -115,6 +115,8 @@ export { postgresJobDriver, postgresLeader } from './driver-pg';
 // notify). The rest are this package's internals, read where they are defined, and tested there
 // too — the array-parameter proofs are `driver-pg-array.live.test.ts` (25.0.0).
 export { SQL_JOBS_TABLE } from './driver-pg-sql';
+export type { RedisJobDriverOptions, RedisSender } from './driver-redis';
+export { DEFAULT_REDIS_DONE_TTL_MS, redisJobDriver } from './driver-redis';
 export { signalEnqueued, signalStaged } from './enqueue-signal';
 export type { JobErrorCode } from './errors';
 export {
