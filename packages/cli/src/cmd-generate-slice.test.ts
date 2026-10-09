@@ -34,7 +34,7 @@ describe('unit · x g reads the slice it writes into', () => {
       for (const kind of GENERATORS) {
         if ((await readSliceFile(root, kind, SLICE, 'entity.ts')) !== undefined) reads.push(kind);
       }
-      expect(reads.sort()).toEqual(['action', 'job', 'mutator', 'query', 'task']);
+      expect(reads.sort()).toEqual(['action', 'backfill', 'job', 'mutator', 'query', 'task']);
       expect(await readSliceFile(root, 'query', SLICE, 'repo.ts')).toContain(
         'export async function',
       );
@@ -72,6 +72,50 @@ describe('unit · x g reads the slice it writes into', () => {
       expect(specOf(told)).toContain('stored rows read back newest first');
       expect(specOf(untold)).not.toContain('stored rows read back newest first');
     });
+  });
+});
+
+describe('unit · x g backfill into a slice whose entity is named otherwise', () => {
+  // notificado.co's `deadline` slice declares `holidays` and `court_closures`, no `deadlines`: the
+  // generator wrote `import type { Deadline }` and `db.deadlines`, plus admin labels for a table
+  // that does not exist — files that cannot compile, or a crash (X_CLI_UNEXPECTED on 22.15).
+  const OTHER = `import { entity, text, uuid } from '@ultimat3/entity';
+export const holiday = entity('holidays', { columns: { id: uuid().primaryKey(), name: text() } });
+export const courtClosure = entity('court_closures', { columns: { id: uuid().primaryKey() } });
+`;
+
+  test('is refused before a file is planned, naming the tables the slice does declare', () => {
+    let caught: unknown;
+    try {
+      generate({
+        kind: 'backfill',
+        name: 'recompute-terms',
+        feature: 'deadline',
+        sliceEntity: OTHER,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    const refusal = caught as { code?: string; cause?: string; fix?: string };
+    expect(refusal.code).toBe('X_BACKFILL_SLICE_ENTITY');
+    expect(refusal.cause).toContain('holidays, court_closures');
+    expect(refusal.fix).toStartWith('x g job recompute-terms --feature deadline');
+  });
+
+  test('a slice x g entity wrote, and a feature with no slice yet, still generate', async () => {
+    await withSlice(async (root) => {
+      const sliceEntity = await readSliceFile(root, 'backfill', SLICE, 'entity.ts');
+      expect(sliceEntity).toBeDefined();
+      const files = generate({
+        kind: 'backfill',
+        name: 'normalize-titles',
+        feature: 'invoice',
+        ...(sliceEntity === undefined ? {} : { sliceEntity }),
+      });
+      expect(files.some((file) => file.path.endsWith('/backfills/normalize-titles.ts'))).toBe(true);
+    });
+    const fresh = generate({ kind: 'backfill', name: 'normalize-titles', feature: 'invoice' });
+    expect(fresh.some((file) => file.path.endsWith('/entity.ts'))).toBe(true);
   });
 });
 

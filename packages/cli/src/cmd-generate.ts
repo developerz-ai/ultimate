@@ -323,7 +323,14 @@ async function readSliceErrors(
 }
 
 /** The generators whose output depends on what the slice's `entity.ts` / `repo.ts` declare. */
-const READS_SLICE: ReadonlySet<Generator> = new Set(['job', 'task', 'action', 'mutator', 'query']);
+const READS_SLICE: ReadonlySet<Generator> = new Set([
+  'job',
+  'task',
+  'action',
+  'mutator',
+  'query',
+  'backfill',
+]);
 
 /**
  * The slice's `entity.ts`/`repo.ts` as they stand on disk, absent when the generator's kind reads

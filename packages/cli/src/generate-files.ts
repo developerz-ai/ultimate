@@ -61,7 +61,7 @@ export interface GenerateOptions {
    */
   readonly sliceErrors?: string;
   /**
-   * `action`, `mutator`, `query`, `job` and `task`: the slice's `entity.ts` as it stands on disk, absent when
+   * `action`, `mutator`, `query`, `job`, `task` and `backfill`: the slice's `entity.ts` as it stands on disk, absent when
    * the feature has no entity yet — and then none is written. Supplied by `run` for `sliceErrors`'s reason — whether the feature is
    * tenant-scoped is a fact about THIS app, and a template that assumed `tenant: 'orgId'` wrote
    * `repo.byId`/`repo.list` calls into a feature whose entity names no tenant column. Read at
@@ -166,6 +166,8 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
         backfillFiles(options.name, {
           ...target,
           ...(options.locales === undefined ? {} : { locales: options.locales }),
+          ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
+          ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
         }),
       );
     case 'entity':
