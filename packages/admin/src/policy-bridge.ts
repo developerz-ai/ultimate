@@ -42,6 +42,21 @@ const policyActor = (actor: AdminActor): Actor =>
   });
 
 /**
+ * One evaluated clause as the line `/_x` prints: `  can(job:read): allow`, indented by depth, its
+ * reason after a refusal. A `TraceEntry` through `String()` read `[object Object]`.
+ */
+function traceLine(entry: unknown): string {
+  if (typeof entry !== 'object' || entry === null) return String(entry);
+  const { label, depth, allowed, reason } = entry as Partial<
+    Record<'label' | 'depth' | 'allowed' | 'reason', unknown>
+  >;
+  const indent = '  '.repeat(typeof depth === 'number' && depth > 0 ? depth : 0);
+  const verdict = allowed === true ? 'allow' : 'deny';
+  const why = typeof reason === 'string' && reason !== '' ? ` (${reason})` : '';
+  return `${indent}${String(label)}: ${verdict}${why}`;
+}
+
+/**
  * `evaluate()`'s result is read structurally: the policy layer owns its own decision type,
  * and the admin only needs the verdict, a reason key, and the trace it prints in `/_x`.
  */
@@ -59,12 +74,15 @@ function readDecision(permission: string, result: unknown): AdminDecision {
   };
   const verdict = result === true || bag.allowed === true;
   const reason = typeof inner.reason === 'string' ? inner.reason : 'admin.policy.evaluated';
-  const trace = Array.isArray(bag.trace) ? bag.trace.map((line) => String(line)) : [];
+  const trace = Array.isArray(bag.trace) ? bag.trace.map(traceLine) : [];
   return verdict ? adminAllowed(permission, reason, trace) : adminDenied(permission, reason, trace);
 }
 
-/** `resource:verb` — the only shape `can()` takes. Anything else is denied, never thrown. */
-const isPermission = (value: string): value is Permission => /^[^:]+:[^:]+$/.test(value);
+/**
+ * `resource:verb`, the resource itself colon-scoped or not (`admin:support:write`) — the shape
+ * `Permission` types and `can()` takes. Anything else is denied, never thrown.
+ */
+const isPermission = (value: string): value is Permission => /^[^:]+(?::[^:]+)+$/.test(value);
 
 /**
  * Declare the admin's OWN permissions (`ADMIN_PERMISSIONS`) and the ones a mount DERIVES —

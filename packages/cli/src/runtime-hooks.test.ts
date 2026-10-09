@@ -123,6 +123,37 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
     expect((await decide(route, context('/settings'))).allowed).toBe(false);
   });
 
+  test("a page's scoped permission (`admin:billing:read`) is evaluated, not taken for malformed", async () => {
+    // `can()` takes `${string}:${string}`, colons in the resource included: a guard naming one
+    // was read as a malformed name and denied "no policy is registered" before its policy ran.
+    definePermissions(['admin:billing:read'] as const);
+    registerRoute({
+      file: 'apps/web/app/billing/page.tsx',
+      suspenseBoundaries: 0,
+      config: defineRoute({
+        render: 'ssr',
+        offline: 'network-only',
+        hydrate: 'never',
+        budget: { js: '0kb' },
+        meta: () => ({ title: 'Billing' }),
+        policy: { permission: 'admin:billing:read' },
+      }),
+    });
+    const route = appRoutes({ buildId: 'test' })[0];
+    if (route === undefined) {
+      throw new NotImplementedError({
+        cause: 'a route table for the registered billing page is not implemented in this build',
+        fix: 'x routes --json   # every route registerRoute() holds',
+      });
+    }
+
+    const decision = await decide(route, context('/billing'));
+    expect(decision.allowed).toBe(false);
+    expect(decision).not.toMatchObject({
+      reason: expect.stringContaining('no policy is registered'),
+    });
+  });
+
   test('a route naming a policy nothing registered is denied, never allowed by default', async () => {
     const route: Route = {
       method: 'GET',

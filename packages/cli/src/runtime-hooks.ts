@@ -15,7 +15,7 @@ import { routeFor } from '@ultimat3/render';
  * purpose. `can()` checks the name against the registry; this only checks the shape, so a
  * malformed guard denies with "no policy registered" instead of throwing inside the pipeline.
  */
-const isPermission = (value: string): value is KnownPermission => /^[^:]+:[^:]+$/.test(value);
+const isPermission = (value: string): value is KnownPermission => /^[^:]+(?::[^:]+)+$/.test(value);
 
 /** A page carries only the permission label, because that is all `RouteGuard` keeps. */
 function policyFor(path: string): Policy<unknown, unknown> | undefined {
