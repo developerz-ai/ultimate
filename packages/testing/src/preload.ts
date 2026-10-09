@@ -50,9 +50,16 @@ installPerTestReset();
 // A shared worker only (an isolated file is a fresh registry anyway): the app's
 // `defineApi({ pathStyle })` evaluates once per worker, in whichever file first imports it, and
 // must not be refused because an EARLIER file derived action paths under the default style.
+//
+// And the rate-limit store every declared `rateLimit:` spends from: a file that spent a test
+// actor's bucket left it spent for the next file on the worker, so a "the 31st call is a 429" test
+// was red whenever another file calling that action ran first. Each file starts with full buckets,
+// the store back to one process' memory, as a file run alone would have it.
 if (Bun.env[ISOLATED_ENV] !== '1') {
   const { forgetHandedOutActionPaths } = await import('@ultimat3/action');
   onFileBoundary(forgetHandedOutActionPaths);
+  const { resetRateLimitStore } = await import('@ultimat3/http');
+  onFileBoundary(resetRateLimitStore);
 }
 
 // An app's `.tsx` compiles with the app's JSX factory on the first file, never cached classic.

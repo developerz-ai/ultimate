@@ -142,6 +142,13 @@ function patternSegments(source: string, open: number): readonly string[] | unde
 }
 
 /**
+ * Up to the `{` that opens a first-parameter pattern: an optional `async`, then `function` (with
+ * its name or `*`) or a method name, then `(` and the brace. An arrow with no parens (`bag =>`), an
+ * empty list (`() =>`) and a first parameter that is a plain name (`(bag) =>`) never match.
+ */
+const PATTERN_HEAD = /^\s*(?:async\b\s*)?(?:function\b[^(]*|[A-Za-z_$][\w$]*\s*)?\(\s*\{/;
+
+/**
  * The names a body destructures, read from its source.
  *
  * Reading source is unusual enough to justify: the alternative is building every registered
@@ -151,12 +158,12 @@ function patternSegments(source: string, open: number): readonly string[] | unde
  */
 export function requestedFixtures(body: (...args: never[]) => unknown): readonly string[] {
   const source = body.toString();
-  const open = source.indexOf('{');
-  if (open === -1) return [];
-  // Bail if the brace opens a body rather than a destructuring pattern — `async () => {`.
-  const beforeBrace = source.slice(0, open);
-  if (/\)\s*(?::[^=]*)?=>\s*$/.test(beforeBrace) || /\)\s*$/.test(beforeBrace)) return [];
-  return (patternSegments(source, open) ?? [])
+  // The pattern is the FIRST PARAMETER, so its `{` is the first thing inside the parameter list's
+  // `(`. The first `{` anywhere was read instead, so `() => fn({ seed: 1 })` asked for `seed`:
+  // the call's object literal in the BODY was taken for a destructured parameter.
+  const head = PATTERN_HEAD.exec(source);
+  if (head === null) return [];
+  return (patternSegments(source, head[0].length - 1) ?? [])
     .map((part) => (part.split(/[:=]/)[0] ?? '').trim())
     .filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
 }

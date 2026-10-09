@@ -77,6 +77,31 @@ describe('requestedFixtures', () => {
   });
 });
 
+describe('requestedFixtures reads the PARAMETER list, never a brace in the body', () => {
+  // `() => fn({ … })` takes no fixture: the first `{` belongs to the call's argument. It was read
+  // as the parameter pattern, so `seed: 1` in a body's object literal asked for the `seed` fixture
+  // and `{ a: x }` asked for one named `a` — built, or refused as unknown, for a test that took none.
+  const call = (input: object): object => input;
+
+  bunTest('a body that passes an object literal to a call takes no fixtures', () => {
+    expect(requestedFixtures(() => call({ seed: 1, page: 2 }))).toEqual([]);
+    expect(requestedFixtures(async () => call({ mail: 1 }))).toEqual([]);
+    expect(requestedFixtures(() => void call({ clock: { now: 1 } }))).toEqual([]);
+  });
+
+  bunTest('a single bare parameter destructures nothing, whatever its body holds', () => {
+    expect(requestedFixtures((bag: ProbeBag) => call({ seed: bag.seed }))).toEqual([]);
+  });
+
+  bunTest('a function expression still reads its own pattern', () => {
+    expect(
+      requestedFixtures(async function named({ seed, mail }: ProbeBag) {
+        return [seed, mail, call({ page: 1 })];
+      }),
+    ).toEqual(['seed', 'mail']);
+  });
+});
+
 describe('fixtureTest teardown', () => {
   // Disposal is what stops one file's ambient driver reaching the next, so it has to hold when a
   // disposer itself fails — otherwise one broken fixture re-opens the leak for all of them.
