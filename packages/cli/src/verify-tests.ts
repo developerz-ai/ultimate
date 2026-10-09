@@ -10,10 +10,10 @@
 // and `join` builds the host-separator path to its config file.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { APP_CONFIG_FILE } from '@ultimat3/core';
 import type { TestType } from '@ultimat3/testing';
 import { TEST_TYPES } from '@ultimat3/testing';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
-import { APP_CONFIG_FILE } from './app-root';
 import { judgeCoverage } from './coverage-floor';
 import { msg } from './messages';
 import { countsOf } from './test-counts';

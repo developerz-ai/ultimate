@@ -10,6 +10,7 @@ import type { Finding } from './output';
 import { runBatches, testBatches } from './test-batches';
 import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
+import { tidyBeforeTestRun } from './test-housekeeping';
 import type { TestFile } from './test-select';
 import { failureOf, TEST_TIMINGS_FILE, testArgs } from './test-shards';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
@@ -63,6 +64,8 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
     workers,
     options.isolate === true ? BATCH_FILES_PER_WORKER : SHARED_BATCH_FILES_PER_WORKER,
   );
+  // What earlier runs left behind, swept before this one adds to it (#738).
+  await tidyBeforeTestRun(options.root, options.env ?? Bun.env);
   const result = await runBatches({
     runner: options.runner,
     batches,

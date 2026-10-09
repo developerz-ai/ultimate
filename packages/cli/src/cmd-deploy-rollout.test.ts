@@ -2,9 +2,9 @@
 // that can run two containers starts the new one first, and a helm release sizes every role's
 // grace period from the drain budget `app.config.ts` declares — not from the chart's defaults.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, and the fixtures are written synchronously.
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -15,6 +15,17 @@ import type { CommandContext } from './command';
 import type { ExecResult } from './exec';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
 
 const COMPOSE = `
 services:
@@ -27,7 +38,7 @@ services:
 `;
 
 function appRoot(config: string, compose?: string): string {
-  const dir = mkdtempSync(join(tmpdir(), 'x-deploy-rollout-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-deploy-rollout-')));
   writeFileSync(join(dir, 'app.config.ts'), `export const config = ${config};\n`);
   if (compose !== undefined) {
     mkdirSync(join(dir, 'docker'), { recursive: true });

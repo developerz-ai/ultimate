@@ -56,6 +56,7 @@ import { testEnvOverrides } from './test-dotenv';
 export const TEST_TIMINGS_FILE = '.x/test-timings.json';
 
 import { runBatches, testBatches } from './test-batches';
+import { tidyBeforeTestRun } from './test-housekeeping';
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
@@ -265,6 +266,8 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     workers: options.workers,
     ...(options.type === undefined ? {} : { type: options.type }),
   });
+  // What earlier runs left behind, swept before this one adds to it (#738).
+  await tidyBeforeTestRun(options.root, options.env ?? Bun.env);
   const started = performance.now();
   const steps: StepResult[] = [];
   const spent: JsonValue[] = [];

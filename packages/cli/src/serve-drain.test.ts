@@ -1,9 +1,9 @@
 // The drain and health sections a container's boot hands its web server, read off the app's own
 // config through the one loader.
 
-import { expect, test } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, and the fixtures are written synchronously.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -11,13 +11,24 @@ import { join } from 'node:path';
 import { DRAIN_DEADLINE_DEFAULT_MS, defaultReadinessGraceMs } from '@ultimat3/core';
 import { loadDrainConfig, loadHealthConfig } from './serve-drain';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
+
 const appWith = (config: string): string => {
-  const root = mkdtempSync(join(tmpdir(), 'serve-drain-'));
+  const root = made(mkdtempSync(join(tmpdir(), 'serve-drain-')));
   writeFileSync(join(root, 'app.config.ts'), `export const config = ${config};\n`);
   return root;
 };
 
-const none = (): string => mkdtempSync(join(tmpdir(), 'serve-drain-none-'));
+const none = (): string => made(mkdtempSync(join(tmpdir(), 'serve-drain-none-')));
 
 test('the declared readiness grace and drain budget are read off app.config.ts', async () => {
   const root = appWith('{ name: "demo", drain: { readinessGraceMs: 7000, deadlineMs: 120000 } }');

@@ -9,6 +9,7 @@ import {
   PROBE_DATABASE_MIN_AGE_MS,
   probeDatabaseAlive,
   sweepProbeDatabases,
+  sweepStaleProbeDatabases,
 } from './probe-database-sweep';
 
 interface Row {
@@ -114,5 +115,34 @@ describe('probeDatabaseAlive', () => {
   test('this process is alive, and a pid no process holds is not', () => {
     expect(probeDatabaseAlive(process.pid)).toBe(true);
     expect(probeDatabaseAlive(2 ** 22 + 12_345)).toBe(false);
+  });
+});
+
+// #738: a suite only swept its OWN prefix, and only when it ran again — a suite that was renamed or
+// deleted left its probes forever. The test runner and `x clean` sweep every probe-shaped name.
+describe('sweepStaleProbeDatabases', () => {
+  const OTHER = `x_other_suite_300_${OLD}_cccccccc`;
+  const FRESH = `x_suite_400_${YOUNG}_dddddddd`;
+  const USERS = 'notificado_dev';
+
+  test('drops every dead, idle, old probe of any prefix; nothing else', async () => {
+    const server = fakeServer([
+      { datname: SIBLING, backends: 0 },
+      { datname: OTHER, backends: 0 },
+      { datname: FRESH, backends: 0 },
+      { datname: `x_busy_500_${OLD}_eeeeeeee`, backends: 1 },
+      { datname: USERS, backends: 0 },
+    ]);
+    const swept = await sweepStaleProbeDatabases(server, { isAlive: dead, now: clock });
+    expect([...swept].sort()).toEqual([OTHER, SIBLING].sort());
+    expect(server.sent.filter((text) => text.startsWith('drop'))).toHaveLength(2);
+  });
+
+  test('`dryRun` names them and drops nothing', async () => {
+    const server = fakeServer([{ datname: SIBLING, backends: 0 }]);
+    expect(
+      await sweepStaleProbeDatabases(server, { isAlive: dead, now: clock, dryRun: true }),
+    ).toEqual([SIBLING]);
+    expect(server.sent.some((text) => text.startsWith('drop'))).toBe(false);
   });
 });

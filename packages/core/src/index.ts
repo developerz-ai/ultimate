@@ -47,6 +47,8 @@ export {
 } from './actor';
 export type { AddressClass } from './address-class';
 export { addressNetwork, classifyAddress, isPublicAddress } from './address-class';
+/** Test support: the one name a live suite gives the database it creates (`probe-databases`). */
+export { APP_CONFIG_FILE, APP_STATE_DIR, appDirOf, appStatePath } from './app-dir';
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { type AssertCodedOptions, assert, assertCoded, assertNever } from './assert';
 export { type AsyncContext, asyncContext } from './async-context';
@@ -77,6 +79,8 @@ export { signAwsRequest, UNSIGNED_PAYLOAD } from './aws-sigv4';
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
 export { backoffDelay, jitterStatedDelay } from './backoff';
 export { isCompiledBundle } from './bunfs';
+export type { CacheEvictionOptions } from './cache-eviction';
+export { CACHE_TEMP_GRACE_MS, evictCacheFiles } from './cache-eviction';
 export { CACHE_TIERS, type CacheTierName } from './cache-vocabulary';
 export { canonicalJson, fingerprint } from './canonical-json';
 export type { FetchLike, TransportRequest } from './client-dispatch';
@@ -691,7 +695,6 @@ export {
 } from './page-meta';
 /** The structural Postgres seam http, auth, action and jobs share without a `@ultimat3/db` edge. */
 export type { PgExecutor } from './pg-executor';
-/** Test support: the one name a live suite gives the database it creates (`probe-databases`). */
 export type { ProbeDatabaseEntropy } from './probe-database';
 export { PROBE_DATABASE_NAME_MAX, probeDatabaseName } from './probe-database';
 export type { ProbeDatabaseSweepOptions } from './probe-database-sweep';
@@ -699,6 +702,7 @@ export {
   PROBE_DATABASE_MIN_AGE_MS,
   probeDatabaseAlive,
   sweepProbeDatabases,
+  sweepStaleProbeDatabases,
 } from './probe-database-sweep';
 export type { ProcessMetricsOptions, ProcessReading } from './process-metrics';
 export { readProcess, resetProcessMetrics, startProcessMetrics } from './process-metrics';

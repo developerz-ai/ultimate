@@ -2,9 +2,9 @@
 // its root — the shape that answered `X_CATALOG_UNREGISTERED` with a fix naming an edit that had
 // already been made. Then the shapes that must NOT be reported: a workspace symlink to one checkout.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: a fixture with a real symlink is the only proof that the realpath dedupe reads the filesystem.
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 // why: Bun ships no temp-directory primitive.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -21,6 +21,17 @@ import {
   installedCopies,
   REGISTRY_PACKAGES,
 } from './duplicate-packages';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
 
 const copy = (from: string, dir: string, version: string, pkg = '@ultimat3/i18n') => ({
   pkg,
@@ -195,7 +206,7 @@ describe('unit · the finding', () => {
  * workspace that resolves the root's through a symlink, and a workspace with no copy at all.
  */
 function fixture(): { root: string; cli: string } {
-  const root = mkdtempSync(join(tmpdir(), 'x-duplicate-packages-'));
+  const root = made(mkdtempSync(join(tmpdir(), 'x-duplicate-packages-')));
   const manifest = (dir: string, name: string, version: string): void => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version, main: 'index.js' }));
@@ -271,7 +282,7 @@ describe('integration · installedCopies over a real fixture tree', () => {
   });
 
   test('a manifest that names another package, or will not parse, is not a copy', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'x-duplicate-packages-'));
+    const root = made(mkdtempSync(join(tmpdir(), 'x-duplicate-packages-')));
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'app', workspaces: [] }));
     const io: DuplicateIo = {
       resolve: (specifier, from) =>
@@ -285,7 +296,7 @@ describe('integration · installedCopies over a real fixture tree', () => {
   });
 
   test('an entry six directories below any manifest, or at the filesystem root, is not a copy', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'x-duplicate-packages-'));
+    const root = made(mkdtempSync(join(tmpdir(), 'x-duplicate-packages-')));
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'app', workspaces: [] }));
     const io: DuplicateIo = {
       resolve: (_specifier, from) => (from === root ? '/a/b/c/d/e/f/g/h/index.js' : '/index.js'),

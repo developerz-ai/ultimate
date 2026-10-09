@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 // why: Bun ships no temp-directory API, and the browser chunk this suite builds must be written
 // somewhere that is not the source tree.
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform's temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive, and `Bun.write` takes a path already joined.
@@ -14,6 +14,17 @@ import { ERROR_DOCS_URL } from './error-codes';
 import { UltimateError } from './errors';
 import type { LogLevel } from './logger';
 import { LOG_LEVELS, REDACTED, setLogSink, setLogStream, structuredLogger } from './logger';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(async () => {
+  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
 
 function capture(level: 'trace' | 'info' = 'info') {
   const lines: Record<string, unknown>[] = [];
@@ -367,7 +378,7 @@ describe('logger · the default writer', () => {
 describe('the process-wide logger, in a runtime with no process', () => {
   // why: Bun ships no temp-directory API of its own, and a chunk built for this suite must never
   // be written into the source tree — `mkdtemp` is the only one that answers.
-  const dir = mkdtemp(join(tmpdir(), 'ultimate-logger-browser-'));
+  const dir = mkdtemp(join(tmpdir(), 'ultimate-logger-browser-')).then(made);
 
   /**
    * Reports through `console.log`, which is a browser's and Bun's alike, because the one thing it

@@ -1,17 +1,28 @@
 // Failure first: the case that shipped a zero-entity manifest is the global CLI running inside an
 // app that has its own — that must resolve to the app's file, and nothing else may.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: a real `realpathSync` on a virtual path is what throws the ENOENT the compiled case rests on.
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun ships no temp-directory primitive.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { KEEP_GLOBAL_CLI_ENV, LOCAL_CLI_BIN, type LocalCliIo, resolveLocalCli } from './local-cli';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
+
 const app = () => {
-  const dir = mkdtempSync(join(tmpdir(), 'x-local-cli-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-local-cli-')));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 };

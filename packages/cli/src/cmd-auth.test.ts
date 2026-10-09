@@ -2,9 +2,9 @@
 // second run changes nothing, and that a missing master key writes no row. The statements against
 // a real server are `cmd-auth.live.test.ts`'s.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, and Bun.write is async in this synchronous fixture helper.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -16,10 +16,21 @@ import { authCommandOver } from './cmd-auth';
 import { authSpec } from './cmd-auth-spec';
 import type { CommandContext } from './command';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
+
 const KEY = { [SECRETS_KEY_ENV]: Bun.env[SECRETS_KEY_ENV] };
 
 const appRoot = (): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'x-auth-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-auth-')));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 };
@@ -116,7 +127,7 @@ describe('unit · x auth seal-mfa', () => {
 
   test('outside an app it is refused before any store is opened', async () => {
     const opened = { count: 0 };
-    const outside = mkdtempSync(join(tmpdir(), 'x-auth-nowhere-'));
+    const outside = made(mkdtempSync(join(tmpdir(), 'x-auth-nowhere-')));
     const thrown = await authCommandOver(async () => {
       opened.count += 1;
       return { adapter: memoryAuthAdapter(), close: async () => undefined };
