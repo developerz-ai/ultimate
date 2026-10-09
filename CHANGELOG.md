@@ -8,7 +8,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+Tier 5 â€” cli.
+
+- **A component `apps/<app>/runtime.ts` imports is compiled by the framework's JSX loader, never Bun's React one.** `runRole` reads `runtime.ts` before anything else in the process, and nothing on `@ultimat3/cli/serve`'s static graph imports `@ultimat3/render/server`, whose import installs the `.tsx` loader: so every component that file reached (through its routes and their slices) compiled to `React.createElement` and stayed cached that way for the pages that import it later. A container booted through `apps/web/server.ts` answered 500 `X_PRERENDER_FAILED` "React is not defined" on every rendered page that reached one (notificado.co on 27.2.0); `x dev` was unaffected, its CLI graph installs the loader first. `loadAppRuntime` now installs the loader before its first app import.
 
 ## 27.2.1 - 2026-10-09
 

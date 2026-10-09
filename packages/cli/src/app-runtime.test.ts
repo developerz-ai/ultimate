@@ -42,4 +42,31 @@ describe('loadAppRuntime', () => {
     });
     expect(await loadAppRuntime(other)).toBeUndefined();
   });
+
+  // The production boot: `runRole` reads `runtime.ts` FIRST, before anything on `@ultimat3/cli/serve`'s
+  // static graph has imported `@ultimat3/render/server`, so a component that file reaches was
+  // compiled by Bun's own loader — `jsx: "preserve"` → `React.createElement` — and cached that way
+  // for every page that imports it later (notificado.co, 27.2.0: `React is not defined`). Its own
+  // process, because this test process's preload has the loader installed long before any import.
+  test('a component runtime.ts imports is compiled by the framework JSX loader, not React', async () => {
+    const root = await fixture('jsx', {
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { jsx: 'preserve', jsxImportSource: 'solid-js' },
+      }),
+      'apps/web/shared/badge.tsx': 'export const Badge = () => <b>ok</b>;\n',
+      'apps/web/runtime.ts':
+        "import { Badge } from './shared/badge';\nexport const runtime = { badge: Badge };\n",
+    });
+    const script = `const { loadAppRuntime } = await import(${JSON.stringify(join(import.meta.dir, 'app-runtime.ts'))});
+const runtime = await loadAppRuntime(process.cwd());
+try { const node = runtime.badge(); console.log(typeof node === 'object' && node !== null ? 'node' : typeof node); }
+catch (error) { console.log(String(error)); }`;
+    const child = Bun.spawn(['bun', '-e', script], { cwd: root, stdout: 'pipe', stderr: 'pipe' });
+    const [out, err, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect([code, out.trim(), err.includes('React') ? err : '']).toEqual([0, 'node', '']);
+  }, 30_000);
 });

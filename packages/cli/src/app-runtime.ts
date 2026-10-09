@@ -30,6 +30,13 @@ export async function loadAppRuntime(root: string): Promise<RuntimeOverrides | u
   if (!existsSync(join(root, 'apps'))) return undefined;
   const files: string[] = [];
   for await (const file of new Bun.Glob(APP_RUNTIME_GLOB).scan({ cwd: root })) files.push(file);
+  // The `.tsx` loader BEFORE the first app import, which this is on `runRole`'s path: a Bun plugin
+  // only transforms modules loaded after it, and nothing on `@ultimat3/cli/serve`'s static graph
+  // installs it. Without this, every component `runtime.ts` reaches compiled to
+  // `React.createElement` and stayed cached that way for the pages (27.2.x images: `React is not
+  // defined`). Dynamic, so a root with no `runtime.ts` loads nothing, and the serve entry's static
+  // graph (`serve-graph.test.ts`) is unchanged.
+  if (files.length > 0) await import('@ultimat3/render/server');
   for (const file of files.sort()) {
     const module = (await import(join(root, file))) as Record<string, unknown>;
     const exported = module[APP_RUNTIME_EXPORT];
