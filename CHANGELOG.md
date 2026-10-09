@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.0.0 - 2026-10-09
+
 Every breaking entry under Changed has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `26.x → 27.0.0` section, in
 the same order.
@@ -41,6 +45,12 @@ Tier 5 — cli.
 - **The `/_storage` `GET` reads no signature, and says so.** A signed GET URL `localDriver` mints points at it and is served on the session's terms (policy plus the key rules above), which neither widen nor narrow with `x-sig`/`x-exp`; `readSignedObject` is for an app's own signature-only route. The wiki and `17-uploads.md` now state the decision in order.
 - **`x manifest` attributes an error code to the same workspace on every OS.** `errorCodes[].package` was the site's path split on `/`; a Windows path kept the whole file (`apps\admin\app\…\abuse.tsx`), and the codes, sorted by it, came out in another order — thousands of changed lines per regen across machines, and a `--check` that disagreed with itself. The source walk has answered POSIX paths since 25.0.0 (#661); `workspaceOf` now normalises on its own too, pinned with Windows-shaped input.
 - **`x dev` reloads an edited module on Windows.** The reload graph compared `startsWith(root + '/')`, false for every backslash path Bun resolves there, so it recorded no import and no stylesheet as the app's own and a save rendered stale code until a restart; `dev-watch-tree` closed no watcher below a removed directory for the same reason. Both use `isPathUnder` (either separator).
+
+### Commits
+
+- docs(upgrading): 27.0.0 leaves unreleased
+- fix!: /_storage and /media refuse un-shared keys outside org/; jobs never inherit a transaction (27.0.0 batch) (#722)
+- docs(render): month-level stamp; CLAUDE.md names three entry points and the one error outside errors.ts (#719 review) (#721)
 
 ## 26.1.1 - 2026-10-08
 
