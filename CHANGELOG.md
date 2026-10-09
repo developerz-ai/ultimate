@@ -8,12 +8,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.2.1 - 2026-10-09
+
 ### Fixed
 
 Tier 5 â€” admin, cli.
 
 - **A permission whose resource is colon-scoped (`admin:support:write`) is decided, never refused as malformed.** `Permission` is `${string}:${string}` and `can()` takes such a name, but the admin's shape check (and `x dev`'s page-guard check) allowed exactly one colon: 27.2's role-map fallback refused every `admin:<area>:<verb>` a `policyAuthz` map omitted as `admin.policy.missing` though `definePermissions` declared it and a role granted it (notificado.co: every staff screen, once its plain `can()` entries were dropped), and a page guard naming one was denied "no policy is registered" before its policy ran. Both now take colon-separated non-empty segments, two or more.
 - **An admin decision's trace reads as text.** Each evaluated clause reached `/_x` through `String()` as `[object Object]`; it is now `label: allow|deny (reason)`, indented by depth.
+
+### Commits
+
+- fix(admin,cli): a colon-scoped permission (admin:support:write) is decided, not refused as malformed; admin traces read as text (#730)
 
 ## 27.2.0 - 2026-10-09
 
