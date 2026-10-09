@@ -11,6 +11,7 @@
 import { readdir, rm, stat } from 'node:fs/promises';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
+import { finiteCount } from './finite-option';
 
 /** A temp file younger than this may be a write in flight in another process; older is debris. */
 export const CACHE_TEMP_GRACE_MS = 10 * 60 * 1000;
@@ -58,7 +59,7 @@ export async function evictCacheFiles(options: CacheEvictionOptions): Promise<re
     else if (now - mtimeMs > CACHE_TEMP_GRACE_MS) debris.push(path);
   }
   aged.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const keep = Math.max(0, options.keepPrevious ?? 1);
+  const keep = finiteCount('evictCacheFiles', 'keepPrevious', options.keepPrevious ?? 1);
   const evicted = [...aged.slice(keep).map((file) => file.path), ...debris];
   if (options.dryRun !== true) {
     for (const path of evicted) await rm(path, { force: true }).catch(() => undefined);

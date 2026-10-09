@@ -6,6 +6,7 @@
 // Bun ships no `Bun.*` path API: `join`/`resolve` reach the files a scan imports.
 import { join, resolve } from 'node:path';
 import { isAction, isMutator, listActions, registerActions } from '@ultimat3/action';
+import { APP_CONFIG_FILE } from '@ultimat3/core';
 import { describeEntities, registeredEntities } from '@ultimat3/entity';
 import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import { appLocaleSet, UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
@@ -35,7 +36,7 @@ import {
   trackModule,
   trackStylesheets,
 } from './app-reload-graph';
-import { API_INDEX, APP_CONFIG_FILE } from './app-root';
+import { API_INDEX } from './app-root';
 import { collectDeclaredCodes } from './error-contract';
 import type { Finding } from './output';
 import { findingFrom } from './output';

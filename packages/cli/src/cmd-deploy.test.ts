@@ -25,8 +25,8 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -81,7 +81,7 @@ describe('unit · the deploy plan', () => {
 
 /** An app root, because `x deploy` resolves one before it reads a single flag. */
 function appRoot(): string {
-  const dir = trackedDirSync(join(tmpdir(), 'x-deploy-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-deploy-')));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'demo-app' };\n");
   return dir;
 }

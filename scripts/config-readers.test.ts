@@ -34,8 +34,8 @@ const madeDirs: string[] = [];
 afterAll(async () => {
   for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-const trackedDir = async (prefix: string): Promise<string> => {
-  const dir = await mkdtemp(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -315,7 +315,7 @@ describe('unit · the ratchet', () => {
    * what the entry-delete regex has to survive and a two-line fixture would not have proved it.
    */
   test('--unpin performs the edit the stale finding names, and refuses one that is not stale', async () => {
-    const dir = await trackedDir(join(tmpdir(), 'ultimate-config-pins-'));
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-config-pins-')).then(made);
     const path = join(dir, CONFIG_PINS_FILE);
     // The real file, with two multi-line rows seeded back into its (now empty) table: the shape
     // the entry-delete regex must survive, which the live table no longer holds.

@@ -11,9 +11,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
 import { generateMigration } from '@ultimat3/db';
-import { APP_CONFIG_FILE } from './app-root';
 import { VERIFY_STEPS } from './cmd-verify';
 import { migrationSql } from './db-generate';
 import {

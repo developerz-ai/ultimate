@@ -21,8 +21,8 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -30,7 +30,7 @@ const trackedDirSync = (prefix: string): string => {
 const KEY = { [SECRETS_KEY_ENV]: Bun.env[SECRETS_KEY_ENV] };
 
 const appRoot = (): string => {
-  const dir = trackedDirSync(join(tmpdir(), 'x-auth-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-auth-')));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 };
@@ -127,7 +127,7 @@ describe('unit · x auth seal-mfa', () => {
 
   test('outside an app it is refused before any store is opened', async () => {
     const opened = { count: 0 };
-    const outside = trackedDirSync(join(tmpdir(), 'x-auth-nowhere-'));
+    const outside = made(mkdtempSync(join(tmpdir(), 'x-auth-nowhere-')));
     const thrown = await authCommandOver(async () => {
       opened.count += 1;
       return { adapter: memoryAuthAdapter(), close: async () => undefined };

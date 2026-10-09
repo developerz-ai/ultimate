@@ -17,7 +17,8 @@ import {
 import { tmpdir } from 'node:os';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
-import { type PgExecutor, UltimateError } from '@ultimat3/core';
+import type { PgExecutor } from '@ultimat3/core';
+import { UltimateError } from '@ultimat3/core';
 import { type HousekeepingReport, tidyBeforeTestRun, tidyTestState } from './test-housekeeping';
 
 const scratch = mkdtempSync(join(tmpdir(), 'x-housekeeping-'));

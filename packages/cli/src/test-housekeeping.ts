@@ -14,13 +14,12 @@
 import { readdir, rm, rmdir } from 'node:fs/promises';
 // why: Bun ships no path joiner.
 import { join } from 'node:path';
+import type { PgExecutor, ProbeDatabaseSweepOptions } from '@ultimat3/core';
 import {
   APP_CONFIG_FILE,
   APP_STATE_DIR,
   appDirOf,
   evictCacheFiles,
-  type PgExecutor,
-  type ProbeDatabaseSweepOptions,
   sweepStaleProbeDatabases,
 } from '@ultimat3/core';
 import { dbExecutor, postgresClient } from '@ultimat3/db';

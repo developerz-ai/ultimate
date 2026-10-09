@@ -20,8 +20,8 @@ const madeDirs: string[] = [];
 process.once('exit', () => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -34,7 +34,7 @@ export interface RunOptions {
 }
 
 export function appRoot(): string {
-  const dir = trackedDirSync(join(tmpdir(), 'x-jobs-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-jobs-')));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 }

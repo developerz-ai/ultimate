@@ -5,8 +5,6 @@ import { join, resolve } from 'node:path';
 import { APP_CONFIG_FILE, appDirOf } from '@ultimat3/core';
 import { BunVersionError, NotInAppError } from './errors';
 
-export { APP_CONFIG_FILE };
-
 /**
  * The one file `defineApi` is called from in a scaffolded app — here, beside the config file, so
  * the module scan can import it first without pulling the generators into the serve graph.

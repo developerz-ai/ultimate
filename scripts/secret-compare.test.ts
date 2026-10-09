@@ -37,8 +37,8 @@ const madeDirs: string[] = [];
 afterAll(async () => {
   for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-const trackedDir = async (prefix: string): Promise<string> => {
-  const dir = await mkdtemp(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -369,7 +369,7 @@ describe('the ratchet moves in one direction', () => {
   });
 
   test('--unpin lowers a site row to what is measured, deletes it at zero, refuses to raise', async () => {
-    const dir = await trackedDir(join(tmpdir(), 'ultimate-secret-pins-'));
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-secret-pins-')).then(made);
     const path = join(dir, SECRET_PINS_FILE);
     await Bun.write(path, await Bun.file(join(repoRoot(), SECRET_PINS_FILE)).text());
     const triple = 'packages/manifest/src/docs-search.ts: !matched.includes(token)';

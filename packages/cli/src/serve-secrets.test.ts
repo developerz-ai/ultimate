@@ -17,8 +17,8 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -26,7 +26,7 @@ const trackedDirSync = (prefix: string): string => {
 test('a production boot on the shipped cursor key is refused before any service starts', async () => {
   // The precondition, asserted: this process really is on the development key.
   expect(usesDevCursorSecret()).toBe(true);
-  const root = trackedDirSync(join(tmpdir(), 'serve-secrets-'));
+  const root = made(mkdtempSync(join(tmpdir(), 'serve-secrets-')));
   const outcome = await serveApp({ root, env: { ULTIMATE_ENV: 'production' }, role: 'web' }).then(
     () => 'booted',
     (error: unknown) => (error as { code?: string }).code ?? 'uncoded',

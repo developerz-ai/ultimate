@@ -21,8 +21,8 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -38,7 +38,7 @@ services:
 `;
 
 function appRoot(config: string, compose?: string): string {
-  const dir = trackedDirSync(join(tmpdir(), 'x-deploy-rollout-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-deploy-rollout-')));
   writeFileSync(join(dir, 'app.config.ts'), `export const config = ${config};\n`);
   if (compose !== undefined) {
     mkdirSync(join(dir, 'docker'), { recursive: true });

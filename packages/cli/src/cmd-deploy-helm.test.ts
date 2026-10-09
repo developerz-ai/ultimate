@@ -28,15 +28,15 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
 
 /** An app root whose `app.config.ts` exports `config` — named, or deliberately not. */
 function appRoot(config = "{ name: 'shop-web' }"): string {
-  const dir = trackedDirSync(join(tmpdir(), 'x-deploy-helm-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-deploy-helm-')));
   writeFileSync(join(dir, 'app.config.ts'), `export const config = ${config};\n`);
   return dir;
 }
@@ -126,7 +126,7 @@ describe('unit · x deploy --method helm waits, and names its release', () => {
   // The `fix:` is a line to paste, and an app root holding a space pasted back as two arguments —
   // `helm upgrade … /srv/my app/docker/helm` upgrades a chart at `/srv/my`.
   test('the rerun line quotes a path that would split in a shell', async () => {
-    const root = trackedDirSync(join(tmpdir(), 'x deploy $(helm) '));
+    const root = made(mkdtempSync(join(tmpdir(), 'x deploy $(helm) ')));
     writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'shop-web' };\n");
     const { runner } = helmRunner('', 1);
     const result = await run(['--method', 'helm'], root, runner);
@@ -183,7 +183,7 @@ describe('unit · what x deploy --method helm refuses before spawning anything',
     expect(await refusalCode(readReleaseName(appRoot(`{ name: '${long}' }`), undefined))).toBe(
       'X_CONFIG_INVALID',
     );
-    const bare = trackedDirSync(join(tmpdir(), 'x-deploy-helm-bare-'));
+    const bare = made(mkdtempSync(join(tmpdir(), 'x-deploy-helm-bare-')));
     expect(await refusalCode(readReleaseName(bare, undefined))).toBe('X_CONFIG_INVALID');
     expect(await readReleaseName(appRoot(), undefined)).toBe('shop-web');
   });

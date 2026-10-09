@@ -20,8 +20,8 @@ const madeDirs: string[] = [];
 afterAll(async () => {
   for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-const trackedDir = async (prefix: string): Promise<string> => {
-  const dir = await mkdtemp(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -378,7 +378,7 @@ describe('logger · the default writer', () => {
 describe('the process-wide logger, in a runtime with no process', () => {
   // why: Bun ships no temp-directory API of its own, and a chunk built for this suite must never
   // be written into the source tree — `mkdtemp` is the only one that answers.
-  const dir = trackedDir(join(tmpdir(), 'ultimate-logger-browser-'));
+  const dir = mkdtemp(join(tmpdir(), 'ultimate-logger-browser-')).then(made);
 
   /**
    * Reports through `console.log`, which is a browser's and Bun's alike, because the one thing it

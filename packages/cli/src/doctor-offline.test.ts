@@ -7,7 +7,7 @@
 // app that HAD the route was told it did not.
 
 import { describe, expect, test } from 'bun:test';
-import { APP_CONFIG_FILE } from './app-root';
+import { APP_CONFIG_FILE } from '@ultimat3/core';
 import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackFinding } from './doctor-offline';
 

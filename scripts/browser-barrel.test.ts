@@ -46,8 +46,8 @@ const madeDirs: string[] = [];
 afterAll(async () => {
   for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-const trackedDir = async (prefix: string): Promise<string> => {
-  const dir = await mkdtemp(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -110,7 +110,7 @@ const buildScript = (entry: string, out: string): string =>
 /** The build with its verdict kept, because for one specifier the FAILURE is the finding. */
 async function browserBuild(entry: string): Promise<Chunk & { ok: boolean; output: string }> {
   // A fresh path per build: a reused one would serve a chunk built before a fix.
-  const file = join(await trackedDir(join(tmpdir(), 'ultimate-barrel-')), 'barrel.mjs');
+  const file = join(await mkdtemp(join(tmpdir(), 'ultimate-barrel-')).then(made), 'barrel.mjs');
   const built = await run(['bun', '-e', buildScript(entry, file)], { cwd: repoRoot() });
   const text = built.ok ? await Bun.file(file).text() : '';
   return { text, file, ok: built.ok, output: built.output };
@@ -131,11 +131,13 @@ async function evaluationError(chunk: Chunk): Promise<string | undefined> {
 }
 
 const entryFor = (name: string, source: string): Promise<string> =>
-  trackedDir(join(tmpdir(), `ultimate-fixture-${name}-`)).then(async (dir) => {
-    const entry = join(dir, 'entry.ts');
-    await Bun.write(entry, source);
-    return entry;
-  });
+  mkdtemp(join(tmpdir(), `ultimate-fixture-${name}-`))
+    .then(made)
+    .then(async (dir) => {
+      const entry = join(dir, 'entry.ts');
+      await Bun.write(entry, source);
+      return entry;
+    });
 
 const fixture = (name: string, source: string): Promise<Chunk> =>
   entryFor(name, source).then(browserChunk);

@@ -22,8 +22,8 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -52,7 +52,7 @@ const parsed = (out: string): { ok: boolean; findings?: { code: string }[] } =>
 // refusal at all, which is the one thing a declaration exists to make impossible.
 describe('unit · the dispatcher is what enforces requiresApp', () => {
   /** No `app.config.ts` at or above it — `/tmp/x-no-app-*` walks up to `/`. */
-  const outsideAnApp = (): string => trackedDirSync(`${tmpdir()}/x-no-app-`);
+  const outsideAnApp = (): string => made(mkdtempSync(`${tmpdir()}/x-no-app-`));
 
   // `x secrets set` is the proof BECAUSE it checks its own positional before it resolves a root:
   // outside an app it answered X_CLI_BAD_FLAG — "you left out the name" — about an invocation that

@@ -9,8 +9,8 @@ const madeDirs: string[] = [];
 afterAll(async () => {
   for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-const trackedDir = async (prefix: string): Promise<string> => {
-  const dir = await mkdtemp(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -100,7 +100,7 @@ describe('a browser bundle of @ultimat3/core', () => {
     built ??= (async (): Promise<BrowserBarrel> => {
       // `index.ts` as the entry, directly. Until Bun 1.4.1 that build was shaken to its export
       // clause alone (#276, oven-sh/bun#40578) and this suite went through a re-exporting wrapper.
-      const dir = await trackedDir(join(tmpdir(), 'ultimate-core-'));
+      const dir = await mkdtemp(join(tmpdir(), 'ultimate-core-')).then(made);
       const output = await Bun.build({
         entrypoints: [join(import.meta.dir, 'index.ts')],
         target: 'browser',

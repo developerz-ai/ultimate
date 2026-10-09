@@ -16,19 +16,19 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
 
 const appWith = (config: string): string => {
-  const root = trackedDirSync(join(tmpdir(), 'serve-drain-'));
+  const root = made(mkdtempSync(join(tmpdir(), 'serve-drain-')));
   writeFileSync(join(root, 'app.config.ts'), `export const config = ${config};\n`);
   return root;
 };
 
-const none = (): string => trackedDirSync(join(tmpdir(), 'serve-drain-none-'));
+const none = (): string => made(mkdtempSync(join(tmpdir(), 'serve-drain-none-')));
 
 test('the declared readiness grace and drain budget are read off app.config.ts', async () => {
   const root = appWith('{ name: "demo", drain: { readinessGraceMs: 7000, deadlineMs: 120000 } }');

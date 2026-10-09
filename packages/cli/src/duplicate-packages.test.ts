@@ -27,8 +27,8 @@ const madeDirs: string[] = [];
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
-const trackedDirSync = (prefix: string): string => {
-  const dir = mkdtempSync(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -206,7 +206,7 @@ describe('unit · the finding', () => {
  * workspace that resolves the root's through a symlink, and a workspace with no copy at all.
  */
 function fixture(): { root: string; cli: string } {
-  const root = trackedDirSync(join(tmpdir(), 'x-duplicate-packages-'));
+  const root = made(mkdtempSync(join(tmpdir(), 'x-duplicate-packages-')));
   const manifest = (dir: string, name: string, version: string): void => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ name, version, main: 'index.js' }));
@@ -282,7 +282,7 @@ describe('integration · installedCopies over a real fixture tree', () => {
   });
 
   test('a manifest that names another package, or will not parse, is not a copy', async () => {
-    const root = trackedDirSync(join(tmpdir(), 'x-duplicate-packages-'));
+    const root = made(mkdtempSync(join(tmpdir(), 'x-duplicate-packages-')));
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'app', workspaces: [] }));
     const io: DuplicateIo = {
       resolve: (specifier, from) =>
@@ -296,7 +296,7 @@ describe('integration · installedCopies over a real fixture tree', () => {
   });
 
   test('an entry six directories below any manifest, or at the filesystem root, is not a copy', async () => {
-    const root = trackedDirSync(join(tmpdir(), 'x-duplicate-packages-'));
+    const root = made(mkdtempSync(join(tmpdir(), 'x-duplicate-packages-')));
     writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'app', workspaces: [] }));
     const io: DuplicateIo = {
       resolve: (_specifier, from) => (from === root ? '/a/b/c/d/e/f/g/h/index.js' : '/index.js'),

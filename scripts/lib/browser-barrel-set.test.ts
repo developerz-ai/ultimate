@@ -25,8 +25,8 @@ const madeDirs: string[] = [];
 afterAll(async () => {
   for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
-const trackedDir = async (prefix: string): Promise<string> => {
-  const dir = await mkdtemp(prefix);
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
   madeDirs.push(dir);
   return dir;
 };
@@ -36,7 +36,8 @@ const trackedDir = async (prefix: string): Promise<string> => {
 // to take minutes, and a test that does has hung.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
-const tree = (name: string): Promise<string> => trackedDir(join(tmpdir(), `ultimate-${name}-`));
+const tree = (name: string): Promise<string> =>
+  mkdtemp(join(tmpdir(), `ultimate-${name}-`)).then(made);
 
 describe('the seam half', () => {
   /**
