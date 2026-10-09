@@ -17,7 +17,7 @@ export const publishPost = action({
 });
 ```
 
-Declared in `api/` or a feature's `actions.ts`. Named export, never default. The export name is the identity, and it must be globally unique. Only the HTTP path is *derived* from it (`publishPost` → `POST /api/posts/publish`); the OpenAPI `operationId` and the **MCP tool name are the export name verbatim** — `publishPost`, never `publish_post`. `As of 2026-08` that holds on every surface at once: what `tools/call` accepts, what `defineAppMcp`'s `scopes:` map is keyed on, what the LLM tool list offers, what `openapi.json`'s `x-ultimate.mcpTool` publishes, and what `describe().mcp.tool` reports.
+Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what `x g` writes). Named export, never default. The export name is the identity, and it must be globally unique. Only the HTTP path is *derived* from it (`publishPost` → `POST /api/posts/publish`); the OpenAPI `operationId` and the **MCP tool name are the export name verbatim** — `publishPost`, never `publish_post`. `As of 2026-08` that holds on every surface at once: what `tools/call` accepts, what `defineAppMcp`'s `scopes:` map is keyed on, what the LLM tool list offers, what `openapi.json`'s `x-ultimate.mcpTool` publishes, and what `describe().mcp.tool` reports.
 
 ## Fields
 
@@ -115,9 +115,9 @@ Rejected by that rule: an MCP-specific permission table, a "trusted tool" mode, 
 - render, redirect, or return HTML
 - perform its own authorization inside `handle` — that belongs in `policy`
 - do slow work inline — enqueue a `job`
-- be defined outside `api/` or a feature's `actions.ts`
+- share a file with another primitive — one per file, in the feature's `actions/`
 
-Logic lives in `service.ts`; `actions.ts` holds declarations. An action whose `handle` is more than a few lines of orchestration is a service waiting to be extracted.
+Logic lives in `service.ts`; `actions/` holds declarations. An action whose `handle` is more than a few lines of orchestration is a service waiting to be extracted.
 
 ## `mutator` — action + optimistic twin
 
@@ -164,7 +164,8 @@ export const likePost = mutator({
 | `X_MUTATOR_NOT_IDEMPOTENT` | a `mutator` declared without `idempotent: true` | add `idempotent: true` to the definition |
 | `X_CONTRACT_DRIFT` | client build id ≠ server build id, or a breaking published-contract change | reload the client / bump the action version |
 | `X_TENANCY_UNSCOPED` | a query inside `handle` had no tenant predicate | scope it through the repo, never raw SQL |
-| `X_BOUNDARY_VIOLATION` | action declared outside `api/` or `<feature>/actions.ts` | move the file, or `x fix boundary <file>` |
+| `X_BOUNDARY_VIOLATION` | action declared outside `api/` or `<feature>/actions/` | move the file, or `x fix boundary <file>` |
+| `X_LAYOUT_SIBLING_MODULE` | a module `actions.ts` beside the directory `actions/` | move each declaration to `actions/<name>.ts`, then delete the file |
 
 ```
 X_ACTION_POLICY_MISSING: action registered without a policy

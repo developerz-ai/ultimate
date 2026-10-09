@@ -4,7 +4,7 @@
  * `offline: 'runtime'` — network first, the device's copy only when the network fails — so a post
  * read once opens again in a tunnel, which is what the offline like on this page is for. A render
  * cached on the device is one principal's view, and it can only ever be shown to that principal:
- * sign-out (`endSession`, `app/auth/actions.ts`) answers `Clear-Site-Data: "cache", "storage"`,
+ * sign-out (`endSession`, `app/auth/actions/end-session.ts`) answers `Clear-Site-Data: "cache", "storage"`,
  * which drops the service worker's caches, and the page boot wipes any other principal's stored
  * record scopes before it reads one. It was `network-only` while neither was true.
  */

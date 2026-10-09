@@ -5,8 +5,8 @@
  * prompt's identity, which keys the semantic cache and appears in every trace, so a summary can
  * always be attributed to the exact text that produced it. Bumping `version` changes the hash.
  *
- * The `llm()` declaration that uses it lives in `../actions.ts`, because `llm()` returns an
- * `action` and an action is only ever declared in `api/` or a feature's `actions.ts`. What lives
+ * The `llm()` declaration that uses it lives in `../actions/summarize.ts`, because `llm()` returns
+ * an `action` and an action is only ever declared in a feature's `actions/`. What lives
  * beside this file is the rest of the artifact: `summarize.v5.md`, `summarize.evals.ts` and
  * `summarize.v5.baseline.json`. Earlier versions (`summarize.v3.md`, `summarize.v4.md`, their
  * baselines) stay on disk unchanged — old traces cite them, and rollback is a version number, not a restore from git.

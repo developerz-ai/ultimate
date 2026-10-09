@@ -11,7 +11,7 @@
  */
 
 import { expect, test } from '@ultimat3/testing';
-import { savePreferences } from './actions';
+import { savePreferences } from './actions/save-preferences';
 
 test('savePreferences writes the member row and answers it as stored', async ({
   seed,

@@ -11,9 +11,9 @@
 
 import { db } from '@postly/db';
 import { expect, jobTest } from '@ultimat3/testing';
-import { publishPost } from '../posts/actions';
-import { addWebhookEndpoint } from './actions';
-import { POST_PUBLISHED, postPublishedWebhook } from './jobs';
+import { publishPost } from '../posts/actions/publish-post';
+import { addWebhookEndpoint } from './actions/add-webhook-endpoint';
+import { POST_PUBLISHED, postPublishedWebhook } from './jobs/post-published-webhook';
 
 const RECEIVER = 'https://hooks.postly.invalid/inbox';
 

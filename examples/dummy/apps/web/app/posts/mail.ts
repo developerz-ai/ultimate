@@ -36,7 +36,7 @@ export const postPublished = defineMail<PostPublishedData>({
 });
 
 /**
- * "Someone commented on your post" — what `commentPosted` (`./notifiers.ts`) mails the author.
+ * "Someone commented on your post" — what `commentPosted` (`./jobs/comment-posted.ts`) mails the author.
  * Names, not ids, in the slots: the payload is rendered on the worker with no request to look a
  * name up through, so the comment's action puts the two names in at enqueue.
  */

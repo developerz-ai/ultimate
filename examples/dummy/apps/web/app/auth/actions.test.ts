@@ -4,7 +4,7 @@
 import { runWithContext } from '@ultimat3/core';
 import { asCtx, defineHttpConfig, requestContext } from '@ultimat3/http';
 import { describe, expect, test } from '@ultimat3/testing';
-import { AFTER_SIGN_OUT, endSession } from './actions';
+import { AFTER_SIGN_OUT, endSession } from './actions/end-session';
 import { DEMO_MEMBER_COOKIE, DEMO_SIGNED_OUT } from './demo-actor';
 
 const signOut = async (accept: string) => {

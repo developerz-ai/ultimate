@@ -8,7 +8,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 5 — cli. Both tracked apps.
+
+- **The generator's directory form is the one layout (#710, owner decision 10).** One primitive per file, in its kind's directory — `<slice>/actions/<name>.ts`, `live/`, `queries/`, `jobs/`, `tasks/` — what `x g` writes. `x verify`'s `boundaries` step now refuses a module `X.ts` beside a directory `X/` in an app's surfaces (`X_LAYOUT_SIBLING_MODULE`): `./actions` resolves to the file and never the directory, so the two homes disagree silently. Both tracked apps migrated: `examples/dummy`'s 56 primitives and the demo's 11 each in their own file (`api/tasks.ts`'s two tasks moved into their slices' `tasks/`), registered module by module in `api/index.ts`. `docs/architecture/12-generated-app.md`, `wiki/Project-Layout.md` and `wiki/Actions.md` say so. An app that keeps `actions.ts` with no `actions/` beside it is not refused.
 
 ## 27.2.3 - 2026-10-09
 

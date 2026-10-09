@@ -10,7 +10,8 @@
 
 import type { LocalTables } from '@ultimat3/action';
 import { expect, memoryLocalTx, test, unitTest } from '@ultimat3/testing';
-import { likePost, movePostStatus } from './mutator';
+import { likePost } from './actions/like-post';
+import { movePostStatus } from './actions/move-post-status';
 
 type LocalPost = LocalTables['posts'];
 

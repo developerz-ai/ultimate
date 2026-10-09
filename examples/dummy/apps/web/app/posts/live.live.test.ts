@@ -16,9 +16,9 @@
  */
 
 import { expect, test } from '@ultimat3/testing';
-import { publishPost } from './actions';
+import { publishPost } from './actions/publish-post';
 import type { PostSummary } from './entity';
-import { liveFeed } from './live';
+import { liveFeed } from './live/live-feed';
 
 test('the initial snapshot is scoped to the actor’s org', async ({ seed, actorFor, subscribe }) => {
   const { ada, acme } = await seed('dev').pick({ ada: 'member:ada', acme: 'org:acme' });

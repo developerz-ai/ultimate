@@ -10,10 +10,10 @@
 import { channelRef } from '@ultimat3/realtime';
 import type { Api } from '../../api';
 
-/** The catch-up read: the org's recent posts as whole rows (`live.ts`). */
+/** The catch-up read: the org's recent posts as whole rows (`queries/org-posts.ts`). */
 export const ORG_POSTS_READ: keyof Api['queries'] = 'orgPosts';
 
-/** One post as its whole row — what an island seeds its record from (`live.ts`). */
+/** One post as its whole row — what an island seeds its record from (`queries/post-record.ts`). */
 export const POST_RECORD_READ: keyof Api['queries'] = 'postRecord';
 
 /** `org-posts.<orgId>`: every committed `posts` row of that org reaches its members as a record. */

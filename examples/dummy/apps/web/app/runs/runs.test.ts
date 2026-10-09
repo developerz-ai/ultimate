@@ -13,7 +13,10 @@ import { testActor } from '@ultimat3/policy';
 import { noWaitClock, resetScrapeClock, setScrapeClock } from '@ultimat3/scraping';
 import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, describe, expect, test, testName } from '@ultimat3/testing';
-import { answerPrompt, cancelRun, connectSite, startRun } from './actions';
+import { answerPrompt } from './actions/answer-prompt';
+import { cancelRun } from './actions/cancel-run';
+import { connectSite } from './actions/connect-site';
+import { startRun } from './actions/start-run';
 import { canRunAct, canRunKey, canRunKeyRevoke, canRunRead, canRunWrite } from './policy';
 import * as repo from './repo';
 

@@ -11,7 +11,7 @@
 import type { RunEvent } from '@postly/db';
 import { ctxOf, runWithContext } from '@ultimat3/core';
 import { expect, test } from '@ultimat3/testing';
-import { liveRunEvents } from './live';
+import { liveRunEvents } from './live/live-run-events';
 import * as repo from './repo';
 
 const RUN = '00000000-0000-4000-8000-0000000000b1';

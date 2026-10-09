@@ -29,7 +29,8 @@ import {
   setMailDriver,
   tryMailDriver,
 } from '@ultimat3/mail';
-import { deliverDigest, digestEnabled, sendDigest } from './jobs';
+import { deliverDigest } from './jobs/deliver-digest';
+import { digestEnabled, sendDigest } from './jobs/send-digest';
 
 const TINTA = '00000000-0000-4000-8000-00000000e001';
 const NUBE = '00000000-0000-4000-8000-00000000e002';

@@ -41,7 +41,9 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Caching-And-Invalidation: // action': 1,
   'Caching-And-Invalidation: export const summarize = llm({': 1,
   'Caching-And-Invalidation: export const tag = tags({': 1,
-  'Client-Data: // app/posts/actions.ts': 1,
+  // why: the `// app/posts/actions.ts` row, renamed with the layout it shows (#710) — the same
+  // fence, failing for the same feature-relative imports a snippet cannot resolve.
+  'Client-Data: // app/posts/actions/rename-post.ts': 1,
   'Client-Data: // app/posts/queries.ts': 1,
   'Client-Data: // app/posts/rename.island.tsx': 1,
   'Client-Data: // shared/browser-client.ts — type-only import of the api, so no server code reaches the island': 1,

@@ -11,7 +11,7 @@ import { answerPrompt, noWaitClock, resetScrapeClock, setScrapeClock } from '@ul
 import type { MemoryStorageDriver } from '@ultimat3/storage';
 import { defineStorage, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { afterEach, beforeEach, expect, type JobRunTrace, jobTest } from '@ultimat3/testing';
-import { PROMPT_LABEL, syncConnection } from './jobs';
+import { PROMPT_LABEL, syncConnection } from './jobs/sync-connection';
 import * as repo from './repo';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';

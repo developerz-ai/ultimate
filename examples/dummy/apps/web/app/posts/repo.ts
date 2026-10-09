@@ -167,7 +167,7 @@ export const byId = async (orgId: OrgId, id: PostId): Promise<PostView | null> =
 /**
  * Whole `posts` rows — RECORDS, not views: what the page's store holds under `posts:<id>`, so the
  * read answering them and the channel frame updating them write one object. `orgPosts` and
- * `postRecord` in `live.ts` answer these, declared `rows: posts.$schema`.
+ * `postRecord` in `queries/` answer these, declared `rows: posts.$schema`.
  */
 export const recentRows = async (orgId: OrgId, limit: number): Promise<Post[]> => [
   ...(await db.posts.where({ orgId }).orderBy('createdAt', 'desc').limit(limit).all()),
@@ -221,7 +221,7 @@ export const insertDraft = async (row: {
 }): Promise<PostView> => writeView(await db.posts.insert(row));
 
 /**
- * Every post of one org, as `exportPosts` pages it (`jobs.ts`): the chain, never the rows — the
+ * Every post of one org, as `exportPosts` pages it (`jobs/export-posts.ts`): the chain, never the rows — the
  * export reads it a batch at a time, so the org's whole history is never one array in the heap.
  */
 export const exportSource = (orgId: OrgId): ReadBuilder<Post> => db.posts.where({ orgId });
@@ -286,7 +286,7 @@ export const publishedSince = async (orgId: OrgId, since: Date): Promise<PostSum
   ).map(summaryView);
 
 /**
- * One row, one statement, for the feed's streamed activity badge — `feedActivity` in `live.ts`
+ * One row, one statement, for the feed's streamed activity badge — `feedActivity` in `queries/feed-activity.ts`
  * wraps this so the count arrives independently of the feed itself, which reads over the socket.
  */
 export const activitySummary = async (orgId: OrgId): Promise<ActivitySummary[]> => {
@@ -308,7 +308,7 @@ export const insertComment = async (row: {
  * appends the primary key to every plan (`plan.ts`, `totalOrder`) precisely so a cursor page has a
  * total order. Repeating it would be a second declaration of the same rule, and an ascending `id`
  * spelled `desc` by hand would silently disagree with the page the driver actually returns. The
- * live query in `live.ts` does write it out, because `from()` builds its shape from that call.
+ * live query in `live/live-feed.ts` does write it out, because `from()` builds its shape from that call.
  */
 export const feedPage = async (orgId: OrgId, limit: number): Promise<PostSummary[]> =>
   (

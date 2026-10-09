@@ -13,7 +13,7 @@ import { cancelJob, jobDriver } from '@ultimat3/jobs';
 import { answerPrompt as publishAnswer } from '@ultimat3/scraping';
 import type { ConnectInput, ConnectionView, RunKeyIssued, RunStarted } from './entity';
 import { ConnectionNotFound, RunNotFound, RunQueueUnavailable } from './errors';
-import { syncConnection } from './jobs';
+import { syncConnection } from './jobs/sync-connection';
 import { issueRunKeyFor, revokeRunKeyById, runKeyOwner } from './keys';
 import type { RunOwner } from './policy';
 import * as repo from './repo';

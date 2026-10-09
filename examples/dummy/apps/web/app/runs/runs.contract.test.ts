@@ -14,7 +14,9 @@ import { defineHttpConfig, httpServer, mountedPath } from '@ultimat3/http';
 import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, beforeEach, expect, test } from '@ultimat3/testing';
-import { connectSite, issueRunKey, revokeRunKey } from './actions';
+import { connectSite } from './actions/connect-site';
+import { issueRunKey } from './actions/issue-run-key';
+import { revokeRunKey } from './actions/revoke-run-key';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';
 const OTHER_ORG = '00000000-0000-4000-8000-0000000000a9';

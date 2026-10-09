@@ -8,7 +8,7 @@
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { toQueryRoute } from '@ultimat3/query';
 import { expect, test } from '@ultimat3/testing';
-import { publicPostSlugs } from './live';
+import { publicPostSlugs } from './queries/public-post-slugs';
 
 test('every published post is a prerendered URL, newest first, and a draft is not', async ({
   seed,

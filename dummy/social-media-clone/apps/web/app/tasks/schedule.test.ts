@@ -7,7 +7,8 @@
 import { expect, test } from 'bun:test';
 import { task } from '@ultimat3/jobs';
 import { scheduledApi } from '../../api/tasks';
-import { hourlyDemoReset, hourlyMediaSweep } from './schedule';
+import { hourlyDemoReset } from './tasks/hourly-demo-reset';
+import { hourlyMediaSweep } from './tasks/hourly-media-sweep';
 
 test('a task declared without a tz is rejected — an unzoned cron is a bug waiting for March', () => {
   // @ts-expect-error — `tz` is REQUIRED by TaskDefinition. This line failing to error is itself

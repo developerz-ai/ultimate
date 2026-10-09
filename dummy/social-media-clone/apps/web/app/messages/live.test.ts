@@ -8,7 +8,7 @@
 import { ctxOf, userActor } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { expect, liveTest, unitTest } from '@ultimat3/testing';
-import { liveThread } from './live';
+import { liveThread } from './live/live-thread';
 import { THREAD_PAGE } from './repo';
 
 const ROOM = '00000000-0000-4000-8000-0000000000f3';

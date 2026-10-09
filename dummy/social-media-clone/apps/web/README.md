@@ -16,8 +16,9 @@ applies migrations and exits.
 **The directory is the URL.** `app/posts/[id]/page.tsx` is `/posts/:id`. The filename never
 contributes — `page.tsx` on `site/`/`app/`, `route.ts` on `api/`, and nothing else is a route.
 
-A feature slice is one directory holding `entity.ts`, `policy.ts`, `actions.ts`, `mutator.ts`,
-`live.ts`, `jobs.ts`, `service.ts`, `repo.ts`, `errors.ts` and `ui/`. Each file has one job, and
+A feature slice is one directory holding `entity.ts`, `policy.ts`, `service.ts`, `repo.ts`,
+`errors.ts`, `ui/`, and one primitive per file under `actions/`, `live/`, `queries/`, `jobs/` and
+`tasks/` — the layout `x g` writes, and the only one (`X_LAYOUT_SIBLING_MODULE`). Each file has one job, and
 only `repo.ts` writes SQL. There is no `lib/`, `utils/` or `helpers/` — those names mean the code
 has no owner.
 

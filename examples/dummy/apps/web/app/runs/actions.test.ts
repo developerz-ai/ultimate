@@ -6,14 +6,12 @@ import { ctxOf, runWithContext } from '@ultimat3/core';
 import { jobDriver, memoryJobDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { testActor } from '@ultimat3/policy';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
-import {
-  answerPrompt,
-  cancelRun,
-  connectSite,
-  issueRunKey,
-  revokeRunKey,
-  startRun,
-} from './actions';
+import { answerPrompt } from './actions/answer-prompt';
+import { cancelRun } from './actions/cancel-run';
+import { connectSite } from './actions/connect-site';
+import { issueRunKey } from './actions/issue-run-key';
+import { revokeRunKey } from './actions/revoke-run-key';
+import { startRun } from './actions/start-run';
 import { resolveRunKey } from './keys';
 import * as repo from './repo';
 

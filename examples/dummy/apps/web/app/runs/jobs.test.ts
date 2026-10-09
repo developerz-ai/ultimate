@@ -7,7 +7,7 @@ import type { Ctx } from '@ultimat3/core';
 import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { answerPrompt, noWaitClock } from '@ultimat3/scraping';
 import { afterEach, beforeEach, expect, unitTest } from '@ultimat3/testing';
-import { askConsole, PROMPT_LABEL, recordedUsage, syncConnection } from './jobs';
+import { askConsole, PROMPT_LABEL, recordedUsage, syncConnection } from './jobs/sync-connection';
 import * as repo from './repo';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';

@@ -21,7 +21,8 @@
 import { postlyMcp } from '@postly/mcp';
 import { agentActor } from '@ultimat3/core';
 import { expect, test } from '@ultimat3/testing';
-import { createComment, createPost } from './actions';
+import { createComment } from './actions/create-comment';
+import { createPost } from './actions/create-post';
 
 interface Member {
   readonly id: string;

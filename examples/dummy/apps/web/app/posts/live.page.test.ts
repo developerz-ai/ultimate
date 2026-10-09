@@ -14,7 +14,7 @@ import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { toQueryRoute } from '@ultimat3/query';
 import { expect, test } from '@ultimat3/testing';
 import type { PostSummary } from './entity';
-import { liveFeed } from './live';
+import { liveFeed } from './live/live-feed';
 
 interface FeedPage {
   readonly rows: readonly PostSummary[];

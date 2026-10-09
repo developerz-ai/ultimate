@@ -120,10 +120,10 @@ apps/web/app/<features>/page.tsx the route, at the plural URL
 | `queries/` | one `query` per file, not subscribable | writes |
 | `jobs/` | one `job` per file | inline slow work in an action |
 | `tasks/` | one `task` per file — a cron trigger that enqueues a job | doing the work itself |
-| `ui.tsx`, `ui/` | Solid components | fetching, business logic, its own authz |
+| `ui.tsx` or `ui/` | Solid components | fetching, business logic, its own authz |
 | `admin/resource.ts` | list columns, title key, page size | a second authz path |
 
-`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`. A primitive is registered by `defineApi()` and found by the module scan, never by its filename, so a feature may equally keep several declarations in one file — `examples/dummy` keeps one `actions.ts` per feature — and nothing enforces either layout ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). The flat files are the ones there is exactly one of per feature.
+`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`, each named for its export in kebab case. **That directory form is the one layout** (`As of 2026-10`, owner decision 10 of #648): both tracked apps use it, and a module `X.ts` beside a directory `X/` is refused — `X_LAYOUT_SIBLING_MODULE`, in the `boundaries` step — because `./actions` resolves to the file and never the directory. A factory's kind decides its directory: a mutator, a `transition()` and an `llm()`/`agent()`/`hive()` call are actions; a `backfill()` keeps `backfills/`, and every other job factory is a job. A primitive is registered by `defineApi()` and found by the module scan, never by its filename ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). The flat files are the ones there is exactly one of per feature.
 
 The folder is the name passed to `x g resource`; the route is its plural, because a collection URL is plural — `x g resource post` writes the slice to `apps/web/app/post/` and the page to `apps/web/app/posts/page.tsx`.
 
@@ -152,7 +152,7 @@ this file a route?" mechanically decidable from the filename alone.
 
 **`api/` holds the action and query projections, and no route file.** An action, mutator, query,
 job or task reaches HTTP through `defineApi()`, not through a filename: those modules keep whatever
-name their feature gives them (`app/posts/actions.ts`, `app/digest/jobs.ts`, …) and
+name their feature gives them (`app/posts/actions/create-post.ts`, `app/digest/jobs/send-digest.ts`, …) and
 `apps/web/api/index.ts` collects them into one `defineApi()` call, which projects the HTTP routes,
 `openapi.json`, the typed client and the job handles.
 
