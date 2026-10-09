@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.2.0 - 2026-10-09
+
 ### Added
 
 Tier 0 — core.
@@ -38,6 +42,10 @@ Tier 5 — testing.
 
 - **The app preload resets the rate-limit store at every test-file boundary.** One worker runs many files since 22.7, and a declared `rateLimit:` is counted in the process-wide installed store: a file that spent a test actor's bucket left it spent for the next, so "the 31st call is a 429" went red whenever another file calling that action ran first on its worker. Each file now starts with the store back to one process' memory (`resetRateLimitStore`), as a file run alone would; `rate-limit-file-boundary.test.ts` proves it in a real two-file `bun test`.
 - **`requestedFixtures` reads the first parameter's pattern, not the first `{` in the source.** `() => fn({ seed: 1 })` asked for the `seed` fixture: the body's object literal was taken for a destructured parameter, so a test that took no fixtures built — or was refused for — names from its own call arguments. The pattern must now open the parameter list (`({ … })`, `async ({ … })`, `function name({ … })`); `() =>`, `bag =>` and `(bag) =>` request nothing.
+
+### Commits
+
+- fix: 27.1 upgrade defects: promote data loss, admin direct grants and policy fallback, clientTransport text, test isolation (#728)
 
 ## 27.1.0 - 2026-10-09
 
