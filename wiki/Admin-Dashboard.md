@@ -284,8 +284,8 @@ never an author's choice, `As of 2026-08`.
 | `hydrate` | `never` | every control on a generated screen is a link or a native `<form method="post">` — paging, search, the forms, row actions — so the page ships **zero JavaScript** and has nothing to boot. It also means a generated screen declares **no island**: an island rendered on a route at `never` is `X_ISLAND_NOT_HYDRATED`, whose fix is to remove the `never` |
 | `policy` | `permissions[0]`, always | the author never writes this `defineRoute` call, so the author cannot omit the guard; an empty permission list is `X_ADMIN_PAGE_UNGUARDED` at construction |
 
-Interactivity is a screen you write yourself under `apps/admin/app/<feature>/` — a normal Ultimate
-route, where `hydrate` derives from the island it declares.
+Interactivity on an admin URL is an app file that claims the route — [An admin page in your own
+shell](#an-admin-page-in-your-own-shell) — where `hydrate` derives from the islands it declares.
 
 The **request timeline** and the **live query inspector** are not admin routes: they are `/_x`
 panels (`panel-timeline.ts`, `panel-live.ts`), mounted by `devDashboard()`, which throws rather
@@ -301,7 +301,8 @@ Own routes in your own app. Never fork the framework.
 
 | Want | Do |
 |---|---|
-| A custom screen | `pages: [{ path, titleKey, permissions, component }]` on `defineAdmin` — same route table, same guard, framed in the shell. `x g admin:page <name>` writes it beside the declaration, under `apps/admin/app/admin/`. A path the admin already serves (`/jobs/*` included) is `X_ADMIN_PAGE_PATH_INVALID`. A screen that needs an island is a normal Ultimate route under `apps/admin/app/<feature>/` |
+| A custom screen | `pages: [{ path, titleKey, permissions, component }]` on `defineAdmin` — same route table, same guard, framed in the shell. `x g admin:page <name>` writes it beside the declaration, under `apps/admin/app/admin/`. A path the admin already serves (`/jobs/*` included) is `X_ADMIN_PAGE_PATH_INVALID` |
+| A custom screen in your own shell, or with an island | the `pages:` entry above, plus a `page.tsx` at its path whose config is `claimAdminRoute(admin, path, …)` → [An admin page in your own shell](#an-admin-page-in-your-own-shell) |
 | A different control for one field | `resources: { <entity>: { fields: { <name>: { widget } } } }` — one of the `AdminWidget` kinds in `fields.ts`; a new column kind is a row in that table, not an app hook |
 | A custom operation, on one row or many | `actions: [{ name, permission, entity, input?, when?, batch?, matching?, readonly?, destructive?, handle }]` on `defineAdmin` — a button on the detail and each list row, a row in the batch bar with `batch`, and an MCP tool `admin.action.<name>`. Grant its `permission` in the role map, or the `policy` step is `X_PERMISSION_UNGRANTED` |
 | Different columns in a list | `resources: { <entity>: { listFields, labelField, columns } }` — `x g resource <name> --admin` writes the override, with `listFields` read off the entity, and lists it in `defineAdmin()` |
@@ -311,6 +312,56 @@ Own routes in your own app. Never fork the framework.
 | Hide an entity | the entity's policy denies `admin:read` — visibility is authz, not configuration |
 
 No plugin API, in 1.x, 2.x, 3.x or 4.0.0 ([axiom](Home)). The extension point is that the admin is your app.
+
+## An admin page in your own shell
+
+**`claimAdminRoute(admin, path, options)` — the one way an app file serves an admin path**, `As of
+2026-10`. For a console that keeps the app's own chrome (theme switch, language switch, an
+enrolment banner) or needs an island on a page: every other admin route ships no script.
+
+```tsx
+// apps/admin/app/admin/credits/page.tsx — the file at the page's own path
+import { type AdminClaimData, claimAdminRoute } from '@ultimat3/admin';
+import { island } from '@ultimat3/render';
+import { admin } from '../admin';            // the module that calls defineAdmin()
+import { creditsPage } from '../pages/credits';
+
+// Islands FIRST: the claim's defineRoute drains them, which is how the page hydrates.
+const GrantForm = island({ src: './credits-grant.island.tsx', props: ['orgId'] });
+
+export const config = claimAdminRoute(admin, `${admin.basePath}${creditsPage.path}`, {
+  hydrate: 'idle',
+  budget: { js: '60kb' },
+  // The app's half of the data, read AFTER the screen decided — the refused included (`denied`).
+  load: ({ ctx, url }) => ({ role: ctx.actor.roles[0] ?? null, path: new URL(url).pathname }),
+});
+
+export function Page(props: { readonly data: AdminClaimData<{ role: string | null; path: string }> }) {
+  return (
+    <AppShell nav={props.data.nav} titleKey={props.data.denied ? null : props.data.titleKey}>
+      {props.data.body}
+    </AppShell>
+  );
+}
+```
+
+| The app passes | The admin keeps |
+|---|---|
+| `load` — the shell's own data; `withStatus(404, …)` from it sets the page's status | `render: 'ssr'`, `offline: 'network-only'`, private `no-store` |
+| `hydrate`, `budget`, `navigation` | `policy` — the route's `admin:read`, decided by the pipeline before `load` |
+| the page component: the shell around `data.body` | `meta`: the route's title, `noindex, nofollow` on every answer |
+| | `load`: the SAME screen the catch-all serves — the page's permission pair decided with `auth.actor`'s actor, a refusal audited and answered 403 (`data.denied`, the author's component never called), the body without `AdminLayout` |
+
+- **Only a `pages:` entry or the dashboard** (`admin.basePath`). A generated screen posts its forms
+  back to its own URL, which only the admin answers: `X_ADMIN_PAGE_PATH_INVALID`, naming what may
+  be claimed. A claimed dashboard leaves `POST /admin` (app-wide actions) to the admin.
+- **Only the config `claimAdminRoute` issued, at the path it was issued for.** A hand-written
+  `defineRoute` on an admin path — or `defineRoute({ ...claimed, load })` — is `X_ROUTE_DUPLICATE`,
+  as before: the admin answers render's `claimable(path, config)` by identity.
+- An island inside the `pages:` component is rendered by the component, but declared by the claiming
+  file (the island's `src` resolves against it): hand it down — a module-level slot the file binds,
+  or a prop of the shell.
+- `x routes` lists the path once: the file, with `defineAdmin() · <permissions>`.
 
 ## Deployment
 
@@ -326,7 +377,7 @@ See [Deployment](Deployment).
 
 ## Rules
 
-- One declaration, mounted by the framework. A hand-written page for an admin URL is a second server for it.
+- One declaration, mounted by the framework. A hand-written page for an admin URL is a second server for it; a file serves one only through `claimAdminRoute`, under the admin's guard.
 - One authz seam. The UI never shows what the call would refuse.
 - Destructive operations confirm and audit — enforced by the permission table, not by a view.
 - Read-only SQL, capped. No write console.

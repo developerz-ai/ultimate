@@ -9,6 +9,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RouteFact } from '@ultimat3/manifest';
 import { buildManifest } from '@ultimat3/manifest';
+import {
+  clearRoutes,
+  defineRoute,
+  type RouteMetaFn,
+  registerMountedRoutes,
+  registerRoute,
+} from '@ultimat3/render';
 import type { BuildStats } from './budgets';
 import {
   BUILD_STATS_FILE,
@@ -36,6 +43,8 @@ const route = (url: string, budget?: RouteFact['budget']): RouteFact => ({
   render: 'static',
   ...(budget === undefined ? {} : { budget }),
 });
+
+const meta = (() => ({ title: 'T' })) as unknown as RouteMetaFn;
 
 const stats = (...routes: BuildStats['routes']): BuildStats => ({ routes });
 
@@ -115,6 +124,29 @@ describe('unit · budgets', () => {
     expect(findings[0]?.fix).toBe(
       "edit apps/web/app/dash/page.tsx — set budget: { js: '41kb' } with // measured: 40961 B (x build --target static) — why: <the function it buys> directly above it; or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'",
     );
+  });
+
+  test('a mounted path an app file CLAIMED is that file’s to edit; an unclaimed one is no file', () => {
+    clearRoutes();
+    const guard = { permission: 'admin:read' } as const;
+    const config = defineRoute({ render: 'ssr', offline: 'network-only', policy: guard, meta });
+    registerMountedRoutes(
+      {
+        key: '/admin',
+        by: 'defineAdmin',
+        file: '@ultimat3/admin',
+        surface: 'app',
+        claimable: (path, given) => path === '/admin/ops' && given === config,
+      },
+      ['/admin/ops', '/admin/audit'].map((path) => ({ path, config, permissions: ['admin:read'] })),
+    );
+    registerRoute({ file: 'apps/admin/app/admin/ops/page.tsx', config });
+    const fixOf = (url: string): string | undefined =>
+      checkBudgets(manifestOf(route(url, { js: '1kb' })), stats({ path: url, jsBytes: 4_096 }))[0]
+        ?.fix;
+    expect(fixOf('/admin/ops')).toContain('edit apps/admin/app/admin/ops/page.tsx');
+    expect(fixOf('/admin/audit')).toContain('edit the file declaring /admin/audit');
+    clearRoutes();
   });
 
   test('a route no file declares still gets its measured bytes and the next whole kb', () => {

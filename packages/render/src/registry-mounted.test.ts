@@ -121,3 +121,75 @@ describe('unit · a mounted route is in the one route list', () => {
     );
   });
 });
+
+describe('unit · a mount may let ONE app file claim one of its paths', () => {
+  // The mounter's own answer: the config it issued for that path, by identity. Render never
+  // decides who may claim — it asks the package that mounted the path.
+  const issued = new Map<string, unknown>();
+  const claimable = (path: string, config: unknown): boolean => issued.get(path) === config;
+  const claiming = (paths: readonly string[]): void =>
+    registerMountedRoutes(
+      { ...MOUNT, claimable },
+      paths.map((path) => ({ path, config: gated, permissions: ['admin:read', 'ops:read'] })),
+    );
+  const claim = defineRoute({
+    render: 'ssr',
+    offline: 'network-only',
+    hydrate: 'never',
+    policy: { permission: 'admin:read' },
+    meta,
+  });
+  const FILE = 'apps/admin/app/admin/ops/page.tsx';
+
+  beforeEach(() => {
+    issued.clear();
+    issued.set('/admin/ops', claim);
+  });
+
+  test('the issued config registers at the mounted path, in either order', () => {
+    claiming(['/admin', '/admin/ops']);
+    expect(() => registerRoute({ file: FILE, config: claim })).not.toThrow();
+
+    clearRoutes();
+    registerRoute({ file: FILE, config: claim });
+    expect(() => claiming(['/admin', '/admin/ops'])).not.toThrow();
+  });
+
+  test('the claimed path is ONE row: the file, still carrying the mount and its permissions', () => {
+    claiming(['/admin', '/admin/ops']);
+    registerRoute({ file: FILE, config: claim });
+    const rows = describePages().filter((route) => route.path === '/admin/ops');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      file: FILE,
+      mount: { by: 'defineAdmin', permissions: ['admin:read', 'ops:read'], claimed: true },
+    });
+    // An unclaimed mounted row says nothing about a claim.
+    expect(describePages().find((route) => route.path === '/admin')?.mount).not.toHaveProperty(
+      'claimed',
+    );
+  });
+
+  test('refused: a config the mount did not issue — hand-written or a copy of the issued one', () => {
+    claiming(['/admin/ops']);
+    expect(() => registerRoute({ file: FILE, config: gated })).toThrow(RouteDuplicateError);
+    const copy = defineRoute({ ...claim, meta });
+    expect(() => registerRoute({ file: FILE, config: copy })).toThrow(RouteDuplicateError);
+
+    clearRoutes();
+    registerRoute({ file: FILE, config: gated });
+    expect(() => claiming(['/admin/ops'])).toThrow(RouteDuplicateError);
+  });
+
+  test('refused: a config issued for one path, registered at another', () => {
+    claiming(['/admin/ops', '/admin/billing']);
+    expect(() =>
+      registerRoute({ file: 'apps/admin/app/admin/billing/page.tsx', config: claim }),
+    ).toThrow(RouteDuplicateError);
+  });
+
+  test('a mount that offers no claim refuses every file, as before', () => {
+    mount(['/admin/ops']);
+    expect(() => registerRoute({ file: FILE, config: claim })).toThrow(RouteDuplicateError);
+  });
+});

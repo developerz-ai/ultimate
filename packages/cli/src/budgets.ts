@@ -86,7 +86,9 @@ const jsBudgetOf = (route: RouteFact): number | null => parseByteBudget(route.bu
 export type RouteFileOf = (url: string) => string | undefined;
 
 const declaredFileOf: RouteFileOf = (url) =>
-  describePages().find((route) => route.path === url && route.mount === undefined)?.file;
+  describePages().find(
+    (route) => route.path === url && (route.mount === undefined || route.mount.claimed === true),
+  )?.file;
 
 const KB = 1024;
 

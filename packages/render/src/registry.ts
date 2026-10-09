@@ -20,6 +20,7 @@ import {
 import { assertModeInvariants, defaultIslandBudget } from './modes';
 import type { MountedRouteInput, RouteMount, RouteMountInput } from './mounted-routes';
 import {
+  claimedBy,
   clearMountedRoutes,
   mountCollision,
   mountedAt,
@@ -87,8 +88,9 @@ export interface RouteDescriptor {
   readonly islandSources: readonly string[];
   readonly budgetJs: string | null;
   /**
-   * Present on a route NO surface file declares: who mounted it and every permission that gates
-   * it. Absent on a file route — so a reader never has to ask whether `file` is a path.
+   * Present on a route a package mounted: who mounted it and every permission that gates it.
+   * `file` is the package — unless `mount.claimed`, when an app file serves the path in the
+   * mount's place and `file` is that file. Absent on every other file route.
    */
   readonly mount?: RouteMount;
 }
@@ -212,6 +214,11 @@ function toUrlSegment(segment: string): string {
 }
 
 const routes = new Map<string, RouteEntry>();
+/**
+ * The config each path's module EXPORTED, before `withIslandBudget` may have copied it: a mount's
+ * `claimable` answers by identity, and the entry's own config is not always that object.
+ */
+const declaredConfigs = new Map<string, RouteConfig>();
 /** The table `describePages()` last built, dropped whenever a route registers or the registry clears. */
 let described: readonly RouteDescriptor[] | undefined;
 
@@ -297,7 +304,9 @@ export function registerRoute<TData = RouteData>(
     );
   }
   const claimed = mountedAt(path);
-  if (claimed !== undefined) throw mountCollision(path, input.file, claimed.mount);
+  if (claimed !== undefined && !claimedBy(claimed, input.config as RouteConfig)) {
+    throw mountCollision(path, input.file, claimed.mount);
+  }
 
   const entry: RouteEntry<TData> = {
     file: input.file,
@@ -318,6 +327,7 @@ export function registerRoute<TData = RouteData>(
     ...(input.component === undefined ? {} : { component: input.component }),
   };
   routes.set(path, entry as RouteEntry);
+  declaredConfigs.set(path, input.config as RouteConfig);
   described = undefined;
   return entry;
 }
@@ -355,7 +365,9 @@ export function registerMountedRoutes(
 ): void {
   for (const route of declared) {
     const file = routes.get(route.path)?.file;
-    if (file !== undefined) throw mountCollision(route.path, file, mount);
+    const config = declaredConfigs.get(route.path);
+    const claimed = config !== undefined && claimedBy({ ...route, mount }, config);
+    if (file !== undefined && !claimed) throw mountCollision(route.path, file, mount);
     assertPurgeableTags(mount.file, route.config.revalidate?.tags);
   }
   setMountedRoutes(mount, declared);
@@ -364,6 +376,7 @@ export function registerMountedRoutes(
 
 export function clearRoutes(): void {
   routes.clear();
+  declaredConfigs.clear();
   clearMountedRoutes();
   described = undefined;
 }
@@ -395,21 +408,39 @@ export function describePages(): readonly RouteDescriptor[] {
 }
 
 function buildDescriptors(): RouteDescriptor[] {
-  const files = routeEntries().map((entry) =>
-    descriptorOf(entry.path, entry.file, entry.surface, entry.config, entry.pattern.keys.length),
-  );
-  const mounts = mountedRoutes().map(
-    (route): RouteDescriptor => ({
-      ...descriptorOf(
-        route.path,
-        route.mount.file,
-        route.mount.surface,
-        route.config,
-        compilePattern(route.path).keys.length,
-      ),
-      mount: { by: route.mount.by, permissions: [...route.permissions] },
-    }),
-  );
+  const mounted = mountedRoutes();
+  // A path an app file claimed is ONE row: the file's, still naming the mount that gates it.
+  const claimOf = (path: string): RouteMount | undefined => {
+    const route = mounted.find((candidate) => candidate.path === path);
+    return route === undefined
+      ? undefined
+      : { by: route.mount.by, permissions: [...route.permissions], claimed: true };
+  };
+  const files = routeEntries().map((entry): RouteDescriptor => {
+    const row = descriptorOf(
+      entry.path,
+      entry.file,
+      entry.surface,
+      entry.config,
+      entry.pattern.keys.length,
+    );
+    const claim = claimOf(entry.path);
+    return claim === undefined ? row : { ...row, mount: claim };
+  });
+  const mounts = mounted
+    .filter((route) => !routes.has(route.path))
+    .map(
+      (route): RouteDescriptor => ({
+        ...descriptorOf(
+          route.path,
+          route.mount.file,
+          route.mount.surface,
+          route.config,
+          compilePattern(route.path).keys.length,
+        ),
+        mount: { by: route.mount.by, permissions: [...route.permissions] },
+      }),
+    );
   return mounts.length === 0
     ? files
     : [...files, ...mounts].sort((a, b) => byCodeUnit(a.path, b.path));

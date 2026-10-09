@@ -23,6 +23,12 @@ export interface AdminRouteRequest extends AdminPageProps {
   readonly method: 'GET' | 'POST';
   /** The parsed form. `null` on a GET; a POST with no fields is `{}`. */
   readonly form: Readonly<Record<string, unknown>> | null;
+  /**
+   * Who frames the body. Absent or `'admin'`: the admin's own layout. `'none'`: the body alone,
+   * for an app file that claimed the route (`claimAdminRoute`) and frames it in its own shell.
+   * The decision, the audit and the status are the screen's either way — only the wrapper differs.
+   */
+  readonly frame?: 'admin' | 'none';
 }
 
 export type AdminRouteResponse =
@@ -83,6 +89,7 @@ export function framed(
   body: JSX.Element,
   status = 200,
 ): AdminRouteResponse {
+  if (request.frame === 'none') return { kind: 'document', status, body };
   return {
     kind: 'document',
     status,

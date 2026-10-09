@@ -232,6 +232,7 @@
         "@ultimat3/core": "27.0.0",
         "@ultimat3/db": "27.0.0",
         "@ultimat3/entity": "27.0.0",
+        "@ultimat3/http": "27.0.0",
         "@ultimat3/i18n": "27.0.0",
         "@ultimat3/jobs": "27.0.0",
         "@ultimat3/mcp": "27.0.0",

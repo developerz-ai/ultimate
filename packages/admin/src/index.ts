@@ -124,6 +124,12 @@ export {
 export { BATCH_MATCHING_REASON, matchingConfirmationToken } from './batch-matching';
 export { BATCH_QUEUED_REASON } from './batch-queue';
 export {
+  type AdminClaimData,
+  type AdminClaimLoadArgs,
+  type ClaimAdminRouteOptions,
+  claimAdminRoute,
+} from './claim-route';
+export {
   type AdminUpdateOptions,
   adminCreate,
   adminDestroy,

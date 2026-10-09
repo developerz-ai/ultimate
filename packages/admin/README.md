@@ -91,7 +91,7 @@ admin.
 
 ### No script
 
-Every route is `ssr`, `hydrate: 'never'`, and every control is a link or a native form: the pager
+Every route is `ssr`, `hydrate: 'never'` (unless an app file claimed it — Custom pages, below), and every control is a link or a native form: the pager
 is `<Pagination hrefFor>`, a sort header is a link, scope tabs are links, the filter bar is one
 GET form, a form posts at the URL that rendered it and a refused one comes back 422 with what was
 typed. A write that worked is a 303. Every admin document is `noindex, nofollow`, and carries no
@@ -376,6 +376,15 @@ that shadows a generated screen throws `X_ADMIN_PAGE_PATH_INVALID` the same way.
 
 Custom pages are `render: 'ssr'`, `hydrate: 'never'`: the guard runs on the server, so there is
 nothing to ship and nothing to decide twice. A refused one answers 403.
+
+**In your own shell, with an island: claim the route.** A `page.tsx` at the page's path whose
+config is `claimAdminRoute(admin, path, { load?, hydrate?, budget?, navigation? })` serves it in
+the catch-all's place — a file route, so its islands hydrate. The claim keeps the gate, `meta` and
+a `load` that answers through the same screen (`frame: 'none'`, no `AdminLayout`); the page
+component renders `data.body` (decided: the page or the refusal) inside the app's shell, beside
+`data.nav` and `data.app` (what `load` returned). Only a `pages:` entry or the dashboard; only the
+config issued for that path (else `X_ROUTE_DUPLICATE`). [Admin Dashboard → An admin page in your
+own shell](https://github.com/developerz-ai/ultimate/wiki/Admin-Dashboard#an-admin-page-in-your-own-shell).
 
 ### Splitting the admin across files
 

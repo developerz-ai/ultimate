@@ -7,7 +7,7 @@ import type { AdminApp, AdminRouteConfig } from '@ultimat3/admin';
 import type { Route, RouteMeta } from '@ultimat3/http';
 import { asCtx, html, redirect, routeNotFound } from '@ultimat3/http';
 import type { RouteEntry } from '@ultimat3/render';
-import { compilePattern } from '@ultimat3/render';
+import { compilePattern, routeFor } from '@ultimat3/render';
 import { renderSsr } from '@ultimat3/render/server';
 import type { DocumentOptions } from './document-options';
 import { routeDocument } from './runtime-render';
@@ -120,6 +120,9 @@ const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
 
 const METHODS: readonly ('GET' | 'POST')[] = ['GET', 'POST'];
 
+/** A file route on a mounted path exists only by a claim the mount accepted (`registerRoute`). */
+const claimed = (path: string): boolean => routeFor(path) !== undefined;
+
 /**
  * Two paths per admin and two methods on each: the base path itself (the dashboard) and one
  * catch-all under it. The admin's own table is matched INSIDE the handler, against the table as
@@ -131,7 +134,11 @@ const METHODS: readonly ('GET' | 'POST')[] = ['GET', 'POST'];
 export function adminMountRoutes(options: AdminMountOptions): readonly Route[] {
   return [...declared().keys()].flatMap((base) =>
     [base, `${base}/*rest`].flatMap((path) =>
-      METHODS.map(
+      // The dashboard's GET, when an app file claimed it (`claimAdminRoute`): the file's route
+      // serves it, and two GETs on one path is X_ROUTE_CONFLICT. A claimed path UNDER the base
+      // needs nothing here — a static or param segment outranks the catch-all — and every POST
+      // stays the admin's. Only a claim the admin issued can put a file on a mounted path.
+      METHODS.filter((method) => !(method === 'GET' && path === base && claimed(base))).map(
         (method): Route => ({
           method,
           path,
