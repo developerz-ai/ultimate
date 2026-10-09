@@ -28,6 +28,11 @@ import { pageClient, recordSink } from './record-sink';
 
 const ONCE = { attempts: 1 } as const;
 
+/** `responseType: 'text'`: the 2xx body as a string, never decoded. */
+export function clientTransport(
+  req: TransportRequest & { readonly responseType: 'text' },
+): Promise<string>;
+export function clientTransport<T = unknown>(req: TransportRequest): Promise<T>;
 export async function clientTransport<T = unknown>(req: TransportRequest): Promise<T> {
   const read = req.method === 'GET';
   const issued = pageClient().scope.epoch;
@@ -63,6 +68,8 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
   // A read that raced the abort still belongs to the previous principal.
   if (read && current !== issued) throw scopeChanged(req.url, issued, current);
   if (req.rawBody !== undefined) return undefined as T;
+  // Read as text: nothing to decode, and no records envelope — that is a JSON answer's.
+  if (req.responseType === 'text') return answer.text as T;
   const envelope = unwrap(answer, req.url, read);
   // A write that crossed a rescope HAS landed, so its caller is told — but its rows are the
   // previous principal's, and the new scope's store never sees them.
