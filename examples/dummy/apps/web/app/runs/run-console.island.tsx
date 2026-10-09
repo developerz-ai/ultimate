@@ -13,6 +13,8 @@
  * `WebSocket`, and none of the five states can be held still by clicking. The page passes none.
  */
 
+import type { CatalogSubset } from '@ultimat3/i18n/subset';
+import { subsetTranslator } from '@ultimat3/i18n/subset';
 import { useQuery } from '@ultimat3/realtime';
 import { AsyncRegion, Button, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
@@ -28,7 +30,6 @@ import {
 } from 'solid-js';
 import { render } from 'solid-js/web';
 import { browserClient } from '../../shared/browser-client';
-import { type UiStrings, uiTranslator } from '../../shared/ui-strings';
 import styles from './run-console.module.scss';
 import type { ConnectionOption, ConsoleFault, ConsoleModel, RunHandle } from './run-console-model';
 import { createConsole } from './run-console-model';
@@ -59,8 +60,8 @@ export interface RunConsoleProps {
   readonly zone: string;
   readonly connections: readonly ConnectionOption[];
   readonly labels: RunConsoleLabels;
-  /** The `ui.*` strings `AsyncRegion`'s failure branch reads (`shared/ui-strings.ts`). */
-  readonly ui: UiStrings;
+  /** The design system's `ui.*` strings, resolved on the server (`uiCatalog(t)`): a `t` cannot travel. */
+  readonly ui: CatalogSubset;
   readonly run?: RunHandle;
   /** Events to draw instead of subscribing. The states file's, never the page's. */
   readonly preview?: readonly RunEventRow[];
@@ -248,11 +249,7 @@ export function mount(el: HTMLElement, props: RunConsoleProps): void {
   el.textContent = '';
   render(
     () => (
-      <UiProvider
-        locale={props.locale}
-        timeZone={props.zone}
-        t={uiTranslator(props.ui, props.locale)}
-      >
+      <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
         <RunConsole {...props} />
       </UiProvider>
     ),

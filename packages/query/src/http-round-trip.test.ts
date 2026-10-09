@@ -80,3 +80,46 @@ describe('the typed client and the route agree on what a value is', () => {
     expect(row?.kinds).toEqual(['post']);
   });
 });
+
+interface Dated {
+  readonly id: string;
+  readonly at: Date;
+  readonly note: string;
+  readonly replies: readonly { readonly at: Date | null }[];
+}
+
+/** A read whose rows carry instants — at the top, inside a nested list, and beside plain text. */
+const dated = query({
+  input: t.object({}),
+  policy: can('feed:read'),
+  sql: () =>
+    from<Dated>('dated', [
+      { id: 'a', at: SINCE, note: SINCE.toISOString(), replies: [{ at: SINCE }, { at: null }] },
+    ]),
+}).named('dated');
+
+const single = query({
+  input: t.object({}),
+  policy: can('feed:read'),
+  single: true,
+  sql: () => from<Dated>('dated', [{ id: 'a', at: SINCE, note: 'n', replies: [] }]),
+}).named('datedOne');
+
+describe('a read that answers instants', () => {
+  test('a Date in a row reaches the typed client as a Date, and text stays text', async () => {
+    const call = dated.client({ baseUrl: 'http://dev.test', fetch: clientFor(dated) });
+    const [row] = await call({});
+    expect(row?.at).toEqual(SINCE);
+    expect(row?.replies.map((reply) => reply.at)).toEqual([SINCE, null]);
+    expect(row?.note).toBe('2026-03-04T05:06:07.089Z');
+  });
+
+  test('a page and a single read revive the same way', async () => {
+    const call = dated.client({ baseUrl: 'http://dev.test', fetch: clientFor(dated) });
+    const page = await call.page({}, { first: 5 });
+    expect(page.rows[0]?.at).toEqual(SINCE);
+    const response = await clientFor(single)('http://dev.test/_x/query/dated-one', {});
+    expect(response.headers.get('x-ultimate-dates')).not.toBeNull();
+    expect(((await response.json()) as { at: unknown }).at).toBe(SINCE.toISOString());
+  });
+});

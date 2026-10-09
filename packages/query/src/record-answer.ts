@@ -8,7 +8,7 @@
  */
 
 import type { RecordRows, Row } from '@ultimat3/core';
-import { encodeRecordEnvelope, RECORDS_HEADER } from '@ultimat3/core';
+import { DATES_HEADER, encodeRecordEnvelope, RECORDS_HEADER, wireDatePaths } from '@ultimat3/core';
 import { hasEntityRows, rowsOf } from '@ultimat3/entity';
 import { jsonResponse } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -23,13 +23,23 @@ export type RecordAnswer = (answer: readonly object[] | Page<object>) => Respons
  * `Page` — is the route's, not the declaration's.
  */
 export function recordAnswerFor(rows: StandardSchemaV1 | undefined): RecordAnswer {
-  if (!answersRecords(rows)) return (answer) => jsonResponse(answer);
+  if (!answersRecords(rows)) return (answer) => jsonResponse(answer, datesOf(answer));
   return (answer) => {
     const records = collect(rows, isPage(answer) ? answer.rows : answer);
     return jsonResponse(encodeRecordEnvelope(answer, records), {
-      headers: { [RECORDS_HEADER]: '1' },
+      headers: { [RECORDS_HEADER]: '1', ...datesOf(answer).headers },
     });
   };
+}
+
+/**
+ * The instants of a read's DATA — the rows, the `Page` or the one row — by path
+ * (`@ultimat3/core`'s `wire-dates.ts`), so the typed client hands back the `Date` the row type
+ * promises. A header, never the body: the body and the OpenAPI document stay what they were.
+ */
+function datesOf(data: unknown): { readonly headers: Record<string, string> } {
+  const dates = wireDatePaths(data);
+  return { headers: dates === undefined ? {} : { [DATES_HEADER]: dates } };
 }
 
 /**
@@ -38,10 +48,10 @@ export function recordAnswerFor(rows: StandardSchemaV1 | undefined): RecordAnswe
  * answers for a single output, so the transport unwraps both the same way.
  */
 export function recordRowAnswerFor(rows: StandardSchemaV1 | undefined): (row: object) => Response {
-  if (!answersRecords(rows)) return (row) => jsonResponse(row);
+  if (!answersRecords(rows)) return (row) => jsonResponse(row, datesOf(row));
   return (row) =>
     jsonResponse(encodeRecordEnvelope(row, collect(rows, [row])), {
-      headers: { [RECORDS_HEADER]: '1' },
+      headers: { [RECORDS_HEADER]: '1', ...datesOf(row).headers },
     });
 }
 

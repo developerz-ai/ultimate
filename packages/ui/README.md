@@ -493,7 +493,11 @@ catalog — so every built-in string in the tree renders its key: `<Dialog>`'s c
 `⟦ui.close⟧`, `<Field>`'s marker `⟦ui.required⟧`. The keys are `UI_KEYS`, and they live in the
 framework catalog the SERVER has registered; a browser chunk has none, which is why
 `translatorFor(locale)` on the client is the same empty answer wearing a better name. Send the
-subset the island renders and build the translator from it. `t` itself — `@ultimat3/i18n`'s bare
+subset and build the translator from it — the framework's two halves (`As of 2026-10`, #710):
+the page passes `ui={uiCatalog(t)}` (every `UI_KEYS` template in the request's locale, plurals
+included) and the island renders `<UiProvider t={subsetTranslator(props.ui)}>`, with
+`subsetTranslator` from `@ultimat3/i18n/subset` — an entry that carries no framework catalog, so
+only an island that imports it pays for the lookup. `t` itself — `@ultimat3/i18n`'s bare
 exported function — is not a `Translator` and is `TS2739` in this position.
 
 An island's own copy is a different thing and stays a plain prop: it arrives already translated,

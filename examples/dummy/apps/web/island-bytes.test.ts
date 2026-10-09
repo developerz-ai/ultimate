@@ -184,7 +184,10 @@ test('every island in the app is measured, and each is classified by its own gra
   // worker and the render. Never the core barrel, which was 8,344 B of a 710 B chunk.
   expect(reachable.get('apps/web/app/update-banner.island.tsx')).toEqual([CONSTANTS_ONLY]);
   // `@ultimat3/time` for the row's date, day only (`formatDate`) — already in the chunk through ui.
+  // `@ultimat3/i18n/subset` for the design system's strings the server resolved (`uiCatalog`): the
+  // translator alone, never the i18n barrel and the framework catalog it installs.
   expect(reachable.get('apps/web/app/feed/feed.island.tsx')).toEqual([
+    '@ultimat3/i18n/subset',
     '@ultimat3/realtime',
     '@ultimat3/time',
     '@ultimat3/ui',
@@ -195,6 +198,7 @@ test('every island in the app is measured, and each is classified by its own gra
   expect(reachable.get('apps/web/app/runs/run-console.island.tsx')).toEqual([
     '@ultimat3/action',
     CONSTANTS_ONLY,
+    '@ultimat3/i18n/subset',
     '@ultimat3/realtime',
     '@ultimat3/ui',
   ]);

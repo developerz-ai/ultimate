@@ -113,8 +113,12 @@ export const config = defineRoute({
    * that tells a failed save from a browser that cannot (`push-status.ts`). The other +176 B is
    * main's growth between the 2026-10-05 measurement and 26.0.0, which measured 61,670 B (router
    * 19,966, island 39,182, banner 710, inline runtime 1,812), unstated until now.
+   * raised 67kb → 67.5kb (#710, owner decision 19). measured: 68,644 B (2026-10-09;
+   * `x build --target static`), against 69,120; main measured 67,945 the same way. why: +699 B
+   * settings island — core's `reviveWireDates` in the transport its typed action client sends
+   * through, so a read's `Date` reaches a caller as a `Date`.
    */
-  budget: { js: '67kb' },
+  budget: { js: '67.5kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
