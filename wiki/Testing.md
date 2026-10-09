@@ -31,6 +31,44 @@ bun test --workers 8
 
 Real databases, truly parallel, is the only combination that is both fast and honest.
 
+## Database state, and what a run leaves behind
+
+`As of 27.3.0`. The framework's DatabaseCleaner and `tmp:clear` in one place: every test starts from a known database by construction, and what a run leaves on disk or on the server is swept by the framework, never by the app.
+
+**The migrated database.** `migratedDatabase({ root })` from `@ultimat3/cli` is a fresh embedded Postgres holding the framework schema (`x_jobs`, `x_users`, …) and every migration under `packages/db/migrations` — exactly what `x db migrate` applies. It boots from a template (the migrated data directory, dumped once per PGlite version, framework schema and migration set) cached at `<app root>/.x/test-db/pglite-<key>.tar`: a restore is ~0.5 s where initdb plus the migrations is 4-7 s. A changed migration is a new key, so a stale template is never loaded. The recipe, once per app, in the app's own test-support module:
+
+```ts
+import { migratedDatabase } from '@ultimat3/cli';
+import { setDbClient } from '@ultimat3/db';
+import { afterAll, beforeAll, reusableDatabase } from '@ultimat3/testing';
+
+const workerDatabase = reusableDatabase(() => migratedDatabase({ root: import.meta.dir }));
+
+export function useMigratedDatabase(): void {
+  beforeAll(async () => setDbClient(await workerDatabase()), 60_000);
+  afterAll(() => setDbClient(undefined));
+}
+```
+
+| Scope | What it gets |
+|---|---|
+| a test **file** | the worker's database with its DATA reset to the template's — every table truncated and re-filled, every sequence reset, triggers off meanwhile (`reusableDatabase`) |
+| a **test** inside a file | the same database as the file's other tests: nothing is rolled back between them (a rollback would break every commit-dependent path). Give each test its own ids |
+| DDL a test runs | not undone — a test that changes the schema opens its own `migratedDatabase` and closes it |
+| a Postgres server (`TEST_DATABASE_URL`) | a database per worker cloned from the template (`describeApp`), or a per-run probe database (`probeDatabaseName`), dropped at teardown |
+
+**What a run leaves behind is swept** — before every `x test` and every test step of `x verify` (once per process), and on demand by `x clean`:
+
+| Leftover | Before a run | `x clean` |
+|---|---|---|
+| `.x/test-db/pglite-*.tar` templates | the newest two stay — the current migration state and one a second checkout may be on. Writing a new one evicts the same way | all |
+| `.x/cache` — PGlite initdb snapshots, the Sass cache | snapshots: the newest two stay | the whole folder |
+| a `.x` below the app root (written beside the code by a process started in a source folder, before 27.3.0) | removed | removed |
+| a probe database whose process is dead, with no connection, older than 10 min (`TEST_DATABASE_URL` set) | dropped | dropped |
+| `.x/pgdata` (the dev database), `.x/storage`, the build output | never touched | never touched |
+
+Every `.x` path a framework module writes resolves from the APP ROOT (`appStatePath` in `@ultimat3/core`), whichever folder the process started in. A temp directory a framework test makes is removed by the file that made it; `scripts/temp-dir-cleanup.test.ts` refuses one that is not.
+
 ## Determinism
 
 Any test that can pass twice and fail the third time is worse than no test — it trains people to ignore red.

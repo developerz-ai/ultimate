@@ -4,7 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest } from '@ultimat3/manifest';
 import { AGENTS_MD_FILENAME, MANIFEST_FILENAME, verifyContract } from '@ultimat3/manifest';
 import type { MetaIssue } from '@ultimat3/seo';
@@ -14,7 +14,6 @@ import { readAppSources } from './app-boundaries';
 import { envExampleFindings } from './app-env';
 import { appManifest, readAppManifest } from './app-manifest';
 import { policyFindings } from './app-permissions';
-import { APP_CONFIG_FILE } from './app-root';
 import { asyncPageFindings } from './async-pages';
 import { appBoundaryFindings } from './boundary-findings';
 import { checkBudgets, readBuildStats } from './budgets';

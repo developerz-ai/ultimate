@@ -2,10 +2,10 @@
 // against `repoRoot()` — the pattern `changelog-check.test.ts` uses — because the finding that
 // matters is a fact about THIS tree, not about a fixture.
 
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
 // `node:path`'s `join` — no Bun path joiner. No `mkdir`: `Bun.write()` creates the parents.
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -28,6 +28,17 @@ import {
   CONFIG_READER_PINS,
 } from './lib/config-reader-pins';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(async () => {
+  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
 
 // Every test below scans the whole tree, so the budget is the file's default rather than a third
 // argument per test — see `REPO_SCAN_TIMEOUT_MS`. This file ran on Bun's 5000ms default until
@@ -304,7 +315,7 @@ describe('unit · the ratchet', () => {
    * what the entry-delete regex has to survive and a two-line fixture would not have proved it.
    */
   test('--unpin performs the edit the stale finding names, and refuses one that is not stale', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ultimate-config-pins-'));
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-config-pins-')).then(made);
     const path = join(dir, CONFIG_PINS_FILE);
     // The real file, with two multi-line rows seeded back into its (now empty) table: the shape
     // the entry-delete regex must survive, which the live table no longer holds.

@@ -27,8 +27,8 @@
 // reason and is where the set is derived. `scripts/async-context-guard.ts` is what still covers a
 // program, statically and with no bundle at all.
 
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdtemp } from 'node:fs/promises'; // why: Bun has no mkdtemp.
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -40,6 +40,17 @@ import {
   seamPackages,
 } from './lib/browser-barrel-set';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(async () => {
+  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -99,7 +110,7 @@ const buildScript = (entry: string, out: string): string =>
 /** The build with its verdict kept, because for one specifier the FAILURE is the finding. */
 async function browserBuild(entry: string): Promise<Chunk & { ok: boolean; output: string }> {
   // A fresh path per build: a reused one would serve a chunk built before a fix.
-  const file = join(await mkdtemp(join(tmpdir(), 'ultimate-barrel-')), 'barrel.mjs');
+  const file = join(await mkdtemp(join(tmpdir(), 'ultimate-barrel-')).then(made), 'barrel.mjs');
   const built = await run(['bun', '-e', buildScript(entry, file)], { cwd: repoRoot() });
   const text = built.ok ? await Bun.file(file).text() : '';
   return { text, file, ok: built.ok, output: built.output };
@@ -120,11 +131,13 @@ async function evaluationError(chunk: Chunk): Promise<string | undefined> {
 }
 
 const entryFor = (name: string, source: string): Promise<string> =>
-  mkdtemp(join(tmpdir(), `ultimate-fixture-${name}-`)).then(async (dir) => {
-    const entry = join(dir, 'entry.ts');
-    await Bun.write(entry, source);
-    return entry;
-  });
+  mkdtemp(join(tmpdir(), `ultimate-fixture-${name}-`))
+    .then(made)
+    .then(async (dir) => {
+      const entry = join(dir, 'entry.ts');
+      await Bun.write(entry, source);
+      return entry;
+    });
 
 const fixture = (name: string, source: string): Promise<Chunk> =>
   entryFor(name, source).then(browserChunk);

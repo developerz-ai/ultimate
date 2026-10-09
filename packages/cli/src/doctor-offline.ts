@@ -3,10 +3,9 @@
 // `cmd-doctor.ts`'s job is the probe rather than the loading — the `db-backfill.ts` split, one
 // diagnostic over.
 
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
 import { describePages } from '@ultimat3/render';
 import { loadApp } from './app-load';
-import { APP_CONFIG_FILE } from './app-root';
 import type { Finding } from './output';
 import { loadPwaArtifacts } from './pwa-artifacts';
 import { quoteArg } from './shell-quote';

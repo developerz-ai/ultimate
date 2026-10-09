@@ -1,8 +1,19 @@
-import { describe, expect, test } from 'bun:test';
-import { mkdtemp } from 'node:fs/promises';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asyncContext } from './async-context';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(async () => {
+  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
 
 describe('asyncContext, on a server', () => {
   test('is undefined outside a scope and the value inside one', () => {
@@ -89,7 +100,7 @@ describe('a browser bundle of @ultimat3/core', () => {
     built ??= (async (): Promise<BrowserBarrel> => {
       // `index.ts` as the entry, directly. Until Bun 1.4.1 that build was shaken to its export
       // clause alone (#276, oven-sh/bun#40578) and this suite went through a re-exporting wrapper.
-      const dir = await mkdtemp(join(tmpdir(), 'ultimate-core-'));
+      const dir = await mkdtemp(join(tmpdir(), 'ultimate-core-')).then(made);
       const output = await Bun.build({
         entrypoints: [join(import.meta.dir, 'index.ts')],
         target: 'browser',
