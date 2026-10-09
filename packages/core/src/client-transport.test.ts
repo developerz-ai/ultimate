@@ -257,3 +257,15 @@ describe('clientTransport — responseType: text', () => {
     expect(isUltimateError(error) ? error.code : error).toBe('X_CLIENT_TRANSPORT_FAILED');
   });
 });
+
+test('responseType: text with a rawBody resolves the body, as its overload says', async () => {
+  const { fetchImpl } = fakeFetch(() => new Response('stored'));
+  const answer: string = await clientTransport({
+    method: 'PUT',
+    url: '/_storage/uploads/k',
+    rawBody: new Uint8Array([1]),
+    responseType: 'text',
+    fetchImpl,
+  });
+  expect(answer).toBe('stored');
+});

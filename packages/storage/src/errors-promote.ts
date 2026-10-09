@@ -39,6 +39,6 @@ export const alreadyPromoted = (key: string, attachedKey: string, orgId: string)
   new StorageError({
     code: 'X_STORAGE_ALREADY_PROMOTED',
     cause: `"${key}" was already promoted to "${attachedKey}" by an earlier call (a retried or doubled confirm), so this call moved nothing`,
-    fix: `const row = await findRowByStorageKey('${attachedKey}') — answer that row instead of inserting one, and never delete '${attachedKey}' on a failure of your own: it belongs to that row`,
+    fix: `await disk.stat('${attachedKey}') answers the moved object: answer the row that references that key if one exists, write it with that key if none does, and never delete the key on a failure of your own`,
     meta: { key, attachedKey, orgId },
   });

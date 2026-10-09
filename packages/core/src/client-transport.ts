@@ -67,9 +67,10 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
   const current = pageClient().scope.epoch;
   // A read that raced the abort still belongs to the previous principal.
   if (read && current !== issued) throw scopeChanged(req.url, issued, current);
-  if (req.rawBody !== undefined) return undefined as T;
-  // Read as text: nothing to decode, and no records envelope — that is a JSON answer's.
+  // Read as text: nothing to decode, and no records envelope — that is a JSON answer's. Before the
+  // `rawBody` return, so the overload's `Promise<string>` holds for a raw upload read as text too.
   if (req.responseType === 'text') return answer.text as T;
+  if (req.rawBody !== undefined) return undefined as T;
   const envelope = unwrap(answer, req.url, read);
   // A write that crossed a rescope HAS landed, so its caller is told — but its rows are the
   // previous principal's, and the new scope's store never sees them.

@@ -32,7 +32,7 @@ test('the caller still has its one token', async () => {
     'action:send|actor:test-user',
     { capacity: 1, refillPerSecond: 0.0001 },
     1,
-    Date.now(),
+    1_700_000_000_000,
   );
   expect(decision.allowed).toBe(true);
 });

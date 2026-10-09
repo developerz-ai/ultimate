@@ -161,7 +161,7 @@ export interface PolicyAuthzInput {
  * or tenant rule, or a `deny` that closes what a role grants); one the map omits is decided by
  * the role map and the actor's direct grants, exactly as `roleAuthz` and the request pipeline
  * decide it. Still closed: a permission nobody declared is denied with the fix in the trace, and
- * a declared one no role grants is denied by `can()`.
+ * a declared one is denied by `can()` when neither a role nor the actor's direct grants hold it.
  *
  * Until 27.2.0 an omitted permission was denied outright, so the framework's own screens needed
  * the same grant twice — `job:read` in `defineRoles` AND `'job:read': can('job:read')` here — and
