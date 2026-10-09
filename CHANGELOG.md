@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.0.0 - 2026-10-09
+
 Every breaking entry under Changed has a manual edit in the
 [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `26.x → 27.0.0` section, in
 the same order.
@@ -42,6 +46,13 @@ Tier 5 — cli.
 - **`x g backfill --feature <slice>` refuses a slice whose entities are named otherwise, instead of writing files that cannot compile.** The sweep it generates reads the slice's own scaffolded table (`db.<plural>`, its `title` and `price`); for notificado.co's `deadline` slice, which declares `holidays` and `court_closures`, it wrote `import type { Deadline }`, `db.deadlines` and admin labels for a table that does not exist (22.15 crashed with `X_CLI_UNEXPECTED`). `x g backfill` now reads the slice's `entity.ts` like `job` and `query` do, and a slice it cannot sweep is `X_BACKFILL_SLICE_ENTITY` (new), naming the tables the slice does declare, with `x g job <name> --feature <slice>` as the fix — a hand sweep wraps `backfill({ source: db.<table> })` in it. A slice `x g entity`/`x g resource` wrote, and a feature with no slice yet, generate as before.
 - **`x manifest` attributes an error code to the same workspace on every OS.** `errorCodes[].package` was the site's path split on `/`; a Windows path kept the whole file (`apps\admin\app\…\abuse.tsx`), and the codes, sorted by it, came out in another order — thousands of changed lines per regen across machines, and a `--check` that disagreed with itself. The source walk has answered POSIX paths since 25.0.0 (#661); `workspaceOf` now normalises on its own too, pinned with Windows-shaped input.
 - **`x dev` reloads an edited module on Windows.** The reload graph compared `startsWith(root + '/')`, false for every backslash path Bun resolves there, so it recorded no import and no stylesheet as the app's own and a save rendered stale code until a restart; `dev-watch-tree` closed no watcher below a removed directory for the same reason. Both use `isPathUnder` (either separator).
+
+### Commits
+
+- docs(upgrading): 27.0.0 leaves unreleased
+- fix(cli): x g backfill refuses a slice whose entities are named otherwise (X_BACKFILL_SLICE_ENTITY) (#724)
+- fix!: /_storage and /media refuse un-shared keys outside org/; jobs never inherit a transaction (27.0.0 batch) (#722)
+- docs(render): month-level stamp; CLAUDE.md names three entry points and the one error outside errors.ts (#719 review) (#721)
 
 ## 26.1.1 - 2026-10-08
 
