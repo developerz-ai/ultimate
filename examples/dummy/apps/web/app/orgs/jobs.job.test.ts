@@ -5,8 +5,9 @@
 
 import { assert } from '@ultimat3/core';
 import { expect, type JobRunTrace, test } from '@ultimat3/testing';
-import { inviteMember } from './actions';
-import { onboardOrg, sendInvite } from './jobs';
+import { inviteMember } from './actions/invite-member';
+import { onboardOrg } from './jobs/onboard-org';
+import { sendInvite } from './jobs/send-invite';
 import { nudgeEmail } from './mail';
 
 /**
@@ -22,7 +23,7 @@ const executionsOf = (trace: JobRunTrace, step: string): number => {
   assert(
     tally !== undefined,
     `this run took no step named "${step}" — it took: ${Object.keys(trace.steps).join(', ')}`,
-    'check the step name against the step.run(...) calls in apps/web/app/orgs/jobs.ts',
+    'check the step name against the step.run(...) calls in apps/web/app/orgs/jobs/',
   );
   return tally.executions;
 };

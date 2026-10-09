@@ -7,7 +7,7 @@
 import { schema } from '@social-media-clone/db';
 import { can } from '@ultimat3/policy';
 import { channel } from '@ultimat3/realtime';
-import { inbox } from './live';
+import { inbox } from './queries/inbox';
 
 /**
  * Your own inbox and nobody else's. An admin is not exempted: `admin:read` is a moderation grant

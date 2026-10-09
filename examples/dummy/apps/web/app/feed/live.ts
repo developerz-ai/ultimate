@@ -2,7 +2,7 @@
  * The feed's live query, as the BROWSER can name it.
  *
  * `useQuery({ name: LIVE_FEED, live: true }, { orgId })` takes a name and the declaration's
- * live-ness — never the query VALUE: importing `liveFeed` drags `app/posts/live.ts` → `repo.ts` →
+ * live-ness — never the query VALUE: importing `liveFeed` drags `app/posts/live/live-feed.ts` → `repo.ts` →
  * the whole read path into the client bundle. Measured, `Bun.build --target browser` over the old
  * `./hooks.ts`: **698,801 bytes**, against this route's 60 kB budget. The name crosses, the
  * implementation never does — the same seam `shared/client.ts` uses for reads and writes.

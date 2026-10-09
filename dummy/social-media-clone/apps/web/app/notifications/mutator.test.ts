@@ -10,7 +10,7 @@ import type { LocalTable, LocalTx } from '@ultimat3/action';
 import { ctxOf, isUltimateError, userActor } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
-import { markNotificationsRead } from './mutator';
+import { markNotificationsRead } from './actions/mark-notifications-read';
 import * as repo from './repo';
 import { unreadFor } from './service';
 

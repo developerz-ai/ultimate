@@ -39,7 +39,7 @@ One or two sentences: what, and why.
 
 ## Context
 - Only the facts the executor needs.
-- Pattern to follow: `apps/web/app/posts/actions.ts:33` — copy this shape.
+- Pattern to follow: `apps/web/app/friends/actions/request-friend.ts` — copy this shape.
 
 ## Slices (execute in order)
 1. [`01-<aspect>.md`](01-<aspect>.md) — one line, and the exclusive file set it owns.

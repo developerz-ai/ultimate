@@ -7,7 +7,7 @@
 
 import { schema } from '@social-media-clone/db';
 import { channel } from '@ultimat3/realtime';
-import { liveThread } from './live';
+import { liveThread } from './live/live-thread';
 import { threadRead } from './policy';
 import * as repo from './repo';
 

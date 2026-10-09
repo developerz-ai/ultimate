@@ -17,7 +17,9 @@ import {
 } from '@ultimat3/ai';
 import { beforeEach, expect, jobTest } from '@ultimat3/testing';
 import { CLAUDE_SONNET_5 } from '../models';
-import { keepDraftReview, requestDraftReview, reviewDraftLater } from './actions';
+import { keepDraftReview } from './actions/keep-draft-review';
+import { requestDraftReview } from './actions/request-draft-review';
+import { reviewDraftLater } from './jobs/review-draft-later';
 
 const USAGE = { inputTokens: 40, outputTokens: 20, cacheReadTokens: 0, cacheWriteTokens: 0 };
 

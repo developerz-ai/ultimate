@@ -7,7 +7,7 @@
 
 import { confirmationStore } from '@postly/mcp/confirmations';
 import { expect, jobTest } from '@ultimat3/testing';
-import { CONFIRMATION_RETENTION_MS, purgeMcpConfirmations } from './jobs';
+import { CONFIRMATION_RETENTION_MS, purgeMcpConfirmations } from './jobs/purge-mcp-confirmations';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

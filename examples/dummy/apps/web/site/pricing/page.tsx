@@ -31,7 +31,7 @@ import styles from './page.module.scss';
 /**
  * The action the form posts to, named once and checked by the compiler. `satisfies` is what makes
  * the string safe: a renamed action is a build error here, while `import type` keeps the value
- * edge absent — a `site/` page that imported `app/contact/actions.ts` would drag the whole feature
+ * edge absent — a `site/` page that imported `app/contact/actions/` would drag the whole feature
  * across the boundary and fail `x verify` with `X_BOUNDARY_VIOLATION`.
  */
 const CONTACT_ACTION = 'contactSales' satisfies keyof Api['actions'];

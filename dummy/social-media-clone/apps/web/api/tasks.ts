@@ -4,7 +4,12 @@
 // `defineApi`'s own ordering, because a task descriptor lists the jobs it enqueues by name.
 
 import { defineApi } from '@ultimat3/action';
-import * as taskJobs from '../app/tasks/jobs';
-import * as taskSchedule from '../app/tasks/schedule';
+import * as resetDemo from '../app/tasks/jobs/reset-demo';
+import * as sweepOrphanMedia from '../app/tasks/jobs/sweep-orphan-media';
+import * as hourlyDemoReset from '../app/tasks/tasks/hourly-demo-reset';
+import * as hourlyMediaSweep from '../app/tasks/tasks/hourly-media-sweep';
 
-export const scheduledApi = defineApi({ jobs: taskJobs, tasks: taskSchedule });
+export const scheduledApi = defineApi({
+  jobs: [sweepOrphanMedia, resetDemo],
+  tasks: [hourlyMediaSweep, hourlyDemoReset],
+});

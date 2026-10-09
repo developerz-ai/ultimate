@@ -5,7 +5,8 @@ import { ctxOf, runWithContext, userActor } from '@ultimat3/core';
 import { testActor } from '@ultimat3/policy';
 import { sourceFor } from '@ultimat3/query';
 import { afterEach, expect, unitTest } from '@ultimat3/testing';
-import { liveRunEvents, runConnections } from './live';
+import { liveRunEvents } from './live/live-run-events';
+import { runConnections } from './queries/run-connections';
 import * as repo from './repo';
 
 const ORG = '00000000-0000-4000-8000-0000000000a1';

@@ -32,7 +32,7 @@ export class DemoResetUnsafeError extends UltimateError {
     super({
       code: 'X_DEMO_RESET_UNSAFE',
       cause: `this database does not hold the demo's seeded accounts (missing ${init.missing.join(', ')}), so it is not the demo's — and resetDemo deletes every post, comment, upload, message and notification before re-seeding`,
-      fix: 'delete hourlyDemoReset from apps/web/app/tasks/schedule.ts if DATABASE_URL points at a database whose rows matter; if this IS the demo, seed it with `bun run packages/db/src/seed.ts` and the next occurrence runs',
+      fix: 'delete hourlyDemoReset from apps/web/app/tasks/tasks/hourly-demo-reset.ts if DATABASE_URL points at a database whose rows matter; if this IS the demo, seed it with `bun run packages/db/src/seed.ts` and the next occurrence runs',
       meta: { missing: init.missing },
     });
   }

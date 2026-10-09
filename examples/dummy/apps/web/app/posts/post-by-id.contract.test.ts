@@ -7,7 +7,7 @@
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { toQueryRoute } from '@ultimat3/query';
 import { expect, test } from '@ultimat3/testing';
-import { postById } from './live';
+import { postById } from './queries/post-by-id';
 
 test('a member reads one of their org’s posts, with its comments', async ({ seed, actorFor }) => {
   const { ada, post } = await seed('dev').pick({ ada: 'member:ada', post: 'post:tenancy' });

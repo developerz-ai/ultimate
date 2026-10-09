@@ -68,7 +68,7 @@ export interface OrgsService {
   invite(input: InviteInput): Promise<MemberView>;
   upgrade(plan: PlanCode): Promise<UpgradeReceipt>;
   /**
-   * Every field optional: `actions.ts`'s bulk save writes all four, but `mutator.ts`'s `setTheme`
+   * Every field optional: `savePreferences`'s bulk save writes all four, but the mutators `setTheme`
    * and `toggleDigestOptIn` each write one — a partial write is what keeps the field a single
    * mutator owns from also needing a second, competing write path through this method.
    */
@@ -136,7 +136,7 @@ export interface WebhooksService {
  * `CtxServices` carries a string index signature, so `ctx.session` compiled and was `undefined` at
  * runtime, and a declaration nothing installs is a lie the type system helps tell. The member row
  * moved onto the actor's own facts (`shared/actor.ts`); the channel publish is gone from
- * `app/posts/jobs.ts` with the reason it cannot exist yet.
+ * `app/posts/jobs/` with the reason it cannot exist yet.
  */
 declare module '@ultimat3/core' {
   interface CtxServices {

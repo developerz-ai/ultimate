@@ -302,6 +302,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'gh issue create --repo developerz-ai/ultimate --title "X_ISLAND_MODULE_DUPLICATED"   # paste this error\'s --json as the body: the framework bundled one of its own modules twice',
   X_BACKFILL_SLICE_ENTITY:
     'x errors explain X_BACKFILL_SLICE_ENTITY --json   # the refusal itself names the x g job line for this slice',
+  X_LAYOUT_SIBLING_MODULE:
+    'x verify --only boundaries --json   # then move each declaration in X.ts to X/<name>.ts, one primitive per file',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

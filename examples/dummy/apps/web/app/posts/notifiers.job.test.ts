@@ -7,8 +7,8 @@
  */
 
 import { expect, jobTest } from '@ultimat3/testing';
-import { createComment } from './actions';
-import { commentPosted } from './notifiers';
+import { createComment } from './actions/create-comment';
+import { commentPosted } from './jobs/comment-posted';
 
 jobTest(
   'a comment on someone else’s post mails its author and pushes to her browser, once',

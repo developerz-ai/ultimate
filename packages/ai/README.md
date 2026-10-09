@@ -523,7 +523,7 @@ whose result must be KEPT is queued through an action that runs it and makes the
 else wrote — a draft, a ticket, a page — and "now record this for record X" is an instruction a
 model may follow, so a write tool is a write that text can aim. The action binds the target from
 its OWN input, and the agent stays read-only. The reference app's `keepDraftReview` →
-`reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`, tested on the production
+`reviewDraftLater` (`examples/dummy/apps/web/app/posts/jobs/review-draft-later.ts`, tested on the production
 worker in `review.job.test.ts`) is the worked call:
 
 ```ts

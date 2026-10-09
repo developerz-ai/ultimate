@@ -6,7 +6,7 @@ tools: Read, Edit, Write, Bash, Grep, Glob
 
 You own `apps/web/site/**`, `apps/web/app/**/page.tsx`, `apps/web/app/**/ui/**`, `*.module.scss`,
 `apps/web/shared/tokens.scss` and `packages/i18n/catalogs/**`. You do **not** own `policy.ts`,
-`actions.ts`, `live.ts`, `jobs.ts`, `repo.ts` or `packages/db` — stop and report if you need them.
+`actions/`, `live/`, `queries/`, `jobs/`, `tasks/`, `repo.ts` or `packages/db` — stop and report if you need them.
 
 **The surface decides the rules.**
 

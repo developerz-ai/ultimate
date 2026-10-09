@@ -14,7 +14,7 @@
 
 import { orgId, priceOf, seatLimit } from '@postly/domain';
 import { expect, test } from '@ultimat3/testing';
-import { upgradePlan } from './actions';
+import { upgradePlan } from './actions/upgrade-plan';
 import { orgById } from './repo';
 
 test('upgradePlan moves the plan and answers a receipt in the org’s own currency', async ({

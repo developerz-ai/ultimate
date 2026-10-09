@@ -9,8 +9,10 @@
  */
 
 import { contractTest, expect, test } from '@ultimat3/testing';
-import { createComment, createPost, publishPost } from './actions';
-import { notifySubscribers } from './jobs';
+import { createComment } from './actions/create-comment';
+import { createPost } from './actions/create-post';
+import { publishPost } from './actions/publish-post';
+import { notifySubscribers } from './jobs/notify-subscribers';
 
 const ORG = '00000000-0000-4000-8000-000000000002';
 const NOT_A_UUID = 'not-a-uuid';

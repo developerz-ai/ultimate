@@ -94,7 +94,7 @@ apps/web/app/<feature>/{actions,live,queries,jobs,tasks}/<name>.ts   # one per f
 apps/web/app/<feature>/ui/                                           # components
 ```
 
-**A primitive is registered by `defineApi()` and found by the module scan, never by its filename**, so a feature may keep one declaration per file (`actions/<verb>-<name>.ts` — what `x g` writes) or several in one (`actions.ts` — what `examples/dummy` keeps); nothing enforces either, `As of 2026-10`. The filenames that ARE enforced:
+**One primitive per file, in its kind's directory** — `actions/<verb>-<name>.ts`, what `x g` writes, and what both tracked apps keep (`As of 2026-10`, owner decision 10 of #648). A primitive is registered by `defineApi()` and found by the module scan, never by its filename; what IS refused is a primitive module beside its directory — `actions.ts` with `actions/`, or `live`, `queries`, `jobs`, `tasks` — (`X_LAYOUT_SIBLING_MODULE`, the `boundaries` step), because `./actions` resolves to the file and never the directory. The filenames that ARE enforced:
 
 | File | Owns | Never — and the error |
 |---|---|---|
@@ -102,9 +102,9 @@ apps/web/app/<feature>/ui/                                           # component
 | `repo.ts` | the feature's reads and writes, through the typed handle | a raw SQL literal the handle can express — `guards/repo-raw-sql.ts` |
 | `service.ts` | business logic, composed from repos | an HTTP import — `X_BOUNDARY_SERVICE_TO_HTTP` |
 | `page.tsx` · `layout.tsx` | a URL | a database import — `X_BOUNDARY_ROUTE_TO_DB` |
-| `actions/` · `actions.ts` | `action` / `mutator` declarations | logic (delegate to `service.ts`) |
-| `live/` · `queries/` · `live.ts` | `query` declarations | writes |
-| `jobs/` · `tasks/` · `jobs.ts` | `job` / `task` declarations | inline slow work in an action |
+| `actions/` | `action` / `mutator` declarations, one per file | logic (delegate to `service.ts`) |
+| `live/` · `queries/` | `query` declarations, one per file | writes |
+| `jobs/` · `tasks/` | `job` / `task` declarations, one per file | inline slow work in an action |
 | `policy.ts` | `policy` rules for this feature | data shaping |
 | `ui/` | Solid components | fetching, business logic, its own authz |
 

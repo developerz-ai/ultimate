@@ -72,7 +72,7 @@ describe('unit · the reference app uses every primitive factory', () => {
     // first test's logic only when the pending list happened to cover it — and fail it otherwise
     // with the wrong instruction.
     expect(usedBy({ factory: 'llm', pkg: '@ultimat3/ai' })).toContain(
-      `${REFERENCE_APP}/apps/web/app/posts/actions.ts`,
+      `${REFERENCE_APP}/apps/web/app/posts/actions/summarize.ts`,
     );
     expect(app.some((file) => file.path.includes('.test.'))).toBe(false);
   });

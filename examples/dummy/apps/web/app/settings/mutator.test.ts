@@ -8,7 +8,8 @@ import { expect, test } from 'bun:test';
 import { resolveConflict } from '@ultimat3/core';
 import { parse } from '@ultimat3/schema';
 import { MemberView } from '../orgs/entity';
-import { setTheme, toggleDigestOptIn } from './mutator';
+import { setTheme } from './actions/set-theme';
+import { toggleDigestOptIn } from './actions/toggle-digest-opt-in';
 
 const member = (patch: Partial<MemberView> = {}): MemberView => ({
   id: '00000000-0000-4000-8000-0000000000a1',

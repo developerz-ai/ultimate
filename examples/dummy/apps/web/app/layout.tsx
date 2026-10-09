@@ -22,7 +22,7 @@ import { viewerOf } from '../shared/viewer';
 import styles from './layout.module.scss';
 import { ViewerProvider } from './viewer-context';
 
-/** `endSession` → `POST /api/sessions/end`, derived — `app/auth/actions.ts` sets the cookie. */
+/** `endSession` → `POST /api/sessions/end`, derived — `app/auth/actions/end-session.ts` sets the cookie. */
 const SIGN_OUT_ENDPOINT = derivePath('endSession' satisfies keyof Api['actions']).path;
 
 const BANNER_PROPS = ['label', 'action'] as const;
@@ -59,7 +59,7 @@ export function Layout(props: {
           {/*
             No org switcher yet. `@postly/ui`'s `OrgSwitcher` posts a native form to a path nothing
             serves (`/_x/session/org`, until 2026-08). A session write IS an action's to make —
-            `app/auth/actions.ts`' sign-out below sets its cookie on `ctx.headers` — so switching
+            `app/auth/actions/`' sign-out below sets its cookie on `ctx.headers` — so switching
             org is the same shape, one more action, when an org switcher earns its place.
           */}
           <nav class={styles.nav} aria-label={t('app.nav.org')}>

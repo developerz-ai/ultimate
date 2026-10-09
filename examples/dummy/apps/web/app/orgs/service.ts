@@ -140,7 +140,7 @@ export const orgsService = defineService('orgs', (ctx) => ({
 
   /**
    * The member a background run acts FOR, and their org, re-read on every attempt — the half of an
-   * `agentJob`'s `actor` an app owns (`app/posts/actions.ts`'s `reviewDraftLater`). No acting
+   * `agentJob`'s `actor` an app owns (`app/posts/jobs/review-draft-later.ts`'s `reviewDraftLater`). No acting
    * member is required, because the caller is a job whose actor carries only the org it DECLARED;
    * the org is named, and the entity guard refuses a read outside the actor's own, so a request
    * cannot use this to reach another tenant. A member who left is `X_ORG_NOT_FOUND`, never trusted

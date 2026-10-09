@@ -22,7 +22,7 @@ policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId))
 | `row` | `R \| null` | the already-loaded row a row-level rule decides about; `null` when the rule decides on input alone. Never pass a row through `input` |
 | `ctx` | `Ctx` | repos for lookups, `ctx.tz`, `ctx.logger`. Read-only use |
 
-Policies live in `<feature>/policy.ts` and are referenced by name from `actions.ts` and `live.ts`. `agent` is a first-class actor kind: an MCP caller goes through this same function, with no separate path.
+Policies live in `<feature>/policy.ts` and are referenced by name from the feature's `actions/` and `live/` modules. `agent` is a first-class actor kind: an MCP caller goes through this same function, with no separate path.
 
 ## Where a policy is evaluated
 
