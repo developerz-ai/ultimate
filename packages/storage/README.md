@@ -370,7 +370,7 @@ An upload happens **before** the row it belongs to exists, so it lands at
 | `pendingKey(orgId, uploadName(id, filename))` | `org/o1/pending/u-1.png` |
 | `quarantineKey(orgId, name)` | `org/o1/pending/quarantine/u-1.png` |
 | `attachmentKey(orgId, { entity, id, field }, name)` | `org/o1/post/p-1/cover/u-1.png` |
-| `promoteAttachment({ disk, key, orgId, target, policy })` | `stat`, `copy`, then `delete` — never the reverse. **`policy` is required**: the object is measured here (`stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and it stays under `pending/` for the sweep), because an s3 presign bounds no size. A retry after the source is gone answers the already-attached object instead of `X_STORAGE_NOT_FOUND`. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
+| `promoteAttachment({ disk, key, orgId, target, policy })` | `stat`, `copy`, then `delete` — never the reverse. **`policy` is required**: the object is measured here (`stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and it stays under `pending/` for the sweep), because an s3 presign bounds no size. A call after the source is gone, with the attached key present, is `X_STORAGE_ALREADY_PROMOTED` (409, `meta.attachedKey`): an earlier call moved the bytes, so this one answers the row that holds them and never deletes that key. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
 | `releaseQuarantine({ disk, key, orgId })` | quarantine → pending; returns the released key |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | `{ deleted, failed }` for stale `pending/` keys. `olderThanMs` is a whole number of 0 or more, refused otherwise (`X_INVARIANT`) — `NaN` read as "everything is old enough" and deleted an upload made a moment ago |
 
@@ -421,6 +421,7 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_LIST_FAILED` | the disk REFUSED a listing — denied `s3:ListBucket`, a throttle, an unreadable root. An **empty** disk is still not an error |
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
 | `X_STORAGE_NOT_PENDING` | `promoteAttachment` on a key outside the org's `pending/` prefix — most often another row's attached key |
+| `X_STORAGE_ALREADY_PROMOTED` | `promoteAttachment` on a pending key an earlier call already moved (a retried or doubled confirm); `meta.attachedKey` names where the bytes are |
 | `X_STORAGE_PUT_FAILED` | the disk REFUSED a `put()`/`copy()` — `EACCES`, `ENOSPC`, `EROFS`, a provider's refused PUT |
 | `X_STORAGE_OBJECT_LOCKED` | local, memory: a delete, overwrite or copy onto a key under retention or a legal hold; the cause names the key, the mode and `retainUntil` or the hold, and the bytes are unchanged. Never raised by s3, where the provider keeps the locked version |
 | `X_STORAGE_READ_FAILED` | the disk REFUSED a `get`/`stat`/`exists`/`stream` or the read half of a `copy` — a denied `s3:GetObject`, a throttle, an unreadable file. An **absent** object is still `X_STORAGE_NOT_FOUND`, including one deleted between the existence check and the read |

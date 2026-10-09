@@ -31,6 +31,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_READ_FAILED',
   'X_STORAGE_OBJECT_LOCKED',
   'X_STORAGE_KEY_UNSHARED',
+  'X_STORAGE_ALREADY_PROMOTED',
 ] as const;
 
 /**
@@ -72,6 +73,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_READ_FAILED: 'the object could not be read',
   X_STORAGE_OBJECT_LOCKED: 'the object is under retention or a legal hold',
   X_STORAGE_KEY_UNSHARED: 'object key is outside every tenant and every shared prefix',
+  X_STORAGE_ALREADY_PROMOTED: 'the upload was already promoted onto its row',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws
@@ -395,32 +397,6 @@ export const listFailed = (
     meta: { disk, prefix, reason },
   });
 };
-
-/**
- * A key still under the quarantine prefix. The framework never scans bytes — that is the app's
- * job — so the only thing it can enforce is that nothing leaves quarantine without the app
- * saying so, which is what `promoteAttachment` refusing this key means.
- */
-export const quarantined = (key: string, orgId: string): StorageError =>
-  new StorageError({
-    code: 'X_STORAGE_QUARANTINED',
-    cause: `"${key}" is still under the quarantine prefix, so nothing has cleared it for use`,
-    fix: `scan the bytes, then releaseQuarantine({ disk, key: '${key}', orgId: '${orgId}' }) — promote the key it returns`,
-    meta: { key, orgId },
-  });
-
-/**
- * A key inside the org and outside its `pending/` prefix — most often another row's attached key
- * a client sent back. Promotion copies then deletes, so accepting it moved the victim's file onto
- * this row and removed it from theirs.
- */
-export const notPending = (key: string, orgId: string): StorageError =>
-  new StorageError({
-    code: 'X_STORAGE_NOT_PENDING',
-    cause: `"${key}" is not under org "${orgId}"'s pending/ prefix, so it is not an upload waiting for a row — it may already belong to one`,
-    fix: 'promote the key grantUpload returned with no target: promoteAttachment({ disk, key: pendingKey(orgId, name), orgId, target })',
-    meta: { key, orgId },
-  });
 
 /** The key is well-formed and unforged, and still belongs to somebody else. */
 export const orgMismatch = (key: string, orgId: string): StorageError =>

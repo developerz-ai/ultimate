@@ -84,7 +84,6 @@ export {
   pathUnsafe,
   putFailed,
   putTooLarge,
-  quarantined,
   readFailed,
   STORAGE_ERROR_CODES,
   STORAGE_ERROR_TITLES,
@@ -97,6 +96,7 @@ export {
   uploadFailed,
   xmlBodyUnreadable,
 } from './errors';
+export { alreadyPromoted, quarantined } from './errors-promote';
 export type { GrantUploadInput, UploadGrant, UploadRequest } from './grant';
 export { grantUpload } from './grant';
 export type {

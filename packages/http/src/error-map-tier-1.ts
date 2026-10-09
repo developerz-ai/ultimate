@@ -76,4 +76,8 @@ export const TIER_1_ERROR_STATUS = {
   X_CACHE_VALUE_UNENCODABLE: 500,
   // @ultimat3/storage — object key is outside every tenant and every shared prefix
   X_STORAGE_KEY_UNSHARED: 404,
+  // @ultimat3/storage — the upload was already promoted onto its row
+  // 409 with the rest of promotion's refusals: an earlier call moved these bytes (a doubled or
+  // retried confirm), a state the caller answers by reading the row that holds `meta.attachedKey`.
+  X_STORAGE_ALREADY_PROMOTED: 409,
 } satisfies Readonly<Record<string, number>>;

@@ -7,7 +7,8 @@
 import type { Clock } from '@ultimat3/core';
 import { assert, finiteCount, renderThrowable, systemClock } from '@ultimat3/core';
 import type { StorageDriver, StorageListEntry, StorageObject } from './driver';
-import { notPending, objectNotFound, orgMismatch, quarantined, tooLarge } from './errors';
+import { objectNotFound, orgMismatch, tooLarge } from './errors';
+import { alreadyPromoted, notPending, quarantined } from './errors-promote';
 import { isWithinOrg, orgPrefix, scopedKey } from './path';
 import type { UploadPolicy } from './upload';
 
@@ -141,10 +142,12 @@ export interface PromoteAttachmentInput {
  * object stays under `pending/` for `sweepOrphans` — never at a key a row points to. `stat` and
  * not `get`: this is the call that learns the size, so it cannot be one that buffers it.
  *
- * Idempotent across a retry: a source that is gone with the destination already there answers the
- * destination. Promotion is copy-then-delete inside a request whose row write can still roll back,
- * and the retry used to raise `X_STORAGE_NOT_FOUND` for a file sitting exactly where it belonged.
- * A source that is gone with NO destination is still `X_STORAGE_NOT_FOUND`.
+ * A source that is gone with the destination already there is `X_STORAGE_ALREADY_PROMOTED`
+ * (409, `meta.attachedKey`), never the destination answered as if this call had moved it. 27.1.0
+ * answered it: a confirm sent twice then inserted a second row for one key, that insert failed,
+ * and its cleanup deleted the FIRST row's bytes. Only the call that moved the bytes may hand them
+ * back; a retry is told where they are and answers the row that holds them. A source that is gone
+ * with NO destination is still `X_STORAGE_NOT_FOUND`.
  *
  * The copy is `disk.copy`, not `get` + `put`: promotion used to download the whole object into
  * this process and upload it again, so attaching a 500MB file moved a gigabyte through the pod
@@ -168,8 +171,9 @@ export async function promoteAttachment(input: PromoteAttachmentInput): Promise<
   const attached = attachmentKey(input.orgId, input.target, name);
   const pending = await disk.stat(input.key);
   if (pending === undefined) {
-    const already = await disk.stat(attached);
-    if (already !== undefined) return already;
+    if ((await disk.stat(attached)) !== undefined) {
+      throw alreadyPromoted(input.key, attached, input.orgId);
+    }
     throw objectNotFound(disk.name, input.key);
   }
   if (pending.size > input.policy.maxBytes) {

@@ -90,21 +90,26 @@ describe('promoteAttachment measures the upload against the policy', () => {
   });
 });
 
-describe('a promotion that already happened answers the same object', () => {
-  // Copy then delete, and then the caller's row write rolled back: the retry found no source and
-  // raised X_STORAGE_NOT_FOUND for a file that was sitting, attached, exactly where it belonged.
-  test('a gone source with a present destination returns the destination', async () => {
+describe('a promotion that already happened is refused, and its bytes are never touched', () => {
+  // 27.1.0 answered the second call with the attached object, indistinguishable from a move this
+  // call made. An app's confirm then inserted a SECOND row for that key, the insert failed on its
+  // unique key, and the cleanup every refused write runs deleted the object — the FIRST row's
+  // bytes. Only the call that moved the bytes may answer them; a retry learns where they are.
+  test('a gone source with a present destination is X_STORAGE_ALREADY_PROMOTED, naming it', async () => {
     for (const disk of disks) {
       const key = pendingKey(ORG, 'u-1.png');
       await disk.put(key, bytesOf('cover'), { contentType: 'image/png' });
       const input = { disk, key, orgId: ORG, target: TARGET, policy: SMALL };
 
       const first = await promoteAttachment(input);
-      const again = await promoteAttachment(input);
+      const again = await catchError(() => promoteAttachment(input));
 
-      expect(again.key).toBe(first.key);
-      expect(again.size).toBe(5);
-      expect(again.contentType).toStartWith('image/png');
+      expect(codeOf(again)).toBe('X_STORAGE_ALREADY_PROMOTED');
+      expect(isUltimateError(again) ? again.meta : undefined).toMatchObject({
+        key,
+        attachedKey: first.key,
+      });
+      expect(isUltimateError(again) ? again.fix : '').toContain(first.key);
       expect(textOf((await disk.get(first.key)).bytes)).toBe('cover');
     }
   });
