@@ -14,11 +14,12 @@ Nothing yet.
 
 ### Added
 
-Tier 0 — core. Tier 1 — db. Tier 5 — cli.
+Tier 0 — core. Tier 1 — db. Tier 3 — jobs. Tier 5 — cli, testing.
 
 - **`x clean [--dry-run]`, and the test runner sweeps what earlier runs left behind (#738).** An app held 72 migrated test templates in `.x/test-db` (4.2 GB) and `.x/cache` folders beside its source. Before every `x test` and every test step of `x verify`, the framework now evicts `.x/test-db` templates and PGlite initdb snapshots to the newest two, removes any `.x` below the app root, and, with `TEST_DATABASE_URL` set, drops every probe database whose run is provably over (`sweepStaleProbeDatabases`). `x clean` clears all of it on demand; `.x/pgdata` and `.x/storage` are never touched. [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#database-state-and-what-a-run-leaves-behind).
 - **`migratedDatabase({ root })` in `@ultimat3/cli`: the app's migrated test database, from the framework.** The framework schema and every migration, booted from a template cached under the app root's `.x/test-db` and evicted when a migration changes, so an app no longer hand-rolls the template cache (and its unbounded growth). With `reusableDatabase` from `@ultimat3/testing` it is one database per worker, data reset before every file.
 - **`appDirOf`, `appStatePath` and `evictCacheFiles` in `@ultimat3/core`**: the one walk to the app root (`app.config.ts`), the one way to name a path under its `.x/`, and the eviction a content-keyed cache runs when it writes a new key.
+- **`redisJobDriver()` — a Redis queue on `Bun.redis` (#710, owner decision 5).** `import { redisJobDriver } from '@ultimat3/jobs/redis'` — its own entry, so the barrel every role boots carries none of it — then `setJobDriver(redisJobDriver())`, or `ServeOptions.runtime.jobs`; options `client`, `prefix` (default `x:jobs`), `clock`, `doneTtlMs` (default a week; `0` keeps finished rows). Every operation is one Lua script, every key under one `{prefix}` hash tag, so it runs on Redis Cluster and Dragonfly. It passes `@ultimat3/testing`'s `jobDriverConformance` — the suite memory and pg pass — against the CI Redis, and a second live suite runs one script of operations on it and on the memory driver under one frozen clock and compares every answer. It carries no `introspect` (`x jobs show`/`retry`/`cancel`, queue pauses), no `backfills` ledger and no `leases`, so a job declaring `concurrency` still refuses `jobWorker().start()` on it.
 
 ### Fixed
 
