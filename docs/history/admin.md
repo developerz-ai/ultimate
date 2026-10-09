@@ -144,3 +144,26 @@ still hold are in that file, and where the two disagree it wins.
 - **A batch is the button's gate once per row** (`batch.ts`): policy, `when`, handler; counts `done`/`refused`/`failed`/`queued`/`remaining`; one audit entry per row. Selection is checked ids or "all matching" — the list URL's own `listWhere`, keyset by id, `MAX_BATCH_ROWS` inline / `MAX_BATCH_QUEUED_ROWS` queued per request. `batch: { threshold }` queues one `admin.batch` job per chunk (`batch-queue.ts`, `batch-job.ts`) under a DERIVED `batchIdOf` (actor, action, rows, input — not the request id), so a retry dedupes; the worker runs it AS the operator. Zero JS: the bar is one form (`batch-bar.tsx`), row checkboxes join it by `form=`; a destructive or input-taking batch is a server round trip. ONE MCP tool per action — a batch action's tool takes `ids`.
 - **No test reaches a `.tsx` statically.** `routes.ts` reaches the screens, so a test does `await import('@ultimat3/render/server')` and then `await import('./routes')`: a static import compiles JSX before the loader exists and every later render dies with `React is not defined`.
 - **Every admin operation is audited, reads included**, not `/admin`'s counts (a count reads no row). `ListResult` carries its `AuditEntry` on both branches, keyed on the table (`entityId: null`). `AdminSearchResult.audit` carries one entry per resource it decided about — `allowed` per searched resource, a `deniedDraft` per refused one; a resource skipped for no text field, no repo or a repo that THREW (`admin.search.skipped.failed`) is listed in `skipped`, never a 500 for the rest.
+
+## Claimed routes (2026-10-09)
+
+- **Why an app file may serve an admin path again.** 23.0.0 (#49/#50) made the admin serve every
+  route itself, through one `hydrate: 'never'` catch-all, to delete the host glue every app wrote
+  for GENERATED screens (a repo adapter, a screen module, a `page.tsx` per resource). It also took
+  away the one thing a `pages:` entry could not do without a file: carry an island. A 22.x console
+  with 40 mounted pages, each in the app's own shell with its own islands, had no upgrade but a
+  redesign. Islands are a FILE route's — bundled relative to the file, budgeted, hydrated — so the
+  smallest correct seam is to let a file serve the path, not to teach the catch-all islands.
+- **The guard stays the admin's.** `claimAdminRoute(admin, path, { load })` returns a config whose
+  `policy` and `meta` are the route's and whose `load` answers through the SAME `screenFor` the
+  catch-all calls, with `frame: 'none'` (the body without `AdminLayout`): decided, refusal audited,
+  403, the author's component never called. The app supplies only its own half of the data
+  (`load`, run after the decision) and the route's `hydrate`/`budget`/`navigation`.
+- **Who may claim is the mounter's answer, by identity.** Render asks the mount's `claimable(path,
+  config)`; the admin answers from a `WeakMap` of configs it issued (`claims.ts`, not exported). A
+  hand-written `defineRoute`, or `defineRoute({ ...issued, load })`, is a different object:
+  `X_ROUTE_DUPLICATE`, as before. A brand symbol was refused — a spread copies it.
+- **Only a `pages:` entry and the dashboard.** A generated screen posts back to its own URL and
+  re-renders a refused write from the catch-all, in the admin's layout: one screen in two shells.
+- **Moved here:** `dev/panel-db.ts`'s `sanitize` decides "did they type a statement", not "is it
+  safe" — never cite it as a security property (the reasoning is under slice 15 above).

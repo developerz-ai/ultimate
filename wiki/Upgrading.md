@@ -1169,7 +1169,7 @@ Run each step; the entries it closes are in the last column.
 | 7 | `x doctor --json`, then `x g guard <name>` for each name in `data.guards.missing` you adopt, and fix what `x verify --only boundaries` reports | nothing — upgrading installs no guard | — |
 | 8 | drop `--feature <other>` from `x g resource` and `--live` from every `x g` but `query` in your scripts; read `x tasks --json` rows by key; `git mv apps/admin/src/pages apps/admin/app/admin/pages` | `X_CLI_BAD_FLAG` | 17–22 |
 | 9 | `bun run typecheck` and fix each job, driver, export, scraping, admin and type-union site it names | TS2741 / TS2345 / TS2339 / TS2353 at each hand-built literal, driver, store or option | 23–43, 55–57, 63, 64 |
-| 10 | delete the admin host: every `page.tsx` under an admin URL — `/admin/jobs` included — the `AdminRepo` adapter, the admin action routes, a hand-written jobs nav item; declare `defineAdmin({ entities, db })` | `X_ADMIN_REPO_UNBOUND` at load, `X_ROUTE_DUPLICATE` for each page file, `X_ADMIN_PAGE_PATH_INVALID` for a `pages:` entry under `/jobs` | 49–55 |
+| 10 | delete the admin host: every `page.tsx` under an admin URL — `/admin/jobs` included — the `AdminRepo` adapter, the admin action routes, a hand-written jobs nav item; declare `defineAdmin({ entities, db })`. A `pages:` page that keeps your own shell or an island keeps its file: on 27.1.0 or later, [claim it](#mounted-admin-pages-that-keep-your-shell-271) instead | `X_ADMIN_REPO_UNBOUND` at load, `X_ROUTE_DUPLICATE` for each page file, `X_ADMIN_PAGE_PATH_INVALID` for a `pages:` entry under `/jobs` | 49–55 |
 | 11 | `x verify --only policy,i18n`, then grant every permission it names in the role map and add every admin key it names to each non-`en` catalog | `X_PERMISSION_UNGRANTED`, one per permission a mounted admin route asks for; `X_CATALOG_MISSING_KEYS` per locale | 15, 16 |
 | 12 | `x verify --only unit,job` and fix the tests it fails | a test that leaned on `runJobs` calling the body directly or on a lease that never renewed, an event published in `beforeAll`, a row action's old redirect, an admin write or action the row scope now refuses, a social tag on a `noindex` page | 44–46, 48, 58–61 |
 | 13 | `x secrets init` where no master key exists; correct any credential a site had refused before the first scrape | `X_SEAL_KEY_MISSING` before the browser opens; every stored session is logged in again | 62, 65, 66 |
@@ -1274,6 +1274,26 @@ The `typecheck` step finds entries 23–29, 34, 37, 39–43, 50, 51, 55–57, 63
 3, 4, 7, 11–16, 47 and 54; `x db migrate` finds 6; `x g` finds 18 and 19. It does not find entry 2
 (a worker that misses a side-effect registration logs it at boot), 20, 21, 32, 33, 36, 44–46, 48,
 58–61 or 62 — run the unit, job, live and scraping suites, and read the first boot's log.
+
+### Mounted admin pages that keep your shell (27.1+)
+
+A 22.x console that mounted each `pages:` entry in its own `<path>/page.tsx` — the app's frame
+around `adminRouteFor(…).component`, islands declared in the mount — does not have to fold into the
+admin's layout. Upgrade to 27.1.0 or later (an earlier 23–27 has no seam: the island is
+`X_ISLAND_NOT_HYDRATED`, the file `X_ROUTE_DUPLICATE`), keep every file, and make one edit per
+mount plus one in the shared helper:
+
+| In | 22.x | 27.1+ |
+|---|---|---|
+| each `<path>/page.tsx` | `const mounted = adminRouteFor(admin, path)` (or your `mountedPage(page)`) FIRST, the `island()` calls after it | the `island()` calls first, then `export const config = claimAdminRoute(admin, path, { hydrate, budget, navigation, load })` LAST — its `defineRoute` drains them |
+| each `<path>/page.tsx` | `defineRoute({ render, offline, policy: mounted.policy, meta, cache, load: () => …mounted.component({ ctx, params, url })… })` | nothing: `render`, `offline`, `policy`, `meta`, private `no-store` and the guarded body are the claim's. Drop `cache: 'no-store'` (the default for a gated page) and `meta` |
+| the page component | `props.data` = your `load`'s object, `body` from `route.component` | `props.data: AdminClaimData<YourShellData>` — `body`, `status`, `denied` (the body is the refusal, with its own `<h1>`), `titleKey`, `nav` (`admin.navFor(ctx)`), and `app` = what your `load` returned |
+| the shared mount helper | a `load` that resolved the actor, called the guarded component, computed `denied` with `decideAll`, read `navFor`, and `withStatus(403 \| 404, …)` | only the shell's own data: `load: ({ ctx, url, denied }) => ({ staffRole, mfaEnrolled, locale, path })`. Return `withStatus(404, data)` when the body asked for a 404; the 403 is the admin's |
+| `/admin/page.tsx` (your own home) | a route at the base path | `claimAdminRoute(admin, admin.basePath, { load: () => loadHome() })` — the dashboard is claimable; `data.app` is your home's data |
+
+`pages:` stays the source of the path, title, nav item and permission pair; only a `pages:` entry
+or the dashboard can be claimed, and only by the config `claimAdminRoute` returned for that exact
+path ([Admin dashboard → An admin page in your own shell](Admin-Dashboard#an-admin-page-in-your-own-shell)).
 
 ## 21.x → 22.0.0, entry by entry
 

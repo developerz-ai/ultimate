@@ -11,6 +11,7 @@ import {
   registerMountedRoutes,
 } from '@ultimat3/render';
 import type { AdminRoute } from './admin';
+import { claimable } from './claims';
 import { AdminPageUnguardedError } from './errors';
 
 /** What `RouteDescriptor.file` reads for an admin route: the package, since no app file is one. */
@@ -23,16 +24,33 @@ export interface AdminRouteDefinition {
 }
 
 /**
- * The author never writes this `defineRoute` call, so the author cannot omit its `policy` —
- * which is the whole mechanism. The coarse gate is `permissions[0]` (always `admin:read`, put
- * there by `permissionsForOperation`/`pagePermissions`); the rest of the pair is decided per
- * request, in `crud.ts` for a resource screen and in `guardedScreen()` for every other one.
- * An empty list is refused here too: `render: 'ssr'` with no policy is a public dashboard.
+ * The coarse gate of `route`: `permissions[0]` (always `admin:read`, put there by
+ * `permissionsForOperation`/`pagePermissions`); the rest of the pair is decided per request, in
+ * `crud.ts` for a resource screen and in `guardedScreen()` for every other one. An empty list is
+ * refused: `render: 'ssr'` with no policy is a public dashboard.
  */
-export function adminRouteDefinition(route: AdminRoute): AdminRouteDefinition {
+export function adminRouteGuard(route: AdminRoute): RouteGuard {
   const permission = route.permissions[0];
   if (permission === undefined) throw new AdminPageUnguardedError({ path: route.path });
-  const policy: RouteGuard = { permission };
+  return { permission };
+}
+
+/**
+ * Never indexed and never followed, whatever the screen answers — a list, a refusal, a 404: an
+ * admin URL in a search result is a row id handed to a crawler. The claimed route
+ * (`claim-route.ts`) is served under the same function.
+ */
+export const adminRouteMeta = (route: AdminRoute) => () => ({
+  title: t(route.titleKey),
+  robots: { index: false, follow: false },
+});
+
+/**
+ * The author never writes this `defineRoute` call, so the author cannot omit its `policy` —
+ * which is the whole mechanism.
+ */
+export function adminRouteDefinition(route: AdminRoute): AdminRouteDefinition {
+  const policy = adminRouteGuard(route);
   return {
     policy,
     config: defineRoute({
@@ -41,14 +59,13 @@ export function adminRouteDefinition(route: AdminRoute): AdminRouteDefinition {
       // every control on an admin screen is a link or a native form, so there is nothing to
       // hydrate. `never` is a REFUSAL and not just a default — an `island()` rendered on this
       // route throws `X_ISLAND_NOT_HYDRATED` (`@ultimat3/render`'s `island-collector.ts`), and no
-      // admin module declares one.
+      // admin module declares one. An app that needs one serves the path from its own file:
+      // `claimAdminRoute` (`claim-route.ts`).
       render: 'ssr',
       offline: 'network-only',
       hydrate: 'never',
       policy,
-      // Never indexed and never followed, whatever the screen answers — a list, a refusal, a 404:
-      // an admin URL in a search result is a row id handed to a crawler.
-      meta: () => ({ title: t(route.titleKey), robots: { index: false, follow: false } }),
+      meta: adminRouteMeta(route),
     }),
   };
 }
@@ -61,7 +78,9 @@ export function adminRouteDefinition(route: AdminRoute): AdminRouteDefinition {
  */
 export function mountAdminRoutes(basePath: string, routes: readonly AdminRoute[]): void {
   registerMountedRoutes(
-    { key: basePath, by: 'defineAdmin', file: ADMIN_ROUTE_FILE, surface: 'app' },
+    // `claimable`: the one way an app file serves a path of this table — a config
+    // `claimAdminRoute` issued for exactly that path. Anything else on it is X_ROUTE_DUPLICATE.
+    { key: basePath, by: 'defineAdmin', file: ADMIN_ROUTE_FILE, surface: 'app', claimable },
     routes.map((route) => ({
       path: route.path,
       config: adminRouteDefinition(route).config,

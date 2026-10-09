@@ -14,6 +14,12 @@ export interface RouteMount {
   readonly by: string;
   /** Every permission the route's own screen decides on, coarse gate first. */
   readonly permissions: readonly string[];
+  /**
+   * `true` when an app FILE serves the path in the mount's place — a config the mounter issued
+   * for it (`RouteMountInput.claimable`). The descriptor's `file` is then that file. Absent
+   * otherwise, never `false`.
+   */
+  readonly claimed?: true;
 }
 
 /** The mount a set of routes belongs to. `key` is what a re-declaration replaces. */
@@ -23,6 +29,13 @@ export interface RouteMountInput {
   /** What `RouteDescriptor.file` reads for these routes: the package, since no app file is. */
   readonly file: string;
   readonly surface: Exclude<Surface, 'shared'>;
+  /**
+   * May the file route declaring `config` serve `path` in the mount's place? The MOUNTER's
+   * answer, never render's: only the package that mounted a path knows which configs it issued
+   * (and with what guard inside). Asked with the config the module EXPORTED, by identity. Absent:
+   * no file may, and a file on a mounted path is `X_ROUTE_DUPLICATE`.
+   */
+  readonly claimable?: (path: string, config: RouteConfig) => boolean;
 }
 
 export interface MountedRouteInput {
@@ -61,6 +74,10 @@ export function setMountedRoutes(
 export function clearMountedRoutes(): void {
   mounted.clear();
 }
+
+/** Did the mount that owns `route` issue `config` for its path? */
+export const claimedBy = (route: MountedRoute, config: RouteConfig): boolean =>
+  route.mount.claimable?.(route.path, config) === true;
 
 /** One URL, one claimant — a file and a mount on the same path is two servers for it. */
 export const mountCollision = (

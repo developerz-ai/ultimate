@@ -8,7 +8,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 4 — render; tier 5 — admin, cli.
+
+- **`claimAdminRoute(admin, path, options)` — an app file serves one admin path in the catch-all's place, so an admin page keeps the app's own shell and its islands.** Since 23.0.0 every admin route is served by the framework at `hydrate: 'never'`, so an island on an admin page was `X_ISLAND_NOT_HYDRATED` and a `page.tsx` there `X_ROUTE_DUPLICATE`. Now `export const config = claimAdminRoute(admin, '/admin/credits', { load?, hydrate?, budget?, navigation? })` in `apps/admin/app/admin/credits/page.tsx`, below the module's `island()` calls, makes that file the route: a file route's islands, `hydrate`, budget and bundle. What the app cannot change: `render: 'ssr'`, `offline: 'network-only'`, the route's `policy` (`admin:read`, decided by the pipeline), its `noindex` `meta`, and a `load` that answers through the SAME screen the catch-all serves: the page's permission pair decided by the admin's authz with the actor from `auth.actor`, a refusal audited and answered 403 with the author's component never called. The page component gets `AdminClaimData` — `body` (the decided page or the refusal, without the admin's layout), `status`, `denied`, `titleKey`, `nav`, and `app` (what the app's own `options.load({ ctx, params, url, denied })` returned, run after the screen decided: the shell's role, locale, an enrolment flag; `withStatus(404, …)` from it sets the page's status). A `pages:` entry or the dashboard only: a generated screen is refused (`X_ADMIN_PAGE_PATH_INVALID`, naming the claimable paths). Only the config `claimAdminRoute` issued for that exact path registers there: a hand-written route, or a copy of the issued one with a swapped `load`, is still `X_ROUTE_DUPLICATE`. A claimed dashboard leaves `POST /admin` (app-wide actions) to the admin. [Admin Dashboard](https://github.com/developerz-ai/ultimate/wiki/Admin-Dashboard#an-admin-page-in-your-own-shell).
+- **render: a mount may let a file claim one of its paths.** `RouteMountInput.claimable(path, config)` — the mounter's answer, asked with the config the module exported, by identity; `RouteMount.claimed` marks the one `describePages()` row such a path keeps (the file's, with the mount's permissions). `AdminRouteRequest.frame: 'none'` answers a screen's body without `AdminLayout`. `@ultimat3/admin` now depends on `@ultimat3/http` (tier 2) for the request's headers.
+- **cli:** the admin mount drops the dashboard's `GET` when an app file claimed it; the `budgets` fix line names a claiming file.
+
 
 ## 27.0.0 - 2026-10-09
 
