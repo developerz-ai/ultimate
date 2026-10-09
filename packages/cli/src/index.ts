@@ -137,6 +137,10 @@ export { startQueue } from './runtime-queue';
 export { appRoutes, routeDocument } from './runtime-render';
 export type { RunningServices } from './runtime-services';
 export { startServices } from './runtime-services';
+// The `/_storage` pair `x dev` and `runRole` mount, for an app's contract test of the real route
+// over HTTP — the way `assetRoutes` already serves `/media` to one.
+export type { StorageRoutesOptions } from './runtime-storage';
+export { STORAGE_READ_PERMISSION, servedStorage, storageRoutes } from './runtime-storage';
 // The drift a hash cannot see, and the composition both the gate step and `x doctor` read.
 export { checkMigrationDrift, checkSnapshotDrift } from './schema-drift';
 export { checkSchemaDump } from './schema-dump-drift';

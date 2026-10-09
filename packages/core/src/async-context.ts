@@ -13,6 +13,13 @@ export interface AsyncContext<T> {
   get(): T | undefined;
   /** Run `fn` with `value` in flight. `X_ASYNC_CONTEXT_UNAVAILABLE` where that is impossible. */
   run<R>(value: T, fn: () => R): R;
+  /**
+   * Run `fn` with NO value in flight, whatever scope the caller is in — and everything `fn` starts
+   * (its timers, its promise chains) inherits that absence. For a long-lived loop begun inside a
+   * scope it must not carry: a job worker started inside a transaction handed every job it ever
+   * ran that transaction. Where there is no async context, `fn` simply runs.
+   */
+  exit<R>(fn: () => R): R;
 }
 
 /**
@@ -74,6 +81,10 @@ export function asyncContext<T>(subject: string): AsyncContext<T> {
         });
       }
       return store.run(value, fn);
+    },
+    exit<R>(fn: () => R): R {
+      const store = open();
+      return store === undefined ? fn() : store.exit(fn);
     },
   };
 }

@@ -179,7 +179,7 @@ async function mediaResponse(
 ): Promise<Response> {
   const requested = request.params['key'] ?? '';
   authorizeStorageRead({ disk: storage.defaultDisk, key: requested }, ctx);
-  const key = assertReadableKey(requested, ctx.actor);
+  const key = assertReadableKey(storage, storage.defaultDisk, requested, ctx.actor);
   const query = parseImageQuery(request.url.searchParams);
   if (query !== null) return transformedVariant(storage, key, query, images);
   // No transform asked for: the object itself, still under the storage key's own safety checks.

@@ -39,7 +39,7 @@ describe('defineConfig · pwa.push and pwa.vapid', () => {
     }
   });
 
-  test('push with no vapid still boots, as on 26.0.0 — and wires nothing (27.0.0 refuses it)', () => {
+  test('push with no vapid still boots, as on 26.0.0 — and wires nothing (a later major refuses it)', () => {
     const config = defineConfig({ name: 'myapp', pwa: { ...INSTALLABLE, push: true } });
     expect(config.pwa.push).toBe(true);
     expect(pushWired(config.pwa)).toBe(false);

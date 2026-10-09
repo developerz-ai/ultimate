@@ -7,17 +7,66 @@
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { diskUnknown } from './errors';
+import { isSafeKey, isTenantScoped } from './path';
 
 export interface StorageConfig {
   readonly disks: Readonly<Record<string, StorageDriver>>;
   /** Disk used when `disk()` is called with no name. Defaults to the first declared disk. */
   readonly default?: string | undefined;
+  /**
+   * Key prefixes, per disk, that hold objects NO tenant owns and every reader may have — a brand
+   * logo, a shared asset. The only way a key outside `org/<id>/` is served by `/_storage` and
+   * `/media` (still to a signed-in actor holding `storage:read`); everything else outside a
+   * tenant prefix — exports, raw payloads, DSR archives — is refused `X_STORAGE_KEY_UNSHARED`.
+   * Each prefix ends in `/` and names a whole segment: `{ uploads: ['brand/'] }`.
+   */
+  readonly shared?: Readonly<Record<string, readonly string[]>> | undefined;
 }
 
 export interface Storage {
   readonly defaultDisk: string;
   readonly diskNames: readonly string[];
   disk(name?: string): StorageDriver;
+  /**
+   * Whether `key` on `disk` lies under a prefix `StorageConfig.shared` declared for that disk. A
+   * tenant-scoped key is never shared, and an unknown disk shares nothing.
+   */
+  isShared(disk: string, key: string): boolean;
+}
+
+/**
+ * The declared prefixes, refused at boot when one could never mean what it says: a disk that is
+ * not declared, a prefix that is not a whole segment, one that would share the whole disk, or one
+ * inside the tenant namespace — sharing `org/` would undo the boundary the prefix exists beside.
+ */
+function sharedPrefixes(
+  shared: StorageConfig['shared'],
+  names: readonly string[],
+): ReadonlyMap<string, readonly string[]> {
+  const out = new Map<string, readonly string[]>();
+  for (const [diskName, prefixes] of Object.entries(shared ?? {})) {
+    if (!names.includes(diskName)) {
+      throw new ConfigInvalidError({
+        cause: `storage.shared names disk "${diskName}" but the configured disks are: ${names.join(', ')}`,
+        fix: `defineStorage({ disks, shared: { ${names[0] ?? '<disk>'}: ['<prefix>/'] } })   # key it by one of: ${names.join(', ')}`,
+      });
+    }
+    for (const prefix of prefixes) {
+      const shareable =
+        typeof prefix === 'string' &&
+        prefix.endsWith('/') &&
+        isSafeKey(prefix.slice(0, -1)) &&
+        !isTenantScoped(prefix);
+      if (!shareable) {
+        throw new ConfigInvalidError({
+          cause: `storage.shared.${diskName} lists ${JSON.stringify(prefix)}, which is not a shareable prefix: it must be a relative key ending in "/" and outside "org/"`,
+          fix: `defineStorage({ disks, shared: { ${diskName}: ['brand/'] } })   # whole segments ending in "/", outside org/ — a tenant's object is read by its own org, never shared`,
+        });
+      }
+    }
+    out.set(diskName, Object.freeze([...prefixes]));
+  }
+  return out;
 }
 
 let current: Storage | undefined;
@@ -63,6 +112,7 @@ export function defineStorage(config: StorageConfig): Storage {
     registered.set(driver, diskName);
     driver.registerAs?.(diskName);
   }
+  const shared = sharedPrefixes(config.shared, names);
   const storageInstance: Storage = {
     defaultDisk,
     diskNames: Object.freeze([...names]),
@@ -71,6 +121,10 @@ export function defineStorage(config: StorageConfig): Storage {
       const driver = disks.get(wanted);
       if (driver === undefined) throw diskUnknown(wanted, names);
       return driver;
+    },
+    isShared(diskName: string, key: string): boolean {
+      if (!isSafeKey(key) || isTenantScoped(key)) return false;
+      return (shared.get(diskName) ?? []).some((prefix) => key.startsWith(prefix));
     },
   };
   current = storageInstance;

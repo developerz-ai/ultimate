@@ -103,6 +103,54 @@ describe('defineStorage', () => {
   });
 });
 
+describe('shared prefixes', () => {
+  // The opt-in a serving route reads: a key outside every `org/<id>/` prefix is NOBODY's until the
+  // app names its prefix here, per disk. Refused at boot rather than at the first read, because a
+  // prefix that can never match is a declaration that silently shares nothing.
+  test('nothing is shared until a prefix is declared', () => {
+    const configured = defineStorage({ disks: { uploads, media } });
+    expect(configured.isShared('uploads', 'brand/logo.png')).toBe(false);
+  });
+
+  test('a declared prefix shares its keys on that disk only, a whole segment at a time', () => {
+    const configured = defineStorage({
+      disks: { uploads, media },
+      shared: { uploads: ['brand/'] },
+    });
+    expect(configured.isShared('uploads', 'brand/logo.png')).toBe(true);
+    expect(configured.isShared('uploads', 'brand/a/b.png')).toBe(true);
+    expect(configured.isShared('uploads', 'brandish/logo.png')).toBe(false);
+    expect(configured.isShared('media', 'brand/logo.png')).toBe(false);
+    expect(configured.isShared('nope', 'brand/logo.png')).toBe(false);
+  });
+
+  test('a tenant-scoped key is never shared, whatever the prefix says', () => {
+    const configured = defineStorage({ disks: { uploads }, shared: { uploads: ['brand/'] } });
+    expect(configured.isShared('uploads', 'org/o1/brand/logo.png')).toBe(false);
+  });
+
+  const refusals: readonly [string, Readonly<Record<string, readonly string[]>>][] = [
+    ['a disk that is not declared', { evidence: ['brand/'] }],
+    ['a prefix without its trailing slash', { uploads: ['brand'] }],
+    ['the whole disk', { uploads: ['/'] }],
+    ['an empty prefix', { uploads: [''] }],
+    ['a tenant prefix', { uploads: ['org/'] }],
+    ['a tenant prefix in another case', { uploads: ['Org/o1/'] }],
+    ['a traversal', { uploads: ['../brand/'] }],
+  ];
+  for (const [label, shared] of refusals) {
+    test(`refuses ${label}`, () => {
+      let caught: unknown;
+      try {
+        defineStorage({ disks: { uploads }, shared });
+      } catch (error) {
+        caught = error;
+      }
+      expect(isUltimateError(caught) && caught.code).toBe('X_CONFIG_INVALID');
+    });
+  }
+});
+
 describe('disk()', () => {
   test('an unknown disk names the disks that DO exist', () => {
     defineStorage({ disks: { uploads, media } });

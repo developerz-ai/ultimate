@@ -8,7 +8,39 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+Every breaking entry under Changed has a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `26.x → 27.0.0` section, in
+the same order.
+
+### Changed
+
+Tier 0 — core.
+
+- **BREAKING — (#1) `AsyncContext` gains a required `exit(fn)`.** It runs `fn` with nothing in flight, and everything `fn` starts inherits that absence; where there is no async context, `fn` simply runs. `asyncContext()` implements it; a hand-written `AsyncContext` is TS2741 until it does — `exit: (fn) => fn()` keeps one that has no store.
+
+Tier 1 — storage; tier 5 — cli.
+
+- **BREAKING — (#2) `/_storage/:disk/*key` and `/media/*key` refuse a key no tenant owns unless the app shared its prefix.** The read decision was the permission `storage:read` plus "not under ANOTHER org's `org/` prefix", so every key outside `org/` — an all-tenant `db-export/…`, raw webhook payloads, `dsr/<id>/…zip` — was served, unsigned and unexpiring, on every disk, to every signed-in actor holding `storage:read`. Such a key is now `X_STORAGE_KEY_UNSHARED` (new, 404, decided from the key alone, so it never confirms an object exists) unless `defineStorage({ disks, shared: { <disk>: ['<prefix>/'] } })` lists its prefix for that disk. A prefix ends in `/`, is a whole segment, is never inside `org/` and never the whole disk; anything else is `X_CONFIG_INVALID` at boot. `Storage` gains a required `isShared(disk, key)` — `defineStorage` implements it, and a hand-built `Storage` is TS2741. `/media` makes the same decision through the same `assertReadableKey` (`storage-surfaces.test.ts`). Tenant-scoped keys are unchanged.
+
+### Added
+
+- `@ultimat3/cli`: `storageRoutes`, `servedStorage` and `STORAGE_READ_PERMISSION` are exported, so an app's contract test drives the real `GET`/`PUT /_storage/:disk/*key` — as `assetRoutes` already serves `/media` to one.
+- `@ultimat3/db`: `outsideTransaction(fn)` — `fn` runs with no ambient transaction (`currentTx()` is `undefined`, `db()` is the pool), whatever scope it was called in.
+- `@ultimat3/storage`: `StorageConfig.shared`, `Storage.isShared`, `keyUnshared` and the code `X_STORAGE_KEY_UNSHARED`.
+
+### Fixed
+
+Tier 3 — jobs.
+
+- **A job body and its steps never run inside a transaction they did not open.** A worker started inside a `withTransaction` scope (a test, a boot that ran inside one) carried it into every timer of its poll loop, so each job saw that transaction — committed long before — as ambient: `db()` answered with it, and an `enqueue` from the body staged into its dead outbox. Every body now runs under `outsideTransaction`; a job that wants atomic writes opens its own `withTransaction`. `job-ambient-tx.test.ts` pins both cases. Also pinned, no change: the idempotency key dedupes against a LIVE row only — a done or dead-lettered job frees its key — on the pg driver too (`idempotency-pg.job.test.ts`); and a pinned `webhook()` delivery over real TLS reaches the approved address and verifies the certificate against the endpoint's name (`webhook-pin-tls.live.test.ts`).
+
+Tier 5 — cli.
+
+- **`GET /_storage/:disk/*key` streams the object** (`stat` + `stream`), where it held the whole object in memory through `get()` and refused one past the disk's `maxGetBytes` with `X_STORAGE_TOO_LARGE`. A `Range` reads the stream and drops the bytes before its start. `/media` still buffers: it decodes images.
+- **An app that never declared `storage:read` gets a clean refusal from `/_storage` and `/media`** — 401 for nobody, `403 X_FORBIDDEN` for everyone else — where it got `500 X_PERMISSION_UNKNOWN`; nobody can hold an undeclared permission. `x verify`'s `policy` step stops requiring `storage:read` of an app that declares disks (#524's finding), so an app that serves nothing through these routes leaves it out.
+- **The `/_storage` `GET` reads no signature, and says so.** A signed GET URL `localDriver` mints points at it and is served on the session's terms (policy plus the key rules above), which neither widen nor narrow with `x-sig`/`x-exp`; `readSignedObject` is for an app's own signature-only route. The wiki and `17-uploads.md` now state the decision in order.
+- **`x manifest` attributes an error code to the same workspace on every OS.** `errorCodes[].package` was the site's path split on `/`; a Windows path kept the whole file (`apps\admin\app\…\abuse.tsx`), and the codes, sorted by it, came out in another order — thousands of changed lines per regen across machines, and a `--check` that disagreed with itself. The source walk has answered POSIX paths since 25.0.0 (#661); `workspaceOf` now normalises on its own too, pinned with Windows-shaped input.
+- **`x dev` reloads an edited module on Windows.** The reload graph compared `startsWith(root + '/')`, false for every backslash path Bun resolves there, so it recorded no import and no stylesheet as the app's own and a save rendered stale code until a restart; `dev-watch-tree` closed no watcher below a removed directory for the same reason. Both use `isPathUnder` (either separator).
 
 ## 26.1.1 - 2026-10-08
 
@@ -29,7 +61,7 @@ Tier 4 — render.
 
 Tier 4 — pwa, notify; tier 5 — cli, testing.
 
-- **`pwa.push` wired end to end (#710).** `pwa: { push: true, vapid: { subject } }` in `app.config.ts`; the VAPID pair comes from `ULTIMATE_VAPID_PUBLIC_KEY` / `ULTIMATE_VAPID_PRIVATE_KEY`, resolved at boot — a dev pair locally, while a deploy without a valid pair is refused (`X_PWA_VAPID_KEY_MISSING`, `X_PWA_VAPID_KEY_INVALID`). `pwa.vapid` is what wires it: `push: true` alone still boots, as it did on 26.0.0 where the key wired nothing, with push left unwired and a `pwa.push unwired` warning at boot — 27.0.0 refuses it. The service worker carries the `push` and `notificationclick` handlers, and every document carries `<meta name="x-push-key">`.
+- **`pwa.push` wired end to end (#710).** `pwa: { push: true, vapid: { subject } }` in `app.config.ts`; the VAPID pair comes from `ULTIMATE_VAPID_PUBLIC_KEY` / `ULTIMATE_VAPID_PRIVATE_KEY`, resolved at boot — a dev pair locally, while a deploy without a valid pair is refused (`X_PWA_VAPID_KEY_MISSING`, `X_PWA_VAPID_KEY_INVALID`). `pwa.vapid` is what wires it: `push: true` alone still boots, as it did on 26.0.0 where the key wired nothing, with push left unwired and a `pwa.push unwired` warning at boot — a later major refuses it. The service worker carries the `push` and `notificationclick` handlers, and every document carries `<meta name="x-push-key">`.
 - **`pushSubscribe()` / `pushUnsubscribe()` from `@ultimat3/pwa`.** Factories over `action`: each is a real action (route, OpenAPI, typed client, contract tests) storing or forgetting this browser's subscription in the framework table `x_push_subscriptions`, against `ctx.actor` — never an id the body names, never for an agent. `@ultimat3/pwa/client`'s `subscribeToPush` / `unsubscribeFromPush` / `pushPermission` are the browser half; after a VAPID rotation `subscribeToPush` unsubscribes a subscription made with the old key and subscribes anew, never re-saving one no message can reach.
 - **Web Push sending on WebCrypto, no new dependency.** RFC 8291 message encryption (pinned to its Appendix A vectors) and RFC 8292 VAPID (ES256). `pushToActor` / `webPush()` deliver to every device of one person in that device's locale, delete a subscription answered `404`/`410`, retry `429`/`5xx` through the job, and delete one a push service refuses `401`/`403` (made with a key this server no longer signs with). An endpoint is dialled only on a push service — `https:` and a host in `PUSH_SERVICE_HOSTS` (`fcm.googleapis.com`, `push.services.mozilla.com`, `push.apple.com`, `notify.windows.com`, and their subdomains on a dot boundary) or in the new `pwa.vapid.pushHosts` — checked when a subscription is stored and before every send, since an endpoint comes from a request body and a hostname can resolve to a private address (`X_PWA_PUSH_HOST_UNLISTED`, new; a stored one is deleted unsent) — with a 30 s deadline per POST, and a caller's abort is rethrown as is, never retried.
 - **`@ultimat3/notify`: `pushChannel({ pusher, message })`** — a notification channel over `webPush()`.

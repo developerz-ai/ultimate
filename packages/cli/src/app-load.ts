@@ -419,8 +419,13 @@ function reloadRoute(
 
 const countSuspense = (source: string): number => source.match(/<Suspense[\s/>]/g)?.length ?? 0;
 
-/** `packages/db/src/errors.ts` → `packages/db`; `apps/web/app/posts/errors.ts` → `apps/web`. */
-const workspaceOf = (file: string): string => file.split('/').slice(0, 2).join('/');
+/**
+ * `packages/db/src/errors.ts` → `packages/db`; `apps/web/app/posts/errors.ts` → `apps/web` — on
+ * either separator. A manifest written on Windows split a `\`-path on `/`, kept the whole file as
+ * the "package" (`apps\\admin\\app\\…\\abuse.tsx`) and sorted the codes by it, so the same tree
+ * regenerated thousands of changed lines on the next Linux machine and `--check` meant nothing.
+ */
+export const workspaceOf = (file: string): string => toPosix(file).split('/').slice(0, 2).join('/');
 
 /**
  * The app's `X_*` codes, from the same walk and the same scanner the `errors` gate step uses.

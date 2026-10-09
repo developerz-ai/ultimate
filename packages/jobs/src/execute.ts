@@ -17,6 +17,7 @@ import {
   useContext,
   withChildContext,
 } from '@ultimat3/core';
+import { outsideTransaction } from '@ultimat3/db';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, SettleBy } from './driver';
 import { claimOf } from './driver';
@@ -210,7 +211,12 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
    * payload has parsed there is no tenant to derive, so the worker's own context stands in — and
    * a tenant-scoped read under it fails closed, which is right for a payload nobody could read.
    */
-  let inRunScope = <T>(fn: () => T): T => runWithContext(ctx, fn);
+  //
+  // Outside any transaction, always: a worker started inside a transaction scope (a test, a boot
+  // that ran inside one) carried it into every timer of its loop, so each body saw that
+  // transaction — committed long before — as ambient, `db()` answered with it, and an enqueue from
+  // the body staged into its dead outbox. A job opens its own `withTransaction` when it wants one.
+  let inRunScope = <T>(fn: () => T): T => outsideTransaction(() => runWithContext(ctx, fn));
 
   const settle = async (outcome: JobExecution): Promise<JobExecution> => {
     const steps = await driver.steps.list(claimed.runId);
@@ -237,7 +243,10 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // still answer the worker's org while every ambient repository call answered the job's — one
     // run acting as two tenants, which is the same hole one layer up. It rebuilds every managed
     // factory against `runActor` and carries only the services no factory owns.
-    inRunScope = (fn) => runWithContext(ctx, () => withChildContext({ actor: runActor }, fn));
+    inRunScope = (fn) =>
+      outsideTransaction(() =>
+        runWithContext(ctx, () => withChildContext({ actor: runActor }, fn)),
+      );
     const work = inRunScope(() =>
       handle.run({
         input,

@@ -295,7 +295,7 @@ export function pwaPushIssues(pwa: PwaConfig, issues: string[]): boolean {
     return issues.length > before;
   }
   // `push: true` with no `vapid` at all booted on 26.0.0, where the key wired nothing — so in 26.x
-  // it still boots, with push left unwired (`pushWired`) and the boot saying so. 27.0.0 refuses it.
+  // it still boots, with push left unwired (`pushWired`) and the boot saying so. A later major refuses it.
   if (vapid === undefined) return false;
   const subject: unknown =
     vapid !== null && typeof vapid === 'object' ? (vapid as { subject?: unknown }).subject : vapid;

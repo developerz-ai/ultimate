@@ -141,25 +141,17 @@ describe('unit · a permission a route requires must be one the app declared', (
   });
 });
 
-describe('unit · the mounted /_storage requires storage:read of an app that stores (#524)', () => {
+describe('unit · the mounted /_storage asks nothing of the permission set (27.0.0)', () => {
   afterEach(() => resetStorage());
 
-  test('an app that declared disks and not storage:read is told so by the gate, not by a 500', () => {
+  test('an app that stores and never declares storage:read has no finding: its reads are a 403', () => {
+    // #524 made this a gate finding because the route answered 500 `X_PERMISSION_UNKNOWN`. The
+    // route now refuses an undeclared `storage:read` as a role without the grant is refused, so an
+    // app that serves nothing through it leaves the permission out (`runtime-storage.test.ts`).
     definePermissions(['post:read']);
-    defineStorage({ disks: { uploads: localDriver({ root: '/tmp/x-app-permissions-disk' }) } });
-    const findings = permissionFindings(ROOT);
-    expect(codesOf(findings)).toEqual(['X_PERMISSION_UNKNOWN']);
-    expect(findings[0]?.cause).toContain('storage:read');
-    expect(findings[0]?.cause).toContain('/_storage');
-  });
-
-  test('declared, it is quiet; and an app that stores nothing is never asked', () => {
-    definePermissions(['post:read', STORAGE_READ_PERMISSION]);
     defineStorage({ disks: { uploads: localDriver({ root: '/tmp/x-app-permissions-disk' }) } });
     expect(permissionFindings(ROOT)).toEqual([]);
-    resetStorage();
-    clearPermissions();
-    definePermissions(['post:read']);
+    definePermissions(['post:read', STORAGE_READ_PERMISSION]);
     expect(permissionFindings(ROOT)).toEqual([]);
   });
 });

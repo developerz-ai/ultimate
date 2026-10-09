@@ -3,7 +3,7 @@
 // the app registered nothing — a zero-primitive manifest, green.
 
 import { describe, expect, test } from 'bun:test';
-import { hasPathSegment, pathSegments } from './path-segments';
+import { hasPathSegment, isPathUnder, pathSegments } from './path-segments';
 
 describe('hasPathSegment', () => {
   test('a directory of that exact name, at any depth', () => {
@@ -23,5 +23,22 @@ describe('hasPathSegment', () => {
   test('a backslash separator splits the same way, so the rule exists on Windows too', () => {
     expect(hasPathSegment('apps\\web\\node_modules\\x.ts', 'node_modules')).toBe(true);
     expect(pathSegments('a\\b/c')).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('isPathUnder', () => {
+  test('a file below the root, on either separator', () => {
+    expect(isPathUnder('/home/dev/app', '/home/dev/app/apps/web/page.tsx')).toBe(true);
+    // What Bun resolves on Windows: backslashes in both, or a mix of the two. A bare
+    // `startsWith(root + '/')` was false for EVERY file there, so `x dev` evicted nothing on a
+    // save and rendered the old component until a restart.
+    expect(isPathUnder('C:\\dev\\app', 'C:\\dev\\app\\apps\\web\\page.tsx')).toBe(true);
+    expect(isPathUnder('C:/dev/app', 'C:\\dev\\app\\apps\\web\\page.tsx')).toBe(true);
+  });
+
+  test('a sibling that merely starts with the root’s name, and the root itself, are not under it', () => {
+    expect(isPathUnder('/home/dev/app', '/home/dev/app-two/page.tsx')).toBe(false);
+    expect(isPathUnder('C:\\dev\\app', 'C:\\dev\\app-two\\page.tsx')).toBe(false);
+    expect(isPathUnder('/home/dev/app', '/home/dev/app')).toBe(false);
   });
 });

@@ -42,6 +42,20 @@ describe('asyncContext, on a server', () => {
     });
   });
 
+  test('exit runs with nothing in flight, and so does everything it starts', async () => {
+    const scope = asyncContext<string>('the thing');
+    await scope.run('outer', async () => {
+      expect(scope.exit(() => scope.get())).toBeUndefined();
+      // A loop begun under exit keeps the absence across its awaits and timers.
+      const later = await scope.exit(async () => {
+        await Bun.sleep(1);
+        return scope.get();
+      });
+      expect(later).toBeUndefined();
+      expect(scope.get()).toBe('outer');
+    });
+  });
+
   test('two scopes cannot see each other', () => {
     const left = asyncContext<string>('the left');
     const right = asyncContext<string>('the right');

@@ -80,6 +80,17 @@ export function currentTx(): DbTx | undefined {
 }
 
 /**
+ * Run `fn` outside any transaction this async context carries: inside it `currentTx()` is
+ * `undefined` and `db()` is the pool. For work that must never join a caller's transaction even
+ * when it was STARTED inside one — `@ultimat3/jobs` runs every job body under it, because a worker
+ * started inside a transaction scope handed each job that transaction, long committed, and an
+ * enqueue from the body staged into its dead outbox.
+ */
+export function outsideTransaction<R>(fn: () => R): R {
+  return storage.exit(fn);
+}
+
+/**
  * The connection the transaction still OPEN on this async context runs on, or `undefined`. A
  * different question from `currentTx() !== undefined`, which only says a store is present — and the
  * store survives the scope. The one reader is `pglite.ts`'s `run()`, where the answer decides

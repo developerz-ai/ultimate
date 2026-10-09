@@ -30,6 +30,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_PUT_FAILED',
   'X_STORAGE_READ_FAILED',
   'X_STORAGE_OBJECT_LOCKED',
+  'X_STORAGE_KEY_UNSHARED',
 ] as const;
 
 /**
@@ -70,6 +71,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_PUT_FAILED: 'the object could not be written',
   X_STORAGE_READ_FAILED: 'the object could not be read',
   X_STORAGE_OBJECT_LOCKED: 'the object is under retention or a legal hold',
+  X_STORAGE_KEY_UNSHARED: 'object key is outside every tenant and every shared prefix',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws
@@ -427,6 +429,19 @@ export const orgMismatch = (key: string, orgId: string): StorageError =>
     cause: `key "${key}" is not inside org "${orgId}"`,
     fix: `build it with scopedKey('${orgId}', ...parts), and pass the ACTOR's org as orgId — never one read off the request`,
     meta: { key, orgId },
+  });
+
+/**
+ * A served read of a key no tenant owns and no `defineStorage({ shared })` prefix covers. 404 for
+ * the reason `orgMismatch` is: the refusal is decided from the key alone, before any disk is read,
+ * so it says nothing about whether an object is there.
+ */
+export const keyUnshared = (disk: string, key: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_KEY_UNSHARED',
+    cause: `key "${key}" on disk "${disk}" is outside every org/<id>/ prefix and every prefix defineStorage({ shared }) lists for "${disk}"`,
+    fix: `defineStorage({ disks, shared: { ${disk}: ['${key.split('/')[0] ?? ''}/'] } })   # only for objects every reader may have; a tenant's object is built with scopedKey(orgId, ...parts)`,
+    meta: { disk, key },
   });
 
 /** The client half: the disk answered the presigned PUT with something other than 2xx. */

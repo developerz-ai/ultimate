@@ -11,7 +11,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { userActor } from '@ultimat3/core';
+import type { Actor } from '@ultimat3/core';
+import { anonymousActor, userActor } from '@ultimat3/core';
 import type { RequestContext, Route } from '@ultimat3/http';
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
@@ -43,7 +44,7 @@ const reader = (roles: readonly string[], orgId: string | undefined) =>
 interface CallInit {
   readonly disk?: string;
   readonly key?: string;
-  readonly actor?: ReturnType<typeof reader>;
+  readonly actor?: Actor;
   readonly headers?: Record<string, string>;
 }
 
@@ -131,10 +132,12 @@ describe('unit · dev storage · the served object', () => {
       disks: {
         local: {
           ...inner,
-          async get(key: string) {
-            const read = await inner.get(key);
-            const { lastModified: _unreported, ...object } = read.object;
-            return { object, bytes: read.bytes };
+          // `stat` is what the route reads (it streams the bytes, never `get`s them).
+          async stat(key: string) {
+            const read = await inner.stat(key);
+            if (read === undefined) return undefined;
+            const { lastModified: _unreported, ...object } = read;
+            return object;
           },
         },
       },
@@ -162,6 +165,24 @@ describe('unit · dev storage · the served object', () => {
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(BYTES.subarray(2, 5));
   });
 
+  test('the body is streamed: an object past the disk’s get() ceiling is still served, ranges too', async () => {
+    // `get()` buffers and refuses past `maxGetBytes`; the route used it, so a 2 GB linked file was
+    // either a whole object in a 512 Mi pod or `X_STORAGE_TOO_LARGE`. It reads `stat` + `stream`.
+    resetStorage();
+    const small = defineStorage({
+      disks: { local: localDriver({ root: join(root, '.storage'), maxGetBytes: 4 }) },
+    });
+    const routes = storageRoutes({ storage: small });
+    const whole = await call(routes);
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get('content-length')).toBe(String(BYTES.byteLength));
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(BYTES);
+    const window = await call(routes, { headers: { range: 'bytes=3-8' } });
+    expect(window.status).toBe(206);
+    expect(window.headers.get('content-range')).toBe(`bytes 3-8/${BYTES.byteLength}`);
+    expect(new Uint8Array(await window.arrayBuffer())).toEqual(BYTES.subarray(3, 9));
+  });
+
   test('a Range past the end is 416, never a silent full body', async () => {
     const response = await call(storageRoutes({ storage }), { headers: { range: 'bytes=99-' } });
     expect(response.status).toBe(416);
@@ -181,14 +202,19 @@ describe('unit · dev storage · authorization', () => {
     expect(response.status).toBe(200);
   });
 
-  test('an app that never declared the permission refuses every read', async () => {
-    // "No policy" is not "public": with a permission set that has no `storage:read`, `can()`
-    // refuses at the door and names the `definePermissions` edit that fixes it.
+  test('an app that never declared the permission refuses every read with a clean 403', async () => {
+    // "No policy" is not "public" — and not a 500 either. An app that serves nothing through this
+    // route should be able to leave `storage:read` out of its permission set: nobody can hold an
+    // undeclared permission, so the answer is the one a role without the grant gets. Until 27.0.0
+    // it was `X_PERMISSION_UNKNOWN` (500), so an app kept the permission declared and ungranted
+    // only to keep the route answering a refusal.
     clearPermissions();
     definePermissions(['post:read']);
-    await expect(call(storageRoutes({ storage }))).rejects.toBeUltimateError(
-      'X_PERMISSION_UNKNOWN',
-    );
+    await expect(call(storageRoutes({ storage }))).rejects.toBeUltimateError('X_FORBIDDEN');
+    // Anonymous is still told to log in, before the permission is even looked at.
+    await expect(
+      call(storageRoutes({ storage }), { actor: anonymousActor() }),
+    ).rejects.toBeUltimateError('X_UNAUTHENTICATED');
   });
 
   test('an anonymous caller is told to log in, not that the object is forbidden', async () => {
@@ -232,10 +258,52 @@ describe('unit · dev storage · what a refusal must not disclose', () => {
     ).rejects.toBeUltimateError('X_STORAGE_ORG_MISMATCH');
   });
 
-  test('a key nobody scoped is served on the policy alone', async () => {
-    await storage.disk().put('brand/logo.png', BYTES, { contentType: 'image/png' });
-    const response = await call(storageRoutes({ storage }), { key: 'brand/logo.png' });
-    expect(response.status).toBe(200);
+  test('a key no tenant owns is refused unless the app shared its prefix — whether it exists or not', async () => {
+    // The hole this closes: `db-export/…`, `raw/…` and `dsr/<id>/…zip` are outside every `org/`
+    // prefix, so "not another tenant's" read as "everybody's" and any signed-in reader holding
+    // `storage:read` was served an all-tenant export. Refused with the foreign-tenant status, so
+    // a guess learns nothing about which unshared keys exist.
+    await storage.disk().put('db-export/2026/10/02/users.ndjson', BYTES, {
+      contentType: 'application/x-ndjson',
+    });
+    const routes = storageRoutes({ storage });
+    await expect(
+      call(routes, { key: 'db-export/2026/10/02/users.ndjson' }),
+    ).rejects.toBeUltimateError('X_STORAGE_KEY_UNSHARED');
+    await expect(call(routes, { key: 'db-export/never-written.ndjson' })).rejects.toBeUltimateError(
+      'X_STORAGE_KEY_UNSHARED',
+    );
+  });
+
+  test('a prefix the app shared on this disk is served on the policy alone', async () => {
+    resetStorage();
+    const shared = defineStorage({
+      disks: { local: localDriver({ root: join(root, '.storage') }) },
+      shared: { local: ['brand/'] },
+    });
+    await shared.disk().put('brand/logo.png', BYTES, { contentType: 'image/png' });
+    await shared.disk().put('brandish/logo.png', BYTES, { contentType: 'image/png' });
+    const routes = storageRoutes({ storage: shared });
+    expect((await call(routes, { key: 'brand/logo.png' })).status).toBe(200);
+    // A prefix is a whole segment: `brand/` does not open `brandish/`.
+    await expect(call(routes, { key: 'brandish/logo.png' })).rejects.toBeUltimateError(
+      'X_STORAGE_KEY_UNSHARED',
+    );
+  });
+
+  test('a prefix shared on one disk opens nothing on another', async () => {
+    resetStorage();
+    const two = defineStorage({
+      disks: {
+        local: localDriver({ root: join(root, '.storage') }),
+        evidence: localDriver({ root: join(root, '.evidence') }),
+      },
+      shared: { local: ['brand/'] },
+    });
+    await two.disk('evidence').put('brand/logo.png', BYTES, { contentType: 'image/png' });
+    await expect(
+      call(storageRoutes({ storage: two }), { disk: 'evidence', key: 'brand/logo.png' }),
+    ).rejects.toBeUltimateError('X_STORAGE_KEY_UNSHARED');
   });
 
   test('a missing object is a coded 404 carrying a runnable fix', async () => {
