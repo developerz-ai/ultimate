@@ -46,22 +46,50 @@ export async function sweepProbeDatabases(
 ): Promise<readonly string[]> {
   const prefix = PROBE_SHAPE.exec(probeName)?.[1];
   if (prefix === undefined) return [];
+  return sweep(
+    executor,
+    `${prefix.replaceAll('_', '\\_')}\\_%`,
+    options,
+    (name, shape) => name !== probeName && shape === prefix,
+  );
+}
+
+/**
+ * Every probe-shaped database of ANY prefix whose run is over (#738): the test runner calls it
+ * once per run and `x clean` on demand, so a suite that was renamed or deleted — and so never runs
+ * its own prefix's sweep again — does not leave its probes on the server forever.
+ */
+export async function sweepStaleProbeDatabases(
+  executor: PgExecutor,
+  options: ProbeDatabaseSweepOptions & { readonly dryRun?: boolean } = {},
+): Promise<readonly string[]> {
+  return sweep(executor, '%\\_%\\_%\\_%', options, () => true);
+}
+
+async function sweep(
+  executor: PgExecutor,
+  like: string,
+  options: ProbeDatabaseSweepOptions & { readonly dryRun?: boolean },
+  candidate: (name: string, prefix: string) => boolean,
+): Promise<readonly string[]> {
   const isAlive = options.isAlive ?? probeDatabaseAlive;
   const now = (options.now ?? Date.now)();
   const rows = await executor.query<{ datname: string; backends: number | string }>(
     `select d.datname, (select count(*) from pg_stat_activity a where a.datname = d.datname) as backends
        from pg_database d where d.datname like $1`,
-    [`${prefix.replaceAll('_', '\\_')}\\_%`],
+    [like],
   );
   const swept: string[] = [];
   for (const row of rows) {
     const shape = PROBE_SHAPE.exec(row.datname);
-    if (row.datname === probeName || shape?.[1] !== prefix) continue;
+    if (shape?.[1] === undefined || !candidate(row.datname, shape[1])) continue;
     if (Number(row.backends) > 0 || isAlive(Number(shape[2]))) continue;
     const createdMs = Number.parseInt(shape[3] ?? '', 36) * 1000;
     if (!Number.isFinite(createdMs) || now - createdMs < PROBE_DATABASE_MIN_AGE_MS) continue;
     // The name matched `PROBE_SHAPE`, so it is `[a-z0-9_]` only — quoting it needs no escape.
-    await executor.query(`drop database if exists "${row.datname}" with (force)`, []);
+    if (options.dryRun !== true) {
+      await executor.query(`drop database if exists "${row.datname}" with (force)`, []);
+    }
     swept.push(row.datname);
   }
   return swept;

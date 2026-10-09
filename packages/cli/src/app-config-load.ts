@@ -6,8 +6,7 @@
 // why: Bun exposes no path-join primitive, and the config path is app-root-relative.
 import { join } from 'node:path';
 import type { AppConfig, AppConfigInput } from '@ultimat3/core';
-import { ConfigInvalidError, defineConfig, describeValue } from '@ultimat3/core';
-import { APP_CONFIG_FILE } from './app-root';
+import { APP_CONFIG_FILE, ConfigInvalidError, defineConfig, describeValue } from '@ultimat3/core';
 
 /** The export every app declares. Named, never default — the CLI and the runtime both import it. */
 export const APP_CONFIG_EXPORT = 'config';

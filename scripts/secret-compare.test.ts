@@ -6,8 +6,8 @@
 // `timingSafeEqual` call sites, each rewritten to `===` exactly as the mutation run did, asserted
 // to be REPORTED. That mutation left the package at 432 pass · 14 skip · 0 fail.
 
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-import { mkdtemp } from 'node:fs/promises'; // why: Bun has no mkdtemp.
+import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -31,6 +31,17 @@ import {
   secretCompareSiteKey,
   secretCompareUnpinRows,
 } from './secret-compare';
+
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(async () => {
+  for (const dir of madeDirs.splice(0)) await rm(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -358,7 +369,7 @@ describe('the ratchet moves in one direction', () => {
   });
 
   test('--unpin lowers a site row to what is measured, deletes it at zero, refuses to raise', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ultimate-secret-pins-'));
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-secret-pins-')).then(made);
     const path = join(dir, SECRET_PINS_FILE);
     await Bun.write(path, await Bun.file(join(repoRoot(), SECRET_PINS_FILE)).text());
     const triple = 'packages/manifest/src/docs-search.ts: !matched.includes(token)';

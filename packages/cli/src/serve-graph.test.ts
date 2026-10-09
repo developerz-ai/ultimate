@@ -83,12 +83,15 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * the supported log tee, reached through `logger.ts` by every module that logs.
  * raised 631 → 632, measured 632 (2026-10-08, Web Push): `pwa/src/push-schema.ts` — the leaf
  * `@ultimat3/pwa/schema` the boot applies `x_push_subscriptions` from, as the mcp leaf above.
- * raised 632 → 634, measured 634 (2026-10-09, #710): `core/src/wire-dates.ts` — the query route
+ * raised 632 → 634, measured 634 (2026-10-09, #738): `core/src/app-dir.ts` (the one walk to the app
+ * root, so every `.x/` path resolves from it, never the cwd) and `core/src/cache-eviction.ts` (the
+ * eviction the PGlite snapshot cache runs when it writes a new version), both through the core barrel.
+ * raised 634 → 636, measured 636 (2026-10-09, #710): `core/src/wire-dates.ts` — the query route
  * names its answer's instants in `x-ultimate-dates` — and `core/src/default-locale.ts`, the default
  * locale split out of `context.ts` so an island's translator reads it without the async context;
  * both reached through the core barrel.
  */
-const MIGRATE_CEILING = 634;
+const MIGRATE_CEILING = 636;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -162,10 +165,11 @@ const MIGRATE_CEILING = 634;
  * raised 929 → 930, measured 930 (2026-10-09, 27.2.0): `storage/src/errors-promote.ts` — promotion's
  * three refusals, `X_STORAGE_ALREADY_PROMOTED` new among them, split out of `errors.ts` at its
  * 500-line ceiling and reached through the storage barrel.
- * raised 930 → 932, measured 932 (2026-10-09, #710): the two modules named on `MIGRATE_CEILING`
+ * raised 930 → 932, measured 932 (2026-10-09, #738): the two core modules named on `MIGRATE_CEILING`.
+ * raised 932 → 934, measured 934 (2026-10-09, #710): the two modules named on `MIGRATE_CEILING`
  * for #710.
  */
-const SERVING_ROLE_CEILING = 932;
+const SERVING_ROLE_CEILING = 934;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -234,10 +238,11 @@ const SERVING_ROLE_CEILING = 932;
  * resolves wherever its owner points it), reached through `push-send.ts`.
  * raised 1055 → 1056, measured 1056 (2026-10-09, 27.2.0): `storage/src/errors-promote.ts`, the
  * module named on `SERVING_ROLE_CEILING` for 27.2.0.
- * raised 1056 → 1058, measured 1058 (2026-10-09, #710): the two modules named on
+ * raised 1056 → 1058, measured 1058 (2026-10-09, #738): the two core modules named on `MIGRATE_CEILING`.
+ * raised 1058 → 1060, measured 1060 (2026-10-09, #710): the two modules named on
  * `MIGRATE_CEILING` for #710.
  */
-const WEB_ROLE_CEILING = 1058;
+const WEB_ROLE_CEILING = 1060;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

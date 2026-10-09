@@ -10,10 +10,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
-Tier 0 — core. Tier 1 — i18n. Tier 3 — query. Tier 4 — ui.
+Tier 0 — core. Tier 1 — db, i18n. Tier 3 — query. Tier 4 — ui. Tier 5 — cli.
 
+- **`x clean [--dry-run]`, and the test runner sweeps what earlier runs left behind (#738).** An app held 72 migrated test templates in `.x/test-db` (4.2 GB) and `.x/cache` folders beside its source. Before every `x test` and every test step of `x verify`, the framework now evicts `.x/test-db` templates and PGlite initdb snapshots to the newest two, removes any `.x` below the app root, and, with `TEST_DATABASE_URL` set, drops every probe database whose run is provably over (`sweepStaleProbeDatabases`). `x clean` clears all of it on demand; `.x/pgdata` and `.x/storage` are never touched. [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing#database-state-and-what-a-run-leaves-behind).
+- **`migratedDatabase({ root })` in `@ultimat3/cli`: the app's migrated test database, from the framework.** The framework schema and every migration, booted from a template cached under the app root's `.x/test-db` and evicted when a migration changes, so an app no longer hand-rolls the template cache (and its unbounded growth). With `reusableDatabase` from `@ultimat3/testing` it is one database per worker, data reset before every file.
+- **`appDirOf`, `appStatePath` and `evictCacheFiles` in `@ultimat3/core`**: the one walk to the app root (`app.config.ts`), the one way to name a path under its `.x/`, and the eviction a content-keyed cache runs when it writes a new key.
 - **A read's `Date` reaches the typed client as a `Date` (#710, owner decision 19).** A query declares no output schema, so a column typed `Date` arrived as the ISO string `JSON.stringify` wrote, and every app converted at its `load` (the reference app's `shared/wire.ts`). The query route now names every `Date` of its answer in `x-ultimate-dates` — by path, one entry per column of a list, row by row only where the same column also holds text — and `clientTransport` revives exactly those (`wire-dates.ts`: `DATES_HEADER`, `wireDatePaths`, `reviveWireDates`). The body and the OpenAPI document are unchanged; a client that ignores the header reads what it read before. Measured: `clientTransport` +702 B minified, `@ultimat3/query/client` +763 B.
 - **A catalog slice crosses into an island (#710, owner decision 19).** `catalogSubset(t, keys)` (`@ultimat3/i18n`) resolves the named templates, plural variants included, into JSON; `subsetTranslator(subset)` (`@ultimat3/i18n/subset`, an entry that installs no framework catalog) is the island's full translator over it. `uiCatalog(t)` (`@ultimat3/ui`) is the design system's own slice: every `UI_KEYS` template, so `<UiProvider t={subsetTranslator(props.ui)}>` renders no `⟦ui.*⟧`. The reference app's `shared/ui-strings.ts`, `shared/ui-strings-server.ts` and `shared/wire.ts` are deleted.
+
+### Fixed
+
+Tier 1 — db. Tier 4 — render.
+
+- **`.x/cache` resolves from the app root, never the process's cwd (#738).** The Sass cache joined `.x/cache/sass` to `process.cwd()`, so a `bun test` started in a source folder wrote a `.x/cache` beside the code. It now walks up to `app.config.ts`.
+- **The PGlite initdb snapshot cache evicts old versions.** One `pglite-<version>.snapshot` per PGlite version accumulated under `.x/cache`; writing one now keeps it and the newest previous one.
+- **The framework's own tests and fixtures remove every temp directory they make**, held by `scripts/temp-dir-cleanup.test.ts`. `cmd-jobs-fixture.ts`'s `appRoot()` and 17 test files left theirs in the temp root.
 
 ## 27.2.3 - 2026-10-09
 

@@ -3,7 +3,7 @@
 // `cmd-jobs.test.ts` and `cmd-jobs-operator.test.ts`, split at the file-size ceiling.
 
 // why: Bun has no mkdtemp, and Bun.write is async in these synchronous fixture helpers.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -15,6 +15,17 @@ import { jobsCommand } from './cmd-jobs';
 import type { CommandContext } from './command';
 import type { CommandResult } from './output';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+process.once('exit', () => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
+
 export interface RunOptions {
   readonly subcommand?: string;
   readonly positionals?: readonly string[];
@@ -23,7 +34,7 @@ export interface RunOptions {
 }
 
 export function appRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'x-jobs-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-jobs-')));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   return dir;
 }

@@ -8,9 +8,10 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+import { appStatePath } from '@ultimat3/core';
 
 /**
- * Relative to the process's cwd — the app root for every `x` command. `.x/` is gitignored, and in
+ * Relative to the app root (`defaultSassCacheDir`), never the process's cwd. `.x/` is gitignored, and in
  * a container it is the STATE directory a topology mounts a tmpfs over, so an image's own entries
  * live elsewhere: the image build points this cache at its prebuilt store through
  * `setSassCacheDir`, and the container's boot points it back at the same place.
@@ -20,7 +21,7 @@ export const SASS_CACHE_DIR = join('.x', 'cache', 'sass');
 /** Bumped when the entry shape changes, so an old entry is a miss and never a misread. */
 const ENTRY_VERSION = 2;
 
-/** `undefined`: the default dir under cwd. `null`: off. A string: that directory. */
+/** `undefined`: the default dir under the app root. `null`: off. A string: that directory. */
 let configured: string | null | undefined;
 
 /** Test/host seam. `null` turns the cache off; `undefined` restores the default. */
@@ -28,8 +29,15 @@ export function setSassCacheDir(dir: string | null | undefined): void {
   configured = dir;
 }
 
+/**
+ * The default for a process started in `cwd`: `.x/cache/sass` under the APP ROOT above it (#738).
+ * It was `cwd` itself, so a `bun test` started in a source folder wrote a `.x/cache` beside the
+ * code. Outside any app (a package's own suite), the folder itself.
+ */
+export const defaultSassCacheDir = (cwd: string): string => appStatePath(cwd, 'cache', 'sass');
+
 const cacheDir = (): string | null =>
-  configured === undefined ? join(process.cwd(), SASS_CACHE_DIR) : configured;
+  configured === undefined ? defaultSassCacheDir(process.cwd()) : configured;
 
 const sha256 = (input: string | Uint8Array): string =>
   new Bun.CryptoHasher('sha256').update(input).digest('hex');

@@ -3,9 +3,9 @@
 // long migrate hook failed the upgrade while its Job kept running; and the release was the literal
 // `app` for every app, so two apps in one namespace were one release.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, and Bun.write is async in these synchronous fixture helpers.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -23,9 +23,20 @@ import type { CommandContext } from './command';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
+
 /** An app root whose `app.config.ts` exports `config` — named, or deliberately not. */
 function appRoot(config = "{ name: 'shop-web' }"): string {
-  const dir = mkdtempSync(join(tmpdir(), 'x-deploy-helm-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'x-deploy-helm-')));
   writeFileSync(join(dir, 'app.config.ts'), `export const config = ${config};\n`);
   return dir;
 }
@@ -115,7 +126,7 @@ describe('unit · x deploy --method helm waits, and names its release', () => {
   // The `fix:` is a line to paste, and an app root holding a space pasted back as two arguments —
   // `helm upgrade … /srv/my app/docker/helm` upgrades a chart at `/srv/my`.
   test('the rerun line quotes a path that would split in a shell', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'x deploy $(helm) '));
+    const root = made(mkdtempSync(join(tmpdir(), 'x deploy $(helm) ')));
     writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'shop-web' };\n");
     const { runner } = helmRunner('', 1);
     const result = await run(['--method', 'helm'], root, runner);
@@ -172,7 +183,7 @@ describe('unit · what x deploy --method helm refuses before spawning anything',
     expect(await refusalCode(readReleaseName(appRoot(`{ name: '${long}' }`), undefined))).toBe(
       'X_CONFIG_INVALID',
     );
-    const bare = mkdtempSync(join(tmpdir(), 'x-deploy-helm-bare-'));
+    const bare = made(mkdtempSync(join(tmpdir(), 'x-deploy-helm-bare-')));
     expect(await refusalCode(readReleaseName(bare, undefined))).toBe('X_CONFIG_INVALID');
     expect(await readReleaseName(appRoot(), undefined)).toBe('shop-web');
   });

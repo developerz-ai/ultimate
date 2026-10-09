@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { APP_CONFIG_FILE } from './app-root';
+import { APP_CONFIG_FILE } from '@ultimat3/core';
 
 const BIN = join(import.meta.dir, 'bin.ts');
 
