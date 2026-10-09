@@ -20,6 +20,12 @@ export interface AdminActor {
    */
   readonly orgId?: string;
   readonly roles?: readonly string[];
+  /**
+   * Direct grants — `Actor.permissions`, held with or without a role (a break-glass account, a
+   * staff session not yet enrolled in MFA). The request pipeline decides on roles AND these; the
+   * admin read roles only, so a route the pipeline opened answered a 403 screen.
+   */
+  readonly permissions?: readonly string[];
   /** BCP-47. Drives every `t()` call and every `Intl` format in the admin. */
   readonly locale?: string;
   /** IANA zone. The admin refuses to render a timestamp without one. */

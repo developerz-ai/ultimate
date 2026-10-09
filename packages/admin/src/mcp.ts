@@ -311,6 +311,8 @@ const inputSchema = (tool: AdminMcpTool): JsonSchema => ({
 const adminActorOf = (caller: McpCaller): AdminActor => ({
   id: caller.actor.id,
   roles: caller.actor.roles,
+  // Direct grants too: the pipeline decides on roles and `permissions` as one set.
+  ...(caller.actor.permissions.length === 0 ? {} : { permissions: caller.actor.permissions }),
   ...(caller.actor.orgId === undefined ? {} : { orgId: caller.actor.orgId }),
 });
 
@@ -453,7 +455,12 @@ export function adminMcp(opts: AdminMcpOptions): AppMcp {
       return actor === null
         ? null
         : {
-            actor: agentActor({ id: actor.id, roles: actor.roles ?? [], orgId: actor.orgId }),
+            actor: agentActor({
+              id: actor.id,
+              roles: actor.roles ?? [],
+              permissions: actor.permissions ?? [],
+              orgId: actor.orgId,
+            }),
             scopes: adminTokenScopes(actor.tokenScopes),
           };
     },

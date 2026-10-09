@@ -39,6 +39,7 @@ const chunkInput = t.object({
   actor: t.object({
     id: t.string,
     roles: t.array(t.string),
+    permissions: t.optional(t.array(t.string)),
     orgId: t.optional(t.string),
     locale: t.optional(t.string),
     timeZone: t.optional(t.string),
@@ -58,6 +59,8 @@ export interface AdminBatchChunk {
   readonly actor: {
     readonly id: string;
     readonly roles: readonly string[];
+    /** Direct grants: an operator who holds the permission with no role runs the batch too. */
+    readonly permissions?: readonly string[] | undefined;
     readonly orgId?: string | undefined;
     readonly locale?: string | undefined;
     readonly timeZone?: string | undefined;
@@ -87,6 +90,7 @@ export async function runBatchChunk(chunk: AdminBatchChunk): Promise<readonly Ba
   const actor: AdminActor = {
     id: chunk.actor.id,
     roles: chunk.actor.roles,
+    ...(chunk.actor.permissions === undefined ? {} : { permissions: chunk.actor.permissions }),
     ...(chunk.actor.orgId === undefined ? {} : { orgId: chunk.actor.orgId }),
     ...(chunk.actor.locale === undefined ? {} : { locale: chunk.actor.locale }),
     ...(chunk.actor.timeZone === undefined ? {} : { timeZone: chunk.actor.timeZone }),
@@ -99,6 +103,7 @@ export async function runBatchChunk(chunk: AdminBatchChunk): Promise<readonly Ba
       actor: userActor({
         id: actor.id,
         roles: [...(actor.roles ?? [])],
+        permissions: [...(actor.permissions ?? [])],
         ...(actor.orgId === undefined ? {} : { orgId: actor.orgId }),
       }),
     },
@@ -143,6 +148,7 @@ export const batchEnqueue =
       actor: {
         id: actor.id,
         roles: [...(actor.roles ?? [])],
+        ...(actor.permissions === undefined ? {} : { permissions: [...actor.permissions] }),
         ...(actor.orgId === undefined ? {} : { orgId: actor.orgId }),
         ...(actor.locale === undefined ? {} : { locale: actor.locale }),
         ...(actor.timeZone === undefined ? {} : { timeZone: actor.timeZone }),

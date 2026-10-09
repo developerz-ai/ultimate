@@ -339,8 +339,8 @@ and no actor could open, under a green gate: the `policy` step reads `roleDefini
 `definePermissions([...])` call and the `PermissionRegistry` augmentation beside its
 `AdminCustomPage`, and its emitted test fails if either is dropped. Registration is a side effect
 of import and `pages:` already imports that module, which is why the declaration is in the page and
-not in a `policy.ts` beside it. **Still not enough on its own**: an admin whose `policyAuthz()` is
-built from a fixed list has to name the permission too, and the generated header says so. The page
+not in a `policy.ts` beside it. Since 27.2.0 a `policyAuthz()` map that omits the permission decides it by the role map, so
+the role grant is the one declaration; a map entry only refines it. The page
 lands in `apps/admin/app/admin/pages/` without `--at` — beside the declaration, inside the app scan
 (`DEFAULT_ADMIN_PAGE_DIR`); `apps/admin/src/pages`, the old default, was never imported.
 

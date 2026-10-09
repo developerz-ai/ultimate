@@ -157,6 +157,27 @@ describe('the browser path to the page seam', () => {
     expect(bytes).toBeLessThan(4_403);
   }, 60_000);
 
+  // `clientTransport` alone: what an island that sends one request pays. An app measured its theme
+  // switch at 3 kB before and 13 kB after adopting the transport, and asked whether a table rode
+  // along. None does — the set below is the transport's own work: the fetch and its fence
+  // (`client-dispatch`, `client-scope`), the problem+json decode and `Retry-After`
+  // (`client-problem`, `client-wire`, `client-retry-after`), `UltimateError` with its renderers,
+  // the records envelope and the page's store (`record-envelope`, `record-sink`, `pending-records`).
+  //
+  // measured: 10,693 B (2026-10-09, Bun 1.4.2), 4,575 B gzipped — 10,622 before `responseType`.
+  // The next whole kilobyte above the measurement.
+  test('clientTransport alone reaches no titles table and stays under 11 kB (10,693 B as of 2026-10-09)', async () => {
+    const transport =
+      "import { clientTransport } from '@ultimat3/core/page';\nglobalThis.probe = clientTransport;\n";
+    const { modules } = await build('transport', '', false, transport);
+    expect(modules.filter(isTitlesTable)).toEqual([]);
+    expect(modules.filter((module) => !module.startsWith('core/src/'))).toEqual([
+      'schema/src/error-brand.ts',
+    ]);
+    const { bytes } = await build('transport-min', '', true, transport);
+    expect(bytes).toBeLessThan(11_264);
+  }, 60_000);
+
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a
   // browser hook uses — is the ceiling a realtime island can reach through this path.
   //

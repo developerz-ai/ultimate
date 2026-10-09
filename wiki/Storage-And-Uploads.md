@@ -171,7 +171,7 @@ An upload lands under `org/<org>/pending/…` before its row exists, and is prom
 
 | Call | Does |
 |---|---|
-| `promoteAttachment({ disk, key, orgId, target, policy })` | measure, copy, then delete, onto `org/<org>/<entity>/<id>/<field>/…`. **`policy` is required** — pass the one the upload was granted under: the object's size is read with `stat()` and one over `policy.maxBytes` is `X_STORAGE_TOO_LARGE` and stays pending. Only a **pending** key: another row's attached key is `X_STORAGE_NOT_PENDING`. Safe to retry: a source already moved answers the attached object |
+| `promoteAttachment({ disk, key, orgId, target, policy })` | measure, copy, then delete, onto `org/<org>/<entity>/<id>/<field>/…`. **`policy` is required** — pass the one the upload was granted under: the object's size is read with `stat()` and one over `policy.maxBytes` is `X_STORAGE_TOO_LARGE` and stays pending. Only a **pending** key: another row's attached key is `X_STORAGE_NOT_PENDING`. A second call for a key an earlier call already moved is `X_STORAGE_ALREADY_PROMOTED` (409, `meta.attachedKey`) and touches nothing: answer the row that holds that key, and never delete it in your own cleanup |
 | `grantUpload({ …, quarantine: true })` → `releaseQuarantine({ disk, key, orgId })` | the place for your scanner: a quarantined key cannot be promoted (`X_STORAGE_QUARANTINED`) until your scan job releases it. The scanner is your app's (axiom 8) |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | deletes stale `pending/` keys of one org and answers `{ deleted, failed }` — a refused delete is reported, never counted as done |
 

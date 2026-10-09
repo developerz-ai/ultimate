@@ -8,7 +8,36 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 0 — core.
+
+- **`clientTransport({ …, responseType: 'text' })` — a 2xx body as a string.** The transport decoded JSON only, so an island reading an HTML fragment or a search index page read the body off `onResponse` and swallowed the transport's own `X_CLIENT_TRANSPORT_FAILED` for "2xx with a body that is not JSON" (notificado.co's term calculator and docs search). With `responseType: 'text'` the call resolves the body untouched (typed `Promise<string>` by overload), sends `accept: */*` unless `headers` names one, and adopts no records envelope; with `rawBody` too it still resolves the body (a raw upload's answer). A non-2xx is decoded as a refusal as before. The default stays `'json'`.
+- **`clientTransport` alone has a byte ceiling.** An app measured its theme switch at 3 kB before and 13 kB after adopting the transport and asked what rode along. Measured through `@ultimat3/core/page`: 10,693 B minified, 4,575 B gzipped, no titles table and nothing from `@ultimat3/schema` but the error brand — the bytes are the transport's own work (the fetch and its principal fence, the problem+json and `Retry-After` decode, `UltimateError` and its renderers, the records envelope and the page's store). `page-bundle.test.ts` now holds it under 11 kB and to that module set.
+
+Tier 1 — storage.
+
+- `alreadyPromoted(key, attachedKey, orgId)` and the code `X_STORAGE_ALREADY_PROMOTED` (409).
+
+### Fixed
+
+Tier 5 — cli.
+
+- **`x build --target prebuilt` builds an island whose entry is a pure re-export.** `export { mountMenu as mount } from '@app/ui/menu'` has no code of its own, so its source map names only the module it re-exports, and the store's check read the missing entry as "the source map's paths no longer land in the app root" — `X_BUILD_FAILED`, a failed image build for notificado.co (three such islands). The entry's own file is now added to the sources its map resolved into the root, so the build passes and an edit to the entry marks the store stale. A map that resolved nothing into the root is still refused. `island-store.test.ts` covers both a relative re-export and a workspace package re-exported through its `node_modules` link.
+
+Tier 1 — storage.
+
+- **A second `promoteAttachment` of one pending key is `X_STORAGE_ALREADY_PROMOTED`, never the attached object answered as if this call had moved it — data loss.** A source gone with the destination present used to return the destination, so a confirm sent twice (a double click, a client retry) inserted a second row for one key; that insert failed on its unique key, and the cleanup every refused write runs deleted the object the FIRST row points at. Only the call that moved the bytes now answers them: the retry is refused (409, `meta.attachedKey`), with nothing copied or deleted, and its `fix` says to answer the row that holds that key and never delete it. A source gone with no destination is still `X_STORAGE_NOT_FOUND`. An app that relied on the old answer after its own row write rolled back now catches the code and reads `meta.attachedKey`.
+
+Tier 5 — admin.
+
+- **A permission held with no role opens the admin screen that needs it.** The request pipeline decides `can()` on the actor's roles AND its direct grants (`Actor.permissions`); the admin carried roles only — `adminActorFrom`, the policy bridge, the batch chunk a worker runs and both MCP hops dropped `permissions` — so a route the pipeline opened (an MFA-enrolment page for a staff session holding `admin:read` and no role) rendered a 403 screen. `AdminActor` gains an optional `permissions`, carried at every crossing.
+- **`policyAuthz({ policies })` decides a permission its map omits by the role map.** The framework's own jobs and audit screens needed `job:read` / `audit:read` declared twice — granted in `defineRoles` AND mapped `can('job:read')` in the admin's policy map — and an app that wrote only the grant had screens every operator was refused. A mapped permission is still decided by its policy (a row or tenant rule, or a `deny` that closes what a role grants); an unmapped one is decided exactly as `roleAuthz()` decides it, implications included, with `decided by the role map` at the head of its trace. Still closed: a permission nobody declared is `admin.policy.missing` with its fix, and a declared one is refused by `can()` when neither a role nor the actor's direct grants hold it. The map is also read by own key only.
+
+Tier 5 — testing.
+
+- **The app preload resets the rate-limit store at every test-file boundary.** One worker runs many files since 22.7, and a declared `rateLimit:` is counted in the process-wide installed store: a file that spent a test actor's bucket left it spent for the next, so "the 31st call is a 429" went red whenever another file calling that action ran first on its worker. Each file now starts with the store back to one process' memory (`resetRateLimitStore`), as a file run alone would; `rate-limit-file-boundary.test.ts` proves it in a real two-file `bun test`.
+- **`requestedFixtures` reads the first parameter's pattern, not the first `{` in the source.** `() => fn({ seed: 1 })` asked for the `seed` fixture: the body's object literal was taken for a destructured parameter, so a test that took no fixtures built — or was refused for — names from its own call arguments. The pattern must now open the parameter list (`({ … })`, `async ({ … })`, `function name({ … })`); `() =>`, `bag =>` and `(bag) =>` request nothing.
 
 ## 27.1.0 - 2026-10-09
 

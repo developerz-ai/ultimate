@@ -2,8 +2,9 @@
 // A real build of a fixture app, then every way the store can be wrong and must be refused.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-// why: Bun ships no recursive delete; `rm(…, { force: true })` removes a root that may not exist.
-import { rm } from 'node:fs/promises';
+// why: Bun ships no recursive delete, no mkdir and no symlink; `rm(…, { force: true })` removes a
+// root that may not exist, and a workspace package is linked into `node_modules` as an install does.
+import { mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
 import { clearStylesheets, stylesFor } from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
@@ -198,6 +199,49 @@ describe('unit · the island store is stale once a source it was built from chan
       expect(String((refused as Error).message)).toContain('apps/web/site/plain.island.tsx');
       expect(await Bun.file(join(ROOT, ISLAND_STORE_DIR, 'index.json')).exists()).toBe(false);
     }
+  });
+
+  // notificado.co's admin islands are `export { mountActionMenu as mount } from '…/menu-client'`:
+  // a file with no code of its own, so the source map names the module it re-exports and never the
+  // entry. The check took that for paths that stopped landing in the root and refused the build.
+  test('a pure re-export island is written, and an edit to it is stale', async () => {
+    await write(
+      'apps/web/shared/menu.ts',
+      "export function mountMenu(el: HTMLElement): void { el.textContent = 'menu'; }\n",
+    );
+    const REEXPORT = "export { mountMenu as mount } from '../shared/menu';\n";
+    await write('apps/web/site/menu.island.tsx', REEXPORT);
+    await stored();
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    await write('apps/web/site/menu.island.tsx', `${REEXPORT}// edited\n`);
+    expect((await readIslandStore(ROOT)).stale).toContain('apps/web/site/menu.island.tsx');
+  });
+
+  test('a re-export of a workspace package, through its node_modules link, is written too', async () => {
+    await write(
+      'packages/ui/package.json',
+      JSON.stringify({ name: '@fixture/ui', exports: { './menu': './menu.ts' } }),
+    );
+    await write(
+      'packages/ui/menu.ts',
+      "export function mountMenu(el: HTMLElement): void { el.textContent = 'menu'; }\n",
+    );
+    // Linked beside a directory no earlier test resolved from: Bun's resolver caches a directory
+    // listing per process, and `ROOT/node_modules` was read as absent by every test before this.
+    await mkdir(join(ROOT, 'apps', 'linked', 'node_modules', '@fixture'), { recursive: true });
+    await symlink(
+      join(ROOT, 'packages', 'ui'),
+      join(ROOT, 'apps', 'linked', 'node_modules', '@fixture', 'ui'),
+      'dir',
+    );
+    await write(
+      'apps/linked/site/menu.island.tsx',
+      "export { mountMenu as mount } from '@fixture/ui/menu';\n",
+    );
+    await stored();
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    await write('packages/ui/menu.ts', 'export function mountMenu(el: HTMLElement): void {}\n');
+    expect((await readIslandStore(ROOT)).stale).toContain('packages/ui/menu.ts');
   });
 
   test('an island another island imports may carry its own file in a shared chunk', async () => {

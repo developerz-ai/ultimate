@@ -256,11 +256,11 @@ describe('the admin subject carries the tenant and the loaded row', () => {
   });
 });
 
-describe('a permission with no registered policy is denied, closed, with the fix in the trace', () => {
+describe('an unmapped permission nothing declared is denied, closed, with the fix in the trace', () => {
   test('the verdict is deny and the trace says exactly what to declare', async () => {
     const { policyAuthz } = await import('./policy-bridge');
-    // An admin that fails OPEN is worse than one that fails visibly: the missing entry is the
-    // author forgetting a policy, and the trace is the only place that can say so.
+    // An admin that fails OPEN is worse than one that fails visibly. An unmapped permission is
+    // decided by the role map (`admin-bind.test.ts`), and one nobody declared is refused there.
     const decision = policyAuthz({ policies: {} }).decide({
       permission: 'admin_subject_post:archive',
       actor: OWNER,
@@ -268,9 +268,9 @@ describe('a permission with no registered policy is denied, closed, with the fix
 
     expect(decision.allowed).toBe(false);
     expect(decision.reason).toBe('admin.policy.missing');
-    expect(decision.trace[0]).toContain('admin_subject_post:archive');
-    expect(decision.trace[1]).toContain("can('admin_subject_post:archive')");
-    expect(decision.trace[1]).toContain('definePermissions');
+    expect(decision.trace[0]).toContain('decided by the role map');
+    expect(decision.trace[1]).toContain('admin_subject_post:archive');
+    expect(decision.trace[2]).toContain("definePermissions(['admin_subject_post:archive'])");
   });
 
   test('a permission that IS registered is decided by its policy, not by this branch', () => {

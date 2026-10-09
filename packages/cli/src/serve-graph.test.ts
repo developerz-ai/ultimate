@@ -155,8 +155,11 @@ const MIGRATE_CEILING = 632;
  * raised 927 → 929, measured 929 (2026-10-08, Web Push): the leaf named on `MIGRATE_CEILING`, and
  * `cli/src/runtime-push.ts` — `pwa.push` read and its VAPID pair resolved before the queue starts;
  * `@ultimat3/pwa` itself stays behind its `await import()`.
+ * raised 929 → 930, measured 930 (2026-10-09, 27.2.0): `storage/src/errors-promote.ts` — promotion's
+ * three refusals, `X_STORAGE_ALREADY_PROMOTED` new among them, split out of `errors.ts` at its
+ * 500-line ceiling and reached through the storage barrel.
  */
-const SERVING_ROLE_CEILING = 929;
+const SERVING_ROLE_CEILING = 930;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -223,8 +226,10 @@ const SERVING_ROLE_CEILING = 929;
  * raised 1054 → 1055, measured 1055 (2026-10-08, 26.1.0): `pwa/src/push-hosts.ts` — the push
  * services the sender may dial, checked at subscribe and at send (an endpoint from a request body
  * resolves wherever its owner points it), reached through `push-send.ts`.
+ * raised 1055 → 1056, measured 1056 (2026-10-09, 27.2.0): `storage/src/errors-promote.ts`, the
+ * module named on `SERVING_ROLE_CEILING` for 27.2.0.
  */
-const WEB_ROLE_CEILING = 1055;
+const WEB_ROLE_CEILING = 1056;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

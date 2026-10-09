@@ -212,3 +212,60 @@ describe('clientTransport — records', () => {
     expect(await clientTransport<unknown>({ method: 'GET', url: '/q', fetchImpl })).toBe(7);
   });
 });
+
+// Two app islands read an HTML answer (a re-rendered fragment, a search index page) and had no way
+// to: the transport decoded JSON only, so each read the body off `onResponse` and swallowed the
+// transport's own "2xx with a body that is not JSON" refusal.
+describe('clientTransport — responseType: text', () => {
+  test('answers the body as a string, asks for any type, and adopts nothing', async () => {
+    const { adopted } = recordingSink();
+    const html = '<ul><li>term</li></ul>';
+    const { fetchImpl, calls } = fakeFetch(
+      () => new Response(html, { headers: { 'content-type': 'text/html', [RECORDS_HEADER]: '1' } }),
+    );
+    const body: string = await clientTransport({
+      method: 'GET',
+      url: '/terminos?dias=5',
+      responseType: 'text',
+      fetchImpl,
+    });
+    expect(body).toBe(html);
+    expect(new Headers(calls[0]?.init.headers).get('accept')).toBe('*/*');
+    expect(adopted).toEqual([]);
+  });
+
+  test('an empty 2xx is the empty string, never undefined', async () => {
+    const { fetchImpl } = fakeFetch(() => new Response(null, { status: 204 }));
+    expect(
+      await clientTransport({ method: 'POST', url: '/ping', responseType: 'text', fetchImpl }),
+    ).toBe('');
+  });
+
+  test('a non-2xx is still decoded as a refusal', async () => {
+    const { fetchImpl } = fakeFetch(() =>
+      json({ code: 'X_POST_LOCKED', cause: 'c', fix: 'f' }, { status: 409 }),
+    );
+    const error = await failure(
+      clientTransport({ method: 'GET', url: '/x', responseType: 'text', fetchImpl }),
+    );
+    expect(isUltimateError(error) ? error.code : error).toBe('X_POST_LOCKED');
+  });
+
+  test('the default is still JSON: a non-JSON 2xx is refused', async () => {
+    const { fetchImpl } = fakeFetch(() => new Response('<html></html>'));
+    const error = await failure(clientTransport({ method: 'GET', url: '/x', fetchImpl }));
+    expect(isUltimateError(error) ? error.code : error).toBe('X_CLIENT_TRANSPORT_FAILED');
+  });
+});
+
+test('responseType: text with a rawBody resolves the body, as its overload says', async () => {
+  const { fetchImpl } = fakeFetch(() => new Response('stored'));
+  const answer: string = await clientTransport({
+    method: 'PUT',
+    url: '/_storage/uploads/k',
+    rawBody: new Uint8Array([1]),
+    responseType: 'text',
+    fetchImpl,
+  });
+  expect(answer).toBe('stored');
+});

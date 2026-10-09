@@ -41,6 +41,7 @@ opt-out and no allowlist.
 | a socket or an `EventSource` | `useQuery(<QUERY_REF>, input)` for rows, `useChannel(<CHANNEL_REF>, params, { onEvent })` for events |
 | a file upload | `await uploadFile({ file, grant, onProgress })` from `@ultimat3/storage` — the presigned PUT is its, not yours |
 | anything else | `await clientTransport({ method: 'GET', url })` from `@ultimat3/core/page` |
+| a page or fragment that answers HTML, CSV or plain text | `await clientTransport({ method: 'GET', url, responseType: 'text' })` — the body as a `string`, never read off `onResponse` |
 
 | Fact | Rule |
 |---|---|

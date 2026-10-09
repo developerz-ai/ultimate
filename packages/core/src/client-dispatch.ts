@@ -54,6 +54,13 @@ export interface TransportRequest {
    * ORDER of `records[type]`, which the store (keyed, unordered) cannot give it back.
    */
   readonly onEnvelope?: ((envelope: RecordEnvelope) => void) | undefined;
+  /**
+   * How a 2xx body is read. `'json'` (the default) decodes it and adopts a records envelope;
+   * `'text'` answers the body as a string, untouched — an HTML fragment, a CSV — sends
+   * the wildcard `accept` unless `headers` says otherwise, and adopts nothing. A non-2xx is decoded as a
+   * refusal either way.
+   */
+  readonly responseType?: 'json' | 'text' | undefined;
   /** Sees every response before its body is read — a header check may throw its own refusal. */
   readonly onResponse?: ((response: Response) => void | Promise<void>) | undefined;
   /**
@@ -142,7 +149,9 @@ async function onTheWire<T>(
 
 function initOf(req: TransportRequest, signal: AbortSignal | undefined): RequestInit {
   const raw = req.rawBody !== undefined;
-  const headers: Record<string, string> = raw ? {} : { accept: 'application/json' };
+  const headers: Record<string, string> = raw
+    ? {}
+    : { accept: req.responseType === 'text' ? '*/*' : 'application/json' };
   if (req.body !== undefined && !raw) headers['content-type'] = 'application/json';
   if (req.idempotencyKey !== undefined) headers[IDEMPOTENCY_HEADER] = req.idempotencyKey;
   const body = raw ? req.rawBody : req.body === undefined ? undefined : JSON.stringify(req.body);

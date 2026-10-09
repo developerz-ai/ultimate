@@ -305,6 +305,17 @@ async function builtOutputs(
   return outputs;
 }
 
+/**
+ * The entry's own file, added to sources the map resolved into the root. A pure re-export island
+ * (`export { mountMenu as mount } from '../shared/menu'`) emits no code of its own, so its source
+ * map names only what it re-exports: the store then recorded nothing that changes when the entry
+ * is edited, and `writeIslandStore` refused it as a map whose paths left the root. A map that
+ * resolved NOTHING into the root stays empty — that is the cwd failure, and it is still refused.
+ */
+function withOwnFile(file: string, sources: SourcePaths): SourcePaths {
+  return sources.length === 0 || sources.includes(file) ? sources : [...sources, file].sort();
+}
+
 /** The linked outputs, as the chunk table: the entries in `files` order, their chunks attached. */
 function entryChunks(
   files: readonly string[],
@@ -345,7 +356,7 @@ function entryChunks(
       // different files at one address. `bytes` is measured on THAT code, never on this build's.
       ...stableChunk(file, entry.identity, entry.code),
       imports: closure(entry.imports),
-      sources: sources.get(entry.path) ?? [],
+      sources: withOwnFile(file, sources.get(entry.path) ?? []),
     });
   }
   return chunks;

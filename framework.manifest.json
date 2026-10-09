@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d88b2707e2dda3b9a469015a36d0f8b68a1f0b412a081ebf8c0b45704c5fb0bb",
+  "buildId": "5c245838f9f098a18bf9591f7b54ad481f41577e008f2c6293c39f0e5c657d48",
   "tiers": {
     "0": [
       "core",
@@ -3973,6 +3973,11 @@
       "code": "X_STEP_DUPLICATE",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_ALREADY_PROMOTED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
     },
     {
       "code": "X_STORAGE_CHECKSUM_MISMATCH",
