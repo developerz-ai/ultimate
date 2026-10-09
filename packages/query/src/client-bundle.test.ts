@@ -55,13 +55,15 @@ describe('@ultimat3/query/client in a browser', () => {
     expect(modules.filter(isTitlesTable)).toEqual([]);
   }, 60_000);
 
-  // measured: 11,983 B (2026-10-05, Bun 1.4.2), against 12,288. It was 11,012 at the tip before
+  // measured: 12,746 B (2026-10-09, Bun 1.4.2), against 13,312. why: +763 B, core's
+  // `reviveWireDates`: a row's `Date` reaches the caller as a `Date`, named by the route in
+  // `x-ultimate-dates` (#710). 11,983 B on 2026-10-05; it was 11,012 at the tip before
   // this change. why: +971 B, core's decoders reading an http refusal off the wire — the
   // `Retry-After` reader (`client-retry-after.ts`) and the `retry-after` rule in `retryForStatus`,
   // so a read refused with a 429 waits the delay the server named, and the problem body's `title`
   // for a code this realm never registered (`remoteTitleOf`). The next whole kilobyte above it.
-  test('stays under 12 kB minified (11,983 B as of 2026-10-05)', async () => {
+  test('stays under 13 kB minified (12,746 B as of 2026-10-09)', async () => {
     const { bytes } = await build(true);
-    expect(bytes).toBeLessThan(12_288);
+    expect(bytes).toBeLessThan(13_312);
   }, 60_000);
 });

@@ -19,7 +19,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./app-catalogs": "./src/app-catalogs.ts"
+    "./app-catalogs": "./src/app-catalogs.ts",
+    "./subset": "./src/subset.ts"
   },
   "files": [
     "src",

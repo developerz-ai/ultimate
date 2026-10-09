@@ -40,7 +40,10 @@ const PROPS = {
     update: 'A new version is ready.',
     reload: 'Reload',
   },
-  ui: { 'ui.empty': 'Nothing here', 'ui.error.title': 'Something went wrong' },
+  ui: {
+    locale: 'en',
+    catalog: { 'ui.empty': 'Nothing here', 'ui.error.title': 'Something went wrong' },
+  },
 } as const;
 
 /** The page state every island bundle on a page shares — `globalThis`, by its registered symbol. */

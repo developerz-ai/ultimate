@@ -21,7 +21,6 @@ import { useActor, useCan } from '../../../shared/actor';
 import { memberQueries } from '../../../shared/client';
 import { pluralFormsOf } from '../../../shared/plural-forms';
 import { oneRow } from '../../../shared/rows';
-import { wireDate } from '../../../shared/wire';
 import { Layout, updateBannerIsland } from '../../layout';
 import { useViewer } from '../../viewer-context';
 import { LikeButton } from '../ui/like-button';
@@ -140,17 +139,9 @@ export const config = defineRoute({
    */
   load: async ({ params }) => {
     const postId = params.id ?? '';
-    const post = oneRow(await memberQueries.postById({ orgId: useActor().orgId, postId }), postId);
-    // Both instants are rehydrated here, where the wire ends: the read answered JSON, so what
-    // `<DateTime>` would otherwise be handed is the ISO string, not the `Date` the row type says.
-    return {
-      ...post,
-      publishedAt: wireDate(post.publishedAt),
-      comments: post.comments.map((comment) => ({
-        ...comment,
-        createdAt: wireDate(comment.createdAt),
-      })),
-    };
+    // Both instants arrive as the `Date`s the row type says: the read names them on the wire and
+    // the query client revives them, nested comments included.
+    return oneRow(await memberQueries.postById({ orgId: useActor().orgId, postId }), postId);
   },
   meta: ({ data, t }) => ({
     title: t('app.post.metaTitle', { title: data.title }),

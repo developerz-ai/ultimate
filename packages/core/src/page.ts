@@ -56,5 +56,7 @@ export type { PageClient, RecordSink } from './record-sink';
 export { pageClient } from './record-sink';
 // The key the theme boot script reads and the toggle island writes.
 export { THEME_STORAGE_KEY } from './theme-storage';
+// What `clientTransport` revives a read's instants by: the header the server names them in.
+export { DATES_HEADER, reviveWireDates } from './wire-dates';
 // A write's public name, so the page's store can recognise the `records` frame its own write made.
 export { isWriteDigest, WRITE_DIGEST_LENGTH, writeDigest } from './write-digest';

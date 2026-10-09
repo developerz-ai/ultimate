@@ -99,6 +99,15 @@ catalog is a fallback chain, it reads as `isMiss === false`, and `assertCatalogs
 see it because `CatalogSet.catalogs` carries app strings only. Translate the framework keys your
 app renders into your own catalog — that is the one path, and it is the same merge an override is.
 
+## A catalog slice for an island
+
+A translator is a function and cannot be an island's prop. `catalogSubset(t, keys)` resolves the
+templates `keys` name — every plural variant included — into `{ locale, catalog }`, plain JSON;
+the island builds `subsetTranslator(subset)` over it: the same lookup, interpolation, CLDR plural
+pick and loud `⟦key⟧` miss as the server's. Both are on `@ultimat3/i18n/subset`, an entry that
+installs no framework catalog (the barrel does), so an island chunk can import it.
+`@ultimat3/ui`'s `uiCatalog(t)` is the design system's own slice.
+
 ## Reading an app's declared locales (tooling)
 
 `@ultimat3/i18n/app-catalogs` — server-only, its own entry so no island bundle carries it:
