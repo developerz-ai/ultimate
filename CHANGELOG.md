@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.3.0 - 2026-10-09
+
 ### Added
 
 Tier 0 — core. Tier 1 — db. Tier 5 — cli.
@@ -23,6 +27,10 @@ Tier 1 — db. Tier 4 — render.
 - **`.x/cache` resolves from the app root, never the process's cwd (#738).** The Sass cache joined `.x/cache/sass` to `process.cwd()`, so a `bun test` started in a source folder wrote a `.x/cache` beside the code. It now walks up to `app.config.ts`.
 - **The PGlite initdb snapshot cache evicts old versions.** One `pglite-<version>.snapshot` per PGlite version accumulated under `.x/cache`; writing one now keeps it and the newest previous one.
 - **The framework's own tests and fixtures remove every temp directory they make**, held by `scripts/temp-dir-cleanup.test.ts`. `cmd-jobs-fixture.ts`'s `appRoot()` and 17 test files left theirs in the temp root.
+
+### Commits
+
+- feat: the framework sweeps test leftovers; x clean; .x anchored to the app root (#738) (#741)
 
 ## 27.2.3 - 2026-10-09
 
