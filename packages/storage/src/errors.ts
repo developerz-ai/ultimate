@@ -440,7 +440,9 @@ export const keyUnshared = (disk: string, key: string): StorageError =>
   new StorageError({
     code: 'X_STORAGE_KEY_UNSHARED',
     cause: `key "${key}" on disk "${disk}" is outside every org/<id>/ prefix and every prefix defineStorage({ shared }) lists for "${disk}"`,
-    fix: `defineStorage({ disks, shared: { ${disk}: ['${key.split('/')[0] ?? ''}/'] } })   # only for objects every reader may have; a tenant's object is built with scopedKey(orgId, ...parts)`,
+    // Never derived from the refused key: its own top segment is often the very data the refusal
+    // protects (`db-export/`), and a fix line is pasted as written.
+    fix: `scopedKey(orgId, ...parts)   # a tenant's object; for one EVERY reader may have, list a prefix you choose: defineStorage({ disks, shared: { ${disk}: ['brand/'] } })`,
     meta: { disk, key },
   });
 

@@ -86,7 +86,7 @@ it as `(#N)` after the dash.
 | # | Do | What you see until you do | Entries |
 |---|---|---|---|
 | 1 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
-| 2 | **before the deploy:** `grep -rnE "/_storage/\|/media/\|signedUrl\(" apps` — for each key that is NOT built with `scopedKey(orgId, …)` (no `org/<id>/` prefix) and that readers must still fetch, add its prefix to `defineStorage({ shared: { <disk>: ['<prefix>/'] } })`; leave everything else unshared | `404 X_STORAGE_KEY_UNSHARED` on that link | 2 |
+| 2 | **before the deploy:** `find apps -type f -exec grep -nE '/_storage/\|/media/\|signedUrl\(' {} +` — for each key that is NOT built with `scopedKey(orgId, …)` (no `org/<id>/` prefix) and that readers must still fetch, add its prefix to `defineStorage({ shared: { <disk>: ['<prefix>/'] } })`; leave everything else unshared | `404 X_STORAGE_KEY_UNSHARED` on that link | 2 |
 | 3 | `bun run typecheck` — a hand-written `AsyncContext` or `Storage` object | TS2741 naming `exit` or `isShared` | 1, 2 |
 | 4 | `x verify` | green, or a finding whose `fix:` is the edit | — |
 
