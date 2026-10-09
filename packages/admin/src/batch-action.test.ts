@@ -3,7 +3,7 @@
 // that a worker runs through that same gate, as the operator who queued it.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { ctxOf, UltimateError } from '@ultimat3/core';
+import { ctxOf, runWithContext, UltimateError } from '@ultimat3/core';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog } from '@ultimat3/i18n';
 import {
@@ -285,6 +285,48 @@ describe('unit · above the declared threshold, one job per chunk', () => {
       (entry) => entry.operation === 'item.archive' && ids.includes(entry.entityId ?? ''),
     );
     expect(archived.map((entry) => entry.actor.id)).toEqual(['u-op', 'u-op', 'u-op']);
+  });
+
+  test('a chunk runs as the operator’s DIRECT grants too, not their roles alone', async () => {
+    // An operator holding the permissions with no role ran the inline batch and had every queued
+    // row refused: the chunk carried roles only, and the worker rebuilt a grant-less actor.
+    const byGrant: AdminAuthz = {
+      decide: ({ permission, actor }) =>
+        actor.permissions?.includes(permission) === true
+          ? adminAllowed(permission, 'granted')
+          : adminDenied(permission, 'not-granted'),
+    };
+    defineAdmin({
+      basePath: '/batch-grants',
+      entities: [items],
+      db,
+      actions: [archive],
+      auth: { authz: byGrant },
+    });
+    const id = await insert('g1');
+    const chunk = {
+      basePath: '/batch-grants',
+      entity: 'admin_batch_items',
+      action: 'item.archive',
+      ids: [id],
+      input: '{}',
+      batchId: 'b-grants',
+      index: 0,
+      requestId: 'r',
+      actor: {
+        id: 'u-granted',
+        roles: [],
+        permissions: [
+          'admin:read',
+          'admin:write',
+          'admin_batch_items:read',
+          'admin_batch_items:write',
+        ],
+      },
+    };
+    // A worker runs it inside its own context, as `jobWorker` does.
+    const rows = await runWithContext(ctxOf({ role: 'worker' }), () => runBatchChunk(chunk));
+    expect(rows.map((row) => row.outcome)).toEqual(['done']);
   });
 
   test('a chunk claimed where its admin was never declared is X_ADMIN_MOUNT_MISSING', async () => {

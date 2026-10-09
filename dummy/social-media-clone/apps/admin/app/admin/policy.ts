@@ -115,9 +115,9 @@ export const adminRoles = defineRoles({
 });
 
 /**
- * Permission → the policy that decides it. `policyAuthz()` is closed by default: a permission with
- * no entry here is DENIED with the fix in its trace, which is the only safe direction for a
- * dashboard. Every rule is `can(...)` with no predicate — the admin's question is "may this actor
+ * Permission → the policy that decides it. A permission with no entry here is decided by the role
+ * map (`policyAuthz()` falls back to it), and one nothing declared is DENIED with the fix in its
+ * trace. Every rule is `can(...)` with no predicate — the admin's question is "may this actor
  * do this at all", and row-level visibility belongs to the feature's own policy, not to a table.
  */
 export const adminPolicies: Readonly<Record<string, Policy>> = Object.freeze(

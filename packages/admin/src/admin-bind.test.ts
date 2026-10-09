@@ -8,16 +8,18 @@ import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ulti
 import {
   can,
   defineRoles,
+  deny,
   isKnownPermission,
   knownPermissions,
   permissionDeclarationSites,
   restorePermissions,
   roleDefinitions,
 } from '@ultimat3/policy';
+import { adminActorFrom } from './actor';
 import { defineAdmin } from './admin';
 import { staticAuthz } from './authz';
 import { adminList } from './crud';
-import { roleAuthz, singlePolicyAuthz } from './policy-bridge';
+import { policyAuthz, roleAuthz, singlePolicyAuthz } from './policy-bridge';
 import type { AdminRepo, AdminRow } from './registry';
 
 const posts = entity('admin_bind_posts', {
@@ -227,5 +229,73 @@ describe('unit · singlePolicyAuthz', () => {
     const stranger = authz.decide({ permission: 'admin:read', actor: { id: 'u', roles: [] } });
     expect(stranger.allowed).toBe(false);
     expect(stranger.reason).toContain('admin:read');
+  });
+});
+
+// The request pipeline decides `can('admin:read')` on roles AND direct grants (`Actor.permissions`,
+// what a break-glass account or a not-yet-enrolled staff session holds). The admin dropped the
+// direct half at both crossings — `adminActorFrom` copied roles only, and the policy bridge built
+// a roles-only actor — so a route the pipeline opened rendered a 403 screen.
+describe('unit · a direct grant opens the admin, as it opens the pipeline', () => {
+  test('adminActorFrom carries the direct grants; an actor with none carries no key', () => {
+    const granted = userActor({ id: 'u', roles: [], permissions: ['admin:read'] });
+    expect(adminActorFrom(granted, 'en', 'UTC')?.permissions).toEqual(['admin:read']);
+    const none = adminActorFrom(userActor({ id: 'u', roles: ['x'] }), 'en', 'UTC');
+    expect(none === null ? [] : Object.keys(none)).not.toContain('permissions');
+  });
+
+  test('roleAuthz, policyAuthz and singlePolicyAuthz all allow a permission held with no role', () => {
+    defineAdmin({ entities: [posts], db });
+    const actor = { id: 'u', roles: [], permissions: ['admin:read'] };
+    for (const authz of [
+      roleAuthz(),
+      policyAuthz({ policies: { 'admin:read': can('admin:read') } }),
+      singlePolicyAuthz(can('admin:read')),
+    ]) {
+      expect(authz.decide({ permission: 'admin:read', actor }).allowed).toBe(true);
+    }
+    // And a direct `admin:destroy` carries `admin:write`, as a role granting it does.
+    const destroyer = { id: 'u', roles: [], permissions: ['admin:destroy'] };
+    expect(roleAuthz().decide({ permission: 'admin:write', actor: destroyer }).allowed).toBe(true);
+    // Holding nothing is still nothing.
+    const bare = { id: 'u', roles: [] };
+    expect(roleAuthz().decide({ permission: 'admin:read', actor: bare }).allowed).toBe(false);
+  });
+});
+
+// `job:read` and `audit:read` had to be granted in the role map AND mapped in the app's
+// `policyAuthz({ policies })`, or the framework's jobs and audit screens refused every operator:
+// a map entry missing was a denial the role map could not lift. The role map is the grant; a map
+// entry only REFINES a permission (a row or tenant rule). One declaration is enough.
+describe('unit · policyAuthz decides an unmapped permission by the role map', () => {
+  test('a declared permission the map omits is decided by the roles that grant it', () => {
+    defineAdmin({ entities: [posts], db });
+    defineRoles({ ...previousRoles, bind_ops: { grants: ['admin:read', 'job:read'] } });
+    const authz = policyAuthz({ policies: { 'admin:read': can('admin:read') } });
+    const ops = { id: 'u', roles: ['bind_ops'] };
+    const opened = authz.decide({ permission: 'job:read', actor: ops });
+    expect(opened.allowed).toBe(true);
+    expect(opened.trace.join(' ')).toContain('role map');
+    // The role map is still closed: a role that does not grant it is refused.
+    expect(authz.decide({ permission: 'audit:read', actor: ops }).allowed).toBe(false);
+  });
+
+  test('a permission nothing declared is still refused, with the fix in the trace', () => {
+    const decision = policyAuthz({ policies: {} }).decide({
+      permission: 'admin_bind_nowhere:read',
+      actor: { id: 'u', roles: ['bind_ops'] },
+    });
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('admin.policy.missing');
+    expect(decision.trace.join(' ')).toContain('definePermissions');
+  });
+
+  test('a mapped permission is decided by its policy, which may refuse what a role grants', () => {
+    defineRoles({ ...previousRoles, bind_ops: { grants: ['admin:read', 'job:read'] } });
+    const never = deny('job reads are closed on this app');
+    const authz = policyAuthz({ policies: { 'job:read': never } });
+    expect(
+      authz.decide({ permission: 'job:read', actor: { id: 'u', roles: ['bind_ops'] } }).allowed,
+    ).toBe(false);
   });
 });

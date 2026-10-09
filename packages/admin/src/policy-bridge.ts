@@ -15,6 +15,7 @@ import {
 import {
   type AdminActor,
   type AdminAuthz,
+  type AdminAuthzQuery,
   type AdminDecision,
   type AdminSubject,
   adminAllowed,
@@ -31,7 +32,14 @@ const policyActor = (actor: AdminActor): Actor =>
   // `orgId` rides along, and its absence used to be silent: every admin decision was evaluated
   // with `actor.orgId === undefined`, so an org-scoped rule could not fire and a role-only rule
   // allowed a row from another tenant.
-  userActor({ id: actor.id, roles: actor.roles ?? [], orgId: actor.orgId });
+  // And the direct grants: `can()` reads roles and `permissions` as one set, exactly as the request
+  // pipeline does, so a permission held with no role opens the screen it opens the route for.
+  userActor({
+    id: actor.id,
+    roles: actor.roles ?? [],
+    permissions: actor.permissions ?? [],
+    orgId: actor.orgId,
+  });
 
 /**
  * `evaluate()`'s result is read structurally: the policy layer owns its own decision type,
@@ -99,34 +107,34 @@ const evaluated = (
  * whose rules read the row or the tenant passes `policyAuthz({ policies })` instead.
  */
 export function roleAuthz(): AdminAuthz {
-  return {
-    decide({ permission, actor, subject }): AdminDecision {
-      // Asked BEFORE `can()`, which throws on a name the registry lacks: a decision is an answer,
-      // and an undeclared permission is a refusal with its fix, never a 500 out of a nav render.
-      if (!isPermission(permission) || !isKnownPermission(permission)) {
-        return adminDenied(permission, 'admin.policy.missing', [
-          `"${permission}" is not a declared resource:verb permission`,
-          `fix: definePermissions(['${permission}']), then grant it to a role in defineRoles()`,
-        ]);
-      }
-      // `can()` asserts the name against the registry `declareAdminPermissions` filled. The cast
-      // is the same one a route guard's bare string takes: the registry, not the type, is the check.
-      const own = evaluated(permission, can(permission as KnownPermission), actor, subject);
-      if (own.allowed) return own;
-      // The admin's implications, as `staticAuthz` applies them: a role granting `admin:destroy`
-      // holds `admin:write` and `admin:read` too. Without this the same grants answered two ways.
-      for (const implier of impliersOf(permission)) {
-        const carried = evaluated(implier, can(implier as KnownPermission), actor, subject);
-        if (carried.allowed) {
-          return adminAllowed(permission, carried.reason, [
-            ...carried.trace,
-            `${permission} is implied by ${implier}`,
-          ]);
-        }
-      }
-      return own;
-    },
-  };
+  return { decide: decideByRoleMap };
+}
+
+function decideByRoleMap({ permission, actor, subject }: AdminAuthzQuery): AdminDecision {
+  // Asked BEFORE `can()`, which throws on a name the registry lacks: a decision is an answer,
+  // and an undeclared permission is a refusal with its fix, never a 500 out of a nav render.
+  if (!isPermission(permission) || !isKnownPermission(permission)) {
+    return adminDenied(permission, 'admin.policy.missing', [
+      `"${permission}" is not a declared resource:verb permission`,
+      `fix: definePermissions(['${permission}']), then grant it to a role in defineRoles()`,
+    ]);
+  }
+  // `can()` asserts the name against the registry `declareAdminPermissions` filled. The cast
+  // is the same one a route guard's bare string takes: the registry, not the type, is the check.
+  const own = evaluated(permission, can(permission as KnownPermission), actor, subject);
+  if (own.allowed) return own;
+  // The admin's implications, as `staticAuthz` applies them: a role granting `admin:destroy`
+  // holds `admin:write` and `admin:read` too. Without this the same grants answered two ways.
+  for (const implier of impliersOf(permission)) {
+    const carried = evaluated(implier, can(implier as KnownPermission), actor, subject);
+    if (carried.allowed) {
+      return adminAllowed(permission, carried.reason, [
+        ...carried.trace,
+        `${permission} is implied by ${implier}`,
+      ]);
+    }
+  }
+  return own;
 }
 
 /**
@@ -149,20 +157,28 @@ export interface PolicyAuthzInput {
 }
 
 /**
- * Closed by default: a permission with no registered policy is denied, with the fix in the
- * trace. An admin that fails open is worse than an admin that fails visibly.
+ * The map REFINES, the role map GRANTS. A permission with a policy here is decided by it (a row
+ * or tenant rule, or a `deny` that closes what a role grants); one the map omits is decided by
+ * the role map and the actor's direct grants, exactly as `roleAuthz` and the request pipeline
+ * decide it. Still closed: a permission nobody declared is denied with the fix in the trace, and
+ * a declared one no role grants is denied by `can()`.
+ *
+ * Until 27.2.0 an omitted permission was denied outright, so the framework's own screens needed
+ * the same grant twice — `job:read` in `defineRoles` AND `'job:read': can('job:read')` here — and
+ * an app that wrote only the first had a jobs dashboard every operator was refused.
  */
 export function policyAuthz(input: PolicyAuthzInput): AdminAuthz {
   return {
-    decide({ permission, actor, subject }): AdminDecision {
-      const policy = input.policies[permission];
-      if (policy === undefined) {
-        return adminDenied(permission, 'admin.policy.missing', [
-          `no policy registered for "${permission}"`,
-          `fix: definePermissions({ '${permission}': … }) or can('${permission}') on the action`,
-        ]);
+    decide(query): AdminDecision {
+      const policy = Object.hasOwn(input.policies, query.permission)
+        ? input.policies[query.permission]
+        : undefined;
+      if (policy !== undefined) {
+        return evaluated(query.permission, policy, query.actor, query.subject);
       }
-      return evaluated(permission, policy, actor, subject);
+      const decision = decideByRoleMap(query);
+      const by = `no policy mapped for "${query.permission}": decided by the role map`;
+      return { ...decision, trace: [by, ...decision.trace] };
     },
   };
 }

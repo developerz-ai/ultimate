@@ -21,6 +21,7 @@ export const adminActorFrom = (
     : {
         id: actor.id,
         roles: actor.roles,
+        ...(actor.permissions.length === 0 ? {} : { permissions: actor.permissions }),
         locale,
         timeZone,
         ...(actor.orgId === undefined ? {} : { orgId: actor.orgId }),

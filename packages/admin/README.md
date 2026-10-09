@@ -86,7 +86,7 @@ closed `<details>` whose summary reads "N of M allowed".
 | `audit` | `postgresAuditLog()` (the table `x_admin_audit`) or `memoryAuditLog({ sinks })` | a memory ring |
 
 Three authz constructors, one interface: `roleAuthz()` (the default), `policyAuthz({ policies })`
-when a rule reads the row or the tenant, `singlePolicyAuthz(policy)` when one grant runs the whole
+when a rule reads the row or the tenant (a permission the map omits falls back to the role map), `singlePolicyAuthz(policy)` when one grant runs the whole
 admin.
 
 ### No script
