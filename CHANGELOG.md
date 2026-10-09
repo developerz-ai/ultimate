@@ -21,6 +21,10 @@ Tier 1 — storage.
 
 ### Fixed
 
+Tier 5 — cli.
+
+- **`x build --target prebuilt` builds an island whose entry is a pure re-export.** `export { mountMenu as mount } from '@app/ui/menu'` has no code of its own, so its source map names only the module it re-exports, and the store's check read the missing entry as "the source map's paths no longer land in the app root" — `X_BUILD_FAILED`, a failed image build for notificado.co (three such islands). The entry's own file is now added to the sources its map resolved into the root, so the build passes and an edit to the entry marks the store stale. A map that resolved nothing into the root is still refused. `island-store.test.ts` covers both a relative re-export and a workspace package re-exported through its `node_modules` link.
+
 Tier 1 — storage.
 
 - **A second `promoteAttachment` of one pending key is `X_STORAGE_ALREADY_PROMOTED`, never the attached object answered as if this call had moved it — data loss.** A source gone with the destination present used to return the destination, so a confirm sent twice (a double click, a client retry) inserted a second row for one key; that insert failed on its unique key, and the cleanup every refused write runs deleted the object the FIRST row points at. Only the call that moved the bytes now answers them: the retry is refused (409, `meta.attachedKey`), with nothing copied or deleted, and its `fix` says to answer the row that holds that key and never delete it. A source gone with no destination is still `X_STORAGE_NOT_FOUND`. An app that relied on the old answer after its own row write rolled back now catches the code and reads `meta.attachedKey`.
