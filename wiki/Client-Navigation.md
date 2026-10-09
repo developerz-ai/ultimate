@@ -346,7 +346,7 @@ page, never a modal.
 
 ## Navigating from code
 
-`As of 26.1.1`. From an island or an app script, never by clicking a hidden link — imported from
+`As of 2026-10`. From an island or an app script, never by clicking a hidden link — imported from
 `@ultimat3/render/client`, the package's browser entry:
 
 ```ts
