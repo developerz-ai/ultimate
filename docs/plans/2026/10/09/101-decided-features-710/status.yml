@@ -1,0 +1,33 @@
+plan: 101-decided-features-710
+title: "Decided features from #648 (#710): Redis job driver, demo on auth, one generator layout, reference-app workarounds"
+status: in_progress     # not_started | in_progress | blocked | complete | superseded
+created_by: sebi
+worked_by: "claude"
+owner: sebi
+percent: 10
+current_focus: "sweep 1: the Redis job driver"
+slices:
+  - file: 01-redis-job-driver.md
+    tier: 3
+    sweep: "1"
+    status: in_progress
+    percent: 90
+    evidence: []
+  - file: 02-reference-app-workarounds.md
+    tier: 0
+    sweep: "2"
+    status: not_started
+    percent: 0
+    evidence: []
+  - file: 03-one-generator-layout.md
+    tier: 5
+    sweep: "3"
+    status: not_started
+    percent: 0
+    evidence: []
+  - file: 04-demo-adopts-auth.md
+    tier: 2
+    sweep: "4"
+    status: not_started
+    percent: 0
+    evidence: []

@@ -4,9 +4,10 @@
 //
 // There is no config line that picks a backend: boot always builds `postgresJobDriver()`, and a
 // stale `jobs.driver` in `app.config.ts` is refused by `defineConfig` (25.0.0; it was read by
-// nothing since 5.0.0). `postgresJobDriver` and `memoryJobDriver` are the two that exist — 25.0.0
-// deleted the all-throw `redis` and `nats` stubs. Swapping the driver is `setJobDriver(other)` and
-// ZERO job-code change, and that is what the interface buys.
+// nothing since 5.0.0). `postgresJobDriver`, `redisJobDriver` and `memoryJobDriver` are the three
+// that exist — 25.0.0 deleted the all-throw `redis` and `nats` stubs, and #710 built the Redis one
+// for real. Swapping the driver is `setJobDriver(other)` and ZERO job-code change, and that
+// is what the interface buys.
 
 import { finiteCount, finiteOption } from '@ultimat3/core';
 import type { BackfillLedger } from './backfill-ledger';

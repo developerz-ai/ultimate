@@ -759,10 +759,20 @@ between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driv
 | Driver | Status | Backing | Use |
 |---|---|---|---|
 | `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, a partial unique index on `(name, coalesce(tenant_id, ''), idempotency_key)` over live rows (`x_jobs_name_tenant_idempotency_live_idx`), lease-based leader, `x_job_leases` | zero-infra start, most apps |
+| `redis` | complete, `As of 2026-10` | `Bun.redis`; one Lua script per operation, every key in one `{hash tag}` slot | a queue off the database; no `introspect`, `backfills` or `leases` |
 | `memory` | complete | in-process maps | `x dev`, tests |
 
-There is **no NATS or Redis jobs driver**: `createNatsDriver` and `createRedisDriver`, all-throw
-stubs, were deleted in 25.0.0. A real `redisJobDriver()` would arrive as a minor.
+**`redisJobDriver({ client?, prefix?, clock?, doneTtlMs? })`** passes `@ultimat3/testing`'s
+`jobDriverConformance`, the suite the other two pass, and `driver-redis.live.test.ts` runs one
+script of operations on it and on the memory driver and compares every answer. Installed with
+`setJobDriver(redisJobDriver())` (or `ServeOptions.runtime.jobs`), imported from its own entry
+`@ultimat3/jobs/redis` so the barrel every role boots carries none of it; `Bun.redis` reads `REDIS_URL`.
+What it does not carry: `introspect` (so `x jobs show`/`retry`/`cancel` and queue pauses answer
+for Postgres only), `backfills`, and `leases` — a job declaring `concurrency` refuses
+`jobWorker().start()` (`X_JOB_CONCURRENCY_UNENFORCEABLE`). A `done` row and its steps expire
+after `doneTtlMs` (a week; `0` keeps them); `dead` and `failed` rows are kept. The outbox still
+stages in Postgres — the relay publishes committed rows onto it with their ids. The NATS stub
+deleted in 25.0.0 stays deleted.
 
 The pg SQL lives verbatim in `src/driver-pg-*sql.ts` (`SQL_CLAIM`, `SQL_ENQUEUE`, `SQL_NACK`, …)
 so an agent debugging a stuck queue can read and run the exact statement. The barrel exports

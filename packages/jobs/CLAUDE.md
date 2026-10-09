@@ -64,8 +64,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   what a second call would move.**
 - **No read returns a WHOLE row** — `driver-pg-sql.test.ts` scans every production file here
   (discovered, comments stripped) for `select *`/`returning *`.
-- Drivers implement the six `JobDriver` methods plus optional `introspect`, `backfills`, `leases`. New
-  capabilities go behind the interface. `inspect.ts` returns plain JSON for CLI, `/_x` and MCP.
+- Drivers: the six `JobDriver` methods plus optional `introspect`, `backfills`, `leases`; new
+  capabilities go behind the interface. **`redisJobDriver`** (`@ultimat3/jobs/redis`, off the
+  barrel) is one Lua script per operation: a semantic change lands in memory, pg AND the scripts.
 - Step results are persisted BEFORE the step returns. All time is epoch ms (`nowMs()`, `clock.ts`).
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
 
@@ -75,8 +76,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `finiteCount()` (a count, caller's minimum); `worker-options.ts` is where `jobWorker` reads them.
   **`bun run finite-bounds` is a floor, never proof**: `concurrencyLimiter`'s five numbers are screened
   with min 0 (zero is a HARD STOP). **A row count is `finiteCount` (min 0)**; `retry.attempts` is one with min 1.
-- **`WorkerOptions.concurrency` is read by OWN key** — a queue named `constructor`
-  (`worker-slots.test.ts`).
+- **`WorkerOptions.concurrency` is read by OWN key** (`worker-slots.test.ts`).
 - **`job.concurrency` is enforced by `JobDriver.leases`** (one row per held slot in `x_job_leases`);
   `limits.ts` is the per-process fast path. No lease store + a declared `concurrency` makes `start()`
   throw `X_JOB_CONCURRENCY_UNENFORCEABLE`.
@@ -110,7 +110,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   synchronously with its guard.
 - **A fleet slot is taken INSIDE a `try`, released AWAITED, and HELD, not owned**: `false`, or a TTL
   with no renewal landing, CANCELS the run (`X_JOB_SLOT_LOST`); held per job id as a LIST.
-- **The run's signal is a controller this worker owns** (`run-signal.ts`), never `AbortSignal.any`.
+- **The run's signal is a controller this worker owns** (`run-signal.ts`).
 - **A lease is HELD, not owned** (`heartbeat.ts`): one failed renewal warns; a whole window without
   one landing is `jobs.lease.lost`, on this process's clock, asked both sides of the call.
 - **A renewal is decided against `stopped()`** (`renewal-timer.ts`, re-read after every await); the
@@ -135,7 +135,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **A lease for a run that never STARTED is `abandon()`ed, never `release()`d** — the rate stamp
   goes with it (`worker-admit.ts`). **A failed pass re-arms at the floor** (`worker-loop.ts`
   catch); `timers` is the test seam.
-- **Every timer body catches before it finalises** (`void work().catch(log).finally(...)`).
+- **Every timer body catches before it finalises.**
 - **Suspension is control flow, and a SHED is not a suspension**: `StepSuspension` →
   `nack({ countsAsAttempt: false, park: true })`; a shed is `countsAsAttempt: false` without `park`,
   stays `ready`, logs `jobs.worker.shed` (no `last_error`). `driver-parity.test.ts`.
