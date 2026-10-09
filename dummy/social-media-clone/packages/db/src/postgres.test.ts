@@ -14,12 +14,11 @@ import { demo } from './seed';
 
 const MIGRATIONS = Bun.fileURLToPath(new URL('../migrations/', import.meta.url));
 
-/** The 13 entities `client.ts` names, in the order `information_schema` answers. */
+/** The 11 entities `client.ts` names, in the order `information_schema` answers. */
 const DECLARED_TABLES = [
   'blocks',
   'comments',
   'conversations',
-  'credentials',
   'friendships',
   'likes',
   'media',
@@ -27,7 +26,6 @@ const DECLARED_TABLES = [
   'notifications',
   'participants',
   'posts',
-  'sessions',
   'users',
 ];
 

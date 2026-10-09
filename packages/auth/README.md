@@ -18,6 +18,10 @@ export const auth = defineAuth({
 
 const { actor, token, cookie } = await login(auth, { email, password, ip });
 
+// Or by handle, for an app whose users are `@ada`: `defineAuth({ handles })` names the lookup from
+// a normalised handle to the auth user's id, and `register(auth, { id, ... })` links the two rows.
+const byHandle = await login(auth, { handle: 'ada', password, ip });
+
 // "Log in with GitHub" is a link to /auth/oauth/github. These two routes are what serves it.
 const { start, callback } = oauthLogin(auth);
 ```

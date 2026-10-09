@@ -255,6 +255,18 @@ export const mfaRequiredUnenforceable = (): AuthError =>
   });
 
 /**
+ * `login(auth, { handle })` on an app whose `defineAuth` named no `handles` lookup. Refused before
+ * any bucket is reserved or any hash run: this is a wiring fault, never a failed guess.
+ */
+export const handlesUndeclared = (): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause:
+      'login() was handed a handle, and defineAuth declared no handles lookup to resolve one to a user',
+    fix: 'defineAuth({ adapter, handles: async (handle) => (await db.users.where({ handle }).one())?.id ?? null })',
+  });
+
+/**
  * A policy NUMBER that is not one, refused where `defineAuth` still names the key.
  *
  * Every one of these arrives as `Number(process.env.SESSION_TTL_MS)` as often as a literal, and

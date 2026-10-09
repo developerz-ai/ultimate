@@ -12,9 +12,13 @@ import { NEXT_PARAM, nextAfterSignIn, setRedirect, useRequestHeader } from '@ult
 import { allow } from '@ultimat3/policy';
 import type { IssuedSession } from '../app/auth/service';
 import { signIn, signOut, signUp } from '../app/auth/service';
-import { clearSessionCookie, writeSessionCookie } from '../app/auth/session-cookie';
+import {
+  clearSessionCookie,
+  isSecureRequest,
+  readSessionToken,
+  writeSessionCookie,
+} from '../app/auth/session-cookie';
 import { CAPTCHA_FIELD } from '../shared/auth-policy';
-import { isSecureRequest, readSessionToken } from '../shared/session';
 
 /** The handle rule, enforced here as well as by the `users` CHECK — one predicate, two places. */
 const handleInput = t.string
@@ -72,14 +76,11 @@ export const createSession = action({
   mcp: { expose: false },
   async handle({ input, ctx }) {
     const now = new Date();
-    const issued = await signIn(
-      {
-        handle: input.handle,
-        password: input.password,
-        captchaToken: input[CAPTCHA_FIELD] ?? null,
-      },
-      now,
-    );
+    const issued = await signIn({
+      handle: input.handle,
+      password: input.password,
+      captchaToken: input[CAPTCHA_FIELD] ?? null,
+    });
     attach(ctx, issued, now);
     return { ok: true, next: landAfter(input[NEXT_PARAM], '/feed'), handle: input.handle };
   },
@@ -99,16 +100,13 @@ export const createAccount = action({
   mcp: { expose: false },
   async handle({ input, ctx }) {
     const now = new Date();
-    const issued = await signUp(
-      {
-        handle: input.handle,
-        displayName: input.displayName,
-        email: input.email,
-        password: input.password,
-        captchaToken: input[CAPTCHA_FIELD] ?? null,
-      },
-      now,
-    );
+    const issued = await signUp({
+      handle: input.handle,
+      displayName: input.displayName,
+      email: input.email,
+      password: input.password,
+      captchaToken: input[CAPTCHA_FIELD] ?? null,
+    });
     attach(ctx, issued, now);
     return { ok: true, next: landAfter(input[NEXT_PARAM], '/feed'), handle: input.handle };
   },

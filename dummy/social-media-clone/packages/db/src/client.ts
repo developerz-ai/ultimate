@@ -10,7 +10,6 @@ import { type Driver, database, memoryDriver, postgresDriver } from '@ultimat3/e
 import { blocks } from './schema/blocks';
 import { comments } from './schema/comments';
 import { conversations } from './schema/conversations';
-import { credentials } from './schema/credentials';
 import { friendships } from './schema/friendships';
 import { likes } from './schema/likes';
 import { media } from './schema/media';
@@ -18,11 +17,14 @@ import { messages } from './schema/messages';
 import { notifications } from './schema/notifications';
 import { participants } from './schema/participants';
 import { posts } from './schema/posts';
-import { sessions } from './schema/sessions';
 import { users } from './schema/users';
 
 /** The one binding that decides where rows live — here, in `x dev`, and in `ROLE=migrate`. */
 const DATABASE_URL = 'DATABASE_URL';
+
+/** Whether rows live in Postgres here — the one reading of `DATABASE_URL`, the auth slice's too. */
+export const storesInPostgres = (env: Readonly<Record<string, string | undefined>>): boolean =>
+  (env[DATABASE_URL] ?? '') !== '';
 
 /**
  * One driver, named rather than defaulted, so the SEED and the app write to the same store. The
@@ -43,7 +45,7 @@ const DATABASE_URL = 'DATABASE_URL';
  * watching. `docker/README.md:84` has said "never in production" since before this line was written.
  */
 export const selectDriver = (env: Readonly<Record<string, string | undefined>>): Driver => {
-  if ((env[DATABASE_URL] ?? '') !== '') return postgresDriver();
+  if (storesInPostgres(env)) return postgresDriver();
   if (!isLocal({ env })) {
     throw new EnvMissingError({
       cause: `${DATABASE_URL} is unset, so every row this process writes would live in its own memory and be lost on the next restart — and this is not a development environment`,
@@ -61,7 +63,6 @@ export const db = database(
     blocks,
     comments,
     conversations,
-    credentials,
     friendships,
     likes,
     media,
@@ -69,7 +70,6 @@ export const db = database(
     notifications,
     participants,
     posts,
-    sessions,
     users,
   },
   { driver },

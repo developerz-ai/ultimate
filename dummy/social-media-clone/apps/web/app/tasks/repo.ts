@@ -103,7 +103,7 @@ const CONTENT_TABLES = [
 /**
  * Purge the content tables, then replay the seed.
  *
- * Users, credentials and sessions are deliberately NOT purged: an hourly reset that signs the
+ * Users and their auth rows (`x_users`, `x_sessions`) are deliberately NOT purged: an hourly reset that signs the
  * visitor out mid-click is worse than one that leaves their account alone, and the seed restores
  * every seeded user in place anyway.
  *

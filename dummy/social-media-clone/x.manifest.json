@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "dcf87a4276aa6d1b",
+  "buildId": "a317740eb8828bc7",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -497,34 +497,6 @@
       "invariants": []
     },
     {
-      "name": "credentials",
-      "table": "credentials",
-      "columns": [
-        {
-          "name": "password_hash",
-          "type": "text",
-          "nullable": false,
-          "primaryKey": false
-        },
-        {
-          "name": "updated_at",
-          "type": "timestamptz",
-          "nullable": false,
-          "primaryKey": false,
-          "hasDefault": true
-        },
-        {
-          "name": "user_id",
-          "type": "uuid",
-          "nullable": false,
-          "primaryKey": true,
-          "hasDefault": true,
-          "references": "users.id"
-        }
-      ],
-      "invariants": []
-    },
-    {
       "name": "friendships",
       "table": "friendships",
       "columns": [
@@ -892,46 +864,6 @@
         "post_like_count_non_negative",
         "post_media_count_non_negative"
       ]
-    },
-    {
-      "name": "sessions",
-      "table": "sessions",
-      "columns": [
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "nullable": false,
-          "primaryKey": false,
-          "hasDefault": true
-        },
-        {
-          "name": "expires_at",
-          "type": "timestamptz",
-          "nullable": false,
-          "primaryKey": false
-        },
-        {
-          "name": "id",
-          "type": "uuid",
-          "nullable": false,
-          "primaryKey": true,
-          "hasDefault": true
-        },
-        {
-          "name": "token_hash",
-          "type": "text",
-          "nullable": false,
-          "primaryKey": false
-        },
-        {
-          "name": "user_id",
-          "type": "uuid",
-          "nullable": false,
-          "primaryKey": false,
-          "references": "users.id"
-        }
-      ],
-      "invariants": []
     },
     {
       "name": "users",
@@ -2968,11 +2900,11 @@
       "package": "apps/web"
     },
     {
-      "code": "X_AUTH_HANDLE_TAKEN",
+      "code": "X_AUTH_EMAIL_TAKEN",
       "package": "apps/web"
     },
     {
-      "code": "X_AUTH_PASSWORD_WEAK",
+      "code": "X_AUTH_HANDLE_TAKEN",
       "package": "apps/web"
     },
     {

@@ -90,8 +90,10 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * names its answer's instants in `x-ultimate-dates` — and `core/src/default-locale.ts`, the default
  * locale split out of `context.ts` so an island's translator reads it without the async context;
  * both reached through the core barrel.
+ * raised 636 → 637, measured 637 (2026-10-09, #710 row 9): `auth/src/login-identity.ts` — which
+ * account a login names, an email or a handle `defineAuth({ handles })` resolves, through the auth barrel.
  */
-const MIGRATE_CEILING = 636;
+const MIGRATE_CEILING = 637;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -168,8 +170,10 @@ const MIGRATE_CEILING = 636;
  * raised 930 → 932, measured 932 (2026-10-09, #738): the two core modules named on `MIGRATE_CEILING`.
  * raised 932 → 934, measured 934 (2026-10-09, #710): the two modules named on `MIGRATE_CEILING`
  * for #710.
+ * raised 934 → 935, measured 935 (2026-10-09, #710 row 9): `auth/src/login-identity.ts`, the module
+ * named on `MIGRATE_CEILING`.
  */
-const SERVING_ROLE_CEILING = 934;
+const SERVING_ROLE_CEILING = 935;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -241,8 +245,10 @@ const SERVING_ROLE_CEILING = 934;
  * raised 1056 → 1058, measured 1058 (2026-10-09, #738): the two core modules named on `MIGRATE_CEILING`.
  * raised 1058 → 1060, measured 1060 (2026-10-09, #710): the two modules named on
  * `MIGRATE_CEILING` for #710.
+ * raised 1060 → 1061, measured 1061 (2026-10-09, #710 row 9): `auth/src/login-identity.ts`, the
+ * module named on `MIGRATE_CEILING`.
  */
-const WEB_ROLE_CEILING = 1060;
+const WEB_ROLE_CEILING = 1061;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

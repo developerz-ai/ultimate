@@ -10,6 +10,7 @@ import { normaliseEmail } from './email';
 import { mfaRequiredUnenforceable, sessionUnknown } from './errors';
 import { installedAuthLimiter } from './limiter-install';
 import { openLoginAttempt } from './login-attempt';
+import { type HandleDirectory, loginIdentity } from './login-identity';
 import { memoryTotpReplayGuard, type TotpReplayGuard } from './mfa';
 import { mfaChallengeRequired } from './mfa-challenge';
 import type { OAuthProviderId } from './oauth';
@@ -25,7 +26,6 @@ import { assertPasswordPolicy, assertRateLimitPolicy, assertSessionPolicy } from
 import {
   type AuthLimiter,
   type AuthRateLimitPolicy,
-  accountKey,
   assertAuthLimiterPolicy,
   DEFAULT_AUTH_RATE_LIMIT,
   loginFailed,
@@ -162,6 +162,13 @@ export interface AuthConfigInput {
   readonly providers?: readonly OAuthProviderId[] | undefined;
   /** Defaults to `'verified-email'` — both halves proven. See `OAuthLinkPolicy`. */
   readonly link?: OAuthLinkPolicy | undefined;
+  /**
+   * How `login(auth, { handle })` finds its user: the app's lookup from a normalised handle to the
+   * auth user's id. Absent means logins are by email only, and a handle login is refused
+   * (`X_CONFIG_INVALID`). For an app that keeps handles in a table of its own, linked to `x_users`
+   * by id — `register(auth, { id })` creates the auth user under the app's id.
+   */
+  readonly handles?: HandleDirectory | undefined;
 }
 
 export interface Auth {
@@ -178,6 +185,7 @@ export interface Auth {
   readonly totpReplay: TotpReplayGuard;
   readonly providers: readonly OAuthProviderId[];
   readonly link: OAuthLinkPolicy;
+  readonly handles?: HandleDirectory | undefined;
 }
 
 export function defineAuth(config: AuthConfigInput): Auth {
@@ -245,10 +253,16 @@ export function defineAuth(config: AuthConfigInput): Auth {
     // to be.
     providers: config.providers ?? [],
     link: config.link ?? 'verified-email',
+    ...(config.handles === undefined ? {} : { handles: config.handles }),
   });
 }
 
 export interface RegisterInput {
+  /**
+   * The user's id, when the app already chose one — its own `users` row's, so the two link by id.
+   * Omit it and one is minted.
+   */
+  readonly id?: string | undefined;
   readonly email: string;
   readonly password: string;
   readonly orgId?: string | null | undefined;
@@ -259,7 +273,7 @@ export interface RegisterInput {
 export async function register(auth: Auth, input: RegisterInput): Promise<AuthUser> {
   checkPasswordStrength(input.password, { policy: auth.password });
   return await auth.adapter.createUser({
-    id: uuidV7(auth.clock),
+    id: input.id ?? uuidV7(auth.clock),
     email: normaliseEmail(input.email),
     passwordHash: await hashPassword(input.password, auth.password.params),
     orgId: input.orgId ?? null,
@@ -268,12 +282,21 @@ export async function register(auth: Auth, input: RegisterInput): Promise<AuthUs
   });
 }
 
-export interface LoginInput {
-  readonly email: string;
+interface LoginCredentials {
   readonly password: string;
   readonly ip?: string | null | undefined;
   readonly userAgent?: string | null | undefined;
 }
+
+/**
+ * By email, or by handle when `defineAuth({ handles })` names the lookup — one or the other, and
+ * every failure of either is the same `loginFailed()`.
+ */
+export type LoginInput = LoginCredentials &
+  (
+    | { readonly email: string; readonly handle?: undefined }
+    | { readonly handle: string; readonly email?: undefined }
+  );
 
 export interface LoginResult {
   readonly actor: PolicyActor;
@@ -294,12 +317,13 @@ export interface LoginResult {
  */
 export async function login(auth: Auth, input: LoginInput): Promise<LoginResult> {
   const ip = input.ip ?? null;
-  const attempt = await openLoginAttempt(auth, accountKey(input.email), ip);
+  const identity = loginIdentity(auth, input);
+  const attempt = await openLoginAttempt(auth, identity.key, ip);
 
   let user: AuthUser | null;
   let verification: Awaited<ReturnType<typeof verifyPassword>>;
   try {
-    user = await auth.adapter.findUserByEmail(normaliseEmail(input.email));
+    user = await identity.find();
     // The tenant bucket can only be joined once the address resolves to an org, which is still
     // before the KDF runs — the expensive half of this function — and it caps a spray that
     // per-IP and per-account buckets both let through.

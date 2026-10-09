@@ -5,8 +5,15 @@
 import { ctxOf, isUltimateError, runWithContext } from '@ultimat3/core';
 import { asCtx, defineHttpConfig, requestContext, setCookie } from '@ultimat3/http';
 import { expect, unitTest } from '@ultimat3/testing';
-import { SESSION_COOKIE_PLAIN, SESSION_COOKIE_SECURE } from '../../shared/session';
-import { clearSessionCookie, writeSessionCookie } from './session-cookie';
+import {
+  clearSessionCookie,
+  isSecureRequest,
+  readSessionToken,
+  SESSION_COOKIE_PLAIN,
+  SESSION_COOKIE_SECURE,
+  sessionCookieName,
+  writeSessionCookie,
+} from './session-cookie';
 
 const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
 
@@ -81,3 +88,45 @@ unitTest('off-request it refuses rather than issuing a token nobody can present'
   const job = ctxOf({ role: 'worker' });
   expect(codeOf(() => runWithContext(job, () => clearSessionCookie(true)))).toBe('X_NO_REQUEST');
 });
+
+unitTest('the __Host- prefix is chosen by the same flag that makes it legal', () => {
+  // A browser REFUSES a `__Host-` cookie without `Secure`, and `Secure` needs https. Pinning the
+  // prefix would mean a dev sign-in that appears to work and keeps no cookie at all.
+  expect(sessionCookieName(true)).toBe(SESSION_COOKIE_SECURE);
+  expect(sessionCookieName(false)).toBe(SESSION_COOKIE_PLAIN);
+  expect(SESSION_COOKIE_SECURE.startsWith('__Host-')).toBe(true);
+});
+
+unitTest(
+  'the token is read by name, never by prefix, and the secure name wins over the plain one',
+  () => {
+    // A prefix match would answer `abc123` for a cookie named `smc_sess`.
+    expect(readSessionToken('x_locale=en; smc_session=abc123; other=1')).toBe('abc123');
+    expect(readSessionToken('smc_sess=abc123')).toBe(null);
+    expect(readSessionToken(`${SESSION_COOKIE_PLAIN}=old; ${SESSION_COOKIE_SECURE}=new`)).toBe(
+      'new',
+    );
+    expect(readSessionToken(null)).toBe(null);
+    expect(readSessionToken('')).toBe(null);
+  },
+);
+
+// The header is client-authored: `smc_session=%` used to be a bare `URIError` out of the
+// authenticator, a 500 on every request that browser sent. Core's reader answers the raw value,
+// which then names no session — an anonymous request, never a crash.
+unitTest('a malformed escape is the raw value, and an empty one is absent', () => {
+  expect(readSessionToken('smc_session=%')).toBe('%');
+  expect(readSessionToken('smc_session=%ZZ; other=1')).toBe('%ZZ');
+  expect(readSessionToken('smc_session=')).toBe(null);
+});
+
+unitTest(
+  'only a context that says https is secure — the fact both the name and the flag follow',
+  () => {
+    expect(isSecureRequest({ https: true })).toBe(true);
+    expect(isSecureRequest({ https: false })).toBe(false);
+    expect(isSecureRequest({ https: 'true' })).toBe(false);
+    expect(isSecureRequest(null)).toBe(false);
+    expect(isSecureRequest('https')).toBe(false);
+  },
+);

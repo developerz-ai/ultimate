@@ -25,6 +25,15 @@ const { start, callback } = oauthLogin(auth);   // /auth/oauth/:provider and its
 The tables (`x_users`, `x_sessions`, `x_accounts`, `x_verifications`, `x_api_keys`) are created by
 every boot; an app writes no migration for them.
 
+**Signing in by handle** (`As of 2026-10`): an app whose users are `@ada` names the lookup once —
+`defineAuth({ adapter, handles: async (handle) => (await db.users.where({ handle }).one())?.id ?? null })`
+— and calls `login(auth, { handle, password })`. The handle arrives trimmed and lowercased
+(`normaliseHandle`), its failures count against a bucket of its own, and an unknown handle is the
+same `X_UNAUTHENTICATED` after the same hash as a wrong password. The app's `users` row and the auth
+user share one id: `register(auth, { id, email, password })` creates the auth user under it. A handle
+login on an app that declared no `handles` is `X_CONFIG_INVALID`. The deployed demo
+(`dummy/social-media-clone/apps/web/app/auth/`) signs in this way.
+
 ## Sessions
 
 | Property | How |

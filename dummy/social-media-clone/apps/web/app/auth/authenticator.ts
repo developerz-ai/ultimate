@@ -5,7 +5,7 @@
 // time; what it could not see was that no caller existed.
 
 import { configureAuthenticator } from '@ultimat3/http';
-import { readSessionToken } from '../../shared/session';
+import { readSessionToken } from './session-cookie';
 import { viewerFor } from './viewer';
 
 /**
@@ -17,9 +17,6 @@ import { viewerFor } from './viewer';
  * policy predicate, a live subscriber, an MCP tool — reads it off the actor this returns, and
  * nothing anywhere gets a second chance to ask the database who the viewer is.
  *
- * `new Date()` per request rather than a captured clock: session expiry is absolute, and a boot
- * that ran a week ago must not still be comparing against its own start time.
+ * Expiry is `@ultimat3/auth`'s to judge, on its own clock, per request.
  */
-configureAuthenticator((request) =>
-  viewerFor(readSessionToken(request.header('cookie')), new Date()),
-);
+configureAuthenticator((request) => viewerFor(readSessionToken(request.header('cookie'))));

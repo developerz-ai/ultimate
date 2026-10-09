@@ -1,15 +1,8 @@
-// Every read and write the auth slice makes. No rules here — `service.ts` decides what to do,
-// this file decides how to ask. Only this file may import `db` in the auth slice.
+// Every read and write the auth slice makes of the app's own tables. No rules here — `service.ts`
+// decides what to do, this file decides how to ask. Credentials and sessions are `@ultimat3/auth`'s
+// (`auth.ts`); only this file may import `db` in the auth slice.
 
-import { db, type schema, type User } from '@social-media-clone/db';
-
-/**
- * Derived rather than imported: `@social-media-clone/db`'s index re-exports `User` and five other
- * row types by name but not `Session` (`packages/db/src/index.ts:11`), and that package is not
- * this slice's to edit. `schema` is the namespace it does export, so the row type still comes from
- * the entity declaration and cannot drift from the columns.
- */
-type Session = typeof schema.sessions.$row;
+import { db, type User } from '@social-media-clone/db';
 
 /**
  * Explicit bounds on every graph read, because the builder's default limit is 50
@@ -24,22 +17,20 @@ export const userByHandle = (handle: string): Promise<User | null> =>
 
 export const userById = (id: string): Promise<User | null> => db.users.where({ id }).one();
 
-export const credentialFor = (userId: string): Promise<{ passwordHash: string } | null> =>
-  db.credentials.where({ userId }).select({ passwordHash: true }).one();
-
 /**
- * `put`, and now it is one: an upsert on `credentials.userId`, which is the primary key.
- *
- * An insert here was an overwrite only in the memory driver. Against Postgres it is `23505` in two
- * cases the app already has — a password change through this same function, and two processes
- * bootstrapping the demo logins at once. `ensureDemoCredentials` memoizes that race away inside ONE
- * process, and the deployed demo runs four role containers against one database.
+ * The auth user a handle names — `defineAuth({ handles })`'s lookup. The auth user carries the
+ * `users` row's id, so the id IS the link. `null` for nobody, and for an account that may no longer
+ * act: a soft-deleted user is not a handle anyone signs in as.
  */
-export const putCredential = async (userId: string, passwordHash: string): Promise<void> => {
-  await db.credentials.upsertAll([{ userId, passwordHash }], { onConflict: ['userId'] });
+export const userIdByHandle = async (handle: string): Promise<string | null> => {
+  const user = await userByHandle(handle);
+  return user === null || user.deletedAt !== null ? null : user.id;
 };
 
+export const userByEmail = (email: string): Promise<User | null> => db.users.where({ email }).one();
+
 export interface NewUser {
+  readonly id: string;
   readonly handle: string;
   readonly email: string;
   readonly displayName: string;
@@ -47,20 +38,6 @@ export interface NewUser {
 
 export const insertUser = (values: NewUser): Promise<User> =>
   db.users.insert({ ...values, role: 'member' });
-
-export interface NewSession {
-  readonly userId: string;
-  readonly tokenHash: string;
-  readonly expiresAt: Date;
-}
-
-export const insertSession = (values: NewSession): Promise<Session> => db.sessions.insert(values);
-
-/** By hash, never by token: the token is not stored, so there is nothing here to compare against. */
-export const sessionByTokenHash = (tokenHash: string): Promise<Session | null> =>
-  db.sessions.where({ tokenHash }).one();
-
-export const deleteSession = (id: string): Promise<void> => db.sessions.delete(id);
 
 /**
  * Accepted friendships, in BOTH directions. The row is directional because who asked is part of
