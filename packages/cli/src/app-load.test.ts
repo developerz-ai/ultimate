@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import type { LocaleConfig } from '@ultimat3/i18n';
 import { configureLocales, localeConfig } from '@ultimat3/i18n';
 import { UNDECLARED_LOCALES } from '@ultimat3/i18n/app-catalogs';
-import { appModulePaths, loadApp, sortModulePaths } from './app-load';
+import { appModulePaths, loadApp, sortModulePaths, workspaceOf } from './app-load';
 import { toPosix } from './posix-path';
 
 let root = '';
@@ -198,5 +198,13 @@ describe('unit · the app is imported in one order on every machine', () => {
       'D:/w/apps/web/app/a/page.tsx',
       'D:/w/apps/web/app/a1/page.tsx',
     ]);
+  });
+});
+
+describe("an error code's workspace, on any host", () => {
+  test('a Windows-shaped site answers the same workspace as its POSIX twin', () => {
+    expect(workspaceOf('apps\\admin\\app\\admin\\pages\\abuse.tsx')).toBe('apps/admin');
+    expect(workspaceOf('apps/admin/app/admin/pages/abuse.tsx')).toBe('apps/admin');
+    expect(workspaceOf('packages\\db\\src\\errors.ts')).toBe('packages/db');
   });
 });

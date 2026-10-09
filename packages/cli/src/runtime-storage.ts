@@ -12,14 +12,22 @@ import { actorOf } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { asCtx, unauthenticated } from '@ultimat3/http';
 import type { KnownPermission } from '@ultimat3/policy';
-import { can, codeOf, evaluate, policyForbidden, reasonOf } from '@ultimat3/policy';
-import type { Storage, StorageRead } from '@ultimat3/storage';
+import {
+  can,
+  codeOf,
+  evaluate,
+  isKnownPermission,
+  policyForbidden,
+  reasonOf,
+} from '@ultimat3/policy';
+import type { Storage, StorageObject } from '@ultimat3/storage';
 import {
   assertSafeKey,
   DEFAULT_SIGNED_URL_BASE,
   definedStorage,
   isTenantScoped,
   isWithinOrg,
+  keyUnshared,
   objectNotFound,
   orgMismatch,
 } from '@ultimat3/storage';
@@ -30,8 +38,8 @@ import { storedObjectHeaders } from './stored-object-headers';
  * The one capability that gates reading a stored object, on every disk. A permission and not a
  * per-disk family: `disk` is in the policy's `input`, so an app that wants a per-disk rule writes
  * one predicate over it, while a second permission string would be a second thing to grant and to
- * forget. An app that declared a permission set without it gets `X_PERMISSION_UNKNOWN` from
- * `can()` — naming the exact `definePermissions` edit — rather than a request that quietly worked.
+ * forget. An app that declared a permission set without it serves nothing here: every read is a
+ * clean 401/403 (27.0.0; it was a 500 `X_PERMISSION_UNKNOWN`).
  */
 export const STORAGE_READ_PERMISSION = 'storage:read';
 
@@ -76,10 +84,22 @@ export interface StorageReadInput {
  */
 export function authorizeStorageRead(input: StorageReadInput, ctx: RequestContext): void {
   const context = asCtx(ctx);
+  const actor = actorOf(context);
+  // An app that never declared `storage:read` serves nothing through this route: nobody can hold
+  // an undeclared permission, so it answers what a role without the grant gets — 401 for nobody,
+  // 403 for a known actor. `can()` would throw `X_PERMISSION_UNKNOWN` (500) here, and an app kept
+  // the permission declared-but-ungranted only to keep its own refusal a refusal.
+  if (!isKnownPermission(STORAGE_READ_PERMISSION)) {
+    if (actor === null) throw unauthenticated(ctx.url.pathname);
+    throw policyForbidden(
+      STORAGE_READ_PERMISSION,
+      `this app does not declare ${STORAGE_READ_PERMISSION}, so no role grants it`,
+    );
+  }
   // Built per request, not at mount: an app whose permission set lacks `storage:read` must get a
   // problem document on this route, not a boot that takes every other route down with it.
   const policy = can<StorageReadInput>(READ_PERMISSION);
-  const evaluation = evaluate(policy, { input, actor: actorOf(context) });
+  const evaluation = evaluate(policy, { input, actor });
   if (evaluation.allowed) return;
   // The decision's own code goes on the wire, never a flattened one: `can()` denies "nobody" with
   // X_UNAUTHENTICATED and a known actor with X_FORBIDDEN, and 401 and 403 are different
@@ -93,24 +113,48 @@ export function authorizeStorageRead(input: StorageReadInput, ctx: RequestContex
 
 /**
  * The key half of the read decision, in the order that discloses least: a key that could escape its
- * prefix is refused before any tenant is named, and a key inside another tenant's prefix is 404
- * (never 403 — `error-map.ts` maps `X_STORAGE_ORG_MISMATCH` there so a refusal cannot confirm that
- * a key exists).
+ * prefix is refused before any tenant is named; a key inside another tenant's prefix is 404 (never
+ * 403 — `error-map.ts` maps `X_STORAGE_ORG_MISMATCH` there so a refusal cannot confirm that a key
+ * exists); and a key inside NO tenant's prefix is served only when the app shared it.
+ *
+ * That last clause is secure by default (27.0.0). The rule used to be "not another tenant's", which
+ * read every key outside `org/` as everybody's: an app's all-tenant export, raw webhook payloads
+ * and DSR archives were one GET away for any signed-in reader holding `storage:read`. A key no
+ * tenant owns is now `X_STORAGE_KEY_UNSHARED` (404) unless `defineStorage({ shared })` lists its
+ * prefix for this disk — decided from the key alone, so it too says nothing about existence.
  *
  * Split out of `readStorageObject` because `/media/*key` (`runtime-assets.ts`) has to make the same
  * decision and made none at all: it passed a client-supplied key straight to `disk().get`, so every
  * object on the app's only disk was one unauthenticated URL away. A second copy of this test is how
  * one of the two surfaces would drift back — `storage-surfaces.test.ts` is what holds them level.
  */
-export function assertReadableKey(key: string, actor: Actor): string {
+export function assertReadableKey(
+  storage: Storage,
+  disk: string,
+  key: string,
+  actor: Actor,
+): string {
   const safe = assertSafeKey(key);
   // An actor with no org is inside no org, so every tenant-scoped key is somebody else's —
   // `isWithinOrg` answers exactly that for an empty org, without throwing.
   const orgId = actor.orgId ?? '';
-  if (isTenantScoped(safe) && !isWithinOrg(safe, orgId)) {
-    throw orgMismatch(safe, orgId);
+  if (isTenantScoped(safe)) {
+    if (!isWithinOrg(safe, orgId)) throw orgMismatch(safe, orgId);
+    return safe;
   }
+  if (!storage.isShared(disk, safe)) throw keyUnshared(disk, safe);
   return safe;
+}
+
+/**
+ * What the route serves: the object's description and a STREAM of its bytes, never a buffer. The
+ * route used `get()`, which holds the whole object in memory and refuses past the disk's
+ * `maxGetBytes` — so a large upload was either a pod's worth of heap or `X_STORAGE_TOO_LARGE`.
+ */
+export interface ServedObject {
+  readonly object: StorageObject;
+  /** Opened only once the route knows it will send a body: a 304 and a 416 open nothing. */
+  readonly open: () => Promise<ReadableStream<Uint8Array>>;
 }
 
 /**
@@ -121,10 +165,13 @@ export async function readStorageObject(
   storage: Storage,
   input: StorageReadInput,
   actor: Actor,
-): Promise<StorageRead> {
-  const key = assertReadableKey(input.key, actor);
+): Promise<ServedObject> {
+  const key = assertReadableKey(storage, input.disk, input.key, actor);
   if (!storage.diskNames.includes(input.disk)) throw objectNotFound(input.disk, key);
-  return storage.disk(input.disk).get(key);
+  const driver = storage.disk(input.disk);
+  const object = await driver.stat(key);
+  if (object === undefined) throw objectNotFound(input.disk, key);
+  return { object, open: () => driver.stream(key) };
 }
 
 /** Inclusive, as `Range` and `Content-Range` both are. */
@@ -175,23 +222,52 @@ export function etagMatches(header: string | null, etag: string): boolean {
 }
 
 /**
+ * The inclusive window `[start, end]` of a stream, as a stream. A disk streams from byte 0 (the
+ * driver contract has no ranged read), so the bytes before `start` are read and dropped: bounded
+ * memory, at the cost of reading the prefix — the trade a `Range` probe on a video wants over
+ * buffering the whole object.
+ */
+function windowOf(
+  source: ReadableStream<Uint8Array>,
+  start: number,
+  end: number,
+): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return source.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        const from = Math.max(start - offset, 0);
+        const to = Math.min(end + 1 - offset, chunk.byteLength);
+        offset += chunk.byteLength;
+        if (to > from) controller.enqueue(chunk.subarray(from, to));
+        if (offset > end) controller.terminate();
+      },
+    }),
+  );
+}
+
+/**
  * The content type is the STORED one — the upload gate sniffed those bytes and `put` recorded the
  * answer, so an extension in the URL is the only party that can lie. The validator is the driver's
  * own content hash (local: sha256 of the bytes, S3: the provider's etag), which is the identity
  * storage already keeps for an object; inventing a cache key here would be a second one.
  */
-export function storageResponse(request: UltimateRequest, read: StorageRead): Response {
-  const etag = `"${read.object.etag}"`;
+export async function storageResponse(
+  request: UltimateRequest,
+  served: ServedObject,
+): Promise<Response> {
+  const { object } = served;
+  const etag = `"${object.etag}"`;
   const headers = new Headers({
-    'content-type': read.object.contentType,
+    'content-type': object.contentType,
     etag,
     'accept-ranges': 'bytes',
     // A type a browser would RUN (html, svg, xml) is a download, never a page on this origin.
-    ...storedObjectHeaders(read.object.contentType),
+    ...storedObjectHeaders(object.contentType),
   });
   // Omitted, never invented: a disk whose provider reported no date has none, and a `Last-Modified`
   // made up for it is a validator a cache would go on to trust.
-  const modified = read.object.lastModified;
+  const modified = object.lastModified;
   if (modified !== undefined) headers.set('last-modified', modified.toUTCString());
   // Revalidation costs a request and no bytes, which is the trade an authorized response wants:
   // the bytes never change under a key, but the actor's permission to read them can be revoked.
@@ -199,23 +275,24 @@ export function storageResponse(request: UltimateRequest, read: StorageRead): Re
     return new Response(null, { status: 304, headers });
   }
 
-  const size = read.bytes.byteLength;
+  const size = object.size;
   const range = parseByteRange(request.header('range'), size);
   if (range === UNSATISFIABLE) {
     headers.set('content-range', `bytes */${size}`);
     return new Response(null, { status: 416, headers });
   }
-  // Copied at each call, not through a helper, for `runtime-assets.ts`'s reason: a
-  // `Uint8Array<ArrayBufferLike>` may be backed by a `SharedArrayBuffer`, which `Response` does
-  // not accept — and a helper's declared return type widens the copy back to the type it refuses.
+  // `size` is the stat's: a key's bytes never change under it (an upload mints a new key), so the
+  // length declared here is the length the stream delivers.
   if (range === undefined) {
     headers.set('content-length', String(size));
-    return new Response(new Uint8Array(read.bytes), { headers });
+    return new Response(await served.open(), { headers });
   }
-  const slice = read.bytes.subarray(range.start, range.end + 1);
   headers.set('content-range', `bytes ${range.start}-${range.end}/${size}`);
-  headers.set('content-length', String(slice.byteLength));
-  return new Response(new Uint8Array(slice), { status: 206, headers });
+  headers.set('content-length', String(range.end - range.start + 1));
+  return new Response(windowOf(await served.open(), range.start, range.end), {
+    status: 206,
+    headers,
+  });
 }
 
 /**
@@ -239,6 +316,7 @@ export function servedStorage(host: Storage): Storage {
       return current().diskNames;
     },
     disk: (name?: string) => current().disk(name),
+    isShared: (disk: string, key: string) => current().isShared(disk, key),
   };
 }
 

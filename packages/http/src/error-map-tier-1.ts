@@ -74,4 +74,6 @@ export const TIER_1_ERROR_STATUS = {
   // through `bestEffort`; only a direct `LruCache.set` in a handler reaches a socket, and that is
   // an authoring defect in the server's own code, never the caller's — hence 500.
   X_CACHE_VALUE_UNENCODABLE: 500,
+  // @ultimat3/storage — object key is outside every tenant and every shared prefix
+  X_STORAGE_KEY_UNSHARED: 404,
 } satisfies Readonly<Record<string, number>>;

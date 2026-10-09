@@ -77,6 +77,7 @@ export {
   getTooLarge,
   isStorageError,
   keyConflict,
+  keyUnshared,
   listFailed,
   objectNotFound,
   orgMismatch,

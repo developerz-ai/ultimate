@@ -29,7 +29,12 @@ let storage: Storage;
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'x-stored-headers-'));
-  storage = defineStorage({ disks: { local: localDriver({ root: join(root, '.storage') }) } });
+  // Shared, because no tenant owns these keys: an un-scoped key is served only from a prefix the
+  // app listed (27.0.0) — `storage-surfaces.test.ts` holds the refusal of one it did not.
+  storage = defineStorage({
+    disks: { local: localDriver({ root: join(root, '.storage') }) },
+    shared: { local: ['brand/'] },
+  });
   await storage.disk().put('brand/logo.png', encodeImage(blankRaster(4, 4, 'logo'), 'png'), {
     contentType: 'image/png',
   });

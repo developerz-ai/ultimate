@@ -12,3 +12,13 @@ export function pathSegments(path: string): readonly string[] {
 export function hasPathSegment(path: string, segment: string): boolean {
   return pathSegments(path).includes(segment);
 }
+
+/**
+ * Whether `path` lies strictly below `root`, on either separator. Bun resolves paths with a
+ * backslash on Windows, so `path.startsWith(`${root}/`)` was false for every file there: the dev
+ * reload graph recorded no import and no sheet as the app's own, and a save rendered stale code.
+ */
+export function isPathUnder(root: string, path: string): boolean {
+  const base = root.replaceAll('\\', '/').replace(/\/+$/, '');
+  return path.replaceAll('\\', '/').startsWith(`${base}/`);
+}

@@ -43,7 +43,11 @@ afterEach(async () => {
 
 describe('unit · x dev route table', () => {
   test("the app's runtime images driver reaches /media", async () => {
-    const storage = defineStorage({ disks: { local: localDriver({ root: join(root, '.s') }) } });
+    // `covers/` is shared: an un-scoped key is served only from a prefix the app listed (27.0.0).
+    const storage = defineStorage({
+      disks: { local: localDriver({ root: join(root, '.s') }) },
+      shared: { local: ['covers/'] },
+    });
     await storage.disk().put(SOURCE_KEY, encodeImage(blankRaster(64, 32, 'fixture'), 'png'), {
       contentType: 'image/png',
     });

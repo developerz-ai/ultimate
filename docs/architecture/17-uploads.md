@@ -122,6 +122,21 @@ The `PUT` is `auth: 'required'` and carries no permission: the action that minte
 its own policy, and the route re-proves only what a leaked URL must not buy — the signature, the
 expiry and the actor's tenant.
 
+The `GET` (27.0.0) decides in this order, and stops at the first refusal:
+
+| Step of the `GET` | Refusal |
+|---|---|
+| `authorizeStorageRead` — `can('storage:read')` through `evaluate()`, no row; an app that never declared `storage:read` holds it nowhere | `X_UNAUTHENTICATED` 401 / `X_FORBIDDEN` 403 |
+| `assertSafeKey` | `X_STORAGE_PATH_UNSAFE` 400 |
+| `org/<id>/…` must be the actor's org | `X_STORAGE_ORG_MISMATCH` 404 |
+| any other key must be under `storage.isShared(disk, key)` — `defineStorage({ shared })` | `X_STORAGE_KEY_UNSHARED` 404 |
+| the disk must be registered, then `stat` | `X_STORAGE_NOT_FOUND` 404 |
+| `stream` — the whole body, or a `Range` window cut from it | — |
+
+It reads no signature: a signed GET URL is served on the session's terms. `readSignedObject` is the
+library half for an app that mounts a signature-only route of its own. `/media` makes the same
+key decision through the same `assertReadableKey` (`storage-surfaces.test.ts`).
+
 **The disks served are the process's one registry** (#524): `servedStorage(host)` reads
 `definedStorage() ?? host` per request, so the last `defineStorage()` — the app's, when an app
 module declares its disks — is what `/_storage` and `/media` read, and the boot's env-selected

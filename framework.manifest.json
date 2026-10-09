@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d168a7eceaa36f2ed7053b2f936c46595e93a3e412fe00c2f71e81d3506fd404",
+  "buildId": "48249bba3718451f7b9980b8a816613d5166d61a6ec5c8bfe49ca233e51a8d40",
   "tiers": {
     "0": [
       "core",
@@ -3986,6 +3986,11 @@
     },
     {
       "code": "X_STORAGE_KEY_CONFLICT",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_KEY_UNSHARED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },

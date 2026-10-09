@@ -24,7 +24,7 @@
 import { resolve } from 'node:path';
 import { registeredStylesheets } from '@ultimat3/render/server';
 import { resolvedImports } from './module-imports';
-import { hasPathSegment } from './path-segments';
+import { hasPathSegment, isPathUnder } from './path-segments';
 
 type Kind = 'script' | 'style' | 'data';
 
@@ -106,7 +106,7 @@ const hashOf = (text: string | null): bigint | null =>
 /** The in-app files `source` imports — a package under `node_modules` is not the app's to reload. */
 const importsOf = (path: string, source: string, root: string): string[] =>
   resolvedImports(path, source, 'referenced').filter(
-    (target) => target.startsWith(`${root}/`) && !hasPathSegment(target, 'node_modules'),
+    (target) => isPathUnder(root, target) && !hasPathSegment(target, 'node_modules'),
   );
 
 function link(from: string, to: string): void {
@@ -156,7 +156,7 @@ export async function trackStylesheets(root: string): Promise<void> {
   if (!tracking) return;
   const base = resolve(root);
   const inApp = (path: string): boolean =>
-    path.startsWith(`${base}/`) && !hasPathSegment(path, 'node_modules');
+    isPathUnder(base, path) && !hasPathSegment(path, 'node_modules');
   for (const sheet of registeredStylesheets()) {
     if (!inApp(sheet.file)) continue;
     if (!nodes.has(sheet.file)) await track(sheet.file, await readText(sheet.file), base);

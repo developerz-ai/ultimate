@@ -182,7 +182,12 @@ describe('unit · /_storage serves the APP’s disks (#524)', () => {
 
   test('with no registry at all, the host’s own disk is served', () => {
     resetStorage();
-    const host = { defaultDisk: 'object', diskNames: ['object'], disk: () => storage.disk() };
+    const host = {
+      defaultDisk: 'object',
+      diskNames: ['object'],
+      disk: () => storage.disk(),
+      isShared: () => false,
+    };
     expect(servedStorage(host).diskNames).toEqual(['object']);
   });
 });

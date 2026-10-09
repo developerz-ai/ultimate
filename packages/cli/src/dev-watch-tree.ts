@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { finiteCount, logger } from '@ultimat3/core';
 import type { DevIgnore } from './dev-watch';
 import { devIgnore } from './dev-watch';
-import { pathSegments } from './path-segments';
+import { isPathUnder, pathSegments } from './path-segments';
 
 /** What `node:fs`'s watcher hands a listener — `filename` is optional in fact, not only in type. */
 export type WatchListener = (event: string, filename: string | Buffer | null | undefined) => void;
@@ -213,7 +213,9 @@ class WatchDirectoryMap {
 
   remove(directory: string): void {
     for (const held of this.#watchers.keys()) {
-      if (held !== directory && !held.startsWith(`${directory}/`)) continue;
+      // Either separator: on Windows a held directory is `C:\app\apps\web`, and a `/` test
+      // closed none of the watchers below a removed directory.
+      if (held !== directory && !isPathUnder(directory, held)) continue;
       this.#watchers.get(held)?.close();
       this.#watchers.delete(held);
     }

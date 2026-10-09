@@ -205,7 +205,7 @@ export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode }
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';
-export { currentTx, liveTxConnection, withTransaction } from './transaction';
+export { currentTx, liveTxConnection, outsideTransaction, withTransaction } from './transaction';
 export { commitUnknown, siblingScopeTimeout, transactionAborted } from './transaction-errors';
 export type { DbTx, IsolationLevel, TransactionOptions } from './transaction-options';
 export { beginStatement } from './transaction-options';

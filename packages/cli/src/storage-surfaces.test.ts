@@ -32,7 +32,10 @@ import { AUTHORIZED_OBJECT_CACHE, STORAGE_READ_PERMISSION, storageRoutes } from 
 /** A real PNG, because the `?w=` cases below decode it rather than refusing it as a bad image. */
 const BYTES = encodeImage(blankRaster(64, 64, 'tenant-a-private'), 'png');
 const SCOPED_KEY = scopedKey('org-a', 'private', 'secret.png');
-const UNSCOPED_KEY = 'brand/logo.png';
+/** No tenant's, and under a prefix the app shared — the one un-scoped key a reader may have. */
+const SHARED_KEY = 'brand/logo.png';
+/** No tenant's, and shared by nobody: an export, a raw payload, a DSR zip. */
+const UNSHARED_KEY = 'exports/all-tenants.png';
 
 let root = '';
 let storage: Storage;
@@ -115,9 +118,13 @@ const reader = (roles: readonly string[], orgId: string | undefined): Actor =>
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'x-surfaces-'));
-  storage = defineStorage({ disks: { local: localDriver({ root: join(root, '.storage') }) } });
+  storage = defineStorage({
+    disks: { local: localDriver({ root: join(root, '.storage') }) },
+    shared: { local: ['brand/'] },
+  });
   await storage.disk().put(SCOPED_KEY, BYTES, { contentType: 'image/png' });
-  await storage.disk().put(UNSCOPED_KEY, BYTES, { contentType: 'image/png' });
+  await storage.disk().put(SHARED_KEY, BYTES, { contentType: 'image/png' });
+  await storage.disk().put(UNSHARED_KEY, BYTES, { contentType: 'image/png' });
   definePermissions([STORAGE_READ_PERMISSION]);
   defineRoles({ member: { grants: [STORAGE_READ_PERMISSION] }, guest: { grants: [] } });
 });
@@ -138,8 +145,10 @@ interface SurfaceCase {
   readonly actor: Actor;
   /** What BOTH surfaces must answer for a tenant-scoped object. */
   readonly scoped: Verdict;
-  /** The code both must answer for an object no tenant owns, or `null` when it is served. */
-  readonly unscopedCode: string | null;
+  /** The code both must answer for a SHARED object no tenant owns, or `null` when it is served. */
+  readonly sharedCode: string | null;
+  /** The code both must answer for an object no tenant owns and the app never shared. */
+  readonly unsharedCode: string;
 }
 
 describe('unit · storage surfaces · one object, two routes, one verdict', () => {
@@ -148,35 +157,40 @@ describe('unit · storage surfaces · one object, two routes, one verdict', () =
       label: 'the owning org',
       actor: reader(['member'], 'org-a'),
       scoped: { kind: 'served', cacheControl: AUTHORIZED },
-      unscopedCode: null,
+      sharedCode: null,
+      unsharedCode: 'X_STORAGE_KEY_UNSHARED',
     },
     {
       label: 'another org',
       actor: reader(['member'], 'org-b'),
       scoped: { kind: 'refused', code: 'X_STORAGE_ORG_MISMATCH' },
-      unscopedCode: null,
+      sharedCode: null,
+      unsharedCode: 'X_STORAGE_KEY_UNSHARED',
     },
     {
       label: 'an actor with no org',
       actor: reader(['member'], undefined),
       scoped: { kind: 'refused', code: 'X_STORAGE_ORG_MISMATCH' },
-      unscopedCode: null,
+      sharedCode: null,
+      unsharedCode: 'X_STORAGE_KEY_UNSHARED',
     },
     {
       label: 'a role that grants nothing',
       actor: reader(['guest'], 'org-a'),
       scoped: { kind: 'refused', code: 'X_FORBIDDEN' },
-      unscopedCode: 'X_FORBIDDEN',
+      sharedCode: 'X_FORBIDDEN',
+      unsharedCode: 'X_FORBIDDEN',
     },
     {
       label: 'nobody',
       actor: anonymousActor(),
       scoped: { kind: 'refused', code: 'X_UNAUTHENTICATED' },
-      unscopedCode: 'X_UNAUTHENTICATED',
+      sharedCode: 'X_UNAUTHENTICATED',
+      unsharedCode: 'X_UNAUTHENTICATED',
     },
   ];
 
-  for (const { label, actor, scoped, unscopedCode } of cases) {
+  for (const { label, actor, scoped, sharedCode, unsharedCode } of cases) {
     test(`a tenant-scoped object answers ${label} identically on both surfaces`, async () => {
       const media = await mediaVerdict(SCOPED_KEY, actor);
       const stored = await storageVerdict(SCOPED_KEY, actor);
@@ -187,15 +201,23 @@ describe('unit · storage surfaces · one object, two routes, one verdict', () =
       expect(stored).toEqual(scoped);
     });
 
-    test(`an unscoped object answers ${label} with the same authz verdict`, async () => {
-      const media = await mediaVerdict(UNSCOPED_KEY, actor);
-      const stored = await storageVerdict(UNSCOPED_KEY, actor);
-      if (unscopedCode !== null) {
-        expect(media).toEqual({ kind: 'refused', code: unscopedCode });
-        expect(stored).toEqual({ kind: 'refused', code: unscopedCode });
+    test(`an object no tenant owns and the app never shared is refused to ${label} on both`, async () => {
+      // Secure by default: outside `org/` is not "everybody's". Before 27.0.0 both surfaces served
+      // this to every holder of `storage:read`, which is how an all-tenant export leaked.
+      const refused: Verdict = { kind: 'refused', code: unsharedCode };
+      expect(await mediaVerdict(UNSHARED_KEY, actor)).toEqual(refused);
+      expect(await storageVerdict(UNSHARED_KEY, actor)).toEqual(refused);
+    });
+
+    test(`a shared object answers ${label} with the same authz verdict`, async () => {
+      const media = await mediaVerdict(SHARED_KEY, actor);
+      const stored = await storageVerdict(SHARED_KEY, actor);
+      if (sharedCode !== null) {
+        expect(media).toEqual({ kind: 'refused', code: sharedCode });
+        expect(stored).toEqual({ kind: 'refused', code: sharedCode });
         return;
       }
-      // Served on both — and this is the one place the two legitimately differ: an unscoped key
+      // Served on both — and this is the one place the two legitimately differ: a shared key
       // belongs to no tenant, so `/media` may still hand it to a CDN while `/_storage`
       // revalidates. Who may read it is not negotiable; how long a cache may hold it is.
       expect(media).toEqual({ kind: 'served', cacheControl: IMMUTABLE });
@@ -215,8 +237,8 @@ describe('unit · storage surfaces · what a shared cache may keep', () => {
     expect(media.cacheControl).not.toContain('immutable');
   });
 
-  test('an unscoped object keeps the immutable hint the variant URL depends on', async () => {
-    const media = await mediaVerdict(UNSCOPED_KEY, reader(['member'], 'org-a'));
+  test('a shared object keeps the immutable hint the variant URL depends on', async () => {
+    const media = await mediaVerdict(SHARED_KEY, reader(['member'], 'org-a'));
     expect(media).toEqual({
       kind: 'served',
       cacheControl: 'public, max-age=31536000, immutable',

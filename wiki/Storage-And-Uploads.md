@@ -115,9 +115,55 @@ export const storage = defineStorage({
 
 | | |
 |---|---|
-| `storage:read` | the `GET` requires it. When an app declares its own disks, `x verify`'s `policy` step reports `X_PERMISSION_UNKNOWN` if the app's permission set lacks `storage:read`. Before this, the first signed URL returned a `500` |
+| `storage:read` | the `GET` requires it. An app that serves nothing through these routes leaves it out of its permission set: every read is then `401` for nobody and `403 X_FORBIDDEN` for everyone else (27.0.0). Until then an undeclared `storage:read` was a runtime `500 X_PERMISSION_UNKNOWN`, which `x verify`'s `policy` step reported |
 | the boot's own disk | still built. In production with no `S3_ENDPOINT`, that is a local disk and still needs `STORAGE_SIGNING_SECRET`. To skip it, export `runtime = { storage }` from `apps/<app>/runtime.ts`. `runRole` reads that file, and it replaces the env-selected disk entirely |
 | `definedStorage()` | the registry or `undefined`, without a throw. It is the question the routes ask |
+
+## Who may read a stored object
+
+`As of 2026-10-08` (27.0.0): **`GET /_storage/:disk/*key` and `GET /media/*key` decide on the
+session, the policy and the key — in that order — and a key no tenant owns is refused unless the
+app shared it.**
+
+| Key | Served to | Otherwise |
+|---|---|---|
+| `org/<id>/…` | a signed-in actor holding `storage:read` whose `orgId` is `<id>` | `X_STORAGE_ORG_MISMATCH` (404) |
+| under a prefix `defineStorage({ shared })` lists **for that disk** | a signed-in actor holding `storage:read` | — |
+| anything else — `db-export/…`, `raw/…`, `dsr/…` | nobody | `X_STORAGE_KEY_UNSHARED` (404) |
+
+Both refusals are decided from the key alone, before a disk is read, so neither says whether an
+object exists. Until 26.x the third row was served to every holder of `storage:read`: "not another
+tenant's" was read as "everybody's".
+
+```ts
+import { defineStorage, localDriver, s3Driver } from '@ultimat3/storage';
+
+defineStorage({
+  disks: {
+    uploads: localDriver({ root: '.storage/uploads' }),
+    evidence: s3Driver({ bucket: 'evidence' }),
+  },
+  shared: { uploads: ['brand/'] }, // whole segments, ending in '/'; never 'org/'
+});
+```
+
+A prefix is refused at boot (`X_CONFIG_INVALID`) when it names an undeclared disk, lacks its
+trailing `/`, would share the whole disk, or sits inside `org/`. `storage.isShared(disk, key)` is
+the question both routes ask. Objects a stranger may fetch belong in `apps/web/site/assets/`
+(content-hashed, no disk at all), not in a shared prefix.
+
+**The `GET` does not read `x-sig` or `x-exp`.** A signed GET URL `localDriver` mints points at
+this route, and is served on the terms above whatever its signature says: it neither opens an
+unshared key nor outlives the session. To serve an object by signature alone (no session), mount
+your own route around `readSignedObject({ url, disk, orgId })`, or return the bytes from an action.
+
+**Test the real route.** `storageRoutes({ storage })` from `@ultimat3/cli` returns the mounted
+`GET` and `PUT` (`servedStorage(storage)` is the registry they read), as `assetRoutes` returns
+`/media`, so an app's contract test drives the route its deploy serves rather than a copy.
+
+**The body is streamed** (`stat` + `stream`), never buffered: an object past the disk's
+`maxGetBytes` is served, and a `Range` reads and drops the bytes before its start rather than
+holding the object. `/media` still buffers — it decodes images.
 
 ## Attachments, quarantine, orphans
 

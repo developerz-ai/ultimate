@@ -16,7 +16,6 @@ import {
   roleDefinitions,
 } from '@ultimat3/policy';
 import { routeEntries } from '@ultimat3/render';
-import { definedStorage } from '@ultimat3/storage';
 import { loadApp } from './app-load';
 import { borrowedFinding, borrowedPermissions, permissionsFile } from './app-permissions-borrowed';
 import { siteFile } from './app-permissions-site';
@@ -25,7 +24,6 @@ import { duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { ungrantedFinding, ungrantedRequirements } from './permission-grants';
-import { STORAGE_READ_PERMISSION } from './runtime-storage';
 
 /** One place a permission is named by a string the framework never checks. */
 export interface PermissionReference {
@@ -37,8 +35,6 @@ export interface PermissionReference {
   readonly grant?: true;
   /** App-root-relative POSIX path of the declaration, or `undefined` when it is not derivable. */
   readonly at: string | undefined;
-  /** Who requires it when no app file does — a route the framework mounts. */
-  readonly requiredBy?: string;
 }
 
 /** What this check needs of a boot — the seam `i18n-registration.ts` already established. */
@@ -76,31 +72,10 @@ export function roleMapFile(root: string): string | undefined {
  * and the running server cannot be looking at two different sets.
  */
 export function requiredReferences(): readonly PermissionReference[] {
-  const routes = routeEntries().flatMap((entry) => {
+  return routeEntries().flatMap((entry) => {
     const permission = entry.config.policy?.permission;
     return permission === undefined ? [] : [{ permission, at: entry.file }];
   });
-  return [...routes, ...storageReferences()];
-}
-
-/**
- * The framework's own `GET /_storage/:disk/*key` and `/media/*key` require `storage:read`
- * (`runtime-storage.ts`), and an app whose permission set lacks it got `500 X_PERMISSION_UNKNOWN`
- * on the first signed URL it minted — at runtime, from a route it never wrote (#524). Asked only
- * of an app that declared its own disks (`defineStorage` in an app module, which is what those
- * routes then serve): one that stores nothing mints no URL, and requiring a permission it has no
- * use for would be a finding with no reader.
- */
-function storageReferences(): readonly PermissionReference[] {
-  return definedStorage() === undefined
-    ? []
-    : [
-        {
-          permission: STORAGE_READ_PERMISSION,
-          at: undefined,
-          requiredBy: 'the mounted GET /_storage/:disk/*key and /media/*key routes',
-        },
-      ];
 }
 
 /**
@@ -147,11 +122,7 @@ export function permissionFindings(root: string): readonly Finding[] {
   );
   const known = knownPermissions();
   return references.map((reference) => {
-    const base = findingFrom(permissionUnknown(reference.permission, known));
-    const finding =
-      reference.requiredBy === undefined
-        ? base
-        : { ...base, cause: `${base.cause} — required by ${reference.requiredBy}` };
+    const finding = findingFrom(permissionUnknown(reference.permission, known));
     return reference.at === undefined ? finding : { ...finding, at: reference.at };
   });
 }

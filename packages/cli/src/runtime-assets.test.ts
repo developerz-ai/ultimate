@@ -72,7 +72,12 @@ function params(pattern: string, pathname: string): Record<string, string> {
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'x-assets-'));
-  storage = defineStorage({ disks: { local: localDriver({ root: join(root, '.storage') }) } });
+  // Shared, because no tenant owns these keys: an un-scoped key is served only from a prefix the
+  // app listed (27.0.0) — `storage-surfaces.test.ts` holds the refusal of one it did not.
+  storage = defineStorage({
+    disks: { local: localDriver({ root: join(root, '.storage') }) },
+    shared: { local: ['covers/'] },
+  });
   await storage.disk().put(SOURCE_KEY, png(1200, 600), { contentType: 'image/png' });
   definePermissions([STORAGE_READ_PERMISSION]);
   defineRoles({ member: { grants: [STORAGE_READ_PERMISSION] } });

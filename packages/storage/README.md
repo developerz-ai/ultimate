@@ -11,12 +11,17 @@ defineStorage({
     media: s3Driver({ bucket: 'media', endpoint: process.env.S3_ENDPOINT, forcePathStyle: true }),
   },
   default: 'uploads', // omit and the first disk wins
+  shared: { media: ['brand/'] }, // the only un-scoped keys /_storage and /media serve (27.0.0)
 });
 
 await disk('media').put(scopedKey(orgId, 'avatars', 'a.png'), bytes, { contentType: 'image/png' });
 ```
 
 Swapping `local` for `s3` in `app.config.ts` changes no call site. `x dev` needs no S3 server.
+
+`shared` is per disk, whole segments ending in `/`, never inside `org/` (`X_CONFIG_INVALID` at
+boot). A key outside every `org/<id>/` prefix and every shared prefix is refused by the served
+read routes with `X_STORAGE_KEY_UNSHARED` (404); `storage.isShared(disk, key)` is the question.
 
 ## Drivers
 
