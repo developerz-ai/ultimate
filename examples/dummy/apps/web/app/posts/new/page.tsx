@@ -86,8 +86,12 @@ export const config = defineRoute({
    * `refresh`/`openModal`/`closeModal` for navigating from code; charged to every
    * `app/` document, as the router is. Of the +4,072 B over 22,508, the router is
    * +4,092; −20 B is main's own drift between that measurement and 26.0.0.
+   * raised 26kb → 27kb (27.2.3). measured: 26,797 B (2026-10-09; `x build --target static`),
+   * against 27,648. why: a route modal closes on a press outside it — `closedby="any"` on the
+   * router's `<dialog>` and the backdrop-click fallback for a browser without it; the router grew
+   * 24,058 → 24,275 B (+217), all of the +217 B over 26,580.
    */
-  budget: { js: '26kb' },
+  budget: { js: '27kb' },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 
