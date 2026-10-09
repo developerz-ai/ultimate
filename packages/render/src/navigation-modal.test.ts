@@ -222,14 +222,25 @@ describe('closing', () => {
     // A browser that knows the attribute closes it on the backdrop by itself.
     expect(dialog.getAttribute('closedby')).toBe('any');
     dialog.getBoundingClientRect = () => ({ left: 100, right: 500, top: 100, bottom: 400 });
-    const press = (x: number, y: number, target: EventTarget = dialog) =>
+    const at = (type: string, x: number, y: number, target: EventTarget) =>
       target.dispatchEvent(
-        Object.assign(new Event('click', { bubbles: true }), { clientX: x, clientY: y }),
+        Object.assign(new Event(type, { bubbles: true }), { clientX: x, clientY: y }),
       );
+    // A press and its release in one place: `pointerdown`, then the `click` it makes.
+    const press = (x: number, y: number, target: EventTarget = dialog) => {
+      at('pointerdown', x, y, target);
+      at('click', x, y, target);
+    };
     // Inside its box (its own padding, or a control in it): nothing closes.
     press(300, 250);
     const inner = dialog.querySelector('a') as FakeElement;
     press(10, 10, inner);
+    // Pressed inside, released on the backdrop (a text selection dragged out): the click
+    // targets the dialog outside its box, and still closes nothing.
+    at('pointerdown', 300, 250, dialog);
+    at('click', 10, 10, dialog);
+    // A click with no press before it (a script's, or a stray one) closes nothing either.
+    at('click', 10, 10, dialog);
     await settle();
     expect(modal(win)).not.toBeNull();
     // Outside its box, on the dialog itself: the backdrop. Back through the entry it pushed.

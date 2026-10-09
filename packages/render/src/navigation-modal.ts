@@ -149,14 +149,25 @@ export function modalController(
   // A press on the backdrop. `closedby="any"` has the browser close the dialog itself (and fire
   // `close`, read above); a browser without it reports the press as a click whose target is the
   // dialog and whose point is outside its box — a click on the dialog's own padding is inside it
-  // and closes nothing, and so does one a keyboard made, which lands on a control. Idempotent with
-  // the browser's own: a close already under way is not started twice.
-  const onClick = (event: Event): void => {
+  // and closes nothing, and so does one a keyboard made, which lands on a control. The press must
+  // START outside too: one that began inside (selecting text, dragging out of a field) and was
+  // released on the backdrop also clicks the dialog, and must not throw the visitor's work away.
+  // Idempotent with the browser's own: a close already under way is not started twice.
+  const outside = (event: Event): boolean => {
     const open = dialog;
-    if (open === undefined || event.target !== open) return;
+    if (open === undefined || event.target !== open) return false;
     const { clientX: x, clientY: y } = event as MouseEvent;
     const box = open.getBoundingClientRect();
-    if (x < box.left || x > box.right || y < box.top || y > box.bottom) close();
+    return x < box.left || x > box.right || y < box.top || y > box.bottom;
+  };
+  let pressedOutside = false;
+  const onPointerDown = (event: Event): void => {
+    pressedOutside = outside(event);
+  };
+  const onClick = (event: Event): void => {
+    const began = pressedOutside;
+    pressedOutside = false;
+    if (began && outside(event)) close();
   };
 
   const present = async (
@@ -181,6 +192,7 @@ export function modalController(
       open.setAttribute('closedby', 'any');
       open.addEventListener('cancel', onCancel);
       open.addEventListener('close', onClose);
+      open.addEventListener('pointerdown', onPointerDown);
       open.addEventListener('click', onClick);
       doc.body.append(open);
     } else {
