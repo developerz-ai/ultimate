@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.4.0 - 2026-10-09
+
 ### Added
 
 Tier 0 — core. Tier 1 — i18n. Tier 2 — auth. Tier 3 — jobs, query. Tier 4 — ui. Tier 5 — cli, testing. Both tracked apps.
@@ -17,6 +21,13 @@ Tier 0 — core. Tier 1 — i18n. Tier 2 — auth. Tier 3 — jobs, query. Tier 
 - **A catalog slice crosses into an island (#710, owner decision 19).** `catalogSubset(t, keys)` (`@ultimat3/i18n`) resolves the named templates, plural variants included, into JSON; `subsetTranslator(subset)` (`@ultimat3/i18n/subset`, an entry that installs no framework catalog) is the island's full translator over it. `uiCatalog(t)` (`@ultimat3/ui`) is the design system's own slice: every `UI_KEYS` template, so `<UiProvider t={subsetTranslator(props.ui)}>` renders no `⟦ui.*⟧`. The reference app's `shared/ui-strings.ts`, `shared/ui-strings-server.ts` and `shared/wire.ts` are deleted.
 - **The generator's directory form is the one layout (#710, owner decision 10).** One primitive per file, in its kind's directory — `<slice>/actions/<name>.ts`, `live/`, `queries/`, `jobs/`, `tasks/` — what `x g` writes. `x verify`'s `boundaries` step now refuses a primitive module beside its directory in an app's surfaces — `actions.ts` with `actions/`, or `live`, `queries`, `jobs`, `tasks` (`X_LAYOUT_SIBLING_MODULE`); a component module beside its folder (`ui.tsx` + `ui/`, what `x g resource` writes) is not one: `./actions` resolves to the file and never the directory, so the two homes disagree silently. Both tracked apps migrated: `examples/dummy`'s 56 primitives and the demo's 11 each in their own file (`api/tasks.ts`'s two tasks moved into their slices' `tasks/`), registered module by module in `api/index.ts`. `docs/architecture/12-generated-app.md`, `wiki/Project-Layout.md` and `wiki/Actions.md` say so. An app that keeps `actions.ts` with no `actions/` beside it is not refused.
 - **`login()` signs in by handle (#710, owner decision 9).** `defineAuth({ handles })` names an app's lookup from a normalised handle (`normaliseHandle`: trim, lowercase) to the auth user's id, and `login(auth, { handle, password })` resolves through it — the same reservation, the same KDF for an unknown handle, the same `loginFailed()`; its failures count against a bucket of its own. A handle login with no `handles` declared is `X_CONFIG_INVALID`. `register(auth, { id })` creates the auth user under an id the app chose, so an app's own `users` row and its auth user link by id. Additive: `{ email, password }` is unchanged. The deployed demo (`dummy/social-media-clone`) adopts it: its hand-written password hashing, session table and token cookie are gone — `credentials` and `sessions` are dropped by a migration that first carries every stored password into `x_users` — and its captcha counter is bounded.
+
+### Commits
+
+- feat(auth): login() by handle; the deployed demo adopts @ultimat3/auth (#710 row 9) (#745)
+- feat(cli): the directory form is the one layout (X_LAYOUT_SIBLING_MODULE); both tracked apps migrated (#710 row 10) (#744)
+- feat(core,query,i18n,ui): a read's Date arrives as a Date; a catalog slice crosses into an island (#710 row 19) (#742)
+- feat(jobs): redisJobDriver() on Bun.redis, held to the conformance suite (#710 row 5) (#739)
 
 ## 27.3.0 - 2026-10-09
 
