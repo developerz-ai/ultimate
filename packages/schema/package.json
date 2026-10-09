@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/schema",
-  "version": "27.2.3",
+  "version": "27.3.0",
   "description": "Ultimate's validation seam: Standard Schema interface, the t namespace, JSON Schema output",
   "license": "MIT",
   "type": "module",
