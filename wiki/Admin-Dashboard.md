@@ -321,25 +321,39 @@ enrolment banner) or needs an island on a page: every other admin route ships no
 
 ```tsx
 // apps/admin/app/admin/credits/page.tsx — the file at the page's own path
-import { type AdminClaimData, claimAdminRoute } from '@ultimat3/admin';
+import { type AdminApp, type AdminClaimData, claimAdminRoute } from '@ultimat3/admin';
 import { island } from '@ultimat3/render';
-import { admin } from '../admin';            // the module that calls defineAdmin()
-import { creditsPage } from '../pages/credits';
+import type { JSX } from 'solid-js';
+
+declare const admin: AdminApp; // `import { admin } from '../admin'` — the defineAdmin() module
+declare function AppShell(props: {
+  readonly titleKey: string | null;
+  readonly children: JSX.Element;
+}): JSX.Element;
+
+interface ShellData {
+  readonly role: string | null;
+  readonly path: string;
+}
 
 // Islands FIRST: the claim's defineRoute drains them, which is how the page hydrates.
 const GrantForm = island({ src: './credits-grant.island.tsx', props: ['orgId'] });
 
-export const config = claimAdminRoute(admin, `${admin.basePath}${creditsPage.path}`, {
+export const config = claimAdminRoute(admin, `${admin.basePath}/credits`, {
   hydrate: 'idle',
   budget: { js: '60kb' },
   // The app's half of the data, read AFTER the screen decided — the refused included (`denied`).
-  load: ({ ctx, url }) => ({ role: ctx.actor.roles[0] ?? null, path: new URL(url).pathname }),
+  load: ({ ctx, url }): ShellData => ({
+    role: ctx.actor.roles?.[0] ?? null,
+    path: new URL(url).pathname,
+  }),
 });
 
-export function Page(props: { readonly data: AdminClaimData<{ role: string | null; path: string }> }) {
+export function Page(props: { readonly data: AdminClaimData<ShellData> }): JSX.Element {
   return (
-    <AppShell nav={props.data.nav} titleKey={props.data.denied ? null : props.data.titleKey}>
+    <AppShell titleKey={props.data.denied ? null : props.data.titleKey}>
       {props.data.body}
+      <GrantForm orgId={props.data.app.path} />
     </AppShell>
   );
 }
