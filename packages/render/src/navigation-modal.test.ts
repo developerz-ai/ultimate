@@ -211,6 +211,48 @@ describe('closing', () => {
     expect(win.location.href).toBe('https://app.test/a');
   });
 
+  test('a press outside closes it: closedby="any", and the click fallback without it', async () => {
+    const { win, calls } = open();
+    click(win, 'to-m');
+    await settle();
+    const dialog = modal(win) as FakeElement & {
+      open: boolean;
+      getBoundingClientRect(): { left: number; right: number; top: number; bottom: number };
+    };
+    // A browser that knows the attribute closes it on the backdrop by itself.
+    expect(dialog.getAttribute('closedby')).toBe('any');
+    dialog.getBoundingClientRect = () => ({ left: 100, right: 500, top: 100, bottom: 400 });
+    const at = (type: string, x: number, y: number, target: EventTarget) =>
+      target.dispatchEvent(
+        Object.assign(new Event(type, { bubbles: true }), { clientX: x, clientY: y }),
+      );
+    // A press and its release in one place: `pointerdown`, then the `click` it makes.
+    const press = (x: number, y: number, target: EventTarget = dialog) => {
+      at('pointerdown', x, y, target);
+      at('click', x, y, target);
+    };
+    // Inside its box (its own padding, or a control in it): nothing closes.
+    press(300, 250);
+    const inner = dialog.querySelector('a') as FakeElement;
+    press(10, 10, inner);
+    // Pressed inside, released on the backdrop (a text selection dragged out): the click
+    // targets the dialog outside its box, and still closes nothing.
+    at('pointerdown', 300, 250, dialog);
+    at('click', 10, 10, dialog);
+    // A click with no press before it (a script's, or a stray one) closes nothing either.
+    at('click', 10, 10, dialog);
+    await settle();
+    expect(modal(win)).not.toBeNull();
+    // Outside its box, on the dialog itself: the backdrop. Back through the entry it pushed.
+    press(10, 10);
+    press(10, 10);
+    await settle();
+    expect(modal(win)).toBeNull();
+    expect(win.index).toBe(0);
+    expect(win.location.href).toBe('https://app.test/a');
+    expect(calls).toEqual(['GET /m soft']);
+  });
+
   test('a link to the page beneath closes it with nothing fetched', async () => {
     const { win, calls } = open();
     click(win, 'to-m');

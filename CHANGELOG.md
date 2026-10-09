@@ -10,9 +10,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
-Tier 2 — http. Tier 3 — realtime. Tier 5 — cli.
+Tier 2 — http. Tier 3 — realtime. Tier 4 — render. Tier 5 — cli.
 
 - **The health answers say which build answers.** `/healthz`, `/readyz` and `/readyz?deep=1` sent no `x-ultimate-build`, while every page does, so a deploy check waiting for the new build had to read a page (#734). They now send it on every listener that serves them: the web port (when the role has a build id), the sync port, and the metrics listener of every role (once the boot announces the id: `MetricsEndpoint.announceBuild`). The bodies are unchanged: a stranger still reads `{ state, ready, role }` (#53).
+- **A route modal closes on a press outside it, as every modal does.** The router's `<dialog data-x-modal>` (`navigation: 'modal'`) closed on Escape, a `method="dialog"` form and Back, but a press on the backdrop did nothing: an app whose own dialogs all light-dismiss had one that did not, and no way to add it, since the router builds the element. It now carries `closedby="any"`, so a browser that knows the attribute closes it there itself, and where one does not, a press that begins and ends on the dialog outside its box closes it the same way (one that began inside, such as a text selection dragged out, closes nothing): Back through the entry the router pushed, else the hash dropped in place. A click on the dialog's own padding is inside its box and closes nothing. `packages/render/src/navigation-modal.ts`, held by `navigation-modal.test.ts`. [Closing](https://github.com/developerz-ai/ultimate/wiki/Client-Navigation#closing).
 
 ## 27.2.2 - 2026-10-09
 
