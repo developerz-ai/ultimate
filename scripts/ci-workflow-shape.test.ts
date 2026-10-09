@@ -72,7 +72,13 @@ describe('unit · ci.yml · the gate in parts is still the gate', () => {
       text(step.uses).startsWith('actions/upload-artifact@'),
     );
     expect(upload?.if).toBe(expr('!cancelled()'));
-    expect(upload?.with?.['name']).toBe(`verify-part-${expr('matrix.part')}`);
+    // Per attempt: a re-run's document must not share a name with the one it replaces.
+    expect(upload?.with?.['name']).toBe(
+      `verify-part-${expr('matrix.part')}-attempt-${expr('github.run_attempt')}`,
+    );
+    expect(upload?.with?.['path']).toBe(
+      `${expr('runner.temp')}/parts/${expr('matrix.part')}.attempt-${expr('github.run_attempt')}.json`,
+    );
     expect(upload?.with?.['if-no-files-found']).toBe('error');
     expect(job('gate').strategy?.['fail-fast']).toBe(false);
   });
@@ -94,7 +100,12 @@ describe('unit · ci.yml · the gate in parts is still the gate', () => {
       { subcommand: 'merge', flags: [] },
       { subcommand: 'merge', flags: ['json'] },
     ]);
-    expect(runsOf(verify)).toContain(`merge ${text(download?.with?.['path'])}/*.json`);
+    // Only each part's newest attempt is merged, never the whole download directory.
+    expect(runsOf(verify)).not.toContain('/*.json');
+    expect(runsOf(verify)).toContain(
+      `scripts/verify-parts.ts ${text(download?.with?.['path'])} --json | jq -r '.data[]'`,
+    );
+    expect(runsOf(verify)).toContain(['merge "$', '{docs[@]}"'].join(''));
   });
 
   test('every flag and subcommand ci.yml hands scripts/verify.ts is one that script accepts', () => {

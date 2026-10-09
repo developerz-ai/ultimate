@@ -87,6 +87,11 @@ export const chromeLaunchFlags = (
   '--no-first-run',
   '--no-default-browser-check',
   '--disable-extensions',
+  // `--disable-extensions` leaves Google Chrome's COMPONENT extensions running, each with a page of
+  // its own: the hangouts one (nkeimhogjdpnpccoofpliimaahmaaome) loads `thunk.js` while the browser
+  // starts, and `x shot`'s browser-wide interception paused it and logged it as an off-list request
+  // of the page under test (CI, 2026-10-09). A test browser runs no page it was not handed.
+  '--disable-component-extensions-with-background-pages',
   'about:blank',
 ];
 
