@@ -49,6 +49,7 @@ x version              # CLI version
 | `x policy` | which clause decided a permission, and why | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
+| `x clean [--dry-run]` | remove what test runs leave behind: migrated test templates, `.x/cache`, stray `.x` folders, stale probe databases | shipped |
 | `x affected` | the workspaces a diff can have broken, transitively | shipped |
 | `x shot <route>` | photograph one route from a real browser, plus a `verdict.json` a picture cannot carry | shipped |
 | `x pr review\|resolve\|reply` | inline review threads — the ones `gh pr view --comments` does not show | shipped |
@@ -1264,6 +1265,14 @@ The type rule is `x verify`'s, not a second one — so `x test contract` runs ex
 `--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failure's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to run at all and a rerun without it selects the whole corpus.
 
 **A selection that mixes serial files with the rest is more than one run, `As of 2026-09`.** `--parallel=N` is the width of the WHOLE `bun test`, so the bare `x test --workers 8` — which selects every type — ran `live` and `e2e` eight at a time beside the unit corpus, over the very files `x verify` runs one at a time. The files are partitioned by type: one pass at the requested width for everything that may share a pool, then one pass at `--parallel=1` per serial type, each reproducible on its own (`x test live --workers 1`). `--json` carries a `passes` array when there was more than one.
+
+## x clean
+
+```bash
+x clean [--dry-run] [--json]
+```
+
+Every test leftover the framework knows of, cleared (`As of 27.3.0`): the migrated test-database templates under `.x/test-db`, the whole `.x/cache`, any `.x` folder below the app root, and — with `TEST_DATABASE_URL` set — every probe database whose run is over. `--dry-run` names them and removes nothing; `--json` carries `data.paths` and `data.databases`. Never touched: `.x/pgdata` (the dev database), `.x/storage`, the build output. The test runner sweeps the same set before every run, keeping the newest two of each cache, so `x clean` is for reclaiming the rest by hand. [Testing](Testing#database-state-and-what-a-run-leaves-behind) has the table.
 
 ## x affected
 

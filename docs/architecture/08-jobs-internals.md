@@ -81,7 +81,7 @@ export interface JobDriver {
 
 `x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 
-Because `steps` is a driver member, step persistence works identically on both. **Postgres is the one durable driver.** There is no NATS or Redis jobs driver: both all-throw stubs were deleted in 25.0.0, and with them the drain body and its `--to` targets. `x jobs drain` is a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`) — running it is `X_NOT_IMPLEMENTED`: there is nowhere to drain to. A driver is chosen by the `setJobDriver(…)` call at boot, nothing else.
+Because `steps` is a driver member, step persistence works identically on both. **Postgres is the default durable driver; `redisJobDriver()` is the second** (`As of 2026-10`): one Lua script per operation over `Bun.redis`, held to `jobDriverConformance` like the other two, with no `introspect`, `backfills` or `leases`. There is no NATS jobs driver: the all-throw stubs were deleted in 25.0.0, and with them the drain body and its `--to` targets. `x jobs drain` is a planned subcommand `As of 2026-10` (`PLANNED_SUBCOMMANDS`, `packages/cli/src/cmd-planned.ts`) — running it is `X_NOT_IMPLEMENTED`: there is nowhere to drain to. A driver is chosen by the `setJobDriver(…)` call at boot, nothing else.
 
 ## The pg claim loop
 

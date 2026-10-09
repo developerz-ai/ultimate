@@ -16,8 +16,7 @@
 import { existsSync } from 'node:fs';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL, renderThrowable, UltimateError } from '@ultimat3/core';
-import { APP_CONFIG_FILE } from './app-root';
+import { APP_CONFIG_FILE, ERROR_DOCS_URL, renderThrowable, UltimateError } from '@ultimat3/core';
 import { judgeCoverage } from './coverage-floor';
 import type { CoverageMap } from './coverage-lcov';
 import { decodeCoverage, mergeCoverage } from './coverage-lcov';

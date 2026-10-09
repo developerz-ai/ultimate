@@ -10,6 +10,7 @@ import { affectedSpec } from './cmd-affected-spec';
 import { authSpec } from './cmd-auth-spec';
 import { buildSpec } from './cmd-build-spec';
 import { ciSpec } from './cmd-ci-spec';
+import { cleanSpec } from './cmd-clean-spec';
 import { dbSpec } from './cmd-db-spec';
 import { deploySpec } from './cmd-deploy-spec';
 import { devSpec } from './cmd-dev-spec';
@@ -89,6 +90,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(secretsSpec, async () => (await import('./cmd-secrets')).secretsCommand),
   lazy(authSpec, async () => (await import('./cmd-auth')).authCommand),
   lazy(vapidSpec, async () => (await import('./cmd-vapid')).vapidCommand),
+  lazy(cleanSpec, async () => (await import('./cmd-clean')).cleanCommand),
   lazy(manifestSpec, async () => (await import('./cmd-manifest')).manifestCommand),
   lazy(routesSpec, async () => (await import('./cmd-routes')).routesCommand),
   lazy(actionsSpec, async () => (await import('./cmd-registries')).actionsCommand),

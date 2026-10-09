@@ -3,7 +3,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp, no recursive remove and no synchronous write for fixture setup.
-import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { compileStylesheet } from './css-modules';
 import {
   cachedSassCompile,
+  defaultSassCacheDir,
   type SassOutput,
   sassCompilations,
   setSassCacheDir,
@@ -169,5 +170,18 @@ describe('unit · the Sass compile cache · assets', () => {
     } finally {
       setSassCacheDir(undefined);
     }
+  });
+});
+
+// #738: `.x/cache` directories appeared inside source folders — the default cache resolved `.x`
+// against the process's cwd, and a `bun test` started below the app root put one beside the code.
+describe('the default cache directory', () => {
+  test('is under the APP ROOT, whichever folder the process started in', () => {
+    const app = join(dir, 'app-root');
+    const nested = join(app, 'apps', 'web', 'app', 'casos');
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(app, 'app.config.ts'), 'export default {};\n');
+    expect(defaultSassCacheDir(nested)).toBe(join(app, '.x', 'cache', 'sass'));
+    expect(defaultSassCacheDir(app)).toBe(join(app, '.x', 'cache', 'sass'));
   });
 });

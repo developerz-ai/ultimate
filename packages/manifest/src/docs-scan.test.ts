@@ -1,14 +1,25 @@
 // The scanner's contract: it reads what is installed and invents nothing. Every failure case
 // here is a way a scan could hand an agent a doc entry that does not correspond to shipped code.
 
-import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanInstalledDocs, scanPackageDocs } from './docs-scan';
 
+/** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
+const madeDirs: string[] = [];
+afterAll(() => {
+  for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+/** Records a directory `mkdtemp` made, for the removal above. */
+const made = (dir: string): string => {
+  madeDirs.push(dir);
+  return dir;
+};
+
 function fixture(files: Readonly<Record<string, string>>): string {
-  const dir = mkdtempSync(join(tmpdir(), 'ultimate-docs-'));
+  const dir = made(mkdtempSync(join(tmpdir(), 'ultimate-docs-')));
   for (const [path, text] of Object.entries(files)) {
     const full = join(dir, path);
     mkdirSync(join(full, '..'), { recursive: true });
@@ -204,7 +215,7 @@ describe('unit · scanInstalledDocs', () => {
   });
 
   test('every package under the scope is scanned', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ultimate-scope-'));
+    const dir = made(mkdtempSync(join(tmpdir(), 'ultimate-scope-')));
     for (const name of ['one', 'two']) {
       mkdirSync(join(dir, name, 'src'), { recursive: true });
       writeFileSync(join(dir, name, 'package.json'), `{"name":"@ultimat3/${name}"}`);
@@ -223,7 +234,7 @@ describe('unit · scanInstalledDocs', () => {
   // directory took down the scan for every OTHER package — the docs command answered nothing,
   // for a reason that had nothing to do with the question.
   test('one unparseable package.json costs that package, not the scan', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'ultimate-scope-'));
+    const dir = made(mkdtempSync(join(tmpdir(), 'ultimate-scope-')));
     mkdirSync(join(dir, 'good', 'src'), { recursive: true });
     writeFileSync(join(dir, 'good', 'package.json'), '{"name":"@ultimat3/good"}');
     writeFileSync(join(dir, 'good', 'src/index.ts'), "export { s } from './m';");

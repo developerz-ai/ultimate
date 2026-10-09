@@ -5,9 +5,14 @@
 // why: Bun exposes no path API — the two files this module reads are joined to the app root.
 import { join } from 'node:path';
 import type { EnvSchema, EnvVarDecl } from '@ultimat3/core';
-import { ENV_EXAMPLE_PATH, ERROR_DOCS_URL, parseEnvKeys, pushWired } from '@ultimat3/core';
+import {
+  APP_CONFIG_FILE,
+  ENV_EXAMPLE_PATH,
+  ERROR_DOCS_URL,
+  parseEnvKeys,
+  pushWired,
+} from '@ultimat3/core';
 import { appConfigExport, loadAppConfig } from './app-config-load';
-import { APP_CONFIG_FILE } from './app-root';
 import type { AppSecretFacts } from './framework-env';
 import { appEnvExample, configOwes, FRAMEWORK_SECRETS } from './framework-env';
 import type { Finding } from './output';

@@ -6,11 +6,10 @@
 import { existsSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; Bun.file takes a path already joined.
 import { join } from 'node:path';
-import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { APP_CONFIG_FILE, ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Manifest } from '@ultimat3/manifest';
 import { assertNoDrift, MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { OPENAPI_FILE, openApiStaleness } from './app-openapi';
-import { APP_CONFIG_FILE } from './app-root';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 
