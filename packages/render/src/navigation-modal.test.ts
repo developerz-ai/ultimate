@@ -211,6 +211,37 @@ describe('closing', () => {
     expect(win.location.href).toBe('https://app.test/a');
   });
 
+  test('a press outside closes it: closedby="any", and the click fallback without it', async () => {
+    const { win, calls } = open();
+    click(win, 'to-m');
+    await settle();
+    const dialog = modal(win) as FakeElement & {
+      open: boolean;
+      getBoundingClientRect(): { left: number; right: number; top: number; bottom: number };
+    };
+    // A browser that knows the attribute closes it on the backdrop by itself.
+    expect(dialog.getAttribute('closedby')).toBe('any');
+    dialog.getBoundingClientRect = () => ({ left: 100, right: 500, top: 100, bottom: 400 });
+    const press = (x: number, y: number, target: EventTarget = dialog) =>
+      target.dispatchEvent(
+        Object.assign(new Event('click', { bubbles: true }), { clientX: x, clientY: y }),
+      );
+    // Inside its box (its own padding, or a control in it): nothing closes.
+    press(300, 250);
+    const inner = dialog.querySelector('a') as FakeElement;
+    press(10, 10, inner);
+    await settle();
+    expect(modal(win)).not.toBeNull();
+    // Outside its box, on the dialog itself: the backdrop. Back through the entry it pushed.
+    press(10, 10);
+    press(10, 10);
+    await settle();
+    expect(modal(win)).toBeNull();
+    expect(win.index).toBe(0);
+    expect(win.location.href).toBe('https://app.test/a');
+    expect(calls).toEqual(['GET /m soft']);
+  });
+
   test('a link to the page beneath closes it with nothing fetched', async () => {
     const { win, calls } = open();
     click(win, 'to-m');

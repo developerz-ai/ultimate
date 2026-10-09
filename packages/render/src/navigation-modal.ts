@@ -146,6 +146,18 @@ export function modalController(
   const onClose = (event: Event): void => {
     if (event.target === dialog && dialog !== undefined && !dialog.open) close();
   };
+  // A press on the backdrop. `closedby="any"` has the browser close the dialog itself (and fire
+  // `close`, read above); a browser without it reports the press as a click whose target is the
+  // dialog and whose point is outside its box — a click on the dialog's own padding is inside it
+  // and closes nothing, and so does one a keyboard made, which lands on a control. Idempotent with
+  // the browser's own: a close already under way is not started twice.
+  const onClick = (event: Event): void => {
+    const open = dialog;
+    if (open === undefined || event.target !== open) return;
+    const { clientX: x, clientY: y } = event as MouseEvent;
+    const box = open.getBoundingClientRect();
+    if (x < box.left || x > box.right || y < box.top || y > box.bottom) close();
+  };
 
   const present = async (
     next: Document,
@@ -165,8 +177,11 @@ export function modalController(
       title = doc.title;
       open = doc.createElement('dialog');
       open.setAttribute(NAVIGATION_MODAL_ATTRIBUTE, '');
+      // Light dismiss: Escape AND a press outside close it, as every modal does (`Dialog` included).
+      open.setAttribute('closedby', 'any');
       open.addEventListener('cancel', onCancel);
       open.addEventListener('close', onClose);
+      open.addEventListener('click', onClick);
       doc.body.append(open);
     } else {
       // One modal at a time: the next address replaces this one's content, in the same dialog.

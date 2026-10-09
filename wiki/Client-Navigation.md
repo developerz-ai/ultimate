@@ -316,7 +316,7 @@ answer — and shows its `<main>`. A second shape of one URL would need `Vary`, 
 
 | Gesture | Result |
 |---|---|
-| Escape, a `<form method="dialog">`, any way the browser closes the dialog | **Back**, when the entry is the one the router pushed; otherwise (a cold-loaded address — Back would leave the app) the hash is dropped in place |
+| Escape, a press outside it (the dialog carries `closedby="any"`; a browser without it gets the same from the router's click on the backdrop), a `<form method="dialog">`, any way the browser closes the dialog | **Back**, when the entry is the one the router pushed; otherwise (a cold-loaded address — Back would leave the app) the hash is dropped in place |
 | the browser's Back | the entry beneath has no modal: closed |
 | a link to the page beneath (the page's own **Cancel**, which is also its no-JS way back) | as Escape — nothing is fetched |
 | a link anywhere else | that page swaps in, in place of the modal's entry |
