@@ -208,30 +208,36 @@ jobs:
         run: |
           parts="$RUNNER_TEMP/parts"
           mkdir -p "$parts"
+          doc="$parts/${PART}.attempt-${GITHUB_RUN_ATTEMPT}.json"
           status=0
           bun run scripts/verify.ts --only "$ONLY" ${SHARD:+--shard "$SHARD"} --json \
-            > "$parts/${PART}.json" || status=$?
-          echo "the part's document: $(wc -c < "$parts/${PART}.json") bytes, uploaded as verify-part-${PART}"
+            > "$doc" || status=$?
+          echo "the part's document: $(wc -c < "$doc") bytes, uploaded as verify-part-${PART}-attempt-${GITHUB_RUN_ATTEMPT}"
           table="$(jq -r '
             (.steps // [])[]
             | "\(if .skipped then "-" elif .ok then "✓" else "✗" end) \(.name)  \(.durationMs)ms\(if .tests then "  \(.tests.ran) ran, \(.tests.skipped) skipped\(if .tests.errors then ", \(.tests.errors) errored" else "" end)" else "" end)",
               (.findings[]? | "    \(.code)\(if .at then " (\(.at))" else "" end)\n      cause: \(.cause)\n      fix:   \(.fix)"),
               (select(.ok | not) | .output // empty | split("\n") | map(select(test("^\\s*\\(fail\\)"))) | unique | select(length > 0) | "    failed tests:\n\(map("      " + ltrimstr(" ")) | join("\n"))"),
               (select(.ok | not) | .output // empty | "    output (last lines):\n\(split("\n")[-40:] | map("      " + .) | join("\n"))")
-          ' "$parts/${PART}.json" || true)"
+          ' "$doc" || true)"
           echo "$table"
           echo "### gate ($PART)" >> "$GITHUB_STEP_SUMMARY"
-          bun run scripts/verify-summary.ts "$parts/${PART}.json" \
-            "{shown} of {total} finding(s) shown. Every finding and each red step's output: this job's log, and the verify-part-${PART} artifact." \
+          bun run scripts/verify-summary.ts "$doc" \
+            "{shown} of {total} finding(s) shown. Every finding and each red step's output: this job's log, and the verify-part-${PART}-attempt-${GITHUB_RUN_ATTEMPT} artifact." \
             >> "$GITHUB_STEP_SUMMARY" || echo "the step summary could not be rendered; the part's verdict is the log above"
           exit "$status"
       # Uploaded when the part is RED too: the verdict is the merge's, and a part that failed
       # without a document would read there as a step nobody ran rather than a step that failed.
+      #
+      # Named by the run ATTEMPT, artifact and file both: a "re-run failed jobs" keeps the earlier
+      # attempt's artifacts in the run, and under one name `verify` downloaded the RED document the
+      # rerun replaced (run 37918316075, attempt 2) — a fixed run stayed red until the artifact was
+      # deleted by hand. `scripts/verify-parts.ts` merges each part's newest attempt.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: ${{ !cancelled() }}
         with:
-          name: verify-part-${{ matrix.part }}
-          path: ${{ runner.temp }}/parts/${{ matrix.part }}.json
+          name: verify-part-${{ matrix.part }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/parts/${{ matrix.part }}.attempt-${{ github.run_attempt }}.json
           if-no-files-found: error
           retention-days: 7
 
@@ -277,10 +283,14 @@ jobs:
       - name: x verify merge — every step, from exactly one part, green
         run: |
           status=0
-          bun run scripts/verify.ts merge ${{ runner.temp }}/parts/*.json > "$RUNNER_TEMP/verdict.txt" 2>&1 \
+          # Each part's newest attempt only: an earlier attempt's document of a re-run part is
+          # still in the download, and merged beside its replacement it is the old verdict.
+          bun run scripts/verify-parts.ts ${{ runner.temp }}/parts
+          mapfile -t docs < <(bun run scripts/verify-parts.ts ${{ runner.temp }}/parts --json | jq -r '.data[]')
+          bun run scripts/verify.ts merge "${docs[@]}" > "$RUNNER_TEMP/verdict.txt" 2>&1 \
             || status=$?
           cat "$RUNNER_TEMP/verdict.txt"
-          bun run scripts/verify.ts merge ${{ runner.temp }}/parts/*.json --json > "$RUNNER_TEMP/verdict.json" \
+          bun run scripts/verify.ts merge "${docs[@]}" --json > "$RUNNER_TEMP/verdict.json" \
             || true
           echo "### verify — the verdict" >> "$GITHUB_STEP_SUMMARY"
           bun run scripts/verify-summary.ts "$RUNNER_TEMP/verdict.json" \

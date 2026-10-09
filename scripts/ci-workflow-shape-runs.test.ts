@@ -59,11 +59,15 @@ describe('unit · ci.yml · the verdict`s summary page', () => {
       expect(writes.length).toBe(2);
       expect(writes[0]).toMatch(/^\s*echo "### [^"]*" >> "\$GITHUB_STEP_SUMMARY"$/);
       expect(writes[1]).toMatch(
-        /^\s*bun run scripts\/verify-summary\.ts "[^"]+\.json" "[^"]*\{shown\}[^"]*\{total\}[^"]*" >> "\$GITHUB_STEP_SUMMARY" \|\| echo "[^"]*"$/,
+        /^\s*bun run scripts\/verify-summary\.ts "(?:[^"]+\.json|\$doc)" "[^"]*\{shown\}[^"]*\{total\}[^"]*" >> "\$GITHUB_STEP_SUMMARY" \|\| echo "[^"]*"$/,
       );
     }
-    // The part's own document, spelled without a `${` the linter would read as a template.
-    expect(summaryWrites('gate')[1]).toContain(['"$parts/$', '{PART}.json"'].join(''));
+    // The part's own document, named by attempt (spelled without a `${` the linter would read as
+    // a template).
+    expect(summaryWrites('gate')[1]).toContain('verify-summary.ts "$doc"');
+    expect(runsOf('gate')).toContain(
+      ['doc="$parts/$', '{PART}.attempt-$', '{GITHUB_RUN_ATTEMPT}.json"'].join(''),
+    );
   });
 
   // GitHub refuses a step summary over 1024 KiB, and the whole human verdict of a red run is
@@ -72,9 +76,7 @@ describe('unit · ci.yml · the verdict`s summary page', () => {
     const run = runsOf('verify');
     const summaryLines = run.split('\n').filter((line) => line.includes('GITHUB_STEP_SUMMARY'));
     expect(summaryLines.join('\n')).not.toContain('verdict.txt');
-    expect(run).toContain(
-      `merge ${expr('runner.temp')}/parts/*.json --json > "$RUNNER_TEMP/verdict.json"`,
-    );
+    expect(run).toContain(['merge "$', '{docs[@]}" --json > "$RUNNER_TEMP/verdict.json"'].join(''));
     expect(scriptCalls(run, 'scripts/verify-summary.ts')).toEqual([{ flags: [] }]);
     expect(run).toMatch(
       /scripts\/verify-summary\.ts "\$RUNNER_TEMP\/verdict\.json" \\\n\s+"[^"]*\{shown\}[^"]*\{total\}[^"]*"/,

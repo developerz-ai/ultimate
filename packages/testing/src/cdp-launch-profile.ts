@@ -41,10 +41,10 @@ export interface ThrowawayProfile {
   singletonDir(): string | undefined;
   /**
    * Remove the profile — and `singleton`, when it holds Chrome's singleton files and nothing else —
-   * and answer once neither has come back for `PROFILE_SETTLE_MS`, or at `deadlineMs`. Never throws:
-   * a directory that will not go is litter, never the close's verdict.
+   * and answer once neither has come back for `settleMs` (`PROFILE_SETTLE_MS`), or at `deadlineMs`.
+   * Never throws: a directory that will not go is litter, never the close's verdict.
    */
-  remove(singleton: string | undefined, deadlineMs: number): Promise<void>;
+  remove(singleton: string | undefined, deadlineMs: number, settleMs?: number): Promise<void>;
 }
 
 const quietly = (work: () => void): void => {
@@ -86,7 +86,7 @@ export function throwawayProfile(root: string = tmpdir()): ThrowawayProfile {
         return undefined;
       }
     },
-    async remove(singleton, deadlineMs) {
+    async remove(singleton, deadlineMs, settleMs = PROFILE_SETTLE_MS) {
       const until = performance.now() + deadlineMs;
       const owned = singleton !== undefined && isSingletonDir(singleton) ? singleton : undefined;
       const present = (): boolean => existsSync(path) || (owned !== undefined && existsSync(owned));
@@ -94,11 +94,11 @@ export function throwawayProfile(root: string = tmpdir()): ThrowawayProfile {
         quietly(() => rmSync(path, { recursive: true, force: true }));
         if (owned !== undefined) removeSingleton(owned);
         if (present()) {
-          await Bun.sleep(PROFILE_SETTLE_MS / 5);
+          await Bun.sleep(settleMs / 5);
           continue;
         }
         // Gone NOW is not gone: the look after the settle is what a late writer fails.
-        await Bun.sleep(PROFILE_SETTLE_MS);
+        await Bun.sleep(settleMs);
         if (!present()) return;
       } while (performance.now() < until);
     },

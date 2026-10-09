@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "687d4607d5bf64d4d27b15ed97d81f2c9eabde11379b9b7d20de3ceba99f25f4",
+  "buildId": "65a0813c3cc6a15521e7e31008b9707247810bbefeab00310dc7412b4115ad1c",
   "tiers": {
     "0": [
       "core",
@@ -4598,6 +4598,11 @@
       "code": "X_VERIFY_MERGE_INPUT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERIFY_PART_UNNAMED",
+      "owner": "scripts",
+      "at": "scripts/verify-parts.ts"
     },
     {
       "code": "X_VERIFY_SHARD_INVALID",

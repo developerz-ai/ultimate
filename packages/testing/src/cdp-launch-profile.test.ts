@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 // why: joining the script and its profile-log paths.
 import { join } from 'node:path';
 import { launchChrome } from './cdp-launch';
+import { throwawayProfile } from './cdp-launch-profile';
 
 /** Record `--user-data-dir`, answer the first call, then run `rest`. */
 const script = (rest: string): string => `#!/bin/bash
@@ -74,24 +75,36 @@ describe.skipIf(WINDOWS)('launchChrome — the profile outlives no close', () =>
     });
   }, 20_000);
 
-  test('a writer OUTSIDE the process group that re-creates the profile does not outlast the close', async () => {
-    // Its own process group (`set -m`), so the group reap cannot see it — Chrome's crashpad
-    // handler is one — and it re-creates the profile each time it goes, three times. A close that
-    // removes once after the reap leaves the third.
-    const late = `set -m
-( for n in 1 2 3; do
-    for _ in $(seq 400); do [ -d "$PROFILE" ] || break; sleep 0.005; done
-    mkdir -p "$PROFILE/Default/Cache/Cache_Data"
-  done ) &
-set +m`;
-    await withFake(late, async (fake) => {
-      const launched = await launchChrome({ executable: fake, timeoutMs: 5_000 });
-      const profile = await profileOf(fake);
-      await launched.close();
-      // Long past the writer's 5 ms poll: a profile it re-created after the close has reappeared.
-      await Bun.sleep(250);
-      expect(existsSync(profile)).toBe(false);
-    });
+  // The profile's own removal, not a launch: the writer is outside the browser's process group, so
+  // the reap never sees it, and what outlasts it is `remove` alone. Driven through `remove` with a
+  // settle wider than the writer's deliberate 100 ms: through `close()` the settle is
+  // PROFILE_SETTLE_MS (50 ms), and a 5 ms poller forking `sleep` and `mkdir` on a loaded 4-CPU
+  // runner reacted slower than that — the profile came back after the close (CI, 2026-10-09).
+  test('a writer OUTSIDE the process group that re-creates the profile does not outlast the remove', async () => {
+    const profile = throwawayProfile();
+    // Re-creates the profile each time it goes, three times, each 100 ms after it saw it gone. A
+    // remove that looks once after the first removal leaves the third.
+    const writer = Bun.spawn(
+      [
+        'bash',
+        '-c',
+        `for n in 1 2 3; do
+           for _ in $(seq 2000); do [ -d "$1" ] || break; sleep 0.005; done
+           sleep 0.1; mkdir -p "$1/Default/Cache/Cache_Data"
+         done`,
+        'writer',
+        profile.path,
+      ],
+      { stdout: 'ignore', stderr: 'ignore' },
+    );
+    try {
+      await profile.remove(undefined, 15_000, 1_000);
+      expect(await writer.exited).toBe(0);
+      expect(existsSync(profile.path)).toBe(false);
+    } finally {
+      writer.kill('SIGKILL');
+      await rm(profile.path, { recursive: true, force: true });
+    }
   }, 20_000);
 
   test("Chrome's singleton socket directory beside the profile goes with it", async () => {

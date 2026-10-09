@@ -89,6 +89,7 @@ hand-edited; `--check` refuses drift (`X_GUARDS_DOC_DRIFT`). A guard is a runnab
 | `bun run scripts/to-throw-returns.ts` | Enforce, as a gate step, that `expect(fn).toThrow(...)` is given a function that THROWS. | `X_TEST_THROW_NOT_THROWN` |
 | `bun run scripts/trust-publishers.ts` | Attaches the OIDC trusted publisher to every published package, and verifies it stayed attached. | `X_TRUST_2FA_REQUIRED` `X_TRUST_ENVIRONMENT_EMPTY` `X_TRUST_NPM_TOO_OLD` `X_TRUST_PUBLISHER_FAILED` `X_TRUST_PUBLISHER_MISSING` |
 | `bun run url-pathname` | Enforce that no source reads `.pathname` off a URL built from `import.meta.url` as a filesystem path. | `X_URL_PATHNAME_AS_PATH` |
+| `bun run scripts/verify-parts.ts` | The gate-part documents the `verify` CI job merges: each part's newest attempt, from the directory `download-artifact` filled. | `X_CLI_BAD_FLAG` `X_VERIFY_PART_UNNAMED` |
 | `bun run verify` | The gate for the framework repo itself: `x verify`, run at the repo root. | `X_CONFIG_IMPORT_OUTSIDE_LOADER` `X_MANIFEST_DRIFT` `X_VERIFY_FAILED` |
 | `bun run scripts/version-stamps.ts` | Enforce, as a gate step, the two version facts this repo states in prose and checked nowhere. | `X_LOCKFILE_STALE` `X_VERSION_LOCKSTEP_BROKEN` `X_VERSION_STAMP_DUPLICATE` `X_VERSION_STAMP_PIN_STALE` `X_VERSION_STAMP_STALE` `X_VERSION_STAMP_UNSCANNED` |
 | `bun run wiki-anchors` | Enforce, as a gate rule, that every `Page#anchor` and `#anchor` link on a `wiki/` page lands on a heading of its target page. | `X_WIKI_ANCHOR_DEAD` `X_WIKI_ANCHOR_UNSCANNED` |

@@ -21,10 +21,14 @@ const HELM = Bun.which('helm');
  * first render took over Bun's default 5 s while the child itself was allowed 30 s, so the TEST
  * died first (CI, 2026-10-07). Each test renders once; the scaffold's chart is written once.
  *
- * The child is killed with SIGKILL, never the default SIGTERM: `helm template` runs helm's install
- * path, which traps SIGTERM to cancel a context and keeps running, so a wedged render outlived its
- * 30 s budget — and `spawnSync` holds the event loop, so the test's own timeout never fired either.
- * The `unit` step's 480 s deadline was the first thing that could stop it (CI, 2026-10-08).
+ * Awaited, never `Bun.spawnSync`. Inside a `bun test --parallel` worker the synchronous wait missed
+ * its child's exit: run 37882529833 got exit 0 and EMPTY stdout back at exactly 30000 ms — helm had
+ * rendered and exited, and only the timeout woke the wait — and five runs on 2026-10-09 never woke
+ * at all, so the worker sat until the `unit` step's 480 s deadline killed it, with no helm left
+ * running to kill. A synchronous wait also holds the event loop, so this file's own timeout could
+ * not fire either. Awaited, the child keeps its own deadline (SIGKILL, so nothing it traps can
+ * stretch it), and the test's timeout stays live behind it. Nothing here touches the network: the
+ * charts have no dependencies and `--kube-version` stands in for a cluster.
  */
 const HELM_RENDER_MS = 30_000;
 const TEST_MS = 2 * HELM_RENDER_MS + 5_000;
@@ -64,8 +68,8 @@ function scaffoldChart(): Promise<string> {
 }
 
 /** Each Deployment by role, `<release>-<chart>-<role>` cut down to the role. */
-function render(chart: string, extra: readonly string[]): Map<string, Deployment> {
-  const result = Bun.spawnSync(
+async function render(chart: string, extra: readonly string[]): Promise<Map<string, Deployment>> {
+  const child = Bun.spawn(
     [
       HELM ?? 'helm',
       'template',
@@ -79,15 +83,30 @@ function render(chart: string, extra: readonly string[]): Map<string, Deployment
       'image.repository=registry.example.com/app',
       ...extra,
     ],
-    { stdout: 'pipe', stderr: 'pipe', timeout: HELM_RENDER_MS, killSignal: 'SIGKILL' },
+    {
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: HELM_RENDER_MS,
+      killSignal: 'SIGKILL',
+    },
   );
-  if (result.exitCode !== 0) {
-    const how = result.exitedDueToTimeout
-      ? `killed after ${HELM_RENDER_MS} ms`
-      : (result.signalCode ?? `exit ${result.exitCode}`);
-    return expect.unreachable(`helm (${how}): ${result.stderr.toString()}`);
+  const stdout = new Response(child.stdout).text();
+  const stderr = new Response(child.stderr).text();
+  // The exit, not the pipes' EOF, ends the wait: a pipe a stray grandchild still holds open would
+  // keep the deadline from ever being reported.
+  const code = await child.exited;
+  if (code !== 0) {
+    const how =
+      child.signalCode === 'SIGKILL'
+        ? `killed after its ${HELM_RENDER_MS} ms deadline`
+        : (child.signalCode ?? `exit ${code}`);
+    const said = await Promise.race([stderr, Bun.sleep(1_000).then(() => '(stderr still open)')]);
+    return expect.unreachable(`helm template ${chart} (${how}): ${said}`);
   }
-  const parsed: unknown = Bun.YAML.parse(result.stdout.toString());
+  const parsed: unknown = Bun.YAML.parse(await stdout);
+  if (parsed === null)
+    return expect.unreachable(`helm template ${chart} printed nothing: ${await stderr}`);
   const docs = (Array.isArray(parsed) ? parsed : [parsed]) as Deployment[];
   return new Map(docs.map((doc) => [doc.metadata.name.split('-').at(-1) ?? '', doc]));
 }
@@ -101,7 +120,7 @@ describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both char
       `${which}: off by default — no retire preStop, the drain-only grace`,
       async () => {
         const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
-        const worker = render(chart, []).get('worker');
+        const worker = (await render(chart, [])).get('worker');
         expect(preStopOf(worker)).toBeUndefined();
         expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(35);
       },
@@ -112,7 +131,7 @@ describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both char
       `${which}: set, the worker sends PID 1 the retire signal and waits it out`,
       async () => {
         const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
-        const rendered = render(chart, ['--set', 'roles.worker.retireSeconds=7200']);
+        const rendered = await render(chart, ['--set', 'roles.worker.retireSeconds=7200']);
         const worker = rendered.get('worker');
         const command = preStopOf(worker);
         expect(command?.[0]).toBe('bun');
@@ -130,7 +149,7 @@ describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both char
       `${which}: drain.workerDeadlineSeconds sizes the worker's grace alone`,
       async () => {
         const chart = which === 'framework' ? FRAMEWORK : await scaffoldChart();
-        const rendered = render(chart, [
+        const rendered = await render(chart, [
           '--set',
           'drain.workerDeadlineSeconds=7500',
           '--set',
