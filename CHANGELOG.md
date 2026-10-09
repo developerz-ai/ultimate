@@ -15,11 +15,19 @@ Tier 0 — core. Tier 1 — i18n. Tier 3 — query. Tier 4 — ui.
 - **A read's `Date` reaches the typed client as a `Date` (#710, owner decision 19).** A query declares no output schema, so a column typed `Date` arrived as the ISO string `JSON.stringify` wrote, and every app converted at its `load` (the reference app's `shared/wire.ts`). The query route now names every `Date` of its answer in `x-ultimate-dates` — by path, one entry per column of a list, row by row only where the same column also holds text — and `clientTransport` revives exactly those (`wire-dates.ts`: `DATES_HEADER`, `wireDatePaths`, `reviveWireDates`). The body and the OpenAPI document are unchanged; a client that ignores the header reads what it read before. Measured: `clientTransport` +702 B minified, `@ultimat3/query/client` +763 B.
 - **A catalog slice crosses into an island (#710, owner decision 19).** `catalogSubset(t, keys)` (`@ultimat3/i18n`) resolves the named templates, plural variants included, into JSON; `subsetTranslator(subset)` (`@ultimat3/i18n/subset`, an entry that installs no framework catalog) is the island's full translator over it. `uiCatalog(t)` (`@ultimat3/ui`) is the design system's own slice: every `UI_KEYS` template, so `<UiProvider t={subsetTranslator(props.ui)}>` renders no `⟦ui.*⟧`. The reference app's `shared/ui-strings.ts`, `shared/ui-strings-server.ts` and `shared/wire.ts` are deleted.
 
+## 27.2.3 - 2026-10-09
+
 ### Fixed
 
-Tier 2 — http. Tier 3 — realtime. Tier 5 — cli.
+Tier 2 — http. Tier 3 — realtime. Tier 4 — render. Tier 5 — cli.
 
 - **The health answers say which build answers.** `/healthz`, `/readyz` and `/readyz?deep=1` sent no `x-ultimate-build`, while every page does, so a deploy check waiting for the new build had to read a page (#734). They now send it on every listener that serves them: the web port (when the role has a build id), the sync port, and the metrics listener of every role (once the boot announces the id: `MetricsEndpoint.announceBuild`). The bodies are unchanged: a stranger still reads `{ state, ready, role }` (#53).
+- **A route modal closes on a press outside it, as every modal does.** The router's `<dialog data-x-modal>` (`navigation: 'modal'`) closed on Escape, a `method="dialog"` form and Back, but a press on the backdrop did nothing: an app whose own dialogs all light-dismiss had one that did not, and no way to add it, since the router builds the element. It now carries `closedby="any"`, so a browser that knows the attribute closes it there itself, and where one does not, a press that begins and ends on the dialog outside its box closes it the same way (one that began inside, such as a text selection dragged out, closes nothing): Back through the entry the router pushed, else the hash dropped in place. A click on the dialog's own padding is inside its box and closes nothing. `packages/render/src/navigation-modal.ts`, held by `navigation-modal.test.ts`. [Closing](https://github.com/developerz-ai/ultimate/wiki/Client-Navigation#closing).
+
+### Commits
+
+- fix(render): a route modal closes on a press outside it (#737)
+- fix(http,realtime,cli): health answers send x-ultimate-build on every listener (#734) (#735)
 
 ## 27.2.2 - 2026-10-09
 
