@@ -36,9 +36,12 @@ const BASE = {
     reload: 'Reload',
   },
   ui: {
-    'ui.empty': 'Nothing here yet',
-    'ui.error.title': 'Something went wrong',
-    'ui.retry': 'Try again',
+    locale: 'en',
+    catalog: {
+      'ui.empty': 'Nothing here yet',
+      'ui.error.title': 'Something went wrong',
+      'ui.retry': 'Try again',
+    },
   },
 } satisfies FeedIslandProps;
 
@@ -79,9 +82,12 @@ export const feedStates = defineIslandStates({
           reload: 'Reîncarcă pagina',
         },
         ui: {
-          'ui.empty': 'Nu există încă nimic aici',
-          'ui.error.title': 'Ceva nu a funcționat',
-          'ui.retry': 'Încearcă din nou',
+          locale: 'ro',
+          catalog: {
+            'ui.empty': 'Nu există încă nimic aici',
+            'ui.error.title': 'Ceva nu a funcționat',
+            'ui.retry': 'Încearcă din nou',
+          },
         },
       },
     },

@@ -17,12 +17,11 @@
 import { useT } from '@postly/i18n';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
-import { Skeleton, Text } from '@ultimat3/ui';
+import { Skeleton, Text, uiCatalog } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { memberQueries } from '../../shared/client';
 import { pluralFormsOf } from '../../shared/plural-forms';
-import { uiStringsFor } from '../../shared/ui-strings-server';
 import { Layout, updateBannerIsland } from '../layout';
 import { useViewer } from '../viewer-context';
 import styles from './page.module.scss';
@@ -109,8 +108,14 @@ export const config = defineRoute({
    * `refresh`/`openModal`/`closeModal` for navigating from code; charged to every
    * `app/` document, as the router is. Of the +4,088 B over 155,900, the router is
    * +4,092; −4 B is main's own drift between that measurement and 26.0.0.
+   * raised 157kb → 158.5kb (#710, owner decision 19). measured: 161,762 B (2026-10-09;
+   * `x build --target static`), against 162,304; main measured 160,066 the same way. why: +699 B
+   * page boot — `reviveWireDates`, so a read's `Date` reaches every island as a `Date` (the app's
+   * `shared/wire.ts` is deleted); +997 B feed island — `subsetTranslator` over the `ui.*` strings
+   * the server resolved (`uiCatalog`), interpolation and the CLDR plural pick included, where the
+   * app's `shared/ui-strings.ts` looked a key up and nothing else.
    */
-  budget: { js: '157kb' },
+  budget: { js: '158.5kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
@@ -153,7 +158,7 @@ export function Page(props: { readonly data: FeedActivity }): JSX.Element {
           update: t('errors.updateAvailable'),
           reload: t('errors.updateAction'),
         }}
-        ui={uiStringsFor(t)}
+        ui={uiCatalog(t)}
       >
         <Skeleton lines={4} />
       </LiveFeed>

@@ -200,8 +200,6 @@ export { resolveConflict } from './conflict-policy';
 export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
 export {
   ctxOf,
-  DEFAULT_LOCALE,
-  DEFAULT_TIME_ZONE,
   hasContext,
   runWithContext,
   throwIfAborted,
@@ -228,6 +226,7 @@ export {
 export type { Page } from './cursor-page';
 export { pageOf } from './cursor-page';
 export { compareDecimalText } from './decimal-order';
+export { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
 export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { DevSecretsOptions } from './dev-secrets';
@@ -801,6 +800,7 @@ export {
   webhookSignature,
   webhookSigningString,
 } from './webhook-signature';
+export { DATES_HEADER, reviveWireDates, wireDatePaths } from './wire-dates';
 /**
  * A write's public name — the digest of its idempotency key — and the server scope that carries it
  * from `@ultimat3/action`'s HTTP projection to the layers that stamp it on a `records` frame.

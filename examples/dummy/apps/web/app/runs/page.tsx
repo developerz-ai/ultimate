@@ -12,12 +12,11 @@
 import { useT } from '@postly/i18n';
 import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute, island } from '@ultimat3/render';
-import { Skeleton, Text } from '@ultimat3/ui';
+import { Skeleton, Text, uiCatalog } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { memberQueries } from '../../shared/client';
 import { pluralFormsOf } from '../../shared/plural-forms';
-import { uiStringsFor } from '../../shared/ui-strings-server';
 import { Layout, updateBannerIsland } from '../layout';
 import { useViewer } from '../viewer-context';
 import type { RunConsoleLabels } from './run-console.island';
@@ -86,8 +85,13 @@ export const config = defineRoute({
    * `refresh`/`openModal`/`closeModal` for navigating from code; charged to every
    * `app/` document, as the router is. Of the +4,084 B over 169,390, the router is
    * +4,092; −8 B is main's own drift between that measurement and 26.0.0.
+   * raised 170kb → 172.5kb (#710, owner decision 19). measured: 176,018 B (2026-10-09;
+   * `x build --target static`), against 176,640; main measured 173,623 the same way. why: +699 B
+   * page boot — `reviveWireDates`, a read's `Date` revived as a `Date`; +1,696 B run console —
+   * the same revival in its typed action client's transport (+699) and `subsetTranslator` over the
+   * server-resolved `ui.*` strings (+997), which replaced the app's `shared/ui-strings.ts`.
    */
-  budget: { js: '170kb' },
+  budget: { js: '172.5kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });
@@ -157,7 +161,7 @@ export function Page(props: { readonly data: Connections }): JSX.Element {
           zone={viewer.zone}
           connections={props.data.map((row) => ({ id: row.id, label: row.label }))}
           labels={consoleLabels(t)}
-          ui={uiStringsFor(t)}
+          ui={uiCatalog(t)}
         >
           <Skeleton lines={3} />
         </Console>

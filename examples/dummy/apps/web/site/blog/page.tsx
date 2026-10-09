@@ -14,7 +14,6 @@ import { queries } from '../../shared/client';
 import { blogHref, toCardPost } from '../../shared/entities';
 import { tag } from '../../shared/tags';
 import { anonymousViewer } from '../../shared/viewer';
-import { wireDate } from '../../shared/wire';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
@@ -26,13 +25,8 @@ export const config = defineRoute({
   // No `feed:` key: `defineRoute` takes the contract's nine keys and nothing else, so the one
   // that used to sit here declared three feed formats and emitted none. A feed is its own URL —
   // `buildFeed` from @ultimat3/seo, behind an `api/` route — never a flag on the HTML page.
-  // Rehydrated at the loader, like the article route: the cards render `publishedAt` through
-  // `<DateTime>`, and what a JSON response carries there is a string.
-  load: async () =>
-    (await queries.publicPosts({})).map((post) => ({
-      ...post,
-      publishedAt: wireDate(post.publishedAt),
-    })),
+  // The cards render `publishedAt` through `<DateTime>`: a `Date`, revived by the query client.
+  load: async () => await queries.publicPosts({}),
   meta: ({ t, url }) => ({
     title: t('site.blog.metaTitle'),
     description: t('site.blog.metaDescription'),
