@@ -123,6 +123,8 @@ export type { AuthLimiterFactory } from './limiter-install';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
 // caller building limiters out of band would be a second answer to where failures are counted.
 export { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
+export type { HandleDirectory } from './login-identity';
+export { normaliseHandle } from './login-identity';
 export { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,

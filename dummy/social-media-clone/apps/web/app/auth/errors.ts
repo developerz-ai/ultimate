@@ -8,7 +8,7 @@ export const AUTH_ERROR_CODES = [
   'X_AUTH_CREDENTIALS_INVALID',
   'X_AUTH_CAPTCHA_FAILED',
   'X_AUTH_HANDLE_TAKEN',
-  'X_AUTH_PASSWORD_WEAK',
+  'X_AUTH_EMAIL_TAKEN',
 ] as const;
 
 /**
@@ -54,17 +54,16 @@ export class HandleTaken extends UltimateError {
 }
 
 /**
- * Sign-up only. The two seeded demo logins (`user`/`user`, `admin`/`admin`) are shorter than this
- * and stay valid, because they are bootstrapped rather than registered — a demo whose advertised
- * password its own sign-up form rejects would be a worse lie than a short password.
+ * One account per address: `users.email` and the auth user's both. Sign-up is the one door that
+ * names an address, and a refusal here discloses nothing the sign-up form would not — the address
+ * was the caller's to type.
  */
-export class PasswordWeak extends UltimateError {
-  constructor(minLength: number) {
+export class EmailTaken extends UltimateError {
+  constructor() {
     super({
-      code: 'X_AUTH_PASSWORD_WEAK',
-      cause: `a password must be at least ${minLength} characters`,
-      fix: `curl -sS -X POST "$APP_URL/api/accounts/create" -d handle=demo -d 'displayName=Demo' -d email=demo@demo.example -d "password=$(openssl rand -base64 24)"`,
-      meta: { minLength },
+      code: 'X_AUTH_EMAIL_TAKEN',
+      cause: 'an account already uses that email address',
+      fix: `curl -sS -X POST "$APP_URL/api/accounts/create" -d "handle=demo$RANDOM" -d 'displayName=Demo' -d "email=demo$RANDOM@demo.example" -d 'password=correct horse battery'`,
     });
   }
 }

@@ -19,6 +19,7 @@
       "dependencies": {
         "@ultimat3/action": "27.2.3",
         "@ultimat3/admin": "27.2.3",
+        "@ultimat3/auth": "27.2.3",
         "@ultimat3/cache": "27.2.3",
         "@ultimat3/cli": "27.2.3",
         "@ultimat3/core": "27.2.3",

@@ -13,7 +13,6 @@ import {
   blocks,
   comments,
   conversations,
-  credentials,
   friendships,
   likes,
   media,
@@ -273,14 +272,8 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
     { postId: id('post:timezones'), userId: id('user:ada'), createdAt: at('2026-03-09T12:00:00Z') },
   ]);
 
-  // Bun's own password hashing, not a hand-rolled one: `Bun.password` picks argon2id and encodes
-  // the parameters into the hash, so a verify never has to be told which algorithm produced it.
-  // Awaited at seed time rather than precomputed, because a committed hash is a committed secret
-  // even when the password is "user".
-  await insert(credentials, [
-    { userId: id('user:user'), passwordHash: await Bun.password.hash('user') },
-    { userId: id('user:admin'), passwordHash: await Bun.password.hash('admin') },
-  ]);
+  // No credentials here: a password hash is not a fixture. The two demo logins' auth users are
+  // written by `apps/web/app/auth/bootstrap.ts`, through `@ultimat3/auth`, from `DEMO_LOGINS`.
 
   // One direct thread the demo user is in, and one they are NOT — the second exists so a
   // non-participant being refused is a case the screens can actually show.

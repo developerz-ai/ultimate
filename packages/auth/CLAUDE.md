@@ -33,6 +33,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `password.test.ts` proves an unreadable hash burns the KDF. A TTL takes `min: 1`.
 - Every credential failure throws `loginFailed()` — one code, one cause, one fix. Adding a
   parameter to it re-opens account enumeration.
+- **`login()` takes an email or a handle** (`login-identity.ts`, `defineAuth({ handles })`).
 - **A stored hash Bun cannot read is the generic failure, and it burns the same KDF.**
   `verifyAgainst` (`password.ts`) answers `null` for `Bun.password.verify`'s throw (unsupported
   algorithm, malformed PHC) and `''`, joining the no-user branch; nothing is logged. An
