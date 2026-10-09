@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.1.0 - 2026-10-09
+
 ### Added
 
 Tier 4 — render; tier 5 — admin, cli.
@@ -16,6 +20,9 @@ Tier 4 — render; tier 5 — admin, cli.
 - **render: a mount may let a file claim one of its paths.** `RouteMountInput.claimable(path, config)` — the mounter's answer, asked with the config the module exported, by identity; `RouteMount.claimed` marks the one `describePages()` row such a path keeps (the file's, with the mount's permissions). `AdminRouteRequest.frame: 'none'` answers a screen's body without `AdminLayout`. `@ultimat3/admin` now depends on `@ultimat3/http` (tier 2) for the request's headers.
 - **cli:** the admin mount drops the dashboard's `GET` when an app file claimed it; the `budgets` fix line names a claiming file.
 
+### Commits
+
+- feat(admin): claimAdminRoute — admin pages in the app's own shell, with islands, under the admin's guard (#726)
 
 ## 27.0.0 - 2026-10-09
 
