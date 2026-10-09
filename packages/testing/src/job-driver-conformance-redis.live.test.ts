@@ -3,7 +3,7 @@
 // server survives two runs at once; every check claims only from a queue it named.
 
 import { afterAll, describe } from 'bun:test';
-import { redisJobDriver } from '@ultimat3/jobs';
+import { redisJobDriver } from '@ultimat3/jobs/redis';
 import { jobDriverConformance } from './job-driver-conformance';
 import { behavesLike } from './shared-examples';
 import { testName } from './test-types';

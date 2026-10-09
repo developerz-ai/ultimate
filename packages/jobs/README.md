@@ -765,7 +765,8 @@ between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driv
 **`redisJobDriver({ client?, prefix?, clock?, doneTtlMs? })`** passes `@ultimat3/testing`'s
 `jobDriverConformance`, the suite the other two pass, and `driver-redis.live.test.ts` runs one
 script of operations on it and on the memory driver and compares every answer. Installed with
-`setJobDriver(redisJobDriver())` (or `ServeOptions.runtime.jobs`); `Bun.redis` reads `REDIS_URL`.
+`setJobDriver(redisJobDriver())` (or `ServeOptions.runtime.jobs`), imported from its own entry
+`@ultimat3/jobs/redis` so the barrel every role boots carries none of it; `Bun.redis` reads `REDIS_URL`.
 What it does not carry: `introspect` (so `x jobs show`/`retry`/`cancel` and queue pauses answer
 for Postgres only), `backfills`, and `leases` — a job declaring `concurrency` refuses
 `jobWorker().start()` (`X_JOB_CONCURRENCY_UNENFORCEABLE`). A `done` row and its steps expire

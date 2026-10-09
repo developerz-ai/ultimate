@@ -1,7 +1,9 @@
 // A Redis queue on `Bun.redis` — no client dependency, the runtime ships one. The same contract as
 // the pg driver, held by `@ultimat3/testing`'s `jobDriverConformance`: every operation is one Lua
 // script (`driver-redis-scripts.ts`), so a claim, a settle and a renewal are each atomic on the
-// server the way a `driver-pg-sql.ts` statement is in one transaction.
+// server the way a `driver-pg-sql.ts` statement is in one transaction. Its own entry,
+// `@ultimat3/jobs/redis`: the barrel is on every role's boot path, and an app on Postgres loads none
+// of this.
 //
 // Key layout, every key inside ONE hash tag `{<prefix>}` (one slot: legal on Redis Cluster):
 //   job:<id>      HASH   the row                    wait:<queue>  ZSET  ready/delayed, by runAt
