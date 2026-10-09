@@ -3,7 +3,7 @@
 // Core owns the rule (`healthBody`, `healthPeerListed`); this is the sync node calling it.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { frozenClock, markReady, resetLifecycle } from '@ultimat3/core';
+import { BUILD_ID_HEADER, frozenClock, markReady, resetLifecycle } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub } from './channel';
 import { InProcessTransport } from './fanout';
@@ -42,7 +42,12 @@ async function ask(
   address: string | null,
   headers: Record<string, string> = {},
   overrides: Partial<UpgradeDeps> = {},
-): Promise<{ status: number; body: Record<string, unknown>; cache: string | null }> {
+): Promise<{
+  status: number;
+  body: Record<string, unknown>;
+  cache: string | null;
+  build: string | null;
+}> {
   const response = await handleUpgrade(
     deps(overrides),
     new Request(`http://node${path}`, { headers }),
@@ -53,6 +58,7 @@ async function ask(
     status: response.status,
     body: (await response.json()) as Record<string, unknown>,
     cache: response.headers.get('cache-control'),
+    build: response.headers.get(BUILD_ID_HEADER),
   };
 }
 
@@ -68,6 +74,8 @@ describe('the sync listener tells a stranger the verdict and nothing else', () =
       expect(answer.body['role']).toBe('sync');
       expect(JSON.stringify(answer.body)).not.toContain('build');
       expect(answer.cache).toBe('no-store');
+      // The build is public on every page; the header says it here too, never the body (#734).
+      expect(answer.build).toBe('build-9');
     });
   }
 

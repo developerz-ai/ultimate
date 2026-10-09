@@ -3,6 +3,7 @@
 // from what the socket then does — the same line `sync-frames.ts` and `sync-listen.ts` already draw.
 
 import {
+  BUILD_ID_HEADER,
   type HealthPayload,
   healthBody,
   healthPeerListed,
@@ -283,7 +284,12 @@ function health(
     healthPeerListed(deps.healthDetailPeers, server.requestIP(request)?.address ?? null);
   return new Response(JSON.stringify(healthBody(payload.body, 'sync', detailed)), {
     status: payload.status,
-    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+    // The build in the header, as every page says it (#734); never in the stranger's body (#53).
+    headers: {
+      'content-type': 'application/json',
+      'cache-control': 'no-store',
+      [BUILD_ID_HEADER]: deps.buildId,
+    },
   });
 }
 

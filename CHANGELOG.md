@@ -8,7 +8,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+Tier 2 — http. Tier 3 — realtime. Tier 5 — cli.
+
+- **The health answers say which build answers.** `/healthz`, `/readyz` and `/readyz?deep=1` sent no `x-ultimate-build`, while every page does, so a deploy check waiting for the new build had to read a page (#734). They now send it on every listener that serves them: the web port (when the role has a build id), the sync port, and the metrics listener of every role (once the boot announces the id: `MetricsEndpoint.announceBuild`). The bodies are unchanged: a stranger still reads `{ state, ready, role }` (#53).
 
 ## 27.2.2 - 2026-10-09
 

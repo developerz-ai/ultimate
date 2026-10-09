@@ -289,6 +289,8 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
         whenTaken: whenMetricsPortTaken(binding.dev, options.env),
       });
     started.push(async () => metrics.stop());
+    // Opened here or adopted from `serve-boot.ts`, this is where the build id is known (#734).
+    metrics.announceBuild(options.buildId);
 
     // BUILT here, BOUND below, the web role between them: `web` serves the node's socket on its
     // own port and a listening server cannot be handed one, while the neighbouring-port refusals
