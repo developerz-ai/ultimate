@@ -7,6 +7,7 @@ import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/cor
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import {
   can,
+  definePermissions,
   defineRoles,
   deny,
   isKnownPermission,
@@ -276,8 +277,30 @@ describe('unit · policyAuthz decides an unmapped permission by the role map', (
     const opened = authz.decide({ permission: 'job:read', actor: ops });
     expect(opened.allowed).toBe(true);
     expect(opened.trace.join(' ')).toContain('role map');
+    // Each evaluated clause is a line an operator can read in `/_x`, never `[object Object]`.
+    expect(opened.trace.slice(1).join('\n')).not.toContain('[object Object]');
+    expect(opened.trace.slice(1).join('\n')).toContain('job:read');
     // The role map is still closed: a role that does not grant it is refused.
     expect(authz.decide({ permission: 'audit:read', actor: ops }).allowed).toBe(false);
+  });
+
+  test('a declared permission with a scoped resource (`admin:support:write`) is decided too', () => {
+    // `can()` takes `${string}:${string}`, colons in the resource included; the role map refused
+    // every such name as "not a declared resource:verb permission" though `definePermissions`
+    // declared it and a role granted it (notificado.co: every `admin:<area>:<verb>` screen).
+    defineAdmin({ entities: [posts], db });
+    definePermissions(['admin_bind:support:write']);
+    defineRoles({ ...previousRoles, bind_support: { grants: ['admin_bind:support:write'] } });
+    const support = { id: 'u', roles: ['bind_support'] };
+    for (const authz of [policyAuthz({ policies: {} }), roleAuthz()]) {
+      expect(authz.decide({ permission: 'admin_bind:support:write', actor: support }).allowed).toBe(
+        true,
+      );
+      expect(
+        authz.decide({ permission: 'admin_bind:support:write', actor: { id: 'u', roles: [] } })
+          .allowed,
+      ).toBe(false);
+    }
   });
 
   test('a permission nothing declared is still refused, with the fix in the trace', () => {
