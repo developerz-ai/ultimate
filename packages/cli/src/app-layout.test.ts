@@ -7,7 +7,7 @@ import { siblingModuleFindings } from './app-layout';
 const files = (...paths: string[]) => paths.map((path) => ({ path, source: '' }));
 
 describe('siblingModuleFindings', () => {
-  test('a module beside a directory of its own name is refused, by file', () => {
+  test('a primitive module beside its directory is refused, a component module beside its folder is not', () => {
     const found = siblingModuleFindings(
       files(
         'apps/web/app/posts/actions.ts',
@@ -18,7 +18,6 @@ describe('siblingModuleFindings', () => {
     );
     expect(found.map((finding) => [finding.code, finding.at])).toEqual([
       ['X_LAYOUT_SIBLING_MODULE', 'apps/web/app/posts/actions.ts'],
-      ['X_LAYOUT_SIBLING_MODULE', 'apps/web/app/posts/ui.tsx'],
     ]);
     expect(found[0]?.cause).toContain('apps/web/app/posts/actions/');
   });
@@ -36,4 +35,12 @@ describe('siblingModuleFindings', () => {
       ),
     ).toEqual([]);
   });
+});
+
+test('every primitive directory is read', () => {
+  const paths = ['actions', 'live', 'queries', 'jobs', 'tasks'].flatMap((dir) => [
+    `apps/web/app/posts/${dir}.ts`,
+    `apps/web/app/posts/${dir}/one.ts`,
+  ]);
+  expect(siblingModuleFindings(files(...paths))).toHaveLength(5);
 });

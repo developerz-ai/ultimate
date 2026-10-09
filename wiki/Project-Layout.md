@@ -94,7 +94,7 @@ apps/web/app/<feature>/{actions,live,queries,jobs,tasks}/<name>.ts   # one per f
 apps/web/app/<feature>/ui/                                           # components
 ```
 
-**One primitive per file, in its kind's directory** — `actions/<verb>-<name>.ts`, what `x g` writes, and what both tracked apps keep (`As of 2026-10`, owner decision 10 of #648). A primitive is registered by `defineApi()` and found by the module scan, never by its filename; what IS refused is a module `X.ts` beside a directory `X/` (`X_LAYOUT_SIBLING_MODULE`, the `boundaries` step), because `./actions` resolves to the file and never the directory. The filenames that ARE enforced:
+**One primitive per file, in its kind's directory** — `actions/<verb>-<name>.ts`, what `x g` writes, and what both tracked apps keep (`As of 2026-10`, owner decision 10 of #648). A primitive is registered by `defineApi()` and found by the module scan, never by its filename; what IS refused is a primitive module beside its directory — `actions.ts` with `actions/`, or `live`, `queries`, `jobs`, `tasks` — (`X_LAYOUT_SIBLING_MODULE`, the `boundaries` step), because `./actions` resolves to the file and never the directory. The filenames that ARE enforced:
 
 | File | Owns | Never — and the error |
 |---|---|---|
