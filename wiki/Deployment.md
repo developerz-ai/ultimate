@@ -50,6 +50,8 @@ The body is `{ state, ready, role }` for everyone, and `{ state, ready, uptimeMs
 
 **`health: { readiness: 'process' }` in `app.config.ts`** (`As of 22.5`; default `'dependencies'`). Every replica shares the database, so one blip fails `database` everywhere at once and the ingress answers "no available server" for the whole site — pages that never touch the database included. In `'process'` mode `/readyz` is 503 only while starting, draining or stopped; a failing check stays 200 with `ready: true` and the check still named `failing` in `checks`. `/readyz?deep=1` always answers in `'dependencies'` mode — point monitoring there. Web and sync roles alike; liveness is unchanged in both modes.
 
+**Which build answers is a header, on every health answer** (`As of 27.2.3`). `/healthz`, `/readyz` and `/readyz?deep=1` send `x-ultimate-build` — the same header every page sends — on the web port, the sync port and the metrics listener alike, whoever asks. The body does not change: a stranger still reads `{ state, ready, role }`. A deploy check that waits for the new build polls `curl -sI https://<host>/readyz | grep -i x-ultimate-build` rather than a page. Two cases send none: a web role whose `buildId` is `null` (no `BUILD_ID` and none from the boot), and the metrics listener in the moments before its boot has computed the id — a container opens it first, so a cold pod's probe gets the status without the header.
+
 **`registered: 0` is a real answer, not an error.** An empty registry is still ready, so a 200 means no more than "the socket is bound" — which is what the chart's and compose's healthchecks route traffic on. Read `registered` before you trust `checks: {}`.
 
 ## Graceful drain on SIGTERM

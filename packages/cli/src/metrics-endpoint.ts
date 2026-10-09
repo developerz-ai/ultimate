@@ -4,6 +4,7 @@
 // series (`process_*`): a role that can be scraped reports what it costs.
 
 import {
+  BUILD_ID_HEADER,
   finiteCount,
   type HealthPayload,
   healthzPayload,
@@ -124,6 +125,13 @@ export function bindScrapePort<T>(
 export interface MetricsEndpoint {
   /** `http://host:port` — the base the scrape target appends `METRICS_PATH` to. */
   readonly url: string;
+  /**
+   * The build this process serves, sent as `x-ultimate-build` on `/healthz` and `/readyz` from here
+   * on — as every page sends it (#734). Told rather than passed at open: a container opens this
+   * port BEFORE its boot computes the build id (`serve.ts`), and `startRoles` is the one caller
+   * that has it, whichever opened the port. Until then the health answers carry no header.
+   */
+  announceBuild(buildId: string): void;
   stop(): void;
 }
 
@@ -132,10 +140,17 @@ export interface MetricsEndpoint {
  * `replicator` — so the replicator's readiness check (`role-replicator.ts`) is read by a probe.
  * The verdict only, never the report: this port is unauthenticated, and check names are topology.
  */
-function healthResponse(payload: HealthPayload, role: string): Response {
+function healthResponse(payload: HealthPayload, role: string, buildId: string | null): Response {
   return Response.json(
     { state: payload.body.state, ready: payload.body.ready, role },
-    { status: payload.status, headers: { 'cache-control': 'no-store' } },
+    {
+      status: payload.status,
+      // The build in the header (public on every page), never in the body (#53, #734).
+      headers: {
+        'cache-control': 'no-store',
+        ...(buildId === null ? {} : { [BUILD_ID_HEADER]: buildId }),
+      },
+    },
   );
 }
 
@@ -151,6 +166,7 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
   // that way. Floor 0, because 0 asks the kernel for a free port and `role-start.ts` passes it for
   // an ephemeral boot; the ceiling stays Bun's, which names the range it refuses.
   const port = finiteCount('startMetricsEndpoint', 'port', options.port ?? DEFAULT_METRICS_PORT);
+  let buildId: string | null = null;
   // `startRoles` opens this FIRST, before any role, so `Bun.serve`'s own bare `Error` was what a
   // second `x dev` on one machine reported: no code, no fix, at the boot path this package owns.
   const server = bindScrapePort(port, options.whenTaken ?? 'refuse', (candidate) =>
@@ -160,11 +176,12 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
       fetch(request: Request): Response {
         const url = new URL(request.url);
         const role = options.role ?? 'unknown';
-        if (url.pathname === '/healthz') return healthResponse(healthzPayload(), role);
+        if (url.pathname === '/healthz') return healthResponse(healthzPayload(), role, buildId);
         if (url.pathname === '/readyz') {
           return healthResponse(
             readyzPayload({ deep: url.searchParams.get('deep') === '1' }),
             role,
+            buildId,
           );
         }
         if (url.pathname !== METRICS_PATH) {
@@ -186,6 +203,9 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
   logger.info('ultimate metrics listening', { url: `${server.url.origin}${METRICS_PATH}` });
   return {
     url: server.url.origin,
+    announceBuild(id: string): void {
+      buildId = id;
+    },
     stop(): void {
       server.stop(true);
       stopListening();

@@ -316,6 +316,7 @@ describe('unit · x dev --role', () => {
       routes: [],
       metrics: {
         url: 'http://127.0.0.1:1',
+        announceBuild: () => undefined,
         stop: () => {
           metricsStopped = true;
         },

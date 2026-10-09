@@ -4,6 +4,7 @@
 
 import type { DrainConfig, HealthPayload, HealthState, Role } from '@ultimat3/core';
 import {
+  BUILD_ID_HEADER,
   beginWork,
   configureLifecycle,
   drain,
@@ -220,6 +221,8 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
    *
    * The STATUS is everyone's, which is all a probe reads. The body beyond the verdict is for a
    * peer `healthDetailPeers` lists: these two paths answer outside the pipeline, unauthenticated.
+   * The build id rides in the HEADER, as on every page the `context` stage stamps (#734): a deploy
+   * check asks `/readyz` which build answers, and the body stays the stranger's verdict (#53).
    */
   const healthResponse = (payload: HealthPayload, request: Request, socket: BunServer): Response =>
     jsonResponse(
@@ -232,7 +235,13 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
           socketAddress: socket.requestIP(request)?.address ?? null,
         }),
       ),
-      { status: payload.status, headers: { 'cache-control': 'no-store' } },
+      {
+        status: payload.status,
+        headers: {
+          'cache-control': 'no-store',
+          ...(config.buildId === null ? {} : { [BUILD_ID_HEADER]: config.buildId }),
+        },
+      },
     );
 
   const dispatch = async (request: Request, socket?: BunServer): Promise<Response> => {
