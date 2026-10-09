@@ -24,7 +24,7 @@ const isTargetInfo = (value: unknown): value is TargetInfo =>
 
 describe.skipIf(chrome === undefined && !required)('launchChrome — the browser it starts', () => {
   test(
-    'runs no extension page or worker beside the page it was handed',
+    'runs no extension page or worker, and the one page it was handed',
     async () => {
       if (chrome === undefined)
         expect.unreachable('E2E_BROWSER_REQUIRED=1 and no Chrome was found');
@@ -33,8 +33,12 @@ describe.skipIf(chrome === undefined && !required)('launchChrome — the browser
         const answer = await browser.connection.send('Target.getTargets');
         const infos = (answer.result as { targetInfos?: unknown } | undefined)?.targetInfos;
         const targets = (Array.isArray(infos) ? infos : []).filter(isTargetInfo);
-        expect(targets.map((target) => `${target.type} ${target.url}`)).toEqual([
-          'page about:blank',
+        // Chrome's own browser UI (`browser_ui chrome://omnibox-popup…` on CI's build) loads no
+        // web resource; an extension's page or worker does, and it is the one interception pauses.
+        const extensions = targets.filter((target) => target.url.startsWith('chrome-extension://'));
+        expect(extensions.map((target) => `${target.type} ${target.url}`)).toEqual([]);
+        expect(targets.filter((target) => target.type === 'page').map((t) => t.url)).toEqual([
+          'about:blank',
         ]);
       } finally {
         await browser.close();
