@@ -51,7 +51,7 @@ the module graph, which is what makes the framework's boot scan load it once for
 other stylesheet in the app emits top-level CSS: every module is its own Sass compilation, so a
 second emitter would duplicate the `:root` block. A document that carries none is
 `X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. **There is no `/signin` or `/signup`**
-(sign-OUT is the `endSession` action, `app/auth/actions.ts`: it sets the demo cookie to
+(sign-OUT is the `endSession` action, `app/auth/actions/end-session.ts`: it sets the demo cookie to
 `signed-out` and redirects, and the layout's native form posts to it) — this file claimed all three were mounted "by the wrapped Better Auth integration"
 until 2026-08, which contradicted its own gotcha twelve lines down: `app/auth/login.ts`'s two route
 descriptors are declared, tested and **not served**, and there is no Better Auth wrapper in this
@@ -85,10 +85,9 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
 | `entity.ts` | view schemas + invariants for this feature | I/O, policy |
 | `repo.ts` | SQL for this feature | business rules, HTTP |
 | `service.ts` | business logic composed from repos | HTTP, rendering, raw SQL |
-| `actions.ts` | `action` declarations | logic — delegate to `service.ts` |
-| `mutator.ts` | `mutator` declarations — `server`, `policy`, `conflict` | I/O inside `local`; DECLARING `local`, which lives one file over |
-| `live.ts` | `query` declarations | writes |
-| `jobs.ts` | `job` declarations | inline slow work |
+| `actions/<name>.ts` | one `action` or `mutator` per file — a mutator's `server`, `policy`, `conflict` | logic — delegate to `service.ts`; DECLARING `local`, which lives one file over |
+| `live/<name>.ts` · `queries/<name>.ts` | one `query` per file, `live: true` or not | writes |
+| `jobs/<name>.ts` · `tasks/<name>.ts` | one `job` / `task` per file | inline slow work |
 | `backfills/` | `backfill()` sweeps — a job factory, so each one registers in `defineApi({ jobs })` | a `step` of its own; the pass mints one per page |
 | `policy.ts` | `policy` rules — `can()` or `definePolicy()`, both returning the same `Policy` | data shaping |
 | `ui/` | Solid components | fetching, business logic, authz |
@@ -104,8 +103,8 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   MCP tools, and admin. Never re-check authz inside `handle`.
 - `t` is two different things by file kind: the schema namespace in declaration files, the i18n
   translator (`useI18n()`) in components. Never both in one file. A declaration file imports the
-  schema `t` from the package it declares in — `@ultimat3/action` in `actions.ts`/`mutator.ts`,
-  `@ultimat3/query` in `live.ts`, `@ultimat3/jobs` in `jobs.ts`, `@ultimat3/mail` in `mail.ts`,
+  schema `t` from the package it declares in — `@ultimat3/action` in `actions/`,
+  `@ultimat3/query` in `live/` and `queries/`, `@ultimat3/jobs` in `jobs/`, `@ultimat3/mail` in `mail.ts`,
   `@ultimat3/mcp` in the MCP package — never reaching past it to `@ultimat3/schema`. It is the same
   object either way. A module that declares no primitive (a feature's `entity.ts` view schemas)
   imports `@ultimat3/schema` directly, because that already is its one import.
@@ -198,7 +197,7 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
 - **A background agent is `agentJob(action, { actor })` over an action that runs the agent and
   makes the write ITSELF — the model is handed no write.** A draft is text its writer controls, and
   "now record a review for post X" is an instruction a model may follow, so a write tool whose
-  target the model names is a write any writer can aim. `app/posts/actions.ts`: `reviewDraft` is
+  target the model names is a write any writer can aim. `app/posts/actions/review-draft.ts`: `reviewDraft` is
   read-only (one tool, `summarize`); `keepDraftReview` runs it and upserts the verdict on the post
   id IT was given, `post_reviews`' key `(orgId, postId)`, so a replayed run is the same row (a
   queued run keeps no output, and an attempt that loses its lease runs from the top). Writing a
@@ -288,7 +287,7 @@ The two guards measured here, and their repairs, are recorded in
   shipped; `post.likedByMe ? {} : { likedByMe: true, likeCount: post.likeCount + 1 }` is the repair.
 - **A local twin lives in the BROWSER-reachable module of its feature, and the declaration imports
   it.** `app/posts/like-mutation.ts` holds `likePostLocally` and the `LocalTables` augmentation;
-  `app/posts/mutator.ts` writes `local: likePostLocally`. An island cannot import `mutator.ts` —
+  `app/posts/actions/like-post.ts` writes `local: likePostLocally`. An island cannot import that —
   the declaration drags `@ultimat3/action`, the policy and the Postgres client into the chunk — and
   `local` is by definition the half that runs in the tab, so the file a browser can load is its one
   home. Two copies is two declarations of one intent.

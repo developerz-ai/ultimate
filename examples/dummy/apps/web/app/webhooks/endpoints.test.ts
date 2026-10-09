@@ -7,7 +7,8 @@
 
 import { db } from '@postly/db';
 import { expect, test } from '@ultimat3/testing';
-import { addWebhookEndpoint, removeWebhookEndpoint } from './actions';
+import { addWebhookEndpoint } from './actions/add-webhook-endpoint';
+import { removeWebhookEndpoint } from './actions/remove-webhook-endpoint';
 import { ENDPOINTS_PER_ORG } from './entity';
 
 const receiver = (n: number): string => `https://hooks.example.com/postly/${n}`;

@@ -8,8 +8,10 @@
 
 import { configureAi, echoProvider, providerGateway } from '@ultimat3/ai';
 import { beforeEach, expect, test } from '@ultimat3/testing';
-import { requestPostsExport, reviewDraft, summarizePosts } from './actions';
-import { exportPosts, postsExportPrefix } from './jobs';
+import { requestPostsExport } from './actions/request-posts-export';
+import { reviewDraft } from './actions/review-draft';
+import { summarizePosts } from './actions/summarize-posts';
+import { exportPosts, postsExportPrefix } from './jobs/export-posts';
 
 /** Every prompt the provider was sent, so a refusal can be shown to have cost nothing. */
 const sent: string[] = [];

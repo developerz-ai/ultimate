@@ -2,7 +2,7 @@
  * `likePost`, as the BROWSER can name and APPLY it — the same seam `app/feed/live.ts` is for
  * `liveFeed`, one step further along.
  *
- * An island cannot import `./mutator.ts`: the declaration reaches `@ultimat3/action`, the policy,
+ * An island cannot import `./actions/like-post.ts`: the declaration reaches `@ultimat3/action`, the policy,
  * `@postly/db`'s tag table and through it the Postgres client, none of which belong in a chunk a
  * browser downloads. `useMutation` takes anything carrying a `name`, so the name crosses and the
  * declaration never does.
@@ -11,7 +11,7 @@
  * string: a mutator IS an action, so `defineApi` registers it in `Api['actions']` under its export
  * name, and `Api` is imported as a TYPE — no module edge exists.
  *
- * **The local twin lives HERE, and `mutator.ts` imports it.** It used to live in `mutator.ts` and
+ * **The local twin lives HERE, and `actions/like-post.ts` imports it.** It used to live beside the declaration and
  * this file said a twin here "would be a second copy" — true, and it had the direction backwards:
  * `local` is browser code by definition (it runs against the client's store, in the tab, on every
  * rebase), and the only module of this feature a browser can load is this one. So the twin's one

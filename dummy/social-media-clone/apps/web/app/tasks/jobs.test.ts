@@ -6,7 +6,8 @@ import { afterAll, beforeEach, expect, test } from 'bun:test';
 import { db, driver, seedDemo } from '@social-media-clone/db';
 import { seedId } from '@ultimat3/entity';
 import { type RunJobs, testJobs } from '@ultimat3/testing';
-import { resetDemo, sweepOrphanMedia } from './jobs';
+import { resetDemo } from './jobs/reset-demo';
+import { sweepOrphanMedia } from './jobs/sweep-orphan-media';
 import { mediaById, missingDemoMarkers, pendingMediaBefore } from './repo';
 
 /** The seed's deliberate orphan, and the attached row that must survive every sweep. */

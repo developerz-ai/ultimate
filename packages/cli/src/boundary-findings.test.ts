@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { SourceFile } from './app-boundaries';
 import { appImportGraph, checkImportRules } from './app-boundaries';
-import { withCutEdits } from './boundary-findings';
+import { appBoundaryFindings, withCutEdits } from './boundary-findings';
 
 const file = (path: string, source: string): SourceFile => ({ path, source });
 
@@ -26,5 +26,18 @@ describe('unit · a boundary finding names the concrete edit', () => {
     const files = [file('apps/web/site/page.tsx', "import { db } from '@acme/db';")];
     const findings = checkImportRules(files);
     expect(withCutEdits(findings, appImportGraph(files))).toEqual(findings);
+  });
+});
+
+describe('unit · the boundaries step refuses a second layout', () => {
+  test('a module beside a directory of its own name is a finding of the step', async () => {
+    const files = [
+      file('apps/web/app/posts/actions.ts', 'export const legacy = 1;'),
+      file('apps/web/app/posts/actions/create-post.ts', 'export const createPost = 1;'),
+    ];
+    const found = await appBoundaryFindings('/nowhere', files);
+    expect(found.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_LAYOUT_SIBLING_MODULE', 'apps/web/app/posts/actions.ts'],
+    ]);
   });
 });

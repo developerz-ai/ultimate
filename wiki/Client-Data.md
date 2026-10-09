@@ -68,11 +68,11 @@ Nothing else is declared.
 ## 2. An action that returns the row
 
 ```ts
-// app/posts/actions.ts
+// app/posts/actions/rename-post.ts
 import { action, t } from '@ultimat3/action';
-import { Post } from './entity';
-import { postWrite } from './policies';
-import { repo } from './repo';
+import { Post } from '../entity';
+import { postWrite } from '../policies';
+import { repo } from '../repo';
 
 export const renamePost = action({
   input: t.object({ postId: t.uuid, title: t.string }),

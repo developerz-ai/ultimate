@@ -5,6 +5,7 @@
 
 import type { SourceFile } from './app-boundaries';
 import { appImportGraph, checkImportRules, readAppSources } from './app-boundaries';
+import { siblingModuleFindings } from './app-layout';
 import { appTransportFindings } from './app-transport';
 import { planBoundaryCuts } from './boundary-cuts';
 import type { Finding } from './output';
@@ -44,5 +45,6 @@ export async function appBoundaryFindings(
   return [
     ...withCutEdits(checkImportRules(files), appImportGraph(files)),
     ...(await appTransportFindings(root, files)),
+    ...siblingModuleFindings(files),
   ];
 }

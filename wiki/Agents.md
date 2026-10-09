@@ -371,7 +371,7 @@ It composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox,
 
 > **Rule: never hand the model a write tool whose target it chooses.** The model reads text someone else wrote — a draft, a ticket, a scraped page — and "now record this for record X" is an instruction a model may follow. A write tool is a write that text can aim. The wrapping action binds the target from its OWN input.
 
-Worked example: the reference app's `keepDraftReview` → `reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions.ts`). `reviewDraft` is an agent with one read tool; `keepDraftReview` runs it and upserts the verdict on the post id it was given — `(orgId, postId)` is the key, so a replayed run is the same row — under `postReviewKeep`, the publishing right, never `post:read`; `reviewDraftLater = agentJob(keepDraftReview, { actor })`; the `postReview` query reads it back. `review.job.test.ts` drives it on the production worker, with a model that tries to write onto another post and has nothing to write with.
+Worked example: the reference app's `keepDraftReview` → `reviewDraftLater` (`examples/dummy/apps/web/app/posts/actions/keep-draft-review.ts`, `jobs/review-draft-later.ts`). `reviewDraft` is an agent with one read tool; `keepDraftReview` runs it and upserts the verdict on the post id it was given — `(orgId, postId)` is the key, so a replayed run is the same row — under `postReviewKeep`, the publishing right, never `post:read`; `reviewDraftLater = agentJob(keepDraftReview, { actor })`; the `postReview` query reads it back. `review.job.test.ts` drives it on the production worker, with a model that tries to write onto another post and has nothing to write with.
 
 ### The at-least-once trap
 

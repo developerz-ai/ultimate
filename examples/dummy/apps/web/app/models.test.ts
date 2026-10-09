@@ -7,7 +7,8 @@
 import { configureAi, echoProvider, modelSpec, providerGateway } from '@ultimat3/ai';
 import { expect, test } from '@ultimat3/testing';
 import { APP_MODELS, CLAUDE_SONNET_5, claudeSonnet5 } from './models';
-import { reviewDraft, summarize } from './posts/actions';
+import { reviewDraft } from './posts/actions/review-draft';
+import { summarize } from './posts/actions/summarize';
 import { reviewDraftPrompt } from './posts/prompts/review-draft';
 import { summarizePrompt } from './posts/prompts/summarize';
 

@@ -9,7 +9,7 @@ import { db } from '@social-media-clone/db';
 import { ctxOf, isUltimateError, userActor } from '@ultimat3/core';
 import type { Actor } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
-import { sendMessage } from './action';
+import { sendMessage } from './actions/send-message';
 import * as repo from './repo';
 
 const ADA = '00000000-0000-4000-8000-0000000000a1';

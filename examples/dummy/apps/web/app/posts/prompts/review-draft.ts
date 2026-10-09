@@ -1,5 +1,5 @@
 /**
- * The prompt artifact behind the `reviewDraft` agent (`../actions.ts`), and nothing else — the
+ * The prompt artifact behind the `reviewDraft` agent (`../actions/review-draft.ts`), and nothing else — the
  * same split `summarize.ts` makes: the agent is an action and lives with the actions; the artifact,
  * its eval and its recorded baseline live here.
  */

@@ -326,7 +326,7 @@ An agent's scarcest resource is context, and most of it goes on infrastructure t
 |---|---|
 | everything the author owns, 218 files | **9,712** code lines |
 | production only, tests excluded | **7,230** |
-| a fully-projected endpoint — input schema, output schema, policy, OpenAPI operation, MCP tool, typed client | **~16 code lines**, from 4 actions in [`app/friends/actions.ts`](dummy/social-media-clone/apps/web/app/friends/actions.ts) |
+| a fully-projected endpoint — input schema, output schema, policy, OpenAPI operation, MCP tool, typed client | **~16 code lines**, from 4 actions in [`app/friends/actions/`](dummy/social-media-clone/apps/web/app/friends/actions/) |
 | one action, 51 code lines | **179 lines** of committed generated interface — OpenAPI operation, two JSON Schemas, the manifest row — plus five handles it never declares |
 
 Re-derive it — `node_modules`, `.x/`, `dist/` and `coverage/` are gitignored, so `git ls-files` never enters them:
@@ -353,7 +353,7 @@ The 1,767 generated Lucide glyph files are excluded on purpose — leaving them 
 | that the demo passes its own gate | it is **pinned red on 2 steps**, `As of 2026-09-23` — `boundaries` (`X_BOUNDARY_SITE_TO_APP` ×3, the static feed importing the authed post service) and `budgets` (`X_BUDGET_UNMEASURED`, no `.x/build-stats.json` has ever existed there). It was 3: `drift` came off when the migration reconciling its foreign keys landed. [`examples/dummy`](examples/dummy/README.md) is pinned on 1 step — `budgets`. The pins and their reasons are [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts); `bun run scripts/reference-app-gate.ts` re-derives them |
 | that low lines means high leverage | partly it means **few features**. Roughly half of [`DOMAIN.md`](dummy/social-media-clone/DOMAIN.md) is a plan, not a build: `likes` and `comments` are entities with migrations and no write path |
 | that the framework wrote the auth | it did not. 13 non-test files hand-write argon2id parameters, `__Host-` cookie prefixes, session token hashing and a captcha, and **`@ultimat3/auth` is imported nowhere in that app**. `@ultimat3/storage` likewise, despite a media feature. The largest thing the framework could have projected and did not |
-| that live messaging works | the thread's live query ([`app/messages/live.ts`](dummy/social-media-clone/apps/web/app/messages/live.ts)) and its channel ([`app/messages/topics.ts`](dummy/social-media-clone/apps/web/app/messages/topics.ts)) are declared and tested against a real hub, and **no island subscribes to either** — there is no `useChannel` or `useQuery` in the app — and the deployed stack runs no `sync` role, `As of 2026-09-23` |
+| that live messaging works | the thread's live query ([`app/messages/live/`](dummy/social-media-clone/apps/web/app/messages/live/)) and its channel ([`app/messages/topics.ts`](dummy/social-media-clone/apps/web/app/messages/topics.ts)) are declared and tested against a real hub, and **no island subscribes to either** — there is no `useChannel` or `useQuery` in the app — and the deployed stack runs no `sync` role, `As of 2026-09-23` |
 | that the typed client is proven | it is projected and unused. There is **no `.client()` call in either tracked app**; the demo's forms post HTML |
 
 **The larger win is not the lines** — it is that a bug is found once, here, where the fix reaches every app at once. The sweeps in [`CHANGELOG.md`](CHANGELOG.md) closed defects of exactly that kind:

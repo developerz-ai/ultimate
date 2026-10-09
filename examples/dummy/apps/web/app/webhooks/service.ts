@@ -17,7 +17,7 @@ import {
   type RemoveEndpointInput,
 } from './entity';
 import { EndpointLimitReached, EndpointNotFound } from './errors';
-import { postPublishedWebhook } from './jobs';
+import { postPublishedWebhook } from './jobs/post-published-webhook';
 import { deleteEndpoint, insertEndpoint, liveEndpoints, usedSlots } from './repo';
 import { screenEndpointUrl } from './url-screen';
 

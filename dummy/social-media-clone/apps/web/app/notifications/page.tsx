@@ -3,7 +3,7 @@
 // `useMutation(markNotificationsRead)` and the badge is rendered once, on the server.
 //
 // The count is DERIVED (`readAt is null`), never stored and never decremented, which is the same
-// property that makes the offline twin in `mutator.ts` safe to replay.
+// property that makes the offline twin in `actions/mark-notifications-read.ts` safe to replay.
 
 import { actorOf, useContext } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "46137e4c71b4ed2953e548ffeb6b79d79cb26e2df5cb6da162ee06878ddd3401",
+  "buildId": "687d4607d5bf64d4d27b15ed97d81f2c9eabde11379b9b7d20de3ceba99f25f4",
   "tiers": {
     "0": [
       "core",
@@ -2108,6 +2108,11 @@
       "code": "X_KNOWN_GAP_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/known-gaps-links.ts"
+    },
+    {
+      "code": "X_LAYOUT_SIBLING_MODULE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_LD_INVALID",

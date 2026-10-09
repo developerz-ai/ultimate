@@ -40,7 +40,9 @@ describe('a Set-Cookie spelled by hand', () => {
 
   test('a demo cookie appended straight onto the header bag is reported', () => {
     const source = "ctx.headers.append('set-cookie', `${NAME}=${OUT}; Path=/; SameSite=Lax`);";
-    expect(quoted(source, 'examples/dummy/apps/web/app/auth/actions.ts')).toHaveLength(1);
+    expect(quoted(source, 'examples/dummy/apps/web/app/auth/actions/end-session.ts')).toHaveLength(
+      1,
+    );
   });
 
   test('a standalone name=value attribute is read in any case — joined parts are a cookie too', () => {

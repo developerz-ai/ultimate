@@ -22,8 +22,9 @@ import {
 } from '@ultimat3/mail';
 import { defineStorage, disk, memoryStorageDriver, resetStorage } from '@ultimat3/storage';
 import { jobTest } from '@ultimat3/testing';
-import { publishPost } from './actions';
-import { exportPosts, notifySubscribers, postsExportPrefix } from './jobs';
+import { publishPost } from './actions/publish-post';
+import { exportPosts, postsExportPrefix } from './jobs/export-posts';
+import { notifySubscribers } from './jobs/notify-subscribers';
 
 const ORG = '00000000-0000-4000-8000-00000000f001';
 const POST = '00000000-0000-4000-8000-00000000f0a1';
