@@ -8,6 +8,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+Tier 0 — core. Tier 1 — i18n. Tier 3 — query. Tier 4 — ui.
+
+- **A read's `Date` reaches the typed client as a `Date` (#710, owner decision 19).** A query declares no output schema, so a column typed `Date` arrived as the ISO string `JSON.stringify` wrote, and every app converted at its `load` (the reference app's `shared/wire.ts`). The query route now names every `Date` of its answer in `x-ultimate-dates` — by path, one entry per column of a list, row by row only where the same column also holds text — and `clientTransport` revives exactly those (`wire-dates.ts`: `DATES_HEADER`, `wireDatePaths`, `reviveWireDates`). The body and the OpenAPI document are unchanged; a client that ignores the header reads what it read before. Measured: `clientTransport` +702 B minified, `@ultimat3/query/client` +763 B.
+- **A catalog slice crosses into an island (#710, owner decision 19).** `catalogSubset(t, keys)` (`@ultimat3/i18n`) resolves the named templates, plural variants included, into JSON; `subsetTranslator(subset)` (`@ultimat3/i18n/subset`, an entry that installs no framework catalog) is the island's full translator over it. `uiCatalog(t)` (`@ultimat3/ui`) is the design system's own slice: every `UI_KEYS` template, so `<UiProvider t={subsetTranslator(props.ui)}>` renders no `⟦ui.*⟧`. The reference app's `shared/ui-strings.ts`, `shared/ui-strings-server.ts` and `shared/wire.ts` are deleted.
+
 ### Fixed
 
 Tier 2 — http. Tier 3 — realtime. Tier 5 — cli.

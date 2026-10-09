@@ -33,6 +33,7 @@
 import { type Actor, anonymousActor } from './actor';
 import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
+import { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
 import { UltimateError } from './errors';
 import { finiteOption } from './finite-option';
 import { traceId as newTraceId, uuidV7 } from './ids';
@@ -156,13 +157,6 @@ export type CtxPatch = Omit<CtxInit, 'requestId' | 'buildId'>;
 const requestContext = asyncContext<Ctx>('the request context');
 
 const neverAborted = new AbortController().signal;
-
-/**
- * The framework's default locale — the ONE declaration: `@ultimat3/i18n` imports it rather than
- * restating it (a second `'en'` there could drift from the context's own default).
- */
-export const DEFAULT_LOCALE = 'en';
-export const DEFAULT_TIME_ZONE = 'UTC';
 
 function buildId(): string {
   return process.env['BUILD_ID'] ?? 'dev';

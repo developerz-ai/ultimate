@@ -94,9 +94,12 @@ const BASE = {
     },
   },
   ui: {
-    'ui.empty': 'Nothing here yet',
-    'ui.error.title': 'Something went wrong',
-    'ui.retry': 'Try again',
+    locale: 'en',
+    catalog: {
+      'ui.empty': 'Nothing here yet',
+      'ui.error.title': 'Something went wrong',
+      'ui.retry': 'Try again',
+    },
   },
 } satisfies RunConsoleProps;
 

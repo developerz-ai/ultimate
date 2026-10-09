@@ -14,6 +14,7 @@ import { CLIENT_BUILD_META } from './page-meta';
 import type { RecordEnvelope } from './record-envelope';
 import { RECORDS_HEADER } from './record-envelope';
 import { outboundSlot, pageClient } from './record-sink';
+import { DATES_HEADER } from './wire-dates';
 
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
@@ -79,6 +80,8 @@ export interface TransportRequest {
 export interface Answer {
   readonly text: string;
   readonly enveloped: boolean;
+  /** `x-ultimate-dates`: which values of the data were instants (`wire-dates.ts`). */
+  readonly dates: string | null;
 }
 
 /** Called, never captured: a browser's `fetch` throws `Illegal invocation` when detached. */
@@ -111,7 +114,11 @@ export async function dispatch(
         problemError(response.status, text, req.url, stated)
       );
     }
-    return { text, enveloped: response.headers.get(RECORDS_HEADER) === '1' };
+    return {
+      text,
+      enveloped: response.headers.get(RECORDS_HEADER) === '1',
+      dates: response.headers.get(DATES_HEADER),
+    };
   } catch (error) {
     const current = pageClient().scope.epoch;
     if (read && current !== issued) throw scopeChanged(req.url, issued, current);

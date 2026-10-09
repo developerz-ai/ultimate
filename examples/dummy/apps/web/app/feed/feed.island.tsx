@@ -17,6 +17,8 @@
  * in the page's outbox with the queued notice showing.
  */
 
+import type { CatalogSubset } from '@ultimat3/i18n/subset';
+import { subsetTranslator } from '@ultimat3/i18n/subset';
 import { useConnection, useMutation, useOutbox, useQuery } from '@ultimat3/realtime';
 import { formatDate } from '@ultimat3/time';
 import {
@@ -41,7 +43,6 @@ import {
 import { render } from 'solid-js/web';
 import { postHref } from '../../shared/entities';
 import { type PluralForms, pluralText } from '../../shared/plural-text';
-import { type UiStrings, uiTranslator } from '../../shared/ui-strings';
 import { LIKE_POST } from '../posts/like-mutation';
 import { type FeedRow, LIVE_FEED } from './live';
 
@@ -73,8 +74,8 @@ export interface FeedIslandProps {
   /** The member's IANA zone — every date on the feed is formatted in it, never the device's. */
   readonly zone: string;
   readonly labels: FeedLabels;
-  /** The `ui.*` strings `AsyncRegion`'s failure and empty branches read (`shared/ui-strings.ts`). */
-  readonly ui: UiStrings;
+  /** The design system's `ui.*` strings, resolved on the server (`uiCatalog(t)`): a `t` cannot travel. */
+  readonly ui: CatalogSubset;
 }
 
 function Feed(props: FeedIslandProps): JSX.Element {
@@ -155,11 +156,7 @@ export function mount(el: HTMLElement, props: FeedIslandProps): void {
   el.textContent = '';
   render(
     () => (
-      <UiProvider
-        locale={props.locale}
-        timeZone={props.zone}
-        t={uiTranslator(props.ui, props.locale)}
-      >
+      <UiProvider locale={props.locale} timeZone={props.zone} t={subsetTranslator(props.ui)}>
         <Feed {...props} />
       </UiProvider>
     ),

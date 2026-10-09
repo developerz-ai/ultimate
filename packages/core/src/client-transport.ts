@@ -25,6 +25,7 @@ import { notifyClientWrite } from './client-writes';
 import type { RecordEnvelope } from './record-envelope';
 import { decodeRecordEnvelope } from './record-envelope';
 import { pageClient, recordSink } from './record-sink';
+import { reviveWireDates } from './wire-dates';
 
 const ONCE = { attempts: 1 } as const;
 
@@ -94,7 +95,9 @@ function unwrap(answer: Answer, url: string, read: boolean): RecordEnvelope {
       error,
     );
   }
-  return answer.enveloped ? decodeRecordEnvelope(body) : { data: body };
+  const envelope = answer.enveloped ? decodeRecordEnvelope(body) : { data: body };
+  // In place, on this caller's own parse: a deduped read's joiners each parsed their own copy.
+  return { ...envelope, data: reviveWireDates(envelope.data, answer.dates) };
 }
 
 /** Adopt, then remove: a key in both is gone, never resurrected by the same answer. */

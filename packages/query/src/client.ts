@@ -6,8 +6,9 @@
  *
  * Every read goes through `@ultimat3/core`'s `clientTransport`, the one browser HTTP function —
  * there is no `fetch` call here, only the injected `fetch` option handed on as `fetchImpl`. Rows
- * are handed back as parsed: an instant reaches a caller as the ISO string `JSON.stringify` wrote,
- * and a surface that formats one converts at its own edge. A record envelope is unwrapped by the
+ * are handed back as parsed, with every value the server answered as a `Date` revived as one — the
+ * route names them in `x-ultimate-dates` (`@ultimat3/core`'s `wire-dates.ts`), so a row typed
+ * `Date` is a `Date` here, and never an ISO string to convert. A record envelope is unwrapped by the
  * transport, its rows adopted into the page's store, so the return type is the rows either way.
  *
  * `ClientFlight` is a TYPE here and never a value: dedup, retry, the deadline and the fence are

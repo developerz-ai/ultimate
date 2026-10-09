@@ -110,6 +110,12 @@ export {
   catalogRegistrationGaps,
 } from './registration';
 export {
+  type CatalogSubset,
+  catalogSubset,
+  type RawTranslator,
+  subsetTranslator,
+} from './subset';
+export {
   catalogTranslator,
   isMiss,
   type TranslateVars,

@@ -164,9 +164,11 @@ describe('the browser path to the page seam', () => {
   // (`client-problem`, `client-wire`, `client-retry-after`), `UltimateError` with its renderers,
   // the records envelope and the page's store (`record-envelope`, `record-sink`, `pending-records`).
   //
-  // measured: 10,693 B (2026-10-09, Bun 1.4.2), 4,575 B gzipped — 10,622 before `responseType`.
+  // measured: 11,395 B (2026-10-09, Bun 1.4.2) — 10,693 before this change, 10,622 before
+  // `responseType`. why: +702 B, `wire-dates.ts`'s `reviveWireDates`: a read's `Date` reaches the
+  // caller as a `Date` (`x-ultimate-dates`), where every app converted ISO strings by hand (#710).
   // The next whole kilobyte above the measurement.
-  test('clientTransport alone reaches no titles table and stays under 11 kB (10,693 B as of 2026-10-09)', async () => {
+  test('clientTransport alone reaches no titles table and stays under 12 kB (11,395 B as of 2026-10-09)', async () => {
     const transport =
       "import { clientTransport } from '@ultimat3/core/page';\nglobalThis.probe = clientTransport;\n";
     const { modules } = await build('transport', '', false, transport);
@@ -175,25 +177,27 @@ describe('the browser path to the page seam', () => {
       'schema/src/error-brand.ts',
     ]);
     const { bytes } = await build('transport-min', '', true, transport);
-    expect(bytes).toBeLessThan(11_264);
+    expect(bytes).toBeLessThan(12_288);
   }, 60_000);
 
   // Everything the entry exports at once — the transport, the URL rule, the fence and the helpers a
   // browser hook uses — is the ceiling a realtime island can reach through this path.
   //
-  // measured: 16,975 B (2026-10-05, Bun 1.4.2), against 17,408. It was 16,004 at the tip before
+  // measured: 17,860 B (2026-10-09, Bun 1.4.2), against 18,432. why: +885 B, the read's instants
+  // revived (`wire-dates.ts`, #710) and `DATES_HEADER` on the entry. 16,975 B on 2026-10-05,
+  // against 17,408. It was 16,004 at the tip before
   // this change (15,470 on 2026-09-28). why: +971 B, what a browser reads off an http refusal it
   // never loaded the package for — `client-retry-after.ts` (the one `Retry-After` reader), the
   // `retry-after` rule in `retryForStatus`, `remoteTitleOf` + `UltimateError`'s `remoteTitle` (the
   // problem body's title for an unregistered code) — and the retry wait and a queued gate slot that `bump()`
   // and the caller's abort can now end. That is what let `@ultimat3/http`'s 11.5 kB leave every action island.
   // The next whole kilobyte above the measurement.
-  test('the whole entry reaches no titles table and stays under 17 kB (16,975 B as of 2026-10-05)', async () => {
+  test('the whole entry reaches no titles table and stays under 18 kB (17,860 B as of 2026-10-09)', async () => {
     const whole = "import * as page from '@ultimat3/core/page';\nglobalThis.probe = page;\n";
     const { modules } = await build('whole', '', false, whole);
     expect(modules.filter(isTitlesTable)).toEqual([]);
     const { bytes } = await build('whole-min', '', true, whole);
-    expect(bytes).toBeLessThan(17_408);
+    expect(bytes).toBeLessThan(18_432);
   }, 60_000);
 
   test('the barrel still drags both titles tables — the reason the subpath exists', async () => {

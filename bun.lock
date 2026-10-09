@@ -129,6 +129,7 @@
         "@ultimat3/entity": "27.2.2",
         "@ultimat3/flags": "27.2.2",
         "@ultimat3/http": "27.2.2",
+        "@ultimat3/i18n": "27.2.2",
         "@ultimat3/jobs": "27.2.2",
         "@ultimat3/mail": "27.2.2",
         "@ultimat3/notify": "27.2.2",

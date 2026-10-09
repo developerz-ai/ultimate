@@ -422,3 +422,4 @@ export {
   touchTokens,
   zTokens,
 } from './tokens/tokens';
+export { uiCatalog } from './ui-catalog';
