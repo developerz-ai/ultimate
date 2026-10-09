@@ -231,6 +231,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_DEV_STATE_UNWRITABLE',
   'X_PACKAGE_TEST_ONLY_SHIPPED',
   'X_ISLAND_MODULE_DUPLICATED',
+  'X_BACKFILL_SLICE_ENTITY',
 ] as const;
 
 /**
@@ -418,6 +419,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_DEV_STATE_UNWRITABLE: 'x dev cannot claim its state directory',
   X_PACKAGE_TEST_ONLY_SHIPPED: 'a test-only module ships in the tarball',
   X_ISLAND_MODULE_DUPLICATED: 'An island chunk bundles one module more than once',
+  X_BACKFILL_SLICE_ENTITY: 'the slice holds no entity a generated backfill can sweep',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

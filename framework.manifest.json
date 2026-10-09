@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "48249bba3718451f7b9980b8a816613d5166d61a6ec5c8bfe49ca233e51a8d40",
+  "buildId": "8a7c2230d0d26f44ea5f145bdfffd056947d897afa4b681bb89c7d1dbb0ffdfd",
   "tiers": {
     "0": [
       "core",
@@ -558,6 +558,11 @@
       "code": "X_BACKFILL_RUNNING",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_BACKFILL_SLICE_ENTITY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_BACKFILL_STALLED",

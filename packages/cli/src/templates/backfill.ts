@@ -2,12 +2,13 @@
 // primitive, so it inherits .enqueue(), the retry policy, the cancellation and the manifest row.
 // One live run per name: a second enqueue while the pass is going is the same pass.
 
+import { stripComments, UltimateError } from '@ultimat3/core';
 import type { FeatureTarget } from './entity';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
 import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
-import { sliceFoundation } from './slice-foundation';
+import { sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
 import { wrapImport } from './wrap';
 
 /**
@@ -226,11 +227,54 @@ unitTest('the projection is idempotent: a replayed page changes nothing', () => 
 export interface BackfillOptions extends FeatureTarget {
   /** Every locale the planted entity's admin labels ship for. Defaults to `['en']`. */
   readonly locales?: readonly string[];
+  /** The slice's `entity.ts` as it stands on disk, absent when the feature has none yet. */
+  readonly sliceEntity?: string;
+  /** The slice's `repo.ts` as it stands on disk, absent alongside `sliceEntity`. */
+  readonly sliceRepo?: string;
+}
+
+/** Every table an `entity.ts` declares, in source order: `entity('court_closures', …)`. */
+const declaredTables = (source: string): readonly string[] =>
+  [...stripComments(source).matchAll(/\bentity\(\s*['"]([^'"]+)['"]/g)].map(
+    (match) => match[1] ?? '',
+  );
+
+/**
+ * Declared beside its one thrower: `errors.ts` sits at its ceiling. The sweep this generator writes
+ * reads the slice's OWN scaffolded table (`db.<plural>`, its `title` and `price`), so a slice whose
+ * entities are named otherwise — notificado.co's `deadline`, holding `holidays` and
+ * `court_closures` — got `import type { Deadline }`, `db.deadlines` and admin labels for a table
+ * that does not exist. Refused before a file is planned; a hand sweep starts from a job.
+ */
+export class BackfillSliceEntityError extends UltimateError {
+  constructor(input: {
+    readonly name: string;
+    readonly feature: string;
+    readonly tables: readonly string[];
+  }) {
+    const declared = input.tables.length === 0 ? 'no table' : input.tables.join(', ');
+    super({
+      code: 'X_BACKFILL_SLICE_ENTITY',
+      cause: `x g backfill sweeps the ${input.feature} slice's own scaffolded table, and its entity.ts declares ${declared} instead — the generated files would import a row type and a db handle that do not exist`,
+      fix: `x g job ${input.name} --feature ${input.feature}   # then declare backfill({ source: db.<one of: ${declared}>, … }) from @ultimat3/jobs in it`,
+      meta: { feature: input.feature, tables: [...input.tables] },
+    });
+  }
 }
 
 export function backfillFiles(rawName: string, target: BackfillOptions): readonly GeneratedFile[] {
   const name = names(rawName);
   const feature = names(target.feature);
+  if (
+    target.sliceEntity !== undefined &&
+    !sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo)
+  ) {
+    throw new BackfillSliceEntityError({
+      name: name.kebab,
+      feature: target.feature,
+      tables: declaredTables(target.sliceEntity),
+    });
+  }
   const dir = `${target.surfaceDir}/${target.feature}/backfills`;
   const dbModule = target.dbModule ?? PLACEHOLDER_DB_MODULE;
   return [
