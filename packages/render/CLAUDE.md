@@ -4,7 +4,7 @@ Owns: the `route` primitive, the four render modes, the route table, the surface
 islands + budgets, hydration directives, `<head>` merge, **the server JSX runtime and the two Bun
 loaders that make an app's `.tsx` and `.scss` runnable**.
 
-**Three entry points.** `"."` and `"./server"` are disjoint; `"./client"` deliberately repeats a few of `"."`'s names (below). `"."` (`index.ts`) is the CLIENT half and bundles for the browser;
+**Three entry points**; `"."` and `"./server"` disjoint. `"."` (`index.ts`) is the CLIENT half and bundles for the browser;
 `"./server"` (`server.ts`) is the build-time half — `css-modules`, `module-loader`, `render-html`,
 `render-isr`, `render-ssr`, `render-static`, `render-stream` — and does not (`css-modules.ts` needs
 `node:url`, which a browser build cannot link; no `sideEffects` value repairs that). Never re-export
@@ -91,7 +91,7 @@ axiom 6). Never `cli` (upward).
 | An undecodable path segment | not a match, never a throw — `decodeSegment` in `registry.ts`. |
 | ISR registration | reconciled against `store.paths()` after every generation (`forgetEvictedPaths`). |
 | Stream hole deadline | `DEFAULT_HOLE_TIMEOUT_MS` (15 s), `holeTimeoutMs: null` to opt out, otherwise a whole number ≥ 1. A hole reveals exactly once — promise, rejection or deadline. |
-| Errors | `errors.ts` subclasses only — except `NavigationModalPathInvalidError`, which lives in `navigation-errors.ts` (on `@ultimat3/core/page`) so `./client` never reaches the table; `errors.ts` re-exports it, one class from both entries. Never a bare `Error`, never a bare `TODO`. |
+| Errors | `errors.ts` subclasses only, but for `navigation-errors.ts` (re-exported; keeps `./client` off the table). Never a bare `Error`, never a bare `TODO`. |
 | Policy | render checks *presence* only. Evaluation belongs to `@ultimat3/policy`. |
 | A gated route is never a cached one | `modes.ts` refuses `policy` on both `static` and `isr` (`X_ROUTE_MODE_INVALID`, `modes.test.ts`). `ssr` is the one gated mode. |
 | Responses | return `RenderResult`. `@ultimat3/http` builds the `Response`. |
