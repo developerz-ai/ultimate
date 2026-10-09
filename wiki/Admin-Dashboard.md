@@ -333,7 +333,7 @@ declare function AppShell(props: {
 
 interface ShellData {
   readonly role: string | null;
-  readonly path: string;
+  readonly orgId: string | null;
 }
 
 // Islands FIRST: the claim's defineRoute drains them, which is how the page hydrates.
@@ -343,9 +343,9 @@ export const config = claimAdminRoute(admin, `${admin.basePath}/credits`, {
   hydrate: 'idle',
   budget: { js: '60kb' },
   // The app's half of the data, read AFTER the screen decided — the refused included (`denied`).
-  load: ({ ctx, url }): ShellData => ({
+  load: ({ ctx }): ShellData => ({
     role: ctx.actor.roles?.[0] ?? null,
-    path: new URL(url).pathname,
+    orgId: ctx.actor.orgId ?? null,
   }),
 });
 
@@ -353,7 +353,7 @@ export function Page(props: { readonly data: AdminClaimData<ShellData> }): JSX.E
   return (
     <AppShell titleKey={props.data.denied ? null : props.data.titleKey}>
       {props.data.body}
-      <GrantForm orgId={props.data.app.path} />
+      <GrantForm orgId={props.data.app.orgId} />
     </AppShell>
   );
 }
