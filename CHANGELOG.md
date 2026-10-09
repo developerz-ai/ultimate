@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.4.0 - 2026-10-09
+
 ### Added
 
 Tier 0 — core. Tier 1 — i18n. Tier 2 — auth. Tier 3 — jobs, query. Tier 4 — ui. Tier 5 — cli, testing. Both tracked apps.
@@ -24,6 +28,14 @@ Tier 5 — testing.
 
 - **A launched Chrome runs no component-extension page (`--disable-component-extensions-with-background-pages`).** `--disable-extensions` left Google Chrome's built-in extensions running, each with a background page; the hangouts one loading `thunk.js` at start-up was paused by `x shot`'s browser-wide interception and logged as an off-list request of the page under test. Held by `packages/testing/e2e/cdp-launch-targets.e2e.test.ts`: the only target of a fresh launch is `page about:blank`.
 - **The framework's CI no longer goes red on four flakes.** `scaffold-helm-retire.test.ts` awaits `helm template` instead of `Bun.spawnSync`, whose wait inside a `bun test --parallel` worker missed the child's exit (exit 0 and empty stdout at exactly its 30 s timeout, or no wake at all until the `unit` step's 480 s deadline). A "re-run failed jobs" merges each gate part's newest attempt (`scripts/verify-parts.ts`, `X_VERIFY_PART_UNNAMED`), never the red document the rerun replaced. The late-profile-writer test drives `remove` with a settle wider than its writer, instead of racing a forking 5 ms poller against the 50 ms one on a loaded runner.
+
+### Commits
+
+- fix(ci,testing): four CI flakes — helm spawnSync wait, re-run merges stale parts, Chrome component extensions, profile-writer race (#746)
+- feat(auth): login() by handle; the deployed demo adopts @ultimat3/auth (#710 row 9) (#745)
+- feat(cli): the directory form is the one layout (X_LAYOUT_SIBLING_MODULE); both tracked apps migrated (#710 row 10) (#744)
+- feat(core,query,i18n,ui): a read's Date arrives as a Date; a catalog slice crosses into an island (#710 row 19) (#742)
+- feat(jobs): redisJobDriver() on Bun.redis, held to the conformance suite (#710 row 5) (#739)
 
 ## 27.3.0 - 2026-10-09
 
