@@ -14,6 +14,7 @@ import { listQueries } from '@ultimat3/query';
 import type { SyncNode, SyncWs } from '@ultimat3/realtime/server';
 import {
   ChannelHub,
+  describeChannels,
   LiveQueryRegistry,
   listenSyncNode,
   liveQueryDefinition,
@@ -193,6 +194,19 @@ export function registerLiveQueries(options: StartRolesOptions): LiveQueryRegist
     if (target.isLive) registry.register(liveQueryDefinition(target, { ctx, lsn }));
   }
   return registry;
+}
+
+/**
+ * Whether a node in this process would read a committed change at all: a `live: true` query, or a
+ * declared channel that lists `records`. What is left when neither exists is events channels, and
+ * those ride the transport from whoever publishes them (`publishChannelEvent`) — so the boot asks
+ * this before it holds a real database to having a replicator (`runtime-live-feed.ts`).
+ */
+export function syncReadsChanges(): boolean {
+  return (
+    listQueries().some((target) => target.isLive) ||
+    describeChannels().some((declared) => declared.records.length > 0)
+  );
 }
 
 /**

@@ -18,8 +18,9 @@ import { type Bridge, unsubscribeWhenOpen } from './channel-bridge';
 import type { Channel, Topic } from './channel-decl';
 import { DenialLatch } from './channel-latch';
 import { ChannelLogs, type ChannelTopic } from './channel-logs';
+import { channelSubject, sendChannelEvent } from './channel-publish';
 import { getChannel, registeredChannels } from './channel-registry';
-import type { ChannelEventsFrame, ChannelSubscribeTarget } from './channel-wire';
+import type { ChannelSubscribeTarget } from './channel-wire';
 import {
   isPolicyDenial,
   SubscriptionLimitError,
@@ -29,11 +30,9 @@ import {
 import type { Transport } from './fanout';
 import type { JsonObject } from './json';
 import type { SocketRegistry, SyncSocket } from './socket';
-import { decode, PROTOCOL_VERSION } from './sync-protocol';
+import { decode } from './sync-protocol';
 
 export { type Topic, topic } from './channel-decl';
-
-const CHANNEL_SUBJECT_PREFIX = 'x.channel';
 
 export interface ChannelHubOptions {
   readonly transport: Transport;
@@ -253,8 +252,7 @@ export class ChannelHub {
     // A topic this node holds open on a channel declared without `events` carries none: a
     // presence leave for it was an event on a channel whose members were promised records only.
     if (this.#logs.target(name)?.channel.events === false) return;
-    const frame: ChannelEventsFrame = { type: 'events', v: PROTOCOL_VERSION, channel: name, event };
-    await this.#transport.publish(`${CHANNEL_SUBJECT_PREFIX}.${name}`, JSON.stringify(frame));
+    await sendChannelEvent(this.#transport, name, event);
   }
 
   /** The declaration and params a topic joined on this node resolves to — `undefined` if none. */
@@ -448,7 +446,7 @@ export class ChannelHub {
   async #open(name: Topic, bridge: Bridge): Promise<void> {
     // Published into the bridge before it is awaited: that is what makes a second subscriber join
     // this open instead of starting a second one the table can never reach again.
-    bridge.sub ??= this.#transport.subscribe(`${CHANNEL_SUBJECT_PREFIX}.${name}`, (payload) => {
+    bridge.sub ??= this.#transport.subscribe(channelSubject(name), (payload) => {
       this.#sockets.deliver(name, decode(payload));
     });
     await bridge.sub;

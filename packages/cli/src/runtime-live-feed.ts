@@ -40,6 +40,12 @@ export interface LiveFeedInput {
   readonly transport: string;
   /** Whether the `replicator` role runs in THIS process. */
   readonly replicatorHere: boolean;
+  /**
+   * Whether anything this node serves reads a committed change: a `live: true` query, or a channel
+   * that lists `records` (`role-sync.ts`'s `syncReadsChanges`). An events-only channel does not —
+   * the app publishes its frames through the transport — so such a node needs no replicator.
+   */
+  readonly readsChanges: boolean;
 }
 
 /** The label the `x dev` boot line carries beside `db=`, `events=` and `storage=`. */
@@ -49,11 +55,16 @@ export const liveFeedLabel = (feed: LiveFeed): string => `live=${feed}`;
  * `embedded` → the in-process bridge; anything else → replication, which is the WAL decoder's
  * job whether the replicator role runs in this process or another. Never both: with a real
  * database the decoder already delivers this process's own writes, and a bridge beside it would
- * deliver every one of them twice. No sync node, no feed to speak of.
+ * deliver every one of them twice. No sync node, no feed to speak of — and none for a node on a
+ * real database that serves only events channels, which the transport alone carries.
  */
 export async function startLiveFeed(input: LiveFeedInput): Promise<RunningLiveFeed> {
   if (input.sync === null) return { feed: 'none', bridge: null, stop: () => undefined };
   if (input.dbMode !== 'embedded') {
+    // Nothing here reads the log, so nothing is owed one: refusing this node demanded a
+    // replication slot (and the cluster-wide REPLICATION grant) to carry channel events the
+    // write-ahead log never held. `none`, said on the boot line, never a `replication` nobody runs.
+    if (!input.readsChanges) return { feed: 'none', bridge: null, stop: () => undefined };
     // A decoder this node can hear: in this process, or on a bus other processes share. Neither
     // is a sync node that reported `replication` while nothing could ever reach it.
     if (input.transport === 'in-process' && !input.replicatorHere)

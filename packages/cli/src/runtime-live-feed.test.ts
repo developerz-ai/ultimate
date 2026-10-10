@@ -13,6 +13,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       dbMode: 'embedded',
       transport: 'in-process',
       replicatorHere: false,
+      readsChanges: true,
     });
     expect(none.feed).toBe('none');
     const external = await startLiveFeed({
@@ -20,6 +21,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       dbMode: 'external',
       transport: 'nats',
       replicatorHere: false,
+      readsChanges: true,
     });
     expect(external.feed).toBe('replication');
     expect(external.bridge).toBeNull();
@@ -43,6 +45,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       dbMode: 'embedded',
       transport: 'in-process',
       replicatorHere: false,
+      readsChanges: true,
     });
     expect(live.feed).toBe('in-process');
     expect(live.bridge).not.toBeNull();
@@ -70,6 +73,7 @@ describe('startLiveFeed decides by the database, never by guessing', () => {
       dbMode: 'embedded',
       transport: 'in-process',
       replicatorHere: false,
+      readsChanges: true,
     });
     try {
       rowObserver()?.onChange({ entity: 'notes', op: 'insert', before: null, after: { id: 'n1' } });
@@ -103,6 +107,7 @@ describe('a split-role topology that cannot deliver a change', () => {
       dbMode: 'external',
       transport: 'in-process',
       replicatorHere: false,
+      readsChanges: true,
     }).then(
       () => 'booted',
       (error: unknown) => (isUltimateError(error) ? error.code : 'not coded'),
@@ -115,8 +120,31 @@ describe('a split-role topology that cannot deliver a change', () => {
       ['nats', false],
       ['in-process', true],
     ] as const) {
-      const live = await startLiveFeed({ sync, dbMode: 'external', transport, replicatorHere });
+      const live = await startLiveFeed({
+        sync,
+        dbMode: 'external',
+        transport,
+        replicatorHere,
+        readsChanges: true,
+      });
       expect(live.feed).toBe('replication');
+    }
+  });
+
+  // An events-only channel reads no change: its frames are published by the app, through the
+  // transport (`publishChannelEvent`). Refusing that node asked for a replication slot — the
+  // REPLICATION grant, cluster-wide — to carry events no write-ahead log ever held.
+  test('a node that serves no live query and no records channel needs no feed, on either bus', async () => {
+    for (const transport of ['in-process', 'nats'] as const) {
+      const live = await startLiveFeed({
+        sync,
+        dbMode: 'external',
+        transport,
+        replicatorHere: false,
+        readsChanges: false,
+      });
+      expect(live.feed).toBe('none');
+      expect(live.bridge).toBeNull();
     }
   });
 });

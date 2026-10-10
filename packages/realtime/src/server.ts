@@ -44,6 +44,12 @@ export {
   DEFAULT_MAX_TOPICS_PER_NODE,
 } from './channel';
 export { type ChannelDescription, describeChannels } from './channel-describe';
+// What a job or an action publishes an event with: the process's own bus, no hub needed.
+export {
+  publishChannelEvent,
+  resetChannelTransport,
+  setChannelTransport,
+} from './channel-publish';
 export { RealtimeTopologyError } from './errors';
 export {
   InProcessTransport,

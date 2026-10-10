@@ -37,13 +37,12 @@ export const notifySubscribers = job({
       return found;
     });
 
-    // No channel announcement here, and it is a gap rather than a decision: a `ChannelHub` is
-    // built by the process that serves sockets (`new ChannelHub(...)` in
-    // packages/cli/src/role-sync.ts) and there is no seam by which an app reaches it — a worker
-    // building its own would publish onto a transport nothing bridges. This step used to call
-    // `ctx.channel(...)`, a service nothing registered, so every run of this job dead-lettered on
-    // a `TypeError` before it mailed anybody. The feed stays live through `live/live-feed.ts`'s
-    // `query({ live: true })`, which is the path that does work.
+    // No channel announcement here, by decision: `org-posts` carries RECORDS, derived from the
+    // change feed, so the committed row already reached every member and an event beside it would
+    // say the same thing twice. A job that does announce calls `publishChannelEvent(decl, params,
+    // event)` from `@ultimat3/realtime/server` on a channel declared `events: true` — the process
+    // bus, no hub. This step used to call `ctx.channel(...)`, a service nothing registered, so
+    // every run of this job dead-lettered on a `TypeError` before it mailed anybody.
     const recipients = await step.run('load-recipients', () =>
       ctx.orgs.digestRecipients(toOrgId(post.orgId)),
     );

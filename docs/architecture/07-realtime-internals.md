@@ -198,7 +198,7 @@ serves every registered one. The raw-topic hub API (`guard`, `subscribe(socket, 
 | Kind | Source | Carries | Store |
 |---|---|---|---|
 | `records` | `ChannelHub.deliverChange(change)`, fed the same `ChangeEvent` stream as `LiveQueryRegistry.deliver`; a committed row of a listed entity, matched to the topic by its param columns | `{ channel, seq, epoch, adopt?, remove? }`, keyed record type → record key → row | adopted into the tab's `RecordStore`, never into a handler |
-| `events` | `hub.publishEvent(decl, params, event)` on a channel declared `events: true`, across nodes by the transport | an app payload; a presence roster is `{ presence: op, members, total? }` | never; handlers only (`onEvent`, `onPresence`) |
+| `events` | `publishChannelEvent(decl, params, event)` from any role's app code (the process bus the boot installed, `channel-publish.ts`), or `hub.publishEvent(decl, params, event)` on the node — on a channel declared `events: true`, across nodes by the transport | an app payload; a presence roster is `{ presence: op, members, total? }` | never; handlers only (`onEvent`, `onPresence`) |
 | `replay-gap` | the hub, when it cannot prove a socket holds a topic's frames | `{ channel, epoch }` | the client re-runs the channel's `catchUp` query |
 
 ### Sequence, epoch, ring
