@@ -8,7 +8,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+Tier 2 — entity. Tier 3 — realtime.
+
+- **An `arrayOf(uuid())` column reads on a real Postgres.** `Bun.SQL` hands back the array types it has no parser for as their TEXT literal (`'{01a1…,01a2…}'` for `uuid[]`, the empty `'{}'` included), and `decodeRow` passed that string to `arrayOf`'s parser, which refuses anything that is not an `Array`: every read of a row holding one, the `returning` of the insert that wrote it included, was `X_INVARIANT_VIOLATED` ("column.array: expected an array, got a string of 38 characters", a 422 on the HTTP surface). PGlite parses `uuid[]`, so `x dev`, the `unit` step and an app's own tests never saw it; only a server did. An `arrayOf()` cell is now read by its declaration: an `Array` as before, a typed array (`Bun.SQL` answers `int4[]` with an `Int32Array` on a pool that prepares statements) as a plain array, and a string through the Postgres array literal grammar, with quoting, backslash escapes, NULL members and `{}`, each element then parsed by the element column. A cell that is none of these is still `X_INVARIANT_VIOLATED`, now naming the entity and the property; a string in a non-array column is never inspected. Writes, and `contains` / `overlaps` with a bound array, were measured for every element type and were already correct. Nothing to change in an app; rows written before this release read back as written.
+- **Every column kind is round-tripped on both drivers.** One entity declares every column kind and an array of every element kind `arrayOf()` accepts (nullable elements included), and seven rows go through insert, a keyed read, an unfiltered read and an update on PGlite (`unit` step) and on `Bun.SQL` against Postgres (`live` step), each compared with `memoryDriver()`. A kind added to `COLUMN_KINDS` without a column in that entity fails the suite. The only live array test before this used `arrayOf(text())`, the one element type both drivers parse.
+- **The array literal grammar has one reader.** `parsePgArray` moved from `@ultimat3/realtime` into `@ultimat3/entity` (exported from the barrel), and the WAL decoder imports it, so a live row and a repository row cannot disagree about a quoted `"NULL"`.
 
 ## 27.6.0 - 2026-10-10
 

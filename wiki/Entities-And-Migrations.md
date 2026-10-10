@@ -493,7 +493,7 @@ is the shape a table already has, `As of 2026-08`.
 | `date()` | `date` | `PlainDate` — a calendar date, no time, no zone |
 | `bigint()` | `bigint` | `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53, which is where a legacy `int8` key lives |
 | `bytes()` | `bytea` | `Uint8Array`, normalised across both drivers |
-| `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column |
+| `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column. Elements: `uuid`, `text` (and `url`, `enumerated`, `tz`, `locale`), `integer`, `boolean`, `timestamp`, `decimal`, `date`, `bigint`, each optionally `.nullable()`. The row is the same on both drivers: a driver that returns an array as its text literal (`Bun.SQL` does for `uuid[]`) is read by the column's declaration |
 
 **No NUL in text.** `text()` and `url()` refuse a string carrying U+0000 (`X_INVARIANT_VIOLATED`,
 `column.format`) — the one character a Postgres `text` value cannot hold (SQLSTATE 22021), so the

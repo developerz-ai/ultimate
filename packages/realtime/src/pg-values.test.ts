@@ -4,7 +4,8 @@
 // `Date`'s epoch number and which `post.tags.map(…)` throws on.
 
 import { describe, expect, test } from 'bun:test';
-import { arrayElementOid, parsePgArray } from './pg-array';
+import { parsePgArray } from '@ultimat3/entity';
+import { arrayElementOid } from './pg-array';
 import { decodeValue } from './pg-values';
 
 const TIMESTAMPTZ = 1184;

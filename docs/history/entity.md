@@ -1324,6 +1324,7 @@ string (a `lookup` column's is equal for equal values).
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is three columns) |
+| `pg-array-literal.ts` / `pg-array-decode.ts` | the Postgres array literal grammar; an `arrayOf()` cell in any shape a driver hands back → a JS array |
 | `row-observer.ts` | `setRowObserver` — committed row changes, above the driver, for a change feed that has no log to read. A change made inside a keyed request carries `write` (`currentWriteOrigin()`) |
 | `write-tag.ts` | a keyed request's write names itself in the WAL: `pg_logical_emit_message(true, WRITE_ORIGIN_WAL_PREFIX, digest)` opens its transaction, once per transaction; a write outside one gets a transaction of its own; a role that may not execute it is probed once and its writes go out untagged; a pinned repository is never wrapped |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
@@ -1363,3 +1364,58 @@ the same function, which reads either side as plain digits. So `where({ total: 1
 `bigint()` column matches the row holding `'10'` in the memory driver, as it always did in
 Postgres. `compare-parity.test.ts` runs the rows against both drivers; emitted DDL did not move
 (`ddl-pin.test.ts`).
+
+## 2026-10-10 — an array cell is read by its declaration, not by the driver's type table
+
+`arrayOf(uuid())` could be written and never read on a real server: `decodeRow` handed the driver's
+cell to `arrayOf`'s `$parse`, and `Bun.SQL` answers `uuid[]` with the array's TEXT literal
+(`'{01a1…}'`), which is not an `Array`. Every read of a row holding one was `X_INVARIANT_VIOLATED`
+("expected an array, got a string of 38 characters"), including the `returning *` of the insert
+that wrote it. PGlite parses `uuid[]`, and PGlite is what `x dev`, the `unit` step and an app's own
+tests run on, so nothing in this tree or in an app's gate could see it; a built image against
+Postgres was the first thing that did. The one live array test (`columns-data.live.test.ts`) used
+`arrayOf(text())`, the one element type both drivers parse.
+
+Measured on Bun 1.4.2 against Postgres 17 (the framework's pool, `prepare: false`) and PGlite, for
+`select <expr>` of each type:
+
+| Postgres type | `Bun.SQL`, `prepare: false` (what `postgresClient` opens) | `Bun.SQL`, prepared (binary results) | PGlite |
+|---|---|---|---|
+| `uuid[]` (and `'{}'::uuid[]`) | **`string`, the literal** | **`string`, the literal** | `Array` |
+| `text[]`, `varchar[]` | `Array` | `Array` | `Array` |
+| `int4[]` | `Array` of `number` | **`Int32Array`**; with a NULL member **`Failed to read data`** and the connection is dropped | `Array` |
+| `float4[]` (no column kind) | `Array` | **`Float32Array`**; NULL member fails as above | `Array` |
+| `int8[]` | `Array` of `string` | same | `Array` of `number` / `bigint` |
+| `numeric[]` | `Array` of `string` | same | same |
+| `bool[]` | `Array` of `boolean` | same | same |
+| `timestamptz[]`, `date[]` | `Array` of `Date` | same | same |
+| `jsonb[]`, `bytea[]` (refused by `arrayOf`) | `Array` | same | `Array` |
+| an `enum` type's array (no column kind) | `string`, the literal | same | `string`, the literal |
+| every scalar kind | as `columns-data.ts` records | same | `int8` is a `bigint` |
+
+So the unparsed cases are exactly the array types the driver has no entry for, and a user-defined
+type's oid is per-database: a table keyed by oid cannot be complete. `Bun.SQL` also has no
+type-parser registration to hang one on. The declared column is the only thing that knows the cell
+is an array, so `decodeRow` asks `arrayFromDriver(meta, value)` (`pg-array-decode.ts`) for an array
+column and for no other: an `Array` passes through, a typed array becomes a plain one, a string is
+read by `parsePgArray` with each element's text turned into the value a parsing driver hands over
+(`number`, `boolean`, `Date`, or the text itself), and anything else is `X_INVARIANT_VIOLATED`
+naming the entity and the property. A string in a `text()` column is never inspected.
+
+`parsePgArray` moved here from `@ultimat3/realtime`'s `pg-array.ts`, which read the same literal
+off the WAL; realtime imports it, so the grammar has one reader. `pg-array-literal.test.ts` holds
+it to the writer (`arrayLiteral` in `pg-row.ts`).
+
+The write direction was measured in the same pass and was already right: an array is bound as its
+quoted literal (`bindable`), an untyped parameter takes the column's type, and `@>` / `&&` with a
+bound operand match on every element type.
+
+`column-matrix-fixture.ts` is the guard: one entity declaring every `COLUMN_KINDS` member and an
+array of every element kind `arrayOf()` accepts (a kind added to the list without a column there is
+red), seven adversarial rows, each through insert `returning`, a keyed read, an unfiltered read and
+update `returning`, compared with `memoryDriver()`. `column-matrix-parity.test.ts` runs it on
+PGlite in the `unit` step and `column-matrix.live.test.ts` on `Bun.SQL` in the `live` step.
+
+Not fixed, because the framework never opens such a pool: on a PREPARING `Bun.SQL` connection an
+`int4[]` with a NULL member fails inside the driver. `prepare: false` is `bun-sql.ts`'s; a change
+to it has to answer the third column of the table above first.

@@ -48,7 +48,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   list or nothing, and a NULL in it emits `(col in (…) or col is null)`; a column the row never NAMED
   is NULL for `eq`/`neq`/`in`.
 - **The Postgres driver is proved against a real Postgres** (`pg-driver.live.test.ts`, skipped without
-  `TEST_DATABASE_URL`). A new operator, column kind or write path is not done until it round-trips.
+  `TEST_DATABASE_URL`). A new operator, kind or write path is not done until it round-trips.
 - **A repository call rejects, never throws synchronously** (`tableFor`'s writes are `async`).
 - **`defaultDriver()`** is the process default; `Driver.reset?()` is optional (memory only), resets
   repositories in place. Test seam only.
@@ -102,7 +102,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `seekFrom(entity, plan)`; **`assertSeekable` runs in `planFor`**, before a statement exists. A
   `timestamptz` sort key is refused when its `<column>$US` alias would pass 63 bytes. A cursor is bound
   to `planScope(plan)` (entity, filters, sort); a bad one is `X_CURSOR_INVALID`, never "from the top".
-- **A NULLABLE sort key orders** `asc nulls last` / `desc nulls first` (written down); the cursor tags
+- **A NULLABLE sort key orders** `asc nulls last` / `desc nulls first`; the cursor tags
   `~` for NULL and `!` for present; the seek reaches NULLs; a nullable key has no row comparison. Only a
   nullable PRIMARY-KEY column is refused. `pg-null-order.live.test.ts`.
 - **A `timestamp` cursor carries MICROSECONDS**: `seekPrecision` projects `(col at time zone
@@ -145,8 +145,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   NAME and the TABLE are different things** — cache tags and policies key on the name; index names are
   the table's.
 - **Invariants run twice and only ONE side is rendered here**: app-side `assertInvariants`, and the
-  CHECK/UNIQUE DDL is `@ultimat3/db`'s `invariant-ddl.ts` reading `$describe()` (`$migration()` and the
-  local renderers are deleted). An untranslatable predicate is `kind: 'assert'`, `sql: null`.
+  CHECK/UNIQUE DDL is `@ultimat3/db`'s `invariant-ddl.ts` reading `$describe()`. An untranslatable predicate is `kind: 'assert'`, `sql: null`.
   **`InvariantDescription.columns` is projected** (`describe-invariant.test.ts`).
 - **The two halves must AGREE, term by term** (`expr.ts`): `matches(/…/i)` is `~*`, other flags are
   refused (`matchOperator`); `minLength` counts code points; `trimmed()` strips U+0020 only (`btrim`);
@@ -175,8 +174,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `scale: null` means a two-column amount (`decodeRow` branches on `$meta.kind === 'money'`).
 - **Timestamps are `timestamptz`.** A naive timestamp stays inexpressible.
 - **A `jsonb` value is bound `::text::jsonb`** (load-bearing); an array is written as a quoted `{…}`
-  literal. **Wide column types are normalised in `$parse`** to one row type per driver (`bigint()` and
-  `decimal()` are strings).
+  literal, read by its DECLARATION (`pg-array-decode.ts`); `column-matrix-fixture.ts` is every kind
+  on both drivers. **Wide types are normalised in `$parse`** (`bigint()`, `decimal()`: strings).
 - **Every framework member on an entity is `$`-prefixed.** Row types are derived, never re-declared.
   **A branded id survives to the signature** (`IdOf<Row>`). `type-pins.ts` enforces all of it.
 - **`$parse` tells absence from `null`** (`raw === undefined ? defaultValue(...) : raw`).
