@@ -6,9 +6,11 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { NatsClient, NatsConnect } from './nats-client';
+import { DIAL_TIMEOUT_MS } from './nats-dial-wait';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
 import { NatsTransport, type NatsTransportOptions } from './nats-transport';
 import type { BackoffPolicy } from './thundering-herd';
+import { BUS_CONNECT_WAIT_MS } from './transport-env';
 
 const codeOf = (value: unknown): string =>
   isUltimateError(value) ? value.code : `not an UltimateError: ${String(value)}`;
@@ -140,6 +142,100 @@ describe('NatsTransport.connectInBackground', () => {
 
     expect(bus.attempts()).toBe(after);
     expect(bus.broker.clients).toHaveLength(0);
+  });
+});
+
+describe('NatsTransport, the dial loop at its edges', () => {
+  // The loop's memo used to be cleared one microtask AFTER the loop returned. A connection that
+  // closed for good in that gap asked for a loop, was handed the finished one, and nothing ever
+  // dialled again: every kept subscription stayed orphaned.
+  test('a client lost in the microtask after the loop lands still starts a new loop', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const broker = new FakeNatsBroker({ clock });
+    const open = fakeNatsConnect(broker);
+    const dialled: { client: NatsClient; onClosed: (() => void) | undefined }[] = [];
+    const connect: NatsConnect = async (options) => {
+      const client = await open(options);
+      dialled.push({ client, onClosed: options.onClosed });
+      return client;
+    };
+    const transport = new NatsTransport({
+      url: 'nats://bus.test:4222',
+      bucket: 'x-test',
+      clock,
+      backoff: QUICK,
+      connect,
+      onError: () => undefined,
+    });
+    let losses = 0;
+    transport.onReconnect(() => {
+      if (losses > 0) return;
+      losses += 1;
+      // Queued while the loop is still on the stack, so it runs after the loop's function has
+      // returned and before any reaction to its promise: exactly the gap.
+      queueMicrotask(() => {
+        const first = dialled[0];
+        if (first === undefined) expect.unreachable('no dial landed');
+        void first.client.close();
+        first.onClosed?.();
+      });
+    });
+
+    transport.connectInBackground();
+    await waitFor(() => dialled.length === 2 && transport.connected);
+
+    expect(dialled).toHaveLength(2);
+    expect(transport.connected).toBe(true);
+    await transport.close();
+  });
+
+  test('an onError that throws does not end the loop, and nothing is left unhandled', async () => {
+    const bus = harness();
+    bus.broker.offline = true;
+    const unhandled: unknown[] = [];
+    const note = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', note);
+    const transport = bus.transport({
+      onError: () => {
+        // What an app's reporter does when the thing it reports to is the thing that is down.
+        JSON.parse('the sink is gone');
+      },
+    });
+    try {
+      transport.connectInBackground();
+      await waitFor(() => bus.attempts() >= 4);
+      expect(bus.attempts()).toBeGreaterThanOrEqual(4);
+
+      bus.broker.offline = false;
+      await waitFor(() => transport.connected);
+      expect(transport.connected).toBe(true);
+      await Bun.sleep(5);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', note);
+      await transport.close();
+    }
+  });
+
+  test('a dial is given a connect timeout below the boot wait, so a black hole is an attempt that ends', async () => {
+    const seen: (number | undefined)[] = [];
+    const broker = new FakeNatsBroker();
+    const open = fakeNatsConnect(broker);
+    const transport = new NatsTransport({
+      url: 'nats://bus.test:4222',
+      bucket: 'x-test',
+      connect: (options) => {
+        seen.push(options.connectTimeoutMs);
+        return open(options);
+      },
+    });
+    await transport.connect();
+
+    expect(seen).toEqual([DIAL_TIMEOUT_MS]);
+    expect(DIAL_TIMEOUT_MS).toBeLessThan(BUS_CONNECT_WAIT_MS / 2);
+    await transport.close();
   });
 });
 

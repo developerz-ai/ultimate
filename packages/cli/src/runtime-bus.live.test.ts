@@ -18,6 +18,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'; // why: Bun has no
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { invalidateTags, tag } from '@ultimat3/cache';
 import type { HealthReport } from '@ultimat3/core';
 import { isUltimateError, resetLifecycle } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
@@ -29,6 +30,7 @@ import type { RunningRoles } from './role-start';
 import { startRoles } from './role-start';
 import { resolveServices } from './runtime-bindings';
 import { busLabel } from './runtime-bus';
+import { CACHE_INVALIDATE_SUBJECT } from './runtime-cache';
 import type { RunningServices } from './runtime-services';
 import { startServices } from './runtime-services';
 
@@ -220,6 +222,14 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       await syncSide.transport.subscribe('x.channel.bus-live-feed.>', (payload) => {
         heard.push(payload);
       });
+      // And a peer replica's cache hop. A bust made now, with the bus down, is refused — and owed.
+      const busts: string[] = [];
+      await syncSide.transport.subscribe(CACHE_INVALIDATE_SUBJECT, (payload) => {
+        busts.push(payload);
+      });
+      const bust = await invalidateTags([tag('post', '1')]);
+      expect(bust.errors.map((entry) => entry.tier)).toEqual(['broadcast']);
+      expect(busts).toEqual([]);
 
       // NATS UP: no restart, and inside the dial's backoff a publish reaches the sync side.
       relay.up();
@@ -230,6 +240,9 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       await until(() => heard.length === 1, 10);
       expect(heard).toHaveLength(1);
       expect((await readyz(base, '?deep=1')).status).toBe(200);
+      // The bust the bus refused reaches the peer now, once, with no second write to trigger it.
+      await until(() => busts.length >= 1, 10);
+      expect(busts).toEqual(['["post:1"]']);
 
       // NATS DIES MID-FLIGHT. The process stays up and ready, and a publish is refused at once
       // rather than queued in the client for whenever the server returns.

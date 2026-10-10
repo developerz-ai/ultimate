@@ -21,6 +21,7 @@ import { TransportUnavailableError } from './errors';
 import type { Transport, TransportHandler, TransportSet, TransportSubscription } from './fanout';
 import type { NatsClient, NatsConnect } from './nats-client';
 import { parseNatsUrl } from './nats-client';
+import { DIAL_TIMEOUT_MS, landWithin, type NatsConnectWait } from './nats-dial-wait';
 import { ensureKvBucket } from './nats-jetstream';
 import { NatsKvSet } from './nats-kv';
 import { openNatsClient } from './nats-open';
@@ -50,13 +51,8 @@ export interface NatsTransportOptions {
    * `shared`, so a server without JetStream, or without the bucket, must not cost it the bus.
    */
   readonly presenceBucket?: 'dial' | 'first-use';
-}
-
-export interface NatsConnectWait {
-  /** Refuse with `X_TRANSPORT_UNAVAILABLE` once this long has passed without a connection. */
-  readonly withinMs?: number | undefined;
-  /** The `fix:` of that refusal — the caller knows which role is waiting and what it needs. */
-  readonly fix?: string | undefined;
+  /** One dial's connect timeout. Default `DIAL_TIMEOUT_MS`. */
+  readonly dialTimeoutMs?: number;
 }
 
 const DEFAULT_ATTEMPTS = 10;
@@ -78,6 +74,7 @@ export class NatsTransport implements Transport {
   /** False until the first dial lands: what a refusal says while a background dial is in flight. */
   #everUp = false;
   readonly #lazyBucket: boolean;
+  readonly #dialTimeoutMs: number;
   /** Under `'first-use'`: the clients whose bucket has been asserted since they last connected. */
   readonly #bucketed = new WeakSet<NatsClient>();
   /** Set while no client is held and one is being dialled in the background; the attempt in flight. */
@@ -102,6 +99,11 @@ export class NatsTransport implements Transport {
       options.maxReconnectAttempts ?? DEFAULT_ATTEMPTS,
     );
     this.#rng = options.rng ?? Math.random;
+    this.#dialTimeoutMs = finiteOption(
+      'createNatsTransport',
+      'dialTimeoutMs',
+      options.dialTimeoutMs ?? DIAL_TIMEOUT_MS,
+    );
     this.#lazyBucket = options.presenceBucket === 'first-use';
     this.shared = new NatsKvSet({
       client: () => this.#presenceClient(),
@@ -122,28 +124,14 @@ export class NatsTransport implements Transport {
       await this.#ensure();
       return;
     }
-    const withinMs = finiteOption('createNatsTransport', 'connect.withinMs', wait.withinMs);
     const target = parseNatsUrl(this.#options.url);
-    // A real timer, never the injected clock: the wait bounds a container's boot, which the
-    // kubelet counts in real seconds.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const late = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        const last = this.#lastFailure === undefined ? '' : ` — last attempt: ${this.#lastFailure}`;
-        reject(
-          new TransportUnavailableError({
-            transport: this.name,
-            reason: `${target.host}:${target.port} did not accept a connection within ${withinMs}ms${last}`,
-            ...(wait.fix === undefined ? {} : { fix: wait.fix }),
-          }),
-        );
-      }, withinMs);
+    await landWithin(this.#client === undefined ? this.#redial() : undefined, {
+      transport: this.name,
+      server: `${target.host}:${target.port}`,
+      withinMs: wait.withinMs,
+      fix: wait.fix,
+      lastFailure: () => this.#lastFailure,
     });
-    try {
-      await Promise.race([this.#client === undefined ? this.#redial() : undefined, late]);
-    } finally {
-      clearTimeout(timer);
-    }
     // The loop also ends when the transport is closed under it.
     if (this.#client === undefined) await this.#ensure();
   }
@@ -279,6 +267,7 @@ export class NatsTransport implements Transport {
       url: this.#options.url,
       name: 'ultimate',
       maxReconnectAttempts: this.#attempts,
+      connectTimeoutMs: this.#dialTimeoutMs,
       // The library retries; the spread is ours, so a cluster restart does not bring every node
       // back on the same millisecond.
       reconnectDelay: () => policyDelay(this.#backoff, ++this.#retries, this.#rng),
@@ -353,9 +342,7 @@ export class NatsTransport implements Transport {
    * kept subscription and is announced: changes published in the gap are gone.
    */
   #redial(): Promise<void> {
-    this.#redialLoop ??= this.#redialUntilUp().finally(() => {
-      this.#redialLoop = undefined;
-    });
+    this.#redialLoop ??= this.#redialUntilUp();
     return this.#redialLoop;
   }
 
@@ -384,7 +371,11 @@ export class NatsTransport implements Transport {
         }
       }
     } finally {
+      // Both, HERE, in the loop's own last synchronous step — never in a reaction to its promise.
+      // A reaction runs a microtask later, and a client lost in that gap (`#lost`) was handed the
+      // finished loop back: nothing dialled again and its subscriptions stayed orphaned.
       this.#redialing = undefined;
+      this.#redialLoop = undefined;
     }
   }
 
@@ -470,8 +461,16 @@ export class NatsTransport implements Transport {
   #report(error: unknown, subject: string): void {
     const handler = this.#options.onError;
     if (handler !== undefined) {
-      handler(error, subject);
-      return;
+      // Total: the handler is injected, and its throw would land in whatever called this — the
+      // dial loop (started with `void`: an unhandled rejection and no more retries), the
+      // library's status loop, a subscriber's delivery. A reporter that cannot report is not a
+      // reason to stop dialling; the fault falls through to the logger line below.
+      try {
+        handler(error, subject);
+        return;
+      } catch (thrown) {
+        logger.error('nats transport onError threw', { error: renderThrowable(thrown) });
+      }
     }
     logger.error('nats transport error', {
       transport: this.name,

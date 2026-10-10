@@ -41,9 +41,10 @@ export interface ServedApp {
   readonly buildId: string;
   /**
    * The bus as the boot left it: `nats(up)`, `nats(connecting)` or `in-process` (`busLabel`). Only
-   * a role that publishes and serves no socket can boot `connecting`.
+   * a role that publishes and serves no socket can boot `connecting`. Optional: a hand-built
+   * `ServedApp` — a test double — has no bus to report, and the boot line then carries none.
    */
-  readonly bus: string;
+  readonly bus?: string;
   readonly running: RunningRoles;
   readonly runtime: RunningServices;
   stop(): Promise<void>;

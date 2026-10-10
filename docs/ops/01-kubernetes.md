@@ -120,14 +120,17 @@ down for a bus those roles only publish "re-read" events to.
 | Role | NATS down at pod start | NATS down while running | Needs JetStream (`-js`) |
 |---|---|---|---|
 | `sync` | retries for 15 s, then exits with `X_TRANSPORT_UNAVAILABLE`; the kubelet restarts it | not ready (`transport: failing`); reconnects on its own | yes, at boot |
-| `replicator` | same | same | no |
+| `replicator` | same | not ready while disconnected; a publish refused during a restart of a second or two is retried in place, so the stream is not torn down for it | no |
 | `web`, `worker`, `scheduler` | **boots and serves**; dials in the background (jittered, 500 ms doubling to 30 s) | **stays ready**; publishes are refused with `X_TRANSPORT_UNAVAILABLE` until it is back, then resume with no restart | no |
 
 What to watch: `/readyz?deep=1` answers 503 while `checks.transport` is `degraded` — the probe on
 `/readyz` stays 200, by design. The boot line carries the state (`"msg":"ultimate started",…,"bus":"nats(connecting)"`)
 and `"msg":"ultimate bus","bus":"nats(up)"` is logged when the connection lands. While the bus is away a cache
 invalidation still clears the replica that made it, Redis and the CDN; the other replicas' in-process
-copies wait for their TTL, and nothing is replayed afterwards. Do not add NATS to a `web` pod's
+copies are stale until it returns. Then each sender publishes the tags it could not (at most 1,024,
+else one flush-all), and every replica that was disconnected empties its in-process `lru` and marks
+its tag-revalidated ISR pages stale — so expect one cold in-process cache per replica after a NATS
+restart, and the database reads that refill it. Do not add NATS to a `web` pod's
 `initContainers` or `dependsOn`: that rebuilds the dependency this removes.
 
 ### Replication is a cluster-wide grant
