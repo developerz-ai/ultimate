@@ -219,6 +219,28 @@ describe('NatsTransport, the dial loop at its edges', () => {
     }
   });
 
+  // Claimed in the changelog and the ops page: an outage is said at once and then ever more
+  // rarely, not once per dial per pod for as long as it lasts.
+  test('a dial that keeps failing is reported on attempts 1, 2, 4, 8, … and on no other', async () => {
+    const bus = harness();
+    bus.broker.offline = true;
+    const transport = bus.transport({
+      backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+    });
+
+    transport.connectInBackground();
+    await waitFor(() => bus.attempts() >= 40);
+    await transport.close();
+
+    // Every failed attempt up to the one `close()` cut short: the powers of two among them.
+    const attempts = bus.attempts();
+    const powers = Math.floor(Math.log2(attempts)) + 1;
+    expect(attempts).toBeGreaterThanOrEqual(40);
+    expect(bus.reported.length).toBeGreaterThanOrEqual(powers - 1);
+    expect(bus.reported.length).toBeLessThanOrEqual(powers);
+    expect(bus.reported.every((error) => codeOf(error) === 'X_TRANSPORT_UNAVAILABLE')).toBe(true);
+  });
+
   test('a dial is given a connect timeout below the boot wait, so a black hole is an attempt that ends', async () => {
     const seen: (number | undefined)[] = [];
     const broker = new FakeNatsBroker();
@@ -295,7 +317,11 @@ describe('NatsTransport.connect({ withinMs })', () => {
     expect(codeOf(refused)).toBe('X_TRANSPORT_UNAVAILABLE');
     expect(causeOf(refused)).toContain('bus.test:4222');
     expect(causeOf(refused)).toContain('within 40ms');
-    expect(isUltimateError(refused) ? refused.fix : '').toContain('nats-server');
+    // No `fix` was passed, and the refusal still carries one: `TransportUnavailableError` supplies
+    // its own when the caller names none (`errors.ts`), so no path leaves this code without a fix.
+    expect(isUltimateError(refused) ? refused.fix : '').toBe(
+      'x doctor — then check NATS_URL points at a reachable nats-server',
+    );
 
     // The boot unwinds by closing the transport; the dial that lands afterwards is not leaked.
     await transport.close();

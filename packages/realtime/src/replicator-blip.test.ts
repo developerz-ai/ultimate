@@ -103,6 +103,33 @@ describe('a bus that is away for a moment', () => {
     expect(bus.published).toEqual([]);
   });
 
+  // The wait's timer was scheduled and its cancel thrown away, so a `stop()` that landed during a
+  // retry left the handler parked for up to 1.5 s — and a feed's stop waits for its handler.
+  test('stop() during a retry wait cancels the timer and ends the wait at once', async () => {
+    const bus = blipping(1);
+    const { feed, timers, replicator } = rig(bus);
+    await replicator.start();
+
+    let settled = false;
+    void feed
+      .deliver(change(7))
+      .catch(() => undefined)
+      .finally(() => {
+        settled = true;
+      });
+    await turns();
+    expect(timers.pending.map((entry) => entry.ms)).toEqual(PUBLISH_RETRY_DELAYS_MS.slice(0, 1));
+
+    await replicator.stop();
+    await turns();
+
+    // No timer left to fire, the handler is out of its wait, and nothing more was published.
+    expect(timers.pending).toEqual([]);
+    expect(settled).toBe(true);
+    expect(bus.attempts).toBe(1);
+    expect(bus.published).toEqual([]);
+  });
+
   test('a refusal that is not the bus being away is not retried', async () => {
     const inner = new InProcessTransport();
     const bus: Transport = {

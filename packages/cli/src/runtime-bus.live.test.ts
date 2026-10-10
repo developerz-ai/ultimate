@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { invalidateTags, tag } from '@ultimat3/cache';
 import type { HealthReport } from '@ultimat3/core';
-import { isUltimateError, resetLifecycle } from '@ultimat3/core';
+import { isUltimateError, logger, resetLifecycle } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { channel, clearChannels } from '@ultimat3/realtime';
 import type { TransportSelection } from '@ultimat3/realtime/server';
@@ -118,8 +118,11 @@ let runtime: RunningServices | undefined;
 let root: string | undefined;
 let relay: Relay | undefined;
 let syncSide: TransportSelection | undefined;
+let restoreLogger: (() => void) | undefined;
 
 afterEach(async () => {
+  restoreLogger?.();
+  restoreLogger = undefined;
   await running?.stop();
   running = undefined;
   await runtime?.stop().catch(() => undefined);
@@ -187,6 +190,15 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
 
       // NATS DOWN, and the web role boots anyway. Before this landed the line below sat in the
       // library's first-dial budget — ten attempts on a 30 s backoff — and then rejected.
+      // Every `ultimate bus` line this boot writes: the other half of a `connecting` boot line.
+      const announced: unknown[] = [];
+      const info = logger.info;
+      restoreLogger = (): void => {
+        logger.info = info;
+      };
+      logger.info = (message: string, fields?: Record<string, unknown>): void => {
+        if (message === 'ultimate bus') announced.push(fields);
+      };
       const bootedAt = performance.now();
       runtime = await startServices(resolveServices(root, env), env, undefined, 'apply', ['web']);
       running = await startRoles({
@@ -236,6 +248,7 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       const serving = runtime;
       await until(() => busLabel(serving.transport) === 'nats(up)', 90);
       expect(busLabel(serving.transport)).toBe('nats(up)');
+      expect(announced).toEqual([{ bus: 'nats(up)', use: 'publish' }]);
       expect(await publish()).toBeUndefined();
       await until(() => heard.length === 1, 10);
       expect(heard).toHaveLength(1);
@@ -260,6 +273,11 @@ describe.skipIf(url === undefined)('a web role and a NATS that is not there', ()
       relay.up();
       await until(() => busLabel(serving.transport) === 'nats(up)', 90);
       expect(busLabel(serving.transport)).toBe('nats(up)');
+      // Said again: one line per recovery, so a log shows when each outage ended.
+      expect(announced).toEqual([
+        { bus: 'nats(up)', use: 'publish' },
+        { bus: 'nats(up)', use: 'publish' },
+      ]);
       expect(await publish()).toBeUndefined();
       await until(() => heard.length === 2, 10);
       await Bun.sleep(200);

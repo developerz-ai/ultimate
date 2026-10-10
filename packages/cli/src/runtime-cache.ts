@@ -180,17 +180,55 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
     deferred.clear();
     flushOwed = true;
   };
-  /** Publish what is owed. Cleared only once the bus took it; a second refusal keeps it owed. */
-  const settle = async (): Promise<void> => {
+  /**
+   * One pass over what is owed. It is TAKEN before the publish and put back if the bus refuses, so
+   * a bust refused while this publish is in flight is owed afresh rather than cleared by a success
+   * that never carried it — and a flush-all sent before that bust cannot stand in for it.
+   */
+  const settleOnce = async (): Promise<void> => {
     if (flushOwed) {
-      await send(CACHE_FLUSH_ALL);
       flushOwed = false;
+      try {
+        await send(CACHE_FLUSH_ALL);
+      } catch (error) {
+        deferred.clear();
+        flushOwed = true;
+        throw error;
+      }
       return;
     }
     if (deferred.size === 0) return;
     const batch = [...deferred];
-    await send(JSON.stringify(batch));
-    for (const wire of batch) deferred.delete(wire);
+    deferred.clear();
+    try {
+      await send(JSON.stringify(batch));
+    } catch (error) {
+      defer(batch);
+      throw error;
+    }
+  };
+  // ONE settle at a time. It is asked for by every reconnect and after every accepted publish,
+  // and two that overlapped both published the same batch (and the same flush-all). A call that
+  // arrives mid-run asks for one more pass instead, which finds whatever the run did not carry.
+  let settling: Promise<void> | undefined;
+  let again = false;
+  const settle = (): Promise<void> => {
+    if (settling !== undefined) {
+      again = true;
+      return settling;
+    }
+    settling = (async (): Promise<void> => {
+      try {
+        do {
+          again = false;
+          await settleOnce();
+        } while (again);
+      } finally {
+        again = false;
+        settling = undefined;
+      }
+    })();
+    return settling;
   };
   const settleQuietly = (): void => {
     void settle().catch((error: unknown) => {

@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   isUltimateError,
+  logger,
   markReady,
   readinessCheckCount,
   readyzPayload,
@@ -109,6 +110,42 @@ describe('selectBus().start(), for a role that only publishes', () => {
     }
     expect(readinessCheckCount()).toBe(0);
     expect(broker.clients).toHaveLength(1); // the test's own listener; the boot's is closed
+  });
+
+  // Claimed in the changelog and the wiki: the other half of a boot line that said `connecting`.
+  test('logs `ultimate bus` with bus=nats(up) when the dial lands, and again after every recovery', async () => {
+    const lines: { message: string; fields: Record<string, unknown> | undefined }[] = [];
+    const info = logger.info;
+    logger.info = (message: string, fields?: Record<string, unknown>): void => {
+      lines.push({ message, fields });
+    };
+    const broker = new FakeNatsBroker();
+    broker.offline = true;
+    const bus = selectBus({ env: ENV, realtime: NATS, roles: ['web'], select: fake(broker) });
+    const running = await bus.start();
+    const said = (): unknown[] =>
+      lines.filter((line) => line.message === 'ultimate bus').map((line) => line.fields);
+    try {
+      await Bun.sleep(10);
+      expect(said()).toEqual([]);
+
+      broker.offline = false;
+      await waitFor(() => said().length === 1);
+      expect(said()).toEqual([{ bus: 'nats(up)', use: 'publish' }]);
+
+      broker.drop();
+      expect(busLabel(running.transport)).toBe('nats(connecting)');
+      broker.restore();
+      expect(said()).toEqual([
+        { bus: 'nats(up)', use: 'publish' },
+        { bus: 'nats(up)', use: 'publish' },
+      ]);
+    } finally {
+      await running.stop();
+      logger.info = info;
+    }
+    // Released with the boot: a later recovery of a transport nobody holds says nothing.
+    expect(said()).toHaveLength(2);
   });
 
   test('a server with no JetStream costs a publisher nothing', async () => {

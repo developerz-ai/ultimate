@@ -143,6 +143,8 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
   /** The run whose stream and lock still speak for this replicator. */
   let current: Run | undefined;
   let cancelRetry: (() => void) | undefined;
+  /** Ends the publish retry's wait in flight, if any — see `publishThroughBlip`. */
+  let endBlipWait: (() => void) | undefined;
   /** Stops listening for the lock being lost. Held only while this replicator holds the lock. */
   let unwatchLock: (() => void) | undefined;
   const unwatch = (): void => {
@@ -206,7 +208,17 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
         const delay = PUBLISH_RETRY_DELAYS_MS[retry];
         if (delay === undefined || !busAway(thrown)) throw thrown;
         await new Promise<void>((resolve) => {
-          schedule(resolve, delay);
+          const cancel = schedule(() => {
+            endBlipWait = undefined;
+            resolve();
+          }, delay);
+          // Held so `stop()` can end the wait: the timer is cleared AND the wait settles, into the
+          // fence below. A stop that only waited it out held the feed's handler for up to 1.5 s.
+          endBlipWait = (): void => {
+            endBlipWait = undefined;
+            cancel();
+            resolve();
+          };
         });
         if (current !== run || run.over !== null) {
           throw fencedOut(run.over ?? 'a newer run started');
@@ -426,6 +438,8 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       pumping = false;
       if (current !== undefined) current.over ??= 'the replicator was stopped';
       current = undefined;
+      // After the run is marked over, so the wait it ends lands in the fence and publishes nothing.
+      endBlipWait?.();
       unwatch();
       // Whatever the feed said: a lock kept because the stream would not close politely is a
       // slot no standby can take. Its refusal is still the one the caller is owed.
