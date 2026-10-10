@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/action",
-  "version": "27.4.0",
+  "version": "27.5.0",
   "description": "The action primitive: one declaration projected to route, OpenAPI, client, MCP tool, job handle, tests",
   "license": "MIT",
   "type": "module",
@@ -35,12 +35,12 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/cache": "27.4.0",
-    "@ultimat3/core": "27.4.0",
-    "@ultimat3/db": "27.4.0",
-    "@ultimat3/entity": "27.4.0",
-    "@ultimat3/http": "27.4.0",
-    "@ultimat3/policy": "27.4.0",
-    "@ultimat3/schema": "27.4.0"
+    "@ultimat3/cache": "27.5.0",
+    "@ultimat3/core": "27.5.0",
+    "@ultimat3/db": "27.5.0",
+    "@ultimat3/entity": "27.5.0",
+    "@ultimat3/http": "27.5.0",
+    "@ultimat3/policy": "27.5.0",
+    "@ultimat3/schema": "27.5.0"
   }
 }

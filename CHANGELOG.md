@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.5.0 - 2026-10-10
+
 ### Added
 
 Tier 3 — realtime. Tier 5 — cli.
@@ -19,6 +23,10 @@ Tier 3 — realtime. Tier 5 — cli.
 Tier 5 — cli.
 
 - **A `sync` node that serves only events channels needs no replicator.** `X_REALTIME_TOPOLOGY` refused every `sync` node on a real database with the in-process bus and no replicator in the process, whatever it served — so an app whose only realtime was an events-only channel was asked for a replication slot and the cluster-wide `REPLICATION` grant to carry events no write-ahead log ever held. The boot now asks whether anything reads a change (a `live: true` query, or a channel with `records`); when nothing does the node boots with `live=none`, on either transport.
+
+### Commits
+
+- feat(realtime): publishChannelEvent from any role; an events-only sync node needs no replicator (#748)
 
 ## 27.4.0 - 2026-10-09
 
