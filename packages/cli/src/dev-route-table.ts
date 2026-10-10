@@ -188,6 +188,7 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
       buildId: input.buildId,
       ...(input.isr === undefined ? {} : { isr: input.isr }),
       resolveIsland: (file) => input.islands().resolverFor(file),
+      realtimeIslands: () => input.islands().realtime,
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),

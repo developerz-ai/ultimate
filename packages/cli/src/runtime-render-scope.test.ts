@@ -21,7 +21,8 @@ import {
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import type { RenderMode } from '@ultimat3/render';
 import { clearRoutes, defineRoute, island, registerRoute } from '@ultimat3/render';
-import { reachesRealtime } from './island-realtime';
+import { realtimeKind } from './island-realtime';
+import type { IslandRealtime } from './island-realtime-state';
 import { processRoot } from './process-root-fixture';
 import { appRoutes } from './runtime-render';
 
@@ -145,6 +146,7 @@ describe('unit · the page boot rides with the scope AND a realtime island', () 
   const ROOT = processRoot(join(import.meta.dir, '..', '.boot-fixture'));
   const Live = island({ src: './live.island.tsx' });
   const Plain = island({ src: './plain.island.tsx' });
+  const kinds = new Map<string, IslandRealtime>();
 
   beforeAll(async () => {
     await rm(ROOT, { recursive: true, force: true });
@@ -156,9 +158,14 @@ describe('unit · the page boot rides with the scope AND a realtime island', () 
       join(ROOT, 'apps/web/app/settings/plain.island.tsx'),
       'export function mount(): void {}\n',
     );
-    // What every island build asks, and what the renderer then reads back.
-    expect(await reachesRealtime(ROOT, 'apps/web/app/settings/live.island.tsx')).toBe(true);
-    expect(await reachesRealtime(ROOT, 'apps/web/app/settings/plain.island.tsx')).toBe(false);
+    // What every island build asks of each island, and what the bundle then hands the renderer.
+    for (const file of ['live', 'plain'].map(
+      (name) => `apps/web/app/settings/${name}.island.tsx`,
+    )) {
+      const kind = await realtimeKind(ROOT, file);
+      if (kind !== undefined) kinds.set(file, kind);
+    }
+    expect([...kinds]).toEqual([['apps/web/app/settings/live.island.tsx', 'restores']]);
   });
 
   afterAll(async () => {
@@ -187,6 +194,7 @@ describe('unit · the page boot rides with the scope AND a realtime island', () 
       routes: appRoutes({
         buildId: BUILD_ID,
         sync: { syncUrl: '/_x/sync', buildId: BUILD_ID, bootUrl: BOOT },
+        realtimeIslands: () => kinds,
       }),
       role: 'web',
       config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),

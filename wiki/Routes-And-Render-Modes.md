@@ -203,6 +203,8 @@ Independent holes each resolve their own [queries](Queries-And-Live-Queries); th
 
 Hydration is per-island, never per-page. A blown `budget.js` is a build failure, so islands cannot quietly accumulate.
 
+**One kind of island is hidden until it mounts, whatever the strategy** (`As of 2026-10`): on a signed-in page with a sync node, an island that reads realtime's record store or outbox is held (`data-x-hold`, `visibility:hidden`, its box kept), booted at once, and revealed when it mounts or after 3 s. An island that only follows a channel's events, a roster or the connection is not, and with scripting off none is. The rule and the list of names: [Realtime](Realtime#which-islands-wait-for-the-pages-restore).
+
 ## Budgets
 
 Per route, and one key: `budget.js`, in bytes. `budget.lcp` is deleted — nothing in the build observes a paint, so it was declared and never weighed.

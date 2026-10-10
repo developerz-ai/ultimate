@@ -1,7 +1,7 @@
-// What a realtime island's bootstrap awaits before its `mount` may run (#506, owner option 3): the
-// page boot's disk restore AND the outbox it opened, so the island's first render already carries
-// the overlays a reload rebuilds from the queue — never the server's stale count. Capped, because
-// an IndexedDB that hangs must cost the hold, never the island.
+// What the bootstrap of a realtime island that READS the store or the outbox awaits before `mount`
+// (#506, owner option 3; one that only follows a channel never imports this): the page boot's disk
+// restore AND the outbox it opened, so the first render already carries the overlays a reload
+// rebuilds from the queue. Capped, because an IndexedDB that hangs must cost the hold, never the island.
 
 import { peekOutbox } from './outbox-slot';
 import { pageRealtime } from './page-store';

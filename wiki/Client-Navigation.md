@@ -359,6 +359,9 @@ await openModal('/runs/new'); // the `navigation: 'modal'` route over this page:
 closeModal(); // as Escape
 ```
 
+The same entry exports `disposeIslands(root)`: what the router calls on the body it swaps out, for an
+island that drops markup holding other islands (`As of 2026-10`, [Client data](Client-Data)).
+
 | Call | With the router | Without it (a `site/` page, a `'document'` page, the router's script blocked) |
 |---|---|---|
 | `navigate(url, { replace? })` | the router's own navigation: the server's gate and the answer decide swap, modal or full load. Another origin: a document load | `location.assign` / `location.replace` |

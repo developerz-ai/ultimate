@@ -151,6 +151,7 @@ export async function webSurface(
     ...appRoutes({
       buildId,
       resolveIsland: (file) => islands.resolverFor(file),
+      realtimeIslands: () => islands.realtime,
       ...(sync.head === undefined ? {} : { sync: sync.head }),
       persisted: sync.persisted,
       ...(navigation.head === undefined ? {} : { navigation: navigation.head }),

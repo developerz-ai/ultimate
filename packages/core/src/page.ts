@@ -26,6 +26,10 @@ export type { ConflictPolicy, Row } from './conflict-policy';
 // Registry-free: it merges two rows and throws nothing, so the page's record store settles a
 // write under a conflict policy without loading the error table.
 export { resolveConflict } from './conflict-policy';
+// The registry's one writer, for a package that titles its OWN codes in a browser chunk
+// (`@ultimat3/realtime`'s `error-titles.ts`). A function, not a table: `errors.ts` already retains
+// `error-codes.ts`, so this adds no module — and through the barrel it cost both anchored tables.
+export { registerErrorCodes } from './error-codes';
 export { renderFixShellArg, renderThrowable, stringField } from './error-render';
 export { classifyThrown } from './error-retry';
 export type { UltimateErrorInit } from './errors';

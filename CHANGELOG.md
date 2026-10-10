@@ -8,7 +8,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 4 — render.
+
+- **`disposeIslands(root)` on `@ultimat3/render/client` — release the islands under an element.** `import { disposeIslands } from '@ultimat3/render/client'`. The client router has always called what each island's `mount` returned when it swaps a page; an island that replaces markup holding OTHER islands (a live list redrawing rows whose menus are islands) had no supported way to do the same and mirrored the hydration runtime's private `el.__x`. The one function is now public: every island under `root`, and `root` itself when it is an island's wrapper, is disposed once its boot resolves; one whose boot never started is settled so it mounts nothing; it works on a detached subtree, and a second call over the same subtree disposes nothing twice. 296 B minified from `/client`.
+
+### Fixed
+
+Tier 0 — core. Tier 3 — realtime. Tier 4 — render, ui. Tier 5 — cli.
+
+- **An island that only follows a channel is no longer hidden while it boots.** On a signed-in page with a sync node, every island reaching `@ultimat3/realtime` was held (`visibility:hidden`, up to 3 s) until it mounted, so an offline reload never painted a count older than a queued write (#506, 25.0.0). An island whose whole realtime use is `useChannel`, `usePresence` or `useConnection` reads neither the record store nor the outbox: there was nothing for the restore to contradict, and the hold only delayed the page's main content. `x build` now reads which names each module of an island's graph imports from the barrel; an island taking only those hooks (and `hasPageSocket`, `readPresence`, `channel`, `channelRef`, `topic`) is not held and its `mount` no longer waits up to 1 s for the disk restore. Any other name, or a form with no list of names (`import * as`, `export *`, `import()`), holds as before. Nothing to declare.
+- **With scripting off, a held island is never hidden.** The no-script reveal was a CSS animation at the hold's cap, so a reader without JavaScript looked at an empty box for 3 s on every page with a held island. `@ultimat3/ui`'s `global.scss` now cancels the hold under `@media (scripting: none)`; the keyframes stay as the cap for a browser without that media feature and for a runtime that was blocked.
+- **A prebuilt image renders the realtime page boot and the holds.** Which islands reach realtime was answered by the island build, in the process that ran it. A pod serving a verified island store builds nothing, so it knew of none: no document carried the page boot (the disk restore and the outbox replay never ran from the document) and no island was held, where `x dev` did both. Each island's answer now rides its own chunk (`IslandChunk.realtime`, `IslandBundle.realtime`) instead of process state, the store's index records it, and the document renderer reads it off the bundle it serves; an index without it is stale and rebuilt. Two apps built in one process no longer share an answer for islands at the same relative path.
+- **A realtime island no longer carries core's and schema's error-title tables.** `@ultimat3/realtime`'s `error-titles.ts`, in every chunk that reaches the barrel, registered through `@ultimat3/core`'s barrel, whose own side-effect anchors are those two tables. It registers through `@ultimat3/core/page` (which now exports `registerErrorCodes`) instead: an island whose body is `useChannel` goes 12,692 B → 8,121 B minified (5,407 → 3,658 gzip), and a built events-only island 21,715 B → 16,813 B. Realtime's own titles are still registered; a core code raised in such a chunk is titled from its name, as on every other `@ultimat3/core/page` path.
 
 ## 27.5.0 - 2026-10-10
 

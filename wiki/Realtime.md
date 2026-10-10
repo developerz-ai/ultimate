@@ -180,6 +180,28 @@ island that reaches it through a package, rather than importing it, calls
 And `live` and `entity` on the ref are stated by hand, not derived from the query declaration. Both
 are in the plan-101 DX ledger.
 
+### Which islands wait for the page's restore
+
+`As of 2026-10`. On a signed-in page with a sync node, the page boot restores persisted records and
+the queued writes from disk. Server markup rendered before a queued write would paint the old value
+first, so an island that can show such a value is **held**: hidden (`visibility:hidden`, its box
+kept) until it mounts over the restored store.
+
+| Island | Held | `mount` waits for the restore |
+|---|---|---|
+| takes `useQuery`, `useRecord`, `useRecords`, `useMutation`, `useMutationQueue`, `useOutbox`, or any other name not listed below, anywhere in its own graph | yes — until it mounts, 3 s at most | yes, 1 s at most (`FIRST_PAINT_HOLD_MS`) |
+| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
+| takes the barrel with no list of names (`import * as`, `export *`, `import()`) | yes | yes |
+| reaches no realtime | no | no |
+
+| Fact | Rule |
+|---|---|
+| who decides | `x build`, from the names each module of the island's own graph imports from `@ultimat3/realtime` (`packages/cli/src/island-realtime-state.ts`). Nothing to declare |
+| the events-only list | an island that adopts the server's markup and re-reads its own query when a channel event arrives is never hidden: nothing the restore brings back can contradict what the server drew |
+| with scripting off | no island is ever hidden: `@media (scripting: none)` in `@ultimat3/ui`'s `global.scss` cancels the hold. A browser without that media feature, or a runtime that was blocked, shows the markup at the 3 s cap |
+| a prebuilt image | each island's answer rides its chunk, and the store `x build --target docker` writes records it, so a pod that builds nothing renders the same page boot and the same holds as `x dev` |
+| the blind spot | a **package** that reads the store for the island is not seen, as with the install above |
+
 ### In development, the feed is this process
 
 `As of 2026-09-05`. The sync node's changes come from Postgres logical replication — a real
@@ -331,6 +353,7 @@ plan-101 DX ledger #21.
 | events | on a channel declared with `events: true`; otherwise `X_CHANNEL_DECLARATION_INVALID`. **App code** — a job, an action — calls `publishChannelEvent(decl, params, event)` from `@ultimat3/realtime/server`: it publishes on the process's own bus, in every role, with no hub (27.5.0). The `sync` node's own code holds the hub and calls `hub.publishEvent(decl, params, event)`. Same frame, same subject. At-most-once, never stored, never replayed: an event says "re-read", never "here is the state". Call it **after COMMIT** — nothing here sees a transaction |
 | events with no replicator | a channel that lists no `records` reads no committed change, so it needs no replicator, no replication slot and no `REPLICATION` grant: `realtime: { enabled: true, transport: 'nats', urlEnv }`, a `sync` role, and the publishers. A node that serves no `live: true` query and no `records` channel boots on a real database with `live=none` and is never `X_REALTIME_TOPOLOGY` (27.5.0) |
 | presence | a roster arrives as an `events` frame `{ presence: op, members, total? }`. Read it with `readPresence(frame.event)` in the channel's events handler. There is no separate presence frame |
+| an events-only island | an island whose only realtime is `useChannel` / `usePresence` / `useConnection` is never hidden and never waits for the page's restore ([above](#which-islands-wait-for-the-pages-restore)) |
 | the browser | `useChannel(decl, params, handlers?)`; `topic()` is the one way to spell a topic, and `bun run channel-literals` refuses any other |
 | the manifest | lists every channel (`describeChannels`, on `@ultimat3/realtime/server`). In a contract diff these are **breaking**: a channel removed, its params changed, its policy changed, a record type no longer carried, `events` switched off |
 

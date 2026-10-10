@@ -6,6 +6,7 @@
  * `navigation.ts` decides WHEN (`navigation-modal-rules.ts`); this file only shows and hides.
  */
 
+import { disposeIslands } from './island-dispose';
 import { metaOf } from './navigation-fetch';
 import { entryOf, STATE_KEY, withoutFragment } from './navigation-history';
 import {
@@ -17,7 +18,7 @@ import {
   type PresentationFacts,
   presentation,
 } from './navigation-modal-rules';
-import { disposeIslands, runScripts } from './navigation-swap';
+import { runScripts } from './navigation-swap';
 
 export interface ModalController {
   /** The open modal's address (`/runs/new`), or `undefined`. */
@@ -106,7 +107,7 @@ export function modalController(
     dialog = undefined;
     openAt = undefined;
     leaving = false;
-    disposeIslands(open, () => false);
+    disposeIslands(open);
     if (open.open) open.close();
     open.remove();
     doc.title = title;
@@ -199,7 +200,7 @@ export function modalController(
       // One modal at a time: the next address replaces this one's content, in the same dialog.
       // Closed as `dismiss` closes it — no longer `dialog` — so its own `close` event, queued or
       // (in any engine that fires it at once) synchronous, is never read as the visitor closing.
-      disposeIslands(open, () => false);
+      disposeIslands(open);
       dialog = undefined;
       if (open.open) open.close();
     }

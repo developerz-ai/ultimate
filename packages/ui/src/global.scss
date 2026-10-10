@@ -16,6 +16,17 @@
   }
 }
 
+// With scripting OFF nothing will ever mount, so there is nothing to wait for: the hold is
+// cancelled outright rather than at its cap. `!important` because the hold is an inline style, and
+// an important author rule also outranks the animation above. The keyframes stay for a browser
+// without this media feature and for a runtime that was blocked or threw with scripting on.
+@media (scripting: none) {
+  [data-x-hold] {
+    visibility: visible !important;
+    animation: none !important;
+  }
+}
+
 // The client router's route-presented modal (`@ultimat3/render`'s `NAVIGATION_MODAL_ATTRIBUTE`, a
 // route declaring `navigation: 'modal'`): a native <dialog> holding the page's `<main>`, styled as
 // `Dialog` is. Global because no component renders it — the router does, and `render` cannot

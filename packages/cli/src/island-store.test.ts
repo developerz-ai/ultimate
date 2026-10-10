@@ -271,6 +271,111 @@ describe('unit · the island store is stale once a source it was built from chan
  * `.module.scss` never registered: its rules were missing from every pod that read the store, and
  * present on any that rebuilt — two surface stylesheets for one image (notificado.co, 22.3.2).
  */
+// The document renderer asks two things of every island a page renders: does it reach realtime
+// (the page boot), and has it state to restore (the hold). Both were answered by the BUILD, in the
+// process that ran it — so a pod that read a verified store knew neither, rendered no page boot
+// for any realtime island and held none (measured 2026-10-10: the process's set was empty after
+// `loadOrBuildIslands` on a store another process wrote). The answers now ride the BUNDLE.
+describe('unit · the island store carries which islands are realtime', () => {
+  const READER = 'apps/web/app/reader.island.tsx';
+  const FOLLOWER = 'apps/web/app/follower.island.tsx';
+
+  beforeEach(async () => {
+    await write(
+      READER,
+      "import { useRecord } from '@ultimat3/realtime';\n" +
+        "export function mount(): unknown { return useRecord('posts', 'p1'); }\n",
+    );
+    await write(
+      FOLLOWER,
+      "import { useConnection } from '@ultimat3/realtime';\n" +
+        'export function mount(): unknown { return useConnection; }\n',
+    );
+  });
+
+  test('a boot from the store knows them as the build did', async () => {
+    const built = await buildIslands(ROOT);
+    expect([...built.realtime]).toEqual([
+      [FOLLOWER, 'follows'],
+      [READER, 'restores'],
+    ]);
+    await writeIslandStore(ROOT, built);
+    const index = (await Bun.file(join(ROOT, ISLAND_STORE_DIR, 'index.json')).json()) as {
+      realtime: Record<string, string>;
+    };
+    expect(index.realtime).toEqual({ [FOLLOWER]: 'follows', [READER]: 'restores' });
+
+    // Nothing is built on this path: what the bundle says is what the store recorded.
+    const read = await readIslandStore(ROOT);
+    expect(read.stale).toBeUndefined();
+    expect([...(read.bundle?.realtime ?? [])]).toEqual([...built.realtime]);
+  });
+
+  // The answers were process state keyed by app-relative path: a second app built in the same
+  // process, with an island at the same path, rewrote the first app's before its store was written.
+  test('two apps with one island path keep their own answer, whichever was built last', async () => {
+    const OTHER = processRoot(join(import.meta.dir, '..', '.island-fixture', 'store-other'));
+    const SAME = 'apps/web/app/same.island.tsx';
+    const follower =
+      "import { useConnection } from '@ultimat3/realtime';\n" +
+      'export function mount(): unknown { return useConnection; }\n';
+    const reader =
+      "import { useRecord } from '@ultimat3/realtime';\n" +
+      "export function mount(): unknown { return useRecord('posts', 'p1'); }\n";
+    try {
+      await rm(OTHER, { recursive: true, force: true });
+      await Bun.write(join(OTHER, 'package.json'), JSON.stringify({ name: 'other-fixture' }));
+      await write(SAME, follower);
+      await Bun.write(join(OTHER, SAME), reader);
+      const mine = await buildIslands(ROOT);
+      const theirs = await buildIslands(OTHER);
+      // Written AFTER the other app's build, in the order that used to cross them.
+      await writeIslandStore(ROOT, mine);
+      await writeIslandStore(OTHER, theirs);
+      const kindIn = async (root: string): Promise<unknown> =>
+        (
+          (await Bun.file(join(root, ISLAND_STORE_DIR, 'index.json')).json()) as {
+            realtime: Record<string, string>;
+          }
+        ).realtime[SAME];
+      expect(await kindIn(ROOT)).toBe('follows');
+      expect(await kindIn(OTHER)).toBe('restores');
+      // Read back in the crossing order too: each bundle carries its own app's answer.
+      const readMine = await readIslandStore(ROOT);
+      const readTheirs = await readIslandStore(OTHER);
+      expect(readMine.bundle?.realtime.get(SAME)).toBe('follows');
+      expect(readTheirs.bundle?.realtime.get(SAME)).toBe('restores');
+    } finally {
+      await rm(OTHER, { recursive: true, force: true });
+    }
+  });
+
+  // The index's keys are file names, which is data: the read keeps them in a Map, never an object
+  // indexed by file, where a name `Object.prototype` also has would answer with something that is
+  // not a kind (`bun run proto-index` refuses that lookup).
+  test('only the islands the index names read back with a kind', async () => {
+    await stored();
+    const read = await readIslandStore(ROOT);
+    const kinds = (read.bundle?.chunks ?? []).map((chunk) => [chunk.file, chunk.realtime]);
+    expect(kinds).toEqual([
+      [FOLLOWER, 'follows'],
+      [READER, 'restores'],
+      ['apps/web/site/plain.island.tsx', undefined],
+    ]);
+    expect(read.bundle?.realtime.size).toBe(2);
+    expect(read.bundle?.realtime.get('constructor')).toBeUndefined();
+  });
+
+  test('a store that never recorded them is stale, never read as "no realtime islands"', async () => {
+    await stored();
+    const file = join(ROOT, ISLAND_STORE_DIR, 'index.json');
+    const index = (await Bun.file(file).json()) as Record<string, unknown>;
+    delete index['realtime'];
+    await Bun.write(file, JSON.stringify(index));
+    expect((await readIslandStore(ROOT)).stale).toContain('realtime');
+  });
+});
+
 describe('unit · the island store carries the island stylesheets', () => {
   const STYLED =
     "import styles from './styled.module.scss';\n" +

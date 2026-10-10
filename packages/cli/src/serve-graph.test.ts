@@ -252,8 +252,11 @@ const SERVING_ROLE_CEILING = 936;
  * module named on `MIGRATE_CEILING`.
  * raised 1061 → 1062, measured 1062 (2026-10-10, channel events from app code): the module named
  * on `SERVING_ROLE_CEILING`, which every role carries.
+ * raised 1062 → 1063, measured 1063 (2026-10-10, events-only islands are never held):
+ * `cli/src/island-realtime-state.ts` — which realtime islands read the record store or the outbox
+ * (held, #506) and which only follow a channel, read off the names each imports from the barrel.
  */
-const WEB_ROLE_CEILING = 1062;
+const WEB_ROLE_CEILING = 1063;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

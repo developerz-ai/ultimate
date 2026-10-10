@@ -456,10 +456,11 @@ and a second copy of the number is a settle that shoots early and calls a health
 
 **A held island** (`data-x-hold`, `As of 2026-10`) is one whose server markup must not paint before
 it mounts — an offline reload's cached count under a queued write (#506). The collector's
-`hold: (src) => boolean` names them (the host's call: `@ultimat3/cli` holds realtime islands on a
-document that carries the page boot); the wrapper is `visibility:hidden` from its first byte, the
+`hold: (src) => boolean` names them (the host's call: `@ultimat3/cli` holds, on a document that
+carries the page boot, the realtime islands that read the record store or the outbox — never one
+that only follows a channel's events); the wrapper is `visibility:hidden` from its first byte, the
 runtime boots it at once whatever the strategy, and reveals it when `mount()` settles either way or
-at `ISLAND_HOLD_MS` (3000), whichever comes first — and at the same cap by CSS alone (`ISLAND_HOLD_REVEAL`, keyframes in `@ultimat3/ui`'s `global.scss`), so a page with no script still shows the markup. Only a page holding an island pays for that part
+at `ISLAND_HOLD_MS` (3000), whichever comes first — and at the same cap by CSS alone (`ISLAND_HOLD_REVEAL`, keyframes in `@ultimat3/ui`'s `global.scss`), so a page with no script still shows the markup — and at once, not at the cap, where the browser says scripting is off (`@media (scripting: none)` in the same sheet). Only a page holding an island pays for that part
 of the runtime, and `HYDRATE_RUNTIME_BODIES` carries both variants.
 
 ## Two entry points
@@ -486,7 +487,8 @@ side effect. Anything that loads an app's source — `x dev`, `x build`, `server
 
 `@ultimat3/render/client` is the **browser** entry — what an island or a page script calls:
 `navigate`, `refresh`, `openModal`, `closeModal`, `NavigateToOptions`,
-`NavigationModalPathInvalidError`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`.
+`NavigationModalPathInvalidError`, `NAVIGATE_EVENT`, `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`,
+`disposeIslands`.
 The barrel bundles for the browser but its `sideEffects` keeps `errors.ts` — render's code table,
 and core's and schema's titles tables behind it — in every chunk that reaches it; this entry's
 graph is the navigation helpers plus `@ultimat3/core/page` (`client-bundle.test.ts`). `As of
@@ -495,6 +497,24 @@ graph is the navigation helpers plus `@ultimat3/core/page` (`client-bundle.test.
 
 ```ts
 import { navigate, refresh } from '@ultimat3/render/client';
+```
+
+**`disposeIslands(root, kept?)`** (`island-dispose.ts`, `As of 2026-10`) is the one protocol for
+letting go of mounted islands: every island under `root` — `root` too, when it is an island's
+wrapper — has what its `mount` returned called once its boot resolves, an island whose boot never
+started is settled so it mounts nothing, and the count of boots settled is returned. Idempotent
+per island: a second call over the same subtree runs no disposer twice and returns 0. The router
+calls it on the body it swaps out and on a modal it closes. An island that replaces markup holding
+other islands calls it on each element it drops (attached or already detached), instead of reading
+the runtime's private `el.__x`:
+
+```ts
+import { disposeIslands } from '@ultimat3/render/client';
+
+/** The nodes an island is about to take off the page for good. */
+export function release(dropped: readonly Node[]): void {
+  for (const node of dropped) if (node instanceof Element) disposeIslands(node);
+}
 ```
 
 ## Error classes
@@ -549,6 +569,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script; it stamps `data-theme` and, beside it, the fallback itself as `data-theme-default` for `@ultimat3/ui`'s `clearTheme`/`watchOsTheme` |
 | `clientNavigationTags`, `linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `NAVIGATION_*` (`NAVIGATION_ERROR_EVENT`‡), `NAVIGATE_EVENT`‡, `NAVIGATED_EVENT`‡ | the client router's document tags and its pure rules; the router itself is `@ultimat3/render/navigation`, built and served by the CLI |
 | `navigate`‡, `refresh`‡, `openModal`‡, `closeModal`‡, `NavigateToOptions`‡, `NavigationModalPathInvalidError`‡ | navigating from code: the router when the page has one, the browser's own load when not. Import from `/client` in an island |
+| `disposeIslands` (on `/client` only) | dispose the islands mounted under an element: what the router does on a swap, for an island that drops markup holding other islands |
 | `modalAddress`, `modalLocation`, `addressOf`, `presentation`, `modalHistory`, `leaveModal`, `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE` | route-presented modals (`navigation: 'modal'`): the hash grammar, when an answer is a modal, and what leaving one does to history |
 | `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |
 

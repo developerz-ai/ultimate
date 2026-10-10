@@ -5,7 +5,10 @@
 // rebuilds a node's refusal by code in `refusalError`, and `page-errors.ts` constructs codes from
 // here without importing it) and by `errors.ts`, so constructing a server refusal registers too.
 
-import { registerErrorCodes } from '@ultimat3/core';
+// From `/page`, never core's barrel: this module is in every island chunk that reaches realtime,
+// and the barrel's own anchors are core's and schema's titles tables — 4,571 B minified of titles
+// no realtime island reads (`page-errors-bundle.test.ts`). The registry is one module either way.
+import { registerErrorCodes } from '@ultimat3/core/page';
 
 /** Codes this package declares and owns. */
 export const REALTIME_OWNED_ERROR_CODES = [

@@ -33,9 +33,10 @@ import { frameworkDedupePlugins } from './island-package-dedupe';
 import {
   islandRealtimePlugin,
   REALTIME_ISLAND_ENTRY,
-  reachesRealtime,
   realtimeIslandEntry,
+  realtimeKind,
 } from './island-realtime';
+import type { IslandRealtime } from './island-realtime-state';
 import type { Runtimes } from './island-runtime';
 import { loadingRuntime, mergeBuilds, runtimeBuilder, runtimeShared } from './island-runtime';
 import { solidDedupePlugin } from './island-solid-dedupe';
@@ -79,6 +80,12 @@ export interface IslandChunk {
   readonly imports: readonly string[];
   /** The files on disk it was built from (`island-sources.ts`). Absent on a chunk not built here. */
   readonly sources?: SourcePaths;
+  /**
+   * Absent unless the island's graph reaches `@ultimat3/realtime`: then whether it has page state
+   * to restore or only follows the socket (`island-realtime-state.ts`). On the chunk, so the
+   * answer travels with the app it was asked of — through the store, to the document renderer.
+   */
+  readonly realtime?: IslandRealtime;
 }
 
 /** A module two or more islands import, served once beside them. */
@@ -102,6 +109,8 @@ export interface IslandBundle {
    * than emitting a `data-x-entry` no browser can import.
    */
   resolverFor(routeFile: string): (src: string) => string;
+  /** Every realtime island of THIS app, by file: what a document's page boot and holds are read from. */
+  readonly realtime: ReadonlyMap<string, IslandRealtime>;
   /** The chunk a URL names — for serving it, and for naming the island a budget finding blames. */
   chunkAt(url: string): IslandChunk | undefined;
   /** An entry OR a shared chunk at `url` — what the `/islands/*` route serves. */
@@ -137,17 +146,19 @@ async function buildAll(
   // no code, no file and no fix — before `Bun.build` ever ran to raise the one below.
   const realtime = await Promise.all(
     files.map((file) =>
-      reachesRealtime(root, file).catch((error: unknown) => {
+      realtimeKind(root, file).catch((error: unknown) => {
         throw new IslandBuildFailedError({ file, logs: describeBuildError(error) });
       }),
     ),
   );
   // Only an island whose own graph reaches `@ultimat3/realtime` is wrapped (`island-realtime.ts`);
   // every other one is built from its own file, byte for byte what it was.
-  const live = files.filter((_, index) => realtime[index] === true);
+  const live = files.filter((_, index) => realtime[index] !== undefined);
+  const follows = new Set(files.filter((_, index) => realtime[index] === 'follows'));
+  const kinds = new Map(files.map((file, index) => [file, realtime[index]]));
   const runtime = live[0] === undefined ? undefined : await runtimes(live[0]);
   const entrypoints = files.map((file, index) =>
-    realtime[index] === true ? realtimeIslandEntry(file) : join(root, file),
+    realtime[index] !== undefined ? realtimeIslandEntry(file) : join(root, file),
   );
   let built: Awaited<ReturnType<typeof Bun.build>>;
   try {
@@ -177,7 +188,7 @@ async function buildAll(
       // gets the same rule (`island-package-dedupe.ts`): a nested copy is a second module where no
       // symlink folds it, which is every `file:` install on Windows.
       plugins: [
-        ...(runtime === undefined ? [] : [islandRealtimePlugin(root, runtime)]),
+        ...(runtime === undefined ? [] : [islandRealtimePlugin(root, runtime, follows)]),
         solidDedupePlugin(root),
         ...frameworkDedupePlugins(root),
         solidJsxPlugin,
@@ -225,7 +236,12 @@ async function buildAll(
   await refuseDuplicatedModules(files.join(', '), built.metafile);
   const sources = new Map<string, SourcePaths>();
   const linked = linkOutputs(await builtOutputs(root, files, built.outputs, sources));
-  const chunks = loadingRuntime(entryChunks(files, linked, sources), live, runtime);
+  const chunks = loadingRuntime(entryChunks(files, linked, sources), live, runtime).map(
+    (chunk): IslandChunk => {
+      const kind = kinds.get(chunk.file);
+      return kind === undefined ? chunk : { ...chunk, realtime: kind };
+    },
+  );
   const shared = sharedChunks(chunks, linked, sources);
   return { chunks, shared: [...shared, ...runtimeShared(runtime, live)] };
 }
@@ -439,9 +455,13 @@ export function islandBundle(
   const byFile = new Map(chunks.map((chunk) => [chunk.file, chunk]));
   const byUrl = new Map(chunks.map((chunk) => [chunk.url, chunk]));
   const sharedByUrl = new Map(shared.map((chunk) => [chunk.url, chunk]));
+  const realtime = new Map<string, IslandRealtime>();
+  for (const chunk of chunks)
+    if (chunk.realtime !== undefined) realtime.set(chunk.file, chunk.realtime);
   return {
     chunks,
     shared,
+    realtime,
     resolverFor(routeFile: string): (src: string) => string {
       const dir = posix.dirname(routeFile);
       return (src: string): string => {

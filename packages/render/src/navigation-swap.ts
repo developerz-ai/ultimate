@@ -5,14 +5,9 @@
  * island bootstrap (`hydrate.ts`'s runtime) over the new body. There is no second mount path.
  */
 
+import { disposeIslands } from './island-dispose';
 import { NAVIGATION_PERSIST_ATTRIBUTE } from './navigation-rules';
 
-/** What `hydrate.ts`'s runtime leaves on an island root: the boot promise and the visited mark. */
-interface IslandElement extends Element {
-  __x?: Promise<unknown>;
-}
-
-const ISLAND_SELECTOR = '[data-x-island]';
 const STYLESHEET = 'link[rel~="stylesheet"]';
 
 const isStylesheet = (el: Element): boolean =>
@@ -79,33 +74,6 @@ export function loadStylesheets(
         }),
     ),
   ).then(() => undefined);
-}
-
-/**
- * Calls each island's disposer — what its `mount` returned, held by `el.__x` — unless the island
- * is carried across. A rejected boot has nothing to dispose, and the rejection is already on the
- * element as `data-x-failed`. An island whose boot has not STARTED (an `idle` one still waiting
- * for the browser, a `visible` one never scrolled to) is settled instead: the hydration runtime's
- * `boot` answers an element that already has `__x` with it, so the pending boot mounts nothing into
- * a body that left the document — a mount nobody would ever dispose.
- */
-export function disposeIslands(root: Element, kept: (el: Element) => boolean): number {
-  let disposed = 0;
-  for (const el of root.querySelectorAll<IslandElement>(ISLAND_SELECTOR)) {
-    if (kept(el)) continue;
-    if (el.__x === undefined) {
-      el.__x = Promise.resolve();
-      continue;
-    }
-    disposed += 1;
-    el.__x.then(
-      (dispose) => {
-        if (typeof dispose === 'function') dispose();
-      },
-      () => undefined,
-    );
-  }
-  return disposed;
 }
 
 /** `[data-x-persist="id"]` present in BOTH documents: the live element moves into the next body. */
