@@ -12,14 +12,20 @@ import { join } from 'node:path';
 import type { RouteEntry } from '@ultimat3/render';
 import { emitIslandAttributes } from '@ultimat3/render';
 import type { DocumentOptions } from './document-options';
-import { reachesRealtime } from './island-realtime';
+import { realtimeKind } from './island-realtime';
+import type { IslandRealtime } from './island-realtime-state';
 import { collectorFor } from './route-islands';
 
 const PAGE = 'apps/web/app/posts/page.tsx';
 const LIVE = 'apps/web/app/posts/live.island.tsx';
 const STILL = 'apps/web/app/posts/still.island.tsx';
 const EVENTS = 'apps/web/app/posts/events.island.tsx';
-const SYNC: DocumentOptions = { sync: { syncUrl: 'ws://localhost/_x/sync', buildId: 'b1' } };
+/** What the served bundle hands the renderer (`IslandBundle.realtime`): this app's answers. */
+const kinds = new Map<string, IslandRealtime>();
+const SYNC: DocumentOptions = {
+  sync: { syncUrl: 'ws://localhost/_x/sync', buildId: 'b1' },
+  realtimeIslands: () => kinds,
+};
 
 let root = '';
 
@@ -36,16 +42,18 @@ beforeAll(async () => {
     join(root, EVENTS),
     "import { useChannel } from '@ultimat3/realtime';\nuseChannel;\n",
   );
-  // The build asks this of every island; the answer is what the collector reads.
-  expect(await reachesRealtime(root, LIVE)).toBe(true);
-  expect(await reachesRealtime(root, STILL)).toBe(false);
-  expect(await reachesRealtime(root, EVENTS)).toBe(true);
+  // The build asks this of every island; the answer rides its chunk to the collector.
+  for (const file of [LIVE, STILL, EVENTS]) {
+    const kind = await realtimeKind(root, file);
+    if (kind !== undefined) kinds.set(file, kind);
+  }
+  expect([...kinds]).toEqual([
+    [LIVE, 'restores'],
+    [EVENTS, 'follows'],
+  ]);
 });
 
 afterAll(async () => {
-  // The answer is module state: a file gone from the graph is dropped from it on the next ask.
-  await rm(join(root, LIVE));
-  expect(await reachesRealtime(root, LIVE)).toBe(false);
   await rm(root, { recursive: true, force: true });
 });
 
@@ -83,6 +91,11 @@ describe('collectorFor holds', () => {
   });
 
   test('nothing in an app with no sync node', () => {
-    expect(held({}, 'principal-1')).toEqual([false, false, false]);
+    expect(held({ realtimeIslands: () => kinds }, 'principal-1')).toEqual([false, false, false]);
+  });
+
+  test("nothing when the bundle names no realtime island — another app's answer is not this one's", () => {
+    const none: DocumentOptions = { ...SYNC, realtimeIslands: () => new Map() };
+    expect(held(none, 'principal-1')).toEqual([false, false, false]);
   });
 });

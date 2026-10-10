@@ -13,8 +13,6 @@ import {
   renderHead,
 } from '@ultimat3/render';
 import type { DocumentOptions } from './document-options';
-import { realtimeIslandFiles } from './island-realtime';
-import { followOnlyIslandFiles } from './island-realtime-state';
 
 /**
  * One collector per RENDER, never module-global: two requests render different params, and a
@@ -35,19 +33,17 @@ export const collectorFor = (
     // realtime island's server markup is held off screen until it mounts over the restored store.
     ...(scope === undefined || options.sync === undefined
       ? {}
-      : { hold: (src: string) => restoresState(entry, src) }),
+      : { hold: (src: string) => restoresState(entry, options, src) }),
   });
 
 /**
- * Whether `src`, as the page at `entry` wrote it, is an island the last build found realtime AND
- * reading the record store or the outbox. An island that only follows the socket — a channel's
+ * Whether `src`, as the page at `entry` wrote it, is an island the served bundle built as realtime
+ * AND reading the record store or the outbox. An island that only follows the socket — a channel's
  * events, a roster, the connection — has no markup the restore could contradict, so hiding it
  * only delayed the page's content (`island-realtime-state.ts`).
  */
-const restoresState = (entry: RouteEntry, src: string): boolean => {
-  const file = posix.join(posix.dirname(entry.file), src);
-  return realtimeIslandFiles().has(file) && !followOnlyIslandFiles().has(file);
-};
+const restoresState = (entry: RouteEntry, options: DocumentOptions, src: string): boolean =>
+  options.realtimeIslands?.().get(posix.join(posix.dirname(entry.file), src)) === 'restores';
 
 /**
  * Realtime's page boot, as one deferred script — or nothing. Two conditions, both exact: the
@@ -69,7 +65,7 @@ export function bootScript(
   // An island's module id is derived from its `src`, written relative to the page that renders it:
   // each realtime island file, spelled from THIS page, is the id its directive would carry.
   const pageDir = posix.dirname(entry.file);
-  const reaches = [...realtimeIslandFiles()].some((file) => {
+  const reaches = [...(options.realtimeIslands?.().keys() ?? [])].some((file) => {
     const src = posix.relative(pageDir, file);
     return rendered.has(islandModuleId(src.startsWith('.') ? src : `./${src}`));
   });

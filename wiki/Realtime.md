@@ -199,7 +199,7 @@ kept) until it mounts over the restored store.
 | who decides | `x build`, from the names each module of the island's own graph imports from `@ultimat3/realtime` (`packages/cli/src/island-realtime-state.ts`). Nothing to declare |
 | the events-only list | an island that adopts the server's markup and re-reads its own query when a channel event arrives is never hidden: nothing the restore brings back can contradict what the server drew |
 | with scripting off | no island is ever hidden: `@media (scripting: none)` in `@ultimat3/ui`'s `global.scss` cancels the hold. A browser without that media feature, or a runtime that was blocked, shows the markup at the 3 s cap |
-| a prebuilt image | the store `x build --target docker` writes records both answers, so a pod that builds nothing renders the same page boot and the same holds as `x dev` |
+| a prebuilt image | each island's answer rides its chunk, and the store `x build --target docker` writes records it, so a pod that builds nothing renders the same page boot and the same holds as `x dev` |
 | the blind spot | a **package** that reads the store for the island is not seen, as with the install above |
 
 ### In development, the feed is this process

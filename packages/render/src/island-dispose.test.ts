@@ -66,6 +66,31 @@ describe('islands', () => {
     expect(await pending.__x).toBeUndefined();
   });
 
+  test('a second call over the same subtree disposes nothing twice and counts nothing', async () => {
+    const calls: string[] = [];
+    const booted = h('div', { 'data-x-island': 'booted' });
+    booted.__x = Promise.resolve(() => calls.push('booted'));
+    const pending = h('div', { 'data-x-island': 'pending' });
+    const carried = h('div', { 'data-x-island': 'carried' });
+    carried.__x = Promise.resolve(() => calls.push('carried'));
+    const root = el(h('div', {}, [booted, pending, carried]));
+    const keep = (node: Element): boolean => node === el(carried);
+
+    expect(disposeIslands(root, keep)).toBe(1);
+    // The unbooted one was only settled by the first call: it is not a boot to count now.
+    expect(disposeIslands(root, keep)).toBe(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual(['booted']);
+
+    // An island `kept` carried across is still mounted, so a later call may let it go — once.
+    expect(disposeIslands(root)).toBe(1);
+    expect(disposeIslands(root)).toBe(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual(['booted', 'carried']);
+  });
+
   test('the browser entry exports it, as the one function the router uses', async () => {
     const client = await import('@ultimat3/render/client');
     expect(client.disposeIslands).toBe(disposeIslands);

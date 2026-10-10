@@ -53,43 +53,26 @@ export function realtimeBindings(source: string, path: string): readonly string[
   return named === statements.length ? names : undefined;
 }
 
-/** App-root-relative island files that reach realtime and restore nothing, as the last build answered. */
-const followOnly = new Set<string>();
+/**
+ * What a realtime island is to the page boot: `restores` reads the record store or the outbox
+ * (held, and its `mount` waits for the restore), `follows` only follows the socket (neither).
+ * Carried on the island's own chunk (`IslandChunk.realtime`), never in process state: an answer is
+ * about one app's file, and two apps built in one process can spell two islands the same way.
+ */
+export type IslandRealtime = 'restores' | 'follows';
 
 /**
- * Asked by `reachesRealtime` of every island it answers, so the two sets are filled by one build
- * and emptied by the next. `realtime: false` forgets the file. An island is follow-only when every
- * module of its relative graph takes only `FOLLOW_ONLY_EXPORTS` from the barrel; one unknown name,
- * or one statement with no names, and it restores — the answer every realtime island had before.
- * The blind spot is `reachesRealtime`'s own: a PACKAGE reading the store for the island is not seen.
+ * Whether a realtime island restores nothing: every module of its relative graph takes only
+ * `FOLLOW_ONLY_EXPORTS` from the barrel. One unknown name, or one statement with no names, and it
+ * restores — the answer every realtime island had before. Pure: asked per build, of that build's
+ * root. The blind spot is `reachesRealtime`'s own: a PACKAGE reading the store for the island is
+ * not seen.
  */
-export async function noteFollowOnly(
-  root: string,
-  file: string,
-  realtime: boolean,
-): Promise<boolean> {
-  const restores =
-    !realtime ||
-    (await firstInGraph(root, file, (source, path) => {
-      const names = realtimeBindings(source, path);
-      const follows = names?.every((name) => FOLLOW_ONLY_EXPORTS.includes(name)) === true;
-      return follows ? undefined : true;
-    })) === true;
-  if (restores) followOnly.delete(file);
-  else followOnly.add(file);
-  return !restores;
-}
-
-/**
- * The realtime islands (app-root-relative POSIX paths) with nothing to restore: never held, and
- * built without the first-paint wait. Absent from this set, a realtime island is held.
- */
-export function followOnlyIslandFiles(): ReadonlySet<string> {
-  return followOnly;
-}
-
-/** A verified store's answer, for a process that built nothing (`adoptRealtimeIslands`). */
-export function adoptFollowOnly(files: readonly string[]): void {
-  followOnly.clear();
-  for (const file of files) followOnly.add(file);
+export async function followsOnly(root: string, file: string): Promise<boolean> {
+  const restores = await firstInGraph(root, file, (source, path) => {
+    const names = realtimeBindings(source, path);
+    const follows = names?.every((name) => FOLLOW_ONLY_EXPORTS.includes(name)) === true;
+    return follows ? undefined : true;
+  });
+  return restores !== true;
 }

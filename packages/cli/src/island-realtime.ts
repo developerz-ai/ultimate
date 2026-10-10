@@ -8,7 +8,7 @@
 // why: Bun ships no path API; the entry is joined to the root, the runtime named by its basename.
 import { basename, join } from 'node:path';
 import type { BunPlugin } from 'bun';
-import { adoptFollowOnly, followOnlyIslandFiles, noteFollowOnly } from './island-realtime-state';
+import { followsOnly, type IslandRealtime } from './island-realtime-state';
 import { RUNTIME_CHUNK_SPECIFIER, type RuntimeChunk } from './island-runtime';
 import { firstInGraph } from './live-routes';
 import { PAGE_BOOT_BASE_PATH } from './worker-bundle';
@@ -43,39 +43,21 @@ export async function reachesRealtime(root: string, file: string): Promise<boole
     );
     return scanned.some((entry) => entry.path === REALTIME) ? true : undefined;
   });
-  // Recorded with the answer, so the document renderer can ask it of a page's islands without a
-  // second graph walk per request. Every build re-asks, so an edit that drops realtime drops it.
-  if (found === true) realtimeIslands.add(file);
-  else realtimeIslands.delete(file);
-  // The second answer of the same build: whether this realtime island has anything to restore.
-  await noteFollowOnly(root, file, found === true);
   return found === true;
 }
 
-/** App-root-relative island files whose graph reaches realtime, as the last build answered. */
-const realtimeIslands = new Set<string>();
-
 /**
- * The islands (app-root-relative POSIX paths) the last build found reaching realtime. A page needs
- * realtime's page boot only if one of ITS islands does — `settings` paid 34.9 kB of boot script
- * for an island that never touched a record.
+ * Both of a build's answers about one island, for its chunk to carry (`IslandChunk.realtime`):
+ * `undefined` when its graph never reaches realtime. A page needs realtime's page boot only if one
+ * of ITS islands does — `settings` paid 34.9 kB of boot script for an island that never touched a
+ * record — and holds only the ones that restore.
  */
-export function realtimeIslandFiles(): ReadonlySet<string> {
-  return realtimeIslands;
-}
-
-/**
- * Both of a build's answers, as a verified store recorded them: a pod that reads the store runs no
- * build, so nothing would ask `reachesRealtime` — and with nothing asked, no document carried the
- * page boot and no island was held. Replaces what this process knew, as a build does.
- */
-export function adoptRealtimeIslands(
-  realtime: readonly string[],
-  followOnly: readonly string[],
-): void {
-  realtimeIslands.clear();
-  for (const file of realtime) realtimeIslands.add(file);
-  adoptFollowOnly(followOnly);
+export async function realtimeKind(
+  root: string,
+  file: string,
+): Promise<IslandRealtime | undefined> {
+  if (!(await reachesRealtime(root, file))) return undefined;
+  return (await followsOnly(root, file)) ? 'follows' : 'restores';
 }
 
 /**
@@ -85,9 +67,8 @@ export function adoptRealtimeIslands(
  * module for every realtime island of the build, so a page with two of them loads it once; an
  * island with page state to restore imports the restore, which imports that same install.
  */
-const entrySource = (file: string): string =>
-  `import '${followOnlyIslandFiles().has(file) ? INSTALL : RESTORE}';\n` +
-  `export * from '${MODULE}${file}';\n`;
+const entrySource = (file: string, follows: boolean): string =>
+  `import '${follows ? INSTALL : RESTORE}';\n` + `export * from '${MODULE}${file}';\n`;
 
 /**
  * The install names `@ultimat3/realtime` BARE, and `islandRealtimePlugin` resolves it from the
@@ -128,9 +109,14 @@ const restoreSource = (): string =>
  * the runtime chunk was built against, resolved from the first realtime island's directory. One
  * copy for all of them, because one copy in the bundle is the requirement: the signal the install
  * sets is only read by hooks from the same module instance, and the page object it reads is the
- * shape that copy's runtime installs.
+ * shape that copy's runtime installs. `follows` is THIS build's islands that restore nothing: an
+ * island absent from it waits for the restore, which is the answer that can never paint stale.
  */
-export function islandRealtimePlugin(root: string, runtime: RuntimeChunk): BunPlugin {
+export function islandRealtimePlugin(
+  root: string,
+  runtime: RuntimeChunk,
+  follows: ReadonlySet<string> = new Set(),
+): BunPlugin {
   return {
     name: 'ultimate-island-realtime',
     setup(build) {
@@ -162,7 +148,10 @@ export function islandRealtimePlugin(root: string, runtime: RuntimeChunk): BunPl
       build.onResolve({ filter: /^@ultimat3\/realtime$/ }, () => ({ path: runtime.realtime }));
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({
         contents: args.path.startsWith('entry:')
-          ? entrySource(args.path.slice('entry:'.length))
+          ? entrySource(
+              args.path.slice('entry:'.length),
+              follows.has(args.path.slice('entry:'.length)),
+            )
           : args.path === 'restore'
             ? restoreSource()
             : installSource(runtime.url),

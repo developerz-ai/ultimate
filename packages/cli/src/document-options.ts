@@ -3,6 +3,7 @@
 // 500-line ceiling; one declaration for `x dev`, the container and the static export.
 
 import type { ClientSyncHead } from '@ultimat3/render';
+import type { IslandRealtime } from './island-realtime-state';
 import type { NavigationDocumentHead } from './page-navigation';
 
 /**
@@ -15,6 +16,12 @@ export type IslandResolver = (routeFile: string) => (src: string) => string;
 
 export interface DocumentOptions {
   readonly resolveIsland?: IslandResolver;
+  /**
+   * The served bundle's realtime islands, by app-root-relative file (`IslandBundle.realtime`):
+   * which pages earn the page boot, and which islands are held until they mount. A function, as
+   * `resolveIsland` is — `x dev` swaps the bundle on a rebuild. Absent, no island is realtime.
+   */
+  readonly realtimeIslands?: () => ReadonlyMap<string, IslandRealtime>;
   /**
    * `<link rel="manifest">`, both `theme-color` metas and the apple-touch links — `PwaArtifacts.head`
    * from `pwa-artifacts.ts`, or absent when the app is not installable.

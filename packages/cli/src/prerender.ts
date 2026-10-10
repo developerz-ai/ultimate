@@ -267,6 +267,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const database = measureDatabase(options.root);
   const documentOptions = {
     resolveIsland: (file: string) => islands.resolverFor(file),
+    realtimeIslands: () => islands.realtime,
     themeHead: theme.head,
     ...(brand === undefined ? {} : { brandHead: brand.head }),
     ...(speculation === undefined ? {} : { speculationHead: speculation.head }),

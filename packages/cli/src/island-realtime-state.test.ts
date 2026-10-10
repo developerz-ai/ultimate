@@ -8,13 +8,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
-import { reachesRealtime } from './island-realtime';
-import {
-  FOLLOW_ONLY_EXPORTS,
-  followOnlyIslandFiles,
-  noteFollowOnly,
-  realtimeBindings,
-} from './island-realtime-state';
+import { realtimeKind } from './island-realtime';
+import { FOLLOW_ONLY_EXPORTS, followsOnly, realtimeBindings } from './island-realtime-state';
 
 describe('realtimeBindings', () => {
   test('the value names of a named import, aliases and type names aside', () => {
@@ -59,7 +54,7 @@ describe('realtimeBindings', () => {
   });
 });
 
-describe('noteFollowOnly', () => {
+describe('followsOnly', () => {
   let root = '';
   const at = (name: string): string => `apps/web/app/${name}`;
   const write = (name: string, source: string): Promise<void> =>
@@ -96,29 +91,43 @@ describe('noteFollowOnly', () => {
   });
 
   test('an island whose graph only follows a channel restores nothing', async () => {
-    expect(await noteFollowOnly(root, at('events.island.tsx'), true)).toBe(true);
-    expect(followOnlyIslandFiles().has(at('events.island.tsx'))).toBe(true);
+    expect(await followsOnly(root, at('events.island.tsx'))).toBe(true);
   });
 
   test('one store or outbox hook anywhere in the graph, and it restores', async () => {
-    expect(await noteFollowOnly(root, at('rows.island.tsx'), true)).toBe(false);
-    expect(await noteFollowOnly(root, at('writer.island.tsx'), true)).toBe(false);
-    expect(followOnlyIslandFiles().has(at('rows.island.tsx'))).toBe(false);
+    expect(await followsOnly(root, at('rows.island.tsx'))).toBe(false);
+    expect(await followsOnly(root, at('writer.island.tsx'))).toBe(false);
   });
 
   test('a namespace import cannot be read, so the island is held as it always was', async () => {
-    expect(await noteFollowOnly(root, at('star.island.tsx'), true)).toBe(false);
+    expect(await followsOnly(root, at('star.island.tsx'))).toBe(false);
   });
 
-  test('reachesRealtime asks it, and an edit that adds a read drops the island from the set', async () => {
-    expect(await reachesRealtime(root, at('events.island.tsx'))).toBe(true);
-    expect(await reachesRealtime(root, at('plain.island.tsx'))).toBe(false);
-    expect(followOnlyIslandFiles().has(at('events.island.tsx'))).toBe(true);
-    expect(followOnlyIslandFiles().has(at('plain.island.tsx'))).toBe(false);
+  test("realtimeKind is the build's one answer, and an edit that adds a read changes it", async () => {
+    expect(await realtimeKind(root, at('events.island.tsx'))).toBe('follows');
+    expect(await realtimeKind(root, at('rows.island.tsx'))).toBe('restores');
+    expect(await realtimeKind(root, at('plain.island.tsx'))).toBeUndefined();
 
     await write('feed.ts', "import { useRecord } from '@ultimat3/realtime';\nuseRecord;\n");
-    expect(await reachesRealtime(root, at('events.island.tsx'))).toBe(true);
-    expect(followOnlyIslandFiles().has(at('events.island.tsx'))).toBe(false);
+    expect(await realtimeKind(root, at('events.island.tsx'))).toBe('restores');
+  });
+
+  // The answer is a function of (root, file) and of nothing a previous ask left behind: two apps
+  // spelling an island the same way get their own.
+  test('the same relative path in another app is answered from that app', async () => {
+    const other = await mkdtemp(join(tmpdir(), 'ultimate-island-state-other-'));
+    try {
+      await mkdir(join(other, 'apps/web/app'), { recursive: true });
+      await writeFile(
+        join(other, at('star.island.tsx')),
+        "import { useChannel } from '@ultimat3/realtime';\nexport const mount = useChannel;\n",
+      );
+      expect(await realtimeKind(other, at('star.island.tsx'))).toBe('follows');
+      expect(await realtimeKind(root, at('star.island.tsx'))).toBe('restores');
+      expect(await realtimeKind(other, at('star.island.tsx'))).toBe('follows');
+    } finally {
+      await rm(other, { recursive: true, force: true });
+    }
   });
 
   test('every name on the list is one the client barrel exports', async () => {

@@ -13,8 +13,7 @@ import { contentHash, loadStylesheet } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
 import type { IslandBundle, IslandChunk, SharedChunk } from './island-bundle';
 import { buildIslands, discoverIslands, islandBundle } from './island-bundle';
-import { adoptRealtimeIslands, realtimeIslandFiles } from './island-realtime';
-import { followOnlyIslandFiles } from './island-realtime-state';
+import type { IslandRealtime } from './island-realtime-state';
 import type { SourceDigester, SourceStamp } from './island-sources';
 import { changedSource, isRecordableSource, sourceDigester, stampSources } from './island-sources';
 import { islandStylesheets } from './island-styles';
@@ -57,13 +56,12 @@ interface StoreIndex {
    */
   readonly stylesheets: readonly string[];
   /**
-   * The islands whose graph reaches `@ultimat3/realtime`, and those of them with no page state to
-   * restore — the build's two answers (`island-realtime.ts`, `island-realtime-state.ts`), which
-   * the document renderer reads per request and a pod that builds nothing never computed.
-   * `undefined` only for an index that did not record them, which is stale.
+   * Each realtime island's kind, by file — `IslandChunk.realtime` as the build answered it, which
+   * the document renderer reads per request and a pod that builds nothing never computed. One
+   * object for the index rather than a field per chunk, so its ABSENCE is readable: `undefined`
+   * only for an index that did not record it, which is stale.
    */
-  readonly realtime: readonly string[] | undefined;
-  readonly followOnly: readonly string[];
+  readonly realtime: Readonly<Record<string, IslandRealtime>> | undefined;
 }
 
 const chunkFile = (url: string): string => url.slice(url.lastIndexOf('/') + 1);
@@ -123,17 +121,14 @@ export async function writeIslandStore(
     .map((path) => relative(root, path).split(sep).join('/'))
     .filter((path) => !path.startsWith('..'))
     .sort();
-  // Of THIS bundle's islands only: the two sets are the process's, and a process may have built
-  // more than one app (every test that builds a fixture does).
-  const files = new Set(chunks.map((chunk) => chunk.file));
   const index: StoreIndex = {
     framework: frameworkVersion(),
     bun: Bun.version,
     chunks,
     shared,
     stylesheets,
-    realtime: [...realtimeIslandFiles()].filter((file) => files.has(file)).sort(),
-    followOnly: [...followOnlyIslandFiles()].filter((file) => files.has(file)).sort(),
+    // The bundle's own answer, sorted so the index is reproducible.
+    realtime: Object.fromEntries([...bundle.realtime].sort(([a], [b]) => (a < b ? -1 : 1))),
   };
   await Bun.write(join(dir, INDEX), `${JSON.stringify(index, null, 2)}\n`);
   return [...written, `${ISLAND_STORE_DIR}/${INDEX}`];
@@ -143,6 +138,17 @@ const isString = (value: unknown): value is string => typeof value === 'string';
 
 const stringsOf = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter(isString) : [];
+
+/** `undefined` unless every value is a kind this build knows: anything else is not an answer. */
+function kindsOf(value: unknown): Readonly<Record<string, IslandRealtime>> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const kinds: Record<string, IslandRealtime> = {};
+  for (const [file, kind] of Object.entries(value)) {
+    if (kind !== 'restores' && kind !== 'follows') return undefined;
+    kinds[file] = kind;
+  }
+  return kinds;
+}
 
 /**
  * `undefined` when the field is absent or any entry is malformed or names a path outside the app:
@@ -202,8 +208,7 @@ function parseIndex(value: unknown): StoreIndex | { readonly unchecked: string }
     chunks: parsed,
     shared,
     stylesheets,
-    realtime: Array.isArray(record['realtime']) ? stringsOf(record['realtime']) : undefined,
-    followOnly: stringsOf(record['followOnly']),
+    realtime: kindsOf(record['realtime']),
   };
 }
 
@@ -265,6 +270,7 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
     const code = (await bytes.exists()) ? await bytes.text() : undefined;
     return code === undefined || contentHash(code) !== entry.identity ? undefined : code;
   };
+  const kinds = index.realtime;
   const chunks: IslandChunk[] = [];
   for (const entry of index.chunks) {
     const code = await verified(entry);
@@ -278,6 +284,7 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
       code,
       bytes: new TextEncoder().encode(code).byteLength,
       imports: entry.imports,
+      ...(kinds[entry.file] === undefined ? {} : { realtime: kinds[entry.file] }),
     });
   }
   const shared: SharedChunk[] = [];
@@ -304,8 +311,6 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
     if (!(await source.exists())) return { stale: `${sheet}, an island stylesheet, is missing` };
     loadStylesheet(join(root, sheet), await source.text(), 'island');
   }
-  // Last, once nothing can refuse the store: a stale one is rebuilt, and the build answers both.
-  adoptRealtimeIslands(index.realtime, index.followOnly);
   return { bundle: islandBundle(chunks, shared) };
 }
 

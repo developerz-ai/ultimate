@@ -502,7 +502,8 @@ import { navigate, refresh } from '@ultimat3/render/client';
 **`disposeIslands(root, kept?)`** (`island-dispose.ts`, `As of 2026-10`) is the one protocol for
 letting go of mounted islands: every island under `root` — `root` too, when it is an island's
 wrapper — has what its `mount` returned called once its boot resolves, an island whose boot never
-started is settled so it mounts nothing, and the count of boots settled is returned. The router
+started is settled so it mounts nothing, and the count of boots settled is returned. Idempotent
+per island: a second call over the same subtree runs no disposer twice and returns 0. The router
 calls it on the body it swaps out and on a modal it closes. An island that replaces markup holding
 other islands calls it on each element it drops (attached or already detached), instead of reading
 the runtime's private `el.__x`:

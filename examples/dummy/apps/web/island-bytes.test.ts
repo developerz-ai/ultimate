@@ -35,6 +35,7 @@ import { dirname, join } from 'node:path';
 import type { IslandChunk } from '@ultimat3/cli';
 import { buildIslands } from '@ultimat3/cli';
 import { SCHEMA_ERROR_CODE_TITLES } from '@ultimat3/core';
+import { REALTIME_ERROR_TITLES } from '@ultimat3/realtime';
 import { beforeAll, expect, test } from '@ultimat3/testing';
 
 const APP_ROOT = join(import.meta.dir, '..', '..');
@@ -117,9 +118,23 @@ const line = (chunk: IslandChunk): string => `${chunk.file} ${chunk.bytes} ${chu
 
 /**
  * `@ultimat3/core/page` is constants only and reaches no error registry; every other framework
- * entry an island imports reaches core's barrel, and with it the anchored module.
+ * entry an island imports reaches core's barrel, and with it the anchored module — bar the one
+ * named below.
  */
 const CONSTANTS_ONLY = '@ultimat3/core/page';
+
+/**
+ * `@ultimat3/realtime`'s client barrel registers its OWN titles (`error-titles.ts`, its one listed
+ * side effect) through `@ultimat3/core/page`, never core's barrel — so an island whose only
+ * framework import is realtime carries realtime's table and neither of core's anchored ones
+ * (27.6.0; through the barrel each such island paid 4,571 B minified for two tables it never
+ * read). Retention is still asserted for these islands below, on the table they DO anchor.
+ */
+const OWN_TITLES_ONLY = '@ultimat3/realtime';
+
+/** Whether realtime's anchored titles module reached this chunk: every title, as for core's. */
+const carriesRealtimeTitles = (chunk: IslandChunk): boolean =>
+  Object.values(REALTIME_ERROR_TITLES).every((title) => chunk.code.includes(title));
 
 const byFile = async (): Promise<ReadonlyMap<string, IslandChunk>> =>
   new Map((await buildIslands(APP_ROOT)).chunks.map((chunk) => [chunk.file, chunk]));
@@ -229,16 +244,28 @@ test('every island reaching core keeps its side-effecting module, in both builds
   // The retention flap's other face: oven-sh/bun#40650 on 1.3.14 dropped the module from BOTH
   // builds of one process, which byte equality alone reads as agreement. The expected set is
   // derived from each island's graph, so an import change moves an island loudly.
-  const expected = [...first.keys()]
-    .filter((file) => (reachable.get(file) ?? []).some((pkg) => pkg !== CONSTANTS_ONLY))
-    .sort();
-  expect(expected).toHaveLength(6);
-  for (const build of [first, second]) {
-    const carrying = [...build.values()]
-      .filter(carriesRegisteredTitles)
+  const reaching = (through: (pkg: string) => boolean): string[] =>
+    [...first.keys()].filter((file) => (reachable.get(file) ?? []).some(through)).sort();
+  const expected = reaching((pkg) => pkg !== CONSTANTS_ONLY && pkg !== OWN_TITLES_ONLY);
+  // Six until 27.6.0: `like` and `likes-badge` import realtime and nothing else, and realtime no
+  // longer brings core's barrel with it (`OWN_TITLES_ONLY`).
+  expect(expected).toHaveLength(4);
+  // The same two faces of the flap, on the module realtime anchors: every island reaching it.
+  const realtime = reaching((pkg) => pkg === OWN_TITLES_ONLY);
+  expect(realtime).toHaveLength(4);
+  expect(realtime).toContain('apps/web/app/posts/[id]/like.island.tsx');
+  expect(realtime).toContain('apps/web/app/posts/[id]/likes-badge.island.tsx');
+  const carrying = (
+    build: ReadonlyMap<string, IslandChunk>,
+    carries: (chunk: IslandChunk) => boolean,
+  ): string[] =>
+    [...build.values()]
+      .filter(carries)
       .map((chunk) => chunk.file)
       .sort();
-    expect(carrying).toEqual(expected);
+  for (const build of [first, second]) {
+    expect(carrying(build, carriesRegisteredTitles)).toEqual(expected);
+    expect(carrying(build, carriesRealtimeTitles)).toEqual(realtime);
   }
 });
 

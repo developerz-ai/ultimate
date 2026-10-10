@@ -11,6 +11,14 @@ interface IslandElement extends Element {
 const ISLAND_ATTRIBUTE = 'data-x-island';
 
 /**
+ * Islands this module already let go of. A disposer runs ONCE: a second call over the same subtree
+ * (an island that released its rows, then the router swapping the page they were on) would
+ * otherwise schedule each `mount`'s return twice, and count as a boot the resolved promise the
+ * first call left on an island that never started. Weak, so a dropped element is not kept alive.
+ */
+const released = new WeakSet<Element>();
+
+/**
  * Disposes every island mounted under `root` — `root` itself included when it is an island's
  * wrapper — unless `kept` claims it, and answers how many had a boot to settle. For each one the
  * disposer is what its `mount` returned (held by `el.__x`), called once that boot resolves; a
@@ -20,6 +28,8 @@ const ISLAND_ATTRIBUTE = 'data-x-island';
  * instead: the hydration runtime's `boot` answers an element that already has `__x` with it, so
  * the pending boot mounts nothing into markup that left the document — a mount nobody would ever
  * dispose. Works on a detached subtree, so the order against removing `root` does not matter.
+ * Idempotent per island: one already let go of is skipped and not counted; one `kept` claimed is
+ * untouched, so a later call may still dispose it.
  */
 export function disposeIslands(
   root: Element,
@@ -31,7 +41,8 @@ export function disposeIslands(
     ? [root, ...under]
     : under;
   for (const el of islands) {
-    if (kept(el)) continue;
+    if (released.has(el) || kept(el)) continue;
+    released.add(el);
     if (el.__x === undefined) {
       el.__x = Promise.resolve();
       continue;
