@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.7.0 - 2026-10-10
+
 ### Fixed
 
 Tier 0 — core. Tier 1 — cache. Tier 3 — realtime. Tier 5 — cli.
@@ -36,6 +40,12 @@ Tier 5 — cli.
 - **`x g --dry-run` lists every file the run touches.** It listed the files a generator creates and none it edits: the role map, the typed handle, the API index, two manifests and the i18n index changed under a plan that never named them. The dry run now runs the same edits against the plan in memory (`generate-follow-ups.ts` over a disk seam): `data.files` is the run's list, `data.edits` the subset that already exists, `data.refreshes` the committed contracts a real run re-projects, and a finding the run would report (`X_PERMISSION_UNGRANTED`, `X_DB_HANDLE_UNREGISTERED`, `X_ADMIN_RESOURCE_UNWIRED`) makes the dry run `ok: false` too. A real run's list also names `packages/i18n/src/index.ts` when it changed it.
 - **`x g admin:page --permission admin:blog:write` is accepted.** The flag required one colon exactly, which refused every namespaced permission (`admin:<area>:<verb>`) though `Permission` is `${string}:${string}` and `definePermissions()` takes it. Two segments or more; an empty segment, a space or a quote is still `X_CLI_BAD_FLAG` with a runnable example.
 - **The same scan, in the other registrars.** `apps/web/api/index.ts`: a comment between two entries of a `defineApi` list was split into entries, and a new list in a one-line `defineApi({ … });` was written outside the call (now skipped, the file untouched). `packages/db/src/client.ts`: a `}` in a comment closed the entity set. `packages/i18n/src/index.ts`: a `locales: { … }` in a comment was the one edited. `apps/admin/app/admin/admin.ts`: a brace in a string label miscounted the call.
+
+### Commits
+
+- fix(realtime): NATS is not a boot dependency of a role that only publishes; a sync node without the bus fails in 15 s, coded; a publish with no live connection is refused, never queued (#755)
+- fix(render): a locale-prefixed isr page revalidates (#756)
+- fix(cli): x g edits source lists syntax-aware; a feature's second entity; no stray db client; --dry-run lists every file; three-part permissions (#754)
 
 ## 27.6.1 - 2026-10-10
 
