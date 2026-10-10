@@ -4,6 +4,7 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { plainDate } from '@ultimat3/time';
 import { boolean, integer, text, timestamp, uuid } from './columns';
 import { arrayOf, bigint, date, decimal } from './columns-data';
 import { entity } from './entity';
@@ -146,7 +147,10 @@ describe('decodeRow · the literal a driver left unparsed', () => {
   test('numeric[], int8[] and date[] keep the text Postgres wrote', () => {
     expect(decode({ rates: '{1.50,-0.5}' }).rates).toEqual(['1.50', '-0.5']);
     expect(decode({ bigs: '{9007199254740993,-1}' }).bigs).toEqual(['9007199254740993', '-1']);
-    expect(decode({ days: '{2026-03-14,1970-01-01}' }).days).toEqual(['2026-03-14', '1970-01-01']);
+    expect(decode({ days: '{2026-03-14,1970-01-01}' }).days).toEqual([
+      plainDate('2026-03-14'),
+      plainDate('1970-01-01'),
+    ]);
   });
 });
 

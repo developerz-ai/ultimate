@@ -92,8 +92,12 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * both reached through the core barrel.
  * raised 636 → 637, measured 637 (2026-10-09, #710 row 9): `auth/src/login-identity.ts` — which
  * account a login names, an email or a handle `defineAuth({ handles })` resolves, through the auth barrel.
+ * raised 637 → 639, measured 639 (2026-10-10, #752): `entity/src/pg-array-literal.ts` and
+ * `entity/src/pg-array-decode.ts` — an `arrayOf()` cell read by its declaration, because `Bun.SQL`
+ * hands `uuid[]` back as its text literal and every read of such a row was refused. The grammar
+ * moved out of `realtime/src/pg-array.ts`, which stays for its oid table, so nothing left the graph.
  */
-const MIGRATE_CEILING = 637;
+const MIGRATE_CEILING = 639;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -175,8 +179,10 @@ const MIGRATE_CEILING = 637;
  * raised 935 → 936, measured 936 (2026-10-10, channel events from app code):
  * `realtime/src/channel-publish.ts` — `publishChannelEvent` and the process bus the boot installs
  * (`setChannelTransport`), so a job or an action publishes on a declared channel with no hub.
+ * raised 936 → 938, measured 938 (2026-10-10, #752): the two entity modules named on
+ * `MIGRATE_CEILING` for #752, which every role reaches through the entity barrel.
  */
-const SERVING_ROLE_CEILING = 936;
+const SERVING_ROLE_CEILING = 938;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -255,8 +261,10 @@ const SERVING_ROLE_CEILING = 936;
  * raised 1062 → 1063, measured 1063 (2026-10-10, events-only islands are never held):
  * `cli/src/island-realtime-state.ts` — which realtime islands read the record store or the outbox
  * (held, #506) and which only follow a channel, read off the names each imports from the barrel.
+ * raised 1063 → 1065, measured 1065 (2026-10-10, #752): the two entity modules named on
+ * `MIGRATE_CEILING` for #752.
  */
-const WEB_ROLE_CEILING = 1063;
+const WEB_ROLE_CEILING = 1065;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
