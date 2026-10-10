@@ -233,10 +233,10 @@ actor in another org reads nothing with no org named in any call. Row equality i
 `expect(row).toEqualRow(other)`: a sealed column is a non-enumerable property, which `toEqual` skips.
 
 After `x g entity <name>`: `bunx x db gen "create <table>"`, then `bunx x db migrate`. The generator
-
-A feature with more than one table: `x g entity <second> --feature <feature>` writes `entity-<second>.ts` + `repo-<second>.ts` (and a test beside each) next to the first entity's `entity.ts`, and registers it on the handle the same way (`As of 27.6.2`). One file per table; `x db gen` picks every one up from the registry.
 prints both, with `bun install` first when it added a workspace dependency
 ([CLI reference](CLI-Reference)).
+
+A feature with more than one table: `x g entity <second> --feature <feature>` writes `entity-<second>.ts` + `repo-<second>.ts` (and a test beside each) next to the first entity's `entity.ts`, and registers it on the handle the same way (`As of 27.6.2`). One file per table; `x db gen` picks every one up from the registry.
 
 ## Point lookups batch themselves
 

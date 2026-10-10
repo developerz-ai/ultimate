@@ -108,7 +108,15 @@ export function insertApiEntries(
         .findLast((found) => found !== undefined);
       const after = next.indexOf('\n', (earlier ?? actions).close);
       const line = `  ${entry.key}: [${entry.binding}],`;
-      next = `${next.slice(0, after + 1)}${line}\n${next.slice(after + 1)}`;
+      const candidate = `${next.slice(0, after + 1)}${line}\n${next.slice(after + 1)}`;
+      // Read back, as every other edit here is: when the earlier list shares its row with the
+      // call's own `});`, "the row after it" is OUTSIDE the call — a property of nothing.
+      const landed = listsOf(candidate)?.(entry.key);
+      if (landed?.entries.some((one) => one.text === entry.binding) !== true) {
+        skipped.push(entry);
+        continue;
+      }
+      next = candidate;
     } else {
       const edited = appendToList(next, list.open, [entry.binding]);
       if (edited === undefined) {

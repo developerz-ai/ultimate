@@ -259,3 +259,22 @@ describe('unit · a commented list is added to, and every comment survives', () 
     expect(insertApiEntries(source, entries).source).toBe(source);
   });
 });
+
+// A new list is written on the row after the list before it — and when that list shares its row
+// with the call's own `});`, the row after it is OUTSIDE the call.
+describe('unit · a list that cannot be created inside the call is skipped, never written outside it', () => {
+  test('a one-line defineApi is left byte-identical and the entry comes back', () => {
+    const inline = [
+      "import { defineApi } from '@ultimat3/action';",
+      "import * as health from './health';",
+      '',
+      'export const api = defineApi({ actions: [health] });',
+      'export type Api = typeof api;',
+      '',
+    ].join('\n');
+    const entries = apiEntriesFor(['apps/web/app/billing/jobs/purge-drafts-job.ts']);
+    const { source, skipped } = insertApiEntries(inline, entries);
+    expect(skipped).toEqual(entries);
+    expect(source).toBe(inline);
+  });
+});

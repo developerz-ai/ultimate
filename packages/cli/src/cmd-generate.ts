@@ -3,7 +3,6 @@
 // primitive arrives with the test that pins its distant invariants (policy, idempotency, budget).
 
 import { existsSync } from 'node:fs';
-import { stripComments } from '@ultimat3/core';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { indexBindingFindings } from './api-registration';
 import { writeAppArtifacts } from './app-artifacts';
@@ -21,6 +20,7 @@ import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { refusePluralTable } from './generate-plural';
 import { refuseShadowedTypes, refuseShadowedValues } from './generate-shadow';
+import { declaresOnlyOtherEntities } from './generate-sibling';
 import { containedPath, planWrites, writeFiles } from './generate-write';
 import { resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
@@ -328,15 +328,14 @@ async function readSliceErrors(
 }
 
 /**
- * Whether the slice's `entity.ts` is there and declares a table OTHER than `name`'s. The same
- * entity again is the conflict it always was (`--force` regenerates it); a different one is a
- * second table for the feature, which `--force` would have written OVER the first.
+ * Whether the slice's `entity.ts` is there and readably declares only tables OTHER than `name`'s
+ * (`generate-sibling.ts`). The same entity again — or one this cannot read — is the conflict it
+ * always was (`--force` regenerates it); a different one is a second table for the feature, which
+ * `--force` would have written OVER the first.
  */
 async function holdsAnotherEntity(root: string, slice: string, name: string): Promise<boolean> {
   const file = containedPath(root, `${slice}/entity.ts`);
-  if (!existsSync(file)) return false;
-  const declared = new RegExp(`\\bentity\\(\\s*['"]${names(name).table}['"]`);
-  return !declared.test(stripComments(await Bun.file(file).text()));
+  return existsSync(file) && declaresOnlyOtherEntities(await Bun.file(file).text(), name);
 }
 
 /** The generators whose output depends on what the slice's `entity.ts` / `repo.ts` declare. */
