@@ -46,7 +46,7 @@ docker run -d --name myapp-web -e ROLE=web -e PORT=8080 -p 8085:8080 myapp:dev
 
 ```text
 {"ts":"2026-08-11T17:12:04.499Z","level":"info","msg":"ultimate web listening on http://0.0.0.0:8080"}
-{"ts":"2026-08-11T17:12:04.502Z","level":"info","msg":"ultimate started","role":"web","url":"http://0.0.0.0:8080","buildId":"ed71a3fe16aa534e"}
+{"ts":"2026-08-11T17:12:04.502Z","level":"info","msg":"ultimate started","role":"web","url":"http://0.0.0.0:8080","buildId":"ed71a3fe16aa534e","bus":"in-process"}
 ```
 
 ```bash

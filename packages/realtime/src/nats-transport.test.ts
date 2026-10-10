@@ -176,10 +176,16 @@ describe('NatsTransport', () => {
 
     harness.broker.drop();
     expect(transport.connected).toBe(false);
-    // A caller that arrives mid-drop gets the same client back. Dialling a second one here is the
-    // bug the library's own reconnect exists to prevent: it would come back alongside the one
-    // already recovering, with its own copy of every subscription, and double every change.
-    await transport.publish('x.change.posts', 'during');
+    // A caller that arrives mid-drop is refused at once, on the same client. Dialling a second one
+    // here is the bug the library's own reconnect exists to prevent: it would come back alongside
+    // the one already recovering, with its own copy of every subscription, and double every
+    // change. Handing the publish to the client is the other bug: the real one queues it without
+    // bound and replays it when the server is back.
+    const during = await transport.publish('x.change.posts', 'during').then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(isUltimateError(during) ? during.code : during).toBe('X_TRANSPORT_UNAVAILABLE');
     expect(harness.dials()).toBe(1);
     harness.broker.restore();
     await settle();

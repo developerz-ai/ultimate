@@ -357,6 +357,29 @@ plan-101 DX ledger #21.
 | the browser | `useChannel(decl, params, handlers?)`; `topic()` is the one way to spell a topic, and `bun run channel-literals` refuses any other |
 | the manifest | lists every channel (`describeChannels`, on `@ultimat3/realtime/server`). In a contract diff these are **breaking**: a channel removed, its params changed, its policy changed, a record type no longer carried, `events` switched off |
 
+## What each role needs from the bus
+
+Under `realtime: { transport: 'nats' }` every role holds a connection, and only two cannot work without one (`As of 2026-10`). The role decides, not the transport: a role that only **publishes** sends channel events and cache invalidations, and both mean "re-read".
+
+| Role | Uses the bus to | At boot | NATS down while running | JetStream / the presence bucket | `transport` check |
+|---|---|---|---|---|---|
+| `sync` | serve sockets: subscribe to changes and channels, hold presence | **awaits** the dial, retried on backoff for 15 s (each attempt has a 4 s connect timeout, so a server that accepts and says nothing still fails attempts inside the wait), then refuses the boot with `X_TRANSPORT_UNAVAILABLE` naming the server, the wait, the last attempt's failure and the variable to check | reconnects on its own; windows re-snapshot on return | **required at the dial** — no `-js`, no boot | `failing` |
+| `replicator` | publish committed changes to the nodes | **awaits** the dial, same 15 s, same refusal | a publish refused because the bus is away is retried in place — the same envelope, three more attempts over 2 s — so a NATS restart costs no stream restart; past that the run ends and the takeover loop resumes from the last published lsn | not asked for | `failing` |
+| `web`, `worker`, `scheduler` | publish channel events (`publishChannelEvent`) and cache invalidations; receive peers' invalidations | **does not wait**: dials in the background on a jittered backoff (500 ms doubling to 30 s) and boots, serves and runs jobs meanwhile | stays up and ready; resumes on its own, no restart | not asked for — asserted only if something reads presence | `degraded` |
+| `migrate` | nothing | never dials | — | — | — |
+
+`x dev` is one process running several roles and takes the strictest of them: with `sync` in the set (the default) it awaits the bus, with `--role web,worker` it does not. `realtime.enabled: false` starts neither realtime role, so no process of such an app waits for the bus — the connection is still dialled in the background, because cache invalidation between replicas crosses it.
+
+| While the bus is down, on a publishing role | What happens |
+|---|---|
+| `publishChannelEvent(…)` | rejects at once with `X_TRANSPORT_UNAVAILABLE` — never parked behind the dial. Catch it and log: the event said "re-read", and a subscriber that reconnects re-reads anyway |
+| a publish made while the client is **reconnecting** | refused the same way, from the moment the client's socket closes. The `nats` client would otherwise buffer it without bound and replay it when the server returned, and it has no option to forbid that. One window remains: a connection whose packets are silently dropped still reads as connected until two pings go unanswered (10 s apart — within 30 s, where the library's default is six minutes), and a publish made inside it is buffered and sent on reconnect |
+| an action's `invalidates` / `invalidateTags` | every local tier, Redis and the CDN are cleared as usual; the broadcast to the other replicas fails into `report.errors` (`tier: 'broadcast'`, logged as `cache.invalidate.partial`) and the write succeeds. **The refused tags are kept and published when the bus returns** — de-duplicated, at most 1,024 of them; past that the process owes one *flush-all* instead, so nothing grows with the outage. Until then another replica's in-process `lru` copy and its tag-revalidated ISR page are stale |
+| when the bus returns | every process whose connection was down **drops its in-process tier and marks its tag-revalidated ISR pages stale** (`flushProcessTiers`): it heard no peer for a window nobody measured, so nothing in its own heap is known fresh. One cold `lru` per replica per outage — sized for by the database, not hidden. A replica that receives a peer's flush-all does the same. Redis and the CDN are not touched: whoever ran a bust cleared those |
+| `/readyz` | 200 in both `health.readiness` modes, `checks.transport: 'degraded'` |
+| `/readyz?deep=1` | 503 — the reading a monitor alerts on |
+| the log | the boot line `{"msg":"ultimate started",…,"bus":"nats(connecting)"}` (`nats(up)` when it already is, `in-process` with no NATS); `{"msg":"ultimate bus","bus":"nats(up)"}` when the dial lands, and again after every recovery; `nats transport error` on dial attempts 1, 2, 4, 8, …, and `cache.broadcast.subscribe-failed` on the same attempts |
+
 ## LSN cursors
 
 Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a **delta** instead of a refetch.
@@ -549,7 +572,7 @@ A client on build `A` connecting to a `sync` node on build `B` is **accepted**, 
 | `X_SYNC_UNCONFIGURED` | a live hook needed the page socket, and neither `installRealtime({ sync })` nor `<meta name="ultimate-sync">` named a target. The meta is not rendered at all when `app.config.ts` says `realtime: { enabled: false }`: no node is started, so there is nothing to dial (22.2.2) | serve the page through `x dev` or the container, which render the meta, or pass `installRealtime({ signal, sync: { url, buildId } })` |
 | `X_RECORD_REJECTED` | a row reached the record store with no key, or not as an object | `x entities show <entity> --json`, then return whole rows |
 | `X_MUTATOR_CLOCK_MISSING` | `conflict: 'last-write-wins'` with no number `updatedAt` on the entity | add the clock, or declare `conflict: 'server-wins'` |
-| `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down | `x doctor — then check NATS_URL points at a reachable nats-server` |
+| `X_TRANSPORT_UNAVAILABLE` | the fanout bus is down. At boot only for `sync` and the replicator, after a bounded wait; on `web`, `worker` and `scheduler` it is what a publish rejects with while the bus is away ([what each role needs](#what-each-role-needs-from-the-bus)) | `x doctor — then check NATS_URL points at a reachable nats-server` |
 | `X_TRANSPORT_PROTOCOL` | the bus answers in a protocol this build does not speak | `the bus must be nats-server >= 2.11 with JetStream enabled (nats-server -js)` |
 | `X_BUILD_SKEW` | client build's contract is incompatible with the server's | reload the client; see the fix line on the error |
 

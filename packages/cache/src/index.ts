@@ -41,6 +41,8 @@ export type {
   Revalidator,
 } from './invalidate';
 export {
+  FLUSH_ALL_TAG,
+  flushProcessTiers,
   invalidateTags,
   invalidateWireTags,
   isolateTiers,

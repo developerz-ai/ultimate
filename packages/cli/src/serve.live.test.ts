@@ -64,7 +64,8 @@ function freePort(): number {
   return port ?? expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
 }
 
-async function writeFixture(): Promise<void> {
+/** `realtime` is the section's source text; unset is the scaffold's own (the in-process bus). */
+async function writeFixture(realtime?: string): Promise<void> {
   await rm(ROOT, { recursive: true, force: true });
   await Bun.write(
     join(ROOT, 'package.json'),
@@ -73,7 +74,9 @@ async function writeFixture(): Promise<void> {
   await Bun.write(
     join(ROOT, 'app.config.ts'),
     "import { defineConfig } from '@ultimat3/core';\n" +
-      "export const config = defineConfig({ name: 'serve-fixture' });\n",
+      `export const config = defineConfig({ name: 'serve-fixture'${
+        realtime === undefined ? '' : `, realtime: ${realtime}`
+      } });\n`,
   );
   await Bun.write(join(ROOT, 'apps/web/server.ts'), scaffolded('apps/web/server.ts'));
   // The app's own MCP endpoint, in the contract `app-mcp.ts` reads: `apps/<app>/mcp.ts` exports
@@ -186,6 +189,8 @@ describe('the scaffolded production entry is a runnable artifact', () => {
         // if it were the one the operator asked for.
         expect(started).toContain(`"url":"http://127.0.0.1:${port}"`);
         expect(started).not.toContain('0.0.0.0');
+        // Where the bus is, on the same line: `nats(connecting)` here is a served pod with NATS down.
+        expect(started).toContain('"bus":"in-process"');
         allowHost(`127.0.0.1:${port}`);
         expect((await fetch(`http://127.0.0.1:${port}/readyz`)).status).toBe(200);
         child.kill('SIGTERM');
@@ -269,6 +274,87 @@ describe('the scaffolded production entry is a runnable artifact', () => {
         child.kill('SIGKILL');
         await child.exited;
         await rm(ROOT, { recursive: true, force: true });
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
+});
+
+// The boot line's `bus` field on a real client, in both states a role that only publishes can
+// boot in. A unit test can assert the label; only a booted process shows the LINE an operator
+// reads — and that the web role reaches it at all with nothing listening where NATS should be.
+describe('the boot line says where the bus is', () => {
+  const NATS = "{ enabled: true, transport: 'nats', urlEnv: 'NATS_URL' }";
+  const natsUrl = Bun.env['TEST_NATS_URL'];
+
+  async function bootWeb(
+    url: string,
+  ): Promise<{ started: string; logs: () => string; port: number; stop(): Promise<void> }> {
+    await writeFixture(NATS);
+    const port = freePort();
+    const child = Bun.spawn(['bun', join(ROOT, 'apps/web/server.ts')], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        PORT: String(port),
+        ROLE: 'web',
+        HOST: '127.0.0.1',
+        METRICS_PORT: String(freePort()),
+        NATS_URL: url,
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const out = pump(child.stdout);
+    const err = pump(child.stderr);
+    const logs = (): string => out() + err();
+    const stop = async (): Promise<void> => {
+      child.kill('SIGKILL');
+      await child.exited;
+      await rm(ROOT, { recursive: true, force: true });
+    };
+    try {
+      return { started: await waitFor(logs, 'ultimate started'), logs, port, stop };
+    } catch (error) {
+      await stop();
+      throw error;
+    }
+  }
+
+  const lineWith = (logs: string, message: string): string =>
+    logs.split('\n').find((line) => line.includes(`"msg":"${message}"`)) ?? '';
+
+  test(
+    'nats(connecting): a web role boots and serves with nothing listening where NATS should be',
+    async () => {
+      // A port the kernel just gave back: a refused connection, which is what a dead NATS is.
+      const app = await bootWeb(`nats://127.0.0.1:${freePort()}`);
+      try {
+        expect(lineWith(app.started, 'ultimate started')).toContain('"bus":"nats(connecting)"');
+        allowHost(`127.0.0.1:${app.port}`);
+        expect((await fetch(`http://127.0.0.1:${app.port}/readyz`)).status).toBe(200);
+        expect((await fetch(`http://127.0.0.1:${app.port}/readyz?deep=1`)).status).toBe(503);
+        expect(app.logs()).not.toContain('"msg":"ultimate bus"');
+      } finally {
+        await app.stop();
+      }
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  test.skipIf(natsUrl === undefined)(
+    'nats(up): with a server there, the dial landed before the line and was announced',
+    async () => {
+      const app = await bootWeb(natsUrl ?? '');
+      try {
+        expect(lineWith(app.started, 'ultimate started')).toContain('"bus":"nats(up)"');
+        const announced = lineWith(app.logs(), 'ultimate bus');
+        expect(announced).toContain('"bus":"nats(up)"');
+        expect(announced).toContain('"use":"publish"');
+        allowHost(`127.0.0.1:${app.port}`);
+        expect((await fetch(`http://127.0.0.1:${app.port}/readyz?deep=1`)).status).toBe(200);
+      } finally {
+        await app.stop();
       }
     },
     BOOT_TIMEOUT_MS,

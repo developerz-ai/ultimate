@@ -10,6 +10,7 @@ import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
 import {
   isLocal,
   type RealtimeConfig,
+  type Role,
   registerReadinessCheck,
   renderThrowable,
   resolveEnvironment,
@@ -26,14 +27,14 @@ import {
   resetMailDriver,
   setMailDriver,
 } from '@ultimat3/mail';
-import type { Transport, TransportSelection } from '@ultimat3/realtime/server';
-import { selectTransport, setChannelTransport } from '@ultimat3/realtime/server';
+import type { BusUse, Transport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import { loadAppConfig } from './app-config-load';
 import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import { msg } from './messages';
 import type { DevServices, Env } from './runtime-bindings';
+import { selectBus } from './runtime-bus';
 import { cacheTiersOf, startCacheTiers } from './runtime-cache';
 import { type WorkerConfig, workerConfigOf } from './runtime-jobs';
 import { selectAppMailDriver } from './runtime-mail';
@@ -74,6 +75,11 @@ export interface RunningServices {
   readonly mailDetail: string;
   /** Same rule as `mailDetail`: the env key that selected the bus, never the url behind it. */
   readonly transportDetail: string;
+  /**
+   * What this process does with the bus, which decided whether the boot waited for it
+   * (`runtime-bus.ts`). Optional for the reason `workerConfig` is: a hand-built runtime has none.
+   */
+  readonly busUse?: BusUse;
   /**
    * What the sync role must give `PresenceRegistry`. It travels with the transport because the KV
    * bucket's age limit was derived from it — a registry given a longer TTL than the bucket honours
@@ -278,14 +284,6 @@ function probedReadinessCheck(name: string, probe: () => Promise<unknown>): () =
   });
 }
 
-/** A transport that says whether it is connected. NATS does; the in-process bus has nothing to be. */
-interface ConnectableTransport {
-  readonly connected: boolean;
-}
-
-const saysConnected = (transport: Transport): transport is Transport & ConnectableTransport =>
-  typeof (transport as Partial<ConnectableTransport>).connected === 'boolean';
-
 /**
  * Release what has already started, newest first, and return every failure instead of throwing on
  * the first: a step that rejects must not skip the ones after it, or one transport that will not
@@ -324,6 +322,11 @@ export async function startServices(
   overrides?: RuntimeOverrides,
   /** `'verify'` for a serving role on an external database — `runtime-queue.ts`'s `SchemaMode`. */
   schema: SchemaMode = 'apply',
+  /**
+   * The roles this process will start, which decide whether the boot waits for the bus: only a
+   * `sync` node or a replicator does (`runtime-bus.ts`). Unset is the strictest reading.
+   */
+  roles?: readonly Role[],
 ): Promise<RunningServices> {
   // The app's config is loaded ONCE, here, first, and every section below is read out of that one
   // validated object — mail's `retainMime` is the first reader, so it is loaded before mail.
@@ -341,13 +344,13 @@ export async function startServices(
   // service starts, rather than quietly keeping the in-process bus. Which transport, which KV
   // bucket and which presence TTL is `@ultimat3/realtime`'s decision, and it is the same call a
   // `ROLE=sync` container makes, so this process cannot resolve the bus differently from the
-  // container it stands in for.
+  // container it stands in for. What the bus is USED for is the roles' (`runtime-bus.ts`).
   const realtime = realtimeConfigOf(config);
   // Fourth: `pwa.push` and its VAPID pair (`runtime-push.ts`). Resolving the pair reads env and
   // signs one probe — a deploy with no keys, or two halves of different pairs, refuses here.
   const push = await selectWebPush(config, env);
   const workerConfig = workerConfigOf(config, env);
-  const bus: TransportSelection = selectTransport(env, realtime);
+  const bus = selectBus({ env, realtime, roles, override: overrides?.transport });
   // `env`, not the ambient one: this function is HANDED the boot's environment and every other
   // reader here already uses it, so a queue that asked `process.env` would decide the standby from
   // a different answer than the middleware that routes to it.
@@ -405,28 +408,14 @@ export async function startServices(
     // before `sync`, `worker` and `scheduler` start. The chart's `readinessProbe` and the container
     // healthcheck both route on it, so a replica whose pool was gone kept taking traffic.
     started.push(probedReadinessCheck('database', () => db.ping()));
-    // Dialled here rather than at selection: an unreachable bus must fail at `x dev`, not on the
-    // first change nobody receives, and the socket is a resource the unwind below has to release.
-    // A supplied transport is already connected and is NOT closed here: whoever built it owns its
-    // socket, which is why the override skips both halves rather than only the dial.
-    let transport = overrides?.transport;
-    if (transport === undefined) {
-      await bus.connect();
-      started.push(() => bus.transport.close());
-      transport = bus.transport;
-    }
-    // The bus an app's own code publishes a channel event on (`publishChannelEvent`), in EVERY
-    // role: the hub is the `sync` role's, so a job or an action reached none, and an events-only
-    // channel — the one kind that needs no replicator — could be fed by nothing but a socket.
-    started.push(setChannelTransport(transport));
-    // Only a transport that can be disconnected gets a check. `NatsTransport.connected` is a
-    // synchronous getter over the client's own state, so no probe is needed; the in-process bus
-    // has nothing to lose a connection to, and a check that can only answer `true` is a number in
-    // `registered` that means nothing.
-    if (saysConnected(transport)) {
-      const connectable = transport;
-      started.push(registerReadinessCheck('transport', () => connectable.connected));
-    }
+    // Dialled here rather than at selection: the socket is a resource the unwind below has to
+    // release. AWAITED only by a process that cannot work without the bus — a `sync` node, a
+    // replicator — where an unreachable one must fail the boot, not the first change nobody
+    // receives. Every other role dials in the background and boots regardless; the channel bus and
+    // the `transport` readiness check are installed either way (`runtime-bus.ts`).
+    const running = await bus.start();
+    started.push(() => running.stop());
+    const transport = running.transport;
     // Before `loadApp` for the auth limiters' reason: `pushSubscribe()` is declared when the app's
     // modules import, and reads this runtime per call.
     if (push !== undefined) started.push(await installAppWebPush(push, executor));
@@ -467,9 +456,8 @@ export async function startServices(
       // table: three readers of one executor, resolved once. `startWeb` is what an override
       // replaces it at.
       rateLimitStore,
-      // The env key that selected the bus — or the honest answer that no env key did, because a
-      // boot line reading `NATS_URL` over a transport the host handed in is a lie a script parses.
-      transportDetail: overrides?.transport === undefined ? bus.detail : 'runtime override',
+      transportDetail: running.detail,
+      busUse: bus.use,
       presenceTtlMs: bus.presenceTtlMs,
       purge,
       purgeDetail: cdn.detail,

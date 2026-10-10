@@ -12,8 +12,8 @@ import {
   systemClock,
   withSpan,
 } from '@ultimat3/core';
-import { markInvalidated } from './fence';
-import { dependentsOfKind } from './graph';
+import { markAllInvalidated, markInvalidated } from './fence';
+import { dependentsOfKind, graphSnapshot } from './graph';
 import type { CacheTag } from './tags';
 import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
 import { isolateTierFailures, resetTierFailures } from './tier-failures';
@@ -288,6 +288,70 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     });
 
     if (errors.length > 0) logger.warn('cache.invalidate.partial', { ...report });
+    return report;
+  });
+}
+
+/** What a flush reports and records as its tags: not a wire tag, and never parsed as one. */
+export const FLUSH_ALL_TAG = '*';
+
+/**
+ * Drop everything this PROCESS holds, because it cannot know what it missed.
+ *
+ * A peer's bust reaches this process by the broadcast and by nothing else: its in-process tier and
+ * its tag-revalidated ISR pages are cleared by `receiveInvalidationBroadcast`, or they wait for
+ * their TTL — and a `revalidate: { tags }` page has none. So a process whose bus connection was
+ * down for a window, or a sender that had more refused busts than it could keep, has one correct
+ * answer left. Every in-process tier is cleared (`CacheTier.clear`), every ISR page that depends
+ * on a tag is marked stale, and every fill in flight is fenced out. Shared tiers and the CDN are
+ * untouched — the bust's sender cleared those — and nothing is re-emitted: this is local repair.
+ * Never throws; the cost is one cold cache.
+ */
+export function flushProcessTiers(source: string): Promise<InvalidationReport> {
+  return withSpan('cache.flush', async (): Promise<InvalidationReport> => {
+    const startedAt = performance.now();
+    markAllInvalidated();
+    const tiers: TierInvalidation[] = [];
+    const errors: { tier: string; message: string }[] = [];
+    for (const tier of sortTiers(registry)) {
+      if (tier.clear === undefined) continue;
+      try {
+        await tier.clear();
+        tiers.push({ tier: tier.name, keys: [] });
+      } catch (error) {
+        errors.push({ tier: tier.name, message: renderThrowable(error) });
+      }
+    }
+    const isr = dedupe(
+      graphSnapshot().flatMap((entry) =>
+        entry.dependents.filter((dep) => dep.kind === 'isr-route').map((dep) => dep.id),
+      ),
+    );
+    for (const path of isr) {
+      try {
+        await revalidator?.(path);
+      } catch (error) {
+        errors.push({ tier: 'isr', message: renderThrowable(error) });
+      }
+    }
+    const report: InvalidationReport = {
+      tags: [FLUSH_ALL_TAG],
+      tiers,
+      isr,
+      cdn: [],
+      liveQueries: [],
+      durationMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      errors,
+    };
+    recordInvalidation({
+      at: systemClock.now().toISOString(),
+      tags: report.tags,
+      busted: [...isr],
+      source,
+      durationMs: report.durationMs,
+      errors,
+    });
+    if (errors.length > 0) logger.warn('cache.flush.partial', { ...report });
     return report;
   });
 }

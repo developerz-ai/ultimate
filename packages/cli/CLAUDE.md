@@ -91,7 +91,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `module-imports.ts` | the files a module's source imports, resolved once for both graphs: `referenced` (reload) and `evaluated` (document) |
 | `cmd-dev.ts` / `dev-boot.ts` / `dev-rebuild.ts` / `dev-route-table.ts` | `x dev`: the command (`cmd-dev.ts`, re-exports `startDev`); the boot — every role in one process, `/_x`, the watcher (`dev-boot.ts`); one save rebuilt as one generation (`dev-rebuild.ts`) |
 | `runtime-bindings.ts` | which service each binding points at (embedded or external); events follow `realtime.transport` / `urlEnv` |
-| `runtime-queue.ts` / `runtime-services.ts` | the db + queue pair; everything else and every ambient accessor |
+| `runtime-queue.ts` / `runtime-services.ts` / `runtime-bus.ts` | db + queue; every other accessor; the bus |
 | `framework-schema-apply.ts` / `framework-schema-stamp.ts` | the framework tables: `ROLE=migrate`, `x dev` and every CLI command APPLY them in one transaction behind `MIGRATION_LOCK_KEY` (`pg_advisory_xact_lock`) with a bounded `lock_timeout`, then stamp the build on `x_jobs`' table comment; a serving role on an external database runs no DDL and VERIFIES the stamp (`X_FRAMEWORK_SCHEMA_UNAPPLIED`, a major skew is a warning). A comment, never a table: a new framework table moves every app's schema dump |
 | `runtime-isr.ts` | the ISR controller both boots serve through, ATTACHED to `invalidateTags` and released on stop (`attachedIsr`); `appRoutes` without one builds and attaches its own |
 | `runtime-mfa-warning.ts` / `runtime-idempotency-scope.ts` | boot warnings an operator can act on: unsealed MFA secrets (web role, `x auth seal-mfa`), a per-process idempotency store after the app loaded |

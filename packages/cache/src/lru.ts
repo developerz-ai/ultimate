@@ -305,5 +305,8 @@ export function lruTier(options: LruOptions = {}): CacheTier & { readonly cache:
     invalidateTags(tags: readonly CacheTag[]): Promise<TierInvalidation> {
       return Promise.resolve({ tier: 'lru', keys: cache.invalidateTags(tags) });
     },
+    clear(): void {
+      cache.clear();
+    },
   };
 }

@@ -110,6 +110,29 @@ To turn realtime on:
 | 3 | Enable exactly one replicator per database: `roles.replicator.enabled: true` (chart) or a `ROLE=replicator` service (Compose) |
 | 4 | Enable sync: `roles.sync.enabled: true`, or `replicas: 1` on the Compose `sync` service. The chart's Ingress routes `/_x/sync` only while sync is enabled. The node refuses a socket from a page on another ORIGIN — scheme, host and port, compared exactly (`X_SOCKET_ORIGIN_REFUSED`); a socket is refused when its origin is not `APP_URL`'s when one is declared; with none declared, not the origin the node was reached on. With the Ingress enabled the chart sets `APP_URL` on the sync role from `ingress.host` (`https` when `ingress.tls`), and a declared origin is the whole list. `env.APP_URL` wins when set: state the page's origin there when the pages are served on another host than `ingress.host` |
 
+### NATS is a boot dependency of `sync` and the replicator only
+
+`As of 2026-10`. Until then every role awaited the first dial, and the client library retried that
+dial forever: a `web`, `worker` or `scheduler` pod that restarted while NATS was down (an OOM, a
+node drain, a rollout, a scale-up) hung before it bound a socket, so pages, webhooks and jobs went
+down for a bus those roles only publish "re-read" events to.
+
+| Role | NATS down at pod start | NATS down while running | Needs JetStream (`-js`) |
+|---|---|---|---|
+| `sync` | retries for 15 s, then exits with `X_TRANSPORT_UNAVAILABLE`; the kubelet restarts it | not ready (`transport: failing`); reconnects on its own | yes, at boot |
+| `replicator` | same | not ready while disconnected; a publish refused during a restart of a second or two is retried in place, so the stream is not torn down for it | no |
+| `web`, `worker`, `scheduler` | **boots and serves**; dials in the background (jittered, 500 ms doubling to 30 s) | **stays ready**; publishes are refused with `X_TRANSPORT_UNAVAILABLE` until it is back, then resume with no restart | no |
+
+What to watch: `/readyz?deep=1` answers 503 while `checks.transport` is `degraded` — the probe on
+`/readyz` stays 200, by design. The boot line carries the state (`"msg":"ultimate started",…,"bus":"nats(connecting)"`)
+and `"msg":"ultimate bus","bus":"nats(up)"` is logged when the connection lands. While the bus is away a cache
+invalidation still clears the replica that made it, Redis and the CDN; the other replicas' in-process
+copies are stale until it returns. Then each sender publishes the tags it could not (at most 1,024,
+else one flush-all), and every replica that was disconnected empties its in-process `lru` and marks
+its tag-revalidated ISR pages stale — so expect one cold in-process cache per replica after a NATS
+restart, and the database reads that refill it. Do not add NATS to a `web` pod's
+`initContainers` or `dependsOn`: that rebuilds the dependency this removes.
+
 ### Replication is a cluster-wide grant
 
 `REPLICATION` is a role attribute of the whole Postgres **cluster**, not of one database. A

@@ -11,7 +11,7 @@
 // its feed and reports `/readyz` false. A stream that ENDS — or a lock that is LOST — is this file's
 // to answer: `running` goes false, everything is let go, and the process asks again on a backoff.
 
-import { logger, renderThrowable, uuidV7, withSpan } from '@ultimat3/core';
+import { isUltimateError, logger, renderThrowable, uuidV7, withSpan } from '@ultimat3/core';
 import type { AdvisoryLock } from './advisory-lock';
 import type { ChangeEvent, ChangeFeed } from './changefeed';
 import { ReplicationFailedError } from './errors';
@@ -100,6 +100,18 @@ interface Refusal {
  */
 export const STOP_DEADLINE_MS = 5_000;
 
+/**
+ * How long a publish refused because the bus is AWAY is waited out, in the handler, before the run
+ * ends: three more attempts over two seconds. A NATS restart is a second or two, and ending the
+ * run for it costs a stream stop, an unlock, a backoff and a re-read from `lastLsn` — with
+ * `/readyz` false throughout. Longer than this is an outage, and the takeover loop's to handle.
+ */
+export const PUBLISH_RETRY_DELAYS_MS: readonly number[] = [100, 400, 1_500];
+
+/** The bus is unreachable — as opposed to a change it will never take (a payload over the limit). */
+const busAway = (thrown: unknown): boolean =>
+  isUltimateError(thrown) && thrown.code === 'X_TRANSPORT_UNAVAILABLE';
+
 const fencedOut = (reason: string): ReplicationFailedError =>
   new ReplicationFailedError({
     stage: 'stream',
@@ -131,6 +143,8 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
   /** The run whose stream and lock still speak for this replicator. */
   let current: Run | undefined;
   let cancelRetry: (() => void) | undefined;
+  /** Ends the publish retry's wait in flight, if any — see `publishThroughBlip`. */
+  let endBlipWait: (() => void) | undefined;
   /** Stops listening for the lock being lost. Held only while this replicator holds the lock. */
   let unwatchLock: (() => void) | undefined;
   const unwatch = (): void => {
@@ -180,6 +194,39 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
     return outcome.how === 'failed' ? outcome.error : undefined;
   };
 
+  /**
+   * One envelope, published — retried on `PUBLISH_RETRY_DELAYS_MS` while the bus is away. The SAME
+   * envelope each time, so a consumer sees one `seq`. Fenced after every wait: a run that ended
+   * meanwhile publishes nothing, for the reason the handler below gives.
+   */
+  const publishThroughBlip = async (run: Run, subject: string, envelope: string): Promise<void> => {
+    for (let retry = 0; ; retry += 1) {
+      try {
+        await options.transport.publish(subject, envelope);
+        return;
+      } catch (thrown) {
+        const delay = PUBLISH_RETRY_DELAYS_MS[retry];
+        if (delay === undefined || !busAway(thrown)) throw thrown;
+        await new Promise<void>((resolve) => {
+          const cancel = schedule(() => {
+            endBlipWait = undefined;
+            resolve();
+          }, delay);
+          // Held so `stop()` can end the wait: the timer is cleared AND the wait settles, into the
+          // fence below. A stop that only waited it out held the feed's handler for up to 1.5 s.
+          endBlipWait = (): void => {
+            endBlipWait = undefined;
+            cancel();
+            resolve();
+          };
+        });
+        if (current !== run || run.over !== null) {
+          throw fencedOut(run.over ?? 'a newer run started');
+        }
+      }
+    }
+  };
+
   const changeHandler =
     (run: Run) =>
     async (raw: ChangeEvent): Promise<void> => {
@@ -200,7 +247,7 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       await withSpan('realtime.replicate', async () => {
         seq += 1;
         try {
-          await options.transport.publish(subjectOf(change), encodeEnvelope(change, seq, producer));
+          await publishThroughBlip(run, subjectOf(change), encodeEnvelope(change, seq, producer));
         } catch (thrown) {
           const error = renderThrowable(thrown);
           const same = refusal !== null && refusal.lsn === change.lsn;
@@ -391,6 +438,8 @@ export function changeFeedReplicator(options: ReplicatorOptions): Replicator {
       pumping = false;
       if (current !== undefined) current.over ??= 'the replicator was stopped';
       current = undefined;
+      // After the run is marked over, so the wait it ends lands in the fence and publishes nothing.
+      endBlipWait?.();
       unwatch();
       // Whatever the feed said: a lock kept because the stream would not close politely is a
       // slot no standby can take. Its refusal is still the one the caller is owed.

@@ -71,6 +71,11 @@ export interface NatsClientOptions {
   /** Our jitter policy, asked once per attempt — the herd is ours to spread, not the library's. */
   readonly reconnectDelay?: (() => number) | undefined;
   readonly requestTimeoutMs?: number | undefined;
+  /**
+   * How long ONE dial may sit before it is an attempt that failed. The library's own default is
+   * 20 s, which a server that accepts the socket and says nothing spends in full.
+   */
+  readonly connectTimeoutMs?: number | undefined;
   /** A background failure: a dropped connection, a server error, an exhausted reconnect. */
   readonly onError?: ((error: unknown) => void) | undefined;
   /** The library re-established the connection. The cluster behind it may be a different one. */

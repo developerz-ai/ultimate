@@ -8,6 +8,7 @@ import type { CacheTier, PurgeDriver } from '@ultimat3/cache';
 import {
   CacheDriverUnavailableError,
   cdnTier,
+  flushProcessTiers,
   isNoopPurgeDriver,
   lruTier,
   memoTier,
@@ -28,6 +29,19 @@ import type { Env } from './runtime-bindings';
  * and a second namespace here would be a knob whose only correct value is the default.
  */
 export const CACHE_INVALIDATE_SUBJECT = 'x.cache.invalidate';
+
+/**
+ * "Drop everything you hold in process", on the same subject. An object, where a bust is an array
+ * of wire tags: a replica from before this marker existed parses it, finds no array and ignores
+ * it — its entries wait for their TTL, which is what a lost bust always cost it.
+ */
+export const CACHE_FLUSH_ALL = '{"flush":"all"}';
+
+/**
+ * How many refused wire tags a process keeps for the bus's return. A bound, not a queue: past it
+ * the set is dropped and ONE flush-all is owed instead, so memory does not grow with the outage.
+ */
+export const MAX_DEFERRED_TAGS = 1_024;
 
 export interface CacheTiersOptions {
   readonly env: Env;
@@ -152,8 +166,87 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   for (const tier of built) registerTier(tier);
   warnUnnamed(options);
 
+  const send = (payload: string): Promise<void> =>
+    options.transport.publish(CACHE_INVALIDATE_SUBJECT, payload);
+  // What the bus refused, kept for its return. A publish with no live connection is refused, not
+  // buffered (`NatsTransport`), so without this a bust made during a two-second NATS restart
+  // reached no peer at all. De-duplicated — a tag is a fact, not an event — and bounded.
+  const deferred = new Set<string>();
+  let flushOwed = false;
+  const defer = (wireTags: readonly string[]): void => {
+    if (flushOwed) return;
+    for (const wire of wireTags) deferred.add(wire);
+    if (deferred.size <= MAX_DEFERRED_TAGS) return;
+    deferred.clear();
+    flushOwed = true;
+  };
+  /**
+   * One pass over what is owed. It is TAKEN before the publish and put back if the bus refuses, so
+   * a bust refused while this publish is in flight is owed afresh rather than cleared by a success
+   * that never carried it — and a flush-all sent before that bust cannot stand in for it.
+   */
+  const settleOnce = async (): Promise<void> => {
+    if (flushOwed) {
+      flushOwed = false;
+      try {
+        await send(CACHE_FLUSH_ALL);
+      } catch (error) {
+        deferred.clear();
+        flushOwed = true;
+        throw error;
+      }
+      return;
+    }
+    if (deferred.size === 0) return;
+    const batch = [...deferred];
+    deferred.clear();
+    try {
+      await send(JSON.stringify(batch));
+    } catch (error) {
+      defer(batch);
+      throw error;
+    }
+  };
+  // ONE settle at a time. It is asked for by every reconnect and after every accepted publish,
+  // and two that overlapped both published the same batch (and the same flush-all). A call that
+  // arrives mid-run asks for one more pass instead, which finds whatever the run did not carry.
+  let settling: Promise<void> | undefined;
+  let again = false;
+  const settle = (): Promise<void> => {
+    if (settling !== undefined) {
+      again = true;
+      return settling;
+    }
+    settling = (async (): Promise<void> => {
+      try {
+        do {
+          again = false;
+          await settleOnce();
+        } while (again);
+      } finally {
+        again = false;
+        settling = undefined;
+      }
+    })();
+    return settling;
+  };
+  const settleQuietly = (): void => {
+    void settle().catch((error: unknown) => {
+      logger.warn('cache.broadcast.deferred-failed', { error: broadcastErrorText(error) });
+    });
+  };
+
   registerInvalidationBroadcast(async (wireTags) => {
-    await options.transport.publish(CACHE_INVALIDATE_SUBJECT, JSON.stringify(wireTags));
+    try {
+      await send(JSON.stringify(wireTags));
+    } catch (error) {
+      defer(wireTags);
+      // Still thrown: the report must say the peers have not been told YET.
+      throw error;
+    }
+    // The bus took this one, so it takes what an earlier publish could not — the case no
+    // reconnect announces, a refusal with the connection up.
+    if (flushOwed || deferred.size > 0) settleQuietly();
   });
   // Not awaited HERE: the boot must not block on a subscribe. The PROMISE is held rather than a
   // handle assigned inside a `.then`, because the release ran first whenever `stop()` beat the round
@@ -162,28 +255,56 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   // logged once and never asked again, so the process missed every peer invalidation for its life.
   const released = Promise.withResolvers<undefined>();
   let stopped = false;
+  let subscribed = false;
+  /** Cuts the retry's wait short: the bus coming up is a better signal than a backoff. */
+  let wake: () => void = () => undefined;
   const retryMs = options.subscribeRetryMs ?? defaultSubscribeRetryMs;
+  // This process heard no peer for a window nobody measured — since boot, or since the connection
+  // dropped — so nothing it holds in its own heap is known fresh. One cold cache, never a stale one.
+  const flushDeaf = (source: string): void => {
+    void flushProcessTiers(source);
+  };
   const subscribing = (async (): Promise<TransportSubscription | undefined> => {
     for (let attempt = 1; !stopped; attempt += 1) {
       try {
-        return await options.transport.subscribe(CACHE_INVALIDATE_SUBJECT, (payload: string) => {
-          void applyBroadcast(payload);
-        });
+        const subscription = await options.transport.subscribe(
+          CACHE_INVALIDATE_SUBJECT,
+          (payload: string) => {
+            void applyBroadcast(payload);
+          },
+        );
+        subscribed = true;
+        if (attempt > 1) flushDeaf('cache.bus-subscribed');
+        return subscription;
       } catch (error) {
-        logger.warn('cache.broadcast.subscribe-failed', {
-          error: broadcastErrorText(error),
-          attempt,
-        });
-        await Promise.race([Bun.sleep(retryMs(attempt)), released.promise]);
+        // Attempts 1, 2, 4, 8, …: the dial's own thinning (`NatsTransport`), so an outage is not
+        // one line per retry per pod for as long as it lasts.
+        if ((attempt & (attempt - 1)) === 0) {
+          logger.warn('cache.broadcast.subscribe-failed', {
+            error: broadcastErrorText(error),
+            attempt,
+          });
+        }
+        const woken = Promise.withResolvers<undefined>();
+        wake = (): void => woken.resolve(undefined);
+        await Promise.race([Bun.sleep(retryMs(attempt)), released.promise, woken.promise]);
       }
     }
     return undefined;
   })();
+  // The bus is (back) up. The subscription came back with the connection, so from here this
+  // process hears again: drop what it held while deaf, and say what it could not say.
+  const offReconnect = options.transport.onReconnect(() => {
+    wake();
+    if (subscribed) flushDeaf('cache.bus-reconnect');
+    settleQuietly();
+  });
 
   // `resetTiers()` drops the registry AND the broadcast in one call: this boot is the only thing
   // that registers either, and a tier left behind would purge for a process that has stopped.
   return async () => {
     stopped = true;
+    offReconnect();
     released.resolve(undefined);
     (await subscribing)?.unsubscribe();
     resetTiers();
@@ -200,6 +321,13 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
  */
 export const broadcastErrorText = (error: unknown): string => renderThrowable(error);
 
+/** `CACHE_FLUSH_ALL`, parsed: a peer had more refused busts than it could keep. */
+const isFlushAll = (parsed: unknown): boolean =>
+  typeof parsed === 'object' &&
+  parsed !== null &&
+  !Array.isArray(parsed) &&
+  Reflect.get(parsed, 'flush') === 'all';
+
 /**
  * A peer's wire tags, applied here. Never throws: a malformed frame or an undeclared tag must not
  * kill the subscriber loop, because that would silently end cross-instance invalidation for the
@@ -208,6 +336,10 @@ export const broadcastErrorText = (error: unknown): string => renderThrowable(er
 async function applyBroadcast(payload: string): Promise<void> {
   try {
     const parsed: unknown = JSON.parse(payload);
+    if (isFlushAll(parsed)) {
+      await flushProcessTiers('cache.broadcast');
+      return;
+    }
     if (!Array.isArray(parsed)) return;
     const wire = parsed.filter((value): value is string => typeof value === 'string');
     if (wire.length > 0) await receiveInvalidationBroadcast(wire);

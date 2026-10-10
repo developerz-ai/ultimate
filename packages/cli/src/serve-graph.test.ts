@@ -181,8 +181,15 @@ const MIGRATE_CEILING = 639;
  * (`setChannelTransport`), so a job or an action publishes on a declared channel with no hub.
  * raised 936 → 938, measured 938 (2026-10-10, #752): the two entity modules named on
  * `MIGRATE_CEILING` for #752, which every role reaches through the entity barrel.
+ * raised 938 → 939, measured 939 (2026-10-10, the bus is not a boot dependency of a publisher):
+ * `cli/src/runtime-bus.ts` — which roles await the NATS dial (`sync`, the replicator) and which
+ * dial it in the background and boot (`web`, `worker`, `scheduler`), the `transport` readiness
+ * check and the boot line's `bus=`. Split out of `runtime-services.ts`, which sat at the ceiling.
+ * raised 939 → 940, measured 940 (2026-10-10, PR #755 review): `realtime/src/nats-dial-wait.ts` —
+ * one dial's connect timeout and the bounded wait a `sync` node puts on the retry loop, split out
+ * of `nats-transport.ts` when the dial-loop fixes took it past the 500-line ceiling.
  */
-const SERVING_ROLE_CEILING = 938;
+const SERVING_ROLE_CEILING = 940;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -263,8 +270,12 @@ const SERVING_ROLE_CEILING = 938;
  * (held, #506) and which only follow a channel, read off the names each imports from the barrel.
  * raised 1063 → 1065, measured 1065 (2026-10-10, #752): the two entity modules named on
  * `MIGRATE_CEILING` for #752.
+ * raised 1065 → 1066, measured 1066 (2026-10-10, the bus is not a boot dependency of a publisher):
+ * `cli/src/runtime-bus.ts`, the module named on `SERVING_ROLE_CEILING`, which every role carries.
+ * raised 1066 → 1067, measured 1067 (2026-10-10, PR #755 review): `realtime/src/nats-dial-wait.ts`,
+ * the module named on `SERVING_ROLE_CEILING`.
  */
-const WEB_ROLE_CEILING = 1065;
+const WEB_ROLE_CEILING = 1067;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

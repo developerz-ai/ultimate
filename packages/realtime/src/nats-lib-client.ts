@@ -92,7 +92,7 @@ class LibNatsClient implements NatsClient {
   }
 
   get connected(): boolean {
-    return this.#connected && !this.#connection.isClosed();
+    return this.#connected && !this.#connection.isClosed() && protocolUp(this.#connection);
   }
 
   publish(subject: string, payload: Uint8Array): void {
@@ -211,6 +211,29 @@ class LibNatsClient implements NatsClient {
   }
 }
 
+/**
+ * The library's own flag, read where it is set. `#connected` above follows the status ITERATOR,
+ * which delivers a disconnect a tick or more after the socket dropped; in between the library
+ * already knows (`protocol.connected` is cleared in the socket's close handler) and already
+ * buffers every publish. nats@2.29.3 has no option to forbid that buffer, so the flag is the only
+ * way to refuse a publish it would queue. It is not on the typed surface: a library that moves it
+ * answers `true` here and the status iterator is the reading again — the behaviour before this.
+ */
+const protocolUp = (connection: NatsConnection): boolean => {
+  const protocol: unknown = Reflect.get(connection, 'protocol');
+  if (typeof protocol !== 'object' || protocol === null) return true;
+  return Reflect.get(protocol, 'connected') !== false;
+};
+
+/**
+ * How often the client pings, and how many may go unanswered. The library's defaults are two
+ * minutes and two: a connection whose packets are silently dropped stays "connected" — and keeps
+ * buffering publishes — for up to six minutes. 10 s and two is noticed within half a minute, for
+ * one 6-byte frame every ten seconds on a connection that is otherwise idle.
+ */
+export const PING_INTERVAL_MS = 10_000;
+export const MAX_PINGS_OUT = 2;
+
 /** `QueuedIterator.stop()` is the library's, and missing from the `AsyncIterable` it is typed as. */
 const stopStream = (stream: unknown): void => {
   if (typeof stream !== 'object' || stream === null || !('stop' in stream)) return;
@@ -219,9 +242,14 @@ const stopStream = (stream: unknown): void => {
 };
 
 /**
- * The production `NatsConnect`. The first dial retries on the same budget as a later loss
- * (`waitOnFirstConnect`), so a `sync` container that raced the bus into readiness recovers on its
- * own — and a budget that runs out rejects here rather than leaving a half-live connection behind.
+ * The production `NatsConnect`: ONE first dial, refused at once when the server is not there.
+ *
+ * Deliberately not `waitOnFirstConnect`. Until 2026-10 it was set, on the reading that the first
+ * dial "retries on the same budget as a later loss" — it does not: in nats@2.29.3 a failed first
+ * dial under that option `continue`s past the attempt counter, so it retries FOREVER, and the
+ * promise this returns never settles while the server is down. Every role awaited it at boot, so
+ * a pod that restarted during a NATS outage hung before it bound a socket. The retry is the
+ * transport's (`NatsTransport.#redial`), on our backoff, where `close()` can end it.
  */
 export const openNatsClient = async (options: NatsClientOptions): Promise<NatsClient> => {
   const target = parseNatsUrl(options.url);
@@ -235,11 +263,17 @@ export const openNatsClient = async (options: NatsClientOptions): Promise<NatsCl
     options.maxReconnectAttempts === undefined
       ? undefined
       : finiteOption('the nats client', 'maxReconnectAttempts', options.maxReconnectAttempts);
+  const connectTimeoutMs =
+    options.connectTimeoutMs === undefined
+      ? undefined
+      : finiteOption('the nats client', 'connectTimeoutMs', options.connectTimeoutMs);
   try {
     const connection = await connect({
       servers: [`${target.host}:${target.port}`],
       name: options.name ?? 'ultimate',
-      waitOnFirstConnect: true,
+      pingInterval: PING_INTERVAL_MS,
+      maxPingOut: MAX_PINGS_OUT,
+      ...(connectTimeoutMs === undefined ? {} : { timeout: connectTimeoutMs }),
       ...(maxReconnectAttempts === undefined ? {} : { maxReconnectAttempts }),
       ...(options.reconnectDelay === undefined
         ? {}

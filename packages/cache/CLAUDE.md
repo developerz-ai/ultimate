@@ -42,6 +42,9 @@ Tier 1. Tagged caching + THE invalidation graph.
   `TIER_ORDER` alias (`X_HELPER_COPY` refuses a value of core's under a second name). Adding a
   rung is an edit to `packages/core/src/cache-vocabulary.ts` plus a factory here; `scripts/render-modes.ts` refuses a second declaration of the set. **`isr` is
   not a tier** — the `'isr'` in `invalidate.ts` is an ISR route (`DependentKind = 'isr-route'`).
+- **`flushProcessTiers(source)` is for a process that cannot name what it missed** (its bus was
+  away): `CacheTier.clear()` on in-process tiers only, tagged ISR pages stale, fills fenced out
+  (`markAllInvalidated`). Never re-emits. A shared tier must NOT implement `clear`.
 - **`bestEffort()` is the only sanctioned way to swallow a cache refusal.** Its label is `TierLabel`
   (`TierName` plus `'query-read'`), deliberately not a widening of `TierName`.
 - **A refusal is rendered with `renderThrowable()`, never `error.message`** — at all five absorbing
