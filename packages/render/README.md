@@ -588,7 +588,9 @@ a job boundary the class is gone and the `code` is what survives — match on th
   `DEFAULT_ISR_REGENERATE_DEADLINE_MS` (30 s; `isrController({ regenerateDeadlineMs })`),
   so a render that never settles no longer pins the page for the life of the process. A stored
   path takes its TTL and tags from the most specific matching route (static > `:param` >
-  `*catch-all`, per segment), never the first in table order.
+  `*catch-all`, per segment), never the first in table order. The route is matched on the path
+  with its query and its routed locale prefix removed (`unlocalizedPath`), as the router matches
+  it — the key keeps both, so `/en/blog/a` is its own entry under `/blog/:slug`'s TTL and tags.
 - **A tag-revalidated ISR document carries its purge keys while it is shared-cacheable**,
   `As of 2026-10-02` — `@ultimat3/http`'s `cache-headers` stage rewrites the response to `private`
   for a signed-in visitor and strips both headers: `Surrogate-Key`

@@ -18,6 +18,7 @@ import {
 } from '@ultimat3/cache';
 import type { Scheduler } from '@ultimat3/core';
 import { finiteCount, logger, renderThrowable, singleFlight } from '@ultimat3/core';
+import { unlocalizedPath } from '@ultimat3/i18n';
 import { parseTtlMs } from './duration';
 import { finiteStatus, isRenderStatus } from './finite-status';
 import type { RouteDescriptor } from './registry';
@@ -64,15 +65,22 @@ export function isrKey(url: URL, locale: string): string {
 }
 
 /**
- * The route pattern a key belongs to. Every lookup that asks the ROUTE TABLE a question — the
- * descriptor, and therefore the TTL — has to strip the query first: `descriptorFor('/blog?page=2')`
- * matches no route, so the entry would silently fall back to `ttlMs: null` and a declared
- * `revalidate: { ttl: '5m' }` would become tag-only. Keying without this split is a half-fix that
- * trades a leak for a wrong TTL.
+ * The path the ROUTE TABLE knows a key by. Every lookup that asks the table a question — the
+ * descriptor, and therefore the TTL and the tags — has to undo what the key carries beyond the
+ * route, in the order the router does before it matches (`@ultimat3/http`'s `routing` stage):
+ *
+ * - the query: `descriptorFor('/blog?page=2')` matches no route;
+ * - the routed locale prefix: `/en/blog/a` is the `/blog/:slug` route in English. The key KEEPS the
+ *   prefix — it is the URL the document was rendered for, `canonical` and all — and the table has
+ *   never heard of it. Left on, a prefixed page matched no route: `ttlMs: null` and no tag edge, so
+ *   it was fresh forever while the default locale's copy of the same page went stale on schedule.
+ *
+ * `unlocalizedPath` is i18n's, the one the router's own split is built on: a segment that names no
+ * routed locale is left alone, so `/fr/blog` is still no route.
  */
 function routePathOf(key: string): string {
   const query = key.indexOf('?');
-  return query === -1 ? key : key.slice(0, query);
+  return unlocalizedPath(query === -1 ? key : key.slice(0, query));
 }
 
 /**
