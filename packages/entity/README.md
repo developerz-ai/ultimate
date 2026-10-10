@@ -240,7 +240,7 @@ for a table it was going to create; these are the shapes a table already has, `A
 | `date()` | `date` | `@ultimat3/time`'s `PlainDate` — a calendar date, no time, no zone. `effective_on` is the date a rate applies, and as a `timestamptz` it is a different date on either side of midnight for half the planet |
 | `bigint()` | `bigint` | a decimal `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53 — which is exactly where a legacy `int8` key lives. Both driver spellings (a string from Bun's `sql`, a `bigint` from PGlite) arrive as one. Bounded at `int8` (−2^63 … 2^63−1): one past either end is refused where Postgres answers `22003` |
 | `bytes()` | `bytea` | a plain `Uint8Array`, normalised: Bun's `sql` returns a `Buffer` and PGlite a `Uint8Array`, and the two do not serialise alike |
-| `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column it was given. Money and nested arrays are refused — an element is one scalar column |
+| `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column it was given. Money and nested arrays are refused — an element is one scalar column. Read by the declaration, not by the driver: `Bun.SQL` hands `uuid[]` back as its text literal (`'{…}'`) and PGlite as an `Array`, and both decode to the same row |
 
 ## Adopting an existing table
 

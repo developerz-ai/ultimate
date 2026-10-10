@@ -10,6 +10,7 @@ import { kindOf } from './cursor';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
 import { pgInstantMicros, seekAlias } from './instant';
+import { arrayFromDriver, NOT_AN_ARRAY } from './pg-array-decode';
 import type { SortKey } from './tenancy';
 import type { AnyColumn, MoneyValue, RowPatch } from './types';
 
@@ -169,6 +170,26 @@ const moneyOf = (
 };
 
 /**
+ * What a column's `$parse` is handed. Every kind but one takes the driver's value as it is; an
+ * `arrayOf()` cell is first made the JS array its declaration says it is, because a driver hands
+ * one back three ways (`pg-array-decode.ts`) and only one of them is an `Array`.
+ *
+ * A cell that is none of the three is the table no longer matching the entity, and it is said
+ * here — `arrayOf`'s own refusal is written for a WRITE ("wrap it — [value]"), which instructs
+ * nobody about a value Postgres returned.
+ */
+const cellOf = (entityName: string, property: string, column: AnyColumn, value: unknown) => {
+  if (column.$meta.kind !== 'array') return value;
+  const members = arrayFromDriver(column.$meta, value);
+  if (members !== NOT_AN_ARRAY) return members;
+  throw invariantViolated(
+    entityName,
+    property,
+    `the database returned ${typeof value === 'string' ? `text that is not a Postgres array literal (${value.length} characters)` : `a ${typeof value}`} for an arrayOf() column — the table no longer matches the entity`,
+  );
+};
+
+/**
  * Physical row -> entity row. A column the projection left out is left out here too, so a
  * `select` narrows the object as well as the statement.
  */
@@ -188,7 +209,10 @@ export const decodeRow = <Row>(entity: EntityCore<Row>, source: PhysicalRow): Ro
       // A sealed column's stored value is not the author's to parse: it goes up as it is, and the
       // sealing seam opens it — so a row somebody left in the clear is `X_SEAL_INVALID` there
       // rather than whatever the plaintext parser thinks of its length here.
-      row[property] = column.$meta.sealed === undefined ? column.$parse(value) : value;
+      row[property] =
+        column.$meta.sealed === undefined
+          ? column.$parse(cellOf(entity.$name, property, column, value))
+          : value;
       continue;
     }
     if (column.$meta.notNull) {

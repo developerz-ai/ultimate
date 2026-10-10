@@ -11,9 +11,10 @@
 // in the component the first patch reached.
 
 import { renderThrowable } from '@ultimat3/core';
+import { parsePgArray } from '@ultimat3/entity';
 import { ReplicationProtocolError } from './errors';
 import type { JsonValue } from './json';
-import { arrayElementOid, parsePgArray } from './pg-array';
+import { arrayElementOid } from './pg-array';
 
 /**
  * What a row value can be between the WAL and the wire: JSON, plus the two JS shapes a repository

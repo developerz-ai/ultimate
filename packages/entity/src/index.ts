@@ -88,10 +88,12 @@ export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
 export { persistedRecordTypes } from './persisted-types';
-export type { PostgresDriverOptions } from './pg-driver';
-export { postgresDriver, postgresRepo } from './pg-driver';
 // For a change feed holding a table name and raw columns: `entityForTable` + `decodeRow` is the row
 // the app declared, money and all. Exported for `@ultimat3/realtime` (plan 101, 06 i).
+export type { PgArray } from './pg-array-literal';
+export { parsePgArray } from './pg-array-literal';
+export type { PostgresDriverOptions } from './pg-driver';
+export { postgresDriver, postgresRepo } from './pg-driver';
 export { decodeRow } from './pg-row';
 export { postgresTransactor } from './pg-transactor';
 // The two page bounds, beside `N_PLUS_ONE_THRESHOLD` and for the same reason: an app validating
