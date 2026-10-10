@@ -350,6 +350,22 @@ describe('unit · the island store carries which islands are realtime', () => {
     }
   });
 
+  // The index's keys are file names, which is data: the read keeps them in a Map, never an object
+  // indexed by file, where a name `Object.prototype` also has would answer with something that is
+  // not a kind (`bun run proto-index` refuses that lookup).
+  test('only the islands the index names read back with a kind', async () => {
+    await stored();
+    const read = await readIslandStore(ROOT);
+    const kinds = (read.bundle?.chunks ?? []).map((chunk) => [chunk.file, chunk.realtime]);
+    expect(kinds).toEqual([
+      [FOLLOWER, 'follows'],
+      [READER, 'restores'],
+      ['apps/web/site/plain.island.tsx', undefined],
+    ]);
+    expect(read.bundle?.realtime.size).toBe(2);
+    expect(read.bundle?.realtime.get('constructor')).toBeUndefined();
+  });
+
   test('a store that never recorded them is stale, never read as "no realtime islands"', async () => {
     await stored();
     const file = join(ROOT, ISLAND_STORE_DIR, 'index.json');

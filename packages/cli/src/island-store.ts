@@ -61,7 +61,7 @@ interface StoreIndex {
    * object for the index rather than a field per chunk, so its ABSENCE is readable: `undefined`
    * only for an index that did not record it, which is stale.
    */
-  readonly realtime: Readonly<Record<string, IslandRealtime>> | undefined;
+  readonly realtime: ReadonlyMap<string, IslandRealtime> | undefined;
 }
 
 const chunkFile = (url: string): string => url.slice(url.lastIndexOf('/') + 1);
@@ -127,10 +127,11 @@ export async function writeIslandStore(
     chunks,
     shared,
     stylesheets,
-    // The bundle's own answer, sorted so the index is reproducible.
-    realtime: Object.fromEntries([...bundle.realtime].sort(([a], [b]) => (a < b ? -1 : 1))),
+    realtime: bundle.realtime,
   };
-  await Bun.write(join(dir, INDEX), `${JSON.stringify(index, null, 2)}\n`);
+  // The bundle's own answer as a JSON object, sorted so the index is reproducible.
+  const realtime = Object.fromEntries([...bundle.realtime].sort(([a], [b]) => (a < b ? -1 : 1)));
+  await Bun.write(join(dir, INDEX), `${JSON.stringify({ ...index, realtime }, null, 2)}\n`);
   return [...written, `${ISLAND_STORE_DIR}/${INDEX}`];
 }
 
@@ -140,12 +141,14 @@ const stringsOf = (value: unknown): readonly string[] =>
   Array.isArray(value) ? value.filter(isString) : [];
 
 /** `undefined` unless every value is a kind this build knows: anything else is not an answer. */
-function kindsOf(value: unknown): Readonly<Record<string, IslandRealtime>> | undefined {
+function kindsOf(value: unknown): ReadonlyMap<string, IslandRealtime> | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const kinds: Record<string, IslandRealtime> = {};
+  // A Map, never the parsed object indexed by file: the file names are the index's own DATA, and
+  // an object answers `constructor` or `__proto__` with something that is not a kind.
+  const kinds = new Map<string, IslandRealtime>();
   for (const [file, kind] of Object.entries(value)) {
     if (kind !== 'restores' && kind !== 'follows') return undefined;
-    kinds[file] = kind;
+    kinds.set(file, kind);
   }
   return kinds;
 }
@@ -277,6 +280,7 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
     if (code === undefined) {
       return { stale: `${entry.url} is missing or does not match its recorded hash` };
     }
+    const kind = kinds.get(entry.file);
     chunks.push({
       file: entry.file,
       moduleId: entry.moduleId,
@@ -284,7 +288,7 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
       code,
       bytes: new TextEncoder().encode(code).byteLength,
       imports: entry.imports,
-      ...(kinds[entry.file] === undefined ? {} : { realtime: kinds[entry.file] }),
+      ...(kind === undefined ? {} : { realtime: kind }),
     });
   }
   const shared: SharedChunk[] = [];
