@@ -35,6 +35,7 @@ globalThis.probe = [
   client.NAVIGATE_EVENT,
   client.NAVIGATED_EVENT,
   client.NAVIGATION_ERROR_EVENT,
+  client.disposeIslands,
 ];
 `;
 
@@ -72,6 +73,7 @@ test('the browser entry carries the navigation helpers and core/page, never the 
   const render = modules.filter((module) => module.startsWith('render/'));
   // `client.ts` is re-exports only, so it writes no banner of its own.
   expect(render).toEqual([
+    'render/src/island-dispose.ts',
     'render/src/navigation-api.ts',
     'render/src/navigation-errors.ts',
     'render/src/navigation-modal-rules.ts',
@@ -94,6 +96,15 @@ test('an island that only refreshes carries navigation-api.ts and nothing else',
   // 216 B when measured; through the `.` barrel the same island was 9,323 B.
   const minified = await bundle('refresh-only-min', REFRESH_ONLY, true);
   expect(new TextEncoder().encode(minified.code).byteLength).toBeLessThan(1024);
+});
+
+test('an island that only releases nested islands carries island-dispose.ts and nothing else', async () => {
+  const source =
+    "import { disposeIslands } from '@ultimat3/render/client';\nglobalThis.probe = disposeIslands;\n";
+  expect((await bundle('dispose-only', source)).modules).toEqual(['render/src/island-dispose.ts']);
+  // 296 B when measured (2026-10-10, Bun 1.4.2, `minify: true`).
+  const minified = await bundle('dispose-only-min', source, true);
+  expect(new TextEncoder().encode(minified.code).byteLength).toBeLessThan(512);
 });
 
 test('openModal still rejects with the stable code, as the one class both entries export', async () => {

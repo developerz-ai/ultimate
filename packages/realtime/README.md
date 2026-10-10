@@ -87,7 +87,7 @@ class — stay on `.`.
 | hooks | `.` | `useQuery`, `useRecord`, `useRecords` (by key, or a whole type: `RecordSelection`), `useMutation`, `useMutationQueue`, `useOutbox`, `useConnection`, `useChannel`, `usePresence`, `hasPageSocket`, `installRealtime` |
 | channel records, no replicator | `./server` | `recordPublisher` — an app's committed rows as channel `records`, sequenced per producer ([below](#channel-records-with-no-replicator)) |
 | channels | `.` | `channel`, `channelRef`, `ChannelHandle`, `topic`, `readPresence`, the channel frame types |
-| first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`: the boot's restore and the open outbox, capped (#506) |
+| first paint | `.` | `holdFirstPaint`, `FIRST_PAINT_HOLD_MS` (1 s) — what the island bootstrap awaits before `mount`, for an island that reads the store or the outbox: the boot's restore and the open outbox, capped (#506). An island taking only `useChannel` / `usePresence` / `useConnection` never awaits it and is never hidden |
 | offline | `.` | `pageOutbox`, `recordPersister`, `persistedTypes`, `openLocalStore`, `pageLocalStore`, `memoryLocalStore()` |
 | the socket's worker | `./sync-worker` | the SharedWorker entry — no exports |
 

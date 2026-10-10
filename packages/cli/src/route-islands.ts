@@ -14,6 +14,7 @@ import {
 } from '@ultimat3/render';
 import type { DocumentOptions } from './document-options';
 import { realtimeIslandFiles } from './island-realtime';
+import { followOnlyIslandFiles } from './island-realtime-state';
 
 /**
  * One collector per RENDER, never module-global: two requests render different params, and a
@@ -34,12 +35,19 @@ export const collectorFor = (
     // realtime island's server markup is held off screen until it mounts over the restored store.
     ...(scope === undefined || options.sync === undefined
       ? {}
-      : { hold: (src: string) => reachesRealtime(entry, src) }),
+      : { hold: (src: string) => restoresState(entry, src) }),
   });
 
-/** Whether `src`, as the page at `entry` wrote it, is an island the last build found realtime. */
-const reachesRealtime = (entry: RouteEntry, src: string): boolean =>
-  realtimeIslandFiles().has(posix.join(posix.dirname(entry.file), src));
+/**
+ * Whether `src`, as the page at `entry` wrote it, is an island the last build found realtime AND
+ * reading the record store or the outbox. An island that only follows the socket — a channel's
+ * events, a roster, the connection — has no markup the restore could contradict, so hiding it
+ * only delayed the page's content (`island-realtime-state.ts`).
+ */
+const restoresState = (entry: RouteEntry, src: string): boolean => {
+  const file = posix.join(posix.dirname(entry.file), src);
+  return realtimeIslandFiles().has(file) && !followOnlyIslandFiles().has(file);
+};
 
 /**
  * Realtime's page boot, as one deferred script — or nothing. Two conditions, both exact: the

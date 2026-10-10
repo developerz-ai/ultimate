@@ -206,4 +206,17 @@ describe('the reveal that needs no script', () => {
       ),
     );
   });
+
+  // The keyframes above still cost a no-script reader the whole cap: three seconds of an empty
+  // box where the page's content is. A browser that says scripting is off never waits at all.
+  test('with scripting off the framework sheet cancels the hold outright, over the inline style', async () => {
+    const sheet = await readFile(join(import.meta.dir, '../../ui/src/global.scss'), 'utf8');
+    const rule = new RegExp(
+      `@media \\(scripting: none\\)\\s*\\{\\s*\\[${ISLAND_HOLD_ATTRIBUTE}\\]\\s*\\{([^}]*)\\}`,
+    ).exec(sheet)?.[1];
+    // `!important`: the hold is an inline style, and an important author rule also outranks the
+    // animation that would otherwise keep the wrapper hidden until the cap.
+    expect(rule).toMatch(/visibility:\s*visible\s*!important/);
+    expect(rule).toMatch(/animation:\s*none\s*!important/);
+  });
 });

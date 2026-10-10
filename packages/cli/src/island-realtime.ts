@@ -1,11 +1,14 @@
 // Realtime installed for the author, on exactly the islands that use it: an island whose own import
 // graph reaches `@ultimat3/realtime` is built from a virtual entry that first awaits the page
 // runtime (`island-runtime.ts`), then calls `installRealtime({ signal: createSignal })` with THIS
-// bundle's solid-js, then re-exports the island whole. Every other island pays nothing.
+// bundle's solid-js, then re-exports the island whole. Every other island pays nothing. An island
+// that reads the record store or the outbox also waits for the page's restore before it mounts
+// (#506); one that only follows the socket does not (`island-realtime-state.ts`).
 
 // why: Bun ships no path API; the entry is joined to the root, the runtime named by its basename.
 import { basename, join } from 'node:path';
 import type { BunPlugin } from 'bun';
+import { adoptFollowOnly, followOnlyIslandFiles, noteFollowOnly } from './island-realtime-state';
 import { RUNTIME_CHUNK_SPECIFIER, type RuntimeChunk } from './island-runtime';
 import { firstInGraph } from './live-routes';
 import { PAGE_BOOT_BASE_PATH } from './worker-bundle';
@@ -23,6 +26,7 @@ export const realtimeIslandEntry = (file: string): string => `${REALTIME_ISLAND_
 const REALTIME = '@ultimat3/realtime';
 const NAMESPACE = 'ultimate-island';
 const INSTALL = 'ultimate:island-realtime';
+const RESTORE = 'ultimate:island-restore';
 const MODULE = 'ultimate:island-module:';
 const WAIT = 'ultimate:island-page-wait';
 
@@ -43,6 +47,8 @@ export async function reachesRealtime(root: string, file: string): Promise<boole
   // second graph walk per request. Every build re-asks, so an edit that drops realtime drops it.
   if (found === true) realtimeIslands.add(file);
   else realtimeIslands.delete(file);
+  // The second answer of the same build: whether this realtime island has anything to restore.
+  await noteFollowOnly(root, file, found === true);
   return found === true;
 }
 
@@ -59,13 +65,29 @@ export function realtimeIslandFiles(): ReadonlySet<string> {
 }
 
 /**
+ * Both of a build's answers, as a verified store recorded them: a pod that reads the store runs no
+ * build, so nothing would ask `reachesRealtime` — and with nothing asked, no document carried the
+ * page boot and no island was held. Replaces what this process knew, as a build does.
+ */
+export function adoptRealtimeIslands(
+  realtime: readonly string[],
+  followOnly: readonly string[],
+): void {
+  realtimeIslands.clear();
+  for (const file of realtime) realtimeIslands.add(file);
+  adoptFollowOnly(followOnly);
+}
+
+/**
  * `export *` and never a named list: the hydration runtime reads `mount` off the module, and the
  * wrapper must not decide which of an island's names survive. The install is imported FIRST, so it
  * has run before the island's module body — and every hook the island calls — does. One install
- * module for every realtime island of the build, so a page with two of them loads it once.
+ * module for every realtime island of the build, so a page with two of them loads it once; an
+ * island with page state to restore imports the restore, which imports that same install.
  */
 const entrySource = (file: string): string =>
-  `import '${INSTALL}';\nexport * from '${MODULE}${file}';\n`;
+  `import '${followOnlyIslandFiles().has(file) ? INSTALL : RESTORE}';\n` +
+  `export * from '${MODULE}${file}';\n`;
 
 /**
  * The install names `@ultimat3/realtime` BARE, and `islandRealtimePlugin` resolves it from the
@@ -80,16 +102,26 @@ const entrySource = (file: string): string =>
  * on a document rendered for a principal; anywhere else the island loads the runtime chunk, by a
  * path relative to its own URL, so it resolves under `/islands/` and beside it in `mountIsland`.
  * The chunk's URL is in this source, so a new runtime is a new URL for every island loading it.
- * Then the first-paint hold (#506): `mount` waits for the restored records and the open outbox
- * (capped), so a reload's first render already carries a queued write's overlay.
  */
 const installSource = (runtimeUrl: string): string =>
-  `import { holdFirstPaint, installRealtime } from '${REALTIME}';\n` +
+  `import { installRealtime } from '${REALTIME}';\n` +
   `import { awaitPageRuntime } from '${WAIT}';\n` +
   `import { createSignal } from 'solid-js';\n` +
   `await awaitPageRuntime({ boot: '${PAGE_BOOT_BASE_PATH}/', load: () => import('./${basename(runtimeUrl)}') });\n` +
-  `await holdFirstPaint();\n` +
   `installRealtime({ signal: createSignal });\n`;
+
+/**
+ * The first-paint hold (#506), for an island that reads the record store or the outbox: `mount`
+ * waits for the restored records and the open outbox (capped), so a reload's first render already
+ * carries a queued write's overlay. After the install, which it imports: the wait needs the page
+ * runtime, and no hook runs before the island's module graph — this module included — is done.
+ * An island that only follows the socket never imports it, so it mounts as soon as the runtime is
+ * there and its chunk carries no `first-paint-hold.ts`.
+ */
+const restoreSource = (): string =>
+  `import '${INSTALL}';\n` +
+  `import { holdFirstPaint } from '${REALTIME}';\n` +
+  `await holdFirstPaint();\n`;
 
 /**
  * `runtime` names the realtime every bare `@ultimat3/realtime` of the build resolves to — the copy
@@ -110,6 +142,10 @@ export function islandRealtimePlugin(root: string, runtime: RuntimeChunk): BunPl
         path: 'install',
         namespace: NAMESPACE,
       }));
+      build.onResolve({ filter: /^ultimate:island-restore$/ }, () => ({
+        path: 'restore',
+        namespace: NAMESPACE,
+      }));
       build.onResolve({ filter: /^ultimate:island-module:/ }, (args) => ({
         path: join(root, args.path.slice(MODULE.length)),
       }));
@@ -127,7 +163,9 @@ export function islandRealtimePlugin(root: string, runtime: RuntimeChunk): BunPl
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({
         contents: args.path.startsWith('entry:')
           ? entrySource(args.path.slice('entry:'.length))
-          : installSource(runtime.url),
+          : args.path === 'restore'
+            ? restoreSource()
+            : installSource(runtime.url),
         loader: 'js',
       }));
     },

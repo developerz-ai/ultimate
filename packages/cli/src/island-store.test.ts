@@ -8,6 +8,8 @@ import { mkdir, rm, symlink } from 'node:fs/promises';
 import { join } from 'node:path'; // why: Bun exposes no path API — nothing native joins a path.
 import { clearStylesheets, stylesFor } from '@ultimat3/render/server';
 import { buildIslands } from './island-bundle';
+import { adoptRealtimeIslands, realtimeIslandFiles } from './island-realtime';
+import { followOnlyIslandFiles } from './island-realtime-state';
 import {
   ISLAND_STORE_DIR,
   loadOrBuildIslands,
@@ -271,6 +273,54 @@ describe('unit · the island store is stale once a source it was built from chan
  * `.module.scss` never registered: its rules were missing from every pod that read the store, and
  * present on any that rebuilt — two surface stylesheets for one image (notificado.co, 22.3.2).
  */
+// The document renderer asks two things of every island a page renders: does it reach realtime
+// (the page boot), and has it state to restore (the hold). Both were answered by the BUILD, in the
+// process that ran it — so a pod that read a verified store knew neither, rendered no page boot
+// for any realtime island and held none (measured 2026-10-10: `realtimeIslandFiles()` empty after
+// `loadOrBuildIslands` on a store another process wrote).
+describe('unit · the island store carries which islands are realtime', () => {
+  const READER = 'apps/web/app/reader.island.tsx';
+  const FOLLOWER = 'apps/web/app/follower.island.tsx';
+
+  beforeEach(async () => {
+    await write(
+      READER,
+      "import { useRecord } from '@ultimat3/realtime';\n" +
+        "export function mount(): unknown { return useRecord('posts', 'p1'); }\n",
+    );
+    await write(
+      FOLLOWER,
+      "import { useConnection } from '@ultimat3/realtime';\n" +
+        'export function mount(): unknown { return useConnection; }\n',
+    );
+  });
+
+  test('a boot from the store knows them as the build did', async () => {
+    await stored();
+    const index = (await Bun.file(join(ROOT, ISLAND_STORE_DIR, 'index.json')).json()) as {
+      realtime: string[];
+      followOnly: string[];
+    };
+    expect(index.realtime).toEqual([FOLLOWER, READER]);
+    expect(index.followOnly).toEqual([FOLLOWER]);
+
+    // Another process: nothing was built here, so nothing was asked.
+    adoptRealtimeIslands([], []);
+    expect((await readIslandStore(ROOT)).stale).toBeUndefined();
+    expect([...realtimeIslandFiles()].sort()).toEqual([FOLLOWER, READER]);
+    expect([...followOnlyIslandFiles()]).toEqual([FOLLOWER]);
+  });
+
+  test('a store that never recorded them is stale, never read as "no realtime islands"', async () => {
+    await stored();
+    const file = join(ROOT, ISLAND_STORE_DIR, 'index.json');
+    const index = (await Bun.file(file).json()) as Record<string, unknown>;
+    delete index['realtime'];
+    await Bun.write(file, JSON.stringify(index));
+    expect((await readIslandStore(ROOT)).stale).toContain('realtime');
+  });
+});
+
 describe('unit · the island store carries the island stylesheets', () => {
   const STYLED =
     "import styles from './styled.module.scss';\n" +

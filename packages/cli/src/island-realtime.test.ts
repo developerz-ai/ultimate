@@ -128,6 +128,61 @@ describe('the realtime install the island bundle writes', () => {
   });
 });
 
+describe('the first-paint wait, only where there is state to restore', () => {
+  const sources = (): ((path: string) => string) => {
+    const loads: ((args: { path: string }) => { contents: string })[] = [];
+    const build = {
+      onResolve: () => undefined,
+      onLoad: (_options: unknown, load: (args: { path: string }) => { contents: string }) => {
+        loads.push(load);
+      },
+    };
+    const runtime = {
+      realtime: '/a/realtime/src/index.ts',
+      wait: '/a/realtime/src/page-runtime-wait.ts',
+      url: '/islands/page-runtime.abc123.js',
+      code: '',
+      bytes: 0,
+      sources: [],
+    };
+    islandRealtimePlugin(ROOT, runtime).setup(build as never);
+    return (path) => loads[0]?.({ path }).contents ?? '';
+  };
+
+  test('a reader waits for the restore; an island that only follows the socket does not', async () => {
+    await write('apps/web/app/reader.island.tsx', READER);
+    await write('apps/web/app/live.island.tsx', LIVE);
+    expect(await reachesRealtime(ROOT, 'apps/web/app/reader.island.tsx')).toBe(true);
+    expect(await reachesRealtime(ROOT, 'apps/web/app/live.island.tsx')).toBe(true);
+    const load = sources();
+
+    expect(load('entry:apps/web/app/reader.island.tsx')).toContain("'ultimate:island-restore'");
+    const follower = load('entry:apps/web/app/live.island.tsx');
+    expect(follower).toContain("'ultimate:island-realtime'");
+    expect(follower).not.toContain('ultimate:island-restore');
+
+    // The wait is the restore's alone, and it runs after the one install both share.
+    expect(load('install')).not.toContain('holdFirstPaint');
+    expect(load('restore')).toContain("import 'ultimate:island-realtime';");
+    expect(load('restore')).toContain('await holdFirstPaint();');
+  });
+
+  test('both kinds build together and each finds realtime installed', async () => {
+    await write('apps/web/app/reader.island.tsx', READER);
+    await write('apps/web/app/live.island.tsx', LIVE);
+    const bundle = await buildIslands(ROOT);
+    const out = join(ROOT, 'out');
+    await serve(bundle, out);
+    Object.assign(globalThis, { document: {}, window: {} });
+    const at = (name: string): string =>
+      join(out, bundle.chunks.find((chunk) => chunk.file.endsWith(name))?.url.slice(1) ?? '');
+    const live = (await import(at('live.island.tsx'))) as { mount: () => string };
+    const reader = (await import(at('reader.island.tsx'))) as { mount: () => unknown };
+    expect(live.mount()).not.toBe('X_REALTIME_UNINSTALLED');
+    expect(reader.mount()).toBeTypeOf('function');
+  });
+});
+
 describe('the page runtime, once per page', () => {
   test('an island chunk excludes the store; the one runtime chunk beside it carries it', async () => {
     await write('apps/web/app/reader.island.tsx', READER);

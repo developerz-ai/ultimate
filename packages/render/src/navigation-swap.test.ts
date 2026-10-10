@@ -4,7 +4,6 @@
 import { describe, expect, test } from 'bun:test';
 import { FakeDocument, type FakeElement, h, routerHead } from './navigation-dom-fixture';
 import {
-  disposeIslands,
   documentHead,
   headPlan,
   loadStylesheets,
@@ -78,47 +77,6 @@ describe('stylesheets', () => {
     // Owned as appended: a navigation aborted before its swap leaves nothing the next swap
     // cannot retire.
     expect(links.map((l) => owned.has(l as unknown as Element))).toEqual([true, true]);
-  });
-});
-
-describe('islands', () => {
-  test('disposed through what mount returned — unless kept, unbooted, or failed', async () => {
-    const disposed: string[] = [];
-    const island = (name: string, boot?: Promise<unknown>) => {
-      const node = h('div', { 'data-x-island': name });
-      if (boot !== undefined) node.__x = boot;
-      return node;
-    };
-    const kept = island(
-      'kept',
-      Promise.resolve(() => disposed.push('kept')),
-    );
-    const root = h('div', {}, [
-      island(
-        'a',
-        Promise.resolve(() => disposed.push('a')),
-      ),
-      island('not-a-function', Promise.resolve('value')),
-      island('failed', Promise.reject(new TypeError('mount threw'))),
-      island('never-booted'),
-      kept,
-    ]);
-    const count = disposeIslands(el(root), (node) => node === el(kept));
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(count).toBe(3);
-    expect(disposed).toEqual(['a']);
-  });
-
-  test('an island whose boot never started is settled, so its pending boot mounts nothing', async () => {
-    const pending = h('div', { 'data-x-island': 'idle-pending' });
-    const kept = h('div', { 'data-x-island': 'kept-pending' });
-    disposeIslands(el(h('div', {}, [pending, kept])), (node) => node === el(kept));
-    // What the runtime's `boot` reads: an `__x` already there is returned, never re-imported.
-    expect(pending.__x).toBeInstanceOf(Promise);
-    expect(await pending.__x).toBeUndefined();
-    // A carried island is the tab's: its own boot still runs.
-    expect(kept.__x).toBeUndefined();
   });
 });
 

@@ -13,6 +13,8 @@ import { contentHash, loadStylesheet } from '@ultimat3/render/server';
 import { IslandBuildFailedError } from './errors';
 import type { IslandBundle, IslandChunk, SharedChunk } from './island-bundle';
 import { buildIslands, discoverIslands, islandBundle } from './island-bundle';
+import { adoptRealtimeIslands, realtimeIslandFiles } from './island-realtime';
+import { followOnlyIslandFiles } from './island-realtime-state';
 import type { SourceDigester, SourceStamp } from './island-sources';
 import { changedSource, isRecordableSource, sourceDigester, stampSources } from './island-sources';
 import { islandStylesheets } from './island-styles';
@@ -54,6 +56,14 @@ interface StoreIndex {
    * read the store, and present on any that rebuilt.
    */
   readonly stylesheets: readonly string[];
+  /**
+   * The islands whose graph reaches `@ultimat3/realtime`, and those of them with no page state to
+   * restore — the build's two answers (`island-realtime.ts`, `island-realtime-state.ts`), which
+   * the document renderer reads per request and a pod that builds nothing never computed.
+   * `undefined` only for an index that did not record them, which is stale.
+   */
+  readonly realtime: readonly string[] | undefined;
+  readonly followOnly: readonly string[];
 }
 
 const chunkFile = (url: string): string => url.slice(url.lastIndexOf('/') + 1);
@@ -113,12 +123,17 @@ export async function writeIslandStore(
     .map((path) => relative(root, path).split(sep).join('/'))
     .filter((path) => !path.startsWith('..'))
     .sort();
+  // Of THIS bundle's islands only: the two sets are the process's, and a process may have built
+  // more than one app (every test that builds a fixture does).
+  const files = new Set(chunks.map((chunk) => chunk.file));
   const index: StoreIndex = {
     framework: frameworkVersion(),
     bun: Bun.version,
     chunks,
     shared,
     stylesheets,
+    realtime: [...realtimeIslandFiles()].filter((file) => files.has(file)).sort(),
+    followOnly: [...followOnlyIslandFiles()].filter((file) => files.has(file)).sort(),
   };
   await Bun.write(join(dir, INDEX), `${JSON.stringify(index, null, 2)}\n`);
   return [...written, `${ISLAND_STORE_DIR}/${INDEX}`];
@@ -187,6 +202,8 @@ function parseIndex(value: unknown): StoreIndex | { readonly unchecked: string }
     chunks: parsed,
     shared,
     stylesheets,
+    realtime: Array.isArray(record['realtime']) ? stringsOf(record['realtime']) : undefined,
+    followOnly: stringsOf(record['followOnly']),
   };
 }
 
@@ -221,6 +238,11 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
   if (index.framework !== frameworkVersion() || index.bun !== Bun.version) {
     return {
       stale: `built by framework ${index.framework} on Bun ${index.bun}, serving ${frameworkVersion()} on Bun ${Bun.version}`,
+    };
+  }
+  if (index.realtime === undefined) {
+    return {
+      stale: `${ISLAND_STORE_DIR}/${INDEX} does not say which islands are realtime, so no page would carry the boot they need`,
     };
   }
   const stored = index.chunks.map((chunk) => chunk.file).sort();
@@ -282,6 +304,8 @@ export async function readIslandStore(root: string): Promise<StoreRead> {
     if (!(await source.exists())) return { stale: `${sheet}, an island stylesheet, is missing` };
     loadStylesheet(join(root, sheet), await source.text(), 'island');
   }
+  // Last, once nothing can refuse the store: a stale one is rebuilt, and the build answers both.
+  adoptRealtimeIslands(index.realtime, index.followOnly);
   return { bundle: islandBundle(chunks, shared) };
 }
 
