@@ -3,7 +3,8 @@
 // (`X_WORKSPACE_DEP_UNDECLARED`), and re-serialising the whole file would reformat arrays and
 // spacing the author — or their formatter — chose.
 
-import { containedPath } from './generate-write';
+import type { GenerateDisk } from './generate-disk';
+import { appDisk } from './generate-disk';
 
 const MANIFEST = 'package.json';
 
@@ -76,10 +77,10 @@ export function withDependency(
 export async function readWorkspace(
   root: string,
   dir: string,
+  disk: GenerateDisk = appDisk(root),
 ): Promise<{ readonly name: string; readonly version: string } | undefined> {
-  const file = Bun.file(containedPath(root, `${dir}/${MANIFEST}`));
-  if (!(await file.exists())) return undefined;
-  const parsed = parseManifest(await file.text());
+  const text = await disk.read(`${dir}/${MANIFEST}`);
+  const parsed = text === undefined ? undefined : parseManifest(text);
   if (parsed === undefined || typeof parsed.name !== 'string' || parsed.name === '') {
     return undefined;
   }
@@ -105,12 +106,13 @@ export async function planWorkspaceDependency(
   root: string,
   fromDir: string,
   toDir: string,
+  disk: GenerateDisk = appDisk(root),
 ): Promise<PlannedEdit | undefined> {
-  const target = await readWorkspace(root, toDir);
+  const target = await readWorkspace(root, toDir, disk);
   const path = `${fromDir}/${MANIFEST}`;
-  const file = Bun.file(containedPath(root, path));
-  if (target === undefined || !(await file.exists())) return undefined;
-  const contents = withDependency(await file.text(), target.name, target.version);
+  const text = await disk.read(path);
+  if (target === undefined || text === undefined) return undefined;
+  const contents = withDependency(text, target.name, target.version);
   return contents === undefined ? undefined : { path, contents };
 }
 
@@ -119,9 +121,10 @@ export async function declareWorkspaceDependency(
   root: string,
   fromDir: string,
   toDir: string,
+  disk: GenerateDisk = appDisk(root),
 ): Promise<string | undefined> {
-  const edit = await planWorkspaceDependency(root, fromDir, toDir);
+  const edit = await planWorkspaceDependency(root, fromDir, toDir, disk);
   if (edit === undefined) return undefined;
-  await Bun.write(containedPath(root, edit.path), edit.contents);
+  await disk.write(edit.path, edit.contents);
   return edit.path;
 }

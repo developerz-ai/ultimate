@@ -3,6 +3,8 @@
 // rather than copied fixture files so the generator output is typed, diffable and testable from a
 // unit test.
 
+import type { EntityStems } from './entity-module';
+import { entityStems } from './entity-module';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
@@ -28,8 +30,9 @@ const entitySource = (
   name: NameSet,
   snake: string,
   table: string,
+  stems: EntityStems,
 ): string => `// The ${name.camel} table, its domain type and its invariants. No I/O beyond the column
-// definitions: repo.ts owns every query that touches this table.
+// definitions: ${stems.repo}.ts owns every query that touches this table.
 
 import { entity, invariant, money, text, timestamp, uuid } from '@ultimat3/entity';
 
@@ -39,9 +42,9 @@ export const ${name.camel} = entity('${table}', {
   //
   // SINGLE-TENANT APP? There is no flag: \`x g action\`, \`x g query\` and \`x g policy\` decide on
   // \`orgId\` too, so the edit is per slice and it is this: delete \`tenant: 'orgId'\` and the
-  // \`orgId: uuid()\` column below and drop \`'orgId'\` from \`indexes\`. repo.ts needs no edit —
-  // it names no org. entity.test.ts then expects \`$tenantColumn\` null and \`orgScoped\` false,
-  // its \`row()\` fixture and repo.test.ts's \`draft()\` lose \`orgId\`, and repo.test.ts loses its
+  // \`orgId: uuid()\` column below and drop \`'orgId'\` from \`indexes\`. ${stems.repo}.ts needs no edit —
+  // it names no org. ${stems.entity}.test.ts then expects \`$tenantColumn\` null and \`orgScoped\` false,
+  // its \`row()\` fixture and ${stems.repo}.test.ts's \`draft()\` lose \`orgId\`, and ${stems.repo}.test.ts loses its
   // last test. Nothing else reads the column.
   tenant: 'orgId',
   columns: {
@@ -84,7 +87,7 @@ const chain = (indent: string, head: string, calls: readonly string[]): string =
   return `${indent}${head}\n${calls.map((call) => `${indent}  ${call}`).join('\n')};`;
 };
 
-const repoSource = (name: NameSet, dbModule: string): string => {
+const repoSource = (name: NameSet, dbModule: string, stems: EntityStems): string => {
   const row = name.pascal;
   const table = `db.${name.plural}`;
   const listSignature = wrapList(
@@ -124,7 +127,7 @@ const repoSource = (name: NameSet, dbModule: string): string => {
 // it here only for a statement the handle cannot express — a join, a window, a CTE.
 
 import { db } from '${dbModule}';
-import type { ${row} } from './entity';
+import type { ${row} } from './${stems.entity}';
 
 ${byIdSignature}
 ${byIdBody}
@@ -153,6 +156,7 @@ ${insertSignature}
 const repoTest = (
   name: NameSet,
   dbModule: string,
+  stems: EntityStems,
 ): string => `// The ${name.kebab} repo against the in-memory driver: the contract Postgres serves, with no
 // database. What it pins is what the repo cannot show by being read — whose rows a call reaches.
 ${sortedImports([
@@ -161,7 +165,7 @@ ${sortedImports([
   "import { afterEach, expect, unitTest } from '@ultimat3/testing';",
   `import { driver } from '${dbModule}';`,
 ])}
-import * as repo from './repo';
+import * as repo from './${stems.repo}';
 
 const orgId = '00000000-0000-4000-8000-000000000002';
 const otherOrg = '00000000-0000-4000-8000-000000000009';
@@ -223,11 +227,12 @@ const entityTest = (
   name: NameSet,
   snake: string,
   table: string,
+  stems: EntityStems,
 ): string => `// The ${name.kebab} entity's declaration: the table it maps to and the invariants it names. Both
 // are what the migration generator and every query read, so both are worth pinning.
 import { expect, unitTest } from '@ultimat3/testing';
-import type { ${name.pascal} } from './entity';
-${wrapImport([`${name.pascal}View`, name.camel], './entity')}
+import type { ${name.pascal} } from './${stems.entity}';
+${wrapImport([`${name.pascal}View`, name.camel], `./${stems.entity}`)}
 
 type Over = Partial<${name.pascal}>;
 
@@ -293,14 +298,25 @@ unitTest('${name.camel} parses a row through its own columns', () => {
 });
 `;
 
-export function entityFiles(rawName: string, target: FeatureTarget): readonly GeneratedFile[] {
+/**
+ * `sibling` is the feature's SECOND entity onward: `entity.ts` is already another table's, so this
+ * one lands beside it as `entity-<name>.ts` with its own `repo-<name>.ts` — a file per table, and
+ * nothing the author wrote is edited to make room.
+ */
+export function entityFiles(
+  rawName: string,
+  target: FeatureTarget,
+  options: { readonly sibling?: boolean } = {},
+): readonly GeneratedFile[] {
   const name = names(rawName);
   const dir = `${target.surfaceDir}/${target.feature}`;
   const dbModule = target.dbModule ?? PLACEHOLDER_DB_MODULE;
+  const stems = entityStems(name.kebab, options.sibling === true);
+  const { snake, table } = name;
   return [
-    { path: `${dir}/entity.ts`, contents: entitySource(name, name.snake, name.table) },
-    { path: `${dir}/entity.test.ts`, contents: entityTest(name, name.snake, name.table) },
-    { path: `${dir}/repo.ts`, contents: repoSource(name, dbModule) },
-    { path: `${dir}/repo.test.ts`, contents: repoTest(name, dbModule) },
+    { path: `${dir}/${stems.entity}.ts`, contents: entitySource(name, snake, table, stems) },
+    { path: `${dir}/${stems.entity}.test.ts`, contents: entityTest(name, snake, table, stems) },
+    { path: `${dir}/${stems.repo}.ts`, contents: repoSource(name, dbModule, stems) },
+    { path: `${dir}/${stems.repo}.test.ts`, contents: repoTest(name, dbModule, stems) },
   ];
 }

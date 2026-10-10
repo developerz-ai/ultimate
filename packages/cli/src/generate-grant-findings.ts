@@ -3,6 +3,8 @@
 // every generated endpoint answered 403. Apart from that module because this one only REPORTS:
 // it re-asks the same pure edits of the file as it now stands and names what they could not place.
 
+import type { GenerateDisk } from './generate-disk';
+import { appDisk } from './generate-disk';
 import type { RoleGrant } from './generate-grants';
 import {
   adminGrantsFor,
@@ -11,7 +13,6 @@ import {
   insertPermissions,
   writtenTables,
 } from './generate-grants';
-import { containedPath } from './generate-write';
 import type { Finding } from './output';
 import { ROLES_FILE } from './permission-grants';
 
@@ -45,15 +46,16 @@ function stillMissing(source: string, grants: readonly RoleGrant[], admin: reado
 export async function ungrantedByGenerator(
   root: string,
   written: readonly string[],
+  disk: GenerateDisk = appDisk(root),
 ): Promise<readonly Finding[]> {
-  const admin = (await writtenTables(root, written)).flatMap(adminGrantsFor);
+  const admin = (await writtenTables(root, written, disk)).flatMap(adminGrantsFor);
   const grants = [...grantsForWritten(written), ...admin];
   if (grants.length === 0) return [];
-  const file = Bun.file(containedPath(root, ROLES_FILE));
+  const source = await disk.read(ROLES_FILE);
   // The file whose declarations nobody granted: where a reader starts when the map is not ours.
   const declaredIn =
     written.find((path) => path.endsWith('/policy.ts')) ?? written[0] ?? ROLES_FILE;
-  if (!(await file.exists())) {
+  if (source === undefined) {
     return [
       {
         code: 'X_PERMISSION_UNGRANTED',
@@ -63,12 +65,12 @@ export async function ungrantedByGenerator(
       },
     ];
   }
-  const missing = stillMissing(await file.text(), grants, admin);
+  const missing = stillMissing(source, grants, admin);
   if (missing.length === 0) return [];
   return [
     {
       code: 'X_PERMISSION_UNGRANTED',
-      cause: `${ROLES_FILE} has no role, no "grants: [...]" list or no definePermissions([...]) these could be added to, so nothing granted: ${linesFor(missing)}`,
+      cause: `${ROLES_FILE} has no role, no "grants: [...]" list or no definePermissions([...]) these could be safely added to, so nothing granted: ${linesFor(missing)}`,
       fix: `edit ${ROLES_FILE} — add to each role's grants (and declare any the map does not know in definePermissions([...])) — ${linesFor(missing)} — then x verify --only policy`,
       at: ROLES_FILE,
     },

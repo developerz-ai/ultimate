@@ -6,10 +6,13 @@
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import { API_INDEX } from './app-root';
+import type { GenerateDisk } from './generate-disk';
+import { appDisk } from './generate-disk';
 import { containedPath } from './generate-write';
 import type { Finding } from './output';
+import type { SourceList } from './source-list-edit';
+import { appendToList, maskOf, readList, readProperties } from './source-list-edit';
 import { camel } from './templates/naming';
-import { wrapList } from './templates/wrap';
 
 /** One module to import as a namespace and list under a `defineApi` key. */
 export interface ApiEntry {
@@ -56,42 +59,30 @@ export function apiEntriesFor(written: readonly string[]): readonly ApiEntry[] {
 }
 
 /**
- * Every `[...]` entry of a `key: [...]` list in the `defineApi({ ... })` call, and where it sits:
- * `line` is the start of the line holding `key: [`, `start` is just past the `[`, `end` is the `]`.
- *
- * Searched from `from` (the `defineApi({` call), so a `jobs: [` in a comment or an object above the
- * call is never the one edited. `line` is found from the key, never from `start`: in a list already
- * wrapped one entry per line the character AT `start` is the newline after `[`, and a backwards
- * search from there answered the first ITEM's line — the rewrite then nested a second `jobs: [`
- * inside the first and left the old `]` behind.
+ * The `key: [...]` lists of the `defineApi({ ... })` call, read off the MASKED text: a `jobs: [` in
+ * a comment or an object above the call is never the one edited, and a `]` or a comma inside a
+ * comment between two entries ends nothing. (The list was closed at the first `]` in the raw text
+ * and split at every comma — a commented list was rewritten with its comment as an entry.)
  */
-const listOf = (
-  source: string,
-  key: string,
-  from: number,
-): { line: number; start: number; end: number; items: string[] } | undefined => {
-  const open = new RegExp(`\\n([ \\t]*)${key}: \\[`, 'g');
-  open.lastIndex = from;
-  const found = open.exec(source);
-  if (found === null) return undefined;
-  const line = found.index + 1;
-  const start = found.index + found[0].length;
-  const end = source.indexOf(']', start);
-  if (end === -1) return undefined;
-  const items = source
-    .slice(start, end)
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-  return { line, start, end, items };
+const listsOf = (source: string): ((key: string) => SourceList | undefined) | undefined => {
+  const masked = maskOf(source);
+  const call = /\bdefineApi\(\s*\{/.exec(masked);
+  if (call === null) return undefined;
+  const properties = readProperties(source, masked, call.index + call[0].length - 1);
+  return (key) => {
+    const property = properties.find((one) => one.key === key);
+    return property === undefined || masked[property.value] !== '['
+      ? undefined
+      : readList(source, masked, property.value);
+  };
 };
 
 /**
  * `source` with each entry imported and listed. The import joins the `import * as` block in sorted
  * position; the binding joins its list, which is created after `actions: [...]` when the call has
- * none. An index that is not the scaffold's shape — no `defineApi({`, no `actions:` list — is
- * returned untouched with the entries in `skipped`, and the `manifest` step's X_JOB_UNREGISTERED
- * names the edit.
+ * none. An index that is not the scaffold's shape — no `defineApi({`, no `actions:` list — or a
+ * list that cannot be edited safely is returned untouched with the entries in `skipped`, and the
+ * `manifest` step's X_JOB_UNREGISTERED names the edit.
  */
 export function insertApiEntries(
   source: string,
@@ -101,28 +92,38 @@ export function insertApiEntries(
   const skipped: ApiEntry[] = [];
   for (const entry of entries) {
     const importLine = `import * as ${entry.binding} from '${entry.specifier}';`;
-    const call = next.indexOf('defineApi({');
-    const actions = call === -1 ? undefined : listOf(next, 'actions', call);
-    if (call === -1 || actions === undefined) {
+    const listOf = listsOf(next);
+    const actions = listOf?.('actions');
+    if (listOf === undefined || actions === undefined) {
       skipped.push(entry);
       continue;
     }
-    const list = listOf(next, entry.key, call);
-    if (list?.items.includes(entry.binding) === true) continue;
+    const list = listOf(entry.key);
+    if (list?.entries.some((one) => one.text === entry.binding) === true) continue;
     if (list === undefined) {
       // In the order `x new` writes — actions, queries, jobs, tasks: after the nearest list
       // before it that the call already holds, which is `actions` at the least.
       const earlier = LIST_ORDER.slice(0, LIST_ORDER.indexOf(entry.key))
-        .map((key) => listOf(next, key, call))
+        .map((key) => listOf(key))
         .findLast((found) => found !== undefined);
-      const after = next.indexOf('\n', (earlier ?? actions).end);
+      const after = next.indexOf('\n', (earlier ?? actions).close);
       const line = `  ${entry.key}: [${entry.binding}],`;
-      next = `${next.slice(0, after + 1)}${line}\n${next.slice(after + 1)}`;
+      const candidate = `${next.slice(0, after + 1)}${line}\n${next.slice(after + 1)}`;
+      // Read back, as every other edit here is: when the earlier list shares its row with the
+      // call's own `});`, "the row after it" is OUTSIDE the call — a property of nothing.
+      const landed = listsOf(candidate)?.(entry.key);
+      if (landed?.entries.some((one) => one.text === entry.binding) !== true) {
+        skipped.push(entry);
+        continue;
+      }
+      next = candidate;
     } else {
-      const items = [...list.items, entry.binding];
-      const indent = /^[ \t]*/.exec(next.slice(list.line))?.[0] ?? '';
-      const rewritten = wrapList(indent, `${entry.key}: [`, items, ']');
-      next = `${next.slice(0, list.line)}${rewritten}${next.slice(list.end + 1)}`;
+      const edited = appendToList(next, list.open, [entry.binding]);
+      if (edited === undefined) {
+        skipped.push(entry);
+        continue;
+      }
+      next = edited;
     }
     if (!next.includes(importLine)) next = withImport(next, importLine);
   }
@@ -236,13 +237,13 @@ export async function indexBindingFindings(
 export async function registerGeneratedPrimitives(
   root: string,
   written: readonly string[],
+  disk: GenerateDisk = appDisk(root),
 ): Promise<readonly string[]> {
   const entries = apiEntriesFor(written);
-  const file = containedPath(root, API_INDEX);
-  if (entries.length === 0 || !(await Bun.file(file).exists())) return [];
-  const before = await Bun.file(file).text();
+  const before = entries.length === 0 ? undefined : await disk.read(API_INDEX);
+  if (before === undefined) return [];
   const { source } = insertApiEntries(before, entries);
   if (source === before) return [];
-  await Bun.write(file, source);
+  await disk.write(API_INDEX, source);
   return [API_INDEX];
 }

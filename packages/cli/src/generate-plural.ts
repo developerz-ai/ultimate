@@ -33,6 +33,17 @@ export function refusePluralTable(
   feature: string | undefined,
   exists: (path: string) => boolean,
 ): void {
+  // A feature's second entity (`entity-<name>.ts`) is named by the NAME, never by the slice.
+  const sibling = files.find((file) => /\/entity-[a-z0-9-]+\.ts$/.test(file.path));
+  const single = sibling === undefined ? undefined : singularOf(kebab(name));
+  if (single !== undefined && feature !== undefined) {
+    throw new BadFlagError({
+      flag: 'name',
+      command: `g ${kind}`,
+      reason: `"${name}" is already plural, and the entity this run writes pluralises it again for its table — "${names(name).table}"`,
+      fix: ['x g', kind, single, '--feature', feature].join(' '),
+    });
+  }
   for (const slice of writtenEntitySlices(files, exists)) {
     const singular = singularOf(slice);
     if (singular === undefined) continue;
