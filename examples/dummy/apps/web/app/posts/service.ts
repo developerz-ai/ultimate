@@ -18,6 +18,7 @@ import {
   insertDraft,
   insertLike,
   markPublished,
+  markWithdrawn,
   publishedSince,
   recountLikes,
   reviewOf,
@@ -104,6 +105,13 @@ export const postsService = defineService('posts', (ctx) => {
       const post = await this.byId(postId);
       if (post.status === 'published') return post;
       return markPublished(tenantId(), postId, ctx.now());
+    },
+
+    /** Withdrawing is idempotent too: a post that is not published is answered as it stands. */
+    async withdraw(postId: PostId): Promise<PostView> {
+      const post = await this.byId(postId);
+      if (post.status !== 'published') return post;
+      return markWithdrawn(tenantId(), postId);
     },
 
     /**

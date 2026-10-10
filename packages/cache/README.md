@@ -283,6 +283,15 @@ one naming the span that triggered it. That is the log the `/_x` cache panel ren
 actually clear?" is answerable without a log dive because the one fan-out path retained the
 answer, not because a second recorder was wired next to it.
 
+### The ISR holder is asked by tag
+
+`registerRevalidator(byPath, byTags?)` takes both halves in one call (`@ultimat3/render`'s
+controller is the caller). `byPath` is told each `isr-route` dependent the graph holds; `byTags`
+(`TagRevalidator`) is handed the busted tags and answers the paths it revalidated — the pages its
+STORE holds under them, which the graph cannot know when two controllers share a store or an entry
+outlived the process that rendered it. Both lists are one `report.isr`; a rejection is a
+`report.errors` row (`tier: 'isr'`), never a failed bust. Omitting `byTags` clears the previous one.
+
 ### Across instances
 
 `invalidateTags` clears the tiers of the process that called it. On a fleet that is one pod: a user

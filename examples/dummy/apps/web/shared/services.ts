@@ -42,6 +42,7 @@ export interface PostsService {
   bySlug(slug: string): Promise<PostView>;
   createDraft(input: CreatePostInput): Promise<PostView>;
   publish(postId: PostId): Promise<PostView>;
+  withdraw(postId: PostId): Promise<PostView>;
   like(postId: PostId): Promise<PostView>;
   unlike(postId: PostId): Promise<PostView>;
   comment(postId: PostId, body: string): Promise<CommentView>;

@@ -1,6 +1,8 @@
 /**
- * One public post. ISR: prerendered at build, regenerated in the background when anything tagged
- * `blog` is written — which is what `publishPost` declares in its `cache.invalidates`.
+ * One public post. ISR: prerendered at build, and PURGED when anything tagged `blog` is written —
+ * which is what `publishPost` and `withdrawPost` declare in their `cache.invalidates`. Purged and
+ * not marked stale, because a withdrawn article must not be answered one more time; the next
+ * request renders it, and finds the 404. `query: []`: the page varies on no query parameter.
  *
  * The route never touches the database. `prerender` and the page body both go through the typed
  * read client — `Api['queries']` is a type, so this file has no edge into `app/` and stays inside
@@ -23,7 +25,7 @@ import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'isr',
-  revalidate: { tags: [tag.blog] },
+  revalidate: { tags: [tag.blog], onInvalidate: 'purge', query: [] },
   /**
    * One page per published slug; unpublishing removes it from the sitemap in the same build. A
    * read answers rows and a prerender answers params, so the slug is projected out — a bare

@@ -19,7 +19,7 @@ import { transition } from '@ultimat3/action';
 import { postSchedule } from '../policy';
 import { postStatus } from '../repo';
 
-/** The states a caller may move a post between here — every one except the terminal `published`. */
+/** The states a caller may move a post between here — every one except `published` (`publishPost`, `withdrawPost`). */
 const SCHEDULABLE = POST_STATUSES.filter((status) => status !== 'published') as [
   'draft' | 'scheduled',
   ...('draft' | 'scheduled')[],

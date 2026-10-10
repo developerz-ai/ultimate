@@ -24,6 +24,15 @@ import { sortTiers } from './tiers';
 export type Revalidator = (path: string) => Promise<void> | void;
 
 /**
+ * Revalidates every ISR page HELD under these tags, and answers their paths. The graph only knows
+ * the pages this process rendered; a store that outlives the process, or that two controllers
+ * share, holds pages with no edge here — so the holder is asked by tag as well as told by path.
+ */
+export type TagRevalidator = (
+  tags: readonly CacheTag[],
+) => Promise<readonly string[]> | readonly string[];
+
+/**
  * Carries wire tags to every OTHER process. The seam, never the transport: `cache` is tier 1 and
  * may not reach `realtime` (tier 3) or NATS, so `@ultimat3/cli` registers the sender at boot the
  * same way `@ultimat3/render` registers the `Revalidator`.
@@ -94,6 +103,7 @@ export function recentInvalidations(): readonly InvalidationEvent[] {
 
 const registry: CacheTier[] = [];
 let revalidator: Revalidator | undefined;
+let tagRevalidator: TagRevalidator | undefined;
 let broadcast: InvalidationBroadcast | undefined;
 
 /** Tiers register at boot from `app.config.ts`; order is normalised, not trusted. */
@@ -114,6 +124,7 @@ export function registeredTiers(): readonly CacheTier[] {
 export function resetTiers(): void {
   registry.length = 0;
   revalidator = undefined;
+  tagRevalidator = undefined;
   broadcast = undefined;
   invalidationLog.length = 0;
   resetTierFailures();
@@ -134,6 +145,7 @@ export function resetTiers(): void {
 export function isolateTiers(): () => void {
   const capturedTiers = [...registry];
   const capturedRevalidator = revalidator;
+  const capturedTagRevalidator = tagRevalidator;
   const capturedBroadcast = broadcast;
   const capturedLog = [...invalidationLog];
   const restoreFailures = isolateTierFailures();
@@ -142,14 +154,20 @@ export function isolateTiers(): () => void {
     resetTiers();
     registry.push(...capturedTiers);
     revalidator = capturedRevalidator;
+    tagRevalidator = capturedTagRevalidator;
     broadcast = capturedBroadcast;
     invalidationLog.push(...capturedLog);
     restoreFailures();
   };
 }
 
-export function registerRevalidator(next: Revalidator): void {
+/**
+ * One registration for both halves, so they cannot belong to two controllers: `byTags` is replaced
+ * with `next` — omitted, it is cleared, never left pointing at the previous owner's store.
+ */
+export function registerRevalidator(next: Revalidator, byTags?: TagRevalidator): void {
   revalidator = next;
+  tagRevalidator = byTags;
 }
 
 /**
@@ -240,17 +258,25 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // printed upside down is a second thing for a reader to learn.
     tiers.sort((a, b) => CACHE_TIERS.indexOf(a.tier) - CACHE_TIERS.indexOf(b.tier));
 
-    const isr = dependentsOfKind(tags, 'isr-route');
+    const isrPaths = new Set(dependentsOfKind(tags, 'isr-route'));
     const cdn = dependentsOfKind(tags, 'cdn-path');
     const liveQueries = dependentsOfKind(tags, 'live-query');
 
-    for (const path of isr) {
+    for (const path of isrPaths) {
       try {
         await revalidator?.(path);
       } catch (error) {
         errors.push({ tier: 'isr', message: renderThrowable(error) });
       }
     }
+    // After the graph's own paths, and reported with them: what the holder found under the tags
+    // that this process never registered.
+    try {
+      for (const path of (await tagRevalidator?.(tags)) ?? []) isrPaths.add(path);
+    } catch (error) {
+      errors.push({ tier: 'isr', message: renderThrowable(error) });
+    }
+    const isr = [...isrPaths];
 
     const wire = serializeTags(tags);
 

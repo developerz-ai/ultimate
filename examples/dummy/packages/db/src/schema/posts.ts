@@ -33,14 +33,15 @@ export const posts = entity('posts', {
     coverUrl: url().nullable(),
     /**
      * A machine, so a move is one compare-and-set statement (`movePostStatus`, the posts mutator).
-     * `published` is terminal and reached only by `publish()`, which stamps `publishedAt` in the
-     * same write — `post_publish_coherent` below refuses a published row without one.
+     * `published` is reached only by `publish()`, which stamps `publishedAt` in the same write —
+     * `post_publish_coherent` below refuses a published row without one — and left only by
+     * `withdraw()`, back to a draft, which clears it in the same write.
      */
     status: enumerated(POST_STATUSES)
       .transitions({
         draft: ['scheduled', 'published'],
         scheduled: ['draft', 'published'],
-        published: [],
+        published: ['draft'],
       })
       .default('draft'),
     likeCount: integer().default(0),

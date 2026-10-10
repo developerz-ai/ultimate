@@ -61,7 +61,7 @@ const ContactSales = island({
 
 export const config = defineRoute({
   render: 'isr',
-  revalidate: { tags: [tag.plan] },
+  revalidate: { tags: [tag.plan], query: [] },
   offline: 'runtime',
   /**
    * No `hydrate` here on purpose: the island below is the declaration, and a route carrying one

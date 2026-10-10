@@ -39,6 +39,7 @@ export type {
   InvalidationEvent,
   InvalidationReport,
   Revalidator,
+  TagRevalidator,
 } from './invalidate';
 export {
   invalidateTags,

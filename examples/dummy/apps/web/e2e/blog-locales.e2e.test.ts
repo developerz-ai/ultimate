@@ -1,6 +1,7 @@
 /**
  * e2e — the public blog is ISR in EVERY locale: publishing a post puts it on `/blog` and on
- * `/es/blog`, and turns the article's stored 404 into the article under both spellings.
+ * `/es/blog`, and turns the article's stored 404 into the article under both spellings — and
+ * withdrawing it takes all four pages down again, on the next request.
  *
  * The prefixed pages are the ones this guards. The router strips `/es` before it matches and the
  * ISR store keeps it, so a lookup that forgot to strip found no route for `/es/blog`: the page
@@ -40,6 +41,20 @@ describe('the public blog, in every locale', () => {
 
   const get = (path: string): Promise<Response> => fetch(`${app.base}${path}`);
 
+  /** One of the two writes that move the post on or off the public blog, as bruno, its author. */
+  async function write(verb: 'publish' | 'withdraw', extra: object = {}): Promise<void> {
+    const answered = await fetch(`${app.base}/api/posts/${verb}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: app.base,
+        cookie: `${DEMO_MEMBER_COOKIE}=bruno`,
+      },
+      body: JSON.stringify({ postId: DRAFT.id, orgId: DRAFT.orgId, ...extra }),
+    });
+    if (!answered.ok) fail(`${verb} answered ${String(answered.status)}: ${await answered.text()}`);
+  }
+
   /** The page once its regeneration has landed: polled to a deadline, never a fixed wait. */
   async function eventually(
     path: string,
@@ -68,18 +83,7 @@ describe('the public blog, in every locale', () => {
       }
       for (const path of ARTICLES) expect((await get(path)).status).toBe(404);
 
-      const published = await fetch(`${app.base}/api/posts/publish`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          origin: app.base,
-          cookie: `${DEMO_MEMBER_COOKIE}=bruno`,
-        },
-        body: JSON.stringify({ postId: DRAFT.id, orgId: DRAFT.orgId, notify: false }),
-      });
-      if (!published.ok) {
-        fail(`publishPost answered ${String(published.status)}: ${await published.text()}`);
-      }
+      await write('publish', { notify: false });
 
       for (const path of INDEXES) {
         const after = await eventually(path, (_status, body) => body.includes(DRAFT.title));
@@ -93,6 +97,49 @@ describe('the public blog, in every locale', () => {
       // Still one document per locale: the prefixed page is the Spanish one.
       expect((await eventually('/es/blog', () => true)).body).toContain('<html lang="es"');
       expect((await eventually('/blog', () => true)).body).toContain('<html lang="en"');
+    },
+    4 * REGENERATED_MS,
+  );
+
+  // The blog routes declare `onInvalidate: 'purge'`. Under the default a bust keeps the stored page
+  // for one more serve — per stored key, per locale — so a withdrawn article was still handed to
+  // its next reader. ONE request per page below, never a poll: there is no stale copy to outwait.
+  test(
+    'withdrawing a post takes it down in both locales on the very next request',
+    async () => {
+      // Idempotent, so this test stands alone: published, and every page a stored entry naming it.
+      await write('publish', { notify: false });
+      for (const path of INDEXES) {
+        expect((await eventually(path, (_s, body) => body.includes(DRAFT.title))).body).toContain(
+          DRAFT.title,
+        );
+      }
+      for (const path of ARTICLES) {
+        expect((await eventually(path, (status) => status === 200)).status).toBe(200);
+      }
+      // A tracking parameter is the same stored page, not a second entry a withdrawal could miss.
+      const tracked = await get(`${ARTICLES[0]}?utm_source=mail`);
+      expect(tracked.status).toBe(200);
+      expect(await tracked.text()).toContain(
+        `<link rel="canonical" href="${app.base}${ARTICLES[0]}"`,
+      );
+
+      await write('withdraw');
+
+      for (const path of [...ARTICLES, `${ARTICLES[0]}?utm_source=mail`]) {
+        const gone = await get(path);
+        expect({ path, status: gone.status, stale: gone.headers.get('x-ultimate-isr') }).toEqual({
+          path,
+          status: 404,
+          stale: null,
+        });
+        expect(await gone.text()).not.toContain(DRAFT.title);
+      }
+      for (const path of INDEXES) {
+        const index = await get(path);
+        expect({ path, stale: index.headers.get('x-ultimate-isr') }).toEqual({ path, stale: null });
+        expect(await index.text()).not.toContain(DRAFT.title);
+      }
     },
     4 * REGENERATED_MS,
   );

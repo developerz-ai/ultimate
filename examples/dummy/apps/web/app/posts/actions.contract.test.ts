@@ -12,6 +12,7 @@ import { contractTest, expect, test } from '@ultimat3/testing';
 import { createComment } from './actions/create-comment';
 import { createPost } from './actions/create-post';
 import { publishPost } from './actions/publish-post';
+import { withdrawPost } from './actions/withdraw-post';
 import { notifySubscribers } from './jobs/notify-subscribers';
 
 const ORG = '00000000-0000-4000-8000-000000000002';
@@ -179,3 +180,34 @@ contractTest(
     expect(publishPost.openapi().operationId).toBe('publishPost');
   },
 );
+
+test('withdrawPost takes a published post back to a draft, and clears its instant', async ({
+  seed,
+  actorFor,
+}) => {
+  const { draft, author } = await seed('dev').pick({
+    draft: 'post:draft-money',
+    author: 'member:bruno',
+  });
+  const as = actorFor(author);
+  await publishPost.as(as, { postId: draft.id, orgId: draft.orgId, notify: false });
+
+  const withdrawn = await withdrawPost.as(as, { postId: draft.id, orgId: draft.orgId });
+  expect(withdrawn.status).toBe('draft');
+  expect(withdrawn.publishedAt).toBeNull();
+  // Idempotent: a post that is not published is answered as it stands.
+  expect((await withdrawPost.as(as, { postId: draft.id, orgId: draft.orgId })).status).toBe(
+    'draft',
+  );
+});
+
+test('withdrawPost denies a member of another org', async ({ seed, actorFor }) => {
+  const { draft, stranger } = await seed('dev').pick({
+    draft: 'post:draft-money',
+    stranger: 'member:mara',
+  });
+
+  await expect(
+    withdrawPost.as(actorFor(stranger), { postId: draft.id, orgId: draft.orgId }),
+  ).rejects.toBeUltimateError('X_FORBIDDEN');
+});

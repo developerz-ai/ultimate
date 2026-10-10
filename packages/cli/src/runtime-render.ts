@@ -486,8 +486,8 @@ async function renderIsr(
   options: DevRenderOptions,
   isr: IsrController,
 ): Promise<Rendered> {
-  const document = (loaded: RouteData): Promise<string> =>
-    documentFrom(entry, data, loaded, options);
+  const document = (loaded: RouteData, at: DevRouteData): Promise<string> =>
+    documentFrom(entry, at, loaded, options);
   const outcome = await isrOutcome({ entry, data, ctx, isr, document });
   if (outcome.kind === 'redirect') return { respond: () => loadRedirect(entry, outcome.to) };
   return { respond: () => responseOf(outcome.result) };

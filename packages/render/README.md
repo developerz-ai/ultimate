@@ -557,6 +557,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`†, `enumeratePrerender`† | build-time render, content hashing |
 | `isrController`†, `invalidateAndRevalidate`† | SWR + single-flight + tag triggers |
+| `isrKey`†, `isrRequestUrl`†, `undeclaredQuery`† | the one derivation of an `isr` store key, and the request URL narrowed to `revalidate.query` |
+| `noStore`, `routeNoStoreOf` | a loader's "do not keep this answer" — a mark on the data, like `withStatus`; read by `isr` |
 | `renderSsr`†, `streamResult`† | the per-request modes |
 | `renderToHtml`†, `renderComponent`†, `stylesFor`† | the server JSX writer and the surface's css |
 | `claimStylesheets`† | a package claims its own directory's stylesheets for ONE surface, so the other surface's documents never carry them |
@@ -591,6 +593,16 @@ a job boundary the class is gone and the `code` is what survives — match on th
   `*catch-all`, per segment), never the first in table order. The route is matched on the path
   with its query and its routed locale prefix removed (`unlocalizedPath`), as the router matches
   it — the key keeps both, so `/en/blog/a` is its own entry under `/blog/:slug`'s TTL and tags.
+- **`revalidate` decides three more things** (`As of 2026-10-10`; the full table is the wiki's
+  Routes page). `onInvalidate: 'purge'` deletes a route's stored pages on a tag bust — every
+  locale, every keyed query, on every replica — where the default `'stale'` answers the old copy
+  once more; `maxStale` bounds how long past its `ttl` a copy is served; `query: ['page']` (or
+  `[]`) is the only part of the query string in the key and in the URL `load` is given
+  (`isrRequestUrl`†). A route that declares no `query` still keys on the whole query string, and
+  `x verify` says so. **Never stored:** a 5xx (the last good page keeps answering, stale), a
+  render whose `load` returned `noStore(data)`, a throw, a redirect. A bust also asks the store
+  which keys it holds under the tags, so a page another controller wrote into a shared `IsrStore`
+  is reached too.
 - **A tag-revalidated ISR document carries its purge keys while it is shared-cacheable**,
   `As of 2026-10-02` — `@ultimat3/http`'s `cache-headers` stage rewrites the response to `private`
   for a signed-in visitor and strips both headers: `Surrogate-Key`

@@ -68,5 +68,26 @@ export function routeStatusOf(data: unknown): number {
   return status === undefined ? DEFAULT_ROUTE_STATUS : status;
 }
 
+const UNSTORED = new WeakSet<object>();
+
+/**
+ * "Do not keep this answer": the loader's own word that this render is for this request only — a
+ * preview, a page built from a read that came back degraded. Rides on the data by identity, as
+ * `withStatus` does, and composes with it: `noStore(withStatus(404, data))`.
+ *
+ * Read by `isr`, the one mode that keeps a document: the page is served `private, no-store` and
+ * never written to the store, and a stored copy of it is dropped. A 5xx needs no mark — `isr`
+ * never stores one. `isr` only: an `ssr` page's cache is its route's `cache` key (`'no-store'`),
+ * decided per route because the document's principal scope is decided with it.
+ */
+export function noStore<TData extends object>(data: TData): TData {
+  UNSTORED.add(data);
+  return data;
+}
+
+/** Whether `noStore` marked this data. TOTAL over `unknown`, as `routeStatusOf` is. */
+export const routeNoStoreOf = (data: unknown): boolean =>
+  canCarryStatus(data) && UNSTORED.has(data);
+
 /** A 4xx or 5xx: a document a crawler must forget, whatever its `meta` said. */
 export const isErrorStatus = (status: number): boolean => status >= 400;

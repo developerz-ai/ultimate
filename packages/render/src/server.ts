@@ -48,11 +48,10 @@ export type {
 } from './render-isr';
 export {
   DEFAULT_ISR_REGENERATE_DEADLINE_MS,
-  ISR_LOCALE_PARAM,
   invalidateAndRevalidate,
   isrController,
-  isrKey,
 } from './render-isr';
+export { ISR_LOCALE_PARAM, isrKey, isrRequestUrl, undeclaredQuery } from './render-isr-key';
 export type { IsrEntry, IsrState, IsrStore, MemoryIsrStoreOptions } from './render-isr-store';
 export { DEFAULT_ISR_MAX_ENTRIES, memoryIsrStore } from './render-isr-store';
 export type { SsrOptions, SsrRenderFn, SsrRenderInput } from './render-ssr';

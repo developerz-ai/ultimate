@@ -2,7 +2,13 @@
 // role — the files the static export writes, for a deploy that serves its pages from a container.
 // Mounted by `x dev` and `runRole` alike, before the app's pages, for `style-routes.ts`' reason.
 
-import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from '@ultimat3/core';
+import {
+  DEFAULT_ENVIRONMENT,
+  type Environment,
+  logger,
+  renderThrowable,
+  tryResolveEnvironment,
+} from '@ultimat3/core';
 import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders, jsonResponse, NO_STORE } from '@ultimat3/http';
 import { SITEMAP_PARTS_DIR } from '@ultimat3/seo';
@@ -17,6 +23,8 @@ export interface SeoRoutesOptions {
   readonly site?: SiteSettings;
   /** The app root route files are relative to — `seo.sitemap.lastmod: 'git' | 'mtime'` reads them. */
   readonly root?: string;
+  /** The memo's clock, in ms. Injected so an hour's expiry is provable without waiting one out. */
+  readonly now?: () => number;
 }
 
 /**
@@ -43,6 +51,9 @@ const SEO_CACHE = { mode: 'public', maxAgeSeconds: 3600 } as const;
  */
 const SEO_MEMO_ORIGINS = 8;
 
+/** How soon a failed re-enumeration is asked again while the previous answer keeps being served. */
+const SEO_RETRY_MS = 60_000;
+
 interface Memo {
   readonly at: number;
   readonly answer: Promise<SiteSeo>;
@@ -60,11 +71,15 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
       ...(options.root === undefined ? {} : { root: options.root }),
     });
   // Single-flight per origin: concurrent requests share the one computation in progress. A failed
-  // one is dropped, so the next request asks again rather than serving the failure for an hour.
+  // FIRST one is dropped, so the next request asks again rather than serving the failure for an
+  // hour. A failed LATER one keeps the answer it was replacing: `prerender()` reads rows, and a
+  // database blip at the hour mark otherwise answered a crawler a 500 — or, for an app whose
+  // enumeration caught its own error, a sitemap with every article gone. It is asked again a
+  // minute later; a `prerender()` that THROWS on a failed read is what makes this hold.
   const memo = new Map<string, Memo>();
   const answer = (request: UltimateRequest): Promise<SiteSeo> => {
     const origin = originOf(options, request);
-    const now = Date.now();
+    const now = (options.now ?? Date.now)();
     const kept = memo.get(origin);
     if (kept !== undefined && now - kept.at < SEO_CACHE.maxAgeSeconds * 1000) return kept.answer;
     memo.delete(origin);
@@ -73,6 +88,18 @@ export function seoRoutes(options: SeoRoutesOptions): readonly Route[] {
       if (oldest !== undefined) memo.delete(oldest);
     }
     const computed = compute(origin);
+    if (kept !== undefined) {
+      const answered = computed.catch((error: unknown) => {
+        logger.warn('seo.enumeration.kept', { origin, error: renderThrowable(error) });
+        if (memo.get(origin)?.answer === answered) {
+          const retryAt = now - SEO_CACHE.maxAgeSeconds * 1000 + SEO_RETRY_MS;
+          memo.set(origin, { at: retryAt, answer: kept.answer });
+        }
+        return kept.answer;
+      });
+      memo.set(origin, { at: now, answer: answered });
+      return answered;
+    }
     memo.set(origin, { at: now, answer: computed });
     // Voided: the request awaits `computed` itself and reports its failure; this branch only forgets it.
     void computed.catch(() => {
