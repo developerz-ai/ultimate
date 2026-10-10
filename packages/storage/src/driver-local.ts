@@ -33,7 +33,13 @@ import {
 } from './driver';
 import { etagOfFile, headObject, readObjectBytes, readSidecar } from './driver-local-read';
 import { lockOfSidecar, type Sidecar, sidecarLock } from './driver-local-sidecar';
-import { commitObject, keyedQueue, pendingPathOf, sidecarPathOf } from './driver-local-write';
+import {
+  commitObject,
+  type KeyedQueue,
+  keyedQueue,
+  pendingPathOf,
+  sidecarPathOf,
+} from './driver-local-write';
 import { checksumMismatch, deleteFailed, getTooLarge, listFailed, objectNotFound } from './errors';
 import {
   assertObjectLockOptions,
@@ -85,6 +91,11 @@ export interface LocalDriverOptions {
    * is the uploader's, not this process's. Defaults to `maxPutBytes`; past it, `stream()`.
    */
   readonly maxGetBytes?: number | undefined;
+  /**
+   * The per-key queue every read and write of this disk waits in. Defaults to the disk's own
+   * `keyedQueue()`; a test passes one it also holds, to park a key deterministically.
+   */
+  readonly queue?: KeyedQueue | undefined;
 }
 
 /**
@@ -136,7 +147,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     1,
   );
   const clock = options.clock ?? systemClock;
-  const oneAtATime = keyedQueue();
+  const oneAtATime = options.queue ?? keyedQueue();
   // What `defineStorage` registered this driver as — the name a refusal's `disk('…')` must use.
   let registered = DRIVER_NAME;
   // The segment is the disk's REGISTERED name, learned from `defineStorage` at boot — the driver
