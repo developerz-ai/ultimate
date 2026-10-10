@@ -72,7 +72,7 @@ class — stay on `.`.
 
 | Concern | Entry | Export |
 |---|---|---|
-| tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
+| tier 1 | `./server` | `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry`; `publishChannelEvent` — a channel event from a job or an action — with the boot's `setChannelTransport` and the test seam `resetChannelTransport` |
 | tier 2 | `./server` | `LiveQueryRegistry`, `memoryChangeFeed()`, `postgresChangeFeed()`, `selectChangeFeed`, `changeFeedReplicator`, `postgresAdvisoryLock()`, `matcherFor` |
 | replication | `./server` | `parsePgUrl`, `bunPgStream`, `entityRow`, `changeLsn`, `commitPositionOf` |
 | the in-process change source | `./server` | `startLiveReplicator` — a repository's own writes as `ChangeEvent`s, for the embedded database `x dev` runs on (PGlite has no walsender). `ChangeEvent.table` is the entity's TABLE on it as on the WAL decoder and `recordPublisher`, so an `entity(name, { table })` reaches channels and live windows (25.0.0). Moved from `@ultimat3/testing`, which no longer re-exports it |
@@ -136,6 +136,40 @@ leaves `joining` on the node's first answer; nothing waits for app traffic.
 
 A channel declared with **neither** `records` nor `events` carries nothing, so nothing answers its
 join and it reads `joining` for as long as it is held.
+
+## Channel events from a job or an action
+
+The `ChannelHub` lives in the `sync` role. Everything else publishes an event with
+`publishChannelEvent` (`./server`), on the bus the boot installed for the process — every role's
+`startServices` calls `setChannelTransport` with the transport `selectTransport` chose.
+
+```ts
+import { allow } from '@ultimat3/policy';
+import { channel } from '@ultimat3/realtime';
+import { publishChannelEvent } from '@ultimat3/realtime/server';
+
+// Events only: no `records`, so nothing here reads the change feed and no replicator is needed.
+export const orgFeed = channel('org-feed', {
+  params: ['orgId'],
+  catchUp: { name: 'orgFeed' },
+  events: true,
+  policy: allow('public'),
+});
+
+// In a job step or an action handler, after the write committed.
+export const announce = (orgId: string, id: string): Promise<void> =>
+  publishChannelEvent(orgFeed, { orgId }, { kind: 'changed', id });
+```
+
+| Fact | Rule |
+|---|---|
+| who delivers | every `sync` node bridged to that topic, to its members' `onEvent`. Under `x dev` the node is in this process and shares the bus; across processes the bus is NATS (`realtime.transport: 'nats'`) |
+| after COMMIT | nothing here can see a transaction: an event sent from inside one is on every page before a rollback |
+| at-most-once | never stored, never replayed — a member that was offline does not get it. Send "re-read", never state. A bus that refuses the send rejects (`X_TRANSPORT_UNAVAILABLE`); catch it where an event is not worth failing the write for |
+| nothing booted | a unit test or a bare script publishes onto a heap bus nobody hears, and does not throw. A test that wants delivery calls `setChannelTransport(bus)` with the bus its `ChannelHub` holds, and `resetChannelTransport()` after |
+| `realtime.enabled: false` | still safe to call: the bus exists, no node subscribes |
+| refusals | `X_CHANNEL_DECLARATION_INVALID` on a channel declared without `events: true`; `X_TOPIC_FORBIDDEN` for a param that is no topic segment |
+| no replicator | a node that serves no `live: true` query and no `records` channel reads no change, boots `live=none` on a real database, and is never `X_REALTIME_TOPOLOGY` |
 
 ## Channel records with no replicator
 

@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 3 — realtime. Tier 5 — cli.
+
+- **`publishChannelEvent(decl, params, event)` — a channel event from a job or an action.** `import { publishChannelEvent } from '@ultimat3/realtime/server'`. The `ChannelHub` is the `sync` role's, so app code in a worker or a web process had no way to publish on a declared channel (the reference app's `notify-subscribers` job said so). Every role's boot now installs the process's transport (`setChannelTransport`), and the call publishes the hub's own `events` frame on it: in-process under `x dev`, across pods over NATS. With nothing booted it publishes to a heap bus nobody hears and does not throw; `resetChannelTransport()` is the test seam.
+
+### Fixed
+
+Tier 5 — cli.
+
+- **A `sync` node that serves only events channels needs no replicator.** `X_REALTIME_TOPOLOGY` refused every `sync` node on a real database with the in-process bus and no replicator in the process, whatever it served — so an app whose only realtime was an events-only channel was asked for a replication slot and the cluster-wide `REPLICATION` grant to carry events no write-ahead log ever held. The boot now asks whether anything reads a change (a `live: true` query, or a channel with `records`); when nothing does the node boots with `live=none`, on either transport.
 
 ## 27.4.0 - 2026-10-09
 

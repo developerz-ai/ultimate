@@ -98,7 +98,10 @@ nothing else — and serves no role.)
 real database hears committed changes only from a replicator it can reach — in its own process, or
 over NATS — and a fresh deploy has neither, so booted anyway it is refused with
 `X_REALTIME_TOPOLOGY` (it used to start, report healthy, and deliver nothing to any live query or
-channel). To turn realtime on:
+channel). An app whose only realtime is **events-only channels** (no `live: true` query, no channel
+with `records`) needs steps 1 and 4 and no replicator: its events are published by the app
+(`publishChannelEvent`) through NATS, never read off the log, and such a node boots with `live=none`.
+To turn realtime on:
 
 | # | Step |
 |---|---|

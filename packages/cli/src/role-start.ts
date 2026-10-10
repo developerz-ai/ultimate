@@ -39,7 +39,7 @@ import { rolesUnderRealtime } from './role-realtime';
 import { startReplicator } from './role-replicator';
 import type { RunningRoles, StartRolesOptions } from './role-start-types';
 import { DEV_ROLES } from './role-start-types';
-import { prepareSync, type RunningSync } from './role-sync';
+import { prepareSync, type RunningSync, syncReadsChanges } from './role-sync';
 import { startWorkerWake } from './role-wake';
 import { devHooks } from './runtime-hooks';
 import { workerOptionsFor } from './runtime-jobs';
@@ -393,6 +393,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       dbMode: options.runtime.services.db.mode,
       transport: options.runtime.transport.name,
       replicatorHere: replicator !== null,
+      readsChanges: syncReadsChanges(),
     });
     started.push(async () => live.stop());
     // The web server and the sync node mark ready when they bind; a process with neither — a

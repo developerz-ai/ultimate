@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { etagOf, type StorageDriver } from './driver';
 import { localDriver } from './driver-local';
+import { keyedQueue } from './driver-local-write';
 import { bytesOf, textOf } from './driver-s3-fixture';
 import { isStorageError } from './errors';
 
@@ -126,23 +127,45 @@ describe('what a put() stages never becomes an object', () => {
   test('a copy whose source vanishes while it waits is "not found", with nothing staged', async () => {
     // The copy's write is queued behind the destination's other writer, so its source can be
     // deleted in between: the staged half-copy must not outlive the refusal.
-    await disk.put('org/o1/src.txt', bytesOf('source'));
-    const slow = disk.put('org/o1/dst.txt', big('c'));
-    const copy = disk.copy('org/o1/src.txt', 'org/o1/dst.txt').catch((error: unknown) => error);
+    //
+    // The destination's queue is HELD by the test, never by how long a write takes: a big body as
+    // the "slow" writer finished before the delete on a fast disk, and the precondition below
+    // failed (CI, gate unit-3). The disk is given a queue this test also holds a turn in.
+    const queue = keyedQueue();
+    const held = localDriver({ root, signingSecret: 'test-secret', queue });
+    await held.put('org/o1/src.txt', bytesOf('source'));
+    const gate = Promise.withResolvers<void>();
+    const holder = queue('org/o1/dst.txt', () => gate.promise);
+    // The destination's other writer, then the copy — both parked behind the held turn, in order.
+    const other = held.put('org/o1/dst.txt', bytesOf('the other writer'));
+    let copyWaiting = true;
+    const copy = held
+      .copy('org/o1/src.txt', 'org/o1/dst.txt')
+      .catch((error: unknown) => error)
+      .finally(() => {
+        copyWaiting = false;
+      });
     let destinationBusy = true;
-    const settled = slow.then(() => {
+    const settled = other.then(() => {
       destinationBusy = false;
     });
-    await disk.delete('org/o1/src.txt');
+    // Queued on the source's key BEHIND the copy's measurement, which `copy()` queued in its call.
+    await held.delete('org/o1/src.txt');
     // The claim this test makes: the source was measured (it queued on the source's key ahead of
     // the delete) and the copy's write had NOT started when the source went — the destination's
     // queue was still held. If this is false the test took the ordinary not-found path instead.
     expect(destinationBusy).toBe(true);
+    // A copy that had NOT measured its source was refused at the measurement, before the delete
+    // ran — settled by now. Still waiting means it holds a measurement of a source now gone.
+    expect(await held.exists('org/o1/src.txt')).toBe(false);
+    expect(copyWaiting).toBe(true);
+    gate.resolve();
+    await holder;
     await settled;
     const refused = await copy;
     expect(isStorageError(refused) ? refused.code : refused).toBe('X_STORAGE_NOT_FOUND');
     expect(await readdir(`${root}/.meta/.tmp`)).toEqual([]);
-    expect((await disk.get('org/o1/dst.txt')).bytes.byteLength).toBe(big('c').byteLength);
+    expect(textOf((await held.get('org/o1/dst.txt')).bytes)).toBe('the other writer');
   });
 
   test('a write that fails after staging its bytes removes them', async () => {

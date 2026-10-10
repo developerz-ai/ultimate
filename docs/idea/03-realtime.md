@@ -8,7 +8,7 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a **de
 
 | Tier | Name | You write | Server owns | Client owns | Cost |
 |---|---|---|---|---|---|
-| 1 | **Channels** | `const org = channel('org', { params: ['orgId'], policy, events: true })`, then `hub.publishEvent(org, { orgId }, evt)` — never a string topic (`X_CHANNEL_LITERAL`) | truth + fanout | subscription | ~0 — pubsub over WS |
+| 1 | **Channels** | `const org = channel('org', { params: ['orgId'], policy, events: true })`, then `publishChannelEvent(org, { orgId }, evt)` from a job or an action (`hub.publishEvent` on the node) — never a string topic (`X_CHANNEL_LITERAL`) | truth + fanout | subscription | ~0 — pubsub over WS |
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
 | 3 | **Local-first** | the same `mutator` + `entity(name, { persist: true })` | truth + rebase | a durable local store, offline writes | IndexedDB, keyed by principal, + one outbox |
 

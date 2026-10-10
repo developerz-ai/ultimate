@@ -27,7 +27,7 @@ import {
   setMailDriver,
 } from '@ultimat3/mail';
 import type { Transport, TransportSelection } from '@ultimat3/realtime/server';
-import { selectTransport } from '@ultimat3/realtime/server';
+import { selectTransport, setChannelTransport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import { loadAppConfig } from './app-config-load';
@@ -415,6 +415,10 @@ export async function startServices(
       started.push(() => bus.transport.close());
       transport = bus.transport;
     }
+    // The bus an app's own code publishes a channel event on (`publishChannelEvent`), in EVERY
+    // role: the hub is the `sync` role's, so a job or an action reached none, and an events-only
+    // channel — the one kind that needs no replicator — could be fed by nothing but a socket.
+    started.push(setChannelTransport(transport));
     // Only a transport that can be disconnected gets a check. `NatsTransport.connected` is a
     // synchronous getter over the client's own state, so no probe is needed; the in-process bus
     // has nothing to lose a connection to, and a check that can only answer `true` is a number in

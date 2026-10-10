@@ -172,8 +172,11 @@ const MIGRATE_CEILING = 637;
  * for #710.
  * raised 934 → 935, measured 935 (2026-10-09, #710 row 9): `auth/src/login-identity.ts`, the module
  * named on `MIGRATE_CEILING`.
+ * raised 935 → 936, measured 936 (2026-10-10, channel events from app code):
+ * `realtime/src/channel-publish.ts` — `publishChannelEvent` and the process bus the boot installs
+ * (`setChannelTransport`), so a job or an action publishes on a declared channel with no hub.
  */
-const SERVING_ROLE_CEILING = 935;
+const SERVING_ROLE_CEILING = 936;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -247,8 +250,10 @@ const SERVING_ROLE_CEILING = 935;
  * `MIGRATE_CEILING` for #710.
  * raised 1060 → 1061, measured 1061 (2026-10-09, #710 row 9): `auth/src/login-identity.ts`, the
  * module named on `MIGRATE_CEILING`.
+ * raised 1061 → 1062, measured 1062 (2026-10-10, channel events from app code): the module named
+ * on `SERVING_ROLE_CEILING`, which every role carries.
  */
-const WEB_ROLE_CEILING = 1061;
+const WEB_ROLE_CEILING = 1062;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
