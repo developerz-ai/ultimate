@@ -12,6 +12,8 @@ export interface IsrEntry {
    * The store key: the request's pathname AND its query, params sorted. Not the route's pattern
    * and not the bare pathname — `/blog?page=2` and `/blog?page=3` render different documents, and
    * keying both as `/blog` served the second visitor the first one's HTML (#171).
+   * A routed locale prefix stays on it (`/en/blog`): the controller removes it only to find the
+   * route, so a store may never use this as a route path.
    */
   readonly path: string;
   readonly html: string;
