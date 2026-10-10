@@ -4,8 +4,9 @@
 // Performed here; where the admin is not a `defineAdmin({ … })` this can add to, the finding names
 // the two lines.
 
-import { ERROR_DOCS_URL, stripComments } from '@ultimat3/core';
-import { containedPath } from './generate-write';
+import { ERROR_DOCS_URL, maskLiterals, stripComments } from '@ultimat3/core';
+import type { GenerateDisk } from './generate-disk';
+import { appDisk } from './generate-disk';
 import type { Finding } from './output';
 import { holdsKey, withKeyedLine, withSortedImport } from './source-edit';
 import type { GeneratedFile } from './templates/naming';
@@ -70,7 +71,8 @@ export function insertAdminResources(
   let next = source;
   const missing: AdminResourceEntry[] = [];
   for (const entry of entries) {
-    const masked = stripComments(next);
+    // Literals masked too: a brace inside a string label is not one of the call's.
+    const masked = maskLiterals(next);
     const call = /\bdefineAdmin\(\s*\{/.exec(masked);
     const open = call === null ? -1 : call.index + call[0].length - 1;
     const close = open === -1 ? -1 : closeOf(masked, open);
@@ -140,18 +142,17 @@ export function withAdminResources(
 
 /** The overrides among the written paths, each named by what its file and its entity export. */
 async function entriesFor(
-  root: string,
+  disk: GenerateDisk,
   written: readonly string[],
   webModule: string,
 ): Promise<readonly AdminResourceEntry[]> {
   const entries: AdminResourceEntry[] = [];
   for (const path of written) {
     if (!OVERRIDE_PATH.test(path)) continue;
-    const entity = Bun.file(containedPath(root, entityPathOf(path)));
     const entry = entryOf(
       path,
-      await Bun.file(containedPath(root, path)).text(),
-      (await entity.exists()) ? await entity.text() : undefined,
+      (await disk.read(path)) ?? '',
+      await disk.read(entityPathOf(path)),
       webModule,
     );
     if (entry !== undefined) entries.push(entry);
@@ -169,24 +170,24 @@ export interface AdminRegistration {
 export async function registerAdminResources(
   root: string,
   written: readonly string[],
+  disk: GenerateDisk = appDisk(root),
 ): Promise<AdminRegistration> {
-  const web = await readWorkspace(root, WEB_WORKSPACE);
-  const entries = web === undefined ? [] : await entriesFor(root, written, web.name);
+  const web = await readWorkspace(root, WEB_WORKSPACE, disk);
+  const entries = web === undefined ? [] : await entriesFor(disk, written, web.name);
   if (entries.length === 0) return { edited: [], findings: [] };
-  const file = Bun.file(containedPath(root, ADMIN_FILE));
-  if (!(await file.exists())) {
+  const before = await disk.read(ADMIN_FILE);
+  if (before === undefined) {
     return {
       edited: [],
       findings: entries.map((entry) => adminResourceUnwiredFinding(entry, 'does not exist')),
     };
   }
-  const before = await file.text();
   const { source, missing } = insertAdminResources(before, entries);
   const findings = missing.map((entry) =>
     adminResourceUnwiredFinding(entry, 'holds no defineAdmin({ … }) call to add to'),
   );
   if (source === before) return { edited: [], findings };
-  await Bun.write(containedPath(root, ADMIN_FILE), source);
-  const manifest = await declareWorkspaceDependency(root, ADMIN_WORKSPACE, WEB_WORKSPACE);
+  await disk.write(ADMIN_FILE, source);
+  const manifest = await declareWorkspaceDependency(root, ADMIN_WORKSPACE, WEB_WORKSPACE, disk);
   return { edited: manifest === undefined ? [ADMIN_FILE] : [ADMIN_FILE, manifest], findings };
 }

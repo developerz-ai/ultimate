@@ -82,12 +82,32 @@ describe('unit · a hand-edited index is edited, never replaced', () => {
 
     const sync = await syncI18nIndex(root);
 
-    expect(sync).toEqual({ registered: true, findings: [] });
+    expect(sync).toEqual({ registered: true, findings: [], edited: [APP_CATALOGS_PATH] });
     const after = await Bun.file(join(root, APP_CATALOGS_PATH)).text();
     expect(after).toContain("import fr from '../catalogs/fr.json';");
     expect(after).toContain("defineCatalogs({ default: 'es', locales: { es, fr } })");
     expect(after).toContain('export const mine = 1; // the author wrote this');
     expect(after).not.toContain('en.json');
+  });
+
+  test('a `locales: { … }` in a comment is prose: the call below it is the one edited', async () => {
+    const root = await appRoot();
+    await Bun.write(join(root, 'packages/i18n/catalogs/fr.json'), '{}\n');
+    const noted = [
+      "import { defineCatalogs } from '@ultimat3/i18n';",
+      "import en from '../catalogs/en.json';",
+      '',
+      "// it's `locales: { en, es }` once Spanish ships",
+      "export const catalogs = defineCatalogs({ default: 'en', locales: { en } });",
+      '',
+    ].join('\n');
+    await Bun.write(join(root, APP_CATALOGS_PATH), noted);
+
+    await syncI18nIndex(root);
+
+    const after = await Bun.file(join(root, APP_CATALOGS_PATH)).text();
+    expect(after).toContain("// it's `locales: { en, es }` once Spanish ships");
+    expect(after).toContain("defineCatalogs({ default: 'en', locales: { en, fr } })");
   });
 
   test('a shape this writer cannot edit is refused with the edit named, and left untouched', async () => {

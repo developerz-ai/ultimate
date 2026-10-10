@@ -51,7 +51,17 @@ describe('readKind', () => {
    * accepted and written, so the failure arrived as a TS2345 in a file the caller had not written.
    */
   test('a --permission that is not a <resource>:<verb> is refused before anything is written', () => {
-    for (const raw of ['ops', 'ops:', ':read', 'ops read', "ops:'read", 'ops:re:ad']) {
+    const malformed = [
+      'ops',
+      'ops:',
+      ':read',
+      'ops read',
+      "ops:'read",
+      'ops::read',
+      'a:b:',
+      '*:read',
+    ];
+    for (const raw of malformed) {
       const thrown = thrownBy(() => readPermission(raw, 'admin:page'));
       expect([raw, thrown.code]).toEqual([raw, 'X_CLI_BAD_FLAG']);
       expect(thrown.fix).toBe('x g admin:page ops --permission ops:read');
@@ -60,6 +70,12 @@ describe('readKind', () => {
 
   test('the shapes an app really declares are accepted, and absence is not a value', () => {
     for (const raw of ['ops:read', 'ledger:reconcile', 'admin:*', 'billing.eu:read']) {
+      expect(readPermission(raw, 'admin:page')).toBe(raw);
+    }
+    // Namespaced, as a staff console declares them: `Permission` is `${string}:${string}` and
+    // `definePermissions()` takes any such name, so `admin:<area>:<verb>` is one the runtime
+    // accepts — and one this refused, so the page was generated under a name the app did not use.
+    for (const raw of ['admin:blog:write', 'admin:incident:write', 'admin:ops:test-error']) {
       expect(readPermission(raw, 'admin:page')).toBe(raw);
     }
     expect(readPermission(undefined, 'admin:page')).toBeUndefined();

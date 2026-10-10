@@ -3,9 +3,9 @@
 // primitive arrives with the test that pins its distant invariants (policy, idempotency, budget).
 
 import { existsSync } from 'node:fs';
+import { stripComments } from '@ultimat3/core';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
-import { registerAdminResources } from './admin-registration';
-import { indexBindingFindings, registerGeneratedPrimitives } from './api-registration';
+import { indexBindingFindings } from './api-registration';
 import { writeAppArtifacts } from './app-artifacts';
 import { appManifest } from './app-manifest';
 import { requireAppRoot } from './app-root';
@@ -13,19 +13,18 @@ import { generateSpec } from './cmd-generate-spec';
 import type { CliCommand, CommandContext } from './command';
 import { invocationOf } from './command';
 import { localiseCatalogs } from './generate-catalog-locales';
+import { appDisk, plannedDisk } from './generate-disk';
 import { assertFeatureExists } from './generate-feature';
 import { generate, sliceDir } from './generate-files';
-import { ungrantedByGenerator } from './generate-grant-findings';
-import { grantGeneratedPermissions } from './generate-grants';
+import { followUpEdits } from './generate-follow-ups';
 import type { Generator } from './generate-kinds';
 import { readFeature, readKind, readName, readPermission, readSurface } from './generate-kinds';
 import { refusePluralTable } from './generate-plural';
 import { refuseShadowedTypes, refuseShadowedValues } from './generate-shadow';
 import { containedPath, planWrites, writeFiles } from './generate-write';
-import { declareGeneratedImports } from './generated-imports';
-import { registerGeneratedEntities, resolveDbModule } from './handle-registration';
+import { resolveDbModule } from './handle-registration';
 import { resolveCatalogModule } from './i18n-audit';
-import { catalogLocales, syncI18nIndex } from './i18n-index';
+import { catalogLocales } from './i18n-index';
 import { reproducedFlags } from './invocation-flags';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
@@ -33,6 +32,7 @@ import { flagBool, flagList, flagString } from './parse';
 import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 import { kebab, names, resolveLocales } from './templates';
+import { isEntityModule } from './templates/entity-module';
 
 // One import path for the generator, unchanged by the split: `index.ts`, `x new` and the scaffold
 // fixture reach the kinds, the pure file list and the writer through this module, and a second path
@@ -94,6 +94,11 @@ export const generateCommand: CliCommand = {
     // THIS feature's own `entity.ts`/`repo.ts`, not a default the template gets to assume.
     const sliceEntity = await readSliceFile(root, kind, slice, 'entity.ts');
     const sliceRepo = await readSliceFile(root, kind, slice, 'repo.ts');
+    // A feature's SECOND entity: `entity.ts` is another table's, so this one lands beside it.
+    const sibling =
+      kind === 'entity' &&
+      featureFlag !== undefined &&
+      (await holdsAnotherEntity(root, slice, name));
     const planFor = (planned: string) =>
       generate({
         kind,
@@ -111,6 +116,7 @@ export const generateCommand: CliCommand = {
         ...(catalogModule === undefined ? {} : { catalogModule }),
         ...(dbModule === undefined ? {} : { dbModule }),
         shell,
+        sibling,
       });
     // A non-default locale's strings arrive marked, and a locale with no catalog yet is refused
     // with `x i18n add <locale>` — before a dry run answers, so it answers the same files.
@@ -149,14 +155,43 @@ export const generateCommand: CliCommand = {
     if (flagBool(ctx.args, 'dry-run')) {
       // The write plan, never the bare file list: what the real run would write, skip and refuse.
       const plan = await planWrites(root, files, force, invocation);
-      const findings = [...plan.conflicts, ...bindings];
-      const planned = findings.length === 0 ? plan.written : [];
+      const refused = [...plan.conflicts, ...bindings];
+      // And the edits OUTSIDE the slice — role map, handle, API index, manifests, catalog index —
+      // run for real against the plan held in memory: the same code, so the same list. A dry run
+      // that named five new files while the run rewrote four the caller owns was no plan.
+      const planned = new Map(
+        files.flatMap((file) =>
+          plan.written.includes(file.path) && typeof file.contents === 'string'
+            ? [[file.path, file.contents] as const]
+            : [],
+        ),
+      );
+      const follow =
+        refused.length > 0
+          ? { edited: [], findings: [] }
+          : await followUpEdits(root, plan.written, dbModule, plannedDisk(root, planned));
+      const findings = [...refused, ...follow.findings];
+      const touched = refused.length === 0 ? [...plan.written, ...follow.edited] : [];
+      // Re-projected after a real write, from the loaded app: named, since their bytes are not
+      // knowable without the files on disk.
+      const refreshes =
+        plan.written.length === 0 || refused.length > 0
+          ? []
+          : [MANIFEST_FILENAME, 'openapi.json'].filter((file) =>
+              existsSync(containedPath(root, file)),
+            );
       return {
         ok: findings.length === 0,
         command: 'g',
-        summary: msg('cli.generate.planned', { count: planned.length, kind, name }),
-        data: { files: planned, dryRun: true },
-        lines: planned.map((file) => msg('cli.file.added', { path: file })),
+        summary: msg('cli.generate.planned', { count: touched.length, kind, name }),
+        data: {
+          files: touched,
+          // The subset that already exists and would be EDITED, never created.
+          edits: follow.edited.filter((path) => existsSync(containedPath(root, path))),
+          ...(refreshes.length === 0 ? {} : { refreshes }),
+          dryRun: true,
+        },
+        lines: touched.map((file) => msg('cli.file.added', { path: file })),
         findings,
       };
     }
@@ -164,34 +199,11 @@ export const generateCommand: CliCommand = {
       bindings.length > 0
         ? { written: [], conflicts: bindings }
         : await writeFiles(root, files, force, invocation);
-    // The three edits a generated primitive needs outside its own slice, performed rather than
-    // left as findings: a declared permission granted to a role, a job listed in `defineApi`, and
-    // an entity added to the typed handle its `repo.ts` reads through. Before the manifest load
-    // below, so the projection sees all three — a repo reading a table the handle lacks would not
-    // load at all.
-    const handle = await registerGeneratedEntities(root, report.written, dbModule);
-    // And a fourth, for `--admin`: the override it wrote, listed where `defineAdmin()` reads it.
-    const adminWiring = await registerAdminResources(root, report.written);
-    // And a fifth, last because the others add imports too: every sibling workspace a written file
-    // imports, declared in the manifest it landed under — or `package-shape` refuses the output.
-    const edited = [
-      ...new Set([
-        ...(await grantGeneratedPermissions(root, report.written)),
-        ...(await registerGeneratedPrimitives(root, report.written)),
-        ...handle.edited,
-        ...adminWiring.edited,
-        ...(await declareGeneratedImports(root, report.written)),
-      ]),
-    ];
-    // A grant that edit could not place is said so, with the role each permission belongs to: an
-    // app whose role map is not the scaffold's got no grant and no word, and a 403 on every
-    // endpoint the run had just written.
-    const ungranted = await ungrantedByGenerator(root, report.written);
-    // A locale's catalog existing on disk and the app being able to select it are two different
-    // facts — see `syncI18nIndex`. Runs before the manifest load below so a route or resource
-    // this same invocation just wrote never gets projected against a stale catalog registration.
-    const indexSync =
-      report.written.length > 0 ? await syncI18nIndex(root) : { registered: true, findings: [] };
+    // The edits a generated primitive needs outside its own slice, performed rather than left as
+    // findings (`generate-follow-ups.ts`). Before the manifest load below, so the projection sees
+    // them all — a repo reading a table the handle lacks would not load at all.
+    const follow = await followUpEdits(root, report.written, dbModule, appDisk(root));
+    const edited = follow.edited;
     // Facts, not prose: every `x g` run leaves the route/action/entity/job/policy table current,
     // the same guarantee `x manifest` makes on its own — an agent reading it after `x g` never
     // sees a resource that exists on disk but not in the manifest.
@@ -216,14 +228,7 @@ export const generateCommand: CliCommand = {
         buildId = manifest.buildId;
       } else loadFailures.push(...findings);
     }
-    const findings = [
-      ...report.conflicts,
-      ...handle.findings,
-      ...ungranted,
-      ...adminWiring.findings,
-      ...indexSync.findings,
-      ...loadFailures,
-    ];
+    const findings = [...report.conflicts, ...follow.findings, ...loadFailures];
     // One list behind all three renderings. The manifest was printed as a `+` line while the count
     // beside it came from `report.written` alone, so `x g island` said "wrote 2 file(s)" over three
     // lines — and `--json` carried the shorter list, which is the drift `--json` exists to prevent.
@@ -289,7 +294,7 @@ export function nextSteps(
   edited: readonly string[],
   table: string,
 ): readonly string[] {
-  if (!written.some((path) => path.endsWith('/entity.ts'))) return [];
+  if (!written.some(isEntityModule)) return [];
   return [
     ...(edited.some((path) => path.endsWith('package.json')) ? ['bun install'] : []),
     `bunx x db gen "create ${table}"`,
@@ -320,6 +325,18 @@ async function readSliceErrors(
   if (kind !== 'action' && kind !== 'mutator') return undefined;
   const file = containedPath(root, `${slice}/errors.ts`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
+}
+
+/**
+ * Whether the slice's `entity.ts` is there and declares a table OTHER than `name`'s. The same
+ * entity again is the conflict it always was (`--force` regenerates it); a different one is a
+ * second table for the feature, which `--force` would have written OVER the first.
+ */
+async function holdsAnotherEntity(root: string, slice: string, name: string): Promise<boolean> {
+  const file = containedPath(root, `${slice}/entity.ts`);
+  if (!existsSync(file)) return false;
+  const declared = new RegExp(`\\bentity\\(\\s*['"]${names(name).table}['"]`);
+  return !declared.test(stripComments(await Bun.file(file).text()));
 }
 
 /** The generators whose output depends on what the slice's `entity.ts` / `repo.ts` declare. */

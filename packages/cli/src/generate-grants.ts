@@ -7,9 +7,11 @@
 // three permissions `defineAdmin()` derives from the table's own name. They are declared in the
 // role map and granted to `admin`, or the role that runs the admin is refused its newest screen.
 
-import { containedPath } from './generate-write';
+import type { GenerateDisk } from './generate-disk';
+import { appDisk } from './generate-disk';
 import { ROLES_FILE } from './permission-grants';
-import { wrapList } from './templates/wrap';
+import { absentFrom, appendToList, maskOf, readList, readProperties } from './source-list-edit';
+import { isEntityModule } from './templates/entity-module';
 
 /** One permission to add to one role's `grants`. */
 export interface RoleGrant {
@@ -37,8 +39,6 @@ export function grantsForWritten(written: readonly string[]): readonly RoleGrant
   });
 }
 
-/** A generated entity file: `<surface>/<feature>/entity.ts`. */
-const ENTITY_PATH = /^apps\/[^/]+\/[^/]+\/[a-z0-9-]+\/entity\.ts$/;
 /** `entity('widgets', {` — the name the admin's permissions are spelled with. */
 const ENTITY_NAME = /\bentity\(\s*'([^']+)'/;
 
@@ -56,11 +56,31 @@ export function adminGrantsFor(table: string): readonly RoleGrant[] {
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const quoted = (permission: string): string => `'${permission}'`;
+
 /**
- * `source` with each grant added to its role's `grants: [...]`, re-wrapped the way Biome prints
- * it. A role or a `grants` array the scaffold's shape does not have is left alone and returned in
- * `skipped` — the `policy` step's X_PERMISSION_UNGRANTED names the edit, so a guess here would be
- * a second, worse answer.
+ * Where the object of role `name` opens: a property of the `defineRoles({ … })` call, or — in a
+ * map handed to it by name — the scaffold's own `  <role>: {` row. Read off the masked text, so a
+ * role named in a comment or a string is prose and never the one edited.
+ */
+function roleObject(source: string, masked: string, name: string): number | undefined {
+  const call = /\bdefineRoles\(\s*\{/.exec(masked);
+  if (call !== null) {
+    const role = readProperties(source, masked, call.index + call[0].length - 1).find(
+      (property) => property.key === name,
+    );
+    return role !== undefined && masked[role.value] === '{' ? role.value : undefined;
+  }
+  const row = new RegExp(`\\n  ${escapeRegExp(name)}: \\{`).exec(masked);
+  return row === null ? undefined : row.index + row[0].length - 1;
+}
+
+/**
+ * `source` with each grant added to its role's `grants: [...]`. A list on one line is re-wrapped
+ * the way Biome prints it; a list over several lines gains a row and keeps every comment it holds.
+ * A role or a `grants` array the map does not have — or one that cannot be edited safely — is left
+ * alone and returned in `skipped`: the finding names the edit, so a guess here would be a second,
+ * worse answer.
  */
 export function insertGrants(
   source: string,
@@ -69,62 +89,63 @@ export function insertGrants(
   let next = source;
   const skipped: RoleGrant[] = [];
   for (const grant of grants) {
-    const role = new RegExp(`\\n  ${escapeRegExp(grant.role)}: \\{`).exec(next);
-    const open = role === null ? -1 : next.indexOf('grants: [', role.index);
-    const close = open === -1 ? -1 : next.indexOf(']', open);
-    const blockEnd = role === null ? -1 : next.indexOf('\n  },', role.index);
-    if (role === null || open === -1 || close === -1 || (blockEnd !== -1 && open > blockEnd)) {
-      skipped.push(grant);
-      continue;
-    }
-    const current = [...next.slice(open, close).matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '');
-    if (current.includes(grant.permission)) continue;
-    const entries = [...current, grant.permission].map((permission) => `'${permission}'`);
-    const lineStart = next.lastIndexOf('\n', open) + 1;
-    const indent = next.slice(lineStart, open);
-    const rewritten = wrapList(indent, 'grants: [', entries, ']').slice(indent.length);
-    next = `${next.slice(0, open)}${rewritten}${next.slice(close + 1)}`;
+    const masked = maskOf(next);
+    const role = roleObject(next, masked, grant.role);
+    const list =
+      role === undefined
+        ? undefined
+        : readProperties(next, masked, role).find((property) => property.key === 'grants');
+    const edited =
+      list === undefined || masked[list.value] !== '['
+        ? undefined
+        : appendToList(next, list.value, [quoted(grant.permission)]);
+    if (edited === undefined) skipped.push(grant);
+    else next = edited;
   }
   return { source: next, skipped };
 }
 
-const DECLARATION = 'definePermissions([';
+/** Every `definePermissions([` in the masked text: the index of each call's opening `[`. */
+const declarationLists = (masked: string): readonly number[] =>
+  [...masked.matchAll(/\bdefinePermissions\(\s*\[/g)].map(
+    (found) => found.index + found[0].length - 1,
+  );
 
 /**
- * `source` with each permission added to its first `definePermissions([…])`, re-wrapped the way
- * Biome prints it. Declared BEFORE it is granted: `can()` refuses a name no call registered, and
- * `defineRoles()` does not — a grant nothing declares is a 500 on the first request that asks.
- * A role map with no such call is left alone and every permission returned in `skipped`.
+ * `source` with each permission added to its first `definePermissions([…])`. Declared BEFORE it is
+ * granted: `can()` refuses a name no call registered, and `defineRoles()` does not — a grant
+ * nothing declares is a 500 on the first request that asks. One ANY call already declares is left
+ * alone. A role map with no such call, or one that cannot be edited safely, is left alone and
+ * every permission returned in `skipped`.
  */
 export function insertPermissions(
   source: string,
   permissions: readonly string[],
 ): { readonly source: string; readonly skipped: readonly string[] } {
-  const open = source.indexOf(DECLARATION);
-  const close = open === -1 ? -1 : source.indexOf('])', open);
-  if (open === -1 || close === -1) return { source, skipped: [...permissions] };
-  const current = [...source.slice(open, close).matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '');
-  const added = permissions.filter((permission) => !current.includes(permission));
+  const masked = maskOf(source);
+  const lists = declarationLists(masked).flatMap((open) => readList(source, masked, open) ?? []);
+  const first = lists[0];
+  if (first === undefined) return { source, skipped: [...permissions] };
+  const added = lists.reduce<readonly string[]>(
+    (absent, list) => absentFrom(list, absent),
+    permissions.map(quoted),
+  );
   if (added.length === 0) return { source, skipped: [] };
-  const lineStart = source.lastIndexOf('\n', open) + 1;
-  const head = source.slice(lineStart, open);
-  const tail = source.slice(close + 2, source.indexOf('\n', close));
-  const entries = [...current, ...added].map((permission) => `'${permission}'`);
-  const rewritten = wrapList('', `${head}${DECLARATION}`, entries, `])${tail}`);
-  return {
-    source: `${source.slice(0, lineStart)}${rewritten}${source.slice(source.indexOf('\n', close))}`,
-    skipped: [],
-  };
+  const edited = appendToList(source, first.open, added);
+  return edited === undefined
+    ? { source, skipped: [...permissions] }
+    : { source: edited, skipped: [] };
 }
 
-/** The entity names the written `entity.ts` files declare — read off each file, never guessed. */
+/** The entity names the written entity files declare — read off each file, never guessed. */
 export async function writtenTables(
   root: string,
   written: readonly string[],
+  disk: GenerateDisk = appDisk(root),
 ): Promise<readonly string[]> {
   const tables: string[] = [];
-  for (const path of written.filter((candidate) => ENTITY_PATH.test(candidate))) {
-    const table = ENTITY_NAME.exec(await Bun.file(containedPath(root, path)).text())?.[1];
+  for (const path of written.filter(isEntityModule)) {
+    const table = ENTITY_NAME.exec((await disk.read(path)) ?? '')?.[1];
     if (table !== undefined) tables.push(table);
   }
   return tables;
@@ -134,24 +155,30 @@ export async function writtenTables(
  * Performs both edits on the app's role map: a written policy's grants, and — for each written
  * entity — the admin's three permissions for its table, declared and granted. Answers the paths
  * it rewrote.
+ *
+ * A permission is declared only where its grant can be placed. An app with no `admin` role got
+ * three permissions declared that no role held — `X_PERMISSION_UNGRANTED` on the next gate, for
+ * names the author never asked for — beside the finding that said nothing was granted.
  */
 export async function grantGeneratedPermissions(
   root: string,
   written: readonly string[],
+  disk: GenerateDisk = appDisk(root),
 ): Promise<readonly string[]> {
-  const admin = (await writtenTables(root, written)).flatMap(adminGrantsFor);
+  const admin = (await writtenTables(root, written, disk)).flatMap(adminGrantsFor);
   const grants = [...grantsForWritten(written), ...admin];
-  const file = containedPath(root, ROLES_FILE);
-  if (grants.length === 0 || !(await Bun.file(file).exists())) return [];
-  const before = await Bun.file(file).text();
+  const before = grants.length === 0 ? undefined : await disk.read(ROLES_FILE);
+  if (before === undefined) return [];
+  const unplaced = insertGrants(before, grants).skipped;
+  const placeable = grants.filter((grant) => !unplaced.includes(grant));
   const declared = insertPermissions(
     before,
-    admin.map((grant) => grant.permission),
+    admin.filter((grant) => placeable.includes(grant)).map((grant) => grant.permission),
   );
   // Granted only where it could be declared: a grant with no declaration is the 500 above.
-  const grantable = grants.filter((grant) => !declared.skipped.includes(grant.permission));
+  const grantable = placeable.filter((grant) => !declared.skipped.includes(grant.permission));
   const { source } = insertGrants(declared.source, grantable);
   if (source === before) return [];
-  await Bun.write(file, source);
+  await disk.write(ROLES_FILE, source);
   return [ROLES_FILE];
 }

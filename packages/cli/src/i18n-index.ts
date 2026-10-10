@@ -9,7 +9,10 @@
 // why: Bun has no synchronous existence check — `Bun.file(p).exists()` is async, and this decides
 // whether to write at all, before any await the caller could interleave with.
 import { existsSync } from 'node:fs';
+import { stripComments } from '@ultimat3/core';
 import { APP_CATALOGS_PATH } from '@ultimat3/i18n/app-catalogs';
+import type { GenerateDisk } from './generate-disk';
+import { appDisk } from './generate-disk';
 import { containedPath } from './generate-write';
 import type { Finding } from './output';
 import { CATALOG_ROOT, i18nIndex, localeEntry, localeImport } from './templates';
@@ -30,6 +33,8 @@ export interface IndexSync {
   /** False for an app with no i18n package, or an index this writer refused to edit. */
   readonly registered: boolean;
   readonly findings: readonly Finding[];
+  /** The index, when this changed its bytes — a run's file list names every file it touched. */
+  readonly edited?: readonly string[];
 }
 
 const CATALOG_IMPORT = /^import (\w+) from '\.\.\/catalogs\/([^']+)\.json';$/gm;
@@ -48,31 +53,42 @@ const importedLocales = (source: string): readonly string[] =>
  * stay. A shape with no `locales: { … }` object to add to is refused with the edit named, never
  * overwritten: it was, on every `x g`, with a template hard-coding `default: 'en'`.
  */
-export async function syncI18nIndex(root: string): Promise<IndexSync> {
-  const indexAbsolute = containedPath(root, APP_CATALOGS_PATH);
-  if (!existsSync(indexAbsolute)) return { registered: false, findings: [] };
-  const current = await Bun.file(indexAbsolute).text();
-  const onDisk = await catalogLocales(root);
+export async function syncI18nIndex(
+  root: string,
+  disk: GenerateDisk = appDisk(root),
+  /** Locales whose catalog a dry run PLANS: on the real disk only once the run has written. */
+  planned: readonly string[] = [],
+): Promise<IndexSync> {
+  const current = await disk.read(APP_CATALOGS_PATH);
+  if (current === undefined) return { registered: false, findings: [] };
+  const onDisk = [...new Set([...(await catalogLocales(root)), ...planned])].sort();
   const imported = importedLocales(current);
-  if (current === i18nIndex(imported)) {
-    await Bun.write(indexAbsolute, i18nIndex(onDisk));
-    return { registered: true, findings: [] };
-  }
+  const write = async (next: string): Promise<IndexSync> => {
+    if (next === current) return { registered: true, findings: [] };
+    await disk.write(APP_CATALOGS_PATH, next);
+    return { registered: true, findings: [], edited: [APP_CATALOGS_PATH] };
+  };
+  if (current === i18nIndex(imported)) return write(i18nIndex(onDisk));
   const missing = onDisk.filter((locale) => !imported.includes(locale));
   if (missing.length === 0) return { registered: true, findings: [] };
   const edited = withLocales(current, missing);
   if (edited === undefined) return { registered: false, findings: [refusal(missing)] };
-  await Bun.write(indexAbsolute, edited);
-  return { registered: true, findings: [] };
+  return write(edited);
 }
 
 /** Each import after the last catalog import (or at the top), each entry at the object's end. */
 function withLocales(source: string, locales: readonly string[]): string | undefined {
-  const object = LOCALES_OBJECT.exec(source);
+  // Found on the comment-stripped text (same offsets): a `locales: { … }` in a comment above the
+  // call is prose, and it was the one this edited.
+  const object = LOCALES_OBJECT.exec(stripComments(source));
   if (object === null) return undefined;
-  const body = (object[2] ?? '').trim().replace(/,$/, '');
+  const [whole, head = '', inner = ''] = object;
+  // A comment INSIDE the object cannot be carried through a one-line rewrite: refused, with the
+  // edit named, rather than dropped.
+  if (source.slice(object.index, object.index + whole.length) !== whole) return undefined;
+  const body = inner.trim().replace(/,$/, '');
   const entries = [body, ...locales.map(localeEntry)].filter((part) => part !== '').join(', ');
-  const withEntries = source.replace(LOCALES_OBJECT, `$1 ${entries} $3`);
+  const withEntries = `${source.slice(0, object.index)}${head} ${entries} }${source.slice(object.index + whole.length)}`;
   const imports = locales.map(localeImport).join('\n');
   const lastImport = [...withEntries.matchAll(CATALOG_IMPORT)].at(-1);
   if (lastImport === undefined) return `${imports}\n${withEntries}`;
