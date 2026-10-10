@@ -57,12 +57,16 @@ export interface RevalidateConfig {
   readonly tags?: readonly CacheTag[];
   /** `'5m'`, `'1h'`, `'7d'` or milliseconds. */
   readonly ttl?: string | number;
-  /** `'stale'` when omitted. `'purge'` needs `tags` — there is nothing else to purge by. */
+  /**
+   * `'stale'` when omitted. `'purge'` needs `tags` (what it purges by) and a `ttl` (what bounds a
+   * replica the purge never reached), and serves nothing stale past that ttl unless `maxStale` says so.
+   */
   readonly onInvalidate?: InvalidateMode;
   /**
-   * How long PAST its `ttl` a stored page may still be answered stale — `'1h'` or milliseconds.
-   * Older than that, it is rendered again and the request waits. Omitted, there is no bound: a
-   * page nobody asked for in a week answers its next visitor once with last week's document.
+   * How long PAST its `ttl` a stored page may still be answered stale — `'1h'`, milliseconds, or
+   * `0` for never. Older than that, it is rendered again and the request waits. Omitted, there is
+   * no bound (a page nobody asked for in a week answers its next visitor once with last week's
+   * document) — except under `onInvalidate: 'purge'`, where omitted is `0`.
    */
   readonly maxStale?: string | number;
   /**

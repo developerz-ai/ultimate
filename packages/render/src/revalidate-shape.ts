@@ -9,7 +9,7 @@
 import type { CacheTag } from '@ultimat3/cache';
 import { serializeTag, surrogateKeys } from '@ultimat3/cache';
 import { isUltimateError, renderCauseValue, renderFixLiteral } from '@ultimat3/core';
-import { parseTtlMs } from './duration';
+import { parseStaleMs, parseTtlMs } from './duration';
 import { RouteModeInvalidError } from './errors';
 import type { RevalidateConfig } from './route';
 import { INVALIDATE_MODES } from './route';
@@ -31,18 +31,27 @@ export function assertRevalidateShape(revalidate: RevalidateConfig): void {
       "revalidate: { tags: [tag.post], onInvalidate: 'purge' }   // or drop onInvalidate",
     );
   }
+  // The purge reaches a replica through the invalidation broadcast, and a broadcast can be lost.
+  // The ttl is what bounds the copy on a replica that never heard it; with none, that copy is
+  // the withdrawn page for the life of the process.
+  if (onInvalidate === 'purge' && parseTtlMs(revalidate.ttl) === null) {
+    throw new RouteModeInvalidError(
+      "revalidate.onInvalidate: 'purge' needs a ttl: a replica that misses the purge serves its copy until the ttl, and a tag-only page has none",
+      "revalidate: { tags: [tag.post], ttl: '10m', onInvalidate: 'purge' }   // the ttl is the longest a missed purge can last",
+    );
+  }
   if (maxStale !== undefined) {
-    if (parseTtlMs(maxStale) === null) {
+    if (parseStaleMs(maxStale) === null) {
       throw new RouteModeInvalidError(
         `revalidate.maxStale: ${renderCauseValue(maxStale)} is not a duration`,
-        "maxStale: '1h'   // '30s', '5m', '7d', or a positive number of milliseconds",
+        "maxStale: '1h'   // '30s', '5m', '7d', a number of milliseconds, or 0 for never",
       );
     }
     // It is counted from the TTL's expiry, and a tag-only page has no clock to count from.
     if (parseTtlMs(revalidate.ttl) === null) {
       throw new RouteModeInvalidError(
         'revalidate.maxStale bounds how long past its ttl a page is served stale, but revalidate declares no ttl',
-        "revalidate: { ttl: '10m', maxStale: '1h' }   // a tag-only page is bounded by onInvalidate: 'purge' instead",
+        "revalidate: { ttl: '10m', maxStale: '1h' }   // maxStale counts from the ttl's expiry",
       );
     }
   }

@@ -156,7 +156,7 @@ export const config = defineRoute({
     tags: [tag('post')],
     ttl: '10m',
     onInvalidate: 'purge', // 'stale' (default) | 'purge'
-    maxStale: '1h',        // past ttl + 1h a copy is not an answer
+    maxStale: '1h',        // past ttl + 1h a copy is not an answer; 0 (purge's default) is never
     query: ['page'],       // the only query parameters in the key; [] for none
   },
   offline: 'runtime',
@@ -168,25 +168,43 @@ export const config = defineRoute({
 | Key | Default | What it decides |
 |---|---|---|
 | `onInvalidate: 'stale'` | yes | a tag bust marks the stored page stale; the next request is answered **that copy, however old**, while a fresh one renders behind it (`x-ultimate-isr: stale`). Right for a price list |
-| `onInvalidate: 'purge'` | — | a tag bust **deletes** every stored page of the route carrying the tag — each locale, each keyed query, stored 404s included — in this process and, through the invalidation broadcast, on every replica. The next request is a miss: it renders and waits. For content that must come **down** (a withdrawn article, a corrected legal text). Needs `tags`. The response drops `stale-while-revalidate`, so an edge may not answer it stale either |
-| `maxStale` | unbounded | how long **past its `ttl`** a stored page may still be answered stale; older, it is dropped and the request waits for a render. Also the `stale-while-revalidate` a shared cache is told (a day when omitted). Needs `ttl` — a tag-only page has no clock; bound it with `'purge'` |
+| `onInvalidate: 'purge'` | — | a tag bust **deletes** every stored page of the route carrying the tag — each locale, each keyed query, stored 404s included — and evicts any render of them in flight, so the next request renders and waits. For content that must come **down** (a withdrawn article, a corrected legal text). Needs `tags` **and `ttl`** (`X_ROUTE_MODE_INVALID` without either). The response carries no `stale-while-revalidate`, and its `s-maxage` is what is **left** of the `ttl` |
+| `maxStale` | unbounded; **`0` under `'purge'`** | how long **past its `ttl`** a stored page may still be answered stale: a duration, or `0` for never. Older, it is dropped and the request waits for a render. Also the `stale-while-revalidate` a shared cache is told (a day when omitted, absent at `0`). Needs `ttl` |
 | `query` | the whole query string | the query parameters the page varies on. Only these are in the stored page's key **and** in the `url` / `query` that `load`, `meta` and the page receive; one value each (the first), sorted. `[]` is "none" and what most pages want |
 
 **Declare `query` on every `isr` route.** Omitted, the key carries whatever the visitor sent: `/blog?x=1`, `/blog?x=2`, … are each a render and a stored page (the store holds 1,000), which is a cost-amplification vector, and `utm_*` / `fbclid` / `gclid` split one page into many — each of which a withdrawal has to reach. `x verify` names every `isr` route without a declaration (the `seo` step's `warnings`), and the server logs `isr.query.undeclared` once per route the first time a visitor uses it. The default becomes `[]` in the next major.
 
 **Nothing is redirected.** `/blog?utm_source=mail` is answered with the `/blog` page: `load` and `meta` are given the narrowed URL, so `canonical: url` is `/blog` and a parameter outside the key cannot change the document stored under it. A declared parameter's **values** are still the visitor's — `?page=999999` is a key — so `load` answers `withStatus(404, …)` for one that names nothing, and the bounded store evicts the rest.
 
-**The purge reaches a shared store.** A bust asks the store which keys it holds under the tags, by the route table, as well as the invalidation graph — the graph only knows the pages this process rendered. So a page another replica wrote into a `runtime.isrStore`, or one that outlived the process that rendered it, is marked or purged like any other.
+#### How fast a purge takes a page down
+
+"The bust" below is the moment `invalidateTags` reaches its ISR step — after the read tiers (`redis`, `lru`, `request-memo`) cleared, so the re-render reads fresh rows. An action's `cache.invalidates` runs after its commit and is **not awaited by the action's response**, so the response can precede the bust by those tiers' latency.
+
+| Deployment | A request after the bust gets | Bound |
+|---|---|---|
+| one replica | a fresh render — never the stored page, never a render that began before the bust (its flight is evicted; a request that had joined it renders again) | the next request |
+| several replicas, per-replica stores, bus healthy | the same, on each replica **once it has received the broadcast** | broadcast delivery, typically milliseconds; inside it a peer still answers its copy as a hit |
+| several replicas, per-replica stores, **broadcast lost** | a replica that never heard the bust answers its copy as a fresh hit until that copy's `ttl`, then renders (nothing stale past it: `maxStale` is `0` under `'purge'`) | the route's `ttl`, at the origin **and** at an edge in front (`s-maxage` is the ttl's remainder) |
+| several replicas over one `runtime.isrStore` | a fresh render on every replica: the page is deleted from the one store, and a replica that began a render before the bust cannot write it back (`IsrStore.tagFence`) | the next request, bus or no bus |
+
+Order inside one bust: read tiers (farthest first) → this origin's ISR pages → the broadcast to peers → the `cdn` tier **last**. Each replica that receives the broadcast purges the edge again after its own delete, so a peer that answered the old page inside the broadcast window is cleared from the edge too. A render that read its rows before the bust is answered to its own request `private, no-store`, with no purge key, and is never stored.
+
+**Finish a rollout before relying on `'purge'`.** A replica still on a release before this one reads `onInvalidate` as nothing: it marks the page stale and answers it once more, with `stale-while-revalidate=86400`.
+
+**Past `maxStale` the copy is dropped before the re-render**, so a render that fails there answers its 5xx rather than the old page — that is what the bound means. Ages are measured by each replica's own clock against the entry's `generatedAt`; over a shared store, skew between replicas moves `ttl` and `maxStale` by that skew.
+
+**A shared store must be able to refuse a write.** `runtime.isrStore` under `'purge'` needs `IsrStore.tagFence` — `sample(entities)` before a render reads its rows, `bump(entities)` on a bust, and an **atomic** `setIfCurrent(entry, entities, sampled)` (a transaction, a script, a conditional put) that refuses a write whose reading moved. The generation is per tag *entity* (`post` for `post:1`), so an unrelated row's bust costs one extra render and never a stale page. `memoryIsrStore` implements it; a store without it is refused at boot when any route purges (`X_ROUTE_MODE_INVALID`, naming the route). A bust also asks the store which keys it holds under the tags, by the route table, as well as the invalidation graph — the graph only knows the pages this process rendered. It matches on the **route's** tags: a `post:1` bust reaches every stored page of a route tagged `post`.
 
 **What `isr` never stores.**
 
 | Render | Stored | The visitor gets |
 |---|---|---|
-| a 5xx (`withStatus(503, …)` — "the read failed") | never; never over a good copy | the last good page, stale, while one exists (`isr.render.unstored` is logged, and the next request tries again); otherwise the 5xx itself, `private, no-store` |
+| a 5xx (`withStatus(503, …)` — "the read failed") | never; never over a good copy | the last good page, stale, while one exists (`isr.render.unstored` is logged); otherwise the 5xx itself, `private, no-store`. For one second (`DEFAULT_ISR_FAILURE_COOLDOWN_MS`; `isrController({ failureCooldownMs })`) requests for that page are answered the same failure, or the same stale page, instead of each rendering again |
 | `noStore(data)` from `load` | never; a stored copy of the page is dropped | that render, `private, no-store` |
 | a `load` or page that throws | never | the last good page, stale (`isr.regenerate.failed`); with none, the error page |
+| a render invalidated while it ran | never | the request that started it: that render, `private, no-store`; any other request: a render of its own |
 | a redirect (`setRedirect()`) | never | the redirect |
-| a 2xx or 4xx | yes — a 404 is a stored page | it, for the `ttl` |
+| a 2xx or 4xx | yes — a 404 is a stored page | it, for the `ttl`. A 4xx is never offered to a shared cache (`no-store`, no purge key): the pipeline's rule for every refusal |
 
 `noStore` is `@ultimat3/render`'s, a mark on the data like `withStatus` and composable with it (`noStore(withStatus(404, data))`). `isr` only — an `ssr` page's cache is its route's `cache` key.
 

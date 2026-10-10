@@ -11,7 +11,7 @@ import { describePages } from '@ultimat3/render';
  */
 export function isrQueryAdvice(): readonly string[] {
   return describePages()
-    .filter((route) => route.mode === 'isr' && route.revalidateQuery === null)
+    .filter((route) => route.mode === 'isr' && (route.revalidateQuery ?? null) === null)
     .map(
       (route) =>
         `${route.file}: render 'isr' with no revalidate.query — its stored pages are keyed on the whole query string, so any visitor can mint one per request. Declare revalidate: { query: [] } (or the parameters the page varies on)`,

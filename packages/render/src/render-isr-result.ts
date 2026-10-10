@@ -44,15 +44,22 @@ export function entryTtlMs(entry: IsrEntry): number | null {
  * not be answered stale by the edge for a day after the origin deleted it), `maxStale` when one is
  * declared, a day otherwise.
  */
-function cacheControl(ttlMs: number | null, policy: IsrPolicy): string {
+function cacheControl(ttlMs: number | null, policy: IsrPolicy, ageMs: number): string {
   const sMaxAge = ttlMs === null ? TAG_ONLY_S_MAX_AGE_SECONDS : Math.round(ttlMs / 1_000);
+  if (policy.onInvalidate === 'purge') {
+    // What is LEFT of the ttl, not the whole of it: the ttl bounds a replica that missed a purge,
+    // and a hit answered at its last second with the full age would hand the edge a second ttl.
+    // TOTAL, like every reader here: an age that is not a number (a clock that answered `NaN`)
+    // is the whole ttl, never `s-maxage=NaN` — a directive a conforming cache ignores.
+    const left = ttlMs === null ? sMaxAge : Math.max(0, Math.ceil((ttlMs - ageMs) / 1_000));
+    return `public, max-age=0, s-maxage=${Number.isFinite(left) ? Math.min(sMaxAge, left) : sMaxAge}`;
+  }
   const base = `public, max-age=0, s-maxage=${sMaxAge}`;
-  if (policy.onInvalidate === 'purge') return base;
   const stale =
     policy.maxStaleMs === null
       ? DEFAULT_STALE_WHILE_REVALIDATE_SECONDS
       : Math.round(policy.maxStaleMs / 1_000);
-  return `${base}, stale-while-revalidate=${stale}`;
+  return stale === 0 ? base : `${base}, stale-while-revalidate=${stale}`;
 }
 
 /**
@@ -73,6 +80,8 @@ export interface IsrResultOptions {
   readonly buildId: string;
   readonly policy: IsrPolicy;
   readonly servedStale?: boolean;
+  /** How long ago the entry was generated, by the controller's clock; 0 for one just rendered. */
+  readonly ageMs: number;
   /**
    * False for a render the store did not keep — a 5xx, one whose `load` said `noStore()`, or one
    * invalidated while it rendered. It is then `private, no-store` with no purge key: an answer
@@ -99,7 +108,7 @@ export function isrResult(entry: IsrEntry, options: IsrResultOptions): RenderRes
   }
   const headers: Record<string, string> = {
     ...staticHeaders(entry.hash, buildId),
-    'cache-control': cacheControl(entryTtlMs(entry), policy),
+    'cache-control': cacheControl(entryTtlMs(entry), policy, options.ageMs),
     vary,
   };
   // The keys an edge purges this document by — `@ultimat3/cache`'s list, never a second one, so

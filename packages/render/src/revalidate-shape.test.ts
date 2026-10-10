@@ -51,13 +51,26 @@ describe('unit · revalidate options are screened at defineRoute', () => {
     );
   });
 
+  test('maxStale: 0 is "never serve stale", in either spelling', () => {
+    expect(define({ ttl: '5m', maxStale: 0 })).not.toThrow();
+    expect(define({ ttl: '5m', maxStale: '0s' })).not.toThrow();
+  });
+
+  test("'purge' with no ttl has nothing bounding a replica the purge never reached", () => {
+    const tagOnly = define({ tags: [tag('post')], onInvalidate: 'purge' });
+    expect(tagOnly).toThrow(expect.objectContaining(refused));
+    expect(tagOnly).toThrow(
+      expect.objectContaining({ fix: expect.stringContaining("ttl: '10m'") }),
+    );
+  });
+
   test("'purge' with no tags has nothing to purge by", () => {
     expect(define({ ttl: '5m', onInvalidate: 'purge' })).toThrow(expect.objectContaining(refused));
   });
 
   test('a maxStale that is no duration, or that has no ttl to count from, is refused', () => {
     expect(define({ ttl: '5m', maxStale: '1 hour' })).toThrow(expect.objectContaining(refused));
-    expect(define({ ttl: '5m', maxStale: 0 })).toThrow(expect.objectContaining(refused));
+    expect(define({ ttl: '5m', maxStale: -1 })).toThrow(expect.objectContaining(refused));
     expect(define({ tags: [tag('post')], maxStale: '1h' })).toThrow(
       expect.objectContaining(refused),
     );

@@ -42,7 +42,7 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
   });
 
   test('a bust DELETES the entry: the next request renders, waits, and never sees the old copy', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     const controller = isrController({ routes: describePages });
     const key = isrKeyIn('/blog/a');
     await controller.serve(key, () => '<p>published</p>');
@@ -57,8 +57,12 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
   });
 
   test('every stored key of the route goes: both locales, and every keyed query', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
-    isrRouteWith('apps/web/site/team/page.tsx', { tags: [teamTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
+    isrRouteWith('apps/web/site/team/page.tsx', {
+      tags: [teamTag],
+      ttl: '10m',
+      onInvalidate: 'purge',
+    });
     const controller = isrController({ routes: describePages });
     const keys = [isrKeyIn('/blog/a'), isrKeyIn('/blog/a', 'es'), isrKeyIn('/blog/b?page=2')];
     for (const key of keys) await controller.serve(key, () => '<p>post</p>');
@@ -69,7 +73,7 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
   });
 
   test('a stored 404 is purged like any page, so a published post is not a 404 for one more visitor', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     const controller = isrController({ routes: describePages });
     const key = isrKeyIn('/blog/soon');
     await controller.serve(key, () => ({ html: '<p>nope</p>', status: 404 }));
@@ -82,7 +86,7 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
   });
 
   test('a render in flight when the purge lands is answered to its own request and not stored', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     const controller = isrController({ routes: describePages });
     const key = isrKeyIn('/blog/a');
     const gate = Promise.withResolvers<undefined>();
@@ -101,7 +105,7 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
   });
 
   test('invalidateTags reaches it through the attached controller, and reports the purged keys', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     const controller = isrController({ routes: describePages });
     const detach = controller.attach();
     const key = isrKeyIn('/blog/a');
@@ -113,12 +117,12 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
   });
 
   test('a purge route tells a shared cache nothing may be served stale; the default still says a day', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     isrRouteWith('apps/web/site/team/page.tsx', { tags: [teamTag] });
     const controller = isrController({ routes: describePages });
     const post = await controller.serve(isrKeyIn('/blog/a'), () => '<p>a</p>');
     const team = await controller.serve(isrKeyIn('/team'), () => '<p>t</p>');
-    expect(post.result.headers['cache-control']).toBe('public, max-age=0, s-maxage=60');
+    expect(post.result.headers['cache-control']).toBe('public, max-age=0, s-maxage=600');
     expect(team.result.headers['cache-control']).toBe(
       'public, max-age=0, s-maxage=60, stale-while-revalidate=86400',
     );
@@ -129,7 +133,7 @@ describe('unit · a store two controllers share', () => {
   // The graph is one process's memory of what IT rendered. A replica answering a hit for an entry
   // another replica wrote had no edge for it, so a bust that arrived there found nothing to do.
   test('a purge on the controller that never rendered the page deletes it from the shared store', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     const store = memoryIsrStore();
     // Each replica's graph is its own; `none` is a replica that registered nothing.
     const none = (): readonly string[] => [];
@@ -157,7 +161,7 @@ describe('unit · a store two controllers share', () => {
   });
 
   test('an entry that outlived the process that rendered it is still purged by its tag', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     const store = memoryIsrStore();
     const key = isrKeyIn('/blog/a');
     store.set({
@@ -177,7 +181,7 @@ describe('unit · a store two controllers share', () => {
   });
 
   test('a bust of a tag no route carries reads no store at all', async () => {
-    isrRouteWith(POST, { tags: [postTag], onInvalidate: 'purge' });
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
     const inner = memoryIsrStore();
     let listed = 0;
     const store = {
@@ -192,6 +196,48 @@ describe('unit · a store two controllers share', () => {
     listed = 0;
     expect(controller.revalidateByTags([teamTag])).toEqual([]);
     expect(listed).toBe(0);
+  });
+});
+
+describe("unit · a 'purge' page past its ttl", () => {
+  // The ttl is what bounds a replica the purge never reached, so a copy past it is not answered
+  // "once more": that one request would be the withdrawn page again.
+  test('is never served stale unless the route says how long it may be', async () => {
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
+    let clock = 0;
+    const controller = isrController({ routes: describePages, now: () => clock });
+    const key = isrKeyIn('/blog/a');
+    await controller.serve(key, () => '<p>published</p>');
+    clock = 600_000;
+    const next = await controller.serve(key, () => ({ html: '<p>gone</p>', status: 404 }));
+    expect({ state: next.state, status: next.result.status }).toEqual({
+      state: 'miss',
+      status: 404,
+    });
+  });
+
+  test('a hit tells the edge what is LEFT of the ttl, so the edge cannot outlive it', async () => {
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
+    let clock = 0;
+    const controller = isrController({ routes: describePages, now: () => clock });
+    const key = isrKeyIn('/blog/a');
+    const miss = await controller.serve(key, () => '<p>a</p>');
+    expect(miss.result.headers['cache-control']).toBe('public, max-age=0, s-maxage=600');
+    clock = 599_000;
+    const hit = await controller.serve(key, () => '<p>never</p>');
+    expect(hit.state).toBe('hit');
+    expect(hit.result.headers['cache-control']).toBe('public, max-age=0, s-maxage=1');
+  });
+
+  test('maxStale: 0 says the same for a route that is not a purge route', async () => {
+    isrRouteWith(POST, { ttl: '1m', maxStale: 0 });
+    let clock = 0;
+    const controller = isrController({ routes: describePages, now: () => clock });
+    const key = isrKeyIn('/blog/a');
+    const first = await controller.serve(key, () => '<p>v1</p>');
+    expect(first.result.headers['cache-control']).toBe('public, max-age=0, s-maxage=60');
+    clock = 60_000;
+    expect((await controller.serve(key, () => '<p>v2</p>')).state).toBe('miss');
   });
 });
 

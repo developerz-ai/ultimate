@@ -5,7 +5,7 @@
  */
 
 import type { CacheTag } from '@ultimat3/cache';
-import { parseTtlMs } from './duration';
+import { parseStaleMs, parseTtlMs } from './duration';
 import type { RouteDescriptor } from './registry';
 import { routePathOf } from './render-isr-key';
 import type { InvalidateMode } from './route';
@@ -24,16 +24,22 @@ export interface IsrPolicy {
   readonly ttlMs: number | null;
   /** `'stale'`: a bust keeps the copy for one more serve. `'purge'`: a bust deletes it. */
   readonly onInvalidate: InvalidateMode;
-  /** How long past its TTL an entry may still be served stale; `null` is unbounded. */
+  /**
+   * How long past its TTL an entry may still be served stale: `null` is unbounded, `0` never.
+   * A `'purge'` route that declares none gets `0` — its `ttl` is what bounds a replica that
+   * missed the purge, and a copy answered stale past it would move that bound by one request.
+   */
   readonly maxStaleMs: number | null;
 }
 
 export function isrPolicyOf(descriptor: RouteDescriptor | undefined): IsrPolicy {
+  const onInvalidate = descriptor?.revalidateOnInvalidate ?? 'stale';
+  const declared = descriptor?.revalidateMaxStale ?? null;
   return {
     tags: (descriptor?.revalidateTags ?? []).map(parseWireTag),
     ttlMs: parseTtlMs(descriptor?.revalidateTtl),
-    onInvalidate: descriptor?.revalidateOnInvalidate ?? 'stale',
-    maxStaleMs: parseTtlMs(descriptor?.revalidateMaxStale),
+    onInvalidate,
+    maxStaleMs: declared === null ? (onInvalidate === 'purge' ? 0 : null) : parseStaleMs(declared),
   };
 }
 
@@ -44,6 +50,17 @@ interface RouteMatcher {
 
 /** One compiled set per route TABLE — `describePages()` hands out one array per registry change. */
 const compiledTables = new WeakMap<readonly RouteDescriptor[], readonly RouteMatcher[]>();
+
+/**
+ * The route each key resolved to, per table. A bust asks this of EVERY stored key, and a pattern
+ * match per key per bust is the store's size in regex tests on the event loop. Bounded: emptied
+ * when it outgrows a store several times the default, never grown without limit by request keys.
+ */
+const resolvedKeys = new WeakMap<
+  readonly RouteDescriptor[],
+  Map<string, RouteDescriptor | undefined>
+>();
+const MAX_RESOLVED_KEYS = 8_192;
 
 /**
  * A stored path belongs to a route when the route's pattern matches it — `route-pattern.ts`'s one
@@ -72,6 +89,16 @@ export function isrRouteFor(
   table: readonly RouteDescriptor[],
   key: string,
 ): RouteDescriptor | undefined {
+  let resolved = resolvedKeys.get(table);
+  if (resolved === undefined) {
+    resolved = new Map();
+    resolvedKeys.set(table, resolved);
+  }
+  if (resolved.has(key)) return resolved.get(key);
   const path = routePathOf(key);
-  return table.find((r) => r.path === path) ?? matchersOf(table).find((m) => m.test(path))?.route;
+  const route =
+    table.find((r) => r.path === path) ?? matchersOf(table).find((m) => m.test(path))?.route;
+  if (resolved.size >= MAX_RESOLVED_KEYS) resolved.clear();
+  resolved.set(key, route);
+  return route;
 }

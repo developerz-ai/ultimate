@@ -58,7 +58,8 @@ afterAll(() => {
 });
 
 function serving() {
-  const { isr, release } = attachedIsr({ buildId: BUILD_ID });
+  // No cooldown: these tests ask what the very next request gets, not what the next second does.
+  const { isr, release } = attachedIsr({ buildId: BUILD_ID, failureCooldownMs: 0 });
   const server = httpServer({
     routes: appRoutes({ buildId: BUILD_ID, isr }),
     role: 'web',

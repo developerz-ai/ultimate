@@ -243,7 +243,9 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // FARTHEST tier first. Near-to-far leaves the far tier holding the old value after the near
     // ones are clear, and a read racing the bust promotes it straight back up into them — the
     // report says every tier cleared, and the LRU is stale again before the call returns.
-    for (const tier of [...sortTiers(registry)].reverse()) {
+    // The EDGE is not one of them here: it is purged last, below (`purgeEdge`).
+    const farthestFirst = [...sortTiers(registry)].reverse();
+    for (const tier of farthestFirst.filter((one) => !isEdgeTier(one))) {
       try {
         tiers.push(await tier.invalidateTags(tags));
       } catch (error) {
@@ -254,10 +256,6 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
         errors.push({ tier: tier.name, message: renderThrowable(error) });
       }
     }
-    // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
-    // printed upside down is a second thing for a reader to learn.
-    tiers.sort((a, b) => CACHE_TIERS.indexOf(a.tier) - CACHE_TIERS.indexOf(b.tier));
-
     const isrPaths = new Set(dependentsOfKind(tags, 'isr-route'));
     const cdn = dependentsOfKind(tags, 'cdn-path');
     const liveQueries = dependentsOfKind(tags, 'live-query');
@@ -290,6 +288,14 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
       }
     }
 
+    // The edge LAST, after this origin dropped its own pages and told its peers to. Purged first,
+    // a request between the purge and the origin's delete was answered the old page as a public
+    // hit, and the edge — already purged — kept it for a whole `s-maxage` with no purge to come.
+    await purgeEdge(farthestFirst, tags, tiers, errors);
+    // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
+    // printed upside down is a second thing for a reader to learn.
+    tiers.sort((a, b) => CACHE_TIERS.indexOf(a.tier) - CACHE_TIERS.indexOf(b.tier));
+
     const report: InvalidationReport = {
       tags: wire,
       tiers,
@@ -316,6 +322,25 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     if (errors.length > 0) logger.warn('cache.invalidate.partial', { ...report });
     return report;
   });
+}
+
+/** The one rung that holds RESPONSES rather than values a render reads: core's last `CACHE_TIERS` name. */
+const isEdgeTier = (tier: CacheTier): boolean => tier.name === CACHE_TIERS[CACHE_TIERS.length - 1];
+
+/** The edge's own half of the fan-out, with a read tier's isolation: a refusal is a report row. */
+async function purgeEdge(
+  ordered: readonly CacheTier[],
+  tags: readonly CacheTag[],
+  tiers: TierInvalidation[],
+  errors: { tier: string; message: string }[],
+): Promise<void> {
+  for (const tier of ordered.filter(isEdgeTier)) {
+    try {
+      tiers.push(await tier.invalidateTags(tags));
+    } catch (error) {
+      errors.push({ tier: tier.name, message: renderThrowable(error) });
+    }
+  }
 }
 
 /** First-seen order kept — a union of what actually changed, not a sorted report. */

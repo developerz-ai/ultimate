@@ -283,6 +283,13 @@ one naming the span that triggered it. That is the log the `/_x` cache panel ren
 actually clear?" is answerable without a log dive because the one fan-out path retained the
 answer, not because a second recorder was wired next to it.
 
+### The order of one bust
+
+Read tiers, farthest first (`redis` → `lru` → `request-memo`) → the ISR revalidators → the
+broadcast to peers → the `cdn` tier **last**. The edge holds responses, not values a render reads:
+purged before the origin dropped its own page, it was handed that page again by the next request
+and kept it for a whole `s-maxage`. `report.tiers` is still the ladder in read order.
+
 ### The ISR holder is asked by tag
 
 `registerRevalidator(byPath, byTags?)` takes both halves in one call (`@ultimat3/render`'s

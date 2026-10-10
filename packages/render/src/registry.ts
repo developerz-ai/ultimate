@@ -68,13 +68,17 @@ export interface RouteDescriptor {
   readonly hydrate: HydrateStrategy;
   readonly revalidateTags: readonly string[];
   readonly revalidateTtl: string | number | null;
-  readonly revalidateOnInvalidate: InvalidateMode;
-  readonly revalidateMaxStale: string | number | null;
+  /**
+   * The three below are optional so a descriptor built by hand before they existed still
+   * typechecks; the registry always writes them. Absent reads as `'stale'`, unbounded, undeclared.
+   */
+  readonly revalidateOnInvalidate?: InvalidateMode;
+  readonly revalidateMaxStale?: string | number | null;
   /**
    * `revalidate.query`, sorted: the only query parameters an `isr` page of this route keys on.
    * `null` when the route declared none — its pages then key on the WHOLE query string.
    */
-  readonly revalidateQuery: readonly string[] | null;
+  readonly revalidateQuery?: readonly string[] | null;
   readonly prerenderable: boolean;
   readonly dynamic: boolean;
   readonly hasPolicy: boolean;
