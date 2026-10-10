@@ -374,9 +374,15 @@ export function drain(signal = 'manual'): Promise<void> {
   return drainPromise;
 }
 
-export function healthReport(mode: ReadinessMode = readinessMode): HealthReport {
+export function healthReport(
+  mode: ReadinessMode = readinessMode,
+  /** `/readyz?deep=1`: a `'degraded'` check is not ready either. Never the probe's reading. */
+  strict = false,
+): HealthReport {
   const checks = readinessChecks();
-  const dependencies = Object.values(checks).every((status) => status === 'ok');
+  const dependencies = Object.values(checks).every(
+    (status) => status === 'ok' || (!strict && status === 'degraded'),
+  );
   return {
     state,
     // `ready` is the same predicate `/readyz` answers on, so a body and its status can never
@@ -405,9 +411,11 @@ export function healthzPayload(): HealthPayload {
 /**
  * Readiness: may this instance receive traffic? 503 while starting or draining, and — in the
  * default `'dependencies'` mode, or always with `deep` (`/readyz?deep=1`) — while any check fails.
+ * A `'degraded'` check (`ReadinessCheckOptions.onFailure`) is a 503 under `deep` ALONE.
  */
 export function readyzPayload(options: { readonly deep?: boolean } = {}): HealthPayload {
-  const body = healthReport(options.deep === true ? 'dependencies' : readinessMode);
+  const deep = options.deep === true;
+  const body = healthReport(deep ? 'dependencies' : readinessMode, deep);
   return { ok: body.ready, status: body.ready ? 200 : 503, body };
 }
 

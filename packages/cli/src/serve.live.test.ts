@@ -186,6 +186,8 @@ describe('the scaffolded production entry is a runnable artifact', () => {
         // if it were the one the operator asked for.
         expect(started).toContain(`"url":"http://127.0.0.1:${port}"`);
         expect(started).not.toContain('0.0.0.0');
+        // Where the bus is, on the same line: `nats(connecting)` here is a served pod with NATS down.
+        expect(started).toContain('"bus":"in-process"');
         allowHost(`127.0.0.1:${port}`);
         expect((await fetch(`http://127.0.0.1:${port}/readyz`)).status).toBe(200);
         child.kill('SIGTERM');

@@ -219,9 +219,14 @@ const stopStream = (stream: unknown): void => {
 };
 
 /**
- * The production `NatsConnect`. The first dial retries on the same budget as a later loss
- * (`waitOnFirstConnect`), so a `sync` container that raced the bus into readiness recovers on its
- * own — and a budget that runs out rejects here rather than leaving a half-live connection behind.
+ * The production `NatsConnect`: ONE first dial, refused at once when the server is not there.
+ *
+ * Deliberately not `waitOnFirstConnect`. Until 2026-10 it was set, on the reading that the first
+ * dial "retries on the same budget as a later loss" — it does not: in nats@2.29.3 a failed first
+ * dial under that option `continue`s past the attempt counter, so it retries FOREVER, and the
+ * promise this returns never settles while the server is down. Every role awaited it at boot, so
+ * a pod that restarted during a NATS outage hung before it bound a socket. The retry is the
+ * transport's (`NatsTransport.#redial`), on our backoff, where `close()` can end it.
  */
 export const openNatsClient = async (options: NatsClientOptions): Promise<NatsClient> => {
   const target = parseNatsUrl(options.url);
@@ -239,7 +244,6 @@ export const openNatsClient = async (options: NatsClientOptions): Promise<NatsCl
     const connection = await connect({
       servers: [`${target.host}:${target.port}`],
       name: options.name ?? 'ultimate',
-      waitOnFirstConnect: true,
       ...(maxReconnectAttempts === undefined ? {} : { maxReconnectAttempts }),
       ...(options.reconnectDelay === undefined
         ? {}

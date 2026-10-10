@@ -61,6 +61,43 @@ describe("health.readiness: 'process'", () => {
     expect(readyzPayload({ deep: true }).status).toBe(200);
   });
 
+  test("a check registered as degradable reports 'degraded' and never fails readiness", () => {
+    // A dependency the role can serve without: the bus of a role that only publishes to it.
+    let up = false;
+    registerReadinessCheck('transport', () => up, { onFailure: 'degraded' });
+    registerReadinessCheck('database', () => true);
+    markReady();
+
+    // The DEFAULT mode: the kubelet routes on this, and a dead bus must not empty the ingress.
+    const shallow = readyzPayload();
+    expect(shallow.status).toBe(200);
+    expect(shallow.body.ready).toBe(true);
+    expect(shallow.body.checks).toEqual({ transport: 'degraded', database: 'ok' });
+    // Monitoring's view is strict: anything short of 'ok' is a 503 a monitor can alert on.
+    expect(readyzPayload({ deep: true }).status).toBe(503);
+    expect(readyzPayload({ deep: true }).body.checks).toEqual({
+      transport: 'degraded',
+      database: 'ok',
+    });
+
+    up = true;
+    expect(readyzPayload().body.checks).toEqual({ transport: 'ok', database: 'ok' });
+    expect(readyzPayload({ deep: true }).status).toBe(200);
+  });
+
+  test('a degradable check that THROWS is degraded too, and a failing one beside it still fails', () => {
+    // The runtime's own SyntaxError: what a check reading a torn-down client really raises.
+    registerReadinessCheck('transport', () => JSON.parse('gone') === true, {
+      onFailure: 'degraded',
+    });
+    markReady();
+    expect(readyzPayload().status).toBe(200);
+    expect(readyzPayload().body.checks).toEqual({ transport: 'degraded' });
+
+    registerReadinessCheck('database', () => false);
+    expect(readyzPayload().status).toBe(503);
+  });
+
   test('the default is unchanged: a failing check is 503', () => {
     expect(defineConfig({ name: 'app' }).health.readiness).toBe('dependencies');
     registerReadinessCheck('database', () => false);

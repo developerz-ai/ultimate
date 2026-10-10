@@ -3,6 +3,11 @@
 // re-establishing subscriptions, which is what makes a `sync` node stateless. The one loss it does
 // not own is its own end: a client closed for good once its reconnect budget is spent is replaced
 // here, on our backoff, and every kept subscription is bound again on the new one.
+//
+// Two ways to open it, because two kinds of process hold one. A node that SERVES from the bus
+// awaits `connect()` and refuses to boot without it; a process that only PUBLISHES calls
+// `connectInBackground()` and boots regardless — its publishes are refused, typed and at once,
+// until the dial lands.
 
 import {
   type Clock,
@@ -39,6 +44,19 @@ export interface NatsTransportOptions {
   readonly rng?: Rng;
   /** Injected so the whole transport — reconnect included — runs in a test with no network. */
   readonly connect?: NatsConnect;
+  /**
+   * When the presence bucket is asserted. `'dial'` (the default) is a node that serves presence: no
+   * JetStream, no connection. `'first-use'` is a process that only publishes — it never reads
+   * `shared`, so a server without JetStream, or without the bucket, must not cost it the bus.
+   */
+  readonly presenceBucket?: 'dial' | 'first-use';
+}
+
+export interface NatsConnectWait {
+  /** Refuse with `X_TRANSPORT_UNAVAILABLE` once this long has passed without a connection. */
+  readonly withinMs?: number | undefined;
+  /** The `fix:` of that refusal — the caller knows which role is waiting and what it needs. */
+  readonly fix?: string | undefined;
 }
 
 const DEFAULT_ATTEMPTS = 10;
@@ -57,8 +75,16 @@ export class NatsTransport implements Transport {
   #dialing: Promise<NatsClient> | undefined;
   #retries = 0;
   #closed = false;
-  /** Set while a client the library gave up on is being replaced; the attempt in flight. */
+  /** False until the first dial lands: what a refusal says while a background dial is in flight. */
+  #everUp = false;
+  readonly #lazyBucket: boolean;
+  /** Under `'first-use'`: the clients whose bucket has been asserted since they last connected. */
+  readonly #bucketed = new WeakSet<NatsClient>();
+  /** Set while no client is held and one is being dialled in the background; the attempt in flight. */
   #redialing: number | undefined;
+  #redialLoop: Promise<void> | undefined;
+  /** The last background dial's own refusal, for the cause of a `connect({ withinMs })` that gave up. */
+  #lastFailure: string | undefined;
   #wakeRedial: (() => void) | undefined;
   readonly #subscriptions = new NatsSubscriptions();
   readonly #reconnectListeners = new Set<() => void>();
@@ -76,16 +102,60 @@ export class NatsTransport implements Transport {
       options.maxReconnectAttempts ?? DEFAULT_ATTEMPTS,
     );
     this.#rng = options.rng ?? Math.random;
+    this.#lazyBucket = options.presenceBucket === 'first-use';
     this.shared = new NatsKvSet({
-      client: () => this.#ensure(),
+      client: () => this.#presenceClient(),
       bucket: options.bucket,
       clock: options.clock ?? systemClock,
     });
   }
 
-  /** Fail fast at boot rather than on the first change: `/readyz` is meant to catch a dead bus. */
-  async connect(): Promise<void> {
-    await this.#ensure();
+  /**
+   * Fail fast at boot rather than on the first change: `/readyz` is meant to catch a dead bus.
+   * Bare, it is ONE dial. With `withinMs` the dial is retried on our backoff for that long — a
+   * node that raced the bus into readiness recovers on its own — and then refused, naming the
+   * server, the wait and the last attempt's own failure. The retry is not stopped by the refusal;
+   * `close()` stops it, and that is what a failed boot calls.
+   */
+  async connect(wait: NatsConnectWait = {}): Promise<void> {
+    if (wait.withinMs === undefined) {
+      await this.#ensure();
+      return;
+    }
+    const withinMs = finiteOption('createNatsTransport', 'connect.withinMs', wait.withinMs);
+    const target = parseNatsUrl(this.#options.url);
+    // A real timer, never the injected clock: the wait bounds a container's boot, which the
+    // kubelet counts in real seconds.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const last = this.#lastFailure === undefined ? '' : ` — last attempt: ${this.#lastFailure}`;
+        reject(
+          new TransportUnavailableError({
+            transport: this.name,
+            reason: `${target.host}:${target.port} did not accept a connection within ${withinMs}ms${last}`,
+            ...(wait.fix === undefined ? {} : { fix: wait.fix }),
+          }),
+        );
+      }, withinMs);
+    });
+    try {
+      await Promise.race([this.#client === undefined ? this.#redial() : undefined, late]);
+    } finally {
+      clearTimeout(timer);
+    }
+    // The loop also ends when the transport is closed under it.
+    if (this.#client === undefined) await this.#ensure();
+  }
+
+  /**
+   * Dial without being waited for: retried on our backoff until it lands or `close()` runs, and
+   * announced to the `onReconnect` listeners when it does. Until then every publish and subscribe
+   * is refused at once (`#ensure`) — never parked behind the dial, never queued.
+   */
+  connectInBackground(): void {
+    if (this.#closed || this.#client !== undefined) return;
+    void this.#redial();
   }
 
   get connected(): boolean {
@@ -94,6 +164,16 @@ export class NatsTransport implements Transport {
 
   async publish(subject: string, payload: string): Promise<void> {
     const client = await this.#ensure();
+    // The library BUFFERS a publish made while it reconnects, without bound, and replays the lot
+    // when the server is back: a queue nobody sized, delivering events whose only meaning was
+    // "re-read now" minutes late. A subscriber is told of the gap (`onReconnect`); the publisher
+    // is told here.
+    if (!client.connected) {
+      throw new TransportUnavailableError({
+        transport: this.name,
+        reason: `publish to ${subject} was refused: the client is reconnecting to the bus`,
+      });
+    }
     // `client.publish` is synchronous and refuses locally: a bad subject, a payload over the
     // server's `max_payload`, a connection torn down between the `#ensure` and this line. Those
     // are the LIBRARY's errors — or an app-supplied `connect`'s — so they arrive uncoded, and
@@ -167,7 +247,9 @@ export class NatsTransport implements Transport {
       return Promise.reject(
         new TransportUnavailableError({
           transport: this.name,
-          reason: `the connection closed once its reconnect budget was spent, and re-dial attempt ${this.#redialing} is in progress`,
+          reason: this.#everUp
+            ? `the connection closed once its reconnect budget was spent, and re-dial attempt ${this.#redialing} is in progress`
+            : `the bus has not connected yet, and dial attempt ${this.#redialing} is in progress`,
         }),
       );
     }
@@ -208,7 +290,7 @@ export class NatsTransport implements Transport {
       },
     });
     try {
-      await this.#ensureBucket(client);
+      if (!this.#lazyBucket) await this.#ensureBucket(client);
       if (closedEarly) {
         throw new TransportUnavailableError({
           transport: this.name,
@@ -229,7 +311,18 @@ export class NatsTransport implements Transport {
     }
     opened = client;
     this.#client = client;
+    this.#everUp = true;
     this.#retries = 0;
+    return client;
+  }
+
+  /** `shared`'s client: under `'first-use'` this is where the bucket is asserted, once per client. */
+  async #presenceClient(): Promise<NatsClient> {
+    const client = await this.#ensure();
+    if (this.#lazyBucket && !this.#bucketed.has(client)) {
+      await this.#ensureBucket(client);
+      this.#bucketed.add(client);
+    }
     return client;
   }
 
@@ -253,18 +346,26 @@ export class NatsTransport implements Transport {
   }
 
   /**
-   * Re-dial until a client is up or the transport is closed. Bounded by our backoff between
-   * attempts (capped at the policy's `maxMs`), and each attempt is itself a library dial with its
-   * own budget, so a long outage costs one dial per interval rather than a spin. A dial that lands
-   * re-binds every kept subscription and is announced: changes published in the gap are gone.
+   * Dial until a client is up or the transport is closed — the first dial of a process that does
+   * not wait for the bus, and the replacement of a client the library gave up on. One loop however
+   * many callers ask. Bounded by our backoff between attempts (capped at the policy's `maxMs`), so
+   * a long outage costs one dial per interval rather than a spin. A dial that lands re-binds every
+   * kept subscription and is announced: changes published in the gap are gone.
    */
-  async #redial(): Promise<void> {
-    if (this.#redialing !== undefined) return;
+  #redial(): Promise<void> {
+    this.#redialLoop ??= this.#redialUntilUp().finally(() => {
+      this.#redialLoop = undefined;
+    });
+    return this.#redialLoop;
+  }
+
+  async #redialUntilUp(): Promise<void> {
     try {
       for (let attempt = 1; !this.#closed && this.#client === undefined; attempt += 1) {
         this.#redialing = attempt;
         try {
           const client = await this.#dialOnce();
+          this.#lastFailure = undefined;
           // Coded like a first subscribe's refusal; the subscription stays kept for the next client.
           for (const failure of this.#subscriptions.bindAll(client)) {
             this.#report(
@@ -275,7 +376,10 @@ export class NatsTransport implements Transport {
           this.#announce();
         } catch (error) {
           if (this.#closed) return;
-          this.#report(error, this.name);
+          this.#lastFailure = renderThrowable(error);
+          // Attempts 1, 2, 4, 8, …: an outage is said at once and then ever more rarely, rather
+          // than once per dial per pod for as long as it lasts.
+          if ((attempt & (attempt - 1)) === 0) this.#report(error, this.name);
           await this.#pause(policyDelay(this.#backoff, attempt, this.#rng));
         }
       }
@@ -319,7 +423,9 @@ export class NatsTransport implements Transport {
     const client = this.#client;
     if (client === undefined) return;
     // Not awaited: the library calls this from its status loop. The failure has one place to go.
-    void this.#ensureBucket(client).catch((error: unknown) => this.#report(error, this.name));
+    // A lazy bucket is forgotten instead, and asserted again by whoever next reads `shared`.
+    if (this.#lazyBucket) this.#bucketed.delete(client);
+    else void this.#ensureBucket(client).catch((error: unknown) => this.#report(error, this.name));
     this.#announce();
   }
 

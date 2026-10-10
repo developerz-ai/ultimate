@@ -800,7 +800,22 @@ principal.
   fanout across nodes. Until 22.0.0 `NATS_URL` alone decided and both keys were read by nothing.
   `presenceTtlMs` comes back with it because the bucket's whole-stream age limit was derived from
   it — a `PresenceRegistry` given a different number would report members leaving that never left.
-  Selection is pure; `connect()` is the dial, so an unreachable bus fails at boot.
+  Selection is pure; `connect()` is the dial. **What the process does with the bus decides whether
+  that dial is waited for** — `selectTransport(env, realtime, { use })`, `BusUse`:
+  `'sockets'` (a `sync` node; the default) awaits it and the presence bucket, retried on backoff for
+  `connectWithinMs` (default `BUS_CONNECT_WAIT_MS`, 15 s) and then `X_TRANSPORT_UNAVAILABLE`;
+  `'feed'` (the replicator) awaits it and asks JetStream for nothing; `'publish'` (`web`, `worker`,
+  `scheduler`) starts it in the background and resolves at once. `selection.state()` answers
+  `'up' | 'connecting'`.
+- **`NatsTransport` has two ways to open.** `connect({ withinMs, fix })` is for a node that cannot
+  work without the bus. `connectInBackground()` is for a process that only publishes: retried on the
+  transport's own backoff until it lands or `close()` runs, announced through `onReconnect`, and
+  until then every `publish`/`subscribe` rejects at once with `X_TRANSPORT_UNAVAILABLE` — never
+  parked, never queued. A publish made while the client is **reconnecting** is refused too: the
+  `nats` client would buffer it without bound and replay it late. `presenceBucket: 'first-use'`
+  asserts the KV bucket when `shared` is first read instead of at the dial, so a publisher needs no
+  JetStream. The first dial is ONE attempt of the library's — `waitOnFirstConnect` is not set,
+  because under it nats@2.29.3 retries a failed first dial forever and the promise never settles.
 - **`NatsTransport` runs on the official `nats` client** — `nats@2.29.3`, pinned exact, admitted at
   this transport seam and nowhere else
   ([`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md)). The package reaches it

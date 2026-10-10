@@ -181,8 +181,12 @@ const MIGRATE_CEILING = 639;
  * (`setChannelTransport`), so a job or an action publishes on a declared channel with no hub.
  * raised 936 → 938, measured 938 (2026-10-10, #752): the two entity modules named on
  * `MIGRATE_CEILING` for #752, which every role reaches through the entity barrel.
+ * raised 938 → 939, measured 939 (2026-10-10, the bus is not a boot dependency of a publisher):
+ * `cli/src/runtime-bus.ts` — which roles await the NATS dial (`sync`, the replicator) and which
+ * dial it in the background and boot (`web`, `worker`, `scheduler`), the `transport` readiness
+ * check and the boot line's `bus=`. Split out of `runtime-services.ts`, which sat at the ceiling.
  */
-const SERVING_ROLE_CEILING = 938;
+const SERVING_ROLE_CEILING = 939;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -263,8 +267,10 @@ const SERVING_ROLE_CEILING = 938;
  * (held, #506) and which only follow a channel, read off the names each imports from the barrel.
  * raised 1063 → 1065, measured 1065 (2026-10-10, #752): the two entity modules named on
  * `MIGRATE_CEILING` for #752.
+ * raised 1065 → 1066, measured 1066 (2026-10-10, the bus is not a boot dependency of a publisher):
+ * `cli/src/runtime-bus.ts`, the module named on `SERVING_ROLE_CEILING`, which every role carries.
  */
-const WEB_ROLE_CEILING = 1065;
+const WEB_ROLE_CEILING = 1066;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

@@ -256,6 +256,8 @@ export {
   reconnectFrame,
 } from './thundering-herd';
 export {
+  BUS_CONNECT_WAIT_MS,
+  type BusUse,
   DEFAULT_PRESENCE_BUCKET,
   DEFAULT_PRESENCE_TTL_MS,
   type SelectTransportOptions,

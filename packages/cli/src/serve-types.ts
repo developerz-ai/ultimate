@@ -39,6 +39,11 @@ export interface ServedApp {
   /** `http://…` for the web role; null for the roles that open no HTTP socket. */
   readonly url: string | null;
   readonly buildId: string;
+  /**
+   * The bus as the boot left it: `nats(up)`, `nats(connecting)` or `in-process` (`busLabel`). Only
+   * a role that publishes and serves no socket can boot `connecting`.
+   */
+  readonly bus: string;
   readonly running: RunningRoles;
   readonly runtime: RunningServices;
   stop(): Promise<void>;

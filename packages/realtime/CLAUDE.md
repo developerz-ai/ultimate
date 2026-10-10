@@ -119,12 +119,13 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 ## The node, the bus and presence
 
 - `sync` is stateless: no sticky sessions, nothing on a socket survives a restart.
-- **`selectTransport(env, realtime)` is the one place `realtime.transport` + env become a bus** (KV
-  bucket and presence TTL come back with it). The config decides, the env supplies: `'nats'` refuses
-  (`X_CONFIG_INVALID`) when the `urlEnv` variable is unset; `'memory'` refuses a set one.
-- **`nats` is imported only by `nats-lib-client.ts`**; its reconnect re-subscribes. Only when it
-  GIVES UP (`onClosed`) does `NatsTransport` re-dial on backoff and re-bind kept subscriptions
-  (`nats-subscriptions.ts`); callers meanwhile are refused. KV semantics: `nats-jetstream`/`nats-kv`.
+- **`selectTransport(env, realtime, { use })` is the one place config + env become a bus** (bucket
+  and presence TTL come back). `'nats'` refuses (`X_CONFIG_INVALID`) an unset `urlEnv` variable;
+  `'memory'` a set one. `use`: `'sockets'`/`'feed'` await a 15 s dial, then
+  `X_TRANSPORT_UNAVAILABLE`; `'publish'` dials in background. Never `waitOnFirstConnect`
+  (retries forever). A publish with no live connection is refused.
+- **`nats` is imported only by `nats-lib-client.ts`**; its reconnect re-subscribes. When it GIVES
+  UP (`onClosed`) `NatsTransport` re-dials on backoff and re-binds.
 - **Nothing leaves `NatsTransport` uncoded** — `#translating` wraps `publish`/`subscribe` refusals
   as `X_TRANSPORT_UNAVAILABLE`. `#ensure` reuses a mid-reconnect client on purpose;
   `Transport.onReconnect(listener)` (required) announces each recovery.

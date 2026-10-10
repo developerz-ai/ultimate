@@ -203,7 +203,14 @@ export async function runRole(input: ServeOptions): Promise<StartedApp> {
   }
   const { app, hold } = booted;
   retire?.adopt(app.running.worker);
-  logger.info('ultimate started', { role: app.role, url: app.url, buildId: app.buildId });
+  logger.info('ultimate started', {
+    role: app.role,
+    url: app.url,
+    buildId: app.buildId,
+    // `nats(connecting)` on a role that only publishes is a served pod with the bus down;
+    // `ultimate bus` is logged with `nats(up)` when the dial lands.
+    bus: app.bus,
+  });
   await hold();
   return app;
 }

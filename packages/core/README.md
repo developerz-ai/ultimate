@@ -494,7 +494,10 @@ match with `sealAll()`; uniqueness cannot be held across keys.
   **bound**. `ReadinessCheck` is `() => boolean` and must stay synchronous — a probe that awaits its
   dependency turns a slow dependency into a wedged endpoint and then a restart loop; keep a boolean
   fresh and let the check read it. It returns an unregister. `HealthReport.checks` is a map of name
-  → `'ok' | 'failing'`, so "alert on check failures by check name" is writable.
+  → `'ok' | 'degraded' | 'failing'`, so "alert on check failures by check name" is writable.
+  `registerReadinessCheck(name, check, { onFailure: 'degraded' })` is a dependency the role serves
+  without (the bus of a role that only publishes to it): its `false` is `'degraded'`, never a 503
+  on `/readyz` in either mode, and a 503 on `/readyz?deep=1`.
 - **`HealthReport.registered` is the third state.** `checks: {}` reads identically for "every check
   passed" and "nobody registered one", and an **empty registry is still ready** — reported, never
   enforced, so a role with no dependency does not have to invent a check to boot. Read `registered`

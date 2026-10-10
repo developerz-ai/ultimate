@@ -178,6 +178,82 @@ describe('selectTransport', () => {
     expect(codeOf(error)).toBe('X_CONFIG_INVALID');
   });
 
+  // What the process DOES with the bus decides whether its boot waits for it. Until 2026-10 every
+  // role awaited the dial and the JetStream bucket, so a web pod restarting while NATS was down
+  // never served a page — for a bus it only publishes "re-read" events to.
+  test("use: 'publish' connects in the background: connect() resolves with the bus down", async () => {
+    const broker = new FakeNatsBroker();
+    broker.offline = true;
+    const selection = selectTransport({ NATS_URL: URL }, NATS, {
+      use: 'publish',
+      clock: frozenClock(0),
+      connect: fakeNatsConnect(broker),
+      backoff: { baseMs: 2, maxMs: 2, factor: 1, jitter: 'none' },
+      onError: () => undefined,
+    });
+
+    await selection.connect();
+    expect(selection.use).toBe('publish');
+    expect(selection.state()).toBe('connecting');
+    const refused = await selection.transport.publish('x.channel.feed', '{}').then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(codeOf(refused)).toBe('X_TRANSPORT_UNAVAILABLE');
+
+    broker.offline = false;
+    for (let poll = 0; poll < 500 && selection.state() !== 'up'; poll += 1) await Bun.sleep(2);
+    expect(selection.state()).toBe('up');
+    // A publisher never reads presence, so it asks JetStream for nothing.
+    expect(broker.streams).toEqual([]);
+    await selection.transport.close();
+  });
+
+  test("use: 'feed' awaits the dial and creates no bucket: a replicator serves no presence", async () => {
+    const broker = new FakeNatsBroker();
+    const selection = selectTransport({ NATS_URL: URL }, NATS, {
+      use: 'feed',
+      clock: frozenClock(0),
+      connect: fakeNatsConnect(broker),
+    });
+    await selection.connect();
+
+    expect(selection.state()).toBe('up');
+    expect(broker.streams).toEqual([]);
+    await selection.transport.close();
+  });
+
+  test("use: 'sockets' is the default and stays a hard dependency, refused within its wait", async () => {
+    const broker = new FakeNatsBroker();
+    const hung = Promise.withResolvers<never>();
+    const selection = selectTransport({ NATS_URL: URL }, NATS, {
+      clock: frozenClock(0),
+      connect: () => hung.promise,
+      connectWithinMs: 30,
+    });
+    expect(selection.use).toBe('sockets');
+
+    const refused = await selection.connect().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(codeOf(refused)).toBe('X_TRANSPORT_UNAVAILABLE');
+    const said = isUltimateError(refused) ? `${refused.cause} | ${refused.fix}` : '';
+    expect(said).toContain('within 30ms');
+    // The variable to check, what this process needs it for, and which roles do not.
+    expect(said).toContain('NATS_URL');
+    expect(said).toContain('serves sockets');
+    expect(said).not.toContain('bus.test:4222/');
+    expect(broker.clients).toHaveLength(0);
+    await selection.transport.close();
+  });
+
+  test('the in-process bus is always up, whatever the use', async () => {
+    const selection = selectTransport({}, MEMORY, { use: 'publish' });
+    await selection.connect();
+    expect(selection.state()).toBe('up');
+  });
+
   test('the keys it reads are exactly these', () => {
     expect([...TRANSPORT_ENV_KEYS]).toEqual(['NATS_URL', 'NATS_KV_BUCKET']);
   });

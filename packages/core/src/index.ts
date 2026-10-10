@@ -646,7 +646,11 @@ export {
   READINESS_GRACE_DEFAULT_MS,
   READINESS_GRACE_MAX_MS,
 } from './lifecycle-grace';
-export type { ReadinessCheck, ReadinessStatus } from './lifecycle-readiness';
+export type {
+  ReadinessCheck,
+  ReadinessCheckOptions,
+  ReadinessStatus,
+} from './lifecycle-readiness';
 export type { SignalHandlerOptions } from './lifecycle-signals';
 export { drainSignals, installSignalHandlers } from './lifecycle-signals';
 export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';
