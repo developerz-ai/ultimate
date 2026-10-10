@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.6.0 - 2026-10-10
+
 ### Added
 
 Tier 4 — render.
@@ -22,6 +26,10 @@ Tier 0 — core. Tier 3 — realtime. Tier 4 — render, ui. Tier 5 — cli.
 - **With scripting off, a held island is never hidden.** The no-script reveal was a CSS animation at the hold's cap, so a reader without JavaScript looked at an empty box for 3 s on every page with a held island. `@ultimat3/ui`'s `global.scss` now cancels the hold under `@media (scripting: none)`; the keyframes stay as the cap for a browser without that media feature and for a runtime that was blocked.
 - **A prebuilt image renders the realtime page boot and the holds.** Which islands reach realtime was answered by the island build, in the process that ran it. A pod serving a verified island store builds nothing, so it knew of none: no document carried the page boot (the disk restore and the outbox replay never ran from the document) and no island was held, where `x dev` did both. Each island's answer now rides its own chunk (`IslandChunk.realtime`, `IslandBundle.realtime`) instead of process state, the store's index records it, and the document renderer reads it off the bundle it serves; an index without it is stale and rebuilt. Two apps built in one process no longer share an answer for islands at the same relative path.
 - **A realtime island no longer carries core's and schema's error-title tables.** `@ultimat3/realtime`'s `error-titles.ts`, in every chunk that reaches the barrel, registered through `@ultimat3/core`'s barrel, whose own side-effect anchors are those two tables. It registers through `@ultimat3/core/page` (which now exports `registerErrorCodes`) instead: an island whose body is `useChannel` goes 12,692 B → 8,121 B minified (5,407 → 3,658 gzip), and a built events-only island 21,715 B → 16,813 B. Realtime's own titles are still registered; a core code raised in such a chunk is titled from its name, as on every other `@ultimat3/core/page` path.
+
+### Commits
+
+- fix(realtime): an island that only follows a channel is never held; a prebuilt image renders the realtime page boot; disposeIslands is public (#750)
 
 ## 27.5.0 - 2026-10-10
 
