@@ -236,6 +236,8 @@ After `x g entity <name>`: `bunx x db gen "create <table>"`, then `bunx x db mig
 prints both, with `bun install` first when it added a workspace dependency
 ([CLI reference](CLI-Reference)).
 
+A feature with more than one table: `x g entity <second> --feature <feature>` writes `entity-<second>.ts` + `repo-<second>.ts` (and a test beside each) next to the first entity's `entity.ts`, and registers it on the handle the same way (`As of 27.6.2`). One file per table; `x db gen` picks every one up from the registry.
+
 ## Point lookups batch themselves
 
 `findById` called several times in one microtask of one request is **one** statement, `As of 2026-08`:

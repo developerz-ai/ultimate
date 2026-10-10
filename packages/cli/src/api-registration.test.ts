@@ -215,3 +215,66 @@ describe('unit · a binding the index already holds is a finding, never a silent
     expect(findings).toHaveLength(1);
   });
 });
+
+// The list was closed at the first `]` in the raw text and split at every comma, so a comment
+// between two entries became entries: the same scan `generate-grants.ts` made of a role map.
+describe('unit · a commented list is added to, and every comment survives', () => {
+  const COMMENTED = [
+    "import { defineApi } from '@ultimat3/action';",
+    "import * as health from './health';",
+    '',
+    'export const api = defineApi({',
+    "  // jobs: [notThis], — it's prose",
+    '  actions: [',
+    "    // the app's liveness probe, [never] gated",
+    '    health,',
+    '  ],',
+    '  jobs: [',
+    "    // nothing's queued yet, but see tasks[0]",
+    '  ],',
+    '});',
+    '',
+  ].join('\n');
+
+  test('the binding lands after the comment, and the file is otherwise byte-identical', () => {
+    const entries = apiEntriesFor([
+      'apps/web/app/billing/jobs/purge-drafts-job.ts',
+      'apps/web/app/billing/actions/close-period.ts',
+    ]);
+    const { source, skipped } = insertApiEntries(COMMENTED, entries);
+    expect(skipped).toEqual([]);
+    expect(source).toContain(
+      "  jobs: [\n    // nothing's queued yet, but see tasks[0]\n    purgeDraftsJob,\n  ],",
+    );
+    expect(source).toContain(
+      "  actions: [\n    // the app's liveness probe, [never] gated\n    health,\n    closePeriod,\n  ],",
+    );
+    const added = [
+      "import * as closePeriod from '../app/billing/actions/close-period';\n",
+      "import * as purgeDraftsJob from '../app/billing/jobs/purge-drafts-job';\n",
+      '    purgeDraftsJob,\n',
+      '    closePeriod,\n',
+    ];
+    expect(added.reduce((text, row) => text.replace(row, ''), source)).toBe(COMMENTED);
+    expect(insertApiEntries(source, entries).source).toBe(source);
+  });
+});
+
+// A new list is written on the row after the list before it — and when that list shares its row
+// with the call's own `});`, the row after it is OUTSIDE the call.
+describe('unit · a list that cannot be created inside the call is skipped, never written outside it', () => {
+  test('a one-line defineApi is left byte-identical and the entry comes back', () => {
+    const inline = [
+      "import { defineApi } from '@ultimat3/action';",
+      "import * as health from './health';",
+      '',
+      'export const api = defineApi({ actions: [health] });',
+      'export type Api = typeof api;',
+      '',
+    ].join('\n');
+    const entries = apiEntriesFor(['apps/web/app/billing/jobs/purge-drafts-job.ts']);
+    const { source, skipped } = insertApiEntries(inline, entries);
+    expect(skipped).toEqual(entries);
+    expect(source).toBe(inline);
+  });
+});

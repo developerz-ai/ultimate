@@ -3,7 +3,8 @@
 // a generator that emits one hands the author a red gate for the generator's own output — the edit
 // is mechanical, so the generator makes it. Shipped source only, the checker's own scope.
 
-import { containedPath } from './generate-write';
+import type { GenerateDisk } from './generate-disk';
+import { appDisk } from './generate-disk';
 import { isGenerated, isTest } from './source-files';
 import { withDependency } from './workspace-dep-edit';
 import { importedPackages, scanWorkspaces, type WorkspaceNode } from './workspace-graph';
@@ -14,6 +15,7 @@ const SOURCE = /\.tsx?$/;
 async function missingEdges(
   root: string,
   written: readonly string[],
+  disk: GenerateDisk,
 ): Promise<Map<WorkspaceNode, Map<string, string>>> {
   const missing = new Map<WorkspaceNode, Map<string, string>>();
   const sources = written.filter(
@@ -27,7 +29,7 @@ async function missingEdges(
   for (const path of sources) {
     const owner = owners.find((node) => path.startsWith(`${node.dir}/`));
     if (owner === undefined) continue;
-    const text = await Bun.file(containedPath(root, path)).text();
+    const text = (await disk.read(path)) ?? '';
     for (const name of importedPackages(text, path)) {
       const target = byName.get(name);
       if (target === undefined || target === owner || owner.dependencies.includes(name)) continue;
@@ -43,16 +45,17 @@ async function missingEdges(
 export async function declareGeneratedImports(
   root: string,
   written: readonly string[],
+  disk: GenerateDisk = appDisk(root),
 ): Promise<readonly string[]> {
   const edited: string[] = [];
-  for (const [owner, edges] of await missingEdges(root, written)) {
+  for (const [owner, edges] of await missingEdges(root, written, disk)) {
     const path = `${owner.dir}/package.json`;
-    const file = Bun.file(containedPath(root, path));
-    const before = await file.text();
+    // Through the seam, not `owner.dependencies`: an earlier edit of this run may already hold it.
+    const before = (await disk.read(path)) ?? '';
     let after = before;
     for (const [name, version] of edges) after = withDependency(after, name, version) ?? after;
     if (after === before) continue;
-    await Bun.write(containedPath(root, path), after);
+    await disk.write(path, after);
     edited.push(path);
   }
   return edited;

@@ -157,3 +157,25 @@ test('and both are clean for an app whose scope sorts AFTER @ultimat3', async ()
   expect(generatedRun.problems).toBe('');
   expect(generatedRun.checked).toBeGreaterThanOrEqual(typescriptPaths(generated));
 }, 60_000);
+
+test('a feature’s second entity — the sibling files — is clean under both scopes too', async () => {
+  // The sibling's module names are longer than `entity`/`repo`, and every import line that names
+  // one is wrapped by its length: a long entity name is where a fixed shape goes wrong.
+  const siblings = ['line', 'credit-note-attachment-revision'].flatMap((name) =>
+    [undefined, `@${AFTER_ULTIMATE}/db`].flatMap((dbModule) =>
+      generate({
+        kind: 'entity',
+        name,
+        feature: dbModule === undefined ? 'invoice' : 'ledger',
+        sibling: true,
+        ...(dbModule === undefined ? {} : { dbModule }),
+      }),
+    ),
+  );
+  expect(siblings.map((file) => file.path)).toContain('apps/web/app/invoice/entity-line.ts');
+  expect(siblings.map((file) => file.path)).toContain('apps/web/app/ledger/repo-line.test.ts');
+
+  const run = await runBiome(siblings);
+  expect(run.problems).toBe('');
+  expect(run.checked).toBeGreaterThanOrEqual(typescriptPaths(siblings));
+}, 60_000);

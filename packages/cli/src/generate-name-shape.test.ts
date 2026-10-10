@@ -72,6 +72,17 @@ describe('unit · a plural name is refused where the plan pluralises it into a t
     ).not.toThrow();
   });
 
+  test('a feature`s second entity is judged on its own name, and fixed on it', () => {
+    const files = generate({ kind: 'entity', name: 'attempts', feature: 'blog', sibling: true });
+    const thrown = refusal(() =>
+      refusePluralTable(files, 'entity', 'attempts', 'blog', nothingOnDisk),
+    );
+    expect(thrown.code).toBe('X_CLI_BAD_FLAG');
+    expect(thrown.fix).toBe('x g entity attempt --feature blog');
+    const fine = generate({ kind: 'entity', name: 'attempt', feature: 'blog', sibling: true });
+    expect(() => refusePluralTable(fine, 'entity', 'attempt', 'blog', nothingOnDisk)).not.toThrow();
+  });
+
   test('a plural that came from --feature is fixed on --feature', () => {
     const refused = refusal(() =>
       refusePluralTable(planned('query', 'top', 'posts'), 'query', 'top', 'posts', nothingOnDisk),

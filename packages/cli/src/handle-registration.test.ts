@@ -232,3 +232,39 @@ describe('unit · a registration that cannot be made writes nothing', () => {
     expect(await read('packages/db/package.json')).toContain('"@shop/web": "0.0.0"');
   });
 });
+
+// The set was closed at the first `}` in the raw text: one in a comment cut the set short and the
+// entry was written into the middle of it.
+describe('unit · a commented entity set is added to, and every comment survives', () => {
+  const COMMENTED = [
+    "import { database } from '@ultimat3/entity';",
+    "import { post } from '@shop/web/app/post/entity';",
+    '',
+    'const entities = {',
+    "  // the blog's own table — `database({ … })` reads it; don't inline it",
+    '  posts: post,',
+    '};',
+    '',
+    'export const db = database(entities, { driver });',
+    '',
+  ].join('\n');
+
+  test('the entry lands in the set, in key order, below the comment', () => {
+    const { source, missing } = insertHandleEntries(COMMENTED, [WIDGET]);
+    expect(missing).toEqual([]);
+    expect(source).toContain(
+      "  // the blog's own table — `database({ … })` reads it; don't inline it\n  posts: post,\n  widgets: widget,\n};",
+    );
+    expect(insertHandleEntries(source, [WIDGET]).source).toBe(source);
+  });
+
+  test('a set this cannot add a line to safely is refused: the entry comes back as missing', () => {
+    // An entry whose value spans rows and closes on a row shaped like an entry.
+    const odd = COMMENTED.replace('  posts: post,', '  posts: wrap({\n    zebra: post,\n  }),');
+    const { source, missing } = insertHandleEntries(odd, [WIDGET]);
+    // The line edit would have put `widgets` INSIDE `wrap({ … })`; read back, that is not the
+    // set plus one entry, so nothing is written and the finding names the two lines.
+    expect(missing).toEqual([WIDGET]);
+    expect(source).toBe(odd);
+  });
+});

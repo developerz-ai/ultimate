@@ -16,6 +16,7 @@ import { generateCommand } from './cmd-generate';
 import { writeNewApp } from './cmd-new';
 import type { CommandContext } from './command';
 import { exec } from './exec';
+import { ROLES_FILE } from './permission-grants';
 import { HANDLE_FILE } from './templates/scaffold-db-client';
 
 /** This package's own workspace links: `@ultimat3/entity`, `core`, `db`, `testing` and the rest. */
@@ -93,17 +94,35 @@ afterAll(async () => {
 });
 
 describe('unit · x g entity writes a repo over the typed handle', () => {
-  test('--dry-run lists the repo with its test, and edits nothing', async () => {
+  // What the dry run said it would touch, held for the run that follows: the two lists are one.
+  let plannedFiles: readonly string[] = [];
+
+  test('--dry-run lists every file the run touches — created AND edited — and edits nothing', async () => {
     const before = await read(HANDLE_FILE);
+    const roles = await read(ROLES_FILE);
     const result = await generateCommand.run(contextFor('widget', [['dry-run', true]]));
-    expect(filesOf(result.data)).toEqual([
+    plannedFiles = filesOf(result.data);
+    expect(plannedFiles).toEqual([
       'apps/web/app/widget/entity.ts',
       'apps/web/app/widget/entity.test.ts',
       'apps/web/app/widget/repo.ts',
       'apps/web/app/widget/repo.test.ts',
       'packages/i18n/catalogs/en.json',
+      // The edits outside the slice: the dry run named none of them, and the run made all four.
+      ROLES_FILE,
+      HANDLE_FILE,
+      'packages/db/package.json',
+      'apps/web/package.json',
+    ]);
+    // Which of those already exist and are edited rather than created.
+    expect((result.data as { readonly edits?: readonly string[] }).edits).toEqual([
+      ROLES_FILE,
+      HANDLE_FILE,
+      'packages/db/package.json',
+      'apps/web/package.json',
     ]);
     expect(await read(HANDLE_FILE)).toBe(before);
+    expect(await read(ROLES_FILE)).toBe(roles);
     expect(await Bun.file(join(root, 'apps/web/app/widget/repo.ts')).exists()).toBe(false);
   });
 
@@ -112,6 +131,11 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     expect(result.findings).toEqual([]);
     expect(result.ok).toBe(true);
     expect(filesOf(result.data)).toContain(HANDLE_FILE);
+    // The plan was the run: same files, same order, the re-projected contracts aside.
+    const contracts = ['x.manifest.json', 'openapi.json'];
+    expect(filesOf(result.data).filter((path) => !contracts.includes(path))).toEqual([
+      ...plannedFiles,
+    ]);
     const handle = await read(HANDLE_FILE);
     expect(handle).toContain("import { widget } from '@gen/web/app/widget/entity';");
     expect(handle).toContain('const entities = {\n  widgets: widget,\n};');

@@ -244,18 +244,23 @@ const exampleFor = (kind: Generator): string =>
  * space is refused for the same reason one step earlier: the value is spliced into a string
  * literal in emitted source, and neither is a permission any app declares.
  *
+ * Two segments or MORE: `admin:blog:write` is a `${string}:${string}` like any other, an app's
+ * staff console declares its permissions that way, and one colon exactly refused every one of them
+ * — the page was then generated under `blog:write` and renamed by hand in three places. An empty
+ * segment (`ops::read`, `ops:`) is still no permission.
+ *
  * It cannot ask whether the app DECLARES the permission — `x g` writes files against a root, it
  * never loads the app, and an app that will not import is exactly when a generator is reached for.
  * The generated page declaring it is what closes that half (`templates/admin-page.ts`).
  */
-const PERMISSION_SHAPE = /^[a-z0-9][a-z0-9_.-]*:[a-z0-9*][a-z0-9_.*-]*$/i;
+const PERMISSION_SHAPE = /^[a-z0-9][a-z0-9_.-]*(?::[a-z0-9*][a-z0-9_.*-]*)+$/i;
 
 export function readPermission(raw: string | undefined, kind: Generator): string | undefined {
   if (raw === undefined || PERMISSION_SHAPE.test(raw)) return raw;
   throw new BadFlagError({
     flag: 'permission',
     command: 'g',
-    reason: `expects a permission of the form <resource>:<verb>, got "${raw}"`,
+    reason: `expects a permission of the form <resource>:<verb> — or namespaced, <area>:<resource>:<verb> — got "${raw}"`,
     fix: `${exampleFor(kind)} --permission ops:read`,
   });
 }

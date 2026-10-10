@@ -82,6 +82,11 @@ export interface GenerateOptions {
    * resource's page renders inside it. Read off the disk by `run`, for `catalogModule`'s reason.
    */
   readonly shell?: boolean;
+  /**
+   * `entity` only: the feature's `entity.ts` already declares ANOTHER table, so this entity is
+   * written beside it as `entity-<name>.ts` + `repo-<name>.ts`. Read off the disk by `run`.
+   */
+  readonly sibling?: boolean;
 }
 
 const DEFAULT_SURFACE_DIR: Record<Surface, string> = {
@@ -174,7 +179,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
       // With the labels the admin reads for it: the entity is an admin screen once it is in the
       // handle, whether or not a resource was generated around it.
       return dedupe([
-        ...entityFiles(options.name, target),
+        ...entityFiles(options.name, target, { sibling: options.sibling === true }),
         ...adminCatalogFiles(options.name, target, options.locales),
       ]);
     case 'policy':
