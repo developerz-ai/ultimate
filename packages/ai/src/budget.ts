@@ -13,7 +13,8 @@
 import type { Actor } from '@ultimat3/core';
 import { assert, asyncContext, finiteCount } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import { assertSameCurrency } from '@ultimat3/money';
+import { assertSameCurrency, minorAt } from '@ultimat3/money';
+import { costScale, roundUpCost } from './cost';
 import { AiBudgetExceededError } from './errors';
 import type { GenerateRequest, TokenUsage } from './provider';
 import { estimateCost, estimateInputTokens, estimateTokens, totalTokens } from './provider';
@@ -187,7 +188,10 @@ export interface BudgetLedgerInput {
 
 export interface BudgetReport {
   readonly requestTokens: number;
+  /** Everything recorded, rounded up ONCE to the currency's minor unit. */
   readonly cost: Money;
+  /** The same sum exactly, at `costScale(currency)` — micro-units of the minor unit. */
+  readonly costExact: Money;
   readonly limits: BudgetLimits;
   readonly actorSpent: number;
   readonly orgSpent: number;
@@ -199,7 +203,8 @@ export class BudgetLedger {
   private readonly orgKey: string | undefined;
   private readonly store: BudgetStore;
   private requestTokens = 0;
-  private costMinor = 0;
+  /** Summed EXACTLY, in micro-units of the minor unit, and rounded up once — when it is read. */
+  private costMicro = 0n;
   private readonly currency: string;
   /**
    * The ledger this one was `derive`d from, or `undefined` for a scope's root. Set by `derive`
@@ -335,8 +340,11 @@ export class BudgetLedger {
   async record(usage: TokenUsage, cost: Money, reservation?: BudgetReservation): Promise<void> {
     // Up the chain, because `derive` copies the currency: a scope's reported cost is its own
     // calls plus every call made under a ledger derived from it.
+    // `cost` may be exact (`GenerateResult.costExact`, a finer `scale`) or already rounded; either
+    // way it is widened to one scale and summed there, so fourteen cheap calls are rounded once.
+    const micro = minorAt(cost, costScale(cost.currency));
     for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
-      l.costMinor += cost.minor;
+      l.costMicro += micro;
     }
     await this.debit(totalTokens(usage) - (reservation?.tokens ?? 0));
   }
@@ -374,10 +382,20 @@ export class BudgetLedger {
   async report(): Promise<BudgetReport> {
     return {
       requestTokens: this.requestTokens,
-      cost: { minor: this.costMinor, currency: this.currency },
+      cost: roundUpCost(this.exactCost()),
+      costExact: this.exactCost(),
       limits: this.limits,
       actorSpent: this.actorKey === undefined ? 0 : await this.store.spent(this.actorKey),
       orgSpent: this.orgKey === undefined ? 0 : await this.store.spent(this.orgKey),
+    };
+  }
+
+  private exactCost(): Money {
+    const minor = Number(this.costMicro);
+    return {
+      minor: Number.isSafeInteger(minor) ? minor : Number.MAX_SAFE_INTEGER,
+      currency: this.currency,
+      scale: costScale(this.currency),
     };
   }
 

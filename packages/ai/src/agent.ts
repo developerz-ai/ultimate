@@ -23,7 +23,7 @@
 import type { Action } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { finiteCount, isMcpExposed, throwIfAborted, withSpan } from '@ultimat3/core';
+import { isMcpExposed, throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { AgentAction } from './agent-continue';
@@ -34,58 +34,32 @@ import {
   sessionCalls,
   TRANSCRIPT_VERSION,
 } from './agent-continue';
+import type { AgentBounds } from './agent-declared';
+import { factsOf, limitsOf, SUBJECT, screenBounds } from './agent-declared';
 import type { AgentDef } from './agent-def';
 import { AgentTranscriptInvalidError } from './agent-errors';
-import type { AgentFact } from './agent-facts';
 import { registerAgentFact } from './agent-facts';
-import { DEFAULT_MAX_REPEATED_TOOL_CALLS, runDeadline, toolLoopGuard } from './agent-guards';
+import { runDeadline, toolLoopGuard } from './agent-guards';
 import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import { assertAnswerable, observeTurn } from './agent-turn';
 import { runTotal } from './agent-usage';
 import { LlmTruncatedError } from './answer-errors';
-import type { BudgetLimits } from './budget';
-import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
-import {
-  AgentMaxTurnsError,
-  AgentToolUnexposedError,
-  AiBudgetExceededError,
-  AiRequestInvalidError,
-  LlmOutputInvalidError,
-} from './errors';
+import { budgetKeysFor, currentBudget, withBudget } from './budget';
+import { AgentMaxTurnsError, AgentToolUnexposedError, LlmOutputInvalidError } from './errors';
 import { answerAttributes } from './llm';
-import { describedModel, type ModelSource, modelForCall } from './model-resolve';
+import { modelForCall } from './model-resolve';
 import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
-import type { AiMessage, GenerateRequest, TokenUsage } from './provider';
-import { isTruncated, totalTokens } from './provider';
+import type { AiMessage, GenerateRequest } from './provider';
+import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
 import { runMeter } from './run-meter';
-import { aiGateway, aiRedactor, installedGateway } from './runtime';
+import { aiGateway, aiRedactor } from './runtime';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
 import { asProjectableAction, runLlmToolCall, toLlmTools, toolLabel } from './tools';
-
-/**
- * Turn ceiling when the declaration omits one. Low on purpose: a loop that needs more than this
- * is usually a loop with no exit condition, and every turn re-sends the whole transcript, so cost
- * grows quadratically in turns rather than linearly.
- */
-const DEFAULT_MAX_TURNS = 8;
-
-/** Output ceiling per turn when the declaration omits one. Same reasoning as `llm()`'s. */
-const DEFAULT_MAX_TOKENS = 4_096;
-
-/**
- * Characters of ONE tool result the model may read. A tool that returns a 2MB row set otherwise
- * spends the whole context window on turn two and every later turn re-sends it — the transcript
- * is the request, so an untruncated result is billed once per remaining turn.
- */
-const DEFAULT_TOOL_RESULT_CHARS = 4_000;
-
-/** Named in every bound refusal, so the fix names the key the declaration carries. */
-const SUBJECT = 'agent';
 
 export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
 
@@ -106,36 +80,7 @@ export function agent<
       tools: unexposed.map(toolLabel),
     });
   }
-  // The three loop bounds, screened at DECLARATION for the same reason the tool check above is:
-  // the values are here, and an `agent()` runs at module scope, so a bound that is not one fails
-  // the boot instead of the ninetieth second of a run. None of them is checked by what it lands
-  // on — `turn <= NaN` is false on the FIRST comparison, so the loop takes zero turns and reports
-  // `X_AGENT_MAX_TURNS` about a model that was never called; `slice(0, NaN)` is `''`, so every
-  // tool result reaches the model empty while the run keeps paying for turns; and `maxTokens`
-  // becomes the pre-flight estimate, where a `NaN` disables the ledger for the whole process.
-  finiteCount(SUBJECT, 'maxTurns', def.maxTurns ?? DEFAULT_MAX_TURNS, 1);
-  finiteCount(
-    SUBJECT,
-    'maxToolResultChars',
-    def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS,
-    1,
-  );
-  finiteCount(SUBJECT, 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
-  const repeats = finiteCount(
-    SUBJECT,
-    'maxRepeatedToolCalls',
-    def.maxRepeatedToolCalls ?? DEFAULT_MAX_REPEATED_TOOL_CALLS,
-    1,
-  );
-  if (repeats < 2) {
-    // One "repeat" is the first tool turn of every run: the agent could never use a tool.
-    throw new AiRequestInvalidError({
-      detail: `agent maxRepeatedToolCalls is ${repeats}, which would stop every run at its first tool turn`,
-      fix: 'maxRepeatedToolCalls: 3   # on the agent — at least 2; it counts consecutive identical turns, the first included',
-    });
-  }
-  // `AbortSignal.timeout(NaN)` throws a RangeError mid-run; `0` aborts before turn one.
-  if (def.deadlineMs !== undefined) finiteCount(SUBJECT, 'deadlineMs', def.deadlineMs, 1);
+  const bounds = screenBounds(def);
   // Projected on FIRST RUN, memoised, for the reason above: `agent()` is evaluated at module
   // scope and a tool's name is stamped by `registerAction` at boot, so naming it here would make
   // the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED`.
@@ -149,7 +94,7 @@ export function agent<
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: (args) => run(def, respond, adapt(), args),
+    handle: (args) => run(def, respond, adapt(), bounds, args),
   });
   // A thunk, resolved when the manifest asks: every name in the row is stamped at boot, and this
   // line runs at module scope.
@@ -171,42 +116,6 @@ function continuable<TInput extends StandardSchemaV1, TOutput extends StandardSc
   });
 }
 
-// `null`, not `undefined`, for a row naming no model yet: the row is a published fact, and an
-// absent key reads as a reader that forgot to ask.
-const modelFact = (described: {
-  readonly model: string | undefined;
-  readonly from: ModelSource | undefined;
-}): Pick<AgentFact, 'model' | 'modelFrom'> => ({
-  model: described.model ?? null,
-  modelFrom: described.from ?? null,
-});
-
-function factsOf<
-  TInput extends StandardSchemaV1,
-  TOutput extends StandardSchemaV1,
-  V extends PromptVars,
->(def: AgentDef<TInput, TOutput, V>): Omit<AgentFact, 'name'> {
-  const budget = def.budget;
-  return {
-    prompt: def.prompt.ref,
-    promptId: def.prompt.id,
-    promptHash: def.prompt.hash,
-    // The run's own precedence, so the row names the model a call would use NOW: read when the
-    // facts are, at describe time, like every name in the row. `modelFrom` says which place
-    // answered — `gateway` (or `null`, none yet) depends on the gateway installed at that moment.
-    ...modelFact(describedModel(def.model, def.prompt.model, installedGateway()?.defaultModel)),
-    maxTurns: def.maxTurns ?? DEFAULT_MAX_TURNS,
-    maxToolResultChars: def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS,
-    tools: [...def.tools.map(toolLabel)].sort(),
-    budget: {
-      tokensIn: budget?.tokensIn ?? null,
-      tokensPerRun: budget?.tokensPerRun ?? null,
-      costPerCall: budget?.costPerCall ?? null,
-    },
-    mcp: isMcpExposed(def.mcp),
-  };
-}
-
 /** The tools as `runLlmToolCall` consumes them, and as the request offers them. One projection. */
 interface Adapted {
   readonly tools: readonly ProjectableAction[];
@@ -226,6 +135,7 @@ async function run<
   def: AgentDef<TInput, TOutput, V>,
   respond: Respond,
   adapted: Adapted,
+  bounds: AgentBounds,
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
@@ -259,9 +169,8 @@ async function run<
   const rawSystem = systemOf(prompt.system, extra, (text) => text);
   const system = systemOf(prompt.system, extra, redact);
   const promptCache = promptCacheHint(def.promptCache, 'auto', args);
-  const repeated = toolLoopGuard(name, def.maxRepeatedToolCalls ?? DEFAULT_MAX_REPEATED_TOOL_CALLS);
-  const maxTurns = def.maxTurns ?? DEFAULT_MAX_TURNS;
-  const chars = def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS;
+  const repeated = toolLoopGuard(name, bounds.maxRepeatedToolCalls);
+  const { maxTurns, maxToolResultChars: chars } = bounds;
 
   return withSpan('ai.agent', async (span) => {
     span.setAttributes({
@@ -285,7 +194,7 @@ async function run<
       ...(system === undefined ? {} : { system }),
       ...(promptCache === undefined ? {} : { promptCache }),
       messages: [],
-      maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
+      maxTokens: bounds.maxTokens,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
       tools: [...adapted.offered, respond.tool],
@@ -309,6 +218,8 @@ async function run<
           : [...prior.messages, continuationTurn(prior, rendered)];
       let calls = 0;
       let issues: string | undefined;
+      // The issues of the answer the turn in flight is repairing — `onTurn`'s `repairOf`.
+      let rejected: readonly string[] | undefined;
 
       // `maxTurns` counts the run AND its continuations: a handle that used them all takes none.
       for (let turn = (prior?.turns ?? 0) + 1; turn <= maxTurns; turn += 1) {
@@ -342,6 +253,8 @@ async function run<
           stopReason: result.stopReason,
           usage: result.usage,
           cost: result.cost,
+          ...(result.costExact === undefined ? {} : { costExact: result.costExact }),
+          ...(rejected === undefined ? {} : { repairOf: rejected }),
           run: runTotal(result.model, prior?.usage, meter.total()),
         });
         assertAnswerable(result, name, base);
@@ -377,6 +290,7 @@ async function run<
             ),
           );
           calls += requested.length;
+          rejected = undefined;
           // Before the next turn is bought: the same calls with the same results cannot lead
           // anywhere a further turn would not also lead.
           repeated(requested, results);
@@ -414,14 +328,20 @@ async function run<
         }
         // A wrong shape gets another turn like any other, because unlike `llm()` this loop has
         // turns left by construction — and unlike a tool result, the correction is the message.
-        issues = formatIssues(parsed.issues).join('; ');
+        rejected = formatIssues(parsed.issues);
+        issues = rejected.join('; ');
         messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];
       }
 
       // Two different exhaustions, so two different causes: a loop that kept calling tools and
       // never answered is not the same event as one that answered the wrong shape every time.
       if (issues !== undefined) {
-        throw new LlmOutputInvalidError({ prompt: name, attempts: maxTurns, issues });
+        throw new LlmOutputInvalidError({
+          prompt: name,
+          attempts: maxTurns,
+          issues,
+          ...(rejected === undefined ? {} : { list: rejected }),
+        });
       }
       throw new AgentMaxTurnsError({ agent: name, turns: maxTurns, calls });
     };
@@ -431,40 +351,4 @@ async function run<
       }),
     );
   });
-}
-
-function limitsOf<
-  TInput extends StandardSchemaV1,
-  TOutput extends StandardSchemaV1,
-  V extends PromptVars,
->(def: AgentDef<TInput, TOutput, V>, used?: TokenUsage): BudgetLimits {
-  const budget = def.budget;
-  return {
-    // Screened under the names the DECLARATION uses, not the ledger's: `tokensPerRun` arrives at
-    // `BudgetLimits` as `request`, and a fix line naming a key the app never wrote is not a fix.
-    ...(budget?.tokensIn === undefined
-      ? {}
-      : { tokensIn: finiteCount(SUBJECT, 'budget.tokensIn', budget.tokensIn) }),
-    ...(budget?.costPerCall === undefined
-      ? {}
-      : { costPerCall: screenedMoney(SUBJECT, 'budget.costPerCall', budget.costPerCall) }),
-    // The ledger's `request` scope accumulates across every call made under one ledger, which for
-    // a run under `withBudget` is exactly "the whole run".
-    ...(budget?.tokensPerRun === undefined
-      ? {}
-      : {
-          request: leftOf(finiteCount(SUBJECT, 'budget.tokensPerRun', budget.tokensPerRun), used),
-        }),
-  };
-}
-
-/**
- * `tokensPerRun` for THIS call: the declared ceiling less what the run's earlier calls used. Never
- * a debit on the ledger — that would bill the actor and org scopes a second time for tokens they
- * were already charged — so the remainder is the ceiling, and none left is refused before a call.
- */
-function leftOf(limit: number, used: TokenUsage | undefined): number {
-  const spent = used === undefined ? 0 : totalTokens(used);
-  if (spent < limit) return limit - spent;
-  throw new AiBudgetExceededError({ scope: 'request', requested: 1, remaining: 0, limit });
 }

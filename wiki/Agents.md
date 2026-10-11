@@ -446,6 +446,17 @@ onTurn: ({ turn, maxTurns, model, toolCalls, stopReason, usage, cost }) => {
 },
 ```
 
+| Field | |
+|---|---|
+| `cost` | this turn alone, in the currency's minor units, rounded up **once** over the whole turn |
+| `costExact` | the same figure exactly — `Money` at a finer `scale` (`{ minor: 450_000, currency: 'USD', scale: 8 }` is 0.45 cents). Absent when an app-written `Provider` states none |
+| `run.cost` / `run.costExact` | the run so far, priced once from the summed usage: 14 turns of 0.45 cents are 7 cents, not 14 |
+| `repairOf` | on a **repair turn** only: the schema issues of the previous turn's answer — what the model was told to fix before it produced this one |
+
+`llm()` has the same hook per provider call — `onCall({ attempt, model, provider, stopReason, usage, cost, costExact, repairOf, run })` — `attempt` 2 being its one repair turn. It is not called on a semantic-cache hit: nothing was sent.
+
+**Cost is exact, and rounded once.** `exactCostOf(model, usage)` prices a call in micro-units of the currency's minor unit, in integers; `costOf` is that figure rounded up to the minor unit. A ledger (`gateway.spent()`, `BudgetLedger.report()`) sums the exact figures and rounds once when it is read (`cost`, with `costExact` beside it). A price below one minor unit per million tokens is a row with a `scale`: `inputPerMillion: { minor: 75, currency: 'USD', scale: 3 }` is $0.075 per million.
+
 | Rule | Detail |
 |---|---|
 | Observation only | it cannot steer the loop, cannot see the transcript, and cannot reach the actor |

@@ -1,6 +1,7 @@
 // The Anthropic provider's response half: SSE streaming, the stream-only ceiling, and message
 // parsing. The request half is `provider.test.ts`.
 import { describe, expect, test } from 'bun:test';
+import { exactCostOf } from './cost';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import {
@@ -58,6 +59,7 @@ describe('streaming', () => {
         stopDetails: undefined,
         usage,
         cost: costOf('claude-opus-5', usage),
+        costExact: exactCostOf('claude-opus-5', usage),
       },
     });
   });

@@ -5,6 +5,7 @@
 
 import { assert, finiteCount, renderCauseValue, renderFixLiteral } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
+import { exponentOf } from '@ultimat3/money';
 import { AiModelUnknownError, AiRequestInvalidError } from './errors';
 
 /**
@@ -59,11 +60,18 @@ export interface ModelReasoning {
   readonly disabledThinking?: 'disabled' | 'between_tools';
 }
 
+/** Digits a price — and the cost computed from it — may carry beyond the currency's minor unit. */
+export const PRICE_SCALE_DIGITS = 6;
+
 export interface ModelSpec {
   readonly id: ModelId;
   readonly contextWindow: number;
   readonly maxOutput: number;
-  /** Cost of one million input tokens, in minor units. */
+  /**
+   * Cost of one million input tokens: minor units, or — for a price below one minor unit per
+   * million — `Money` at a finer `scale`: `{ minor: 75, currency: 'USD', scale: 3 }` is $0.075.
+   * The same holds for the three prices below.
+   */
   readonly inputPerMillion: Money;
   /** Cost of one million output tokens, in minor units. */
   readonly outputPerMillion: Money;
@@ -147,8 +155,32 @@ export function registerModel(spec: ModelSpec): ModelSpec {
   if (spec.cacheWritePerMillion !== undefined) {
     finiteCount(SUBJECT, `${spec.id} cacheWritePerMillion.minor`, spec.cacheWritePerMillion.minor);
   }
+  assertPriceScales(spec);
   registry.set(spec.id, spec);
   return spec;
+}
+
+/**
+ * A price may state a `scale` finer than the currency's minor unit — `{ minor: 75, currency:
+ * 'USD', scale: 3 }` is $0.075 per million — up to the scale a COST is carried at. Finer than that
+ * cannot be priced exactly, so the row is refused at boot instead of rounded at every call.
+ */
+function assertPriceScales(spec: ModelSpec): void {
+  const prices = {
+    inputPerMillion: spec.inputPerMillion,
+    outputPerMillion: spec.outputPerMillion,
+    cacheReadPerMillion: spec.cacheReadPerMillion,
+    cacheWritePerMillion: spec.cacheWritePerMillion,
+  };
+  for (const [field, price] of Object.entries(prices)) {
+    if (price?.scale === undefined) continue;
+    const finest = exponentOf(price.currency) + PRICE_SCALE_DIGITS;
+    assert(
+      Number.isInteger(price.scale) && price.scale >= 0 && price.scale <= finest,
+      `${SUBJECT} row "${spec.id}" states ${field} at scale ${renderCauseValue(price.scale)}; a price in ${renderCauseValue(price.currency)} may be stated at scale 0 to ${finest}`,
+      `registerModel({ ...spec, ${field}: { minor, currency: ${renderFixLiteral(price.currency, '<currency>')}, scale: ${finest} } })   # at most ${PRICE_SCALE_DIGITS} digits finer than the minor unit`,
+    );
+  }
 }
 
 /**

@@ -210,9 +210,20 @@ export class LlmStreamInvalidError extends UltimateError {
  * bad roll — a third attempt only spends money, so this throws instead of looping.
  */
 export class LlmOutputInvalidError extends UltimateError {
-  constructor(input: { prompt: string; attempts: number; issues: string }) {
+  constructor(input: {
+    prompt: string;
+    attempts: number;
+    issues: string;
+    /** The last answer's issues, one per entry — what a job stores; `issues` is the cause's text. */
+    list?: readonly string[];
+  }) {
     super({
       code: 'X_LLM_OUTPUT_INVALID',
+      meta: {
+        prompt: input.prompt,
+        attempts: input.attempts,
+        issues: input.list ?? [input.issues],
+      },
       cause:
         `prompt "${input.prompt}" returned output failing its schema on all ` +
         `${input.attempts} attempts: ${input.issues}`,

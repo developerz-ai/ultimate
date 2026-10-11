@@ -205,7 +205,7 @@ registerModel({
   id: 'llama-internal-70b',
   contextWindow: 128_000,
   maxOutput: 8_192,
-  inputPerMillion:  { minor: 20, currency: 'USD' },   // YOUR price, integer minor units
+  inputPerMillion:  { minor: 20, currency: 'USD' },   // YOUR price, integer minor units — or finer: { minor: 75, currency: 'USD', scale: 3 } is $0.075
   outputPerMillion: { minor: 40, currency: 'USD' },
   cacheMinimumTokens: 0,
   reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
@@ -442,6 +442,10 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | `budget.tokensPerRun` caps the **whole run** | a single call is bounded by `maxTokens`; a loop is bounded by nothing until this is set |
 | a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
 | **no semantic cache** | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second |
+
+### What a call cost
+
+`cost` is the currency's minor units, rounded up once per call; `costExact` beside it is the same figure exactly (`Money` at a finer `scale`, from `exactCostOf`). `agent()` reports both per turn and for the run in `onTurn`; `llm()` per provider call in `onCall`; a ledger sums exact costs and rounds once when read. `repairOf` on either event is what a repair turn was told to fix.
 
 ### Continuing a run
 

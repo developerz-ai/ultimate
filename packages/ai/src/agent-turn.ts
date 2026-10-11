@@ -28,6 +28,7 @@ export async function observeTurn<
     'agent.turn.tool_calls': event.toolCalls.length,
     'llm.stop': event.stopReason,
     'llm.cost.minor': event.cost.minor,
+    'agent.turn.repair': event.repairOf !== undefined,
     // What the provider's prompt cache did for this turn — the two numbers that say whether the
     // stable prefix is really stable.
     'llm.cache.read_tokens': event.usage.cacheReadTokens,

@@ -193,7 +193,7 @@ class GatewayImpl implements Gateway {
       await settleFailure(ledger, reservation, error);
       throw error;
     }
-    await ledger?.record(result.usage, result.cost, reservation);
+    await ledger?.record(result.usage, result.costExact ?? result.cost, reservation);
     // A refusal is not an answer, so it is not cached. Storing one would keep serving a decision
     // the classifier might not make twice, long after the prompt that provoked it was fixed.
     if (result.stopReason !== 'refusal') await this.remember(cacheKey, result);
@@ -243,7 +243,8 @@ class GatewayImpl implements Gateway {
         }
         // Settled only once `record` has LANDED. Marking it first left a store that threw here
         // holding the reservation and half the record — the `finally` saw a settled stream.
-        await ledger?.record(chunk.result.usage, chunk.result.cost, reservation);
+        const { usage, cost, costExact } = chunk.result;
+        await ledger?.record(usage, costExact ?? cost, reservation);
         settled = true;
         yield { type: 'done', result: { ...chunk.result, provider: provider.name } };
       }

@@ -9,6 +9,7 @@
 
 import type { Secret } from '@ultimat3/core';
 import { isSecret, revealSecret } from '@ultimat3/core';
+import { costOf, exactCostOf } from './cost';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
@@ -25,7 +26,7 @@ import type {
   StreamChunk,
   TokenUsage,
 } from './provider';
-import { costOf, estimateInputTokens, estimateTextTokens, requiresStreaming } from './provider';
+import { estimateInputTokens, estimateTextTokens, requiresStreaming } from './provider';
 import { readSse } from './sse';
 import { assertToolArguments } from './tool-arguments';
 import type { LlmToolCall } from './tools';
@@ -190,6 +191,7 @@ class OpenAiProvider implements Provider {
       stopDetails: answer.stopDetails,
       usage,
       cost,
+      costExact: exactCostOf(model, usage),
     };
   }
 

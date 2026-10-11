@@ -62,6 +62,7 @@ export {
 } from './content-blocks';
 export type { ContentRefusal } from './content-errors';
 export { AiContentUnsupportedError } from './content-errors';
+export { COST_SCALE_DIGITS, costScale, exactCostOf, roundUpCost } from './cost';
 export type { EchoProvider, EchoProviderInput } from './echo-provider';
 export { echoProvider } from './echo-provider';
 export type { Embedder, HashEmbedder, HashEmbedderInput } from './embeddings';
@@ -142,7 +143,7 @@ export type { HiveDef, HiveSplitArgs } from './hive';
 export { hive } from './hive';
 export { HiveEmptyError } from './hive-errors';
 export type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
-export type { LlmAction, LlmBudget, LlmDef, LlmVarsArgs } from './llm';
+export type { LlmAction, LlmBudget, LlmCall, LlmDef, LlmVarsArgs } from './llm';
 export { llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';

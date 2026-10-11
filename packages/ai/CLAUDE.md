@@ -24,7 +24,7 @@ one adds, the other adds.
 | `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts — and NO row of its own |
 | `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
 | `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`). Not shipped |
-| `provider.ts` | `Provider` interface, the request half, the money arithmetic, `anthropicProvider()` |
+| `provider.ts` | `Provider` interface, the request half, `anthropicProvider()` |
 | `echo-provider.ts` | `echoProvider()`, the deterministic double — split from `provider.ts` at its line ceiling |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
 | `content-errors.ts` | the `X_AI_CONTENT_UNSUPPORTED` class; its code and title belong in `errors.ts` |
@@ -59,7 +59,8 @@ one adds, the other adds.
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` | `agent()` — the tool loop, declared as an `action` |
-| `agent-def.ts` / `agent-system.ts` / `agent-usage.ts` | the declaration's types; the system one run sends; its running usage |
+| `agent-def.ts` / `agent-declared.ts` / `agent-system.ts` / `agent-usage.ts` | the declaration's types; its defaults, bound screen, limits and fact row; the system one run sends; its running usage |
+| `llm-def.ts` / `cost.ts` | `llm()`'s declaration types and `LlmCall`; the money arithmetic (`costOf`, `exactCostOf`) |
 | `agent-guards.ts` / `agent-errors.ts` | the repeated-turn detector and the run deadline; their two classes |
 | `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
@@ -97,6 +98,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
   negative `tokens` for a release — a store that clamps at zero leaks the ceiling.
 - A budget throws `X_AI_BUDGET_EXCEEDED` **before** the provider call. Never truncate. List price
   over-reserves.
+- **Cost is exact in bigint (`cost.ts`, `Money` at `costScale`), rounded UP once**: per call by
+  `costOf`, per ledger at `report()`, per run from the summed usage — never a sum of round-ups. A
+  price may state a `scale` (≤ `PRICE_SCALE_DIGITS` finer); it is always read through `minorAt`.
 - **`Gateway.stream` routes BEFORE it reserves**; `settled = true` comes after `ledger.record`.
 
 ## Invariants — `llm()`
@@ -167,20 +171,16 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
 - A tool call is emitted whole. Thinking chunks are never appended to `text`.
 - Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
   `output_config`. Model IDs are exact aliases, never date-suffixed.
-- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** No
-  default model, no catalogue row, no id list ships; the registry starts EMPTY and `resetModels()`
-  empties it. A model resolves declaration → prompt → `Gateway.defaultModel` through `resolveModel`
-  / `modelForCall` only; none is `X_AI_MODEL_UNRESOLVED` naming all three (with no gateway and nothing
-  declared, `X_AI_GATEWAY_MISSING` — the third place does not exist yet). `vendor-neutral.test.ts`
-  proves it in a fresh process; no fix line names a vendor id.
+- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** The
+  registry starts EMPTY; a model resolves declaration → prompt → `Gateway.defaultModel`
+  (`resolveModel` / `modelForCall`), none is `X_AI_MODEL_UNRESOLVED` (no gateway at all:
+  `X_AI_GATEWAY_MISSING`). `vendor-neutral.test.ts` proves it; no fix line names a vendor id.
 - **`ModelId` is `string`; the catalogue is an open registry** — `modelSpec(id)` refuses an
-  unregistered id (`X_AI_MODEL_UNKNOWN`, fix `registerModel(…)`) at `costOf`, the budget estimate and
-  the body builders, before a socket or a reservation. **Re-registering REPLACES the spec and keeps
-  its rung** (negotiated rates). **Registration order is the ladder within a `family`**, read only by
-  `moreCapableThan`, over the APP's rows; `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
-- **Every provider serves the app's list**: `anthropicProvider({ models })` / `openAiProvider({ models })`
-  require a non-empty one (`X_AI_REQUEST_INVALID`); `echoProvider().models` reads the registry. **No
-  provider has a model of its own**: a direct call naming none is `X_AI_MODEL_UNRESOLVED` from all three.
+  unregistered id (`X_AI_MODEL_UNKNOWN`) before a socket or a reservation. Re-registering REPLACES
+  the spec and keeps its rung; registration order is the ladder within a `family`
+  (`moreCapableThan`); `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
+- **Every provider serves the app's list** (`{ models }` required, non-empty); no provider has a
+  model of its own.
 - **The reasoning controls are PER MODEL (`models.ts`)**: an unasked control is omitted; an asked
   control the model lacks is `X_AI_REQUEST_INVALID`, never dropped. Adding a model is a row the app
   registers. `disableThinkingUpTo: 'never'` refuses `thinking: 'disabled'` at every effort;

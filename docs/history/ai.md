@@ -801,3 +801,22 @@ The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved
   **before** the provider call. Never truncate. List price over-reserves (no introductory prices).
 - **`Gateway.stream` routes BEFORE it reserves**, and `settled = true` comes after
   `await ledger.record(...)`.
+
+## Models and providers are the app's
+
+The full wording of three rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11).
+
+- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** No
+  default model, no catalogue row, no id list ships; the registry starts EMPTY and `resetModels()`
+  empties it. A model resolves declaration → prompt → `Gateway.defaultModel` through `resolveModel`
+  / `modelForCall` only; none is `X_AI_MODEL_UNRESOLVED` naming all three (with no gateway and nothing
+  declared, `X_AI_GATEWAY_MISSING` — the third place does not exist yet). `vendor-neutral.test.ts`
+  proves it in a fresh process; no fix line names a vendor id.
+- **`ModelId` is `string`; the catalogue is an open registry** — `modelSpec(id)` refuses an
+  unregistered id (`X_AI_MODEL_UNKNOWN`, fix `registerModel(…)`) at `costOf`, the budget estimate and
+  the body builders, before a socket or a reservation. **Re-registering REPLACES the spec and keeps
+  its rung** (negotiated rates). **Registration order is the ladder within a `family`**, read only by
+  `moreCapableThan`, over the APP's rows; `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
+- **Every provider serves the app's list**: `anthropicProvider({ models })` / `openAiProvider({ models })`
+  require a non-empty one (`X_AI_REQUEST_INVALID`); `echoProvider().models` reads the registry. **No
+  provider has a model of its own**: a direct call naming none is `X_AI_MODEL_UNRESOLVED` from all three.

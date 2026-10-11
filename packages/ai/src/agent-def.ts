@@ -104,8 +104,15 @@ export interface AgentTurn {
   readonly toolCalls: readonly string[];
   readonly stopReason: StopReason;
   readonly usage: TokenUsage;
-  /** This turn's cost alone, integer minor units — never the run's running total. */
+  /** This turn's cost alone, integer minor units, rounded up — never the run's running total. */
   readonly cost: Money;
+  /** This turn's cost exactly (`Money` at a finer `scale`); absent when the provider stated none. */
+  readonly costExact?: Money;
+  /**
+   * Set on a REPAIR turn: the schema issues of the previous turn's answer, which is what the
+   * model was told to fix before it produced this one. Absent on every other turn.
+   */
+  readonly repairOf?: readonly string[];
   /** The running total, this turn included — on the last turn, the whole run. */
   readonly run: AgentRunUsage;
 }

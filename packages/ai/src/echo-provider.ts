@@ -2,6 +2,7 @@
 // from ./provider, which owns the real Messages API, because a double and the socket it stands in
 // for are two jobs — and the request half had reached its line ceiling holding both.
 
+import { costOf, exactCostOf } from './cost';
 import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import { modelIds } from './models';
@@ -13,7 +14,7 @@ import type {
   StreamChunk,
   TokenUsage,
 } from './provider';
-import { costOf, estimateTextTokens, estimateTokens, messageText } from './provider';
+import { estimateTextTokens, estimateTokens, messageText } from './provider';
 
 export interface EchoProviderInput {
   /** Fixed replies keyed by the last user message, for eval fixtures. */
@@ -69,6 +70,7 @@ export class EchoProvider implements Provider {
       stopDetails: undefined,
       usage,
       cost: costOf(model, usage),
+      costExact: exactCostOf(model, usage),
     };
   }
 
