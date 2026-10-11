@@ -22,6 +22,11 @@ export interface MalformedToolCall {
   readonly name: string;
   /** Characters of argument text that arrived. */
   readonly chars: number;
+  /**
+   * The fragments carried neither an `index` nor an `id`, and more than one named a tool: two
+   * calls that cannot be told apart. Refused whole — never run as one call with merged arguments.
+   */
+  readonly unkeyed?: boolean;
 }
 
 /**
@@ -77,6 +82,7 @@ export function assertToolArguments(turn: {
     model: turn.model,
     tool: first.name,
     chars: first.chars,
+    unkeyed: first.unkeyed === true,
     billed: billedCall(turn.usage, turn.cost),
   });
 }

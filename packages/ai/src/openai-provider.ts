@@ -87,6 +87,7 @@ export function openAiProvider(input: OpenAiProviderInput): Provider {
 }
 
 class OpenAiProvider implements Provider {
+  readonly wire = 'openai' as const;
   readonly name: string;
   readonly models: readonly ModelId[];
   private readonly config: OpenAiProviderInput;

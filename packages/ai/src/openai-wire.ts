@@ -234,6 +234,8 @@ interface PendingCall {
   id: string;
   name: string;
   args: string;
+  /** A second NAMED fragment arrived with no index and no id: two calls, indistinguishable. */
+  unkeyed?: boolean;
 }
 
 /**
@@ -294,6 +296,11 @@ export class ChatCompletionStream {
     const chunks: StreamChunk[] = [];
     for (const pending of this.pending.splice(0).sort((a, b) => a.index - b.index)) {
       if (pending.name === '') continue;
+      if (pending.unkeyed === true) {
+        // Deliberate: merged arguments are never parsed, even when they happen to be JSON.
+        this.read.malformed.push({ name: pending.name, chars: pending.args.length, unkeyed: true });
+        continue;
+      }
       const call = collect(this.read, pending.id, pending.name, pending.args);
       if (call !== undefined) chunks.push({ type: 'tool-call', call });
     }
@@ -399,6 +406,18 @@ export class ChatCompletionStream {
       if (id !== undefined) call.id = id;
       const fn = asRecord(record['function']);
       const name = fn?.['name'];
+      // No index, no id, and a tool NAMED again after arguments already arrived: a second call
+      // this stream gives no way to tell from the first. A name split across frames arrives
+      // before any argument, so that legal case is not this one.
+      if (
+        index === undefined &&
+        id === undefined &&
+        call.args !== '' &&
+        name !== undefined &&
+        name !== ''
+      ) {
+        call.unkeyed = true;
+      }
       // Concatenated, not assigned: a server that splits the name across two frames is rare and
       // legal, and assigning would keep only the tail.
       if (typeof name === 'string') call.name += name;

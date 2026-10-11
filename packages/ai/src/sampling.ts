@@ -68,9 +68,19 @@ export function samplingBody(
 }
 
 /** The knobs a request asked for that no wire will send to `model` — what a span reports. */
-export function ignoredSampling(model: ModelId, request: Sampling): readonly string[] {
+export function ignoredSampling(
+  model: ModelId,
+  request: Sampling,
+  /** The wire formats of the providers serving `model`, when the gateway can say. */
+  wires?: readonly SamplingWire[],
+): readonly string[] {
   const accepts = modelSpec(model).sampling;
+  // A knob no serving wire has a word for is dropped too — `seed` on the Messages API.
+  const sendable = (knob: 'temperature' | 'seed'): boolean =>
+    wires === undefined ||
+    wires.length === 0 ||
+    wires.some((wire) => (WIRE_KNOBS[wire] as readonly string[]).includes(knob));
   return (['temperature', 'seed'] as const).filter(
-    (knob) => request[knob] !== undefined && accepts?.[knob] !== true,
+    (knob) => request[knob] !== undefined && (accepts?.[knob] !== true || !sendable(knob)),
   );
 }

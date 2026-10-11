@@ -131,8 +131,42 @@ export function sliceExports(source: string, name: string): boolean {
   const declared = new RegExp(
     `\\bexport\\s+(?:abstract\\s+)?(?:class|const|let|var|(?:async\\s+)?function|enum)\\s+${name}\\b`,
   );
-  return declared.test(code) || listedExports(code).includes(name);
+  return (
+    declared.test(code) || listedExports(code).includes(name) || destructured(code).includes(name)
+  );
 }
+
+/** The names an `export const { a, b: c } = …` declares — `a` and `c`, never `b`. */
+const destructured = (code: string): readonly string[] =>
+  [...code.matchAll(/\bexport\s+(?:const|let|var)\s*\{([^}]*)\}\s*=/g)].flatMap((match) =>
+    (match[1] ?? '')
+      .split(',')
+      .map((entry) => (entry.split(':').at(-1) ?? '').split('=')[0]?.trim() ?? '')
+      .filter((entry) => entry !== ''),
+  );
+
+const STAR = /\bexport\s*\*\s*from\s*['"]([^'"]+)['"]\s*;?/g;
+
+/**
+ * `source` with each `export * from '<specifier>'` replaced by the module `read` answers for it —
+ * ONE level, which is what a slice's barrel is. A specifier `read` cannot answer (a package, a
+ * missing file) is left as it stands, and that leftover is what `exportsUnknown` reports.
+ */
+export function inlineReexports(
+  source: string,
+  read: (specifier: string) => string | undefined,
+): string {
+  return stripComments(source).replace(STAR, (statement: string, specifier: string) => {
+    const inner = read(specifier);
+    // Its own `export *` lines are dropped rather than followed: one level, and a module that
+    // re-exports further is "cannot tell" only if THIS file still says so.
+    return inner === undefined ? statement : stripComments(inner).replace(STAR, '');
+  });
+}
+
+/** Whether `source` re-exports a module nobody read: what it exports cannot be known from here. */
+export const exportsUnknown = (source: string): boolean =>
+  /\bexport\s*\*\s*from\b/.test(stripComments(source));
 
 /** `    title: text({ max: 200 }),` — one column of an entity, as its name and its builder. */
 const COLUMN_LINE = /^ {4}([A-Za-z_$][\w$]*): ([A-Za-z_$][\w$]*)\(/gm;

@@ -58,7 +58,7 @@ import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
 import { runMeter } from './run-meter';
-import { aiGateway, aiRedactor } from './runtime';
+import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { Sampling } from './sampling';
 import { ignoredSampling, screenSampling } from './sampling';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
@@ -196,7 +196,11 @@ async function run<
       'agent.max_turns': maxTurns,
       'llm.redacted': rendered !== rawPrompt || !sameSystem(system, rawSystem),
       'llm.prompt_cache': promptCache !== undefined,
-      'llm.sampling.ignored': ignoredSampling(model, bounds.sampling).join(','),
+      'llm.sampling.ignored': ignoredSampling(
+        model,
+        bounds.sampling,
+        installedGateway()?.samplingWires?.(model),
+      ).join(','),
     });
 
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
@@ -224,6 +228,7 @@ async function run<
     // Every provider call below goes through the meter, so whatever ends the run — a ceiling, a
     // deadline, a truncated turn, the caller leaving — is thrown carrying what the run was billed.
     const meter = runMeter();
+    const disclosure = { discloseErrors: def.discloseToolErrors !== false };
     // Where a failure would resume from: the request in flight, and the turns answered so far.
     const at = { messages: [] as readonly AiMessage[], turns: prior?.turns ?? 0 };
     const loop = async (): Promise<InferOutput<TOutput>> => {
@@ -274,7 +279,7 @@ async function run<
           cost: result.cost,
           ...(result.costExact === undefined ? {} : { costExact: result.costExact }),
           ...(rejected === undefined ? {} : { repairOf: rejected }),
-          run: runTotal(result.model, prior?.usage, meter.total()),
+          run: runTotal(result.model, prior?.usage, meter.total(), meter.below()),
         });
         assertAnswerable(result, name, base);
         // Before a tool runs and before the answer is read: a turn cut off at the ceiling carries
@@ -305,7 +310,9 @@ async function run<
           const results: readonly LlmToolResult[] = await deadline.guard(
             // Inside the deadline's scope, so each tool's own `ctx.signal` carries it.
             deadline.scope(() =>
-              Promise.all(requested.map((call) => runLlmToolCall(adapted.tools, call, actor))),
+              Promise.all(
+                requested.map((call) => runLlmToolCall(adapted.tools, call, actor, disclosure)),
+              ),
             ),
           );
           calls += requested.length;
@@ -330,7 +337,7 @@ async function run<
         if (parsed.issues === undefined) {
           // Kept only for `.run()` / `.continue()`: a plain call leaves nothing behind.
           if (session !== undefined) {
-            const usage = runTotal(result.model, prior?.usage, meter.total());
+            const usage = runTotal(result.model, prior?.usage, meter.total(), meter.below());
             session.finished = {
               transcript: sealTranscript(binding, {
                 messages: [...messages, assistantTurn(result)],
@@ -364,7 +371,7 @@ async function run<
       throw new AgentMaxTurnsError({ agent: name, turns: maxTurns, calls });
     };
     return withBudget(ledger, () =>
-      loop().catch((error: unknown) => {
+      meter.within(loop).catch((error: unknown) => {
         const failed = meter.fail(error);
         // A failed `.run()` / `.continue()` leaves a handle too: the transcript up to the request
         // the failed turn was answering, with `turns` and `usage` counting what this call was

@@ -16,6 +16,7 @@ import { modelSpec, reasoningBody } from './models';
 import type { PromptCacheHint, SystemPrompt } from './prompt-cache';
 import { promptCacheRule, systemText } from './prompt-cache';
 import { anthropicPrompt } from './prompt-cache-blocks';
+import type { SamplingWire } from './sampling';
 import { samplingBody } from './sampling';
 import { readSse } from './sse';
 import { assertToolArguments } from './tool-arguments';
@@ -185,6 +186,8 @@ export interface Provider {
    * can happen.
    */
   marksPromptCache?(model: ModelId): boolean;
+  /** Which wire format this provider speaks, when it is one of the two built in (`./sampling`). */
+  readonly wire?: SamplingWire;
 }
 
 /** Total tokens a usage record accounts for — what a budget is debited by. */
@@ -239,6 +242,7 @@ export function anthropicProvider(input: AnthropicProviderInput): AnthropicProvi
  */
 export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
+  readonly wire = 'anthropic' as const;
   /** The app's list, never the registry's: a model served elsewhere must not be routed here. */
   readonly models: readonly ModelId[];
   private readonly config: AnthropicProviderInput;

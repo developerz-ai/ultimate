@@ -185,6 +185,8 @@ export async function runLlmToolCall(
   actions: readonly ProjectableAction[],
   call: LlmToolCall,
   actor: Actor,
+  /** `discloseErrors: false` withholds every in-process tool's refusal (`agent({ discloseToolErrors })`). */
+  options: { readonly discloseErrors?: boolean } = {},
 ): Promise<LlmToolResult> {
   const action = actions.find((a) => a.name === call.name && isOfferedTool(a));
   if (action === undefined) {
@@ -195,7 +197,8 @@ export async function runLlmToolCall(
     return resultOf(call.id, output);
   } catch (error) {
     // A policy denial is an outcome the model should read and react to, not a crash.
-    return { toolUseId: call.id, content: describeFailure(error, action), isError: true };
+    const content = describeFailure(error, action, options.discloseErrors !== false);
+    return { toolUseId: call.id, content, isError: true };
   }
 }
 
@@ -230,6 +233,13 @@ function resultOf(toolUseId: string, output: unknown): LlmToolResult {
 export const HIDDEN_TOOL_CAUSE =
   'the tool failed inside the server; the details are withheld from this conversation; the server log records its code and where it failed';
 
+/** The most of an in-process refusal's `cause` / `fix` a model is sent. */
+export const OWN_CAUSE_CHARS = 1_000;
+export const OWN_FIX_CHARS = 500;
+
+const clip = (text: string, chars: number): string =>
+  text.length <= chars ? text : `${text.slice(0, chars - 1)}…`;
+
 /**
  * `discloseFailure`'s verdict, rendered as the `tool_result` line — the same rule a hive member's
  * reason follows, so what an agent may read of a throw is decided once. An uncoded throw says only
@@ -238,17 +248,22 @@ export const HIDDEN_TOOL_CAUSE =
  * An in-process tool's OWN refusal is rendered as JSON — `{ error: { code, cause, fix } }` — the
  * structured form of the three authored fields, and nothing but them.
  */
-function describeFailure(error: unknown, tool: ProjectableAction): string {
+function describeFailure(error: unknown, tool: ProjectableAction, disclose: boolean): string {
   const logger = tryUseContext()?.logger;
   const where = `tool ${tool.name}`;
-  const own = tool.inProcess === true && tool.discloseErrors !== false;
+  const own = disclose && tool.inProcess === true && tool.discloseErrors !== false;
   const shown = own
     ? discloseOwnFailure(error, logger, where)
     : discloseFailure(error, logger, where);
   if (shown.code === undefined) return 'tool failed';
   if (own && shown.cause !== undefined) {
-    const { code, cause, fix } = shown;
-    return JSON.stringify({ error: { code, cause, ...(fix === undefined ? {} : { fix }) } });
+    // Bounded BEFORE it is serialised: the loop truncates a tool result at `maxToolResultChars`,
+    // and a cut through the middle of this JSON is a string the model cannot read.
+    const cause = clip(shown.cause, OWN_CAUSE_CHARS);
+    const fix = shown.fix === undefined ? undefined : clip(shown.fix, OWN_FIX_CHARS);
+    return JSON.stringify({
+      error: { code: clip(shown.code, 128), cause, ...(fix === undefined ? {} : { fix }) },
+    });
   }
   const line = `${shown.code}: ${shown.cause ?? HIDDEN_TOOL_CAUSE}`;
   return shown.fix === undefined ? line : `${line} (fix: ${shown.fix})`;

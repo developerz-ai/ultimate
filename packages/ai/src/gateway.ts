@@ -29,6 +29,7 @@ import { AiProviderUnavailableError } from './errors';
 import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
+import type { SamplingWire } from './sampling';
 
 /**
  * Response cache. Structurally satisfied by `@ultimat3/cache`'s memo/LRU tiers; declared as
@@ -83,6 +84,8 @@ export interface ProviderGatewayInput {
 }
 
 export interface Gateway {
+  /** The wire formats of the providers serving `model` — what `llm.sampling.ignored` is read from. */
+  samplingWires?(model: ModelId): readonly SamplingWire[];
   /**
    * The model a call with none declared runs on — `providerGateway({ defaultModel })`. Read by
    * `llm()` and `agent()` after the declaration and its prompt, so the app's choice is the one
@@ -272,6 +275,12 @@ class GatewayImpl implements Gateway {
       // reservation and it would hold the ceiling for the rest of the window.
       if (!settled) await ledger?.release(reservation);
     }
+  }
+
+  samplingWires(model: ModelId): readonly SamplingWire[] {
+    return this.config.providers
+      .filter((p) => p.models.includes(model))
+      .flatMap((p) => (p.wire === undefined ? [] : [p.wire]));
   }
 
   /** Whether any provider serving `model` would send a hinted request with a cache mark. */

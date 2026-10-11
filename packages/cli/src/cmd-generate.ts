@@ -33,6 +33,7 @@ import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 import { kebab, names, resolveLocales } from './templates';
 import { isEntityModule } from './templates/entity-module';
+import { inlineReexports } from './templates/slice-foundation';
 
 // One import path for the generator, unchanged by the split: `index.ts`, `x new` and the scaffold
 // fixture reach the kinds, the pure file list and the writer through this module, and a second path
@@ -91,7 +92,11 @@ export const generateCommand: CliCommand = {
     assertFeatureExists(root, kind, featureFlag, slice);
     const sliceErrors = await readSliceErrors(root, kind, slice);
     // And its `policy.ts`, for the same two kinds and the same reason: the action imports from it.
-    const slicePolicy = await readSliceErrors(root, kind, slice, 'policy.ts');
+    const slicePolicy = await followReexports(
+      root,
+      slice,
+      await readSliceErrors(root, kind, slice, 'policy.ts'),
+    );
     // Same reason again: whether `job`/`task` may assume the tenant-scoped shape is a fact about
     // THIS feature's own `entity.ts`/`repo.ts`, not a default the template gets to assume.
     const sliceEntity = await readSliceFile(root, kind, slice, 'entity.ts');
@@ -368,4 +373,26 @@ export async function readSliceFile(
   if (!READS_SLICE.has(kind)) return undefined;
   const file = containedPath(root, `${slice}/${name}`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
+}
+
+/**
+ * A slice module with its relative `export * from './x'` lines read in, one level deep — so a
+ * `policy.ts` that is a barrel is judged by what it really exports (`inlineReexports`).
+ */
+async function followReexports(
+  root: string,
+  slice: string,
+  source: string | undefined,
+): Promise<string | undefined> {
+  if (source === undefined) return undefined;
+  const found = new Map<string, string>();
+  for (const match of source.matchAll(/\bexport\s*\*\s*from\s*['"](\.[^'"]+)['"]/g)) {
+    const specifier = match[1] ?? '';
+    for (const candidate of [`${specifier}.ts`, `${specifier}/index.ts`, specifier]) {
+      const file = containedPath(root, `${slice}/${candidate}`);
+      if (!existsSync(file) || found.has(specifier)) continue;
+      found.set(specifier, await Bun.file(file).text());
+    }
+  }
+  return inlineReexports(source, (specifier) => found.get(specifier));
 }

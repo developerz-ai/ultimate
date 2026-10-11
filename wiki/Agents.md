@@ -196,7 +196,9 @@ export const kbRead = inProcessTool({
 | What sees it | the agents that list it. It is in no MCP catalogue, no HTTP route, no `openapi.json`, no manifest row |
 | Authorization | the **agent** is the operation with a policy. `execute` runs as `ctx.actor` inside it, exactly as code in the agent's own handler would; anything it reaches that needs its own authorization is an `action()` it calls, whose policy decides |
 | Its input | parsed by `input` before `execute` runs; arguments that fail read back to the model as `X_INPUT_INVALID` naming the fields |
-| Its refusals | an `UltimateError` it throws reaches the model as `{"error":{"code","cause","fix"}}` (row above); `discloseErrors: false` withholds them |
+| Its refusals | an `UltimateError` it throws reaches the model as `{"error":{"code","cause","fix"}}` (row above). `cause` is cut to 1,000 characters and `fix` to 500 **before** it is serialised, so `maxToolResultChars` never cuts the JSON mid-string |
+| What a refusal must not say | the `cause` and `fix` you write are sent to the model's provider, which keeps every request. **Never put another tenant's data, a row's contents or SQL in them** — name the id the model passed and what to do instead. The framework cannot check this: it is the app's own text |
+| Withholding them | one tool: `inProcessTool({ discloseErrors: false })`. Every in-process tool of one agent: `agent({ discloseToolErrors: false })`. Either way the model reads the code and a fixed sentence, as it does for a projected tool |
 
 ## An agent is a tool of another agent
 
@@ -438,6 +440,8 @@ export async function metered<T>(runId: string, run: () => Promise<T>): Promise<
 | `cost` | the price of `usage`, `Money`, rounded up once |
 | `calls` | how many calls answered |
 | `unsettled` | calls that were started and never reported usage — aborted by the caller or the deadline, cut mid-stream, failed in transport. **Their bill cannot be known**: a provider may charge for what it generated before the socket closed, and usage is the last thing a response carries. They are counted, never estimated, and their budget reservation is given back |
+
+A tool that itself calls `llm()` or another `agent()` spends under the run that called it: that spend is in `usage`, `calls` and `cost` here, in `onTurn`'s `run`, and in `AgentRun.usage` — including a nested call that failed and reached the model only as a tool error.
 
 It is the same on `X_LLM_TRUNCATED`, `X_LLM_REFUSED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID`, `X_AGENT_MAX_TURNS`, `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_ABORTED`, `X_AI_BUDGET_EXCEEDED` and a transport failure on a later turn. The ledger the run ran under holds the same settled figures. `meta` is operator-only: it is never in a problem document. A throw that is not an `UltimateError` (an `onTurn` that threw a `TypeError`) has no `meta` to carry it; the ledger still does.
 

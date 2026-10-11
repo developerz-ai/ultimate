@@ -48,7 +48,7 @@ import type { Respond } from './respond';
 import { parseJsonish, RESPOND, respondFor } from './respond';
 import type { RunMeter } from './run-meter';
 import { runMeter } from './run-meter';
-import { aiGateway, aiRedactor } from './runtime';
+import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { Sampling } from './sampling';
 import { ignoredSampling, screenSampling } from './sampling';
 
@@ -182,7 +182,11 @@ async function generate<
       // an audit asks evidence for, and a redactor that silently stopped matching looks identical
       // to one that had nothing to remove until this attribute separates them.
       'llm.redacted': redacted,
-      'llm.sampling.ignored': ignoredSampling(model, sampling).join(','),
+      'llm.sampling.ignored': ignoredSampling(
+        model,
+        sampling,
+        installedGateway()?.samplingWires?.(model),
+      ).join(','),
     });
 
     // A cached answer is still data of unknown provenance, so it goes through the schema like

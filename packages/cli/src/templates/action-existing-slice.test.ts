@@ -11,6 +11,7 @@
 import { describe, expect, test } from 'bun:test';
 import { INVOICE_ENTITY } from '../scaffold-fixture';
 import { actionFiles } from './action';
+import { inlineReexports, sliceExports } from './slice-foundation';
 
 const HANDWRITTEN_POLICY = `import { can } from '@ultimat3/policy';
 
@@ -113,5 +114,40 @@ describe('unit · x g action writes only what an action needs', () => {
     const paths = pathsOf(actionFiles('write-article', slice));
     expect(paths).toContain('apps/web/app/blog/policy.ts');
     expect(paths).toContain('apps/web/app/blog/policy.test.ts');
+  });
+});
+
+describe('unit · a policy.ts whose exports are not spelled one per line is not refused falsely', () => {
+  test('a destructured export declares its names', () => {
+    const destructured =
+      'const made = build();\nexport const { canBlogWrite, tag: blogTag } = made;\n';
+    expect(() =>
+      actionFiles('write-article', { ...slice, slicePolicy: destructured }),
+    ).not.toThrow();
+    expect(sliceExports(destructured, 'canBlogWrite')).toBe(true);
+    expect(sliceExports(destructured, 'blogTag')).toBe(true);
+    expect(sliceExports(destructured, 'tag')).toBe(false);
+  });
+
+  test('a barrel is followed one level: the re-exported module is read in its place', () => {
+    const barrel = "export * from './rules';\nexport { other } from './other';\n";
+    const files: Record<string, string> = { './rules': SCAFFOLD_POLICY };
+    const inlined = inlineReexports(barrel, (specifier) => files[specifier]);
+    expect(sliceExports(inlined, 'canBlogWrite')).toBe(true);
+    expect(() => actionFiles('write-article', { ...slice, slicePolicy: inlined })).not.toThrow();
+  });
+
+  test('a barrel this cannot follow is "cannot tell" — written, never refused on a guess', () => {
+    const opaque = "export * from '@acme/policies';\n";
+    const inlined = inlineReexports(opaque, () => undefined);
+    const files = actionFiles('write-article', { ...slice, slicePolicy: inlined });
+    expect(sourceOf(files, 'actions/write-article.ts')).toContain("from '../policy';");
+  });
+
+  test('a barrel that WAS followed and still lacks the names is refused', () => {
+    const inlined = inlineReexports("export * from './rules';\n", () => HANDWRITTEN_POLICY);
+    expect(() => actionFiles('write-article', { ...slice, slicePolicy: inlined })).toThrow(
+      'X_SLICE_POLICY_INCOMPLETE',
+    );
   });
 });

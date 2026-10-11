@@ -8,7 +8,12 @@ import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
 import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
-import { sliceExports, sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
+import {
+  exportsUnknown,
+  sliceExports,
+  sliceFoundation,
+  sliceTakesScaffoldRow,
+} from './slice-foundation';
 import { wrapImport } from './wrap';
 
 /**
@@ -441,7 +446,8 @@ function withoutOwned(
  */
 function assertPolicyExports(target: ActionOptions, feature: NameSet, isMutator: boolean): void {
   const source = target.slicePolicy;
-  if (source === undefined) return;
+  // A barrel re-exporting a module nobody could read: cannot tell, so never refused on a guess.
+  if (source === undefined || exportsUnknown(source)) return;
   const needed = [`can${feature.pascal}Write`, ...(isMutator ? [] : [`${feature.camel}Tag`])];
   const missing = needed.filter((name) => !sliceExports(source, name));
   if (missing.length === 0) return;

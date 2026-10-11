@@ -45,10 +45,15 @@ export class LlmToolArgumentsError extends UltimateError {
     tool: string;
     chars: number;
     billed: Billed;
+    /** Fragments with no index and no id: two calls merged, not one call broken. */
+    unkeyed?: boolean;
   }) {
     super({
       code: 'X_LLM_TOOL_ARGUMENTS_INVALID',
-      cause: `model "${input.model}" on provider "${input.provider}" finished its turn calling tool "${input.tool}" with ${input.chars} characters of arguments that are not JSON`,
+      cause:
+        input.unkeyed === true
+          ? `provider "${input.provider}" streamed tool-call fragments for model "${input.model}" with no index and no id, and more than one of them named a tool — the calls cannot be told apart, so none was run`
+          : `model "${input.model}" on provider "${input.provider}" finished its turn calling tool "${input.tool}" with ${input.chars} characters of arguments that are not JSON`,
       fix: `retry: { attempts: 2 }   # on the job that runs this call — the same request can succeed; if it repeats, shorten or split the string fields in the input schema of "${input.tool}", the place a model breaks JSON`,
       meta: {
         provider: input.provider,

@@ -2,7 +2,8 @@
 // continuations.
 
 import type { Money } from '@ultimat3/money';
-import { costOf, exactCostOf } from './cost';
+import type { Billed } from './billed';
+import { addMoney, costOf, exactCostOf, roundUpCost } from './cost';
 import type { ModelId } from './models';
 import type { GenerateResult, TokenUsage } from './provider';
 
@@ -49,6 +50,14 @@ export function runTotal(
   model: ModelId,
   prior: TokenUsage | undefined,
   own: { readonly usage: TokenUsage } | undefined,
+  /** What runs underneath were billed (`RunMeter.below`): another model's price, so ADDED, never re-priced. */
+  below?: Billed,
 ): AgentRunUsage {
-  return priced(model, plus(prior ?? ZERO, own?.usage ?? ZERO));
+  const base = priced(model, plus(prior ?? ZERO, own?.usage ?? ZERO));
+  if (below === undefined || below.cost.currency !== base.cost.currency) return base;
+  return {
+    usage: plus(base.usage, below.usage),
+    cost: addMoney(base.cost, roundUpCost(below.cost)),
+    costExact: addMoney(base.costExact, below.cost),
+  };
 }

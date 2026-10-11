@@ -59,6 +59,12 @@ export interface AgentDef<
    * of both.
    */
   readonly tools: readonly AgentTool[];
+  /**
+   * `false` withholds the refusals of EVERY in-process tool this agent runs, as a projected tool's
+   * are — for an agent whose transcript leaves the tenant it ran for. Default `true`; one tool
+   * opts out with `inProcessTool({ discloseErrors: false })`.
+   */
+  readonly discloseToolErrors?: boolean;
   /** Hard ceiling on model turns. Reaching it is `X_AGENT_MAX_TURNS`, never a partial answer. */
   readonly maxTurns?: number;
   readonly maxToolResultChars?: number;
