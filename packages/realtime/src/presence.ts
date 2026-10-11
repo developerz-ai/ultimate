@@ -93,6 +93,13 @@ export class PresenceRegistry {
     return this.#ttlMs;
   }
 
+  /** Rooms with a member this node has seen — what the next `sweepAll` will read the bus for. */
+  get rooms(): number {
+    let rooms = 0;
+    for (const members of this.#seen.values()) if (members.size > 0) rooms += 1;
+    return rooms;
+  }
+
   /** Recommended client heartbeat interval: one lost beat must not read as a leave. */
   get heartbeatMs(): number {
     return Math.max(1_000, Math.floor(this.#ttlMs / 3));

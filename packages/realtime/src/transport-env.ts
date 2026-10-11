@@ -165,6 +165,8 @@ export function selectTransport(
     presenceTtlMs,
     // Only a node that serves presence needs the bucket to exist before it can start.
     presenceBucket: use === 'sockets' ? 'dial' : 'first-use',
+    // A publisher without the bus is degraded and still serves; a node that serves FROM it is not.
+    outageLevel: use === 'publish' ? 'warn' : 'error',
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.connect === undefined ? {} : { connect: options.connect }),
     ...(options.backoff === undefined ? {} : { backoff: options.backoff }),

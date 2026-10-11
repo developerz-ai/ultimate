@@ -128,11 +128,11 @@ leaves `joining` on the node's first answer; nothing waits for app traffic.
 
 | State | Entered when | Left when |
 |---|---|---|
-| `joining` | the subscribe is sent (on hold, and again on every reconnect) | the node's answer: a `records` channel's `replay-gap` (a fresh seat) or the `records` frame at a current cursor; an `events` channel's roster — sent on every seat, an empty one from a node with no presence (24.0.0) |
+| `joining` | the subscribe is sent (on hold, and again on every reconnect); or the node refused it with `X_TRANSPORT_UNAVAILABLE` — its bus is away, which is its condition and not its verdict. The heartbeat re-asks every interval | the node's answer: a `records` channel's `replay-gap` (a fresh seat) or the `records` frame at a current cursor; an `events` channel's roster — sent on every seat, an empty one from a node with no presence (24.0.0) |
 | `catching-up` | a `replay-gap`, or a frame in a new epoch: the `catchUp` query is re-read, frames held behind it | the read lands → `live` (the held frames applied in order) |
 | `live` | as above | the socket drops → `offline`; a gap → `catching-up` |
 | `offline` | the page socket closed | it reopens → `joining` |
-| `failed` | the node refused the subscribe (`error()` is the coded refusal), or a catch-up read failed (retried on the client's curve, and on the next open) | a successful retry → `live` |
+| `failed` | the node **decided** against the subscribe — a policy denial, an undeclared channel, a cap (`error()` is the coded refusal; terminal until the socket reopens) — or a catch-up read failed (retried on the client's curve, and on the next open) | a successful retry → `live` |
 
 A channel declared with **neither** `records` nor `events` carries nothing, so nothing answers its
 join and it reads `joining` for as long as it is held.

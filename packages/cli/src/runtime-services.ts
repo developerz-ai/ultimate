@@ -80,6 +80,8 @@ export interface RunningServices {
    * (`runtime-bus.ts`). Optional for the reason `workerConfig` is: a hand-built runtime has none.
    */
   readonly busUse?: BusUse;
+  /** `x dev` booted without a bus its `sync` role needs: that role waits for it (`role-sync.ts`). */
+  readonly busTolerated?: boolean;
   /**
    * What the sync role must give `PresenceRegistry`. It travels with the transport because the KV
    * bucket's age limit was derived from it — a registry given a longer TTL than the bucket honours
@@ -327,6 +329,8 @@ export async function startServices(
    * `sync` node or a replicator does (`runtime-bus.ts`). Unset is the strictest reading.
    */
   roles?: readonly Role[],
+  /** `x dev`: a bus the realtime roles need is waited for in the background, never refused. */
+  dev = false,
 ): Promise<RunningServices> {
   // The app's config is loaded ONCE, here, first, and every section below is read out of that one
   // validated object — mail's `retainMime` is the first reader, so it is loaded before mail.
@@ -350,7 +354,7 @@ export async function startServices(
   // signs one probe — a deploy with no keys, or two halves of different pairs, refuses here.
   const push = await selectWebPush(config, env);
   const workerConfig = workerConfigOf(config, env);
-  const bus = selectBus({ env, realtime, roles, override: overrides?.transport });
+  const bus = selectBus({ env, realtime, roles, override: overrides?.transport, dev });
   // `env`, not the ambient one: this function is HANDED the boot's environment and every other
   // reader here already uses it, so a queue that asked `process.env` would decide the standby from
   // a different answer than the middleware that routes to it.
@@ -458,6 +462,7 @@ export async function startServices(
       rateLimitStore,
       transportDetail: running.detail,
       busUse: bus.use,
+      busTolerated: bus.tolerant,
       presenceTtlMs: bus.presenceTtlMs,
       purge,
       purgeDetail: cdn.detail,

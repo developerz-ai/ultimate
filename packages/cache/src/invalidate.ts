@@ -14,6 +14,7 @@ import {
 } from '@ultimat3/core';
 import { markAllInvalidated, markInvalidated } from './fence';
 import { dependentsOfKind, graphSnapshot } from './graph';
+import { logPartial, resetPartialLog } from './partial-log';
 import type { CacheTag } from './tags';
 import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
 import { isolateTierFailures, resetTierFailures } from './tier-failures';
@@ -117,6 +118,7 @@ export function resetTiers(): void {
   broadcast = undefined;
   invalidationLog.length = 0;
   resetTierFailures();
+  resetPartialLog();
 }
 
 /**
@@ -221,6 +223,8 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
 
     const tiers: TierInvalidation[] = [];
     const errors = options.errors;
+    /** Every tier that was asked and answered: what ends that tier's run of refusals. */
+    const cleared: string[] = [];
 
     // FARTHEST tier first. Near-to-far leaves the far tier holding the old value after the near
     // ones are clear, and a read racing the bust promotes it straight back up into them — the
@@ -228,6 +232,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     for (const tier of [...sortTiers(registry)].reverse()) {
       try {
         tiers.push(await tier.invalidateTags(tags));
+        cleared.push(tier.name);
       } catch (error) {
         // `renderThrowable`, never `error.message`: a tier is app-supplied, so the value it
         // rejects with is too, and both `instanceof` and `String()` RUN app code on it. A render
@@ -244,13 +249,16 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     const cdn = dependentsOfKind(tags, 'cdn-path');
     const liveQueries = dependentsOfKind(tags, 'live-query');
 
+    let isrFailed = false;
     for (const path of isr) {
       try {
         await revalidator?.(path);
       } catch (error) {
+        isrFailed = true;
         errors.push({ tier: 'isr', message: renderThrowable(error) });
       }
     }
+    if (isr.length > 0 && revalidator !== undefined && !isrFailed) cleared.push('isr');
 
     const wire = serializeTags(tags);
 
@@ -259,6 +267,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     if (emit && wire.length > 0 && broadcast !== undefined) {
       try {
         await broadcast(wire);
+        cleared.push('broadcast');
       } catch (error) {
         errors.push({ tier: 'broadcast', message: renderThrowable(error) });
       }
@@ -287,7 +296,8 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
       errors: report.errors,
     });
 
-    if (errors.length > 0) logger.warn('cache.invalidate.partial', { ...report });
+    // Thinned per failing tier (`partial-log.ts`): an outage is not one line per bust.
+    logPartial(report, cleared);
     return report;
   });
 }

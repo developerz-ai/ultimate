@@ -13,7 +13,6 @@ import {
   type Clock,
   finiteOption,
   isUltimateError,
-  logger,
   renderThrowable,
   systemClock,
 } from '@ultimat3/core';
@@ -25,6 +24,7 @@ import { DIAL_TIMEOUT_MS, landWithin, type NatsConnectWait } from './nats-dial-w
 import { ensureKvBucket } from './nats-jetstream';
 import { NatsKvSet } from './nats-kv';
 import { openNatsClient } from './nats-open';
+import { NatsReports } from './nats-reports';
 import { NatsSubscriptions } from './nats-subscriptions';
 import { type BackoffPolicy, defaultBackoff, policyDelay, type Rng } from './thundering-herd';
 
@@ -53,6 +53,12 @@ export interface NatsTransportOptions {
   readonly presenceBucket?: 'dial' | 'first-use';
   /** One dial's connect timeout. Default `DIAL_TIMEOUT_MS`. */
   readonly dialTimeoutMs?: number;
+  /**
+   * The level an OUTAGE is logged at. `'error'` (the default) is a process that cannot do its job
+   * without the bus — a `sync` node, a replicator. `'warn'` is one that only publishes: degraded,
+   * and still serving. A subscriber that throws is an `error` under either.
+   */
+  readonly outageLevel?: 'warn' | 'error';
 }
 
 const DEFAULT_ATTEMPTS = 10;
@@ -83,6 +89,8 @@ export class NatsTransport implements Transport {
   /** The last background dial's own refusal, for the cause of a `connect({ withinMs })` that gave up. */
   #lastFailure: string | undefined;
   #wakeRedial: (() => void) | undefined;
+  /** Where background failures go: a fault every time, an outage thinned (`nats-reports.ts`). */
+  readonly #reports: NatsReports;
   readonly #subscriptions = new NatsSubscriptions();
   readonly #reconnectListeners = new Set<() => void>();
 
@@ -91,6 +99,11 @@ export class NatsTransport implements Transport {
     // a container that reports itself healthy on one is a container nothing will ever page about.
     parseNatsUrl(options.url);
     this.#options = options;
+    this.#reports = new NatsReports({
+      transport: this.name,
+      onError: options.onError,
+      outageLevel: options.outageLevel ?? 'error',
+    });
     this.#connect = options.connect ?? openNatsClient;
     this.#backoff = options.backoff ?? defaultBackoff;
     this.#attempts = finiteOption(
@@ -186,7 +199,7 @@ export class NatsTransport implements Transport {
         try {
           handler(decoder.decode(message.payload), message.subject);
         } catch (error) {
-          this.#report(error, message.subject);
+          this.#reports.fault(error, message.subject);
         }
       },
       (call) => this.#translating(`subscribe to ${subject}`, call),
@@ -271,7 +284,7 @@ export class NatsTransport implements Transport {
       // The library retries; the spread is ours, so a cluster restart does not bring every node
       // back on the same millisecond.
       reconnectDelay: () => policyDelay(this.#backoff, ++this.#retries, this.#rng),
-      onError: (error) => this.#report(error, this.name),
+      onError: (error) => this.#reports.outage(error),
       onReconnect: () => this.#recovered(),
       onClosed: () => {
         if (opened === undefined) closedEarly = true;
@@ -324,12 +337,12 @@ export class NatsTransport implements Transport {
     if (this.#closed || this.#client !== client) return;
     this.#client = undefined;
     this.#subscriptions.orphan();
-    this.#report(
+    this.#reports.outage(
       new TransportUnavailableError({
         transport: this.name,
         reason: 'the connection closed once its reconnect budget was spent; re-dialling',
       }),
-      this.name,
+      true,
     );
     void this.#redial();
   }
@@ -353,9 +366,10 @@ export class NatsTransport implements Transport {
         try {
           const client = await this.#dialOnce();
           this.#lastFailure = undefined;
+          this.#reports.recovered();
           // Coded like a first subscribe's refusal; the subscription stays kept for the next client.
           for (const failure of this.#subscriptions.bindAll(client)) {
-            this.#report(
+            this.#reports.fault(
               this.#coded(`re-subscribe to ${failure.subject}`, failure.error),
               failure.subject,
             );
@@ -364,9 +378,9 @@ export class NatsTransport implements Transport {
         } catch (error) {
           if (this.#closed) return;
           this.#lastFailure = renderThrowable(error);
-          // Attempts 1, 2, 4, 8, …: an outage is said at once and then ever more rarely, rather
-          // than once per dial per pod for as long as it lasts.
-          if ((attempt & (attempt - 1)) === 0) this.#report(error, this.name);
+          // Thinned (`#outage`): said at once and then ever more rarely, rather than once per
+          // dial per pod for as long as it lasts.
+          this.#reports.outage(error);
           await this.#pause(policyDelay(this.#backoff, attempt, this.#rng));
         }
       }
@@ -413,10 +427,11 @@ export class NatsTransport implements Transport {
     this.#retries = 0;
     const client = this.#client;
     if (client === undefined) return;
+    this.#reports.recovered();
     // Not awaited: the library calls this from its status loop. The failure has one place to go.
     // A lazy bucket is forgotten instead, and asserted again by whoever next reads `shared`.
     if (this.#lazyBucket) this.#bucketed.delete(client);
-    else void this.#ensureBucket(client).catch((error: unknown) => this.#report(error, this.name));
+    else void this.#ensureBucket(client).catch((error: unknown) => this.#reports.outage(error));
     this.#announce();
   }
 
@@ -425,7 +440,7 @@ export class NatsTransport implements Transport {
       try {
         listener();
       } catch (error) {
-        this.#report(error, this.name);
+        this.#reports.fault(error, this.name);
       }
     }
   }
@@ -450,35 +465,6 @@ export class NatsTransport implements Transport {
     return new TransportUnavailableError({
       transport: this.name,
       reason: `${what} was refused: ${renderThrowable(error)}`,
-    });
-  }
-
-  /**
-   * Every background failure lands here — a lost connection, a throwing subscriber, an exhausted
-   * reconnect. Dropping it when the caller passed no handler is what turns "no changes arrive"
-   * into a debugging session with nothing to read, so the default emits rather than swallows.
-   */
-  #report(error: unknown, subject: string): void {
-    const handler = this.#options.onError;
-    if (handler !== undefined) {
-      // Total: the handler is injected, and its throw would land in whatever called this — the
-      // dial loop (started with `void`: an unhandled rejection and no more retries), the
-      // library's status loop, a subscriber's delivery. A reporter that cannot report is not a
-      // reason to stop dialling; the fault falls through to the logger line below.
-      try {
-        handler(error, subject);
-        return;
-      } catch (thrown) {
-        logger.error('nats transport onError threw', { error: renderThrowable(thrown) });
-      }
-    }
-    logger.error('nats transport error', {
-      transport: this.name,
-      subject,
-      code: isUltimateError(error) ? error.code : undefined,
-      // `renderThrowable`, never `String(error)`: this is a reporter, and a throwable that fights
-      // being read makes the report the thing that throws.
-      error: renderThrowable(error),
     });
   }
 }

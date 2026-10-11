@@ -4,7 +4,7 @@
 // scheduler pod that restarted while NATS was down never got past boot.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { frozenClock, isUltimateError, setLogSink } from '@ultimat3/core';
 import type { NatsClient, NatsConnect } from './nats-client';
 import { DIAL_TIMEOUT_MS } from './nats-dial-wait';
 import { FakeNatsBroker, fakeNatsConnect } from './nats-fake';
@@ -240,6 +240,66 @@ describe('NatsTransport, the dial loop at its edges', () => {
     expect(bus.reported.length).toBeLessThanOrEqual(powers);
     expect(bus.reported.every((error) => codeOf(error) === 'X_TRANSPORT_UNAVAILABLE')).toBe(true);
   });
+
+  // The LEVEL is the role's: a process that only publishes is degraded and still serving, so its
+  // outage is a warning; a node that serves from the bus cannot do its job, so its is an error.
+  // Either way an outage is 1, 2, 4, 8, … lines and ONE more when the bus answers.
+  for (const [outageLevel, quiet] of [
+    ['warn', 'error'],
+    ['error', 'warn'],
+  ] as const) {
+    test(`an outage is logged at ${outageLevel}, thinned, and ended by one "recovered after N" line`, async () => {
+      const lines: { level: string; msg: string; fields: Record<string, unknown> }[] = [];
+      const previous = setLogSink((line, level) => {
+        const { msg, ...fields } = JSON.parse(line) as { msg: string } & Record<string, unknown>;
+        if (msg.startsWith('nats transport')) lines.push({ level, msg, fields });
+      });
+      // Built here, not by the harness: this one has NO `onError`, so the logger line is the sink.
+      const broker = new FakeNatsBroker();
+      broker.offline = true;
+      const open = fakeNatsConnect(broker);
+      let attempts = 0;
+      const bus = { attempts: () => attempts };
+      const transport = new NatsTransport({
+        url: 'nats://bus.test:4222',
+        bucket: 'x-test',
+        backoff: { baseMs: 0, maxMs: 0, factor: 1, jitter: 'none' },
+        connect: async (options) => {
+          attempts += 1;
+          return open(options);
+        },
+        outageLevel,
+      });
+      try {
+        transport.connectInBackground();
+        await waitFor(() => bus.attempts() >= 20);
+        broker.offline = false;
+        await waitFor(() => transport.connected);
+        await waitFor(() => lines.some((line) => line.msg === 'nats transport recovered'));
+
+        const failed = lines.filter((line) => line.msg === 'nats transport error');
+        const said = failed.map((line) => line.fields['failures']);
+        // Every failed dial counted, and only the powers of two among them written.
+        const after = bus.attempts() - 1;
+        expect(after).toBeGreaterThanOrEqual(20);
+        expect(said).toEqual(
+          [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024].filter((failures) => failures <= after),
+        );
+        expect(failed.every((line) => line.level === outageLevel)).toBe(true);
+        expect(lines.filter((line) => line.level === quiet)).toEqual([]);
+        expect(lines.filter((line) => line.msg === 'nats transport recovered')).toEqual([
+          {
+            level: 'info',
+            msg: 'nats transport recovered',
+            fields: expect.objectContaining({ transport: 'nats', after }),
+          },
+        ]);
+      } finally {
+        setLogSink(previous);
+        await transport.close();
+      }
+    });
+  }
 
   test('a dial is given a connect timeout below the boot wait, so a black hole is an attempt that ends', async () => {
     const seen: (number | undefined)[] = [];

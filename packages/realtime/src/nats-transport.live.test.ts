@@ -12,6 +12,7 @@ import { parseNatsUrl } from './nats-client';
 import { kvGet } from './nats-jetstream';
 import { encodeToken } from './nats-kv';
 import { openNatsClient } from './nats-lib-client';
+import { relayTo, throughRelay } from './nats-relay-fixture';
 import { NatsTransport } from './nats-transport';
 
 const url = Bun.env['TEST_NATS_URL'];
@@ -32,74 +33,6 @@ const transport = (): NatsTransport => {
 afterAll(async () => {
   for (const created of started) await created.close();
 });
-
-interface Leg {
-  /** The far side of this connection, once it is open. */
-  peer: { write(bytes: Uint8Array): number; end(): void } | undefined;
-  /** Bytes that arrived before the far side opened. */
-  readonly early: Uint8Array[];
-}
-
-/**
- * A TCP relay in front of the real server, so a test can cut a connection without touching the
- * server: the container is shared, and stopping it is not this file's to do. `cut()` ends every
- * relayed connection the way a network partition does — both halves, no goodbye.
- */
-async function relayTo(
-  host: string,
-  port: number,
-  /** Listen on this port rather than a fresh one: a relay "restarted" where the client dials. */
-  listenOn = 0,
-): Promise<{ port: number; cut(): void; stop(): void }> {
-  const clients = new Set<{ end(): void }>();
-  const listener = Bun.listen<Leg>({
-    hostname: '127.0.0.1',
-    port: listenOn,
-    socket: {
-      open(client) {
-        client.data = { peer: undefined, early: [] };
-        clients.add(client);
-        // Not awaited: `open` is synchronous, and the server speaks first (INFO) once this lands.
-        void Bun.connect<Leg>({
-          hostname: host,
-          port,
-          socket: {
-            open(upstream) {
-              upstream.data = { peer: client, early: [] };
-              client.data.peer = upstream;
-              for (const bytes of client.data.early.splice(0)) upstream.write(bytes);
-            },
-            data(_upstream, bytes) {
-              client.write(bytes);
-            },
-            close() {
-              client.end();
-            },
-            error() {
-              client.end();
-            },
-          },
-        }).catch(() => client.end());
-      },
-      data(client, bytes) {
-        // Copied: the runtime reuses the chunk's buffer once this handler returns.
-        if (client.data.peer === undefined) client.data.early.push(Uint8Array.from(bytes));
-        else client.data.peer.write(bytes);
-      },
-      close(client) {
-        clients.delete(client);
-        client.data.peer?.end();
-      },
-    },
-  });
-  return {
-    port: listener.port,
-    cut: () => {
-      for (const client of [...clients]) client.end();
-    },
-    stop: () => listener.stop(true),
-  };
-}
 
 describe.skipIf(url === undefined)('NatsTransport against a real nats-server', () => {
   test('connects, and creates the KV bucket when the cluster has none', async () => {
@@ -187,14 +120,8 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
   test('a connection the library re-establishes is announced, and its subscriptions survive', async () => {
     const target = parseNatsUrl(url ?? '');
     const relay = await relayTo(target.host, target.port);
-    const credentials =
-      target.token !== undefined
-        ? `${encodeURIComponent(target.token)}@`
-        : target.user !== undefined && target.pass !== undefined
-          ? `${encodeURIComponent(target.user)}:${encodeURIComponent(target.pass)}@`
-          : '';
     const bus = new NatsTransport({
-      url: `nats://${credentials}127.0.0.1:${relay.port}`,
+      url: throughRelay(url ?? '', relay.port),
       bucket: BUCKET,
       // Zero, and it has to be: the library redials a server once `lastConnect + wait <= Date.now()`,
       // and the test preload freezes `Date.now()` — any positive wait is never reached.
@@ -234,15 +161,9 @@ describe.skipIf(url === undefined)('NatsTransport against a real nats-server', (
   test('a connection the library gave up on is re-dialled, and its subscriptions come back', async () => {
     const target = parseNatsUrl(url ?? '');
     const relay = await relayTo(target.host, target.port);
-    const credentials =
-      target.token !== undefined
-        ? `${encodeURIComponent(target.token)}@`
-        : target.user !== undefined && target.pass !== undefined
-          ? `${encodeURIComponent(target.user)}:${encodeURIComponent(target.pass)}@`
-          : '';
     const reported: string[] = [];
     const bus = new NatsTransport({
-      url: `nats://${credentials}127.0.0.1:${relay.port}`,
+      url: throughRelay(url ?? '', relay.port),
       bucket: BUCKET,
       // One attempt, so the budget is spent in milliseconds; zero wait for the frozen `Date.now()`.
       maxReconnectAttempts: 1,

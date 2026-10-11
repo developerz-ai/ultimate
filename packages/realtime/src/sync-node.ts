@@ -27,6 +27,7 @@ import { idleSweepPeriodMs } from './socket-idle';
 import { actorChangeHandler } from './sync-actor-change';
 import { GrantBook, sweepGrants } from './sync-auth';
 import { changeHandler, ProducerKinds, reconnectHandler } from './sync-bus-handlers';
+import { busOutage } from './sync-bus-outage';
 import { ackRefOf, frameRouter } from './sync-frames';
 import {
   clientHeartbeatMs,
@@ -73,6 +74,7 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
   const gaps = new SeqGapDetector();
   // Kept across restarts of the bus subscription: a table's producer kind is a fact of the fleet.
   const producers = new ProducerKinds();
+  const outage = busOutage();
   const channelSids = new ChannelSids();
   let reconnects: (() => void) | null = null;
   /** The re-auth pass in flight, shared by every tick that lands while it runs. */
@@ -145,7 +147,7 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
         const leave = presence.leave(name, socket.id);
         // Detached as well as returned: `detach` attaches the reporting catch, so a caller that
         // awaits this later is awaiting a promise whose rejection is already handled.
-        detach(leave, 'presence.leave', name);
+        outage.detach(leave, 'presence.leave', name);
         leaves.push(leave);
       }
     }
@@ -237,13 +239,14 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
     buildId: options.buildId,
     presence,
     channelSids,
+    busAnswered: outage.answered,
     heartbeatMs: clientHeartbeatMs(presence?.heartbeatMs, sockets.idleTimeoutMs),
   });
 
   /** Everything `start()` does, fenced on the generation it began under — see `started`. */
   const begin = async (): Promise<void> => {
     const run = generation;
-    const bus = { registry: options.registry, hub: options.hub, gaps, producers };
+    const bus = { registry: options.registry, hub: options.hub, gaps, producers, outage };
     const subscription = await options.transport.subscribe(CHANGE_SUBJECT_ALL, changeHandler(bus));
     // A stop or drain ran inside that await: what it released did not include this yet.
     if (run !== generation) {
@@ -255,10 +258,7 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
     // One pass per heartbeat window: a member is swept only once it has actually missed its
     // window, and the interval never holds the process open — shutdown is the drain's job.
     if (presence) {
-      sweeping = setInterval(
-        () => detach(presence.sweepAll(), 'presence.sweep'),
-        presence.heartbeatMs,
-      );
+      sweeping = setInterval(() => outage.sweep(presence), presence.heartbeatMs);
       sweeping.unref();
     }
     // The half-open connection Bun's own `idleTimeout` renews through its ping/pong: a client
@@ -409,7 +409,7 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
           } catch (error) {
             // The ack frame tells the client what it did wrong; the monitor only hears about what
             // this node did wrong. Same rule the HTTP pipeline applies at `status >= 500`.
-            if (!isClientFault(error)) {
+            if (!outage.refused(error, 'sync.frame') && !isClientFault(error)) {
               reportError(error, {
                 source: 'realtime',
                 scope: { operation: 'sync.frame', extra: { socketId: socket.id } },

@@ -26,6 +26,7 @@ import {
 import { neighbouringPort, PORT_RANGE, portPairAfter } from './flag-number';
 import { portFree } from './port-probe';
 import type { StartRolesOptions } from './role-start';
+import { startOrWaitForBus } from './role-sync-bus-wait';
 import type { Env } from './runtime-bindings';
 import { syncAuthenticator } from './sync-authenticator';
 import { syncOriginsFrom } from './sync-url';
@@ -327,14 +328,17 @@ export async function prepareSync(options: StartRolesOptions): Promise<PreparedS
       ttlMs: options.runtime.presenceTtlMs,
     }),
   });
-  await node.start();
+  const stopWaiting = await startOrWaitForBus(node, options.runtime);
   return {
     node,
     registry,
     // The node's OWN path, asked rather than restated: `SyncNodeOptions.path` is settable and a
     // second copy of `/_x/sync` here is the copy that stays behind when it moves.
     mount: { path: node.path, fetch: node.fetch, websocket: node.websocket },
-    stop: () => node.stop(),
+    stop: async () => {
+      stopWaiting();
+      await node.stop();
+    },
     listen: async (appUrl) => {
       origins.push(...devOrigins(options, origins, appUrl));
       return await listen(options, node, { registry, hub }, appUrl);
