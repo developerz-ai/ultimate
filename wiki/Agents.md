@@ -194,7 +194,7 @@ There is no JSON mode and no `response_format`. `output` is projected into one t
 | Validation fails | the failure is fed back as a message naming the issues, and the loop takes **another turn** — unlike `llm()`, which gets exactly one repair |
 | Every turn used, and the last failure was a shape | `X_LLM_OUTPUT_INVALID`, naming the attempts and the issues |
 | Every turn used, and the loop kept calling tools | `X_AGENT_MAX_TURNS`, naming the turns and the tool-call count |
-| A repair turn hit its `maxTokens` | `X_LLM_TRUNCATED` |
+| Any turn stops at its `maxTokens` (or the context window) | `X_LLM_TRUNCATED`, before a tool runs and before the answer is validated: a cut-off `respond` call reads as `{}`, which an `output` of optional keys would accept |
 | The provider refused | `X_LLM_REFUSED`, carrying `stopDetails.category` and naming a more capable model |
 
 Two exhaustions, two codes, on purpose: a loop that kept calling tools and never answered is not the same event as one that answered the wrong shape every time.
@@ -581,7 +581,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | `X_AGENT_DEADLINE` | the run outlived its declared `deadlineMs` | `deadlineMs: 300_000` on the agent, once a trace shows the run converging; otherwise lower `maxTurns` |
 | `X_LLM_OUTPUT_INVALID` | every turn's answer failed the `output` schema | describe the shape in the template and bump its version, or widen `output` |
 | `X_LLM_REFUSED` | the provider's classifiers declined; `stopDetails.category` names why | set `model:` to the more capable one the thrown `fix:` names, or edit the template and bump its version |
-| `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing | raise `maxTokens:` on the declaration, or drop fields from `output` |
+| `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing — read before the answer, so nothing truncated is ever validated or run | raise `maxTokens:` on the declaration, or drop fields from `output` |
 | `X_HIVE_EMPTY` | `split()` produced zero members | return at least one member input, or guard the call site |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains | raise that scope's ceiling, or shorten the prompt |
 | `X_AI_PROMPT_SECRET` | `vars()` returned a `Secret` | drop the key from `vars()` and the template, or `revealSecret(value)` if the model genuinely has to read it |

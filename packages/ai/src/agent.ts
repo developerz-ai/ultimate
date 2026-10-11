@@ -304,6 +304,17 @@ async function run<
           run: total,
         });
         assertAnswerable(result, name, base);
+        // Before a tool runs and before the answer is read: a turn cut off at the ceiling carries
+        // arguments that stop wherever the ceiling fell — `{}` on both wires for a call that never
+        // reached its first byte — so running a tool on them is a side effect the model did not
+        // ask for, and validating them accepts an empty answer for any `output` of optional keys.
+        if (isTruncated(result.stopReason)) {
+          throw new LlmTruncatedError({
+            prompt: name,
+            maxTokens: base.maxTokens,
+            subject: SUBJECT,
+          });
+        }
 
         if (requested.length > 0) {
           // Concurrent, and deliberately unbounded WITHIN one turn: the batch is what a single
@@ -346,9 +357,6 @@ async function run<
         // A wrong shape gets another turn like any other, because unlike `llm()` this loop has
         // turns left by construction — and unlike a tool result, the correction is the message.
         issues = formatIssues(parsed.issues).join('; ');
-        if (isTruncated(result.stopReason)) {
-          throw new LlmTruncatedError({ prompt: name, maxTokens: base.maxTokens });
-        }
         messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];
       }
 

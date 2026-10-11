@@ -9,18 +9,13 @@ does), `jobs` (`agentJob()`), `money`, `policy`, `schema`, `time`.
 
 `jobs` is declared for `agentJob()`: the action→job bridge has to live at tier 4+.
 
-`mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`
-rather than imported. Same contract, two wire formats — and the same *decision*: `toLlmTools` and
-`runLlmToolCall` ask `isMcpExposed` from `@ultimat3/core` (tier 0, reachable by both), never a
-local `=== true`. An in-app agent and an external one must be offered exactly the same tools.
-
-**And the same NAME**: `toLlmTool` passes `action.name` through untouched (the export name
-`@ultimat3/mcp` serves); `llm()` and `agent()` tool names are verbatim too. Never derive one.
-
-**And the same TOOL**: `asProjectableAction` and mcp's `primitiveFromAction` are two copies the
-tier table forces; `scripts/ai-mcp-tool-parity.test.ts` holds them equal — name, description,
-exposure, the whole input schema (an idempotent action's reserved `idempotencyKey` argument,
-`tool-idempotency.ts`), the policy verdict and the replay. A field one adds, the other adds.
+`mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`, never
+imported: same contract, same *decision* (`isMcpExposed` from `@ultimat3/core`, never a local
+`=== true`), same NAME (`action.name` verbatim, never derived) and the same TOOL —
+`asProjectableAction` and mcp's `primitiveFromAction` are two copies the tier table forces, held
+equal by `scripts/ai-mcp-tool-parity.test.ts` (name, description, exposure, the whole input schema
+incl. `tool-idempotency.ts`'s reserved `idempotencyKey`, the policy verdict, the replay). A field
+one adds, the other adds.
 
 ## Owns
 
@@ -57,7 +52,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
 | `tool-idempotency.ts` | an idempotent action's reserved `idempotencyKey` tool argument — MCP's, restated (same tier), held equal by the parity test |
-| `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged as code, name and stack frames — never its message or cause |
+| `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged, never its message or cause |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
@@ -67,7 +62,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
-| `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish: nothing reads it yet, because `manifest` is tier 4 like this package and the consumer has to be `cli` at tier 5 |
+| `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish (its consumer has to be `cli`, tier 5) |
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
 | `hive.ts` | `hive()` — one action fanned out over many inputs, declared as an `action` |
 | `hive-result.ts` | `HiveMember` / `HiveResult`, and the SCHEMA built from the member's own `output` |
@@ -116,7 +111,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   `indexOf` scans, never a backtracking pattern.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts`).
 - One repair turn, then `X_LLM_OUTPUT_INVALID`. A refusal (a 200 with no answer) is `X_LLM_REFUSED`
-  before the parse, carrying `stopDetails.category`; a truncated invalid answer is `X_LLM_TRUNCATED`.
+  before the parse, carrying `stopDetails.category`; a truncated turn is `X_LLM_TRUNCATED` before
+  the schema AND before any tool runs (a cut `respond` reads `{}`).
   The gateway never caches a refusal.
 - **Semantic scopes are separate cache INSTANCES**; the instance key carries the prompt hash AND
   `ctx.locale` (in the unconditional half). **The default scope is the calling ACTOR**

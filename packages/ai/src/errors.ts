@@ -296,21 +296,27 @@ export class LlmRefusedError extends UltimateError {
 }
 
 /**
- * The answer was cut off at the enforced ceiling and what arrived does not satisfy the schema.
- * Thrown instead of the repair turn on purpose: the ceiling does not move between attempts, so
- * a second answer truncates at exactly the same place and only spends money.
+ * The answer was cut off at the enforced ceiling. Thrown BEFORE the answer is read, and instead of
+ * a repair turn: a cut-off `respond` call arrives with no arguments, which both wires read as `{}`
+ * and an `output` of optional keys accepts — and the ceiling does not move between attempts, so a
+ * second answer truncates at exactly the same place and only spends money.
  */
 export class LlmTruncatedError extends UltimateError {
-  constructor(input: { prompt: string; maxTokens: number }) {
+  constructor(input: {
+    prompt: string;
+    maxTokens: number;
+    /** The factory whose declaration carries the ceiling. */
+    subject?: 'llm' | 'agent';
+  }) {
     super({
       code: 'X_LLM_TRUNCATED',
       cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
-      fix: `set maxTokens: ${input.maxTokens * 2} on the llm() declaration, or drop fields from its output schema`,
+      fix: `set maxTokens: ${input.maxTokens * 2} on the ${input.subject ?? 'llm'}() declaration, or drop fields from its output schema`,
+      meta: { prompt: input.prompt, maxTokens: input.maxTokens },
     });
   }
 }
 
-/** A prompt was requested at a version whose content hash does not match the registry. */
 export class AiPromptVersionError extends UltimateError {
   constructor(input: { id: string; requested: string; available: readonly string[] }) {
     super({

@@ -298,15 +298,17 @@ async function generate<
             explanation: result.stopDetails?.explanation,
           });
         }
+        // Cut off, so there is no answer to read — and it is read BEFORE the schema for the reason
+        // the refusal is: a `respond` call stopped at the ceiling arrives with no arguments, both
+        // wires read that as `{}`, and `{}` SATISFIES an `output` whose keys are optional. The
+        // ceiling is the same on the next attempt, so the repair turn is a second truncation.
+        if (isTruncated(result.stopReason)) {
+          throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
+        }
         const parsed = await validateAsync(def.output, respond.read(result));
         if (parsed.issues === undefined) {
           await cache?.remember(parsed.value);
           return parsed.value;
-        }
-        // A cut-off answer that also fails its schema is not a disagreement about the shape: the
-        // ceiling is the same on the next attempt, so the repair turn is a second truncation.
-        if (isTruncated(result.stopReason)) {
-          throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
         }
         issues = formatIssues(parsed.issues).join('; ');
         const echo = assistantEcho(result);

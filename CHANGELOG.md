@@ -8,7 +8,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+Tier 4 â€” ai.
+
+- **A cut-off answer is `X_LLM_TRUNCATED` before it is read, never an empty success.** `llm()` and `agent()` validated the answer first and looked at the stop reason only when validation failed. A `respond` call stopped at the output ceiling arrives with no arguments, which both wire formats read as `{}`, and `{}` satisfies any `output` whose keys are all optional: the run returned an empty object and was billed. A turn whose stop reason is `max_tokens` (chat-completions `length`, or a reason this build does not know) or `model_context_window_exceeded` now throws `X_LLM_TRUNCATED` before the schema runs, on both wires, streamed or not. **What changes for a caller:** a truncated answer that happened to validate used to be returned and is now refused; and an `agent()` turn cut off while it was asking for tools is refused too, where it used to run those tools on whatever arguments had arrived (`{}` for a call that never reached its first byte). The error's `fix` names `agent()` when an agent threw it, and its `meta` carries `prompt` and `maxTokens`.
 
 ## 27.9.0 - 2026-10-11
 
