@@ -47,6 +47,7 @@ import {
 } from './rate-limit-stage';
 import type { UltimateRequest } from './request';
 import { addVary, problem, redirect } from './response';
+import { canonicalPath } from './route-path';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
 import { responseSecurityHeaders } from './security-headers';
 import { validateBody } from './validate';
@@ -199,6 +200,8 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       }
       ctx.route = match.route;
       ctx.params = match.params;
+      // The address in its one spelling, from the very string the table was just asked about.
+      ctx.routePath = canonicalPath(routed);
       // Before auth and every app hook: a router request a route may not answer runs nothing.
       return navigationGate(request.raw, ctx.method, ctx.url, match.route.meta.navigation);
     },

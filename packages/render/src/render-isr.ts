@@ -109,6 +109,24 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
   const descriptorFor = (key: string): RouteDescriptor | undefined => isrRouteFor(routes(), key);
 
   /**
+   * A key NO route owns is rendered for the request that asked and never stored. Its ttl and tags
+   * are its route's, so stored it had neither: fresh for ever, on no tag edge, and found by no
+   * bust — the one page a purge could not take down. `@ultimat3/cli` keys every request on the
+   * path the router matched, so this is a caller that derived a key some other way. Told once.
+   */
+  let toldUnowned = false;
+  function tellUnowned(path: string): void {
+    if (toldUnowned) return;
+    toldUnowned = true;
+    logger.warn('isr.key.unowned', {
+      path,
+      cause:
+        'no route in the table matches this key, so it has no ttl and no tags to be revalidated by — it was rendered and not stored',
+      fix: 'isrKey(url, locale)   // key on the URL the router matched, base path removed; never on a hand-built string',
+    });
+  }
+
+  /**
    * A rendered page joins the invalidation graph under its route's tags, so `/blog/a` and
    * `/blog/b` are separately addressable and a `tag.post` bust does not touch `/team`.
    */
@@ -192,7 +210,8 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
           status: finiteStatus('IsrRenderFn', rendered.status),
         };
         const current = latest.get(path) === run;
-        const unstorable = isServerError(rendered.status) || rendered.noStore === true;
+        const unstorable =
+          descriptor === undefined || isServerError(rendered.status) || rendered.noStore === true;
         // Kept only when nothing invalidated the page while it rendered — in this process (the
         // fence) or in any other (the store's) — and no newer run started. Refused, never
         // published stale-flagged: the next request re-renders from rows that include the write.
@@ -203,6 +222,8 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
           // store holds stays (still stale, so the next request tries again); a miss has none, and
           // answers this 5xx to its own request only.
           logger.warn('isr.render.unstored', { path, status: String(rendered.status) });
+        } else if (descriptor === undefined) {
+          tellUnowned(path);
         } else if (rendered.noStore === true) {
           // The loader's answer is not a failure, so the copy held is no longer the page.
           if (current) store.delete(path);
@@ -331,7 +352,9 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
           ageMs: Math.max(0, now() - entry.generatedAt),
         });
       let cached = store.get(path);
-      if (cached !== undefined && pastMaxStale(cached, policy)) {
+      // A copy under a key no route owns (a shared store an earlier release wrote) is not served:
+      // nothing could have invalidated it since.
+      if (cached !== undefined && (descriptor === undefined || pastMaxStale(cached, policy))) {
         store.delete(path);
         cached = undefined;
       }

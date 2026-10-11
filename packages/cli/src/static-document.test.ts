@@ -152,6 +152,44 @@ describe('a static page, rendered once', () => {
   });
 });
 
+describe('a static page, in every spelling the router accepts', () => {
+  const SPELLINGS = [
+    '/precios',
+    '/precios/',
+    '//precios',
+    '/precios//',
+    '/%70recios',
+    '/./precios',
+  ];
+
+  test('memoStatic: is ONE kept document, rendered once, at its one address', async () => {
+    page('apps/web/site/precios/page.tsx', 'static');
+    loads.length = 0;
+    const server = serverFor(true);
+    const bodies = new Set<string>();
+    for (const spelling of SPELLINGS) bodies.add(await (await get(server, spelling)).text());
+    // Keyed on the pathname as written, each spelling was a render and a slot of the memo's 1,024.
+    expect(loads).toEqual(['/precios']);
+    expect(bodies.size).toBe(1);
+    expect([...bodies][0]).toContain('<link rel="canonical" href="http://app.test/precios">');
+  });
+
+  test('without memoStatic it is still rendered at its one address, as the export writes it', async () => {
+    page('apps/web/site/precios/page.tsx', 'static');
+    loads.length = 0;
+    const server = serverFor(false);
+    for (const spelling of SPELLINGS) await get(server, spelling);
+    expect(loads).toEqual(SPELLINGS.map(() => '/precios'));
+  });
+
+  test('an ssr page is still handed the URL as the visitor wrote it', async () => {
+    page('apps/web/app/panel/page.tsx', 'ssr');
+    loads.length = 0;
+    await get(serverFor(true), '/panel/');
+    expect(loads).toEqual(['/panel/']);
+  });
+});
+
 describe('createStaticMemo', () => {
   const result = (status = 200) => ({ status, headers: {}, body: 'x' });
 

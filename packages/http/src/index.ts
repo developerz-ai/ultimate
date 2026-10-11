@@ -106,6 +106,8 @@ export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
 export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
 export { DEFAULT_LOCALE_CONFIG } from './locale';
+export type { RequestAddress } from './locale-prefix';
+export { requestAddress } from './locale-prefix';
 export type { Middleware } from './middleware';
 export { compose } from './middleware';
 export type { NavigationPurpose } from './navigation';
@@ -194,6 +196,7 @@ export {
   textResponse,
   withHeaders,
 } from './response';
+export { canonicalPath } from './route-path';
 export type {
   HttpMethod,
   MatchResult,

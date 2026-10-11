@@ -4,6 +4,7 @@
  * the controller, which only ever holds the key this file derived.
  */
 
+import { canonicalPath } from '@ultimat3/http';
 import { unlocalizedPath } from '@ultimat3/i18n';
 
 /**
@@ -57,6 +58,13 @@ export function undeclaredQuery(url: URL, query: readonly string[] | null): read
  * The ISR store key for one URL: pathname, the negotiated LOCALE, and the query, **params
  * sorted**. The URL is `isrRequestUrl`'s — already narrowed to the route's declared parameters.
  *
+ * The pathname is keyed in its ONE spelling — `@ultimat3/http`'s `canonicalPath`, built from the
+ * functions the router segments and decodes a request with, never a second normaliser. The router
+ * answers `/blog//a/`, `/blog/%61` and `/blog/a` with one page; keyed raw, each was an entry of
+ * its own (a 20-letter slug has a million percent-spellings, and the store holds 1,000), and one
+ * the route table could not read back (`/blog//a`) was stored with no ttl and no tags, which no
+ * bust reached: a withdrawn page stayed up at that spelling for the life of the process.
+ *
  * Exported because deriving it is the caller's job and there may only be ONE derivation — a
  * server that keyed on `url.pathname` while the store believed it held a whole URL is the shape
  * of #171. Sorting makes `?a=1&b=2` and `?b=2&a=1` one entry rather than two renders of one page.
@@ -72,7 +80,7 @@ export function isrKey(url: URL, locale: string): string {
   const params = new URLSearchParams(url.search);
   params.set(ISR_LOCALE_PARAM, locale);
   params.sort();
-  return `${url.pathname}?${params.toString()}`;
+  return `${canonicalPath(url.pathname)}?${params.toString()}`;
 }
 
 /**

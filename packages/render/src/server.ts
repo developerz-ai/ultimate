@@ -47,6 +47,7 @@ export {
 } from './render-isr';
 export { DEFAULT_ISR_FAILURE_COOLDOWN_MS } from './render-isr-cooldown';
 export { ISR_LOCALE_PARAM, isrKey, isrRequestUrl, undeclaredQuery } from './render-isr-key';
+export { isrRouteFor } from './render-isr-routes';
 export type {
   IsrEntry,
   IsrState,

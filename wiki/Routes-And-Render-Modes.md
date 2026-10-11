@@ -134,7 +134,22 @@ export const config = defineRoute({
 | a gated route | may narrow its cache (`'no-store'`, `{ mode: 'private', … }`), never widen it. `public` or `immutable` is `X_ROUTE_MODE_INVALID` |
 | a signed-in visitor | the table above still applies. A declared `public` becomes `private, max-age=0` for them |
 
-**An `isr` entry is keyed by the negotiated locale.** The store key is `isrKey(url, locale)` — pathname, the reserved `__x_locale` parameter, then the query the route declared (`revalidate.query`, below) with its params sorted. Without it, an app shipping two locales served visitor 2 the document rendered for visitor 1, for the whole TTL, and told the CDN to do the same. The time zone is deliberately **not** a dimension — a locale set is declared and bounded, a zone list is not — so a date on an `isr` page belongs in a zone the page itself names, or the page belongs in `ssr`.
+**An `isr` entry is keyed by the negotiated locale.** The store key is `isrKey(url, locale)` — the path in its one spelling (below), the reserved `__x_locale` parameter, then the query the route declared (`revalidate.query`, below) with its params sorted. Without it, an app shipping two locales served visitor 2 the document rendered for visitor 1, for the whole TTL, and told the CDN to do the same. The time zone is deliberately **not** a dimension — a locale set is declared and bounded, a zone list is not — so a date on an `isr` page belongs in a zone the page itself names, or the page belongs in `ssr`.
+
+**An `isr` page is one entry however its URL is spelled.** The router answers `/blog//abc/`, `/blog/%61bc` and `/blog/abc` with the same route and the same `slug`, so the store keys on the address it **matched**, never on the pathname as written: empty segments and the trailing slash dropped, each segment decoded and re-encoded one way (`@ultimat3/http`'s `canonicalPath`, built from the functions the router itself segments and decodes with). `As of 2026-10-11`.
+
+| Request | Stored under | Why |
+|---|---|---|
+| `/blog/abc`, `/blog/abc/`, `/blog//abc`, `//blog/abc`, `/blog/%61bc`, `/blog/./abc` | `/blog/abc` | one route, one `slug` |
+| `/blog/caf%c3%a9`, `/blog/caf%C3%A9`, `/blog/café` | `/blog/caf%C3%A9` | hex case and raw non-ASCII are spellings |
+| `/blog/a%2fb`, `/blog/a%2Fb` | `/blog/a%2Fb` | an encoded slash is part of the segment (`slug` is `a/b`), never a separator: `/blog/a/b` is another address, and a 404 for `/blog/[slug]` |
+| `/en/blog/abc`, `/en//blog/%61bc/` | `/en/blog/abc` | the locale prefix is kept; a locale's home is `/en/` |
+| `/shop/blog/abc` under `basePath: '/shop'` | `/blog/abc` | the route table has never heard of the mount |
+
+- **`load`, `meta` and the page are handed that same address** as `url` (base path included), so the document's `canonical` is `/blog/abc` whichever spelling arrived first. A `static` page is rendered at its address too, as the export writes it; `ssr` and `stream` keep the URL as the visitor wrote it.
+- **Nothing is redirected**, and no status changes: a spelling the router answered with a 200 is still a 200, with the canonical page's `cache-control`, purge keys and `canonical` link. Redirect at the ingress if you want one URL in a browser's address bar.
+- **A key no route owns is never stored.** An entry takes its `ttl` and its tags from its route, so stored without one it was fresh for ever and on no tag edge. `isrController().serve()` renders it for the request that asked, `private, no-store`, and logs `isr.key.unowned` once. The same holds for a request the router matched as one route while its address reads back as another (`//en/x` is the `/[lang]/x` route; `/en/x` is the `/x` route in English): answered, never stored.
+- Releases through 27.8.0 keyed on the raw pathname ([Known Gaps](Known-Gaps)).
 
 **A locale-prefixed `isr` page is its route's page.** The key keeps the prefix — `/en/blog/a?__x_locale=en` is the document rendered for that URL — and the route it belongs to is found on the path with the routed prefix removed (`unlocalizedPath`), as the router matches it. So `/en/blog/a` takes `/blog/:slug`'s `revalidate.ttl` (`s-maxage` included), joins its `revalidate.tags`, and is regenerated in its own locale: a tag bust or the TTL expires every locale's copy of a page, stored 404s included. A page whose truth changes with the clock (`publishedAt <= now`) is written by nothing when the instant passes, so no tag is busted — it needs a `ttl`, and the `ttl` alone is enough in every locale. Releases through 27.6.1 matched no route for a prefixed page ([Known Gaps](Known-Gaps)): tag-only `s-maxage=60`, no tag edge, fresh for the life of the process.
 
