@@ -121,11 +121,15 @@ describe('the permanent codes stay terminal', () => {
 });
 
 describe('the table', () => {
-  test('one retryable code, the transport one; and the two agent stops registered terminal', () => {
+  test('one retryable code, the transport one; and six deterministic failures registered terminal', () => {
     expect(Object.keys(AI_ERROR_RETRY)).toEqual([
       'X_AI_PROVIDER_UNAVAILABLE',
       'X_AGENT_TOOL_LOOP',
       'X_AGENT_DEADLINE',
+      'X_LLM_TRUNCATED',
+      'X_LLM_OUTPUT_INVALID',
+      'X_LLM_TOOL_ARGUMENTS_INVALID',
+      'X_AGENT_TRANSCRIPT_INVALID',
     ]);
     expect(AI_ERROR_RETRY.X_AI_PROVIDER_UNAVAILABLE).toBe('retryable');
   });

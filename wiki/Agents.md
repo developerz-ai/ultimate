@@ -409,7 +409,7 @@ Three bounds stop a run nobody is watching, beside `maxTurns` and `budget.tokens
 | `deadlineMs` | none | `X_AGENT_DEADLINE` — the run was still going; the model call in flight is aborted on the socket, every tool's own `ctx.signal` fires so a tool that reads it stops, and no further turn starts. A tool that ignores its signal is no longer waited for but **does run to its own end** — its effects can land after the run was refused |
 | `maxToolResultChars` | **4,000** | not an error — the result is truncated, and says so in the transcript |
 
-**Under a job.** `X_AGENT_TOOL_LOOP` and `X_AGENT_DEADLINE` are registered `terminal`: an `agentJob()` dead-letters on the first attempt instead of buying the same run once per `retry.attempts`.
+**Under a job.** `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_LLM_TRUNCATED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID` and `X_AGENT_TRANSCRIPT_INVALID` are registered `terminal` — the same input fails the same way, so the caller changes `maxTokens` or the prompt: an `agentJob()` dead-letters on the first attempt instead of buying the same run once per `retry.attempts`.
 
 A caller that goes away mid-call is `X_ABORTED`, not the transport failure (`X_AI_PROVIDER_UNAVAILABLE`, retryable) the aborted socket used to be reported as. `X_ABORTED` is core's and unclassified, so over HTTP it reads `terminal`; in a job the attempt count stays in charge, and a drain or an attempt timeout is settled by jobs off its own signal as before.
 

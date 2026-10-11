@@ -11,7 +11,7 @@
 //     releasing the reservation and nothing retries a request that was answered.
 
 import type { Money } from '@ultimat3/money';
-import { LlmToolArgumentsError } from './answer-errors';
+import { AiProviderUnexpectedError, LlmToolArgumentsError } from './answer-errors';
 import { billedCall } from './billed';
 import type { ModelId } from './models';
 import type { StopReason, TokenUsage } from './provider';
@@ -55,7 +55,21 @@ export function assertToolArguments(turn: {
   readonly malformed: readonly MalformedToolCall[];
   readonly usage: TokenUsage;
   readonly cost: Money;
+  /** The raw finish reason, when the wire did not know it (`openai-wire.ts`). */
+  readonly unknownFinish?: string | undefined;
 }): void {
+  // A reason nobody knows is not truncation. A turn that is whole was read as a stop; one that is
+  // not — arguments that do not parse — or one the endpoint itself called an `error`, is refused
+  // by name, with its bill, instead of being guessed at.
+  const unknown = turn.unknownFinish;
+  if (unknown !== undefined && (turn.malformed.length > 0 || unknown.toLowerCase() === 'error')) {
+    throw new AiProviderUnexpectedError({
+      provider: turn.provider,
+      model: turn.model,
+      reason: unknown,
+      billed: billedCall(turn.usage, turn.cost),
+    });
+  }
   const first = turn.malformed[0];
   if (first === undefined || isTruncated(turn.stopReason)) return;
   throw new LlmToolArgumentsError({

@@ -30,6 +30,8 @@ export interface ChatAnswer {
   readonly stopReason: StopReason;
   readonly stopDetails: StopDetails | undefined;
   readonly usage: TokenUsage | undefined;
+  /** The raw finish reason when this build does not know it — `stopReason` is then read off the content. */
+  readonly unknownFinish?: string;
 }
 
 // A `Map`, not an object literal: `raw` is the PROVIDER's string on every read, and
@@ -40,13 +42,45 @@ export interface ChatAnswer {
 const FINISH_REASONS: ReadonlyMap<string, StopReason> = new Map(
   Object.entries({
     stop: 'end_turn',
+    // Synonyms for "the model finished", as endpoints in the family spell it: the Messages API's
+    // word passed through by a gateway, a tokenizer's end-of-sequence, Gemini's `STOP`.
+    end_turn: 'end_turn',
+    eos: 'end_turn',
+    eos_token: 'end_turn',
+    stop_sequence: 'stop_sequence',
     length: 'max_tokens',
+    max_tokens: 'max_tokens',
+    model_context_window_exceeded: 'model_context_window_exceeded',
     tool_calls: 'tool_use',
     // The legacy name for the same event; LiteLLM and older self-hosted servers still send it.
     function_call: 'tool_use',
+    tool_use: 'tool_use',
     content_filter: 'refusal',
   } as const),
 );
+
+/** What a `finish_reason` field said: nothing yet, a reason this build knows, or one it does not. */
+export type FinishReading =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'known'; readonly reason: StopReason }
+  | { readonly kind: 'unknown'; readonly raw: string };
+
+/**
+ * Read a finish reason, case-insensitively (`STOP`, `MAX_TOKENS`). A non-string (`null` on a
+ * delta) is "still going". A string this table does not list is UNKNOWN, and deliberately not
+ * truncation: `llm()` and `agent()` refuse a truncated turn before reading it, so guessing
+ * "cut off" fails every call of an endpoint that merely spells "done" its own way. What an unknown
+ * reason amounts to is decided from the answer itself (`unknownFinishReason`), by the provider.
+ */
+export function readFinishReason(raw: unknown): FinishReading {
+  if (typeof raw !== 'string') return { kind: 'none' };
+  const reason = FINISH_REASONS.get(raw) ?? FINISH_REASONS.get(raw.toLowerCase());
+  return reason === undefined ? { kind: 'unknown', raw } : { kind: 'known', reason };
+}
+
+/** The stop reason of a turn whose finish reason is unknown: what its content shows it to be. */
+const settledAs = (calls: readonly LlmToolCall[]): StopReason =>
+  calls.length > 0 ? 'tool_use' : 'end_turn';
 
 /**
  * In-band error frames carry a type, not a status, and the gateway's retry rule reads a status.
@@ -70,13 +104,13 @@ const ERROR_STATUS: ReadonlyMap<string, number> = new Map(
 );
 
 /**
- * The finish reason, or `undefined` for a non-string (`null` on a delta means "still going").
- * A string this table does not know FAILS CLOSED as `max_tokens` — `wire.ts`'s `parseStopReason`
- * rule, so one unknown reason reads the same on both formats: a provider's new reason is far
- * likelier to be a way of stopping early than of finishing.
+ * The finish reason as a `StopReason`, or `undefined` for a non-string. An UNKNOWN string reads
+ * `end_turn` here — the bare lookup has no answer to judge it by; the two readers below do, and
+ * report the raw reason as `unknownFinish` so the provider can refuse a turn that is not whole.
  */
 export function parseFinishReason(raw: unknown): StopReason | undefined {
-  return typeof raw === 'string' ? (FINISH_REASONS.get(raw) ?? 'max_tokens') : undefined;
+  const read = readFinishReason(raw);
+  return read.kind === 'none' ? undefined : read.kind === 'known' ? read.reason : 'end_turn';
 }
 
 /**
@@ -124,8 +158,14 @@ export function parseChatCompletion(raw: unknown, provider: string): ChatAnswer 
   // `"refusal": ""` beside a real answer, and that body must not refuse here and answer streamed.
   const declined = message['refusal'];
   const refusal = typeof declined === 'string' && declined !== '' ? declined : undefined;
-  const finish = parseFinishReason(choice['finish_reason']);
   const read = parseToolCalls(message['tool_calls']);
+  const reading = readFinishReason(choice['finish_reason']);
+  const finish =
+    reading.kind === 'none'
+      ? undefined
+      : reading.kind === 'known'
+        ? reading.reason
+        : settledAs(read.calls);
   return {
     text: typeof message['content'] === 'string' ? message['content'] : '',
     toolCalls: read.calls,
@@ -135,6 +175,7 @@ export function parseChatCompletion(raw: unknown, provider: string): ChatAnswer 
     stopReason: refusal === undefined ? (finish ?? 'end_turn') : 'refusal',
     stopDetails: refusalDetails(finish, refusal),
     usage: parseOpenAiUsage(record['usage']),
+    ...(reading.kind === 'unknown' ? { unknownFinish: reading.raw } : {}),
   };
 }
 
@@ -207,6 +248,7 @@ export class ChatCompletionStream {
   private text = '';
   private refusal = '';
   private stopReason: StopReason = 'end_turn';
+  private unknownFinish: string | undefined;
   private finished = false;
   private done = false;
   private usage: TokenUsage | undefined;
@@ -288,9 +330,15 @@ export class ChatCompletionStream {
       malformed: [...this.read.malformed],
       // A refusal that arrived as a `refusal` delta finishes with `stop`, so the reason alone would
       // read as a complete answer that happens to be empty.
-      stopReason: details === undefined ? this.stopReason : 'refusal',
+      stopReason:
+        details !== undefined
+          ? 'refusal'
+          : this.unknownFinish === undefined
+            ? this.stopReason
+            : settledAs(this.read.calls),
       stopDetails: details,
       usage: this.usage,
+      ...(this.unknownFinish === undefined ? {} : { unknownFinish: this.unknownFinish }),
     };
   }
 
@@ -361,9 +409,10 @@ export class ChatCompletionStream {
 
   /** The finish reason closes the TURN. The calls are read by `end()`, when the stream is over. */
   private onFinish(raw: unknown): void {
-    const reason = parseFinishReason(raw);
-    if (reason === undefined) return;
-    this.stopReason = reason;
+    const reading = readFinishReason(raw);
+    if (reading.kind === 'none') return;
+    if (reading.kind === 'known') this.stopReason = reading.reason;
+    else this.unknownFinish = reading.raw;
     this.finished = true;
   }
 

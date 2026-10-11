@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b422a10a8655061e70a6727d09ad74c98ca3261230901d2fb190afa6f1221cb6",
+  "buildId": "973cf00f265ddefc9902c95adc006b9f66cafda0d27ec1e6d37a6f63cc84f422",
   "tiers": {
     "0": [
       "core",
@@ -466,6 +466,11 @@
     },
     {
       "code": "X_AI_PROVIDER_UNAVAILABLE",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_AI_PROVIDER_UNEXPECTED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },

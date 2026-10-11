@@ -59,3 +59,25 @@ export class LlmToolArgumentsError extends UltimateError {
     });
   }
 }
+
+/**
+ * A chat-completions endpoint finished a turn with a reason this build does not know, and the turn
+ * is not whole — a tool call whose arguments do not parse — or the reason was `error`. Not
+ * truncation (nothing says the ceiling was reached) and not a transport failure (the endpoint
+ * answered, and billed): its own code, carrying the reason and the bill.
+ */
+export class AiProviderUnexpectedError extends UltimateError {
+  constructor(input: { provider: string; model: string; reason: string; billed: Billed }) {
+    super({
+      code: 'X_AI_PROVIDER_UNEXPECTED',
+      cause: `provider "${input.provider}" finished a turn of model "${input.model}" with the finish reason ${JSON.stringify(input.reason.slice(0, 64))}, which this build does not know, and the answer is not complete`,
+      fix: "x doctor --json   # then check what the endpoint means by the reason in cause: a truncation needs a higher maxTokens on the declaration, anything else is the endpoint's to explain",
+      meta: {
+        provider: input.provider,
+        model: input.model,
+        reason: input.reason.slice(0, 64),
+        [BILLED_META]: input.billed,
+      },
+    });
+  }
+}

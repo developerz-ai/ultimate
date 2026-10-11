@@ -34,6 +34,7 @@ export const AI_ERROR_CODES = [
   'X_AGENT_DEADLINE',
   'X_LLM_TOOL_ARGUMENTS_INVALID',
   'X_AGENT_TRANSCRIPT_INVALID',
+  'X_AI_PROVIDER_UNEXPECTED',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -70,6 +71,8 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AGENT_DEADLINE: 'an agent ran past its declared deadline and was stopped',
   X_LLM_TOOL_ARGUMENTS_INVALID: 'a finished turn called a tool with arguments that are not JSON',
   X_AGENT_TRANSCRIPT_INVALID: 'an agent was asked to continue from a transcript it cannot read',
+  X_AI_PROVIDER_UNEXPECTED:
+    'a provider ended a turn with an unknown reason and an incomplete answer',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and

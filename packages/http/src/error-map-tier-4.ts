@@ -138,4 +138,6 @@ export const TIER_4_ERROR_STATUS = {
   X_LLM_TOOL_ARGUMENTS_INVALID: 502,
   // @ultimat3/ai — a continuation's transcript handle did not pass its screen: the caller's data
   X_AGENT_TRANSCRIPT_INVALID: 422,
+  // @ultimat3/ai — the upstream ended a turn with a reason nobody knows and an incomplete answer
+  X_AI_PROVIDER_UNEXPECTED: 502,
 } satisfies Readonly<Record<string, number>>;

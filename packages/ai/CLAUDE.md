@@ -135,7 +135,8 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 
 - **The response cache key is core's `fingerprint` over the request, each tool WHOLE** (every `llm()`
   tool is `respond`); a throwing `cache.set` is logged (`ai.cache.write_failed`), never a failure.
-- **An unknown stop/finish reason FAILS CLOSED as `max_tokens` on both formats**, streamed or not.
+- **An unknown stop reason FAILS CLOSED as `max_tokens` on the Anthropic wire; on chat-completions
+  it is UNKNOWN** (`readFinishReason`): a whole turn is a stop, else `X_AI_PROVIDER_UNEXPECTED`.
 - **One failure-body reader** (`error-body.ts`'s `detailOf`, bounded at `READ_LIMIT`) and one
   `withoutKey` scrub — the embedder included.
 - **`attempt` collects TRANSPORT failures only**: an `UltimateError` other than
@@ -144,8 +145,8 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 - **The gateway's reads of a provider's throw are total**: `isRetryable` fails closed; the line goes
   through `renderThrowable`.
 - **`X_AI_PROVIDER_UNAVAILABLE` is the one code classified `retryable`** (`AI_ERROR_RETRY`);
-  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Every other
-  code but the two agent stops stays UNREGISTERED on purpose.
+  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Six
+  deterministic failures are `terminal` (`errors-retry.ts`); the rest stay UNREGISTERED on purpose.
 - **The retry SCHEDULE is core's (`backoffDelay`, `isRetryableStatus`); the LOOP is this package's** —
   core's `retry()` retries unclassified throws, so it would retry a 400 (`gateway-backoff.test.ts`).
 - Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.

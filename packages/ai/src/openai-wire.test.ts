@@ -234,21 +234,23 @@ describe('a finish reason is looked up, never indexed', () => {
   // `FINISH_REASONS['constructor']` on an object literal answers the `Object` FUNCTION, which was
   // returned as a `StopReason` and treated by the stream reader as a finish — so `isComplete()`
   // answered true for a stream that never finished. A name off the prototype chain is now what
-  // any unknown reason is: a cut-off answer, `max_tokens` — a string, never a function.
+  // any unknown reason is: UNKNOWN — read as a stop here and judged by the provider from the
+  // answer itself (`finish-reason.test.ts`) — a string, never a function.
   test('an inherited property name is an unknown reason, never a function', () => {
-    expect(parseFinishReason('constructor')).toBe('max_tokens');
-    expect(parseFinishReason('toString')).toBe('max_tokens');
-    expect(parseFinishReason('__proto__')).toBe('max_tokens');
+    expect(parseFinishReason('constructor')).toBe('end_turn');
+    expect(parseFinishReason('toString')).toBe('end_turn');
+    expect(parseFinishReason('__proto__')).toBe('end_turn');
     expect(parseFinishReason('stop')).toBe('end_turn');
     expect(parseFinishReason(null)).toBeUndefined();
   });
 
-  test('a frame finishing with __proto__ closes the turn as truncated, never as complete', () => {
+  test('a frame finishing with __proto__ closes the turn and reports the reason as unknown', () => {
     const { stream } = drive([
       frame({ choices: [{ delta: { content: 'half an ans' }, finish_reason: '__proto__' }] }),
     ]);
-    // Truncated: `llm()` reads `max_tokens` as cut off and never parses half an answer as one.
-    expect(stream.state().stopReason).toBe('max_tokens');
+    // A finish, with the raw reason kept: the provider refuses the turn if it is not whole.
+    expect(stream.isComplete()).toBe(true);
+    expect(stream.state()).toMatchObject({ stopReason: 'end_turn', unknownFinish: '__proto__' });
   });
 
   test('an in-band error type off the prototype chain gets 500, never a function', () => {

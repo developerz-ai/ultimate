@@ -44,6 +44,14 @@ export const AI_ERROR_RETRY = {
   // deadline: unclassified, an `agentJob` with `attempts: 3` paid for it three times.
   X_AGENT_TOOL_LOOP: 'terminal',
   X_AGENT_DEADLINE: 'terminal',
+  // The four a job otherwise pays for once per attempt, for the same answer: the ceiling does not
+  // move between attempts, a schema two answers failed is a prompt to edit, arguments a model
+  // broke on this request are a schema to simplify, and a refused handle is refused again. The
+  // caller changes the declaration or starts a new run; retrying only re-bills.
+  X_LLM_TRUNCATED: 'terminal',
+  X_LLM_OUTPUT_INVALID: 'terminal',
+  X_LLM_TOOL_ARGUMENTS_INVALID: 'terminal',
+  X_AGENT_TRANSCRIPT_INVALID: 'terminal',
 } as const satisfies Readonly<Partial<Record<AiErrorCode, ErrorRetry>>>;
 
 // `Partial`, so the table may be a subset — but every key is still checked against the declared set,
