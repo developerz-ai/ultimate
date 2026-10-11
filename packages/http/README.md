@@ -10,6 +10,7 @@ to skip.
 |---|---|
 | server lifecycle, drain, `/healthz` + `/readyz` | `server.ts`; `health-disclosure.ts` owns the `healthDetailPeers` key, its screen and the proxy half — the body rule is `@ultimat3/core`'s |
 | route table, matcher, `describeRoutes()` | `router.ts` |
+| a pathname's segments, their decoding, and its ONE spelling (`canonicalPath`) — shared by the matcher and by every store keyed on an address; `ctx.routePath` and `requestAddress(ctx)` say where a request was matched | `route-path.ts`, `locale-prefix.ts` |
 | the ordered request lifecycle | `pipeline.ts` |
 | typed request (params, query, body) | `request.ts` |
 | response constructors + `problem()` | `response.ts` |

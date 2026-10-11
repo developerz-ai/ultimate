@@ -99,8 +99,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 639 → 641, measured 641 (2026-10-10, an outage is one fact in the log): `core/src/outage-log.ts`
  * — failures 1, 2, 4, 8, … and one closing line, through the core barrel — and
  * `cache/src/partial-log.ts`, which thins `cache.invalidate.partial` per failing tier with it.
+ * raised 641 → 642, measured 642 (2026-10-11, an isr page is one entry however its URL is spelled):
+ * `http/src/route-path.ts` — a pathname's segments, their decoding and its one spelling, moved out
+ * of `router.ts` so the matcher and the `isr` key share them; reached through the http barrel.
  */
-const MIGRATE_CEILING = 641;
+const MIGRATE_CEILING = 642;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -204,8 +207,10 @@ const MIGRATE_CEILING = 641;
  * every time, an outage thinned, at the role's level), `realtime/src/sync-bus-outage.ts` (what a
  * `sync` node says while its bus is away) and `cli/src/role-sync-bus-wait.ts` (`x dev` starts its
  * node when the bus answers, where a container refuses the boot).
+ * raised 950 → 951, measured 951 (2026-10-11, an isr page is one entry however its URL is spelled):
+ * the module named on `MIGRATE_CEILING`.
  */
-const SERVING_ROLE_CEILING = 950;
+const SERVING_ROLE_CEILING = 951;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -297,8 +302,11 @@ const SERVING_ROLE_CEILING = 950;
  * parameter its `revalidate.query` does not list (one stored document for every value of it).
  * raised 1073 → 1078, measured 1078 (2026-10-11, a channel recovers after a bus outage): the five
  * modules named on `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
+ * raised 1078 → 1080, measured 1080 (2026-10-11, an isr page is one entry however its URL is
+ * spelled): the module named on `MIGRATE_CEILING`, and `cli/src/runtime-address.ts` — the URL a
+ * `static` or `isr` document is rendered at and kept under, the address the router matched.
  */
-const WEB_ROLE_CEILING = 1078;
+const WEB_ROLE_CEILING = 1080;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

@@ -100,6 +100,7 @@ describe('a render that answers a status', () => {
   test('an entry a custom store round-tripped without a status is served as 200, never NaN', async () => {
     // A Redis-backed `IsrStore` JSON-round-trips its entries; a field that was never written comes
     // back absent. `entryTtlMs` already takes that path for the TTL — the status takes the same one.
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
     const store = memoryIsrStore();
     store.set({
       path: '/blog/old',

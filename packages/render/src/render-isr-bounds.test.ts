@@ -2,9 +2,13 @@
 // crossed the 500-line ceiling. One file, one responsibility: this one owns what happens when a
 // cap or a TTL arrives non-finite, and nothing here touches tag invalidation or key derivation.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { clearRoutes, describePages } from './registry';
 import { isrController } from './render-isr';
+import { isrRouteWith } from './render-isr-fixture';
 import { memoryIsrStore } from './render-isr-store';
+
+afterAll(clearRoutes);
 
 /**
  * A bound whose own value is `NaN` makes its guard read false: `map.size > NaN` is false for
@@ -37,10 +41,12 @@ describe('a non-finite bound is refused, not propagated', () => {
       ttlMs: Number.NaN,
       stale: false,
     };
+    // The key has to be a route's: one no route owns is never served from the store.
+    isrRouteWith('apps/web/site/blog/page.tsx', { ttl: '1m' });
     const controller = isrController({
       buildId: 'b1',
       now: () => 1_000,
-      routes: () => [],
+      routes: describePages,
       store: {
         get: () => entry,
         set: () => undefined,

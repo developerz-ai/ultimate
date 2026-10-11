@@ -124,7 +124,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   past `bodyLimitBytes`); multipart goes through the same capped bytes. **Bytes with no
   `content-type` are `X_BODY_INVALID`** from `bodyRaw()`, never "no body"; `bodyBytes()` reads them.
 - **A repeated field is a LIST in all three parsers** (`collectFields`).
-- **`matchRoute` never throws**: `router.ts`'s `decodeSegment` answers `path-invalid` →
+- **`matchRoute` never throws**: `route-path.ts`'s `decodeSegment` answers `path-invalid` →
   `X_PATH_INVALID` (400).
 - **`handle()` resolves to a Response or nothing**: request phases are guarded by `execute`, the tail
   by `finalize.ts` — a refusing finalize stage degrades to `X_PIPELINE_FINALIZE_FAILED` with a second
@@ -237,7 +237,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `pipeline.ts` | the ORDER the stages run in — the framework's guarantee — and the one loop that drives a request through them |
 | `stages.ts` | what each stage DOES, one entry per `StageName`, plus the stage vocabulary the other two import |
 | `finalize.ts` | the tail of that lifecycle, guarded: a throw after the handler degrades, never rejects |
-| `router.ts` | trie matcher, precedence static > param > wildcard, `path-invalid` for a segment that will not decode. A request segment is decoded ONCE; a static child is looked up raw, then decoded (`/precios-espa%C3%B1a` is `/precios-españa`). A wildcard takes an EMPTY rest after the node's own routes (`/docs` → `/docs/*path` with `path: ''`, the path `@ultimat3/render`'s static build writes) — `router-spelling.test.ts` |
+| `router.ts` | trie, static > param > wildcard, `path-invalid` for a segment that will not decode. A request segment is decoded ONCE; a static child is looked up raw, then decoded. A wildcard takes an EMPTY rest after the node's own routes (`/docs` → `/docs/*path`, `path: ''`). Segments, decoding and `canonicalPath` are `route-path.ts`'s: `ctx.routePath` is the match's one spelling, `requestAddress(ctx)` what render keys `isr` on |
 | `navigation.ts` | the client router's server half: the gate `context` runs after the match (a prefetch to a route whose `meta.navigation` did not opt in → `204`; a soft GET to anything but a page of the router's `<app>:<surface>` → `204` + `x-ultimate-location`, before auth or app code) and the `response` stage's rewrite of a 3xx to a router request into the same hand-over, cookies kept |
 | `error-map.ts` | the code → status table, closed: COMPOSES the slices and holds no row of its own |
 | `error-map-http.ts`, `error-map-tier-<0-4>.ts` | the rows, one slice per owning tier (this package's own apart). `bun run new-error-code` appends to the slice its `--package` maps to; a code in two slices is refused there and by `error-map.test.ts` |

@@ -17,6 +17,8 @@ import type { Bucket } from './rate-limit';
 import type { UltimateRequest } from './request';
 import type { CacheHint } from './response';
 import { assertRouteCache } from './route-cache';
+// Segments and their decoding are `route-path.ts`'s, shared with every store keyed by a path.
+import { decodeSegment, normalizePath, pathSegments } from './route-path';
 import type { Schema } from './validate';
 
 export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'OPTIONS';
@@ -163,17 +165,6 @@ const node = (): TrieNode => ({
   routes: new Map(),
 });
 
-/** `/a/b/` and `//a//b` both normalise to `/a/b`; `/` stays `/`. */
-export const normalizePath = (path: string): string => {
-  const trimmed = path.split('/').filter((segment) => segment.length > 0);
-  return trimmed.length === 0 ? '/' : `/${trimmed.join('/')}`;
-};
-
-const segmentsOf = (path: string): readonly string[] =>
-  normalizePath(path)
-    .split('/')
-    .filter((segment) => segment.length > 0);
-
 export const httpRouter = (routes: readonly Route[]): RouteTable => {
   const root = node();
   for (const route of routes) {
@@ -182,7 +173,7 @@ export const httpRouter = (routes: readonly Route[]): RouteTable => {
     // log line once per request and a response that quietly falls back to heuristic caching.
     assertRouteCache(route.meta.cache, route.meta.name, route.path);
     let current = root;
-    const segments = segmentsOf(route.path);
+    const segments = pathSegments(route.path);
     for (const [index, segment] of segments.entries()) {
       if (segment.startsWith(':')) {
         const name = segment.slice(1);
@@ -232,19 +223,6 @@ interface Search {
   /** First raw segment that would not percent-decode. Only set where a decode was attempted. */
   undecodable: string | undefined;
 }
-
-/**
- * `undefined` instead of the bare `URIError` `decodeURIComponent('%ZZ')` throws. A pathname is
- * whatever the client typed, and an exception from the match would leave the pipeline with
- * `X_INTERNAL` — a 500, and a page for the on-call, for a request only the caller can fix.
- */
-const decodeSegment = (segment: string): string | undefined => {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return undefined;
-  }
-};
 
 /** Terminal nodes reachable for `segments`, in precedence order. */
 const candidates = (
@@ -311,7 +289,7 @@ const routeFor = (candidate: Candidate, method: HttpMethod): Route | undefined =
   (method === 'HEAD' ? candidate.node.routes.get('GET') : undefined);
 
 export const matchRoute = (table: RouteTable, method: string, pathname: string): MatchResult => {
-  const segments = segmentsOf(pathname);
+  const segments = pathSegments(pathname);
   const search: Search = { out: [], undecodable: undefined };
   candidates(table.root, segments, 0, {}, search);
   const found = search.out;
@@ -354,7 +332,7 @@ export interface RouteDescription {
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 const paramsOf = (path: string): readonly string[] =>
-  segmentsOf(path)
+  pathSegments(path)
     .filter((segment) => segment.startsWith(':') || segment.startsWith('*'))
     .map((segment) => segment.slice(1));
 

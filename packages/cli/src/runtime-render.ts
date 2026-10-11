@@ -53,6 +53,7 @@ import {
   principalRelocation,
 } from './page-navigation';
 import { bootScript, collectorFor } from './route-islands';
+import { addressedUrl } from './runtime-address';
 import { attachedIsr } from './runtime-isr';
 import { isrOutcome } from './runtime-isr-outcome';
 import type { StaticResult } from './static-document';
@@ -425,7 +426,7 @@ export function appRoutes(options: DevRenderOptions): readonly Route[] {
       // A static page already rendered by this process is answered without `load` or a render.
       const key =
         options.memoStatic === true
-          ? staticMemoKey(entry, request.url, asCtx(ctx).locale)
+          ? staticMemoKey(entry, addressedUrl(request.url, ctx), asCtx(ctx).locale)
           : undefined;
       const kept = key === undefined ? undefined : memo.get(key);
       if (kept !== undefined) return staticResponse(request, kept);
@@ -461,7 +462,9 @@ async function renderEntry(
   options: DevRenderOptions,
   isr: IsrController,
 ): Promise<Rendered> {
-  const data: DevRouteData = { url: request.url.href, params: ctx.params };
+  // A `static` document is one file in the export, so it is rendered AT its one address here too.
+  const at = entry.config.render === 'static' ? addressedUrl(request.url, ctx) : request.url;
+  const data: DevRouteData = { url: at.href, params: ctx.params };
   if (entry.config.render === 'isr') return renderIsr(entry, data, ctx, options, isr);
   // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
   // object, so a route's `load` runs exactly once however its mode splits head from body.

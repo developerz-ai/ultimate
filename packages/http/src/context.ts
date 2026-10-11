@@ -117,6 +117,13 @@ export interface RequestContext extends Ctx {
    * is matched. Authoritative: the `locale` stage answers it over every other source.
    */
   pathLocale: string | undefined;
+  /**
+   * The path the route table MATCHED, in its one spelling (`route-path.ts`'s `canonicalPath`): base
+   * path and routed locale prefix removed, no empty segment, each segment decoded and re-encoded.
+   * Set with `route` by the `context` stage. What a store keyed by address keys on — never
+   * `url.pathname`, which is one of the many spellings the router answers with the same page.
+   */
+  routePath: string | undefined;
   tz: string;
   /** What the CLIENT says it is running, from core's `BUILD_ID_HEADER`. `assertBuild()` reads it. */
   clientBuildId: string | null;
@@ -234,6 +241,7 @@ export const requestContext = (init: RequestContextInit): RequestContext => {
     actor: anonymousActor(),
     locale: localeConfig().fallback,
     pathLocale: undefined,
+    routePath: undefined,
     tz: timeConfig().defaultZone,
     clientBuildId: null,
     input: undefined,

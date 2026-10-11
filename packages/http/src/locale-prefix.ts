@@ -3,9 +3,10 @@
 // it is authoritative over query, cookie, user and header. Which locales route, and how a path is
 // spelled in one, are `@ultimat3/i18n`'s; this file only applies them to a request.
 
+import { localeSegment } from '@ultimat3/core';
 import { type LocaleSources, localeConfig, resolveLocale, splitLocalePrefix } from '@ultimat3/i18n';
 import type { RequestContext } from './context';
-import { normalizePath } from './router';
+import { normalizePath } from './route-path';
 
 /** Methods whose redirect may change nothing but the URL. Anything else is a 308, never a 301. */
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
@@ -42,6 +43,37 @@ export function routeLocalePrefix(
   ctx.pathLocale = prefix.locale;
   ctx.locale = prefix.locale;
   return prefix.path;
+}
+
+/** A matched request's address, in the one spelling every pathname the router treats alike shares. */
+export interface RequestAddress {
+  /**
+   * The locale prefix the URL named, then the path the table matched — NO base path. What a store
+   * keys on: `@ultimat3/i18n`'s `unlocalizedPath` reads the route's own path straight back out of
+   * it, which it cannot do through a mount.
+   */
+  readonly path: string;
+  /** `path` under the mount: the pathname the request's URL carries, respelled. */
+  readonly pathname: string;
+}
+
+/**
+ * Where a matched request IS, from what the `context` stage recorded when it matched
+ * (`ctx.routePath`, `ctx.pathLocale`) — `undefined` before that. `/blog//a/`, `/blog/%61` and
+ * `/blog/a` are one address: it is what a shared document is keyed by and rendered AT, so a page
+ * that builds its `canonical` from the URL it was handed is never given whichever spelling
+ * happened to arrive first. Nothing is redirected; the request is answered where it was asked.
+ */
+export function requestAddress(ctx: RequestContext): RequestAddress | undefined {
+  if (ctx.routePath === undefined) return undefined;
+  const { basePath } = ctx.config;
+  const mount = basePath === '/' || basePath === '' ? '' : basePath.replace(/\/$/, '');
+  // The prefix PUT BACK, exactly as it was split off — never `localizedPath`, which re-spells a
+  // path already carrying a locale segment: `/en/en/x` (the `/:lang/x` route, in English) is not
+  // `/en/x`. A locale's root is the directory, `/en/`, as `localizedPath` and the export spell it.
+  const prefix = ctx.pathLocale === undefined ? '' : `/${localeSegment(ctx.pathLocale)}`;
+  const path = prefix !== '' && ctx.routePath === '/' ? `${prefix}/` : `${prefix}${ctx.routePath}`;
+  return { path, pathname: path === '/' && mount !== '' ? mount : `${mount}${path}` };
 }
 
 /**

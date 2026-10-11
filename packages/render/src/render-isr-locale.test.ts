@@ -172,10 +172,13 @@ describe('a locale-prefixed isr page is revalidated as its route declares', () =
     detach();
   });
 
-  test('a prefix naming no routed locale is not stripped: `/fr/blog/a` is no route', async () => {
+  test('a prefix naming no routed locale is not stripped: `/fr/blog/a` is no route, and is not stored', async () => {
     const { controller, detach } = attached();
-    const served = await controller.serve(keyOf('/fr/blog/a', 'es-CO'), () => '<p>x</p>');
+    const key = keyOf('/fr/blog/a', 'es-CO');
+    const served = await controller.serve(key, () => '<p>x</p>');
     detach();
     expect(served.entry.ttlMs).toBe(null);
+    expect(served.result.headers['cache-control']).toBe('private, no-store');
+    expect(controller.store().paths()).toEqual([]);
   });
 });

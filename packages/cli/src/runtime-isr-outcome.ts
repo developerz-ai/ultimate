@@ -4,11 +4,11 @@
 
 import { logger } from '@ultimat3/core';
 import type { RedirectIntent, RequestContext, RouteParams } from '@ultimat3/http';
-import { asCtx, takeRedirect } from '@ultimat3/http';
+import { asCtx, requestAddress, takeRedirect } from '@ultimat3/http';
 import type { RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
-import { routeDataFor, routeNoStoreOf, routeStatusOf } from '@ultimat3/render';
+import { describePages, routeDataFor, routeNoStoreOf, routeStatusOf } from '@ultimat3/render';
 import type { IsrController, IsrEntry } from '@ultimat3/render/server';
-import { isrKey, isrRequestUrl, undeclaredQuery } from '@ultimat3/render/server';
+import { isrKey, isrRequestUrl, isrRouteFor, undeclaredQuery } from '@ultimat3/render/server';
 
 export type IsrOutcome =
   | { readonly kind: 'page'; readonly result: RenderResult }
@@ -38,15 +38,17 @@ const NAMED_PARAMS = 5;
 const NAMED_PARAM_CHARS = 40;
 
 /**
- * The request narrowed to what the route declared it varies on (`revalidate.query`). ONE narrowing
- * feeds the store key, `load`, `meta` and the page, so a parameter outside the key cannot reach
- * the document stored under it.
+ * The request narrowed to what the route declared it varies on (`revalidate.query`), AT the one
+ * spelling of its address (`pathname`). ONE narrowing feeds the store key, `load`, `meta` and the
+ * page, so neither a parameter outside the key nor the way a visitor happened to spell the path
+ * (`/blog//a/`, `/blog/%61`) can reach the document stored under it.
  *
  * A route that declared NOTHING still keys on the whole query, and is told so once, the first time
  * a visitor uses that: every distinct query string is then a render and a stored page of its own.
  */
-function keyedData(entry: RouteEntry, data: IsrData): IsrData {
+function keyedData(entry: RouteEntry, data: IsrData, pathname: string | undefined): IsrData {
   const url = new URL(data.url);
+  if (pathname !== undefined) url.pathname = pathname;
   const declared = entry.config.revalidate?.query ?? null;
   if (declared === null && !toldUndeclared.has(entry.file)) {
     const minted = undeclaredQuery(url, declared);
@@ -96,12 +98,27 @@ function dropPage(isr: IsrController, key: string): void {
  * redirected decides for itself, exactly as the static single-flight in `appRoutes` does.
  */
 export async function isrOutcome(arrived: IsrRequest): Promise<IsrOutcome> {
-  const request: IsrRequest = { ...arrived, data: keyedData(arrived.entry, arrived.data) };
+  // Where the router MATCHED this request, never where the visitor wrote it: the router answers
+  // many spellings with one page, and a key built from the raw pathname stored each of them.
+  const address = requestAddress(arrived.ctx);
+  const request: IsrRequest = {
+    ...arrived,
+    data: keyedData(arrived.entry, arrived.data, address?.pathname),
+  };
   const { entry, data, ctx, isr } = request;
   // `isrKey(url, locale)`, never `url.pathname`: the DECLARED query is part of what was rendered —
   // `meta` reads `data.url` — so two URLs differing in it are two documents (#171). The locale is
-  // `ctx.locale`, the one the `locale` stage negotiated for THIS request.
-  const key = isrKey(new URL(data.url), asCtx(ctx).locale);
+  // `ctx.locale`, the one the `locale` stage negotiated for THIS request. The key's path carries
+  // NO base path: the route table has never heard of the mount, so a key that kept it matched no
+  // route — and every `isr` page of an app under a `basePath` was stored with no ttl and no tags.
+  const keyed = new URL(data.url);
+  if (address !== undefined) keyed.pathname = address.path;
+  const key = isrKey(keyed, asCtx(ctx).locale);
+  // The key has to read back as THIS route, or its ttl, its tags and what a bust does to it are
+  // another route's or nobody's. It always does for an address the framework's URL scheme can
+  // spell; what is left is a path the router matched that another reading claims (`//en/x` is the
+  // `/:lang/x` route with no locale, and `/en/x` is the `/x` route in English). Answered, uncached.
+  if (isrRouteFor(describePages(), key)?.file !== entry.file) return ownOutcome(request);
   let decided: RedirectIntent | undefined;
   // `{ html, status }`, never the bare string: the entry stores the status beside the HTML and
   // serves it on every hit, so a 404 under `isr` is a 404 for its whole TTL.
@@ -127,9 +144,9 @@ export async function isrOutcome(arrived: IsrRequest): Promise<IsrOutcome> {
 }
 
 /**
- * A joiner whose leader's load redirected: its own `load`, answered for this request alone. A page
- * here is NOT stored — the store was just told the key has none — so it is `private, no-store`;
- * the next request to miss stores one.
+ * A request answered for itself alone: a joiner whose leader's load redirected, or one whose key
+ * is not its own route's. Its own `load`; a page here is NOT stored — the store was just told the
+ * key has none, or the key is another page's — so it is `private, no-store`.
  */
 async function ownOutcome(request: IsrRequest): Promise<IsrOutcome> {
   const loaded = await routeDataFor(request.entry.config, request.data);

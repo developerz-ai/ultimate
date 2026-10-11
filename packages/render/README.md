@@ -557,7 +557,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`†, `enumeratePrerender`† | build-time render, content hashing |
 | `isrController`†, `invalidateAndRevalidate`† | SWR + single-flight + tag triggers |
-| `isrKey`†, `isrRequestUrl`†, `undeclaredQuery`† | the one derivation of an `isr` store key, and the request URL narrowed to `revalidate.query` |
+| `isrKey`†, `isrRequestUrl`†, `undeclaredQuery`†, `isrRouteFor`† | the one derivation of an `isr` store key — the path in `@ultimat3/http`'s `canonicalPath` spelling, so every spelling the router answers with a page is that page's one entry — the request URL narrowed to `revalidate.query`, and the route a key reads back as (a key no route owns is never stored) |
 | `noStore`, `routeNoStoreOf` | a loader's "do not keep this answer" — a mark on the data, like `withStatus`; read by `isr` |
 | `renderSsr`†, `streamResult`† | the per-request modes |
 | `renderToHtml`†, `renderComponent`†, `stylesFor`† | the server JSX writer and the surface's css |

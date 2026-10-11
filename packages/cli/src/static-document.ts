@@ -12,9 +12,11 @@ import { etagMatches } from './runtime-storage';
 export type StaticResult = RenderResult & { readonly body: string };
 
 /**
- * The entries one process keeps. A static route has no params here and no query, so the real count
- * is routes × locales; the cap is what a forged `Host` (part of the key when the app declares no
- * origin) can cost — past it a page is rendered per request, as before, never refused.
+ * The entries one process keeps. A static route has no params here and no query, and the key's
+ * path is the request's ADDRESS (`runtime-address.ts`), never its raw pathname — `/about/`,
+ * `//about` and `/%61bout` are one entry — so the real count is routes × locales; the cap is what a
+ * forged `Host` (part of the key when the app declares no origin) can cost — past it a page is
+ * rendered per request, as before, never refused.
  */
 export const STATIC_MEMO_LIMIT = 1024;
 
@@ -77,7 +79,9 @@ export function createStaticMemo(
  * The key a request's document is kept under, or `undefined` when it must be rendered: a query
  * string is part of what `meta` reads (`data.url`), and a dynamic segment is an unbounded set an
  * anonymous visitor chooses. The origin is in the key because canonical and `og:url` are absolute
- * against the request's own when the app declares none.
+ * against the request's own when the app declares none. `url` is `addressedUrl`'s: keyed on the
+ * pathname as written, any visitor filled the memo with spellings of one page (`/about//`, …) and
+ * every page that arrived after the cap was rendered per request for the life of the process.
  */
 export function staticMemoKey(
   entry: Pick<RouteEntry, 'config' | 'pattern'>,
