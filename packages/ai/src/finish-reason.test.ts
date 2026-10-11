@@ -43,12 +43,15 @@ describe('a finish reason is read for what it means', () => {
     ['MAX_TOKENS', 'max_tokens'],
     ['content_filter', 'refusal'],
   ])('%s is %s', async (finish, reason) => {
-    expect((await over({ content: 'done' }, finish)).stopReason).toBe(reason);
+    const { stopReason }: { stopReason: string } = await over({ content: 'done' }, finish);
+    expect(stopReason).toBe(reason);
   });
 
-  test.each(['tool_calls', 'function_call', 'tool_use'])('%s is a tool turn', async (finish) => {
-    expect((await over(call('{"a":1}'), finish)).stopReason).toBe('tool_use');
-  });
+  for (const finish of ['tool_calls', 'function_call', 'tool_use']) {
+    test(`${finish} is a tool turn`, async () => {
+      expect((await over(call('{"a":1}'), finish)).stopReason).toBe('tool_use');
+    });
+  }
 });
 
 describe('a reason nobody knows is not truncation', () => {
