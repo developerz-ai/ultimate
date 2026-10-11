@@ -66,7 +66,13 @@ const prerender =
 // landed on disk — which is what \`x build --target static --json\` reads back.
 
 import { join } from 'node:path';
-import { loadSiteSettings, type PrerenderReport, prerenderSite, siteSeo } from '@ultimat3/cli';
+import {
+  loadSiteSettings,
+  type PrerenderReport,
+  prerenderSite,
+  siteSeo,
+  writeSiteSeo,
+} from '@ultimat3/cli';
 
 const root = join(import.meta.dir, '..', '..');
 const flag = Bun.argv.indexOf('--out');
@@ -84,9 +90,12 @@ const origin = Bun.env.SITE_ORIGIN;
  * page whose \`meta\` says \`robots: { index: false }\` left out — so a crawler reads one sitemap
  * from the CDN and from the container.
  *
- * A DYNAMIC route contributes exactly the URLs this build emitted for it, read back off the report
- * rather than by calling \`prerender()\` a second time: the sitemap then cannot name a page the
- * artifact does not contain.
+ * A DYNAMIC route contributes exactly the URLs this build emitted for it, read back off the report:
+ * the sitemap then cannot name a page the artifact does not contain. \`prerender()\` is asked again
+ * only for what each page says of itself — its \`lastmod\`, the \`locales\` it is listed in.
+ *
+ * With \`seo.sitemap.sections\` the answer is an index and its parts: \`/sitemap.xml\` plus
+ * \`/sitemaps/<name>-<n>.xml\`, every one written here.
  *
  * \`robots.txt\` fails closed — anything that is not \`ULTIMATE_ENV=production\` emits
  * \`Disallow: /\` and advertises no sitemap — so a preview build cannot outrank the real site.
@@ -104,9 +113,7 @@ async function writeSeoFiles(report: PrerenderReport): Promise<readonly string[]
     pagesFor: (route) =>
       report.pages.filter((page) => page.route === route).map((page) => page.path),
   });
-  for (const file of seo.sitemaps) await Bun.write(join(out, file.path), file.xml);
-  await Bun.write(join(out, 'robots.txt'), seo.robots);
-  return [...seo.sitemaps.map((file) => file.path), '/robots.txt'];
+  return await writeSiteSeo(out, seo);
 }
 
 if (import.meta.main) {

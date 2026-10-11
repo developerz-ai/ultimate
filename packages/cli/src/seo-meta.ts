@@ -5,6 +5,8 @@
 // this is the only tier that can see both: `@ultimat3/seo` is tier 1 and may not import the route
 // registry, which is tier 4.
 
+import { ctxOf, runWithContext } from '@ultimat3/core';
+import { localizedPath } from '@ultimat3/i18n';
 import { metaContextFor, type RouteEntry, routeDataFor, routeEntries } from '@ultimat3/render';
 import type { RouteRecord } from '@ultimat3/seo';
 import { loadApp } from './app-load';
@@ -66,11 +68,19 @@ export async function scanSiteMeta(root: string): Promise<SiteMetaScan> {
 /**
  * The same scan over the registry as it stands, without loading anything.
  *
+ * `locale` runs every `meta` inside that locale's context; omitted, in none (the gate's read).
+ *
  * Split from `scanSiteMeta` so the resolution rules are testable against routes registered by hand:
  * the half worth pinning is which routes are reachable and what happens when one throws, and
  * neither of those is a fact about globbing a directory.
  */
-export async function readSiteMeta(): Promise<SiteMetaScan> {
+export async function readSiteMeta(locale?: string): Promise<SiteMetaScan> {
+  // In a locale: each `meta` runs as that locale's document would — `ctx.locale`, `t` and the URL
+  // are its own — which is what lets a page that is `noindex` in one language say so.
+  const scoped = <T>(run: () => Promise<T>): Promise<T> =>
+    locale === undefined ? run() : runWithContext(ctxOf({ role: 'web', locale }), run);
+  const pathOf = (path: string): string =>
+    locale === undefined ? path : localizedPath(path, locale);
   const records: RouteRecord[] = [];
   const unresolved: UnresolvedRoute[] = [];
   const findings: Finding[] = [];
@@ -82,10 +92,10 @@ export async function readSiteMeta(): Promise<SiteMetaScan> {
       unresolved.push({ path: entry.path, file: entry.file, reason });
       continue;
     }
-    const ctx = { url: `${PROBE_ORIGIN}${entry.path}`, params: {} };
+    const ctx = { url: `${PROBE_ORIGIN}${pathOf(entry.path)}`, params: {} };
     try {
-      const meta = await entry.config.meta(
-        metaContextFor(ctx, await routeDataFor(entry.config, ctx)),
+      const meta = await scoped(async () =>
+        entry.config.meta(metaContextFor(ctx, await routeDataFor(entry.config, ctx))),
       );
       records.push({
         path: entry.path,

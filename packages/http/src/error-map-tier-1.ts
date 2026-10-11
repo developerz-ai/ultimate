@@ -80,4 +80,6 @@ export const TIER_1_ERROR_STATUS = {
   // 409 with the rest of promotion's refusals: an earlier call moved these bytes (a doubled or
   // retried confirm), a state the caller answers by reading the row that holds `meta.attachedKey`.
   X_STORAGE_ALREADY_PROMOTED: 409,
+  // @ultimat3/seo — a sitemap entry carries a lastmod or a locale the sitemap cannot write
+  X_SITEMAP_ENTRY_INVALID: 500,
 } satisfies Readonly<Record<string, number>>;

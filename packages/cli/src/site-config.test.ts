@@ -33,18 +33,20 @@ describe('loadSiteSettings', () => {
     expect(await loadSiteSettings(join(ROOT, 'app'))).toEqual({
       origin: 'https://notificado.co',
       disallow: ['/panel'],
-      sitemap: { extra: [], lastmod: 'none' },
+      sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
     });
   });
 
   test('reads seo.sitemap when the config carries it', async () => {
     await Bun.write(
       join(ROOT, 'sitemap', 'app.config.ts'),
-      "export const config = { name: 'demo', site: { origin: null }, seo: { robots: { disallow: [] }, sitemap: { extra: ['/verificar'], lastmod: 'git' } } };\n",
+      "export const config = { name: 'demo', site: { origin: null }, seo: { robots: { disallow: [] }, sitemap: { extra: ['/verificar'], lastmod: 'git', pageSize: 1000, sections: [{ name: 'blog', match: '/blog/**' }] } } };\n",
     );
     expect((await loadSiteSettings(join(ROOT, 'sitemap'))).sitemap).toEqual({
       extra: ['/verificar'],
       lastmod: 'git',
+      pageSize: 1000,
+      sections: [{ name: 'blog', match: '/blog/**' }],
     });
   });
 });

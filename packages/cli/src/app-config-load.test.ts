@@ -52,7 +52,7 @@ export const config = {
   drain: { readinessGraceMs: 7000 },
   health: { readiness: 'process' },
   site: { origin: 'https://every.example' },
-  seo: { robots: { disallow: ['/panel'] }, sitemap: { extra: ['/about'], lastmod: 'build' } },
+  seo: { robots: { disallow: ['/panel'] }, sitemap: { extra: ['/about'], lastmod: 'build', sections: [{ name: 'blog', match: '/blog/**' }], pageSize: 1000 } },
   navigation: { client: ['app'], speculation: { prefetch: 'conservative', exclude: ['/x/*'] } },
   islands: { sharedChunks: true },
 };
@@ -95,7 +95,12 @@ describe('loadAppConfig', () => {
     expect(config?.health.readiness).toBe('process');
     expect(config?.site.origin).toBe('https://every.example');
     expect(config?.seo.robots.disallow).toEqual(['/panel']);
-    expect(config?.seo.sitemap).toEqual({ extra: ['/about'], lastmod: 'build' });
+    expect(config?.seo.sitemap).toEqual({
+      extra: ['/about'],
+      lastmod: 'build',
+      sections: [{ name: 'blog', match: '/blog/**' }],
+      pageSize: 1000,
+    });
     expect(config?.navigation.client).toEqual(['app']);
     expect(config?.navigation.speculation).toEqual({
       prefetch: 'conservative',
@@ -127,7 +132,12 @@ describe('loadAppConfig', () => {
     expect(config?.health.readiness).toBe('dependencies');
     expect(config?.site.origin).toBeNull();
     expect(config?.seo.robots.disallow).toEqual([]);
-    expect(config?.seo.sitemap).toEqual({ extra: [], lastmod: 'none' });
+    expect(config?.seo.sitemap).toEqual({
+      extra: [],
+      lastmod: 'none',
+      sections: [],
+      pageSize: 50_000,
+    });
     expect(config?.navigation.client).toEqual([]);
     expect(config?.navigation.speculation).toEqual(DEFAULT_SPECULATION);
     expect(config?.islands.sharedChunks).toBe(false);

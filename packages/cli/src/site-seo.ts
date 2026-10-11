@@ -8,8 +8,8 @@ import { localizedPath, unlocalizedPath } from '@ultimat3/i18n';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import type { RouteEntry } from '@ultimat3/render';
 import { routeEntries } from '@ultimat3/render';
-import { enumeratePrerender, fillPath } from '@ultimat3/render/server';
-import type { RouteRecord, SitemapFile } from '@ultimat3/seo';
+import { enumeratePrerenderEntries, fillPath } from '@ultimat3/render/server';
+import type { RouteRecord, SitemapFile, SitemapPage } from '@ultimat3/seo';
 import { buildRobots, buildSitemap, isDynamic } from '@ultimat3/seo';
 import { readSiteMeta } from './seo-meta';
 import { lastmodOf } from './sitemap-lastmod';
@@ -25,7 +25,8 @@ export interface SiteSeoOptions {
   /**
    * The concrete pages a build EMITTED for a dynamic route. The static export passes its report's,
    * so the sitemap cannot name a page the artifact lacks; absent, `prerender()` is asked — which is
-   * the same list, enumerated by the same function the prerenderer calls.
+   * the same list, enumerated by the same function the prerenderer calls. Given, `prerender()` is
+   * still asked what each page says of ITSELF (`lastmod`, `locales`); the list stays this one.
    */
   readonly pagesFor?: ((routePath: string) => readonly string[]) | undefined;
   /**
@@ -35,14 +36,22 @@ export interface SiteSeoOptions {
   readonly disallow?: readonly string[] | undefined;
   /**
    * `seo.sitemap` from `app.config.ts` (`loadSiteSettings`): the public `app/` pages to list beside
-   * the `site/` ones, and where each `<lastmod>` comes from. Omitted: `site/` pages, no `<lastmod>`.
+   * the `site/` ones, where each `<lastmod>` comes from, and the sections and page size of an
+   * index. Omitted: `site/` pages, no `<lastmod>`, one urlset.
    */
-  readonly sitemap?: SeoSitemapConfig | undefined;
+  readonly sitemap?: SiteSeoSitemap | undefined;
   /** The app root the route files are relative to — read for `lastmod: 'git' | 'mtime'`. */
   readonly root?: string | undefined;
 }
 
-const NO_SITEMAP_SETTINGS: SeoSitemapConfig = { extra: [], lastmod: 'none' };
+/**
+ * `seo.sitemap` as `siteSeo` takes it: `sections` and `pageSize` optional, so a caller that wrote
+ * `{ extra, lastmod }` before either existed still compiles and still gets the one urlset.
+ */
+export type SiteSeoSitemap = Pick<SeoSitemapConfig, 'extra' | 'lastmod'> &
+  Partial<Pick<SeoSitemapConfig, 'sections' | 'pageSize'>>;
+
+const NO_SITEMAP_SETTINGS: SiteSeoSitemap = { extra: [], lastmod: 'none' };
 
 /** A `seo.sitemap.extra` path that names no public page outside `site/`. */
 export class SitemapExtraInvalidError extends UltimateError {
@@ -67,42 +76,87 @@ const isPublicSite = (entry: RouteEntry): boolean =>
   entry.surface === 'site' && entry.config.policy === undefined;
 
 /**
- * A dynamic route's pages, UNPREFIXED and once each. A static export's report lists every locale's
- * copy (`/blog/a` and `/en/blog/a`), and the sitemap localizes each page itself — reading the
- * prefixed copies back as pages of their own listed `/en/en/blog/a`.
+ * A route's pages, UNPREFIXED and once each, with what `prerender()` said of each one. A
+ * static export's report lists every locale's copy (`/blog/a` and `/en/blog/a`), and the sitemap
+ * localizes each page itself — reading the prefixed copies back as pages of their own listed
+ * `/en/en/blog/a`.
  */
-const pagesOf = async (entry: RouteEntry, options: SiteSeoOptions): Promise<readonly string[]> => {
-  if (options.pagesFor !== undefined) {
-    return [...new Set(options.pagesFor(entry.path).map((path) => unlocalizedPath(path)))];
-  }
-  const params = await enumeratePrerender(entry);
-  return params.map((set) => fillPath(entry.pattern.source, set));
+const pagesOf = async (
+  entry: RouteEntry,
+  options: SiteSeoOptions,
+): Promise<readonly SitemapPage[]> => {
+  const said = (await enumeratePrerenderEntries(entry)).map(
+    (page): SitemapPage => ({
+      path: fillPath(entry.pattern.source, page.params),
+      ...(page.lastmod === undefined ? {} : { lastmod: page.lastmod }),
+      ...(page.locales === undefined ? {} : { locales: page.locales }),
+    }),
+  );
+  // Only a DYNAMIC route's list is the report's: a page with no params is listed whether or not
+  // this build emitted it (an `isr` one is rendered by the server), exactly as before.
+  if (options.pagesFor === undefined || !isDynamic(entry.path)) return said;
+  const byPath = new Map(said.map((page) => [page.path, page]));
+  const emitted = new Set(options.pagesFor(entry.path).map((path) => unlocalizedPath(path)));
+  return [...emitted].map((path) => byPath.get(path) ?? { path });
 };
+
+/**
+ * What a page's own `meta` says about being indexed, per locale: the record's `meta` when every
+ * locale agrees, its `locales` when only some may be indexed. `robots: { index: false }` in ONE
+ * locale used to leave that copy listed and every other copy's hreflang pointing at it — the read
+ * was made once, in no locale at all.
+ */
+async function indexability(
+  locales: readonly string[],
+): Promise<(path: string) => Pick<RouteRecord, 'meta' | 'locales'>> {
+  if (locales.length < 2) {
+    const metaByPath = new Map((await readSiteMeta()).records.map((r) => [r.path, r.meta]));
+    return (path) => {
+      const meta = metaByPath.get(path);
+      return meta === undefined ? {} : { meta };
+    };
+  }
+  const scans = new Map<string, Map<string, RouteRecord['meta']>>();
+  // One locale at a time: each scan runs every route's `meta` inside that locale's context.
+  for (const locale of locales) {
+    scans.set(locale, new Map((await readSiteMeta(locale)).records.map((r) => [r.path, r.meta])));
+  }
+  return (path) => {
+    const listed = locales.filter(
+      (locale) => scans.get(locale)?.get(path)?.robots?.index !== false,
+    );
+    if (listed.length === locales.length) return {};
+    // No locale may be indexed: the `noindex` itself is what keeps the route out.
+    if (listed.length === 0) return { meta: { robots: { index: false } } };
+    return { locales: listed };
+  };
+}
 
 /**
  * The public `site/` routes as `@ultimat3/seo` reads them. `meta` is carried where it resolves
  * without a request (`readSiteMeta`), which is what lets a page's own `robots: { index: false }`
  * keep it out of the sitemap — a page that asks crawlers to stay away must not be listed for them.
+ * A route with params or a `load` resolves no `meta` here: its pages say it per entry (`locales`).
  */
 async function publicSiteRoutes(
   options: SiteSeoOptions,
   stamp: Stamp,
+  locales: readonly string[],
 ): Promise<readonly RouteRecord[]> {
-  const metaByPath = new Map((await readSiteMeta()).records.map((r) => [r.path, r.meta]));
+  const indexed = await indexability(locales);
   return routeEntries()
     .filter(isPublicSite)
-    .map((entry) => {
-      const meta = metaByPath.get(entry.path);
-      return {
-        path: entry.path,
-        file: entry.file,
-        surface: 'site' as const,
-        render: entry.config.render,
-        ...(meta === undefined ? {} : { meta }),
-        ...(isDynamic(entry.path) ? { prerender: () => pagesOf(entry, options) } : {}),
-        ...stamp(entry.file),
-      };
-    });
+    .map((entry) => ({
+      path: entry.path,
+      file: entry.file,
+      surface: 'site' as const,
+      render: entry.config.render,
+      ...indexed(entry.path),
+      ...(isDynamic(entry.path) || entry.config.prerender !== undefined
+        ? { prerender: () => pagesOf(entry, options) }
+        : {}),
+      ...stamp(entry.file),
+    }));
 }
 
 type Stamp = (file: string) => { readonly lastmod?: string };
@@ -158,11 +212,15 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
     return lastmod === undefined ? {} : { lastmod };
   };
   const routes = [
-    ...(await publicSiteRoutes(options, stamp)),
+    ...(await publicSiteRoutes(options, stamp, locales)),
     ...extraRoutes(settings.extra, stamp),
   ];
   const sitemap = await buildSitemap(routes, {
     baseUrl: options.baseUrl,
+    // A URL `robots.txt` keeps crawlers out of is not handed to them here: one config, two files.
+    ...(options.disallow === undefined ? {} : { disallow: options.disallow }),
+    ...(settings.sections === undefined ? {} : { sections: settings.sections }),
+    ...(settings.pageSize === undefined ? {} : { maxUrls: settings.pageSize }),
     ...(locales.length < 2
       ? {}
       : {
@@ -172,8 +230,8 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
             localizedPath(path, locale, defaultLocale),
         }),
   });
-  // Past 50,000 URLs `files` are `/sitemaps/<n>.xml` and the index is `/sitemap.xml`; below it,
-  // `files` is that one file and there is no index.
+  // With sections, or past a protocol cap, `files` are `/sitemaps/*.xml` and the index is
+  // `/sitemap.xml`; otherwise `files` is that one file and there is no index.
   const sitemaps = sitemap.index === undefined ? sitemap.files : [sitemap.index, ...sitemap.files];
   const robots = buildRobots({
     baseUrl: options.baseUrl,

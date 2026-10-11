@@ -280,6 +280,8 @@ seo: {
 | `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to **every** production group — a crawler obeys only the group that names it — with a `User-agent: *` group emitted when none is declared. Any other environment still emits `Disallow: /` alone |
 | `seo.sitemap.extra` | `string[]` | `[]` | public pages outside `site/` to list — a path (`/verificar`) answered by an `app/` route with no `policy`; listed per routed locale with hreflang alternates like a `site/` page. No origin, query or fragment (`X_CONFIG_INVALID`); a path no ungated `app/` route answers is `X_SITEMAP_EXTRA_INVALID` when the sitemap is built. `As of 22.10` |
 | `seo.sitemap.lastmod` | `'none' \| 'git' \| 'mtime' \| 'build'` | `'none'` | each `<lastmod>`: `'git'` the last commit touching the route's source file (its mtime where there is no work tree — a container image), `'mtime'` the file's mtime, `'build'` one timestamp for every URL. Read once per file per process. `As of 22.10` |
+| `seo.sitemap.sections` | `{ name, match }[]` | `[]` | any declared: `/sitemap.xml` is an index of `/sitemaps/<name>-<n>.xml`, pages no section matches under the reserved `pages`. `name` a lower-case slug, unique; `match` a path pattern or a list (`/precios`, `/blog/*`, `/blog/**`), read against the path without its locale prefix. Anything else is `X_CONFIG_INVALID`. [SEO](SEO#sections-an-index-by-configuration). `As of 2026-10` |
+| `seo.sitemap.pageSize` | `number` | `50000` | `<url>` entries per sitemap file, 1–50,000 (the sitemaps.org cap). A file past 50 MB splits further whatever this says. `As of 2026-10` |
 
 ## `pwa`
 
@@ -408,7 +410,7 @@ An **embedder** that builds its own server — `httpServer({ routes, config: def
 | Call | Options | Notes |
 |---|---|---|
 | `buildRobots(config)` | `baseUrl`, `environment?`, `groups?`, `disallow?`, `sitemaps?`, `extra?` | **fail-closed**: only the exact string `production` opts a deploy into indexing, so staging, a laptop, a typo and an unset `ULTIMATE_ENV` all emit `Disallow: /` — a branch deploy that gets indexed outranks and cannibalises the real site. `environment` omitted resolves from `ULTIMATE_ENV`, and an unreadable one falls back to core's default rather than 500ing a `robots.txt` |
-| `buildSitemap(routes, options)` | `baseUrl`, `locales?`, `localizePath?`, `defaultLocale?`, `maxUrls?`, `lastmod?` | splits past `SITEMAP_MAX_URLS` (50,000) into the index `/sitemap.xml` and parts `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`), which the web role serves from `GET /sitemaps/:file`. `maxUrls` must be a positive integer — `0` never advances the chunk cursor and used to allocate empty slices until the box ran out of memory |
+| `buildSitemap(routes, options)` | `baseUrl`, `locales?`, `localizePath?`, `defaultLocale?`, `maxUrls?`, `maxBytes?`, `lastmod?`, `sections?`, `disallow?`, `now?` | splits past `SITEMAP_MAX_URLS` (50,000) or `SITEMAP_MAX_BYTES` (50 MB) into the index `/sitemap.xml` and parts `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`), which the web role serves from `GET /sitemaps/:file`; with `sections`, always an index of `/sitemaps/<name>-<n>.xml`. `maxUrls` must be a positive integer — `0` never advances the chunk cursor and used to allocate empty slices until the box ran out of memory |
 
 `baseUrl` is the argument every one of them takes, so the canonical origin stays an env key the app reads (`APP_URL`) and never a config field. There is no `seo.lighthouse` gate and no `seo.ogImage` renderer `As of 2026-08-22`.
 
