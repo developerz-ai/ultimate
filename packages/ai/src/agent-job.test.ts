@@ -109,6 +109,8 @@ function summariser(
     vars: ({ input }) => ({ topic: input.topic }),
     tools,
     ...(budget === undefined ? {} : { budget }),
+    // A scripted model may repeat one call for ever; the ceilings under test are the others.
+    maxRepeatedToolCalls: 100,
     maxTurns: 6,
     policy: allow(),
   }).named(name);

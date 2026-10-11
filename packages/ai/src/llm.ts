@@ -45,6 +45,8 @@ import { modelForCall } from './model-resolve';
 import type { ModelId } from './models';
 import { moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
+import type { PromptCacheOption } from './prompt-cache';
+import { promptCacheHint } from './prompt-cache';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
@@ -94,6 +96,13 @@ export interface LlmDef<
    */
   vars(args: LlmVarsArgs<TInput>): V | Promise<V>;
   readonly cache?: LlmCache<InferOutput<TInput>>;
+  /**
+   * PROVIDER prompt caching (`./prompt-cache`) — not `cache`, which is this package's own semantic
+   * cache. Default `'off'`: a one-shot call marked for caching pays the write premium (1.25x on
+   * Anthropic) for a prefix nothing may ever read back. `'auto'` is for a call made many times
+   * inside the cache's lifetime with one long `system`; the repair turn reads it back either way.
+   */
+  readonly promptCache?: PromptCacheOption<LlmVarsArgs<TInput>>;
   readonly budget?: LlmBudget;
   readonly policy: ActionPolicy;
   readonly mcp?: ActionMcp;
@@ -207,6 +216,7 @@ async function generate<
   const rendered = redact(rawPrompt);
   const system = prompt.system === undefined ? undefined : redact(prompt.system);
   const redacted = rendered !== rawPrompt || system !== prompt.system;
+  const promptCache = promptCacheHint(def.promptCache, 'off', args);
 
   return withSpan('ai.llm', async (span) => {
     span.setAttributes({
@@ -239,6 +249,7 @@ async function generate<
     const base: GenerateRequest = {
       model,
       ...(system === undefined ? {} : { system }),
+      ...(promptCache === undefined ? {} : { promptCache }),
       messages: [{ role: 'user', content: rendered }],
       maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),

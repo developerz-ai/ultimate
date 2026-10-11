@@ -30,6 +30,8 @@ export const AI_ERROR_CODES = [
   'X_VECTOR_UNSCOPED',
   'X_AI_CONTENT_UNSUPPORTED',
   'X_AI_MODEL_UNRESOLVED',
+  'X_AGENT_TOOL_LOOP',
+  'X_AGENT_DEADLINE',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -61,6 +63,8 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_VECTOR_UNSCOPED: 'a vector store was read with no tenant bound inside an org request',
   X_AI_CONTENT_UNSUPPORTED: 'an image or document block the role, model or wire format cannot take',
   X_AI_MODEL_UNRESOLVED: 'a model call named no model',
+  X_AGENT_TOOL_LOOP: 'an agent repeated one tool call with one result and was stopped',
+  X_AGENT_DEADLINE: 'an agent ran past its declared deadline and was stopped',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and

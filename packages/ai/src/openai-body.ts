@@ -9,6 +9,7 @@ import { AiRequestInvalidError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { modelSpec } from './models';
 import { toOpenAiMessages, toOpenAiTools, toolChoiceFor } from './openai-messages';
+import { promptCacheRule, SESSION_KEY_MAX } from './prompt-cache';
 import type { GenerateRequest } from './provider';
 
 export interface ChatCompletionBodyInput {
@@ -18,6 +19,8 @@ export interface ChatCompletionBodyInput {
   /** The provider's `name`, so a content refusal names the endpoint that cannot take the block. */
   readonly provider: string;
   readonly stream: boolean;
+  /** The endpoint, for `PROMPT_CACHE_RULES` — which host this is decides what a cache hint sends. */
+  readonly baseUrl?: string | undefined;
 }
 
 /**
@@ -33,9 +36,12 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
   const { request, model, stream, provider } = input;
   const spec = modelSpec(model);
   assertMediaContent(request.messages, { provider, model });
+  const hint = request.promptCache;
+  const rule = promptCacheRule('openai', input.baseUrl, model);
+  const marked = hint !== undefined && rule.marks === 'parts';
   const body: Record<string, unknown> = {
     model,
-    messages: toOpenAiMessages(request.system, request.messages, { provider, model }),
+    messages: toOpenAiMessages(request.system, request.messages, { provider, model }, marked),
     max_completion_tokens: Math.min(request.maxTokens, spec.maxOutput),
     ...reasoningFields(model, request.effort, request.thinking),
   };
@@ -47,6 +53,11 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
   if (request.stopSequences !== undefined && request.stopSequences.length > 0) {
     body['stop'] = request.stopSequences;
   }
+  // OpenAI's own grouping key. OpenRouter's session rides a header instead (`sessionHeaders`), so
+  // the body never carries two spellings of one key.
+  if (hint?.session !== undefined && rule.session === 'prompt_cache_key') {
+    body['prompt_cache_key'] = sessionKey(hint.session);
+  }
   if (stream) {
     body['stream'] = true;
     // Without this the final chunk carries no `usage` and the budget reconciles against nothing —
@@ -55,6 +66,32 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
     body['stream_options'] = { include_usage: true };
   }
   return body;
+}
+
+/** The headers a cache hint adds for this endpoint and model: OpenRouter's stickiness key, or none. */
+export function sessionHeaders(
+  request: GenerateRequest,
+  model: ModelId,
+  baseUrl: string | undefined,
+): Readonly<Record<string, string>> {
+  const session = request.promptCache?.session;
+  if (session === undefined) return {};
+  if (promptCacheRule('openai', baseUrl, model).session !== 'x-session-id') return {};
+  return { 'x-session-id': sessionKey(session) };
+}
+
+/**
+ * Refused, never cut: a truncated key is a DIFFERENT key that two tenants can share, and a control
+ * character in a header value is a request the runtime refuses with no code at all.
+ */
+function sessionKey(session: string): string {
+  if (session !== '' && session.length <= SESSION_KEY_MAX && !/[^\x20-\x7e]/.test(session)) {
+    return session;
+  }
+  throw new AiRequestInvalidError({
+    detail: `the prompt-cache session key is ${session.length} characters; it must be 1 to ${SESSION_KEY_MAX} printable ASCII characters to travel as a header`,
+    fix: "promptCache: { session: 'kb-agent' }   # a short, stable, non-secret name for the runs that share a prefix",
+  });
 }
 
 /**

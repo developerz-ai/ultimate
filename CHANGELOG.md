@@ -8,7 +8,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 2 — http. Tier 4 — ai.
+
+- **Provider prompt caching: an `agent()` no longer pays input price for its stable prefix on every turn.** Every turn re-sends the whole transcript, and nothing asked a provider to cache it. A `GenerateRequest` now takes `system: { stable, run }` (two blocks; the stable one first and byte-identical across runs) and `promptCache: { session? }`, and each provider marks the stable system part and the transcript's tail the way its wire and host want — `PROMPT_CACHE_RULES` in `@ultimat3/ai`, a table, sources quoted in `prompt-cache.ts`: `cache_control: { type: 'ephemeral' }` on Anthropic content blocks (three of the four breakpoints), the same mark on content parts for an `anthropic/…` model on OpenRouter (two), and **no** mark for any other model there or on OpenAI, where caching is implicit and an explicit mark on Gemini is a paid write. A session key travels as OpenRouter's `x-session-id` header or OpenAI's `prompt_cache_key`; an endpoint the table does not name is sent nothing. `agent({ system, promptCache })` and `llm({ promptCache })` are the declaration's side: `'auto' | 'off' | { session }`, and `system()` returns the text loaded at run time as `{ stable?, run? }`.
+- **Default: `agent()` caches (`promptCache: 'auto'`), `llm()` does not (`'off'`).** This is the one behaviour that changes for a caller who passes nothing: an agent's requests to an Anthropic model now carry `cache_control` marks (so `system` is sent as blocks or parts, not a string), a first turn is billed as a cache write (1.25x input on Anthropic) and later turns as reads, and the pre-flight cost estimate of a marked request prices the prompt as a write — a `budget.costPerCall` set within 25% of an agent's prompt cost now refuses. `promptCache: 'off'` restores the old request byte for byte. A one-shot `llm()` is unchanged.
+- **Cache usage is reported per turn and per run.** The chat-completions reader takes `prompt_tokens_details.cache_write_tokens` as well as `cached_tokens` out of `prompt_tokens` (which includes both) and reports them as `cacheWriteTokens` / `cacheReadTokens`; it reported a write as full-price input before. `onTurn`'s event gains `run` — the running `usage` and `cost`, priced once from the summed usage — and the `agent.turn` span event gains `llm.cache.read_tokens` / `llm.cache.write_tokens`. Prices are the model row's existing `cacheReadPerMillion` / `cacheWritePerMillion`; a token budget counts read and written tokens one for one, as it always has.
+- **`maxRepeatedToolCalls` — an agent that repeats itself is stopped (`X_AGENT_TOOL_LOOP`, 500).** That many consecutive turns making the same tool calls **and** reading the same results end the run. **Default 3, on for every agent**: a loop that used to end in `X_AGENT_MAX_TURNS` or `X_AI_BUDGET_EXCEEDED` after repeating one call now ends earlier with this code. A polled tool whose answer changes is not a repeat.
+- **`deadlineMs` — a wall-clock ceiling for one agent run (`X_AGENT_DEADLINE`, 504).** No default. Passing it aborts the model call in flight on its socket, stops waiting for a tool still running, and starts no further turn.
+- `@ultimat3/ai` exports `PROMPT_CACHE_RULES`, `promptCacheRule`, `systemText`, `SESSION_KEY_MAX`, `AgentToolLoopError`, `AgentDeadlineError` and the types `SystemPrompt`, `SystemParts`, `PromptCacheHint`, `PromptCacheOption`, `PromptCacheRule`, `CacheWire`, `AgentSystem`, `AgentRunUsage`.
+
+### Fixed
+
+Tier 4 — ai.
+
+- **A caller that goes away during an agent's model call is `X_ABORTED`.** The aborted socket surfaced as `X_AI_PROVIDER_UNAVAILABLE`, the one code the package classifies retryable, so a job retried a run its caller had abandoned.
 
 ## 27.8.1 - 2026-10-11
 

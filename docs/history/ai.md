@@ -695,3 +695,41 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 
 - Metadata is bound `::text::jsonb`. A bound string cast straight to `::jsonb` is JSON-encoded
   twice, reads back correctly, and makes every `metadata ->> key` filter match nothing.
+
+## Provider prompt caching, and the unattended-run guards (2026-10)
+
+- **Why the loop marks the cache and an app does not.** Every turn of an `agent()` re-sends the
+  whole transcript, so a 10-turn run with an 8–20k-token stable prefix paid input price for that
+  prefix ten times. `openai-wire.ts` already READ `cached_tokens`; nothing sent a breakpoint. The
+  mark has to be placed by whoever builds the request, and that is the loop.
+- **Why a rule table (`PROMPT_CACHE_RULES`) and not a flag on the provider.** The same
+  chat-completions wire needs three different things: an explicit mark for an Anthropic model on
+  OpenRouter, NO mark for Gemini there (an explicit one turns the free implicit cache into a paid
+  write), and nothing an unknown self-hosted server might reject. Host and model prefix decide,
+  first match wins, unknown gets nothing.
+- **Why `agent()` defaults on and `llm()` off.** A write costs 1.25x input on Anthropic and a read
+  0.1x or less: two turns over a prefix P cost 1.35P marked against 2P unmarked, and a tool loop is
+  two turns or more by construction. A one-shot `llm()` has no second request to read the cache.
+- **Why the stable part is the FIRST system block and the only system block marked.** It is the
+  half other runs share; the per-run half after it is covered by the transcript's own tail mark.
+- **Why `prompt_tokens` has both counters subtracted.** Measured against OpenRouter on 2026-10-11:
+  turn one reported `prompt_tokens: 19918` with `cache_write_tokens: 19914`, turn two
+  `prompt_tokens: 19988` with `cached_tokens: 19914` and `cache_write_tokens: 72`.
+- **Why the pre-flight estimate prices a hinted prompt as a write.** It is the dearest the prompt
+  can be billed (turn one), and a ceiling checked against a cheaper guess is one a real call walks
+  through.
+- **Why the repeated-turn guard compares the RESULT too.** Polling one tool with one argument is
+  legitimate while its answer changes. The same call with the same answer cannot be followed by a
+  different turn. Three ceiling tests that script a model repeating itself for ever lift the guard
+  (`maxRepeatedToolCalls: 100`) so the ceiling they are about is the one that stops the run.
+- **Why `deadlineMs` has no default.** `GenerateRequest.signal`'s own rule: a timeout nobody
+  declared is a lost answer nothing reports.
+- **Why a caller abort mid-call is rethrown as `X_ABORTED`.** The aborted socket surfaced as
+  `X_AI_PROVIDER_UNAVAILABLE`, the one code this package classifies retryable, so a job retried a
+  run its caller had abandoned.
+- Condensed out of `packages/ai/CLAUDE.md` in the same change, to stay under its ceiling: the
+  default `BudgetStore` grew by one entry per caller when every call wrote its keys (hence
+  `takeScope` / `meteredKeys`); budget keys are absent for an `undefined`, `null` or `''` org, the
+  `orgless` case `query`'s cache uses; `RetryPolicy` / `DEFAULT_GATEWAY_RETRY` keep the field names
+  an app writes; the status tables and the OpenAI `estimatedUsage` fallback are the differences
+  `provider-parity.test.ts` asserts between the two wire formats.

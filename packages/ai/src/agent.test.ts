@@ -216,6 +216,9 @@ describe('the loop is bounded', () => {
       prompt: promptFor(),
       vars: ({ input }) => ({ orderId: input.orderId }),
       tools: [actorProbe([])],
+      // The scripted model repeats one call for ever; the repeated-turn guard is lifted so the
+      // ceiling under test is the one that stops it.
+      maxRepeatedToolCalls: 100,
       maxTurns: 3,
       policy: allow(),
     }).named('loopingAgent');
@@ -237,6 +240,9 @@ describe('the loop is bounded', () => {
       prompt: promptFor(),
       vars: ({ input }) => ({ orderId: input.orderId }),
       tools: [actorProbe([])],
+      // The scripted model repeats one call for ever; the repeated-turn guard is lifted so the
+      // ceiling under test is the one that stops it.
+      maxRepeatedToolCalls: 100,
       maxTurns: 10,
       // Enough for the first turn's estimate, not for a second.
       budget: { tokensPerRun: 4_200 },

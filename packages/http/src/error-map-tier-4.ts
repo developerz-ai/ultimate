@@ -129,4 +129,8 @@ export const TIER_4_ERROR_STATUS = {
   X_PWA_PUSH_PAYLOAD_TOO_LARGE: 500,
   // @ultimat3/pwa — the push endpoint is not on a push service this app sends to
   X_PWA_PUSH_HOST_UNLISTED: 422,
+  // @ultimat3/ai — an agent repeated one tool call with one result and was stopped
+  X_AGENT_TOOL_LOOP: 500,
+  // @ultimat3/ai — an agent ran past its declared deadline and was stopped
+  X_AGENT_DEADLINE: 504,
 } satisfies Readonly<Record<string, number>>;

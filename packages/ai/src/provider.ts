@@ -12,6 +12,9 @@ import type { AiFetch } from './fetch-seam';
 import { resolveModel } from './model-resolve';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { modelSpec, reasoningBody } from './models';
+import type { PromptCacheHint, SystemPrompt } from './prompt-cache';
+import { promptCacheRule, systemText } from './prompt-cache';
+import { anthropicMessages, anthropicSystem } from './prompt-cache-blocks';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
 import {
@@ -65,7 +68,14 @@ export function messageText(message: AiMessage): string {
 
 export interface GenerateRequest {
   readonly model?: ModelId;
-  readonly system?: string;
+  /** One string, or a stable part and a per-run part (`./prompt-cache`) — two blocks on the wire. */
+  readonly system?: SystemPrompt;
+  /**
+   * Ask the provider to cache this request's prefix: the stable system part and the transcript's
+   * tail, marked per wire and host by `PROMPT_CACHE_RULES`. Absent sends no mark. Not part of
+   * `promptCacheKey` — it changes what a call costs, never what it answers.
+   */
+  readonly promptCache?: PromptCacheHint;
   readonly messages: readonly AiMessage[];
   /** Enforced output ceiling. The model never sees it, so it can be cut off mid-answer. */
   readonly maxTokens: number;
@@ -328,13 +338,17 @@ export class AnthropicProvider implements Provider {
     const model = this.modelOf(request);
     // The blocks pass through untouched below — they ARE this wire's shapes — so this is the screen.
     assertMediaContent(request.messages, { provider: this.name, model });
+    const marked =
+      request.promptCache !== undefined &&
+      promptCacheRule('anthropic', this.config.baseUrl, model).marks === 'blocks';
     const body: Record<string, unknown> = {
       model,
       max_tokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
-      messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: anthropicMessages(request.messages, marked),
       ...reasoningBody(model, request.effort, request.thinking),
     };
-    if (request.system !== undefined) body['system'] = request.system;
+    const system = anthropicSystem(request.system, marked);
+    if (system !== undefined) body['system'] = system;
     if (request.tools !== undefined && request.tools.length > 0) body['tools'] = request.tools;
     if (request.stopSequences !== undefined) body['stop_sequences'] = request.stopSequences;
     return body;
@@ -439,7 +453,7 @@ const completionCeiling = (request: GenerateRequest): number =>
 /** The prompt half alone — what the provider bills at the input rate. */
 export function estimateInputTokens(request: GenerateRequest): number {
   const body = request.messages.map(messageText).join(' ');
-  const text = estimateTextTokens(body) + estimateTextTokens(request.system ?? '');
+  const text = estimateTextTokens(body) + estimateTextTokens(systemText(request.system));
   return text + mediaTokenEstimate(request.messages);
 }
 
@@ -449,11 +463,15 @@ export function estimateInputTokens(request: GenerateRequest): number {
  * optimistic estimate is a ceiling one long completion walks through.
  */
 export function estimateCost(request: GenerateRequest): Money {
+  // A hinted request can be billed as a cache WRITE end to end (turn one of a run), which is dearer
+  // than input — so that is the rate the ceiling is checked against.
+  const prompt = estimateInputTokens(request);
+  const write = request.promptCache !== undefined;
   return costOf(resolveModel('provider', request.model), {
-    inputTokens: estimateInputTokens(request),
+    inputTokens: write ? 0 : prompt,
     outputTokens: completionCeiling(request),
     cacheReadTokens: 0,
-    cacheWriteTokens: 0,
+    cacheWriteTokens: write ? prompt : 0,
   });
 }
 

@@ -75,9 +75,14 @@ export function parseFinishReason(raw: unknown): StopReason | undefined {
 /**
  * `usage`, or `undefined` when the payload carried none.
  *
- * `prompt_tokens` INCLUDES the cached prefix on this wire, where Anthropic's `input_tokens`
- * excludes it — so the cached half is subtracted out before it is reported as `cacheReadTokens`.
- * Left in place it would be billed twice: once at the full input rate and again at the cache rate.
+ * `prompt_tokens` is the WHOLE prompt on this wire — the part read from a cache and the part
+ * written to one included — where Anthropic's `input_tokens` excludes both. So both are subtracted
+ * out before they are reported under their own counters. Left in place a cached token would be
+ * billed twice: once at the full input rate and again at the cache rate.
+ *
+ * `cache_write_tokens` is OpenRouter's (`prompt_tokens_details.cache_write_tokens`, "Number of
+ * tokens written to the cache"), reported for a model whose vendor bills a write. An endpoint that
+ * never sends it — OpenAI's own, where a write is free — reads as zero.
  */
 export function parseOpenAiUsage(raw: unknown): TokenUsage | undefined {
   const record = asRecord(raw);
@@ -85,14 +90,18 @@ export function parseOpenAiUsage(raw: unknown): TokenUsage | undefined {
   const prompt = countOf(record['prompt_tokens']);
   const completion = countOf(record['completion_tokens']);
   if (prompt === undefined && completion === undefined) return undefined;
-  const cached = countOf(asRecord(record['prompt_tokens_details'])?.['cached_tokens']) ?? 0;
+  const details = asRecord(record['prompt_tokens_details']);
+  const total = prompt ?? 0;
+  // Each clamped to what is left of the prompt: a counter larger than the prompt it is part of is
+  // the endpoint's mistake, and an unclamped one bills tokens that were never sent.
+  const cached = Math.min(countOf(details?.['cached_tokens']) ?? 0, total);
+  const written = Math.min(countOf(details?.['cache_write_tokens']) ?? 0, total - cached);
   return {
-    inputTokens: Math.max((prompt ?? 0) - cached, 0),
+    inputTokens: total - cached - written,
     // `completion_tokens` already contains `reasoning_tokens`; adding them is a double count.
     outputTokens: completion ?? 0,
     cacheReadTokens: cached,
-    // Caching is automatic here and carries no write surcharge, so there is nothing to report.
-    cacheWriteTokens: 0,
+    cacheWriteTokens: written,
   };
 }
 

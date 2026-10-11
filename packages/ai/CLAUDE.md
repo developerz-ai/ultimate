@@ -28,7 +28,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 |---|---|
 | `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts — and NO row of its own |
 | `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
-| `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`), as an app's `models.ts` would. Not shipped (`!src/**/*-fixture.ts`) |
+| `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`). Not shipped |
 | `provider.ts` | `Provider` interface, the request half, the money arithmetic, `anthropicProvider()` |
 | `echo-provider.ts` | `echoProvider()`, the deterministic double — split from `provider.ts` at its line ceiling |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
@@ -62,6 +62,10 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` | `agent()` — the tool loop, declared as an `action` |
+| `agent-def.ts` / `agent-system.ts` / `agent-usage.ts` | the declaration's types; the system one run sends; its running usage |
+| `agent-guards.ts` / `agent-errors.ts` | the repeated-turn detector and the run deadline; their two classes |
+| `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
+| `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
 | `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish: nothing reads it yet, because `manifest` is tier 4 like this package and the consumer has to be `cli` at tier 5 |
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
@@ -71,37 +75,30 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `redaction.ts` | the one gate between `vars()` and the provider: a `Secret` never reaches a prompt |
 | `eval-errors.ts` | the five `X_EVAL_*` classes; their codes and titles stay in `errors.ts` |
 | `llm-cache.ts` | the semantic cache half of `llm()`: what a declaration may partition on, and the store it reaches |
-| `llm-fixture.ts` | the harness `llm.test.ts` and `llm-cache.test.ts` share. Not shipped (`!src/**/*-fixture.ts`) |
-| `bounds-fixture.ts` | the one `refusal`/`asyncRefusal` every numeric-bound suite here asserts through. Not shipped, same rule |
-| `agent-bounds.test.ts` | the agent loop's ceilings (split from `agent.test.ts`, at its line ceiling) |
+| `llm-fixture.ts` / `bounds-fixture.ts` | the `llm()` harness; the one `refusal`/`asyncRefusal` of every bound suite. Not shipped (`!src/**/*-fixture.ts`) |
 | `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches |
-| `fix-line-fixture.ts` / `fix-line.evals-fixture.ts` / `fix-line.v1.baseline.json` / `fix-line.eval.test.ts` | the package's dogfood eval — proof the baseline convention fails a build |
+| `fix-line*` | the package's dogfood eval — proof the baseline convention fails a build |
 
 ## Invariants — bounds and budget
 
-- **Every numeric option is screened; `??` is not the screen.** `finiteOption`/`finiteCount` from
-  `@ultimat3/core` are the one form; `bun run finite-bounds` is the ratchet, and it cannot see a
-  required option with no `??`, a default parameter or a cross-field product. **`maxTokens` is the
-  worst**: it IS the budget's pre-flight estimate, and a `NaN` switches every actor and org ceiling
-  off. `Gateway.generate`/`stream` screen it at the one seam, `registerModel` screens `maxOutput`, and
-  `llm()`/`agent()` screen theirs at DECLARATION.
+- **Every numeric option is screened; `??` is not the screen** (`finiteOption`/`finiteCount`;
+  `bun run finite-bounds` is the ratchet, blind to a required option, a default parameter and a
+  cross-field product). **`maxTokens` is the worst**: it IS the budget's pre-flight estimate, and a
+  `NaN` switches every ceiling off — the gateway, `registerModel` (`maxOutput`) and `llm()`/`agent()`
+  (at DECLARATION) each screen theirs.
 - **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun` in `limitsOf`
   before the ledger's `request`; `retrieve()`'s own `k`; `remoteEmbedder()`'s `maxResponseBytes`).
 - A per-call budget `derive`s from the ambient ledger and only TIGHTENS. **A derived ledger reports
   back up the chain** (every debit on every ancestor; `reserve` checks each `request` scope); the
   STORE is written once, by the ledger the call was made on.
-- **`reserve` debits, then checks — never a read-then-write across an `await`.** The in-memory scopes
-  check and debit synchronously; the store's go through `BudgetStore.take(key, tokens, limit)`, which
-  is REQUIRED and must be atomic (no default over `spent` + `add` — that pair is the race). A refusal
-  at a later scope gives back what the earlier ones took.
-- **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`):
-  every call carries keys, so a write per key grew the default store by one entry per caller.
-  `memoryBudgetStore()` has no window and no eviction (eviction is a ceiling bypass); a counter back
-  at zero is deleted.
+- **`reserve` debits, then checks — never a read-then-write across an `await`.** The store's scopes
+  go through `BudgetStore.take(key, tokens, limit)`: REQUIRED, atomic (never `spent` + `add`). A
+  refusal at a later scope gives back what the earlier ones took.
+- **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`).
+  `memoryBudgetStore()` has no window and no eviction (a ceiling bypass); a zero counter is deleted.
 - **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
-  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an `undefined`/`null`/`''`
-  org — the `orgless` test `query`'s cache uses). `callLedger` is required on
-  `Gateway`; `hive()` asks `installedGateway()` so a hive of plain actions needs none.
+  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an empty org).
+  `callLedger` is required on `Gateway`; `hive()` asks `installedGateway()`.
 - **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
   (`providerGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
   clamps at zero leaks the ceiling.
@@ -131,10 +128,9 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 - The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`, never a
   default provider.
 - **`llm()` forwards `ctx.signal`** onto `GenerateRequest`; `.stream()` inherits it.
-- **`.stream()` is the SAME action**, marked with an ambient sink: it yields UNVALIDATED text and one
-  final `done` with the value that satisfied `output`; no repair turn (`X_LLM_STREAM_INVALID`); the
-  budget is reserved before the provider, debited on the first pull, reconciled at `done`; no
-  `respond` tool; a cache hit yields `done` alone. LAZY. `named()` is re-narrowed so the twin still streams.
+- **`.stream()` is the SAME action**, marked with an ambient sink: UNVALIDATED text, then one `done`
+  with the value that satisfied `output`; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool;
+  budget reserved before the provider, reconciled at `done`; a cache hit yields `done` alone. LAZY.
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
   `vars()` is `X_AI_PROMPT_SECRET` regardless. The `llm.redacted` span attribute records it.
 - **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
@@ -145,7 +141,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   each hold half) — never deletes, never touches a template-only closer. The
   fences are read once at `definePrompt`; no hash moves.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
-  `canonicalJson` (`prompt.test.ts` pins one hash literally); an absent schema hashes as `''`.
+  `canonicalJson`; an absent schema hashes as `''`.
 
 ## Invariants — providers and the gateway
 
@@ -163,15 +159,11 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Every other code
   stays UNREGISTERED on purpose.
 - **The retry SCHEDULE is core's (`backoffDelay`, `isRetryableStatus`); the LOOP is this package's** —
-  core's `retry()` retries unclassified throws, and every value here is an app `Provider`'s plain
-  object, so it would retry a 400. `gateway-backoff.test.ts`. `RetryPolicy`/`DEFAULT_GATEWAY_RETRY` keep the
-  field names an app writes.
+  core's `retry()` retries unclassified throws, so it would retry a 400 (`gateway-backoff.test.ts`).
 - Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.
 - **Both wire formats answer the same question the same way** (`provider-parity.test.ts`): an in-band
-  `error` in a 200 body throws (`throwInBandError`, `wire.ts`); a `refusal` stop detail forces
-  `stopReason: 'refusal'`; a tool call's `input` is parsed (`asToolInput`); the credential is scrubbed
-  from `detail` (`error-body.ts`'s `withoutKey`/`detailOf`). The status tables and the OpenAI
-  `estimatedUsage` fallback are asserted as differences.
+  `error` in a 200 throws (`throwInBandError`); a `refusal` detail forces `stopReason: 'refusal'`; a
+  tool call's `input` is parsed (`asToolInput`); the credential is scrubbed from `detail`.
 - A stream ending without `message_stop` throws. **`readSse` caps the unterminated buffer**
   (`MAX_FRAME_CHARS`); `provider` is required so a transport error names its endpoint.
 - A tool call is emitted whole. Thinking chunks are never appended to `text`.
@@ -188,11 +180,9 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   the body builders, before a socket or a reservation. **Re-registering REPLACES the spec and keeps
   its rung** (negotiated rates). **Registration order is the ladder within a `family`**, read only by
   `moreCapableThan`, over the APP's rows; `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
-- **Every provider serves the app's list**: `anthropicProvider({ models })` and
-  `openAiProvider({ models })` require a non-empty one (`X_AI_REQUEST_INVALID`, a missing config
-  too); `echoProvider().models` reads the registry. **No provider has a model of its own**: a direct
-  call naming none is `X_AI_MODEL_UNRESOLVED` from all three — the list is what it serves, never a
-  fourth place (`vendor-neutral.test.ts`, one parity case).
+- **Every provider serves the app's list**: `anthropicProvider({ models })` / `openAiProvider({ models })`
+  require a non-empty one (`X_AI_REQUEST_INVALID`); `echoProvider().models` reads the registry. **No
+  provider has a model of its own**: a direct call naming none is `X_AI_MODEL_UNRESOLVED` from all three.
 - **The reasoning controls are PER MODEL (`models.ts`)**: an unasked control is omitted; an asked
   control the model lacks is `X_AI_REQUEST_INVALID`, never dropped. Adding a model is a row the app
   registers. `disableThinkingUpTo: 'never'` refuses `thinking: 'disabled'` at every effort;
@@ -228,7 +218,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 
 - **`agent()` returns an action** (listed in `PRIMITIVE_FACTORIES`). `ctx.actor` is read once and is
   the only identity any tool runs as — never taken from the model's output. Bounded by `maxTurns`
-  (`X_AGENT_MAX_TURNS`), `budget.tokensPerRun` and `maxToolResultChars`.
+  (`X_AGENT_MAX_TURNS`), `budget.tokensPerRun`, `maxToolResultChars`, `maxRepeatedToolCalls`
+  (`X_AGENT_TOOL_LOOP`) and `deadlineMs` (`X_AGENT_DEADLINE`).
   - `tools` takes a real `action()` (`AgentTool = AnyAction | ProjectableAction`,
     `asProjectableAction`); projection happens on the FIRST RUN, memoised. An agent can be another
     agent's tool.
@@ -249,12 +240,11 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
     rule a hive member's `reason` follows too. Never a second copy.
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
   member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
-  order with `index`; the hive never names an actor; no hive budget code (the reservation holds
-  it); a member's throw is recorded through `discloseFailure` — a 5xx cause or an uncoded throw's
-  message becomes `HIDDEN_MEMBER_CAUSE`, logged as facts only; `skipped` reasons
-  `SKIPPED_ABORTED` / `SKIPPED_NO_INPUT`; `onMemberError` is required; `concurrency` 4, `minMembers`
-  2 (a below-floor split still runs serially); an empty split is `X_HIVE_EMPTY`; an aborted `ctx`
-  unwinds with `X_ABORTED`.
+  order with `index`; the hive never names an actor; no hive budget code; a member's throw goes
+  through `discloseFailure` (`HIDDEN_MEMBER_CAUSE`);
+  `skipped` reasons `SKIPPED_ABORTED` / `SKIPPED_NO_INPUT`; `onMemberError` is required;
+  `concurrency` 4, `minMembers` 2 (a below-floor split runs serially); an empty split is
+  `X_HIVE_EMPTY`; an aborted `ctx` is `X_ABORTED`.
 - **`describeAgents()` / `registeredModels()` are offered, not published** — their only legal consumer
   is `@ultimat3/cli`. The facts are a THUNK; an unnamed agent has no row.
 - **`agentJob()` composes `job()`** (never an imitation). `name`, `tenant`, `retry` are
@@ -263,16 +253,28 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   idempotent (unenforceable). **`actor`** re-resolves who it acts FOR each attempt (a served worker:
   ANONYMOUS) via `impersonate`; off-tenant is TERMINAL `X_JOB_TENANT_MISMATCH`.
 
+## Invariants — provider prompt caching
+
+- **`GenerateRequest.promptCache` is the one switch; what it sends is a ROW in `PROMPT_CACHE_RULES`**
+  (wire, host, model prefix → marks, session carrier), never an `if`. An unnamed endpoint gets
+  NOTHING. At most 3 `cache_control` (the vendor's cap is 4); never a `provider` routing object.
+- **`agent()` defaults `'auto'`, `llm()` `'off'`.** The stable system part (`prompt.system` +
+  `system().stable`) is sent FIRST and byte-stable; the mark follows the transcript's tail. The hint
+  is not in `promptCacheKey`.
+- **Usage**: chat-completions `prompt_tokens` INCLUDES read and written tokens; both are subtracted,
+  clamped. A budget debits all four counters; `estimateCost` prices a hinted prompt as a WRITE.
+- **`maxRepeatedToolCalls` compares calls AND results**; `deadlineMs` has no default and rides the
+  request's signal; a caller abort mid-call is `X_ABORTED`, never the transport's code.
+
 ## Invariants — evals, retrieval, fix lines
 
 - **No fix line may name `x ai`** (planned). An eval is selected with `x test eval --filter <name>`;
   `eval-errors.test.ts` asserts every `x test <word>` is one of the six types.
 - Every eval result carries the prompt hash. An eval gates on the DROP from its recorded baseline,
-  mean AND per case, both sides rounded as the baseline is written. Never-recorded is `X_EVAL_BASELINE_MISSING`, corrupt is `X_EVAL_BASELINE_INVALID`.
-  `baseline` is `import.meta.resolve('./…')`. Every prompt is named by an eval (`X_EVAL_MISSING`, by
-  prompt ID). `ULTIMATE_EVAL_RECORD=1` records; a deliberately-worse test calls `run`, never
-  `assert`; `x verify` with the flag is `X_EVAL_RECORDING` and runs no eval. The gate asks for a
-  recorded baseline, not only a declaration.
+  mean AND per case, both sides rounded as the baseline is written (`X_EVAL_BASELINE_MISSING` /
+  `X_EVAL_BASELINE_INVALID`). `baseline` is `import.meta.resolve('./…')`. Every prompt is named by an
+  eval (`X_EVAL_MISSING`). `ULTIMATE_EVAL_RECORD=1` records; a deliberately-worse test calls `run`,
+  never `assert`; `x verify` with the flag is `X_EVAL_RECORDING` and runs no eval.
 - Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, the overlap
   carry stops at `buffer.length - 1` and yields to a next unit it does not fit beside (no chunk over
   `size`); `metadata.source` is written AFTER the caller's spread. `VectorStore.prune` is required.

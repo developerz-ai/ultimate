@@ -20,38 +20,36 @@
  * one run's world state to another. Version bump plus the tools' own caching is the story.
  */
 
-import type { Action, ActionMcp, ActionPolicy } from '@ultimat3/action';
+import type { Action } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import type { Ctx, Span } from '@ultimat3/core';
 import { finiteCount, isMcpExposed, throwIfAborted, withSpan } from '@ultimat3/core';
-import type { Money } from '@ultimat3/money';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
+import type { AgentDef, AgentTurn } from './agent-def';
 import type { AgentFact } from './agent-facts';
 import { registerAgentFact } from './agent-facts';
+import { DEFAULT_MAX_REPEATED_TOOL_CALLS, runDeadline, toolLoopGuard } from './agent-guards';
+import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
+import type { AgentRunUsage } from './agent-usage';
+import { addUsage } from './agent-usage';
 import type { BudgetLimits } from './budget';
 import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
 import {
   AgentMaxTurnsError,
   AgentToolUnexposedError,
+  AiRequestInvalidError,
   LlmOutputInvalidError,
   LlmRefusedError,
   LlmTruncatedError,
 } from './errors';
-import type { LlmBudget } from './llm';
 import { answerAttributes } from './llm';
 import { describedModel, type ModelSource, modelForCall } from './model-resolve';
-import type { ModelId } from './models';
 import { moreCapableThan } from './models';
-import type { Prompt, PromptVars } from './prompt';
-import type {
-  AiMessage,
-  GenerateRequest,
-  GenerateResult,
-  StopReason,
-  TokenUsage,
-} from './provider';
+import type { PromptVars } from './prompt';
+import { promptCacheHint } from './prompt-cache';
+import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
@@ -80,76 +78,7 @@ const DEFAULT_TOOL_RESULT_CHARS = 4_000;
 /** Named in every bound refusal, so the fix names the key the declaration carries. */
 const SUBJECT = 'agent';
 
-export interface AgentBudget extends LlmBudget {
-  /**
-   * Token ceiling for the WHOLE run, every turn counted. The one ceiling `llm()` does not need:
-   * a single call is bounded by `maxTokens`, a loop is bounded by nothing until this is set.
-   */
-  readonly tokensPerRun?: number;
-}
-
-export interface AgentVarsArgs<TInput extends StandardSchemaV1> {
-  readonly input: InferOutput<TInput>;
-  readonly ctx: Ctx;
-}
-
-export interface AgentDef<
-  TInput extends StandardSchemaV1,
-  TOutput extends StandardSchemaV1,
-  V extends PromptVars,
-> {
-  readonly model?: ModelId;
-  readonly input: TInput;
-  readonly output: TOutput;
-  readonly prompt: Prompt<V>;
-  /** Same contract as `llm()`: the one declared place a run loads data. */
-  vars(args: AgentVarsArgs<TInput>): V | Promise<V>;
-  /**
-   * The actions the model may call. Each must be `mcp: { expose: true }` — the same predicate an
-   * external MCP client is filtered by, so an in-app agent and an external one are offered
-   * exactly the same tools. Listing one that is not exposed is refused at declaration rather than
-   * dropped, because a tool that reads as offered and silently is not is the worst of both.
-   */
-  readonly tools: readonly AgentTool[];
-  /** Hard ceiling on model turns. Reaching it is `X_AGENT_MAX_TURNS`, never a partial answer. */
-  readonly maxTurns?: number;
-  readonly maxToolResultChars?: number;
-  readonly budget?: AgentBudget;
-  readonly policy: ActionPolicy;
-  readonly mcp?: ActionMcp;
-  /** Enforced completion ceiling PER TURN. The model never sees it. */
-  readonly maxTokens?: number;
-  /**
-   * Called once per completed model turn, before the answer or the tool calls are acted on. The
-   * one thing a multi-turn run could not do until 2026-08: a 90-second loop emitted nothing until
-   * it returned, so a progress indicator, a per-turn spend line and a transcript log all had to be
-   * hand-rolled outside the framework — which is exactly the loop `agent()` exists to replace.
-   *
-   * Observation only: it cannot steer the loop, cannot see the transcript and cannot reach the
-   * actor. A throw from it FAILS the run rather than being swallowed — it is the app's code on the
-   * run's own path, and an observer that silently stopped working would be indistinguishable from
-   * one that is fine. The same facts land on the span as an `agent.turn` event, so a run that
-   * declares no hook is still readable in a trace.
-   *
-   * NOT `.stream()`. Tokens on a screen is a different contract, and `llm()`'s streamed half is
-   * one turn deep by construction; this is per TURN.
-   */
-  onTurn?(event: AgentTurn): void | Promise<void>;
-}
-
-/** One completed model turn, as an observer sees it. Facts only — no transcript, no actor. */
-export interface AgentTurn {
-  /** 1-based, so `turn === maxTurns` is the last one this run will take. */
-  readonly turn: number;
-  readonly maxTurns: number;
-  readonly model: ModelId;
-  /** Tools this turn asked for, in the order the model emitted them. `respond` is not one. */
-  readonly toolCalls: readonly string[];
-  readonly stopReason: StopReason;
-  readonly usage: TokenUsage;
-  /** This turn's cost alone, integer minor units — never the run's running total. */
-  readonly cost: Money;
-}
+export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
 
 export function agent<
   TInput extends StandardSchemaV1,
@@ -183,6 +112,21 @@ export function agent<
     1,
   );
   finiteCount(SUBJECT, 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
+  const repeats = finiteCount(
+    SUBJECT,
+    'maxRepeatedToolCalls',
+    def.maxRepeatedToolCalls ?? DEFAULT_MAX_REPEATED_TOOL_CALLS,
+    1,
+  );
+  if (repeats < 2) {
+    // One "repeat" is the first tool turn of every run: the agent could never use a tool.
+    throw new AiRequestInvalidError({
+      detail: `agent maxRepeatedToolCalls is ${repeats}, which would stop every run at its first tool turn`,
+      fix: 'maxRepeatedToolCalls: 3   # on the agent — at least 2; it counts consecutive identical turns, the first included',
+    });
+  }
+  // `AbortSignal.timeout(NaN)` throws a RangeError mid-run; `0` aborts before turn one.
+  if (def.deadlineMs !== undefined) finiteCount(SUBJECT, 'deadlineMs', def.deadlineMs, 1);
   // Projected on FIRST RUN, memoised, for the reason above: `agent()` is evaluated at module
   // scope and a tool's name is stamped by `registerAction` at boot, so naming it here would make
   // the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED`.
@@ -267,12 +211,19 @@ async function run<
   const limits = limitsOf(def);
   // The declaration, its prompt, then the gateway's `defaultModel` — the app's three places.
   const model = modelForCall('agent', name, def.model, prompt.model);
-  const vars = await def.vars({ input: args.input, ctx: args.ctx });
+  // Armed before anything is loaded: `vars()` is part of the run a deadline bounds.
+  const deadline = runDeadline(name, def.deadlineMs, args.ctx.signal);
+  const vars = await deadline.guard(Promise.resolve(def.vars(args)));
   assertNoSecrets(name, vars);
   const redact = aiRedactor();
   const rawPrompt = prompt.render(vars);
   const rendered = redact(rawPrompt);
-  const system = prompt.system === undefined ? undefined : redact(prompt.system);
+  const extra =
+    def.system === undefined ? {} : await deadline.guard(Promise.resolve(def.system(args)));
+  const rawSystem = systemOf(prompt.system, extra, (text) => text);
+  const system = systemOf(prompt.system, extra, redact);
+  const promptCache = promptCacheHint(def.promptCache, 'auto', args);
+  const repeated = toolLoopGuard(name, def.maxRepeatedToolCalls ?? DEFAULT_MAX_REPEATED_TOOL_CALLS);
   const maxTurns = def.maxTurns ?? DEFAULT_MAX_TURNS;
   const chars = def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS;
 
@@ -283,7 +234,8 @@ async function run<
       'agent.prompt.hash': prompt.hash,
       'agent.tools': adapted.offered.length,
       'agent.max_turns': maxTurns,
-      'llm.redacted': rendered !== rawPrompt || system !== prompt.system,
+      'llm.redacted': rendered !== rawPrompt || !sameSystem(system, rawSystem),
+      'llm.prompt_cache': promptCache !== undefined,
     });
 
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
@@ -295,6 +247,7 @@ async function run<
     const base: GenerateRequest = {
       model,
       ...(system === undefined ? {} : { system }),
+      ...(promptCache === undefined ? {} : { promptCache }),
       messages: [],
       maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
@@ -302,7 +255,8 @@ async function run<
       tools: [...adapted.offered, respond.tool],
       // The caller's own signal, forwarded to the transport. A disconnect has to reach the socket,
       // not just the top of the next turn: a provider call already in flight is the expensive one.
-      signal: args.ctx.signal,
+      // The run's deadline is folded into the same signal, so it reaches the socket too.
+      signal: deadline.signal,
     };
 
     return withBudget(ledger, async () => {
@@ -313,13 +267,23 @@ async function run<
       let messages: readonly AiMessage[] = [{ role: 'user', content: rendered }];
       let calls = 0;
       let issues: string | undefined;
+      let total: AgentRunUsage | undefined;
 
       for (let turn = 1; turn <= maxTurns; turn += 1) {
         // The caller is gone, so unwind instead of finishing. Every turn re-sends the WHOLE
         // transcript, so a loop that keeps going after a disconnect spends the rest of the run's
         // budget, runs every remaining tool's side effects, and discards the answer.
         throwIfAborted(args.ctx);
-        const result = await gateway.generate({ ...base, messages });
+        deadline.check();
+        const result = await deadline
+          .guard(gateway.generate({ ...base, messages }))
+          .catch((error: unknown) => {
+            // The caller left mid-call: the aborted socket reads as a provider failure, which is
+            // RETRYABLE. Say what happened instead.
+            throwIfAborted(args.ctx);
+            throw error;
+          });
+        total = addUsage(total, result);
         const requested = result.toolCalls.filter((call) => call.name !== RESPOND);
         // The same turn's `respond` calls, kept rather than forgotten: they are never RUN, but
         // `assistantTurn` replays them, and every replayed `tool_use` has to be answered.
@@ -337,6 +301,7 @@ async function run<
           stopReason: result.stopReason,
           usage: result.usage,
           cost: result.cost,
+          run: total,
         });
         assertAnswerable(result, name, base);
 
@@ -352,10 +317,14 @@ async function run<
           // result carries the `tool_use` id `runLlmToolCall` was handed, so a fast tool answering
           // first cannot be paired with a slow tool's call.
           throwIfAborted(args.ctx);
-          const results: readonly LlmToolResult[] = await Promise.all(
-            requested.map((call) => runLlmToolCall(adapted.tools, call, actor)),
+          deadline.check();
+          const results: readonly LlmToolResult[] = await deadline.guard(
+            Promise.all(requested.map((call) => runLlmToolCall(adapted.tools, call, actor))),
           );
           calls += requested.length;
+          // Before the next turn is bought: the same calls with the same results cannot lead
+          // anywhere a further turn would not also lead.
+          repeated(requested, results);
           messages = [
             ...messages,
             assistantTurn(result),
@@ -408,6 +377,10 @@ async function observeTurn<
     'agent.turn.tool_calls': event.toolCalls.length,
     'llm.stop': event.stopReason,
     'llm.cost.minor': event.cost.minor,
+    // What the provider's prompt cache did for this turn — the two numbers that say whether the
+    // stable prefix is really stable.
+    'llm.cache.read_tokens': event.usage.cacheReadTokens,
+    'llm.cache.write_tokens': event.usage.cacheWriteTokens,
   });
   await def.onTurn?.(event);
 }
