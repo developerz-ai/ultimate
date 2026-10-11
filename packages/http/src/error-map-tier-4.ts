@@ -136,4 +136,6 @@ export const TIER_4_ERROR_STATUS = {
   // @ultimat3/ai — the upstream model answered, and a tool call in the answer is not JSON: a bad
   // gateway answer no retry of the same response changes
   X_LLM_TOOL_ARGUMENTS_INVALID: 502,
+  // @ultimat3/ai — a continuation's transcript handle did not pass its screen: the caller's data
+  X_AGENT_TRANSCRIPT_INVALID: 422,
 } satisfies Readonly<Record<string, number>>;

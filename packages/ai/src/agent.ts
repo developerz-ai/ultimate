@@ -22,33 +22,43 @@
 
 import type { Action } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
-import type { Ctx, Span } from '@ultimat3/core';
+import type { Ctx } from '@ultimat3/core';
 import { finiteCount, isMcpExposed, throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
-import type { AgentDef, AgentTurn } from './agent-def';
+import type { AgentAction } from './agent-continue';
+import {
+  continuationTurn,
+  currentAgentSession,
+  screenTranscript,
+  sessionCalls,
+  TRANSCRIPT_VERSION,
+} from './agent-continue';
+import type { AgentDef } from './agent-def';
+import { AgentTranscriptInvalidError } from './agent-errors';
 import type { AgentFact } from './agent-facts';
 import { registerAgentFact } from './agent-facts';
 import { DEFAULT_MAX_REPEATED_TOOL_CALLS, runDeadline, toolLoopGuard } from './agent-guards';
 import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
+import { assertAnswerable, observeTurn } from './agent-turn';
+import { runTotal } from './agent-usage';
 import { LlmTruncatedError } from './answer-errors';
 import type { BudgetLimits } from './budget';
 import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
 import {
   AgentMaxTurnsError,
   AgentToolUnexposedError,
+  AiBudgetExceededError,
   AiRequestInvalidError,
   LlmOutputInvalidError,
-  LlmRefusedError,
 } from './errors';
 import { answerAttributes } from './llm';
 import { describedModel, type ModelSource, modelForCall } from './model-resolve';
-import { moreCapableThan } from './models';
 import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
-import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
-import { isTruncated } from './provider';
+import type { AiMessage, GenerateRequest, TokenUsage } from './provider';
+import { isTruncated, totalTokens } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
@@ -83,7 +93,7 @@ export function agent<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
   V extends PromptVars,
->(def: AgentDef<TInput, TOutput, V>): Action<TInput, TOutput> {
+>(def: AgentDef<TInput, TOutput, V>): AgentAction<TInput, TOutput> {
   const respond = respondFor(def.output);
   // At declaration, because the tools are values by then and a run that discovers this at the
   // first request has already been declared, registered and projected as if it worked. Asked of
@@ -144,7 +154,21 @@ export function agent<
   // A thunk, resolved when the manifest asks: every name in the row is stamped at boot, and this
   // line runs at module scope.
   registerAgentFact(built, () => factsOf(def));
-  return built;
+  return continuable(built);
+}
+
+/**
+ * Attach `.run()` and `.continue()` IN PLACE, for the reason `llm()`'s `streamable` gives: the
+ * object an app exported is the one the registry names, and `named()`'s twin gets them too.
+ */
+function continuable<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
+  target: Action<TInput, TOutput>,
+): AgentAction<TInput, TOutput> {
+  const rename = target.named.bind(target);
+  return Object.assign(target, {
+    ...sessionCalls(target),
+    named: (next: string): AgentAction<TInput, TOutput> => continuable(rename(next)),
+  });
 }
 
 // `null`, not `undefined`, for a row naming no model yet: the row is a published fact, and an
@@ -206,16 +230,29 @@ async function run<
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
   const name = prompt.ref;
+  // A `.continue()` in flight: its handle is the app's stored data, so it is screened before
+  // anything is loaded, reserved or sent.
+  const session = currentAgentSession();
+  const resume = session?.resume;
+  const prior = resume === undefined ? undefined : screenTranscript(name, resume.transcript);
+  if (resume !== undefined && resume.user.trim() === '') {
+    throw new AgentTranscriptInvalidError({ agent: name, reason: 'the user turn is empty' });
+  }
   // Screened first: a bad declaration is refused whether or not a gateway exists.
-  const limits = limitsOf(def);
+  const limits = limitsOf(def, prior?.usage);
   // The declaration, its prompt, then the gateway's `defaultModel` — the app's three places.
   const model = modelForCall('agent', name, def.model, prompt.model);
   // Armed before anything is loaded: `vars()` is part of the run a deadline bounds.
   const deadline = runDeadline(name, def.deadlineMs, args.ctx.signal);
-  const vars = await deadline.guard(Promise.resolve(def.vars(args)));
-  assertNoSecrets(name, vars);
   const redact = aiRedactor();
-  const rawPrompt = prompt.render(vars);
+  // A continuation does not render the prompt again: the transcript holds what was sent, and
+  // `vars()` — the load — is not run a second time. Its own turn is the caller's text.
+  let rawPrompt = resume?.user;
+  if (rawPrompt === undefined) {
+    const vars = await deadline.guard(Promise.resolve(def.vars(args)));
+    assertNoSecrets(name, vars);
+    rawPrompt = prompt.render(vars);
+  }
   const rendered = redact(rawPrompt);
   const extra =
     def.system === undefined ? {} : await deadline.guard(Promise.resolve(def.system(args)));
@@ -266,11 +303,15 @@ async function run<
       // identity any tool runs as. Nothing below reads an actor out of `result` — a model cannot
       // name the identity it acts as, and a loop that let it would be an escalation primitive.
       const { actor } = args.ctx;
-      let messages: readonly AiMessage[] = [{ role: 'user', content: rendered }];
+      let messages: readonly AiMessage[] =
+        prior === undefined
+          ? [{ role: 'user', content: rendered }]
+          : [...prior.messages, continuationTurn(prior, rendered)];
       let calls = 0;
       let issues: string | undefined;
 
-      for (let turn = 1; turn <= maxTurns; turn += 1) {
+      // `maxTurns` counts the run AND its continuations: a handle that used them all takes none.
+      for (let turn = (prior?.turns ?? 0) + 1; turn <= maxTurns; turn += 1) {
         // The caller is gone, so unwind instead of finishing. Every turn re-sends the WHOLE
         // transcript, so a loop that keeps going after a disconnect spends the rest of the run's
         // budget, runs every remaining tool's side effects, and discards the answer.
@@ -301,7 +342,7 @@ async function run<
           stopReason: result.stopReason,
           usage: result.usage,
           cost: result.cost,
-          run: meter.total() ?? { usage: result.usage, cost: result.cost },
+          run: runTotal(result.model, prior?.usage, meter.total()),
         });
         assertAnswerable(result, name, base);
         // Before a tool runs and before the answer is read: a turn cut off at the ceiling carries
@@ -353,7 +394,24 @@ async function run<
         }
 
         const parsed = await validateAsync(def.output, respond.read(result));
-        if (parsed.issues === undefined) return parsed.value;
+        if (parsed.issues === undefined) {
+          // Kept only for `.run()` / `.continue()`: a plain call leaves nothing behind.
+          if (session !== undefined) {
+            const usage = runTotal(result.model, prior?.usage, meter.total());
+            session.finished = {
+              transcript: {
+                v: TRANSCRIPT_VERSION,
+                agent: name,
+                messages: [...messages, assistantTurn(result)],
+                turns: turn,
+                usage: usage.usage,
+              },
+              turns: turn,
+              usage,
+            };
+          }
+          return parsed.value;
+        }
         // A wrong shape gets another turn like any other, because unlike `llm()` this loop has
         // turns left by construction — and unlike a tool result, the correction is the message.
         issues = formatIssues(parsed.issues).join('; ');
@@ -375,49 +433,11 @@ async function run<
   });
 }
 
-/**
- * One turn, reported twice: onto the span every run already opens, and to the declaration's own
- * hook. The span event is free — nothing to install, and a trace is where a stalled run is
- * actually diagnosed — and the hook is what a progress indicator or a per-turn spend line reads.
- *
- * Awaited, and not guarded: a throw from `onTurn` fails the run. It is the app's code on the run's
- * path, and an observer that quietly stopped working reads exactly like one that is fine.
- */
-async function observeTurn<
-  TInput extends StandardSchemaV1,
-  TOutput extends StandardSchemaV1,
-  V extends PromptVars,
->(def: AgentDef<TInput, TOutput, V>, span: Span, event: AgentTurn): Promise<void> {
-  span.addEvent('agent.turn', {
-    'agent.turn': event.turn,
-    'agent.turn.tool_calls': event.toolCalls.length,
-    'llm.stop': event.stopReason,
-    'llm.cost.minor': event.cost.minor,
-    // What the provider's prompt cache did for this turn — the two numbers that say whether the
-    // stable prefix is really stable.
-    'llm.cache.read_tokens': event.usage.cacheReadTokens,
-    'llm.cache.write_tokens': event.usage.cacheWriteTokens,
-  });
-  await def.onTurn?.(event);
-}
-
-/** Refuse before the answer is read, for the reason `llm()` does: a refusal is a 200 with no answer. */
-function assertAnswerable(result: GenerateResult, name: string, request: GenerateRequest): void {
-  if (result.stopReason !== 'refusal') return;
-  throw new LlmRefusedError({
-    prompt: name,
-    model: result.model,
-    alternative: moreCapableThan(result.model, request),
-    category: result.stopDetails?.category,
-    explanation: result.stopDetails?.explanation,
-  });
-}
-
 function limitsOf<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
   V extends PromptVars,
->(def: AgentDef<TInput, TOutput, V>): BudgetLimits {
+>(def: AgentDef<TInput, TOutput, V>, used?: TokenUsage): BudgetLimits {
   const budget = def.budget;
   return {
     // Screened under the names the DECLARATION uses, not the ledger's: `tokensPerRun` arrives at
@@ -432,6 +452,19 @@ function limitsOf<
     // a run under `withBudget` is exactly "the whole run".
     ...(budget?.tokensPerRun === undefined
       ? {}
-      : { request: finiteCount(SUBJECT, 'budget.tokensPerRun', budget.tokensPerRun) }),
+      : {
+          request: leftOf(finiteCount(SUBJECT, 'budget.tokensPerRun', budget.tokensPerRun), used),
+        }),
   };
+}
+
+/**
+ * `tokensPerRun` for THIS call: the declared ceiling less what the run's earlier calls used. Never
+ * a debit on the ledger — that would bill the actor and org scopes a second time for tokens they
+ * were already charged — so the remainder is the ceiling, and none left is refused before a call.
+ */
+function leftOf(limit: number, used: TokenUsage | undefined): number {
+  const spent = used === undefined ? 0 : totalTokens(used);
+  if (spent < limit) return limit - spent;
+  throw new AiBudgetExceededError({ scope: 'request', requested: 1, remaining: 0, limit });
 }

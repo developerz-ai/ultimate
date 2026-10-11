@@ -1,6 +1,7 @@
 // Single responsibility: a run's running token and money total, across its turns.
 
 import type { Money } from '@ultimat3/money';
+import type { ModelId } from './models';
 import type { GenerateResult, TokenUsage } from './provider';
 import { costOf } from './provider';
 
@@ -25,3 +26,30 @@ export function addUsage(total: AgentRunUsage | undefined, result: GenerateResul
   };
   return { usage, cost: costOf(result.model, usage) };
 }
+
+/**
+ * A run's total across its continuations: what the handle already held plus what this call used,
+ * priced once from the sum.
+ */
+export function runTotal(
+  model: ModelId,
+  prior: TokenUsage | undefined,
+  own: AgentRunUsage | undefined,
+): AgentRunUsage {
+  const a = prior ?? ZERO;
+  const b = own?.usage ?? ZERO;
+  const usage: TokenUsage = {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+  };
+  return { usage, cost: costOf(model, usage) };
+}
+
+const ZERO: TokenUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+};

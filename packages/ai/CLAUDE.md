@@ -63,6 +63,7 @@ one adds, the other adds.
 | `agent-guards.ts` / `agent-errors.ts` | the repeated-turn detector and the run deadline; their two classes |
 | `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
+| `agent-continue.ts` / `agent-turn.ts` | `.run()` / `.continue()`, the transcript handle and its screen; one turn's report and refusals |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
 | `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish (its consumer has to be `cli`, tier 5) |
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
@@ -78,31 +79,25 @@ one adds, the other adds.
 
 ## Invariants — bounds and budget
 
+Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bounds-and-budget).
+
 - **Every numeric option is screened; `??` is not the screen** (`finiteOption`/`finiteCount`;
-  `bun run finite-bounds` is the ratchet, blind to a required option, a default parameter and a
-  cross-field product). **`maxTokens` is the worst**: it IS the budget's pre-flight estimate, and a
-  `NaN` switches every ceiling off — the gateway, `registerModel` (`maxOutput`) and `llm()`/`agent()`
-  (at DECLARATION) each screen theirs.
-- **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun` in `limitsOf`
-  before the ledger's `request`; `retrieve()`'s own `k`; `remoteEmbedder()`'s `maxResponseBytes`).
-- A per-call budget `derive`s from the ambient ledger and only TIGHTENS. **A derived ledger reports
-  back up the chain** (every debit on every ancestor; `reserve` checks each `request` scope); the
-  STORE is written once, by the ledger the call was made on.
-- **`reserve` debits, then checks — never a read-then-write across an `await`.** The store's scopes
-  go through `BudgetStore.take(key, tokens, limit)`: REQUIRED, atomic (never `spent` + `add`). A
-  refusal at a later scope gives back what the earlier ones took.
-- **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`).
-  `memoryBudgetStore()` has no window and no eviction (a ceiling bypass); a zero counter is deleted.
+  `bun run finite-bounds`). **`maxTokens` is the worst**: it IS the pre-flight estimate, and a `NaN`
+  switches every ceiling off — screened by the gateway, `registerModel` and `llm()`/`agent()`.
+- **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun`, not `request`).
+- A per-call budget `derive`s from the ambient ledger and only TIGHTENS; a derived ledger reports
+  back up the chain; the STORE is written once, by the ledger the call was made on.
+- **`reserve` debits, then checks — never a read-then-write across an `await`**:
+  `BudgetStore.take(key, tokens, limit)` is REQUIRED and atomic; a later refusal gives back.
+- **The store is touched only for a scope whose ceiling is DECLARED**; `memoryBudgetStore()` has no
+  window and no eviction; a zero counter is deleted.
 - **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
-  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an empty org).
-  `callLedger` is required on `Gateway`; `hive()` asks `installedGateway()`.
-- **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
-  (`providerGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
-  clamps at zero leaks the ceiling.
-- Cost is `Money` (integer minor units), rounded **up**. A budget throws `X_AI_BUDGET_EXCEEDED`
-  **before** the provider call. Never truncate. List price over-reserves (no introductory prices).
-- **`Gateway.stream` routes BEFORE it reserves**, and `settled = true` comes after
-  `await ledger.record(...)`.
+  (`actor:<kind>:<id>` / `org:<orgId>`). `callLedger` is required on `Gateway`.
+- **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**; `add` takes a
+  negative `tokens` for a release — a store that clamps at zero leaks the ceiling.
+- A budget throws `X_AI_BUDGET_EXCEEDED` **before** the provider call. Never truncate. List price
+  over-reserves.
+- **`Gateway.stream` routes BEFORE it reserves**; `settled = true` comes after `ledger.record`.
 
 ## Invariants — `llm()`
 
@@ -242,6 +237,10 @@ one adds, the other adds.
     `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
     same verdict a problem document and `@ultimat3/mcp` give, from `failure-disclosure.ts` — the
     rule a hive member's `reason` follows too. Never a second copy.
+- **`.run()`/`.continue()` are the SAME action**, marked by an ambient session (as `.stream()` is).
+  The handle is screened before anything is loaded (`screenTranscript`); `maxTurns` and
+  `tokensPerRun` are cumulative — the remainder is the ceiling, NEVER a ledger debit (it would
+  charge actor/org twice); `vars()` is not re-run; the open `respond` call is answered first.
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
   member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
   order with `index`; the hive never names an actor; no hive budget code; a member's throw goes

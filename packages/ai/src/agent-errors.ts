@@ -1,4 +1,4 @@
-// The two X_AGENT_* codes an UNATTENDED run needs, apart from ./errors only because one file has
+// The X_AGENT_* codes an UNATTENDED run needs, and the one a continuation's handle is refused by, apart from ./errors only because one file has
 // one job and that catalogue is at its ceiling — the split `hive-errors.ts` made. The codes, their
 // titles and the single `registerErrorCodes` call stay in ./errors.
 
@@ -45,6 +45,23 @@ export class AgentDeadlineError extends UltimateError {
       cause: `agent "${input.agent}" was still running after its ${input.deadlineMs}ms deadline; whatever was in flight (setup, a model call or a tool) was signalled to stop, and no further turn or tool was started`,
       fix: 'deadlineMs: 300_000   # on the agent, only once a trace shows the run converging — otherwise lower maxTurns, or shorten the slow tool the agent.turn span events name',
       meta: { agent: input.agent, deadlineMs: input.deadlineMs },
+    });
+  }
+}
+
+/**
+ * A transcript handle handed to `.continue()` did not pass its screen. The handle is data an app
+ * stored and read back, so it is refused BEFORE anything is loaded, reserved or sent: a transcript
+ * with a tool call nothing answers is a 400 from every provider, and one from another agent or
+ * another format would resume a conversation this declaration never had.
+ */
+export class AgentTranscriptInvalidError extends UltimateError {
+  constructor(input: { agent: string; reason: string }) {
+    super({
+      code: 'X_AGENT_TRANSCRIPT_INVALID',
+      cause: `agent "${input.agent}" cannot continue from the transcript it was given: ${input.reason}`,
+      fix: 'agent.run(input, { ctx })   # start a new run and store ITS transcript — pass back exactly the value .run() or .continue() returned, from the same agent and prompt version',
+      meta: { agent: input.agent },
     });
   }
 }

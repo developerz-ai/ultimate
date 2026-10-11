@@ -5,8 +5,19 @@
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export { agent } from './agent';
+export type {
+  AgentAction,
+  AgentContinuation,
+  AgentRun,
+  AgentTranscript,
+} from './agent-continue';
+export { MAX_TRANSCRIPT_CHARS, TRANSCRIPT_VERSION } from './agent-continue';
 export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
-export { AgentDeadlineError, AgentToolLoopError } from './agent-errors';
+export {
+  AgentDeadlineError,
+  AgentToolLoopError,
+  AgentTranscriptInvalidError,
+} from './agent-errors';
 export type { AgentBudgetFact, AgentFact } from './agent-facts';
 export { describeAgents, resetAgents } from './agent-facts';
 export type { AgentJobOptions } from './agent-job';

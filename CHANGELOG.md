@@ -8,6 +8,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+Tier 2 — http. Tier 4 — ai.
+
+- **`agent().run()` and `.continue()` — a finished run can be resumed with one more user turn.** `agent()` could only start: one user message, a fresh transcript, so correcting a finished answer was a whole new run that re-ran every tool. `agent()` now returns an `AgentAction` — the same `Action`, plus `.run(input, opts)` resolving to `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to that transcript and resumes the loop. The transcript is re-sent byte for byte, so the provider's prompt cache reads the prefix back and no tool runs twice. `maxTurns` and `budget.tokensPerRun` count the run and its continuations together; `deadlineMs` and `maxRepeatedToolCalls` are per call. `AgentTranscript` is JSON the app stores and is screened on the way back — version, agent, a 2,000,000-character cap (`MAX_TRANSCRIPT_CHARS`), message order, block kinds, every tool call answered — else `X_AGENT_TRANSCRIPT_INVALID` (422). A plain call is unchanged and keeps nothing. New names: `AgentAction`, `AgentRun`, `AgentContinuation`, `AgentTranscript`, `AgentTranscriptInvalidError`, `MAX_TRANSCRIPT_CHARS`, `TRANSCRIPT_VERSION`.
+
 ### Fixed
 
 Tier 2 — http. Tier 4 — ai.

@@ -443,6 +443,10 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
 | **no semantic cache** | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second |
 
+### Continuing a run
+
+`agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is screened (`X_AGENT_TRANSCRIPT_INVALID`). Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
+
 ### Provider prompt caching
 
 Not the gateway's response cache and not `llm()`'s semantic one: this asks the **provider** to keep
@@ -974,6 +978,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `AgentDeadlineError` | `X_AGENT_DEADLINE` | `src/agent-errors.ts` |
 | `AgentMaxTurnsError` | `X_AGENT_MAX_TURNS` | `src/errors.ts` |
 | `AgentToolLoopError` | `X_AGENT_TOOL_LOOP` | `src/agent-errors.ts` |
+| `AgentTranscriptInvalidError` | `X_AGENT_TRANSCRIPT_INVALID` | `src/agent-errors.ts` |
 | `AgentToolUnexposedError` | `X_AGENT_TOOL_UNEXPOSED` | `src/errors.ts` |
 | `AiBudgetExceededError` | `X_AI_BUDGET_EXCEEDED` | `src/errors.ts` |
 | `AiContentUnsupportedError` | `X_AI_CONTENT_UNSUPPORTED` | `src/content-errors.ts` |

@@ -395,6 +395,44 @@ export async function metered<T>(runId: string, run: () => Promise<T>): Promise<
 
 It is the same on `X_LLM_TRUNCATED`, `X_LLM_REFUSED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID`, `X_AGENT_MAX_TURNS`, `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_ABORTED`, `X_AI_BUDGET_EXCEEDED` and a transport failure on a later turn. The ledger the run ran under holds the same settled figures. `meta` is operator-only: it is never in a problem document. A throw that is not an `UltimateError` (an `onTurn` that threw a `TypeError`) has no `meta` to carry it; the ledger still does.
 
+## Continuing a run (`.run()` / `.continue()`)
+
+`As of 2026-10`. A plain call returns the answer and keeps nothing. To correct a finished answer without starting over, keep the transcript and continue from it:
+
+```ts
+import type { AgentAction, AgentTranscript } from '@ultimat3/ai';
+import type { Ctx } from '@ultimat3/core';
+import type { t } from '@ultimat3/schema';
+
+type Article = ReturnType<typeof t.object<{ title: typeof t.string }>>;
+declare const writeArticle: AgentAction<ReturnType<typeof t.object<{ topic: typeof t.string }>>, Article>;
+declare function store(transcript: AgentTranscript): Promise<void>;
+
+export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: string }> {
+  const input = { topic: 'tides' };
+  const first = await writeArticle.run(input, { ctx });
+  await store(first.transcript); // JSON; pass back exactly this value
+  const second = await writeArticle.continue(
+    input,
+    { transcript: first.transcript, user: `Fix this and answer again: ${problem}` },
+    { ctx },
+  );
+  return second.output;
+}
+```
+
+| | |
+|---|---|
+| `.run(input, opts)` | the same action — policy, audit, rate limit, budget — resolving to `{ output, transcript, turns, usage }` |
+| `.continue(input, { transcript, user }, opts)` | appends ONE user turn and resumes the loop. `input` is the run's own input again (the policy and `system()` read it); `vars()` is not called and the prompt is not re-rendered — the transcript holds it. `user` is redacted like the prompt |
+| what is re-sent | the whole transcript, byte for byte, then the new turn. A provider has no session, so the tokens are sent again — but the prefix is the one the previous request cached, so it is read at the cache rate, and **no tool runs twice** |
+| `maxTurns` | counts the run **and every continuation**: a run that used 5 of 8 has 3 left; one that used them all is `X_AGENT_MAX_TURNS` before a provider call |
+| `budget.tokensPerRun` | cumulative too: the ceiling for a continuation is what the earlier calls left; none left is `X_AI_BUDGET_EXCEEDED` before a provider call. The actor and org scopes are charged once per call, as always |
+| `deadlineMs`, `maxRepeatedToolCalls` | per call |
+| `usage`, `onTurn`'s `run` and `turn` | cumulative across continuations; `meta.billed` on a failure is the failed **call's** own bill |
+
+**The handle is data.** `AgentTranscript` is plain JSON that the app stores; treat it as opaque. It holds what the model was sent (already redacted) and what the tools answered, so store it where tool results may live. On the way back it is screened before anything is loaded or spent — version, the agent (`id@version` of its prompt: a bumped prompt starts a new run), at most `MAX_TRANSCRIPT_CHARS` (2,000,000) of JSON, roles alternating, only the three block kinds a loop writes, and every tool call answered by the next message. Anything else is `X_AGENT_TRANSCRIPT_INVALID` (422). A transcript is not an authority: tools still run as `ctx.actor` under their own policies, so a handle someone edited can mislead the model and nothing else.
+
 ## Progress (`onTurn`)
 
 A 90-second agent run emits nothing until it returns. `onTurn` is what a progress indicator, a per-turn spend line and a transcript log read.
@@ -610,6 +648,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | `X_LLM_OUTPUT_INVALID` | every turn's answer failed the `output` schema | describe the shape in the template and bump its version, or widen `output` |
 | `X_LLM_REFUSED` | the provider's classifiers declined; `stopDetails.category` names why | set `model:` to the more capable one the thrown `fix:` names, or edit the template and bump its version |
 | `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing — read before the answer, so nothing truncated is ever validated or run. A tool call cut off mid-arguments is this code too, streamed or not | raise `maxTokens:` on the declaration, or drop fields from `output`. A model that reasons spends the same ceiling on reasoning: a measured 28,000-character answer used 12,954 output tokens |
+| `X_AGENT_TRANSCRIPT_INVALID` | `.continue()` was handed a transcript that did not pass its screen | start a new `.run()` and store its transcript; pass back exactly the value returned, to the same agent and prompt version |
 | `X_LLM_TOOL_ARGUMENTS_INVALID` | the turn finished and a tool call's arguments are not JSON. Billed (`meta.billed`), recorded on the ledger, not retried by the gateway | `retry: { attempts: 2 }` on the job; if it repeats, shorten or split the string fields of that tool's input schema |
 | `X_HIVE_EMPTY` | `split()` produced zero members | return at least one member input, or guard the call site |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains | raise that scope's ceiling, or shorten the prompt |

@@ -771,3 +771,33 @@ page reached its size ceiling).
 - Tenant and policy filters are in SQL on every statement (`conditionsSql`), on BOTH fusion halves.
   `(tenant, id)` is the primary key. `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`). Metadata is
   bound `::text::jsonb`.
+
+## Bounds and budget
+
+The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11).
+
+- **Every numeric option is screened; `??` is not the screen** (`finiteOption`/`finiteCount`;
+  `bun run finite-bounds` is the ratchet, blind to a required option, a default parameter and a
+  cross-field product). **`maxTokens` is the worst**: it IS the budget's pre-flight estimate, and a
+  `NaN` switches every ceiling off — the gateway, `registerModel` (`maxOutput`) and `llm()`/`agent()`
+  (at DECLARATION) each screen theirs.
+- **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun` in `limitsOf`
+  before the ledger's `request`; `retrieve()`'s own `k`; `remoteEmbedder()`'s `maxResponseBytes`).
+- A per-call budget `derive`s from the ambient ledger and only TIGHTENS. **A derived ledger reports
+  back up the chain** (every debit on every ancestor; `reserve` checks each `request` scope); the
+  STORE is written once, by the ledger the call was made on.
+- **`reserve` debits, then checks — never a read-then-write across an `await`.** The store's scopes
+  go through `BudgetStore.take(key, tokens, limit)`: REQUIRED, atomic (never `spent` + `add`). A
+  refusal at a later scope gives back what the earlier ones took.
+- **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`).
+  `memoryBudgetStore()` has no window and no eviction (a ceiling bypass); a zero counter is deleted.
+- **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
+  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an empty org).
+  `callLedger` is required on `Gateway`; `hive()` asks `installedGateway()`.
+- **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
+  (`providerGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
+  clamps at zero leaks the ceiling.
+- Cost is `Money` (integer minor units), rounded **up**. A budget throws `X_AI_BUDGET_EXCEEDED`
+  **before** the provider call. Never truncate. List price over-reserves (no introductory prices).
+- **`Gateway.stream` routes BEFORE it reserves**, and `settled = true` comes after
+  `await ledger.record(...)`.
