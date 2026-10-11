@@ -71,10 +71,19 @@ describe("a provider's cost is the app's number", () => {
   );
 
   test('a stream whose provider throws AFTER its done chunk is settled once, not credited twice', async () => {
-    const provider = appProvider(1, async function* () {
-      yield { type: 'done', result: answer(1) };
-      throw new TypeError('socket closed late');
-    });
+    // A stream that delivers `done` and then FAILS — the failure is this test's input.
+    const provider = appProvider(1, () => ({
+      [Symbol.asyncIterator]() {
+        let sent = false;
+        return {
+          next(): Promise<IteratorResult<StreamChunk>> {
+            if (sent) return Promise.reject(new TypeError('socket closed late'));
+            sent = true;
+            return Promise.resolve({ done: false, value: { type: 'done', result: answer(1) } });
+          },
+        };
+      },
+    }));
     const outcome = await withBudget(ledger, async () => {
       for await (const _chunk of gatewayOver(provider).stream(request)) {
         // drain

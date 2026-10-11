@@ -7,107 +7,27 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf, userActor } from '@ultimat3/core';
-import { allow } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
 import type { AgentTurn } from './agent';
-import { agent } from './agent';
 import type { AgentTranscript } from './agent-continue';
-import { MAX_TRANSCRIPT_CHARS, sealTranscript, transcriptOf } from './agent-continue';
+import { MAX_TRANSCRIPT_CHARS, sealTranscript } from './agent-continue';
+import {
+  ANSWER,
+  BETTER,
+  ctx,
+  declare,
+  INPUT,
+  model,
+  READ,
+  ran,
+  resetRan,
+  seq,
+  USAGE,
+} from './agent-continue-fixture';
 import { billedOf } from './billed';
-import { echoProvider } from './echo-provider';
-import { providerGateway } from './gateway';
-import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
-import { definePrompt } from './prompt';
-import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
+import { FIXTURE_MODEL } from './model-fixture';
 import { anthropicProvider, costOf } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
-import type { ProjectableAction } from './tools';
 
-useFixtureModels();
-
-const USAGE: TokenUsage = {
-  inputTokens: 1_000,
-  outputTokens: 200,
-  cacheReadTokens: 0,
-  cacheWriteTokens: 0,
-};
-type Step = {
-  readonly call: string;
-  readonly input?: Record<string, unknown>;
-  readonly stop?: 'max_tokens';
-};
-
-/** Call N answers `steps[N-1]`, the last one repeating. */
-function model(...steps: readonly Step[]): { seen: GenerateRequest[] } {
-  const seen: GenerateRequest[] = [];
-  const provider: Provider = {
-    name: 'scripted',
-    models: [FIXTURE_MODEL],
-    generate(request) {
-      const step = steps[Math.min(seen.length, steps.length - 1)] ?? { call: 'respond' };
-      seen.push(request);
-      const result: GenerateResult = {
-        model: FIXTURE_MODEL,
-        text: '',
-        toolCalls: [{ id: `call-${seen.length}`, name: step.call, input: step.input ?? {} }],
-        stopReason: step.stop ?? 'tool_use',
-        stopDetails: undefined,
-        usage: USAGE,
-        cost: costOf(FIXTURE_MODEL, USAGE),
-      };
-      return Promise.resolve(result);
-    },
-    stream: (request) => echoProvider().stream(request),
-  };
-  resetAiRuntime();
-  configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }) });
-  return { seen };
-}
-
-const Input = t.object({ topic: t.string });
-const Output = t.object({ title: t.string });
-const ANSWER = { call: 'respond', input: { title: 'Tides' } };
-const BETTER = { call: 'respond', input: { title: 'Tides, revised' } };
-const READ = { call: 'readDoc', input: { id: 'kb-1' } };
-
-let ran = 0;
-const readDoc: ProjectableAction = {
-  name: 'readDoc',
-  description: 'Read one document',
-  mcp: { expose: true },
-  run: () => Promise.resolve(`page ${++ran}`),
-};
-
-let seq = 0;
-function declare(
-  extra: { maxTurns?: number; tokensPerRun?: number; onTurn?: (e: AgentTurn) => void } = {},
-) {
-  seq += 1;
-  return agent({
-    input: Input,
-    output: Output,
-    prompt: definePrompt<{ topic: string }>({
-      id: `continued-${seq}`,
-      version: '1.0.0',
-      system: 'RULES: answer from the knowledge base only.',
-      template: 'Write about {{topic}}.',
-    }),
-    vars: ({ input }) => ({ topic: input.topic }),
-    system: () => ({ stable: 'INDEX\nkb-1: tides', run: 'Today is 2026-10-11.' }),
-    tools: [readDoc],
-    policy: allow(),
-    ...(extra.maxTurns === undefined ? {} : { maxTurns: extra.maxTurns }),
-    ...(extra.tokensPerRun === undefined ? {} : { budget: { tokensPerRun: extra.tokensPerRun } }),
-    ...(extra.onTurn === undefined ? {} : { onTurn: extra.onTurn }),
-  }).named(`continued${seq}`);
-}
-
-const ctx = () => ctxOf({ actor: userActor({ id: 'u-1' }) });
-const INPUT = { topic: 'tides' };
-
-beforeEach(() => {
-  ran = 0;
-});
+beforeEach(resetRan);
 
 describe('.run() keeps the transcript', () => {
   test('the answer, the handle, the turns and the usage — and a plain call is unchanged', async () => {
@@ -442,72 +362,5 @@ describe('the handle is signed, bound and screened before anything is spent', ()
       if (before === undefined) delete Bun.env['ULTIMATE_ENV'];
       else Bun.env['ULTIMATE_ENV'] = before;
     }
-  });
-});
-
-describe('a failed call leaves a handle that counts what it was billed', () => {
-  const CUT = { call: 'respond', input: {}, stop: 'max_tokens' as const };
-
-  test('six truncated continuations exhaust tokensPerRun when each retry uses the returned handle', async () => {
-    const { seen } = model(READ, ANSWER, CUT);
-    // Each call reserves ~4,100 and settles at 1,200. The run uses 2,400 of 12,000.
-    const write = declare({ tokensPerRun: 12_000, maxTurns: 50 });
-    let handle = (await write.run(INPUT, { ctx: ctx() })).transcript;
-    const codes: string[] = [];
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      const outcome = await write
-        .continue(INPUT, { transcript: handle, user: 'Again.' }, { ctx: ctx() })
-        .catch((error: unknown) => error);
-      codes.push((outcome as { code: string }).code);
-      const next = transcriptOf(outcome);
-      if (next === undefined) return expect.unreachable('a failed continue left no handle');
-      // Every failure is on the books of the handle it returned.
-      expect(billedOf(outcome)?.calls ?? 0).toBeLessThanOrEqual(1);
-      handle = next;
-    }
-    // 2,400 + 1,200 per truncated call: the fifth leaves 5,600 − … until a reservation no longer fits.
-    expect(codes.slice(0, 4)).toEqual(Array(4).fill('X_LLM_TRUNCATED'));
-    expect(codes.at(-1)).toBe('X_AI_BUDGET_EXCEEDED');
-    expect(handle.usage.inputTokens + handle.usage.outputTokens).toBeLessThanOrEqual(12_000);
-    // And nothing was sent once the ceiling was reached.
-    expect(seen.length).toBeLessThan(2 + 8);
-  });
-
-  test('the OLD handle forgets that spend — which is why a job stores the one from the error', async () => {
-    model(READ, ANSWER, CUT);
-    const write = declare({ tokensPerRun: 12_000, maxTurns: 50 });
-    const first = (await write.run(INPUT, { ctx: ctx() })).transcript;
-    const failed = await write
-      .continue(INPUT, { transcript: first, user: 'Again.' }, { ctx: ctx() })
-      .catch((error: unknown) => error);
-    expect(transcriptOf(failed)?.usage.inputTokens).toBe(3_000);
-    expect(transcriptOf(failed)?.turns).toBe(3);
-    expect(first.usage.inputTokens).toBe(2_000);
-  });
-
-  test('a first run that fails after a provider answer can be resumed from its handle', async () => {
-    const { seen } = model(READ, CUT, ANSWER);
-    const write = declare();
-    const failed = await write.run(INPUT, { ctx: ctx() }).catch((error: unknown) => error);
-    expect(failed).toMatchObject({ code: 'X_LLM_TRUNCATED' });
-    const handle = transcriptOf(failed) ?? expect.unreachable('no handle');
-    expect(handle.turns).toBe(2);
-
-    const resumed = await write.continue(
-      INPUT,
-      { transcript: handle, user: 'Shorter.' },
-      { ctx: ctx() },
-    );
-    expect(resumed.output).toEqual({ title: 'Tides' });
-    expect(resumed.turns).toBe(3);
-    // The tool result already in hand was not fetched again, and roles still alternate.
-    expect(ran).toBe(1);
-    expect(seen[2]?.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
-  });
-
-  test('a plain call that fails leaves none: it keeps nothing', async () => {
-    model(CUT);
-    const failed = await declare()(INPUT, { ctx: ctx() }).catch((error: unknown) => error);
-    expect(transcriptOf(failed)).toBeUndefined();
   });
 });
