@@ -8,6 +8,8 @@
 import type { AiMediaBlock } from './content-blocks';
 import { isMediaBlock } from './content-blocks';
 import { AiContentUnsupportedError } from './content-errors';
+import type { SystemPrompt } from './prompt-cache';
+import { CACHE_MARK, systemParts, systemText } from './prompt-cache';
 import type { AiContentBlock, AiMessage } from './provider';
 import type { JsonSchema, LlmTool } from './tools';
 
@@ -20,7 +22,12 @@ export interface OpenAiToolCall {
 
 /** A user message's parts, when it carries more than prose. Field names are the format's own. */
 export type OpenAiContentPart =
-  | { readonly type: 'text'; readonly text: string }
+  | {
+      readonly type: 'text';
+      readonly text: string;
+      /** A prompt-cache breakpoint — sent ONLY where `PROMPT_CACHE_RULES` says `parts`. */
+      readonly cache_control?: typeof CACHE_MARK;
+    }
   | { readonly type: 'image_url'; readonly image_url: { readonly url: string } }
   | {
       readonly type: 'file';
@@ -28,14 +35,18 @@ export type OpenAiContentPart =
     };
 
 export type OpenAiMessage =
-  | { readonly role: 'system'; readonly content: string }
+  | { readonly role: 'system'; readonly content: string | readonly OpenAiContentPart[] }
   | { readonly role: 'user'; readonly content: string | readonly OpenAiContentPart[] }
   | {
       readonly role: 'assistant';
       readonly content?: string | undefined;
       readonly tool_calls?: readonly OpenAiToolCall[] | undefined;
     }
-  | { readonly role: 'tool'; readonly tool_call_id: string; readonly content: string };
+  | {
+      readonly role: 'tool';
+      readonly tool_call_id: string;
+      readonly content: string | readonly OpenAiContentPart[];
+    };
 
 export interface OpenAiFunctionTool {
   readonly type: 'function';
@@ -68,12 +79,17 @@ export interface OpenAiToolChoice {
  * speaking this format — vLLM, Ollama, LiteLLM, Together — knows only `system`. OpenAI accepts it.
  */
 export function toOpenAiMessages(
-  system: string | undefined,
+  system: SystemPrompt | undefined,
   messages: readonly AiMessage[],
   target: MediaTarget,
+  /** Whether this endpoint and model take explicit `cache_control` parts (`./prompt-cache`). */
+  marked = false,
 ): readonly OpenAiMessage[] {
   const out: OpenAiMessage[] = [];
-  if (system !== undefined && system !== '') out.push({ role: 'system', content: system });
+  // One string, stable half first, wherever nothing is marked: every server in the family takes
+  // it, and an implicit cache is a prefix match.
+  const text = systemText(system);
+  if (text !== '') out.push({ role: 'system', content: marked ? systemPartsOf(system) : text });
   messages.forEach((message, m) => {
     if (typeof message.content === 'string') {
       out.push({ role: message.role, content: message.content });
@@ -84,7 +100,43 @@ export function toOpenAiMessages(
       out.push(...userTurn(message.content, m, target));
     }
   });
+  if (marked) markTail(out);
   return out;
+}
+
+/** The system message as parts: the stable one marked, the per-run one after it and unmarked. */
+function systemPartsOf(system: SystemPrompt | undefined): readonly OpenAiContentPart[] {
+  const { stable, run } = systemParts(system);
+  const parts: OpenAiContentPart[] = [];
+  // A whitespace-only part is sent as it stands and never marked.
+  if (stable !== '') {
+    parts.push({
+      type: 'text',
+      text: stable,
+      ...(stable.trim() === '' ? {} : { cache_control: CACHE_MARK }),
+    });
+  }
+  if (run !== '') parts.push({ type: 'text', text: run });
+  return parts;
+}
+
+/**
+ * Mark the LAST message's last part — the breakpoint the next turn reads back. A `user` or `tool`
+ * message only: those are the roles whose content this wire takes as parts, and a transcript sent
+ * to a model always ends on one of them.
+ */
+function markTail(out: OpenAiMessage[]): void {
+  const tail = out.at(-1);
+  if (tail === undefined || (tail.role !== 'user' && tail.role !== 'tool')) return;
+  const parts: readonly OpenAiContentPart[] =
+    typeof tail.content === 'string' ? [{ type: 'text', text: tail.content }] : tail.content;
+  const last = parts.at(-1);
+  // Only a text part carries the mark here, and never an empty or whitespace-only one.
+  if (last === undefined || last.type !== 'text' || last.text.trim() === '') return;
+  out[out.length - 1] = {
+    ...tail,
+    content: [...parts.slice(0, -1), { ...last, cache_control: CACHE_MARK }],
+  };
 }
 
 /** Who a media refusal names: this provider, and the model the request is for. */

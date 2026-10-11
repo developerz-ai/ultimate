@@ -14,9 +14,10 @@ import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './er
 import type { AiFetch } from './fetch-seam';
 import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
-import { chatCompletionBody } from './openai-body';
+import { chatCompletionBody, sessionHeaders } from './openai-body';
 import type { ChatAnswer } from './openai-wire';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
+import { promptCacheRule } from './prompt-cache';
 import type {
   GenerateRequest,
   GenerateResult,
@@ -105,6 +106,10 @@ class OpenAiProvider implements Provider {
     this.config = config;
   }
 
+  marksPromptCache(model: ModelId): boolean {
+    return promptCacheRule('openai', this.config.baseUrl, model).marks === 'parts';
+  }
+
   /**
    * Above `STREAM_ONLY_MAX_TOKENS` this runs the streaming transport and assembles the result,
    * for the reason the Anthropic provider does: a non-streaming request that large sits on an
@@ -115,10 +120,12 @@ class OpenAiProvider implements Provider {
     // this provider's first listed model — the app's three places are the only ones.
     const model = resolveModel('provider', request.model);
     if (requiresStreaming({ ...request, model })) return this.assemble(request);
+    const { baseUrl } = this.config;
     const response = await this.send(
-      chatCompletionBody({ request, model, stream: false, provider: this.name }),
+      chatCompletionBody({ request, model, stream: false, provider: this.name, baseUrl }),
       false,
       request.signal,
+      sessionHeaders(request, model, baseUrl),
     );
     const answer = parseChatCompletion((await response.json()) as unknown, this.name);
     return this.result(request, model, answer);
@@ -126,10 +133,12 @@ class OpenAiProvider implements Provider {
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = resolveModel('provider', request.model);
+    const { baseUrl } = this.config;
     const response = await this.send(
-      chatCompletionBody({ request, model, stream: true, provider: this.name }),
+      chatCompletionBody({ request, model, stream: true, provider: this.name, baseUrl }),
       true,
       request.signal,
+      sessionHeaders(request, model, baseUrl),
     );
     if (response.body === null) {
       throw new AiTransportError({
@@ -187,6 +196,7 @@ class OpenAiProvider implements Provider {
     body: Record<string, unknown>,
     streaming: boolean,
     signal: AbortSignal | undefined,
+    extra: Readonly<Record<string, string>>,
   ): Promise<Response> {
     const apiKey = this.apiKey();
     const doFetch: AiFetch = this.config.fetch ?? fetch;
@@ -198,6 +208,8 @@ class OpenAiProvider implements Provider {
           : { authorization: `Bearer ${apiKey}` }),
         'content-type': 'application/json',
         accept: streaming ? 'text/event-stream' : 'application/json',
+        // The prompt-cache session, when the request carries one and this host routes by it.
+        ...extra,
         // Last, so a caller can replace the credential header outright for a gateway that wants
         // its own scheme. Nothing here is ever logged.
         ...this.config.headers,

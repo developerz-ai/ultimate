@@ -175,6 +175,45 @@ describe('usage', () => {
     });
   });
 
+  test('reads a cache WRITE out of the prompt count too, and survives every missing field', () => {
+    // OpenRouter, turn one of a marked run: 6,000 tokens written, nothing read yet.
+    expect(
+      parseOpenAiUsage({
+        prompt_tokens: 6_200,
+        completion_tokens: 40,
+        prompt_tokens_details: { cached_tokens: 0, cache_write_tokens: 6_000 },
+        cost: 0.0158,
+      }),
+    ).toEqual({ inputTokens: 200, outputTokens: 40, cacheReadTokens: 0, cacheWriteTokens: 6_000 });
+    // Turn two: the prefix read, the new tail written.
+    expect(
+      parseOpenAiUsage({
+        prompt_tokens: 6_500,
+        completion_tokens: 40,
+        prompt_tokens_details: { cached_tokens: 6_000, cache_write_tokens: 450 },
+      }),
+    ).toEqual({ inputTokens: 50, outputTokens: 40, cacheReadTokens: 6_000, cacheWriteTokens: 450 });
+    // No details object, a null one, a details object with neither counter, non-numbers.
+    const bare = { inputTokens: 100, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 };
+    expect(parseOpenAiUsage({ prompt_tokens: 100, completion_tokens: 5 })).toEqual(bare);
+    for (const details of [null, {}, 'x', { cached_tokens: null, cache_write_tokens: '9' }]) {
+      expect(
+        parseOpenAiUsage({
+          prompt_tokens: 100,
+          completion_tokens: 5,
+          prompt_tokens_details: details,
+        }),
+      ).toEqual(bare);
+    }
+    // Counters that exceed the prompt they are part of never bill a token that was not sent.
+    expect(
+      parseOpenAiUsage({
+        prompt_tokens: 100,
+        prompt_tokens_details: { cached_tokens: 80, cache_write_tokens: 500 },
+      }),
+    ).toEqual({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 80, cacheWriteTokens: 20 });
+  });
+
   test('is undefined — never zero — when the endpoint reported none', () => {
     // Zero would read as a free call and refund the whole reservation. The provider substitutes an
     // estimate; it can only do that if this half says "nothing arrived" rather than "nothing spent".

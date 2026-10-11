@@ -12,6 +12,9 @@ import type { AiFetch } from './fetch-seam';
 import { resolveModel } from './model-resolve';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { modelSpec, reasoningBody } from './models';
+import type { PromptCacheHint, SystemPrompt } from './prompt-cache';
+import { promptCacheRule, systemText } from './prompt-cache';
+import { anthropicPrompt } from './prompt-cache-blocks';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
 import {
@@ -65,7 +68,14 @@ export function messageText(message: AiMessage): string {
 
 export interface GenerateRequest {
   readonly model?: ModelId;
-  readonly system?: string;
+  /** One string, or a stable part and a per-run part (`./prompt-cache`) — two blocks on the wire. */
+  readonly system?: SystemPrompt;
+  /**
+   * Ask the provider to cache this request's prefix: the stable system part and the transcript's
+   * tail, marked per wire and host by `PROMPT_CACHE_RULES`. Absent sends no mark. Not part of
+   * `promptCacheKey` — it changes what a call costs, never what it answers.
+   */
+  readonly promptCache?: PromptCacheHint;
   readonly messages: readonly AiMessage[];
   /** Enforced output ceiling. The model never sees it, so it can be cut off mid-answer. */
   readonly maxTokens: number;
@@ -154,6 +164,12 @@ export interface Provider {
   readonly models: readonly ModelId[];
   generate(request: GenerateRequest): Promise<GenerateResult>;
   stream(request: GenerateRequest): AsyncIterable<StreamChunk>;
+  /**
+   * Whether a request carrying `promptCache` for this model would be sent with an explicit cache
+   * mark — billed as a cache WRITE. Absent is no: the gateway prices the write only where one
+   * can happen.
+   */
+  marksPromptCache?(model: ModelId): boolean;
 }
 
 /**
@@ -323,18 +339,26 @@ export class AnthropicProvider implements Provider {
     };
   }
 
+  marksPromptCache(model: ModelId): boolean {
+    return promptCacheRule('anthropic', this.config.baseUrl, model).marks === 'blocks';
+  }
+
   /** The request body. Pure and side-effect free so a test can assert it directly. */
   body(request: GenerateRequest): Record<string, unknown> {
     const model = this.modelOf(request);
     // The blocks pass through untouched below — they ARE this wire's shapes — so this is the screen.
     assertMediaContent(request.messages, { provider: this.name, model });
+    const prompt = anthropicPrompt(
+      request,
+      request.promptCache !== undefined && this.marksPromptCache(model),
+    );
     const body: Record<string, unknown> = {
       model,
       max_tokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
-      messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: prompt.messages,
       ...reasoningBody(model, request.effort, request.thinking),
     };
-    if (request.system !== undefined) body['system'] = request.system;
+    if (prompt.system !== undefined) body['system'] = prompt.system;
     if (request.tools !== undefined && request.tools.length > 0) body['tools'] = request.tools;
     if (request.stopSequences !== undefined) body['stop_sequences'] = request.stopSequences;
     return body;
@@ -439,7 +463,7 @@ const completionCeiling = (request: GenerateRequest): number =>
 /** The prompt half alone — what the provider bills at the input rate. */
 export function estimateInputTokens(request: GenerateRequest): number {
   const body = request.messages.map(messageText).join(' ');
-  const text = estimateTextTokens(body) + estimateTextTokens(request.system ?? '');
+  const text = estimateTextTokens(body) + estimateTextTokens(systemText(request.system));
   return text + mediaTokenEstimate(request.messages);
 }
 
@@ -448,13 +472,17 @@ export function estimateInputTokens(request: GenerateRequest): number {
  * `maxTokens` at the output rate. Deliberately pessimistic — a ceiling checked against an
  * optimistic estimate is a ceiling one long completion walks through.
  */
-export function estimateCost(request: GenerateRequest): Money {
-  return costOf(resolveModel('provider', request.model), {
-    inputTokens: estimateInputTokens(request),
-    outputTokens: completionCeiling(request),
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-  });
+export function estimateCost(request: GenerateRequest, marked = false): Money {
+  const model = resolveModel('provider', request.model);
+  const prompt = estimateInputTokens(request);
+  const usage = { outputTokens: completionCeiling(request), cacheReadTokens: 0 };
+  const asInput = costOf(model, { ...usage, inputTokens: prompt, cacheWriteTokens: 0 });
+  // A request a provider WILL mark (`marked`: the gateway asks the providers serving the model) can
+  // be billed as a cache write end to end. The DEARER of the two: a row whose write is cheaper
+  // than input must not lower the ceiling's estimate below what an unmarked call costs.
+  if (!marked || request.promptCache === undefined) return asInput;
+  const asWrite = costOf(model, { ...usage, inputTokens: 0, cacheWriteTokens: prompt });
+  return asWrite.minor > asInput.minor ? asWrite : asInput;
 }
 
 export function estimateTextTokens(text: string): number {

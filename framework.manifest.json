@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "dd1b939f88b14962605f053fc98e521bf728bdf30d7825e9d8dd651d77fffff6",
+  "buildId": "612841b048d671a4a77304d19c27facac2ffc3475067f745b36f5f044c4d46dc",
   "tiers": {
     "0": [
       "core",
@@ -375,7 +375,17 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_AGENT_DEADLINE",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
       "code": "X_AGENT_MAX_TURNS",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_AGENT_TOOL_LOOP",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },

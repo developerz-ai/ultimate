@@ -341,6 +341,7 @@ export const summarize = llm({
 | Cost + token accounting | per call, per tenant, per prompt version; exceeding `budget` throws before spending |
 | Retries | typed on provider errors; rate limits back off, content refusals do not retry |
 | Caching | semantic cache from [Caching and invalidation](Caching-And-Invalidation) |
+| Provider prompt caching | the provider keeps a request's stable prefix; on by default for `agent()`, off for `llm()` → [Agents](Agents#provider-prompt-caching) |
 | Tracing | one OTel span per call with model, tokens, cache hit, prompt version |
 | Fallback | ordered provider list per model; the provider that answered is on the span as `llm.provider`, never silent. A refusal names a more capable model for the declaration to adopt — models are never swapped at runtime |
 | Money | `Money = { minor, currency }` — never a float → [Money](Money) |

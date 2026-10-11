@@ -180,7 +180,7 @@ class GatewayImpl implements Gateway {
     // The estimate is DEBITED here, not merely checked: three concurrent calls under one ledger
     // all read the same `spent()` otherwise, all pass, and all three record against a ceiling
     // only one of them fitted.
-    const reservation = await ledger?.reserve(estimateSpend(resolved));
+    const reservation = await ledger?.reserve(estimateSpend(resolved, this.marks(model)));
 
     let result: GenerateResult;
     try {
@@ -230,7 +230,7 @@ class GatewayImpl implements Gateway {
     const provider = this.providerFor(model);
 
     const ledger = currentBudget() ?? this.callLedger({});
-    const reservation = await ledger?.reserve(estimateSpend(resolved));
+    const reservation = await ledger?.reserve(estimateSpend(resolved, this.marks(model)));
     let settled = false;
     try {
       for await (const chunk of provider.stream(resolved)) {
@@ -249,6 +249,13 @@ class GatewayImpl implements Gateway {
       // reconciled the reservation and it would hold the ceiling for the rest of the window.
       if (!settled) await ledger?.release(reservation);
     }
+  }
+
+  /** Whether any provider serving `model` would send a hinted request with a cache mark. */
+  private marks(model: ModelId): boolean {
+    return this.config.providers.some(
+      (p) => p.models.includes(model) && p.marksPromptCache?.(model) === true,
+    );
   }
 
   private providerFor(model: ModelId): Provider {

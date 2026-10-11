@@ -4,12 +4,15 @@
 /** Re-exported so an `llm` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
-export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent';
 export { agent } from './agent';
+export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
+export { AgentDeadlineError, AgentToolLoopError } from './agent-errors';
 export type { AgentBudgetFact, AgentFact } from './agent-facts';
 export { describeAgents, resetAgents } from './agent-facts';
 export type { AgentJobOptions } from './agent-job';
 export { agentJob } from './agent-job';
+export type { AgentSystem } from './agent-system';
+export type { AgentRunUsage } from './agent-usage';
 export type {
   BudgetKeys,
   BudgetLedger,
@@ -177,6 +180,21 @@ export {
   promptVersions,
   resetPrompts,
 } from './prompt';
+export type {
+  CacheWire,
+  PromptCacheHint,
+  PromptCacheOption,
+  PromptCacheRule,
+  SystemParts,
+  SystemPrompt,
+} from './prompt-cache';
+export {
+  OPENAI_CACHE_KEY_MAX,
+  PROMPT_CACHE_RULES,
+  promptCacheRule,
+  SESSION_KEY_MAX,
+  systemText,
+} from './prompt-cache';
 export { promptFences } from './prompt-fence';
 export type {
   AiContentBlock,

@@ -59,6 +59,8 @@ The framework ships no default model and no catalogue row (25.0.0): every id is 
 | How do I cancel an agent run when the user closes the tab? | `ctx.signal`. Over HTTP that signal is the **request deadline**, not the socket — a closed tab does not abort it `As of 2026-08` → [Cancellation](#cancellation) |
 | How do I run an agent over 2 million rows without blowing my budget? | `backfill()` for the sweep, `hive()` or `agentJob()` per page, `budget.tokensPerRun` on both, and a shared `BudgetStore` for the fleet-wide ceiling → [Millions of rows](#millions-of-rows) |
 | Do agent tool calls run in parallel? | Yes — every tool of **one turn**, concurrently and unbounded. Turns themselves are serial → [Tools of one turn run concurrently](#tools-of-one-turn-run-concurrently) |
+| How do I stop paying full price for the same long prompt every turn? | Nothing — `agent()` asks the provider to cache each turn's prefix by default. Put text every run shares in `system().stable` → [Provider prompt caching](#provider-prompt-caching) |
+| What stops an agent that loops, or hangs, with nobody watching? | `maxRepeatedToolCalls` (default 3) and `deadlineMs` → [Unattended runs](#unattended-runs) |
 | How do I show progress while an agent is thinking? | `onTurn`, called once per completed turn. There is **no `.stream()`** on an agent → [Progress](#progress-onturn) |
 
 ## A worked example
@@ -125,6 +127,10 @@ export const supportAgent = agent({
 | `maxTurns` | no | **8** | reaching it is `X_AGENT_MAX_TURNS`, never a partial answer |
 | `maxTokens` | no | **4,096** | completion ceiling **per turn**. The model never sees it |
 | `maxToolResultChars` | no | **4,000** | one tool result's ceiling; truncation says so in the transcript |
+| `maxRepeatedToolCalls` | no | **3** | consecutive turns that may repeat the same calls **and** results; reaching it is `X_AGENT_TOOL_LOOP` → [Unattended runs](#unattended-runs) |
+| `deadlineMs` | no | none | wall-clock ceiling for the whole run; passing it is `X_AGENT_DEADLINE` |
+| `system` | no | — | system text loaded at run time, as `{ stable?, run? }` → [Provider prompt caching](#provider-prompt-caching) |
+| `promptCache` | no | **`'auto'`** | `'auto'` \| `'off'` \| `{ session }` — asks the provider to cache each turn's prefix |
 | `budget` | no | unmetered | `tokensIn`, `costPerCall`, `tokensPerRun` |
 | `mcp` | no | not exposed | exposes the agent itself as a tool |
 | `onTurn` | no | — | one call per completed turn, awaited |
@@ -259,6 +265,108 @@ That matters because the transcript **is** the request: a loop that keeps going 
 | the next hop bounded by what is LEFT | nothing — both typed clients spread `traceHeaders()` before your own headers, and it sends the **remaining** budget as `x-request-timeout-ms`. A spent budget sends no header rather than `0`, because `0` reads one hop later as "the caller asked for nothing" |
 | a run the user can actually stop | run it as a job — `agentJob()` — and cancel it by id: `x jobs cancel <id> --reason "user cancelled"` |
 
+## Provider prompt caching
+
+Every turn re-sends the whole transcript, so a run with a long stable prefix — rules, a knowledge-base index — pays for that prefix once per turn. `agent()` asks the provider to cache it: **on by default**.
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { agent, definePrompt } from '@ultimat3/ai';
+import { can } from '@ultimat3/policy';
+
+const readDocument = action({
+  input: t.object({ id: t.string }),
+  output: t.object({ body: t.string }),
+  policy: can('kb:read'),
+  mcp: { expose: true, description: 'Read one knowledge-base document by id.' },
+  handle: ({ input }) => ({ body: `body of ${input.id}` }),
+});
+
+// Your own loader. What it returns must be the same BYTES run to run: sorted, undated.
+const knowledgeIndex = async (orgId: string): Promise<string> => `INDEX for ${orgId}\n…`;
+
+const kbPrompt = definePrompt<{ question: string }>({
+  id: 'kb',
+  version: '1.0.0',
+  system: 'Answer from the knowledge base only. Answer through the respond tool.',
+  template: 'Question: {{question}}',
+});
+
+export const kbAgent = agent({
+  model: 'house-large',
+  input: t.object({ question: t.string, orgId: t.string }),
+  output: t.object({ answer: t.string }),
+  prompt: kbPrompt, // its static `system` starts the stable block
+  vars: ({ input }) => ({ question: input.question }),
+  // Text loaded at run time. `stable` joins the prompt's system in ONE block every run shares;
+  // `run` is a second block after it, for whatever differs.
+  system: async ({ input }) => ({
+    stable: await knowledgeIndex(input.orgId),
+    run: `Asked on ${new Date().toISOString().slice(0, 10)}.`,
+  }),
+  // 'auto' (the default) | 'off' | { session } — a key for hosts that route by one
+  promptCache: { session: ({ input }) => `kb:${input.orgId}` },
+  tools: [readDocument],
+  maxTurns: 10,
+  deadlineMs: 120_000,
+  policy: can('kb:ask'),
+  onTurn: ({ turn, usage, run }) => {
+    console.log(`turn ${turn}: read ${usage.cacheReadTokens}, wrote ${usage.cacheWriteTokens}`);
+    console.log(`run so far: ${run.cost.minor} ${run.cost.currency}`);
+  },
+});
+```
+
+| Turn | What the provider is asked | What it bills |
+|---|---|---|
+| 1 | cache the stable system block, and the transcript up to its tail | the prefix as a cache **write** |
+| N+1 | the same, with the mark moved to the new tail | turn N's prefix as a cache **read**, only the new tail as a write |
+| 1 of the next run | the same stable block, byte for byte | the stable block as a read, while the cache entry lives (5 minutes, refreshed by each read) |
+
+**What is sent depends on the wire and the host** — `PROMPT_CACHE_RULES` in [`prompt-cache.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src/prompt-cache.ts), first match wins. `As of 2026-10`:
+
+| Provider | Endpoint | Model id | Mark | `session` goes |
+|---|---|---|---|---|
+| `anthropicProvider()` | any | any | `cache_control: { type: 'ephemeral' }` on the stable system block and the last block of the last two messages — 3 of the 4 breakpoints | nowhere |
+| `openAiProvider()` | `openrouter.ai` | `anthropic/…` | the same mark on the stable system **part** and the tail message's last part — 2 breakpoints | `x-session-id` header |
+| `openAiProvider()` | `openrouter.ai` | anything else | **none** — Gemini and OpenAI cache implicitly, and an explicit mark on Gemini turns a free cache into a paid write | `x-session-id` header |
+| `openAiProvider()` | `api.openai.com` (the default) | any | none — caching is automatic | `prompt_cache_key` body field |
+| `openAiProvider()` | any other `baseUrl` | any | none | nowhere |
+
+| Rule | Detail |
+|---|---|
+| The stable block must be the same **bytes** | a cache is a prefix match. A timestamp, a request id or an unsorted list in `stable` is a full-price write on every call — put it in `run` |
+| Below the model's minimum nothing is cached | 512 to 4,096 tokens depending on the model (`ModelSpec.cacheMinimumTokens`); a shorter prefix is processed uncached, with no error |
+| `session` is a routing key, not a secret | on OpenRouter it leaves the process in a header: 1 to 256 printable ASCII characters, else `X_AI_REQUEST_INVALID`. On OpenAI a key over 64 characters is sent as a hash of itself (`h:` + 62 hex) — the same key always groups the same requests. OpenAI's guide states no maximum; 64 is a conservative ceiling `As of 2026-10` |
+| The Anthropic row matches any host | `anthropicProvider({ baseUrl })` pointed at a proxy still sends `cache_control`: a server speaking that wire is assumed to speak its marks |
+| Never an empty block, never a fifth mark | a mark moves back past an empty or whitespace-only text block, or is not sent; marks a raw request already carries count against the vendor's four, and the framework's are dropped first — the message before the tail, then the system block, then the tail |
+| More than about 9 tool calls in **one** turn, on OpenRouter | that turn's transcript is not read back: only the tail is marked there, the provider looks back 20 blocks from it, and each call adds two. The next turn pays a write for the transcript; the stable system block still reads |
+| No routing preference is ever sent | OpenRouter skips sticky routing when a request orders its providers, and a cache lives on one upstream |
+| `llm()` is **off** by default | `promptCache: 'auto'` on an `llm()` that is called many times with one long `system`. A one-shot call that marks its prefix pays the write premium for a cache nothing reads |
+| A direct `gateway.generate()` call | `system: { stable, run }` and `promptCache: {}` on the request — the same two fields the loop sets |
+
+**Reading it back.** `onTurn`'s `usage` carries `cacheReadTokens` and `cacheWriteTokens` per turn, `run` carries the running total (`run.usage`, `run.cost`), and the `agent.turn` span event carries `llm.cache.read_tokens` / `llm.cache.write_tokens`. A run whose later turns read nothing has an unstable prefix.
+
+**What it costs.** `costOf` prices a read at the model row's `cacheReadPerMillion` (absent: 0.1x input) and a write at `cacheWritePerMillion` (absent: 1.25x input). A token budget (`tokensPerRun`, `tokensIn`, the gateway's actor and org ceilings) counts **every** token the provider processed — input, output, cache read and cache write, each as one — so caching lowers what a run costs, not how many tokens it is allowed. The pre-flight estimate prices the prompt as a cache write **only when a provider serving the model would actually mark the request** (an Anthropic model; not Gemini, OpenAI or an unknown host, whose estimate is what it was), and at the dearer of the write and input rates — so `costPerCall` holds on turn one.
+
+**Two totals, and which to read.** `run.cost` is the run's usage summed and priced once. The ledger — `gateway.spent()`, and what `costPerCall` and every token ceiling are enforced against — adds each turn's cost, and each turn's cost is rounded **up** to a minor unit on its input half and again on its output half. So the ledger can exceed `run.cost` by under 2 minor units per turn. Enforce on the ledger (declare a `budget`); report `run.cost`.
+
+Measured, 2026-10-11, one three-turn run against OpenRouter with a 19,914-token stable prefix: turn 1 wrote 19,914 tokens and read 0; turn 2 read 19,914 and wrote 72; turn 3 read 19,986 and wrote 68.
+
+## Unattended runs
+
+Three bounds stop a run nobody is watching, beside `maxTurns` and `budget.tokensPerRun`:
+
+| Bound | Default | Reaching it |
+|---|---|---|
+| `maxRepeatedToolCalls` | **3** | `X_AGENT_TOOL_LOOP` — the most recent tool turns are one cycle gone round that many times: the same turn over and over, or a cycle of 2 or 3 turns (A,B,A,B…). "The same" is the calls, their arguments, the results and whether each failed, so a polled tool whose answer changes is progress and is left alone. A repair turn (a wrong-shaped answer) is not a tool turn: it neither counts nor resets. A longer cycle is `maxTurns`' to stop |
+| `deadlineMs` | none | `X_AGENT_DEADLINE` — the run was still going; the model call in flight is aborted on the socket, every tool's own `ctx.signal` fires so a tool that reads it stops, and no further turn starts. A tool that ignores its signal is no longer waited for but **does run to its own end** — its effects can land after the run was refused |
+| `maxToolResultChars` | **4,000** | not an error — the result is truncated, and says so in the transcript |
+
+**Under a job.** `X_AGENT_TOOL_LOOP` and `X_AGENT_DEADLINE` are registered `terminal`: an `agentJob()` dead-letters on the first attempt instead of buying the same run once per `retry.attempts`.
+
+A caller that goes away mid-call is `X_ABORTED`, not the transport failure (`X_AI_PROVIDER_UNAVAILABLE`, retryable) the aborted socket used to be reported as. `X_ABORTED` is core's and unclassified, so over HTTP it reads `terminal`; in a job the attempt count stays in charge, and a drain or an attempt timeout is settled by jobs off its own signal as before.
+
 ## Progress (`onTurn`)
 
 A 90-second agent run emits nothing until it returns. `onTurn` is what a progress indicator, a per-turn spend line and a transcript log read.
@@ -267,7 +375,8 @@ A 90-second agent run emits nothing until it returns. `onTurn` is what a progres
 onTurn: ({ turn, maxTurns, model, toolCalls, stopReason, usage, cost }) => {
   // turn is 1-based, so `turn === maxTurns` is the last one this run will take
   // toolCalls are names, in the order the model emitted them — `respond` is not one
-  // cost is THIS turn's alone, never the run's running total
+  // usage and cost are THIS turn's alone: inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens
+  // the event also carries `run` — the running total, this turn included: run.usage, run.cost
 },
 ```
 
@@ -468,6 +577,8 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 |---|---|---|
 | `X_AGENT_TOOL_UNEXPOSED` | a `tools` entry declares no `mcp` block, or `mcp: { expose: false }`. Raised at **declaration** | add `mcp: { expose: true, description }` to the action `cause` names, or drop it from `tools` |
 | `X_AGENT_MAX_TURNS` | the loop used every turn calling tools and never answered | tell the template when to stop and answer through the respond tool, then bump its version |
+| `X_AGENT_TOOL_LOOP` | consecutive turns made the same tool calls and read the same results | `maxRepeatedToolCalls: 5` on the agent, only for a tool that really is polled; otherwise tell the template what to do when the result does not change, then bump its version |
+| `X_AGENT_DEADLINE` | the run outlived its declared `deadlineMs` | `deadlineMs: 300_000` on the agent, once a trace shows the run converging; otherwise lower `maxTurns` |
 | `X_LLM_OUTPUT_INVALID` | every turn's answer failed the `output` schema | describe the shape in the template and bump its version, or widen `output` |
 | `X_LLM_REFUSED` | the provider's classifiers declined; `stopDetails.category` names why | set `model:` to the more capable one the thrown `fix:` names, or edit the template and bump its version |
 | `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing | raise `maxTokens:` on the declaration, or drop fields from `output` |
@@ -489,6 +600,8 @@ Full list: [Error codes](Error-Codes).
 - A budget refuses, never truncates, and the ceiling holds under parallelism because the reservation debits before the call.
 - `ctx.signal` unwinds the run at every turn boundary, before every tool batch, and on the socket.
 - `onTurn` observes and cannot steer. There is no `.stream()` on an agent.
+- Every turn asks the provider to cache its prefix unless `promptCache: 'off'`; what is sent is a row in `PROMPT_CACHE_RULES`, never an `if`.
+- A run that repeats itself is stopped (`X_AGENT_TOOL_LOOP`); a run with a `deadlineMs` is stopped at it (`X_AGENT_DEADLINE`).
 - A hive reports in split order with three member arms; an empty split is an error.
 - `idempotencyKey` dedupes the enqueue, never the attempt — every tool an agent may call must be idempotent, and nothing checks it for you.
 
