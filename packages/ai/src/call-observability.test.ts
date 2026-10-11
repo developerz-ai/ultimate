@@ -78,9 +78,8 @@ describe('llm() onCall', () => {
     const { provider } = stub(ANSWER);
     install(provider);
     const summarize = declare(promptFor(), {
-      onCall: () => {
-        throw new TypeError('observer down');
-      },
+      // A rejection handed to the code under test — the observer's failure is the INPUT here.
+      onCall: () => Promise.reject(new TypeError('observer down')),
     });
     await expect(summarize({ postId: POST_ID }, { ctx: anonymousCtx() })).rejects.toThrow(
       'observer down',

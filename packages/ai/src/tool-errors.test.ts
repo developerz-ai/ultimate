@@ -60,12 +60,12 @@ describe("an in-process tool's own refusal reaches the model", () => {
     const thrown = new UltimateError({
       code: 'X_KB_DOC_NOT_FOUND',
       cause: 'no such document',
-      fix: 'x db console   # look for the row',
+      fix: 'x queries list --json   # look for the row',
       callerFix: 'call kbList first',
     });
     const result = await reads(tool(thrown, { inProcess: true }));
     expect(JSON.parse(result.content)).toMatchObject({ error: { fix: 'call kbList first' } });
-    expect(result.content).not.toContain('x db console');
+    expect(result.content).not.toContain('x queries list');
   });
 });
 
