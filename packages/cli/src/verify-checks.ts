@@ -23,6 +23,7 @@ import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
+import { isrQueryAdvice } from './isr-query-advice';
 import { unregisteredJobFindings } from './job-registration';
 import { liveRouteFindings } from './live-routes';
 import { withLoadFindings, withoutLoadFindings } from './load-findings';
@@ -292,9 +293,13 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // such key), so canonical checks are skipped rather than run against an origin this file
       // invented. `seo-meta.ts` spells out why that is the honest half.
       const report = validateMeta(scan.records);
+      // The scan filled the route table, so the advice costs no second load. Rides here because
+      // this is the step about public, shared-cache pages; it never fails it.
+      const warnings = await isrQueryAdvice(ctx.root);
       return {
         ok: scan.findings.length === 0 && report.ok,
         findings: [...scan.findings, ...report.issues.map(seoFinding)],
+        ...(warnings.length === 0 ? {} : { warnings }),
       };
     },
   },

@@ -1,7 +1,13 @@
 /**
  * The public blog index. ISR over the same `blog` tag as the article pages, so publishing one
- * post regenerates both in the same fanout — and unpublishing removes the card and the page and
- * the sitemap entry, in one build.
+ * post regenerates both in the same fanout — and withdrawing one removes the card and the page.
+ *
+ * `onInvalidate: 'purge'`: a withdrawn post has to come DOWN. Under the default a bust keeps the
+ * stored page for one more serve, so the next reader would still be handed the card. The `ttl` is
+ * the purge's own bound — a replica that never hears the bust serves its copy for five minutes at
+ * most, and nothing stale after that. `query: []`
+ * says out loud what an `isr` page is by default — no query parameter is part of it, so
+ * `/blog?utm_source=…` is this one stored page and no visitor can mint another.
  */
 
 import { useT } from '@postly/i18n';
@@ -18,7 +24,7 @@ import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'isr',
-  revalidate: { tags: [tag.blog] },
+  revalidate: { tags: [tag.blog], ttl: '5m', onInvalidate: 'purge', query: [] },
   offline: 'runtime',
   hydrate: 'never',
   budget: { js: '0kb' },

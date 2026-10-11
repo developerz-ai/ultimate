@@ -168,6 +168,27 @@ describe('singleFlight', () => {
     expect(flight.size).toBe(0);
   });
 
+  test('evict frees the key: the next run leads a fresh load, the evicted one keeps its callers', async () => {
+    const timers = manualTimers();
+    const flight = singleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
+    const stale = deferred<string>();
+    const first = flight.run('k', async () => await stale.promise);
+    expect(flight.keys()).toEqual(['k']);
+
+    expect(flight.evict('k')).toBe(true);
+    expect(flight.evict('k')).toBe(false);
+    expect(timers.pending()).toBe(0);
+    const second = flight.run('k', async () => 'fresh');
+    expect(await second).toBe('fresh');
+
+    // The evicted load settling late drops nothing that is not its own.
+    const third = flight.run('k', async () => await deferred<string>().promise);
+    stale.resolve('stale');
+    expect(await first).toBe('stale');
+    expect(flight.size).toBe(1);
+    void third;
+  });
+
   test('the deadline timer is cancelled when the load settles', async () => {
     const timers = manualTimers();
     const flight = singleFlight({ deadlineMs: 5_000, schedule: timers.schedule });

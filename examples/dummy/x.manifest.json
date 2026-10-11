@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "74839db6852d17c1",
+  "buildId": "fe54915f6b01ac81",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -401,6 +401,8 @@
       "revalidateTags": [
         "blog"
       ],
+      "onInvalidate": "purge",
+      "query": [],
       "surface": "site",
       "budget": {
         "js": "0kb"
@@ -414,6 +416,8 @@
       "revalidateTags": [
         "blog"
       ],
+      "onInvalidate": "purge",
+      "query": [],
       "surface": "site",
       "budget": {
         "js": "0kb"
@@ -470,6 +474,10 @@
       "hydrate": "interaction",
       "revalidateTags": [
         "plan"
+      ],
+      "onInvalidate": "stale",
+      "query": [
+        "currency"
       ],
       "surface": "site",
       "budget": {
@@ -3826,6 +3834,131 @@
         "expose": true,
         "description": "Move the organisation to a higher plan and return the prorated receipt"
       }
+    },
+    {
+      "name": "withdrawPost",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "postId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "coverUrl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ]
+          },
+          "likeCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "authorName": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "slug",
+          "title",
+          "excerpt",
+          "body",
+          "coverUrl",
+          "status",
+          "likeCount",
+          "publishedAt",
+          "authorId",
+          "authorName"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "post:publish",
+      "permissions": [
+        "post:publish"
+      ],
+      "cacheInvalidates": [
+        "blog",
+        "feed",
+        "post"
+      ],
+      "mcp": {
+        "expose": false
+      }
     }
   ],
   "queries": [
@@ -6135,7 +6268,8 @@
         "action:keepDraftReview",
         "action:movePostStatus",
         "action:publishPost",
-        "action:requestDraftReview"
+        "action:requestDraftReview",
+        "action:withdrawPost"
       ]
     },
     {

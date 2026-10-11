@@ -2270,6 +2270,116 @@
           "nextPeriod"
         ],
         "type": "object"
+      },
+      "WithdrawPostInput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "postId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "postId",
+          "orgId"
+        ],
+        "type": "object"
+      },
+      "WithdrawPostOutput": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "authorId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "authorName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "body": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "coverUrl": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "excerpt": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "likeCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "slug": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "scheduled",
+              "published"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "slug",
+          "title",
+          "excerpt",
+          "body",
+          "coverUrl",
+          "status",
+          "likeCount",
+          "publishedAt",
+          "authorId",
+          "authorName"
+        ],
+        "type": "object"
       }
     }
   },
@@ -5239,6 +5349,79 @@
           "idempotent": false,
           "invalidates": [],
           "mcpTool": "summarizePosts",
+          "rateLimit": null
+        }
+      }
+    },
+    "/api/posts/withdraw": {
+      "post": {
+        "operationId": "withdrawPost",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawPostInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawPostOutput"
+                }
+              }
+            },
+            "description": "ok"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_INPUT_INVALID"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
+          }
+        },
+        "summary": "withdrawPost",
+        "tags": [
+          "posts"
+        ],
+        "x-ultimate": {
+          "capability": "post:publish",
+          "idempotent": false,
+          "invalidates": [
+            "blog",
+            "feed",
+            "post"
+          ],
+          "mcpTool": null,
           "rateLimit": null
         }
       }

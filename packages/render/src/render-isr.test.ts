@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
-import { invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
+import { dependentsOfKind, invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describePages, registerRoute } from './registry';
-import { isrController, isrKey } from './render-isr';
+import { isrController } from './render-isr';
+import { isrKey } from './render-isr-key';
 import { memoryIsrStore } from './render-isr-store';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
@@ -205,7 +206,8 @@ describe('tag-driven revalidation', () => {
 
     expect(controller.store().get('/team')?.stale).toBe(false);
     detach();
-    expect(controller.revalidateByTags([orgTag])).toEqual([]);
+    // The GRAPH edge is what detach drops; the controller's own store is still its to ask.
+    expect(dependentsOfKind([orgTag], 'isr-route')).toEqual([]);
   });
 });
 

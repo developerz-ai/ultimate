@@ -21,6 +21,10 @@ Tier 1. Tagged caching + THE invalidation graph.
 - **The fan-out clears FARTHEST tier first, and reports in read order** (core's `CACHE_TIERS`, what `/_x`
   renders). Near-to-far lets a racing read promote the stale far value straight back up.
   `CacheStack.drop` reverses for the same reason. `invalidation-race.test.ts`.
+- **The EDGE is purged last**: read tiers → ISR revalidators → broadcast → `cdn`. Purged first, a
+  request before the origin's own delete was a public hit the purged edge cached again for a whole
+  `s-maxage`. A refused broadcast purges it again when the deferred one is published
+  (`purgeEdgeAgain`, called by cli); a flush purges it last too. `invalidate-order.test.ts`.
 - **A fill is fenced: sample before `load()`, ask before the write** (`fence.ts`). `sampleFence({ key,
   tags })` → `fence.isValid()`; `markInvalidated` is the write half (`fanOut`, `CacheStack.write`,
   `CacheStack.drop`). Exported so a store outside this package reuses it rather than growing a

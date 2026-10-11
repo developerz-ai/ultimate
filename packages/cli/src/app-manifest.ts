@@ -113,9 +113,24 @@ const routeFacts = (): readonly RouteFact[] =>
       offline: route.offline,
       hydrate: route.hydrate,
       revalidateTags: route.revalidateTags,
+      ...revalidateOf(route),
       surface: route.surface,
       ...budgetOf(route),
     }));
+
+/** An `isr` route's invalidation and key facts — `onInvalidate` always, the other two as declared. */
+function revalidateOf(
+  route: RouteDescriptor,
+): Pick<RouteFact, 'onInvalidate' | 'maxStale' | 'query'> {
+  if (route.mode !== 'isr') return {};
+  const maxStale = route.revalidateMaxStale ?? null;
+  const query = route.revalidateQuery ?? null;
+  return {
+    onInvalidate: route.revalidateOnInvalidate ?? 'stale',
+    ...(maxStale === null ? {} : { maxStale }),
+    ...(query === null ? {} : { query }),
+  };
+}
 
 function budgetOf(route: RouteDescriptor): { budget?: { js: string } } {
   return route.budgetJs === null ? {} : { budget: { js: route.budgetJs } };

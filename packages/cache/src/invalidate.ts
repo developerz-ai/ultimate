@@ -24,6 +24,18 @@ import { sortTiers } from './tiers';
 export type Revalidator = (path: string) => Promise<void> | void;
 
 /**
+ * Revalidates every ISR page HELD under these tags, and answers their paths. The graph only knows
+ * the pages this process rendered; a store that outlives the process, or that two controllers
+ * share, holds pages with no edge here — so the holder is asked by tag as well as told by path.
+ */
+export type TagRevalidator = (
+  tags: readonly CacheTag[] | typeof EVERY_TAG,
+) => Promise<readonly string[]> | readonly string[];
+
+/** What a flush hands the `TagRevalidator` in place of tags: every page it holds under ANY tag. */
+export const EVERY_TAG = 'every-tag';
+
+/**
  * Carries wire tags to every OTHER process. The seam, never the transport: `cache` is tier 1 and
  * may not reach `realtime` (tier 3) or NATS, so `@ultimat3/cli` registers the sender at boot the
  * same way `@ultimat3/render` registers the `Revalidator`.
@@ -94,6 +106,7 @@ export function recentInvalidations(): readonly InvalidationEvent[] {
 
 const registry: CacheTier[] = [];
 let revalidator: Revalidator | undefined;
+let tagRevalidator: TagRevalidator | undefined;
 let broadcast: InvalidationBroadcast | undefined;
 
 /** Tiers register at boot from `app.config.ts`; order is normalised, not trusted. */
@@ -114,6 +127,7 @@ export function registeredTiers(): readonly CacheTier[] {
 export function resetTiers(): void {
   registry.length = 0;
   revalidator = undefined;
+  tagRevalidator = undefined;
   broadcast = undefined;
   invalidationLog.length = 0;
   resetTierFailures();
@@ -134,6 +148,7 @@ export function resetTiers(): void {
 export function isolateTiers(): () => void {
   const capturedTiers = [...registry];
   const capturedRevalidator = revalidator;
+  const capturedTagRevalidator = tagRevalidator;
   const capturedBroadcast = broadcast;
   const capturedLog = [...invalidationLog];
   const restoreFailures = isolateTierFailures();
@@ -142,14 +157,20 @@ export function isolateTiers(): () => void {
     resetTiers();
     registry.push(...capturedTiers);
     revalidator = capturedRevalidator;
+    tagRevalidator = capturedTagRevalidator;
     broadcast = capturedBroadcast;
     invalidationLog.push(...capturedLog);
     restoreFailures();
   };
 }
 
-export function registerRevalidator(next: Revalidator): void {
+/**
+ * One registration for both halves, so they cannot belong to two controllers: `byTags` is replaced
+ * with `next` — omitted, it is cleared, never left pointing at the previous owner's store.
+ */
+export function registerRevalidator(next: Revalidator, byTags?: TagRevalidator): void {
   revalidator = next;
+  tagRevalidator = byTags;
 }
 
 /**
@@ -225,7 +246,9 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // FARTHEST tier first. Near-to-far leaves the far tier holding the old value after the near
     // ones are clear, and a read racing the bust promotes it straight back up into them — the
     // report says every tier cleared, and the LRU is stale again before the call returns.
-    for (const tier of [...sortTiers(registry)].reverse()) {
+    // The EDGE is not one of them here: it is purged last, below (`purgeEdge`).
+    const farthestFirst = [...sortTiers(registry)].reverse();
+    for (const tier of farthestFirst.filter((one) => !isEdgeTier(one))) {
       try {
         tiers.push(await tier.invalidateTags(tags));
       } catch (error) {
@@ -236,21 +259,25 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
         errors.push({ tier: tier.name, message: renderThrowable(error) });
       }
     }
-    // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
-    // printed upside down is a second thing for a reader to learn.
-    tiers.sort((a, b) => CACHE_TIERS.indexOf(a.tier) - CACHE_TIERS.indexOf(b.tier));
-
-    const isr = dependentsOfKind(tags, 'isr-route');
+    const isrPaths = new Set(dependentsOfKind(tags, 'isr-route'));
     const cdn = dependentsOfKind(tags, 'cdn-path');
     const liveQueries = dependentsOfKind(tags, 'live-query');
 
-    for (const path of isr) {
+    for (const path of isrPaths) {
       try {
         await revalidator?.(path);
       } catch (error) {
         errors.push({ tier: 'isr', message: renderThrowable(error) });
       }
     }
+    // After the graph's own paths, and reported with them: what the holder found under the tags
+    // that this process never registered.
+    try {
+      for (const path of (await tagRevalidator?.(tags)) ?? []) isrPaths.add(path);
+    } catch (error) {
+      errors.push({ tier: 'isr', message: renderThrowable(error) });
+    }
+    const isr = [...isrPaths];
 
     const wire = serializeTags(tags);
 
@@ -263,6 +290,14 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
         errors.push({ tier: 'broadcast', message: renderThrowable(error) });
       }
     }
+
+    // The edge LAST, after this origin dropped its own pages and told its peers to. Purged first,
+    // a request between the purge and the origin's delete was answered the old page as a public
+    // hit, and the edge — already purged — kept it for a whole `s-maxage` with no purge to come.
+    await purgeEdge(farthestFirst, tags, tiers, errors);
+    // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
+    // printed upside down is a second thing for a reader to learn.
+    tiers.sort((a, b) => CACHE_TIERS.indexOf(a.tier) - CACHE_TIERS.indexOf(b.tier));
 
     const report: InvalidationReport = {
       tags: wire,
@@ -292,6 +327,42 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
   });
 }
 
+/** The one rung that holds RESPONSES rather than values a render reads: core's last `CACHE_TIERS` name. */
+const isEdgeTier = (tier: CacheTier): boolean => tier.name === CACHE_TIERS[CACHE_TIERS.length - 1];
+
+/** The edge's own half of the fan-out, with a read tier's isolation: a refusal is a report row. */
+async function purgeEdge(
+  ordered: readonly CacheTier[],
+  tags: readonly CacheTag[],
+  tiers: TierInvalidation[],
+  errors: { tier: string; message: string }[],
+): Promise<void> {
+  for (const tier of ordered.filter(isEdgeTier)) {
+    try {
+      tiers.push(await tier.invalidateTags(tags));
+    } catch (error) {
+      errors.push({ tier: tier.name, message: renderThrowable(error) });
+    }
+  }
+}
+
+/**
+ * The edge, purged AGAIN for tags this process already busted — for whoever finally got a refused
+ * broadcast through (`@ultimat3/cli`'s deferred publish). The first purge ran with the bust, while
+ * the peers still held their copies: any request they answered since handed the edge the old page
+ * back. Only now, told, do they drop it, so only now does a purge of the edge hold. Never throws,
+ * and touches no other tier — the bust itself cleared those.
+ */
+export async function purgeEdgeAgain(
+  wire: readonly string[],
+): Promise<readonly TierInvalidation[]> {
+  const tiers: TierInvalidation[] = [];
+  const errors: { tier: string; message: string }[] = [];
+  await purgeEdge(sortTiers(registry), wire.map(parseTag), tiers, errors);
+  if (errors.length > 0) logger.warn('cache.invalidate.partial', { tags: wire, tiers, errors });
+  return tiers;
+}
+
 /** What a flush reports and records as its tags: not a wire tag, and never parsed as one. */
 export const FLUSH_ALL_TAG = '*';
 
@@ -303,8 +374,11 @@ export const FLUSH_ALL_TAG = '*';
  * their TTL — and a `revalidate: { tags }` page has none. So a process whose bus connection was
  * down for a window, or a sender that had more refused busts than it could keep, has one correct
  * answer left. Every in-process tier is cleared (`CacheTier.clear`), every ISR page that depends
- * on a tag is marked stale, and every fill in flight is fenced out. Shared tiers and the CDN are
- * untouched — the bust's sender cleared those — and nothing is re-emitted: this is local repair.
+ * on a tag is revalidated as its route declared — marked stale, or DELETED under
+ * `onInvalidate: 'purge'`, the store's unregistered pages included — and every fill in flight is
+ * fenced out. Shared read tiers are untouched — the bust's sender cleared those. The edge is
+ * purged, last, for the tags of the ISR pages this process held: what it answered while deaf may
+ * be what the edge holds now. Nothing is re-emitted: this is local repair.
  * Never throws; the cost is one cold cache.
  */
 export function flushProcessTiers(source: string): Promise<InvalidationReport> {
@@ -322,18 +396,40 @@ export function flushProcessTiers(source: string): Promise<InvalidationReport> {
         errors.push({ tier: tier.name, message: renderThrowable(error) });
       }
     }
-    const isr = dedupe(
-      graphSnapshot().flatMap((entry) =>
+    // Read BEFORE the pages are revalidated: a purged page leaves the graph, and its tags are
+    // what the edge is purged by below.
+    const tagged = graphSnapshot().filter((entry) =>
+      entry.dependents.some((dep) => dep.kind === 'isr-route'),
+    );
+    const isrPaths = new Set(
+      tagged.flatMap((entry) =>
         entry.dependents.filter((dep) => dep.kind === 'isr-route').map((dep) => dep.id),
       ),
     );
-    for (const path of isr) {
+    for (const path of isrPaths) {
       try {
         await revalidator?.(path);
       } catch (error) {
         errors.push({ tier: 'isr', message: renderThrowable(error) });
       }
     }
+    // And every page the holder has that the graph never named — as a bust asks it, by tag. A
+    // flush is at least a bust of everything: under `onInvalidate: 'purge'` those pages are deleted.
+    try {
+      for (const path of (await tagRevalidator?.(EVERY_TAG)) ?? []) isrPaths.add(path);
+    } catch (error) {
+      errors.push({ tier: 'isr', message: renderThrowable(error) });
+    }
+    const isr = [...isrPaths];
+    // The edge LAST, as in a bust, and for the pages THIS process could have handed it while it
+    // was deaf: a hit it answered from a copy a peer had already purged went out public, and the
+    // peer's own edge purge had run by then. Shared read tiers stay untouched — the sender's.
+    await purgeEdge(
+      sortTiers(registry),
+      tagged.map((entry) => parseTag(entry.tag)),
+      tiers,
+      errors,
+    );
     const report: InvalidationReport = {
       tags: [FLUSH_ALL_TAG],
       tiers,

@@ -45,6 +45,7 @@ import {
   streamResult,
 } from '@ultimat3/render/server';
 import type { DocumentOptions } from './document-options';
+import { routeQuery } from './isr-query-guard';
 import {
   type NavigationDocumentHead,
   navigationMetaOf,
@@ -193,7 +194,7 @@ export async function routeBody(
       data,
       params: ctx.params,
       url: ctx.url,
-      query: Object.fromEntries(url.searchParams) as Readonly<Record<string, string>>,
+      query: routeQuery(entry, url),
     },
     entry.file,
     { islands },
@@ -486,8 +487,8 @@ async function renderIsr(
   options: DevRenderOptions,
   isr: IsrController,
 ): Promise<Rendered> {
-  const document = (loaded: RouteData): Promise<string> =>
-    documentFrom(entry, data, loaded, options);
+  const document = (loaded: RouteData, at: DevRouteData): Promise<string> =>
+    documentFrom(entry, at, loaded, options);
   const outcome = await isrOutcome({ entry, data, ctx, isr, document });
   if (outcome.kind === 'redirect') return { respond: () => loadRedirect(entry, outcome.to) };
   return { respond: () => responseOf(outcome.result) };

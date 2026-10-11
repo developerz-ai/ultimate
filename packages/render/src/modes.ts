@@ -9,6 +9,7 @@ import type { HydrateStrategy, RenderMode } from '@ultimat3/core';
 import { HYDRATE_STRATEGIES, RENDER_MODES, renderCauseValue } from '@ultimat3/core';
 import { parseTtlMs } from './duration';
 import { RouteModeInvalidError } from './errors';
+import { assertRevalidateShape } from './revalidate-shape';
 import type { RouteConfig } from './route';
 import type { RouteSurface, Surface } from './surfaces';
 import { SURFACE_SPECS, surfaceAllows } from './surfaces';
@@ -131,6 +132,9 @@ export function assertModeShape(config: RouteShape): void {
       "render: 'isr' requires a regeneration trigger, but revalidate has neither tags nor ttl",
       "add revalidate: { tags: [tag.post] } or revalidate: { ttl: '5m' }",
     );
+  }
+  if (config.render === 'isr' && config.revalidate !== undefined) {
+    assertRevalidateShape(config.revalidate);
   }
 
   // cache: the `ssr` mode's key alone. `static` and `isr` are content-hashed / TTL'd documents

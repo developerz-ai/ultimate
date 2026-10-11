@@ -25,6 +25,10 @@ const route = (overrides: Partial<Route> = {}): readonly Route[] => [
 const diff = (routes: readonly Route[]) =>
   diffManifest(fixtureManifest(), fixtureManifest({ routes }));
 
+/** The route changes alone: a manifest's own `buildId` moves with any of them. */
+const routePaths = (changes: readonly { readonly path: string }[]): readonly string[] =>
+  changes.map((c) => c.path).filter((path) => path.startsWith('routes.'));
+
 describe('route facts', () => {
   test('a changed surface is breaking — the URL serves a different kind of thing', () => {
     const changed = diff(route({ surface: 'api' }));
@@ -56,6 +60,44 @@ describe('route facts', () => {
     expect(changed.hasBreaking).toBe(false);
     const entry = changed.internal.find((c) => c.path === 'routes./posts.render');
     expect(entry?.detail).toBe('render isr -> ssr');
+  });
+
+  // A route flipping `'purge'` back to `'stale'` puts a withdrawn page back on "served once more",
+  // and nothing else in the manifest moves when it does.
+  test('onInvalidate, maxStale and query are internal but reported, once both manifests carry them', () => {
+    const purge = { onInvalidate: 'purge' as const, maxStale: '1h', query: ['page'] };
+    const from = fixtureManifest({ routes: route(purge) });
+    for (const [path, overrides] of [
+      ['routes./posts.onInvalidate', { ...purge, onInvalidate: 'stale' as const }],
+      ['routes./posts.maxStale', { ...purge, maxStale: '2h' }],
+      ['routes./posts.query', { ...purge, query: ['page', 'q'] }],
+    ] as const) {
+      const changed = diffManifest(from, fixtureManifest({ routes: route(overrides) }));
+      expect(changed.hasBreaking).toBe(false);
+      expect(routePaths(changed.internal)).toEqual([path]);
+    }
+    const flipped = diffManifest(
+      from,
+      fixtureManifest({ routes: route({ ...purge, onInvalidate: 'stale' }) }),
+    );
+    expect(flipped.internal.find((c) => c.path === 'routes./posts.onInvalidate')?.detail).toBe(
+      'onInvalidate purge -> stale',
+    );
+  });
+
+  test('a query declaration that is DROPPED is a change: the page keys on the whole query again', () => {
+    const from = fixtureManifest({ routes: route({ onInvalidate: 'stale', query: [] }) });
+    const to = fixtureManifest({ routes: route({ onInvalidate: 'stale' }) });
+    expect(routePaths(diffManifest(from, to).internal)).toEqual(['routes./posts.query']);
+  });
+
+  test('a manifest written before these keys existed reports nothing for them', () => {
+    const to = fixtureManifest({ routes: route({ onInvalidate: 'purge', query: [] }) });
+    expect(
+      diffManifest(fixtureManifest({ routes: route() }), to).changes.filter((c) =>
+        c.path.startsWith('routes./posts.'),
+      ),
+    ).toEqual([]);
   });
 
   test('a route that only the after side has is additive, not a removal', () => {

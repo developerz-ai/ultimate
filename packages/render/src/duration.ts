@@ -30,6 +30,20 @@ export function parseTtlMs(ttl: string | number | null | undefined): number | nu
 }
 
 /**
+ * `revalidate.maxStale`'s reader: the one duration that may be ZERO — "never answer a copy past
+ * its ttl" is a bound, where a zero-length TTL is no trigger at all. `null` is "not a duration".
+ */
+export function parseStaleMs(value: string | number | null | undefined): number | null {
+  if (
+    value === 0 ||
+    (typeof value === 'string' && /^0(?:\.0+)?(?:ms|s|m|h|d)$/.test(value.trim()))
+  ) {
+    return 0;
+  }
+  return parseTtlMs(value);
+}
+
+/**
  * Both arms end here, so `'0s'` and `0` cannot disagree: a zero-length TTL registered, and
  * `entryTtlMs` then read the stored `0` as tag-only — a page declared to expire never did.
  */

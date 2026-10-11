@@ -8,8 +8,9 @@ import type { CacheTag } from '@ultimat3/cache';
 import { invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import { clearRoutes, describePages, registerRoute } from './registry';
-import type { IsrRendered } from './render-isr';
-import { isrController, isrKey } from './render-isr';
+import { isrController } from './render-isr';
+import { isrKey } from './render-isr-key';
+import type { IsrRendered } from './render-isr-types';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
