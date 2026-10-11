@@ -105,38 +105,29 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
 
 ## Invariants — `llm()`
 
+Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm-invariants).
+
 - **`llm()` returns an `action`**, never a ninth primitive; it adds only the model half: render the
-  prompt, project `output` into the one `respond` tool, reserve the budget, consult the semantic cache.
-- **A non-object `output` is wrapped in `{ value }` and unwrapped** (`respond.ts`) — a tool's input is
-  an object; never refused, because `.stream()` serves `output: t.string`. `parseJsonish` is two
-  `indexOf` scans, never a backtracking pattern.
+  prompt, project `output` into the one `respond` tool, reserve the budget, consult the cache.
+- **A non-object `output` is wrapped in `{ value }` and unwrapped** (`respond.ts`), never refused;
+  `parseJsonish` is two `indexOf` scans, never a backtracking pattern.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts`).
 - One repair turn, then `X_LLM_OUTPUT_INVALID`. A refusal (a 200 with no answer) is `X_LLM_REFUSED`
-  before the parse, carrying `stopDetails.category`; a truncated turn is `X_LLM_TRUNCATED` before
-  the schema AND before any tool runs (a cut `respond` reads `{}`).
-  The gateway never caches a refusal.
-- **Semantic scopes are separate cache INSTANCES**; the instance key carries the prompt hash AND
-  `ctx.locale` (in the unconditional half). **The default scope is the calling ACTOR**
-  (`JSON.stringify([actor.kind, actor.id, actor.orgId ?? null])`); `scope` receives
-  `{ input, ctx }`; widening is `scope: () => 'global'`. The instance map is bounded
-  (core's `MAX_CACHED_FORMATTERS`).
-- `cache.invalidates` is not on `llm()`: a `SemanticCache` is not a `CacheTier`. Version bump + `ttl`
-  is the invalidation.
-- The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`, never a
-  default provider.
+  before the parse; a truncated turn is `X_LLM_TRUNCATED` before the schema AND before any tool
+  runs (a cut `respond` reads `{}`). The gateway never caches a refusal.
+- **Semantic scopes are separate cache INSTANCES** (key: prompt hash AND `ctx.locale`); **the
+  default scope is the calling ACTOR**; widening is `scope: () => 'global'`; the map is bounded.
+  `cache.invalidates` is not on `llm()`: version bump + `ttl` is the invalidation.
+- The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`.
 - **`llm()` forwards `ctx.signal`** onto `GenerateRequest`; `.stream()` inherits it.
 - **`.stream()` is the SAME action**, marked with an ambient sink: UNVALIDATED text, then one `done`
-  with the validated value; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool; budget
-  reserved before the provider, reconciled at `done`. LAZY.
+  with the validated value; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool. LAZY.
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
-  `vars()` is `X_AI_PROMPT_SECRET` regardless. The `llm.redacted` span attribute records it.
+  `vars()` is `X_AI_PROMPT_SECRET` regardless.
 - **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
-  is stamped by the gateway and put on the span as `llm.provider`.
-- Server-side `fallbacks` (beta) are never sent — the stable `2023-06-01` surface only.
-- **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks, in the ASSEMBLED
-  prompt, every fence closer a fenced value wrote any character of (never per value: two slots can
-  each hold half) — never deletes, never touches a template-only closer. The
-  fences are read once at `definePrompt`; no hash moves.
+  is stamped by the gateway. Server-side `fallbacks` (beta) are never sent.
+- **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks every fence closer
+  a fenced value wrote, in the ASSEMBLED prompt — never deletes, never touches a template's own.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
   `canonicalJson`; an absent schema hashes as `''`.
 
@@ -239,7 +230,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
   - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it** (status from
     `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
     same verdict a problem document and `@ultimat3/mcp` give, from `failure-disclosure.ts` — the
-    rule a hive member's `reason` follows too. Never a second copy.
+    rule a hive member's `reason` follows too. Never a second copy. One widening, for an
+    `inProcess` tool only (`discloseOwnFailure`): a branded error under a code with NO declared
+    status is shown as `{ error: { code, cause, fix } }`; `discloseErrors: false` opts out.
 - **`.run()`/`.continue()` are the SAME action**, marked by an ambient session (as `.stream()` is).
   The handle is screened before anything is loaded (`screenTranscript`); `maxTurns` and
   `tokensPerRun` are cumulative — the remainder is the ceiling, NEVER a ledger debit (it would

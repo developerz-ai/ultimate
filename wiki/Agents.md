@@ -156,6 +156,7 @@ export const supportAgent = agent({
 | The tool's own `input:` parses what the model sent | which is what drops an `{ actor: 'admin' }` the model invented, before any handler sees it |
 | A tool failure is a `tool_result` flagged `is_error`, not a crash | a policy denial is an outcome the model should read and react to |
 | A 5xx failure's cause reaches the model only when its code declares it public | the provider keeps every request it is sent; a `X_DB_STATEMENT_FAILED` reads as the code and a fixed sentence — the verdict a production problem document and an MCP client get |
+| An **in-process** tool's own typed refusal reaches the model whole | a tool marked `inProcess: true` is the app's code called by its own agent. An `UltimateError` it throws under a code nobody gave an HTTP status is rendered as `{"error":{"code","cause","fix"}}` (the `callerFix` when it has one) — the model needs exactly that to correct its call. Still withheld: an uncoded throw, a framework 5xx, a code the app registered ≥ 500, a look-alike object; never a stack. `discloseErrors: false` opts out |
 | The actor is **`ctx.actor`**, read once, and nothing the model emits can reach it | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
 
 An unknown tool name answers `unknown tool: <name>` as an error result rather than throwing — the model asked for something it was not offered, which is a turn to correct, not a run to abort.

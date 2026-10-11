@@ -4,7 +4,7 @@
 
 import type { Logger } from '@ultimat3/core';
 import { hasPublicCause, isUltimateError, stringField } from '@ultimat3/core';
-import { statusFor } from '@ultimat3/http';
+import { declaredStatusFor, statusFor } from '@ultimat3/http';
 
 /**
  * What may be shown. `code` is absent for an uncoded throw — a foreign `.message` is the server's
@@ -39,6 +39,36 @@ export function discloseFailure(
     return withheld(error, logger, where, code, callerFix);
   }
   const fix = stringField(error, 'fix');
+  return {
+    code,
+    cause: stringField(error, 'cause') ?? 'unknown',
+    fix: fix === undefined || fix === '' ? undefined : fix,
+  };
+}
+
+/**
+ * The verdict for a tool that runs IN PROCESS: the app's own code, called by the agent it was
+ * written for. Its typed refusal — an `UltimateError` built in this process, under a code NOBODY
+ * gave an HTTP status — is shown whole: code, cause, and the fix (the caller's when it has one).
+ * That is the one case the general rule gets wrong for this reader: an unmapped app code defaults
+ * to 500, a 500's cause is hidden, and a model that cannot read why its call was refused makes
+ * the same call again.
+ *
+ * Everything else keeps the general verdict, so nothing internal rides along: an uncoded throw
+ * (a `TypeError`, a driver's own error) shows nothing; a code the framework or the app DECLARED a
+ * status for follows that status — a driver's `X_DB_STATEMENT_FAILED` stays hidden; and a
+ * look-alike object carrying a `code` is not a typed refusal. Never a stack: only authored fields.
+ */
+export function discloseOwnFailure(
+  error: unknown,
+  logger: Logger | undefined,
+  where: string,
+): DisclosedFailure {
+  const code = isUltimateError(error) ? stringField(error, 'code') : undefined;
+  if (code === undefined || declaredStatusFor(code) !== undefined) {
+    return discloseFailure(error, logger, where);
+  }
+  const fix = stringField(error, 'callerFix') ?? stringField(error, 'fix');
   return {
     code,
     cause: stringField(error, 'cause') ?? 'unknown',

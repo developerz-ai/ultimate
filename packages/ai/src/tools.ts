@@ -24,7 +24,7 @@ import type { Actor } from '@ultimat3/core';
 import { isMcpExposed, tryUseContext } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 import { toWireSchema } from '@ultimat3/schema';
-import { discloseFailure } from './failure-disclosure';
+import { discloseFailure, discloseOwnFailure } from './failure-disclosure';
 import { takeToolIdempotencyKey, withToolIdempotencyKey } from './tool-idempotency';
 
 /**
@@ -69,6 +69,14 @@ export interface ProjectableAction {
   readonly description?: string;
   readonly mcp?: { readonly expose?: boolean; readonly description?: string };
   readonly inputJsonSchema?: JsonSchema;
+  /**
+   * The tool runs IN PROCESS — the app's own code, called by its own agent — and is not the
+   * projection of an exposed action. Its typed refusal is then shown to the model whole, as a
+   * structured error (`discloseOwnFailure`); a projected tool keeps the rule MCP follows.
+   */
+  readonly inProcess?: boolean;
+  /** In-process only: `false` withholds its refusals as a projected tool's are. Default `true`. */
+  readonly discloseErrors?: boolean;
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
 }
 
@@ -177,7 +185,7 @@ export async function runLlmToolCall(
     return resultOf(call.id, output);
   } catch (error) {
     // A policy denial is an outcome the model should read and react to, not a crash.
-    return { toolUseId: call.id, content: describeFailure(error, call.name), isError: true };
+    return { toolUseId: call.id, content: describeFailure(error, action), isError: true };
   }
 }
 
@@ -216,10 +224,22 @@ export const HIDDEN_TOOL_CAUSE =
  * `discloseFailure`'s verdict, rendered as the `tool_result` line — the same rule a hive member's
  * reason follows, so what an agent may read of a throw is decided once. An uncoded throw says only
  * that it failed; a withheld cause becomes `HIDDEN_TOOL_CAUSE`, and the log has the rest.
+ *
+ * An in-process tool's OWN refusal is rendered as JSON — `{ error: { code, cause, fix } }` — the
+ * structured form of the three authored fields, and nothing but them.
  */
-function describeFailure(error: unknown, toolName: string): string {
-  const shown = discloseFailure(error, tryUseContext()?.logger, `tool ${toolName}`);
+function describeFailure(error: unknown, tool: ProjectableAction): string {
+  const logger = tryUseContext()?.logger;
+  const where = `tool ${tool.name}`;
+  const own = tool.inProcess === true && tool.discloseErrors !== false;
+  const shown = own
+    ? discloseOwnFailure(error, logger, where)
+    : discloseFailure(error, logger, where);
   if (shown.code === undefined) return 'tool failed';
+  if (own && shown.cause !== undefined) {
+    const { code, cause, fix } = shown;
+    return JSON.stringify({ error: { code, cause, ...(fix === undefined ? {} : { fix }) } });
+  }
   const line = `${shown.code}: ${shown.cause ?? HIDDEN_TOOL_CAUSE}`;
   return shown.fix === undefined ? line : `${line} (fix: ${shown.fix})`;
 }
