@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/db",
-  "version": "27.7.0",
+  "version": "27.8.0",
   "description": "Postgres access, transactions, migrations and drift detection",
   "license": "MIT",
   "type": "module",
@@ -33,7 +33,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "27.7.0"
+    "@ultimat3/core": "27.8.0"
   },
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.5.0"

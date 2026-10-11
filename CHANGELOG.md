@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.8.0 - 2026-10-11
+
 ### Added
 
 Tier 0 — core. Tier 1 — cache. Tier 4 — manifest, render. Tier 5 — cli. Both tracked apps.
@@ -40,6 +44,11 @@ Tier 1 — cache. Tier 4 — render. Tier 5 — cli.
 - **`controller.revalidateByTags()` fences by tag.** Called directly it marked only the pages it found, and a cold page whose first render was in flight could be in neither the graph nor the store (another page's reconciliation had forgotten it): the bust returned `[]` and the pre-bust render was stored. It now voids the tags' fence first, and a page with a render in flight is never forgotten.
 - **A tag bust reaches a page another controller rendered into a shared `IsrStore`.** The invalidation graph only held the pages a process rendered itself, so a replica that had merely served a hit for an entry in a `runtime.isrStore` — or any process after a restart over a store that outlived it — found nothing to invalidate while `report.isr` read clean. A bust now also asks the store which keys it holds under the tags, by the route table (no route carrying the tag: no store read), and a hit registers the page in the graph.
 - **`/sitemap.xml` and `/robots.txt` keep the last good answer when `prerender()` fails.** The running web role forgot its memoised sitemap before re-enumerating at the hourly refresh, so a failed data read answered a crawler a 500. The hourly refresh now runs BEHIND the previous answer, which every request keeps getting meanwhile — so a read that hangs blocks nobody; a failed one, or one with no answer in 30 s, is logged (`seo.enumeration.kept`, an error from the third in a row) and asked again a minute later. A first enumeration that fails still fails the request. A `prerender()` that catches its own failed read and returns `[]` still shrinks the sitemap: let it throw.
+
+### Commits
+
+- fix(realtime): a channel held open through a bus outage is live again without a reload; an outage is logged as one fact, thinned, at the role's level; x dev serves without the bus; a silent NATS is detected in 30 s, measured (#759)
+- feat(render): isr invalidation can purge, a route declares its keyed query, a failed render is never stored (#757)
 
 ## 27.7.0 - 2026-10-10
 
