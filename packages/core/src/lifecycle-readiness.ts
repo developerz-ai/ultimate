@@ -4,7 +4,22 @@
 
 import { UltimateError } from './errors';
 
-export type ReadinessStatus = 'ok' | 'failing';
+/**
+ * `'degraded'` is a failed check the role serves WITHOUT (`onFailure: 'degraded'`): reported by
+ * name, never a 503 on `/readyz` in either mode, and a 503 on `/readyz?deep=1` — the probe routes
+ * traffic on the first and a monitor alerts on the second.
+ */
+export type ReadinessStatus = 'ok' | 'degraded' | 'failing';
+
+export interface ReadinessCheckOptions {
+  /**
+   * What a `false` (or a throw) from this check is. `'failing'`, the default, is a dependency the
+   * role cannot serve without. `'degraded'` is one it can — the bus of a role that only publishes
+   * to it: pulling every replica from the ingress for a dependency no served request waits on is
+   * the outage the probe exists to prevent.
+   */
+  readonly onFailure?: 'failing' | 'degraded' | undefined;
+}
 
 /**
  * Synchronous, and that is the design, not a limitation. **Do not widen this to
@@ -23,13 +38,22 @@ export type ReadinessStatus = 'ok' | 'failing';
  */
 export type ReadinessCheck = () => boolean;
 
-const checks = new Map<string, ReadinessCheck>();
+interface Registered {
+  readonly check: ReadinessCheck;
+  readonly onFailure: 'failing' | 'degraded';
+}
+
+const checks = new Map<string, Registered>();
 
 /**
  * Register a named readiness check. Returns its unregister — the same shape as `onShutdown`, and
  * owned by whoever can be started twice, for the same reason.
  */
-export function registerReadinessCheck(name: string, check: ReadinessCheck): () => void {
+export function registerReadinessCheck(
+  name: string,
+  check: ReadinessCheck,
+  options: ReadinessCheckOptions = {},
+): () => void {
   if (checks.has(name)) {
     throw new UltimateError({
       code: 'X_READINESS_CHECK_DUPLICATE',
@@ -38,9 +62,10 @@ export function registerReadinessCheck(name: string, check: ReadinessCheck): () 
       meta: { name },
     });
   }
-  checks.set(name, check);
+  const registered: Registered = { check, onFailure: options.onFailure ?? 'failing' };
+  checks.set(name, registered);
   return () => {
-    if (checks.get(name) === check) checks.delete(name);
+    if (checks.get(name) === registered) checks.delete(name);
   };
 }
 
@@ -55,8 +80,8 @@ export function clearReadinessChecks(): void {
 }
 
 /**
- * Every check, run now, by name. A check that throws is `failing` — never an unhandled error —
- * and is handed to `onThrow`, which `lifecycle.ts` routes through its total `report`.
+ * Every check, run now, by name. A check that throws is its `onFailure` (`failing` unless it was
+ * registered degradable) — never an unhandled error — and is handed to `onThrow`, which `lifecycle.ts` routes through its total `report`.
  *
  * Built through `Object.fromEntries`, never by assigning `results[name]`: assignment to the one
  * name `__proto__` sets the PROTOTYPE instead of adding a key, so that check vanished from the
@@ -67,11 +92,11 @@ export function runReadinessChecks(
   onThrow: (name: string, thrown: unknown) => void,
 ): Readonly<Record<string, ReadinessStatus>> {
   const results: [string, ReadinessStatus][] = [];
-  for (const [name, check] of checks) {
+  for (const [name, { check, onFailure }] of checks) {
     try {
-      results.push([name, check() ? 'ok' : 'failing']);
+      results.push([name, check() ? 'ok' : onFailure]);
     } catch (thrown) {
-      results.push([name, 'failing']);
+      results.push([name, onFailure]);
       onThrow(name, thrown);
     }
   }

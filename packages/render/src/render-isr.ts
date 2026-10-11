@@ -8,6 +8,7 @@
 import type { CacheTag, Revalidator, TagRevalidator } from '@ultimat3/cache';
 import {
   dependentsOfKind,
+  EVERY_TAG,
   invalidateTags,
   markInvalidated,
   registerDependent,
@@ -287,18 +288,23 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
    * By ROUTE tags: a row bust (`post:1`) reaches every stored page of a route tagged `post`. An
    * entry records no tags of its own, so this errs toward one render too many, never one too few.
    */
-  function revalidateHeld(tags: readonly CacheTag[]): readonly string[] {
+  function revalidateHeld(tags: readonly CacheTag[] | typeof EVERY_TAG): readonly string[] {
     const table = routes();
-    const owners = new Set(
-      table.filter((route) => tagsIntersect(tags, route.revalidateTags.map(parseWireTag))),
-    );
+    // A flush (`EVERY_TAG`) is a bust of every tag at once: every route that carries one owns.
+    const owns = (route: RouteDescriptor): boolean =>
+      tags === EVERY_TAG
+        ? route.revalidateTags.length > 0
+        : tagsIntersect(tags, route.revalidateTags.map(parseWireTag));
+    const owners = new Set(table.filter(owns));
     if (owners.size === 0) return [];
     const owned = (key: string): boolean => {
       const route = isrRouteFor(table, key);
       return route !== undefined && owners.has(route);
     };
     // The store's fence FIRST: a write racing this call from another process is refused from here.
-    store.tagFence?.bump(entitiesOf(tags));
+    const busted =
+      tags === EVERY_TAG ? [...owners].flatMap((r) => r.revalidateTags.map(parseWireTag)) : tags;
+    store.tagFence?.bump(entitiesOf(busted));
     for (const key of flight.keys()) if (owned(key)) invalidate(key);
     const held = store.paths().filter(owned);
     // A page the graph already named was marked a moment ago; it is reported, not marked twice.

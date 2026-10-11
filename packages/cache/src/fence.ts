@@ -70,6 +70,17 @@ export function markInvalidated(scope: FenceScope): void {
   }
 }
 
+/**
+ * Everything, invalidated: every fence sampled before this call answers `false`. For a process
+ * that cannot name what it missed (`flushProcessTiers`) — the same "older than the ring remembers:
+ * unprovable, so refused" rule, reached on purpose. One refetch per in-flight fill.
+ */
+export function markAllInvalidated(): void {
+  generation += 1;
+  forgottenThrough = generation;
+  marks.length = 0;
+}
+
 function hits(mark: Mark, scope: FenceScope): boolean {
   if (mark.key !== undefined) return scope.key !== undefined && mark.key === scope.key;
   const owned = mark.tag;

@@ -5,6 +5,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isolateGraph, registerDependent, resetGraph } from './graph';
 import {
+  EVERY_TAG,
   invalidateTags,
   isolateTiers,
   receiveInvalidationBroadcast,
@@ -39,7 +40,7 @@ describe('unit · the fan-out asks the ISR holder by tag', () => {
         told.push(path);
       },
       (tags) => {
-        asked.push(tags.map((one) => one.entity));
+        asked.push(tags === EVERY_TAG ? [] : tags.map((one) => one.entity));
         return ['/blog', '/es/blog'];
       },
     );

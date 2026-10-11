@@ -6,8 +6,11 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { isolateGraph, registerDependent, resetGraph } from './graph';
 import {
+  EVERY_TAG,
+  flushProcessTiers,
   invalidateTags,
   isolateTiers,
+  purgeEdgeAgain,
   registerInvalidationBroadcast,
   registerRevalidator,
   registerTier,
@@ -97,5 +100,47 @@ describe('unit · the order of one bust', () => {
     expect(order.at(-1)).toBe('cdn');
     expect(report.errors.map((entry) => entry.tier)).toEqual(['cdn']);
     expect(report.isr).toEqual(['/blog']);
+  });
+});
+
+describe('unit · the edge, outside one bust', () => {
+  test('purgeEdgeAgain touches the edge and nothing else', async () => {
+    const order: string[] = [];
+    wire(order);
+    const purged = await purgeEdgeAgain(['post:1']);
+    expect(order).toEqual(['cdn']);
+    expect(purged.map((entry) => entry.tier)).toEqual(['cdn']);
+  });
+
+  test('a flush asks the ISR holder for EVERY page, then purges the edge by the tags of the pages it held', async () => {
+    const order: string[] = [];
+    const edgeTags: string[][] = [];
+    registerTier({
+      ...recordingTier('cdn', order),
+      async invalidateTags(tags) {
+        order.push('cdn');
+        edgeTags.push(tags.map((one) => one.entity));
+        return { tier: 'cdn', keys: [] };
+      },
+    });
+    registerDependent([tag('post')], { kind: 'isr-route', id: '/blog' });
+    registerDependent([tag('user')], { kind: 'cache-key', id: 'user:1' });
+    const asked: unknown[] = [];
+    registerRevalidator(
+      () => {
+        order.push('isr');
+      },
+      (tags) => {
+        order.push('isr:held');
+        asked.push(tags);
+        return ['/es/blog'];
+      },
+    );
+    const report = await flushProcessTiers('test');
+    expect(order).toEqual(['isr', 'isr:held', 'cdn']);
+    expect(asked).toEqual([EVERY_TAG]);
+    expect(report.isr).toEqual(['/blog', '/es/blog']);
+    // Only what an ISR page carried: a cache key's tag names no document at the edge.
+    expect(edgeTags).toEqual([['post']]);
   });
 });

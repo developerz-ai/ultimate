@@ -105,7 +105,8 @@ export function lazyServices(input: DevHostInput): LazyServices {
   // one connection wedged every later tool call in the session with that first error, and the only
   // way out was restarting the host — `startServices` unwinds everything it started before it
   // rejects, so there is nothing left over for a second attempt to collide with.
-  const boot = retryMemo(() => startServices(services, input.env));
+  // `[]`: this host starts no role, so it only ever publishes to the bus and never waits for it.
+  const boot = retryMemo(() => startServices(services, input.env, undefined, 'apply', []));
   let closed = false;
   return {
     services,

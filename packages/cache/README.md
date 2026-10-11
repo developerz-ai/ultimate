@@ -320,8 +320,17 @@ bus.subscribe('cache.invalidate', (wireTags) => receiveInvalidationBroadcast(wir
 The inbound half **cannot** re-emit, and that is structural rather than a flag: `emit` lives on the
 private fan-out options and `receiveInvalidationBroadcast` is the only caller that passes `false`.
 A receiver that re-broadcast would be a storm bounded by nothing. A failed send lands in
-`report.errors` under `tier: "broadcast"` — the other pods then clear on TTL, and the write that
-triggered the bust still succeeds. An inbound tag this process has not declared is dropped and
+`report.errors` under `tier: "broadcast"` and the write that triggered the bust still succeeds.
+What happens to that bust is the sender's (`@ultimat3/cli` keeps the refused tags, bounded, and
+publishes them when the bus returns); with no such sender the other pods clear on TTL.
+
+**`flushProcessTiers(source)` is the repair for a process that cannot know what it missed** — its
+bus connection was down for a window, or a peer says it had more refused busts than it could keep.
+It calls `CacheTier.clear()` on every tier that has one (only a tier whose store is this process's
+heap implements it: `lruTier` does, `redisTier` and `cdnTier` do not), marks every ISR page that
+depends on a tag stale through the registered revalidator, and fences out every fill in flight
+(`markAllInvalidated`). It never re-emits and never throws; its report and its `/_x` event carry
+`tags: ['*']` (`FLUSH_ALL_TAG`). An inbound tag this process has not declared is dropped and
 reported rather than thrown, because mid-deploy the new pods know an entity the old ones do not and
 a throw would kill the subscriber loop that delivered it.
 

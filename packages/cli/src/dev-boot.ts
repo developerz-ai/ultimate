@@ -113,7 +113,14 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   // boot passed nothing here and built its own embedded disk, so an app's `/_storage` routes and its
   // actions wrote to two different places in `x dev` and to one in production.
   const appRuntime = await loadAppRuntime(options.root);
-  const runtime: RunningServices = await startServices(resolved, env, appRuntime);
+  // The roles decide whether this boot waits for the bus, exactly as a container's one role does.
+  const runtime: RunningServices = await startServices(
+    resolved,
+    env,
+    appRuntime,
+    'apply',
+    options.roles ?? DEV_ROLES,
+  );
   // The events binding the boot line reports is the bus the runtime chose, read off it.
   const services = withRealtimeEvents(resolved, env, runtime.realtime);
   // `serve.ts`'s `releaseBoot` shape: everything acquired from here on is released, newest first,

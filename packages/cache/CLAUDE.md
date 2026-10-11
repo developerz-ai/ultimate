@@ -23,7 +23,8 @@ Tier 1. Tagged caching + THE invalidation graph.
   `CacheStack.drop` reverses for the same reason. `invalidation-race.test.ts`.
 - **The EDGE is purged last**: read tiers → ISR revalidators → broadcast → `cdn`. Purged first, a
   request before the origin's own delete was a public hit the purged edge cached again for a whole
-  `s-maxage`. `invalidate-order.test.ts`.
+  `s-maxage`. A refused broadcast purges it again when the deferred one is published
+  (`purgeEdgeAgain`, called by cli); a flush purges it last too. `invalidate-order.test.ts`.
 - **A fill is fenced: sample before `load()`, ask before the write** (`fence.ts`). `sampleFence({ key,
   tags })` → `fence.isValid()`; `markInvalidated` is the write half (`fanOut`, `CacheStack.write`,
   `CacheStack.drop`). Exported so a store outside this package reuses it rather than growing a
@@ -45,6 +46,9 @@ Tier 1. Tagged caching + THE invalidation graph.
   `TIER_ORDER` alias (`X_HELPER_COPY` refuses a value of core's under a second name). Adding a
   rung is an edit to `packages/core/src/cache-vocabulary.ts` plus a factory here; `scripts/render-modes.ts` refuses a second declaration of the set. **`isr` is
   not a tier** — the `'isr'` in `invalidate.ts` is an ISR route (`DependentKind = 'isr-route'`).
+- **`flushProcessTiers(source)` is for a process that cannot name what it missed** (its bus was
+  away): `CacheTier.clear()` on in-process tiers only, tagged ISR pages stale, fills fenced out
+  (`markAllInvalidated`). Never re-emits. A shared tier must NOT implement `clear`.
 - **`bestEffort()` is the only sanctioned way to swallow a cache refusal.** Its label is `TierLabel`
   (`TierName` plus `'query-read'`), deliberately not a widening of `TierName`.
 - **A refusal is rendered with `renderThrowable()`, never `error.message`** — at all five absorbing

@@ -42,9 +42,13 @@ export type {
   TagRevalidator,
 } from './invalidate';
 export {
+  EVERY_TAG,
+  FLUSH_ALL_TAG,
+  flushProcessTiers,
   invalidateTags,
   invalidateWireTags,
   isolateTiers,
+  purgeEdgeAgain,
   receiveInvalidationBroadcast,
   recentInvalidations,
   registeredTiers,

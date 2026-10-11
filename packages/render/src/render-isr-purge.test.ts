@@ -5,7 +5,14 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
-import { invalidateTags, isolateGraph, isolateTiers, resetGraph, tag } from '@ultimat3/cache';
+import {
+  flushProcessTiers,
+  invalidateTags,
+  isolateGraph,
+  isolateTiers,
+  resetGraph,
+  tag,
+} from '@ultimat3/cache';
 import { clearRoutes, describePages } from './registry';
 import { isrController } from './render-isr';
 import { isrKeyIn, isrRouteWith } from './render-isr-fixture';
@@ -126,6 +133,38 @@ describe("unit · onInvalidate: 'purge' takes the page down", () => {
     expect(team.result.headers['cache-control']).toBe(
       'public, max-age=0, s-maxage=60, stale-while-revalidate=86400',
     );
+  });
+});
+
+describe('unit · a flush is at least a purge', () => {
+  // A replica that was deaf, or a peer that lost count of its refused busts, flushes: it cannot
+  // name what it missed. For a purge route "marked stale" would be the withdrawn page once more.
+  test('every stored page of a purge route is deleted, registered in the graph or not', async () => {
+    isrRouteWith(POST, { tags: [postTag], ttl: '10m', onInvalidate: 'purge' });
+    isrRouteWith('apps/web/site/team/page.tsx', { tags: [teamTag] });
+    const store = memoryIsrStore();
+    const unregistered = isrKeyIn('/blog/old');
+    store.set({
+      path: unregistered,
+      html: '<p>old</p>',
+      hash: 'h',
+      generatedAt: 0,
+      ttlMs: 600_000,
+      stale: false,
+    });
+    const controller = isrController({ store, routes: describePages });
+    const detach = controller.attach();
+    await controller.serve(isrKeyIn('/blog/a'), () => '<p>a</p>');
+    await controller.serve(isrKeyIn('/team'), () => '<p>team</p>');
+
+    const report = await flushProcessTiers('test');
+    detach();
+    expect([...report.isr].sort()).toEqual(
+      [isrKeyIn('/blog/a'), unregistered, isrKeyIn('/team')].sort(),
+    );
+    // The purge route's pages are gone; the stale route's page is kept, marked.
+    expect(store.paths()).toEqual([isrKeyIn('/team')]);
+    expect(store.get(isrKeyIn('/team'))?.stale).toBe(true);
   });
 });
 

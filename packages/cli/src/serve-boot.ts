@@ -12,6 +12,7 @@ import { startOtlpExport } from './otlp-export';
 import { loadAppForRole, roleLoadFor } from './role-load';
 import { startRoles } from './role-start';
 import { resolveServices } from './runtime-bindings';
+import { busLabel } from './runtime-bus';
 import { warnIfIdempotencyProcessScoped } from './runtime-idempotency-scope';
 import { warnUnsealedMfaSecrets } from './runtime-mfa-warning';
 import { replicaOverrides } from './runtime-replica';
@@ -89,7 +90,8 @@ export async function bootServing(boot: {
   // tables first, and this boot only verifies the stamp it left (`framework-schema-apply.ts`).
   // The embedded database has no migrate step to have run, so it applies its own.
   const schema = services.db.mode === 'external' ? 'verify' : 'apply';
-  const runtime = await startServices(services, options.env, options.runtime, schema);
+  // The role decides whether this boot waits for the bus: only `sync` and the replicator do.
+  const runtime = await startServices(services, options.env, options.runtime, schema, [boot.role]);
   boot.acquired.push(() => runtime.stop());
   return bootRoles({ ...boot, runtime });
 }
@@ -190,6 +192,7 @@ async function bootRoles(boot: {
     role,
     url: running.url,
     buildId,
+    bus: busLabel(runtime.transport),
     running,
     runtime,
     async stop() {

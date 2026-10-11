@@ -195,6 +195,12 @@ export interface CacheTier {
    * may never be told about — still stops the fill (`tier-fence.ts`). Omitted by in-process tiers.
    */
   fence?(scope: FenceScope): Promise<TierFence>;
+  /**
+   * Drop every entry — implemented ONLY by a tier whose store is this process's own heap (`lru`).
+   * `flushProcessTiers()` calls it when the process cannot know which busts it missed. A shared
+   * tier omits it: whoever ran a bust cleared that store for everyone.
+   */
+  clear?(): Promise<void> | void;
 }
 
 export interface CacheStack {
