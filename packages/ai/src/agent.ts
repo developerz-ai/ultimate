@@ -28,8 +28,8 @@ import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { AgentAction } from './agent-continue';
 import {
+  claimAgentSession,
   continuationTurn,
-  currentAgentSession,
   screenTranscript,
   sessionCalls,
   TRANSCRIPT_VERSION,
@@ -83,6 +83,8 @@ export function agent<
     });
   }
   const bounds = screenBounds(def);
+  // This declaration's identity for `.run()` / `.continue()` sessions (`claimAgentSession`).
+  const owner = {};
   const sampling = screenSampling(SUBJECT, def);
   // Projected on FIRST RUN, memoised, for the reason above: `agent()` is evaluated at module
   // scope and a tool's name is stamped by `registerAction` at boot, so naming it here would make
@@ -97,12 +99,12 @@ export function agent<
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: (args) => run(def, respond, adapt(), { ...bounds, sampling }, args),
+    handle: (args) => run(def, respond, adapt(), { ...bounds, sampling, owner }, args),
   });
   // A thunk, resolved when the manifest asks: every name in the row is stamped at boot, and this
   // line runs at module scope.
   registerAgentFact(built, () => factsOf(def));
-  return continuable(built);
+  return continuable(built, owner);
 }
 
 /**
@@ -111,11 +113,12 @@ export function agent<
  */
 function continuable<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
   target: Action<TInput, TOutput>,
+  owner: object,
 ): AgentAction<TInput, TOutput> {
   const rename = target.named.bind(target);
   return Object.assign(target, {
-    ...sessionCalls(target),
-    named: (next: string): AgentAction<TInput, TOutput> => continuable(rename(next)),
+    ...sessionCalls(target, owner),
+    named: (next: string): AgentAction<TInput, TOutput> => continuable(rename(next), owner),
   });
 }
 
@@ -138,14 +141,14 @@ async function run<
   def: AgentDef<TInput, TOutput, V>,
   respond: Respond,
   adapted: Adapted,
-  bounds: AgentBounds & { readonly sampling: Sampling },
+  bounds: AgentBounds & { readonly sampling: Sampling; readonly owner: object },
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
   const name = prompt.ref;
   // A `.continue()` in flight: its handle is the app's stored data, so it is screened before
   // anything is loaded, reserved or sent.
-  const session = currentAgentSession();
+  const session = claimAgentSession(bounds.owner);
   const resume = session?.resume;
   const prior = resume === undefined ? undefined : screenTranscript(name, resume.transcript);
   if (resume !== undefined && resume.user.trim() === '') {

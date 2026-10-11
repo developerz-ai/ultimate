@@ -87,6 +87,13 @@ export interface AgentAction<TInput extends StandardSchemaV1, TOutput extends St
 
 /** One `.run()` / `.continue()` in flight: what to resume from, and where the loop leaves its run. */
 export interface AgentSession {
+  /**
+   * Which DECLARATION this session was opened for. The session rides the async context, so every
+   * agent that runs underneath — a tool that calls another agent — can see it; only the one whose
+   * token this is may take it, and only once.
+   */
+  readonly owner: object;
+  claimed: boolean;
   readonly resume: AgentContinuation | undefined;
   finished: Omit<AgentRun<unknown>, 'output'> | undefined;
 }
@@ -95,18 +102,29 @@ export interface AgentSession {
 // continuation calls is the one object the registry, the policy and the audit record know.
 const sessions = asyncContext<AgentSession>('an agent session');
 
-export const currentAgentSession = (): AgentSession | undefined => sessions.get();
+/**
+ * The session of THIS run, taken — or `undefined` for a plain call, and for any other agent
+ * running under somebody else's `.run()` / `.continue()`: a nested agent starts fresh.
+ */
+export function claimAgentSession(owner: object): AgentSession | undefined {
+  const session = sessions.get();
+  if (session === undefined || session.owner !== owner || session.claimed) return undefined;
+  session.claimed = true;
+  return session;
+}
 
 /** `.run()` and `.continue()` for one action: each invokes THAT action inside a session. */
 export function sessionCalls<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
   target: Action<TInput, TOutput>,
+  /** The declaration's own token: `named()` twins share it, no other agent has it. */
+  owner: object,
 ): Pick<AgentAction<TInput, TOutput>, 'run' | 'continue'> {
   const invoke = async (
     input: InferInput<TInput>,
     resume: AgentContinuation | undefined,
     opts: InvokeOptions | undefined,
   ): Promise<AgentRun<InferOutput<TOutput>>> => {
-    const session: AgentSession = { resume, finished: undefined };
+    const session: AgentSession = { owner, claimed: false, resume, finished: undefined };
     const output = await sessions.run(session, () => target(input, opts ?? {}));
     const finished = session.finished;
     if (finished === undefined) {
