@@ -156,13 +156,23 @@ export function toLlmTool(action: ProjectableAction): LlmTool {
 }
 
 /**
+ * Whether an agent may be OFFERED this tool: an action an MCP surface exposes (`isMcpExposed`,
+ * core's one predicate — an in-app agent and an external one see the same catalogue of ACTIONS), or
+ * a tool that is this process's alone (`inProcessTool()`), which no surface but the agent sees.
+ */
+export const isOfferedTool = (tool: {
+  readonly mcp?: ProjectableAction['mcp'];
+  readonly inProcess?: boolean;
+}): boolean => tool.inProcess === true || isMcpExposed(tool.mcp);
+
+/**
  * Every exposed action as a tool definition, in stable name order. The gateway and MCP ask
  * `isMcpExposed` — @ultimat3/core's one predicate — so an in-app agent and an external one are
  * offered exactly the same tools.
  */
 export function toLlmTools(actions: readonly ProjectableAction[]): readonly LlmTool[] {
   return actions
-    .filter((a) => isMcpExposed(a.mcp))
+    .filter(isOfferedTool)
     .map(toLlmTool)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
@@ -176,7 +186,7 @@ export async function runLlmToolCall(
   call: LlmToolCall,
   actor: Actor,
 ): Promise<LlmToolResult> {
-  const action = actions.find((a) => a.name === call.name && isMcpExposed(a.mcp));
+  const action = actions.find((a) => a.name === call.name && isOfferedTool(a));
   if (action === undefined) {
     return { toolUseId: call.id, content: `unknown tool: ${call.name}`, isError: true };
   }

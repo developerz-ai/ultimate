@@ -149,8 +149,8 @@ export const supportAgent = agent({
 
 | Rule | Why |
 |---|---|
-| A tool must declare `mcp: { expose: true }` | `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client are offered exactly the same catalogue |
-| A tool that is not exposed is `X_AGENT_TOOL_UNEXPOSED` **at declaration**, never filtered at the call | a silently dropped tool reads as offered and is not — the worst of both |
+| An **action** used as a tool must declare `mcp: { expose: true }` | `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client are offered exactly the same catalogue of actions. A tool no MCP client may ever see is an [`inProcessTool()`](#in-process-tools) instead |
+| A tool that is neither is `X_AGENT_TOOL_UNEXPOSED` **at declaration**, never filtered at the call | a silently dropped tool reads as offered and is not — the worst of both |
 | The tool's name is its **export name, verbatim** | the same name `tools/call`, `scopes:` and `openapi.json` use. No second spelling |
 | The tool's own `policy` decides every call | there is no "LLM permissions" concept, because there is no second authz system |
 | The tool's own `input:` parses what the model sent | which is what drops an `{ actor: 'admin' }` the model invented, before any handler sees it |
@@ -160,6 +160,43 @@ export const supportAgent = agent({
 | The actor is **`ctx.actor`**, read once, and nothing the model emits can reach it | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
 
 An unknown tool name answers `unknown tool: <name>` as an error result rather than throwing — the model asked for something it was not offered, which is a turn to correct, not a run to abort.
+
+### In-process tools
+
+`As of 2026-10`. A tool that exists only for an agent in this process — a knowledge-base read for an unattended writer, a scratch calculation — is not an action and is never an MCP tool:
+
+```ts
+import { inProcessTool } from '@ultimat3/ai';
+import { UltimateError } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
+
+declare function loadDoc(id: string): Promise<{ id: string; body: string } | undefined>;
+
+export const kbRead = inProcessTool({
+  name: 'kbRead',
+  description: 'Read one knowledge-base document by id.',
+  input: t.object({ id: t.string }),
+  execute: async ({ input }) => {
+    const doc = await loadDoc(input.id);
+    if (doc === undefined) {
+      throw new UltimateError({
+        code: 'X_KB_DOC_NOT_FOUND',
+        cause: `no knowledge-base document has the id "${input.id}"`,
+        fix: 'kbList()   # call it first and pass one of the ids it returns',
+      });
+    }
+    return doc;
+  },
+});
+```
+
+| | |
+|---|---|
+| What it needs | `name` (letters, digits, `_`, `-`; ≤ 64; not `respond`), `description`, `input`, `execute`. No `mcp`, no `policy`, no registration |
+| What sees it | the agents that list it. It is in no MCP catalogue, no HTTP route, no `openapi.json`, no manifest row |
+| Authorization | the **agent** is the operation with a policy. `execute` runs as `ctx.actor` inside it, exactly as code in the agent's own handler would; anything it reaches that needs its own authorization is an `action()` it calls, whose policy decides |
+| Its input | parsed by `input` before `execute` runs; arguments that fail read back to the model as `X_INPUT_INVALID` naming the fields |
+| Its refusals | an `UltimateError` it throws reaches the model as `{"error":{"code","cause","fix"}}` (row above); `discloseErrors: false` withholds them |
 
 ## An agent is a tool of another agent
 
@@ -661,7 +698,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 
 | Code | Cause | Fix |
 |---|---|---|
-| `X_AGENT_TOOL_UNEXPOSED` | a `tools` entry declares no `mcp` block, or `mcp: { expose: false }`. Raised at **declaration** | add `mcp: { expose: true, description }` to the action `cause` names, or drop it from `tools` |
+| `X_AGENT_TOOL_UNEXPOSED` | a `tools` entry is an action with no `mcp` block (or `mcp: { expose: false }`) and is not an `inProcessTool()`. Raised at **declaration** | `inProcessTool({ name, description, input, execute })` for a tool only this agent may call; or `mcp: { expose: true, description }` on the action to offer it to MCP clients too; or drop it from `tools` |
 | `X_AGENT_MAX_TURNS` | the loop used every turn calling tools and never answered | tell the template when to stop and answer through the respond tool, then bump its version |
 | `X_AGENT_TOOL_LOOP` | consecutive turns made the same tool calls and read the same results | `maxRepeatedToolCalls: 5` on the agent, only for a tool that really is polled; otherwise tell the template what to do when the result does not change, then bump its version |
 | `X_AGENT_DEADLINE` | the run outlived its declared `deadlineMs` | `deadlineMs: 300_000` on the agent, once a trace shows the run converging; otherwise lower `maxTurns` |

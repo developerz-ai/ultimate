@@ -52,7 +52,8 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_LLM_TRUNCATED: 'the answer hit its maxTokens ceiling before it was complete',
   X_LLM_STREAM_INVALID: 'a streamed answer failed its output schema, and a stream cannot repair',
   X_AGENT_MAX_TURNS: 'an agent hit its turn ceiling without answering',
-  X_AGENT_TOOL_UNEXPOSED: 'an agent lists a tool that is not an MCP-exposed action',
+  X_AGENT_TOOL_UNEXPOSED:
+    'an agent lists a tool that is neither in-process nor an MCP-exposed action',
   X_HIVE_EMPTY: 'a hive split produced no members, so the run did nothing',
   X_EVAL_THRESHOLD: 'an eval scored below its tolerance',
   X_EVAL_BASELINE_MISSING: 'an eval has no recorded baseline to gate against',
@@ -269,7 +270,7 @@ export class AgentToolUnexposedError extends UltimateError {
     super({
       code: 'X_AGENT_TOOL_UNEXPOSED',
       cause: `agent "${input.agent}" lists tools no MCP surface exposes: ${input.tools.join(', ')}`,
-      fix: 'add mcp: { expose: true } to the action named in cause, or drop it from the agent tools list',
+      fix: "inProcessTool({ name, description, input, execute })   # for a tool only this agent may call — or add mcp: { expose: true } to the action named in cause to offer it to MCP clients too, or drop it from the agent's tools",
     });
   }
 }

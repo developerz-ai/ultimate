@@ -216,7 +216,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   - `tools` takes a real `action()` (`AgentTool = AnyAction | ProjectableAction`,
     `asProjectableAction`); projection happens on the FIRST RUN, memoised. An agent can be another
     agent's tool.
-  - A tool not `mcp: { expose: true }` is `X_AGENT_TOOL_UNEXPOSED` at DECLARATION.
+  - A tool is an exposed action or an `inProcessTool()` (`isOfferedTool`); anything else is
+    `X_AGENT_TOOL_UNEXPOSED` at DECLARATION. An in-process tool is never an action, never projected
+    to MCP, has no policy (the agent's decides) and parses its own input.
   - `ctx.signal` is read at the top of every turn, before every tool batch, and forwarded to
     `fetch`; `X_ABORTED` is core's.
   - One turn's tools run concurrently, results paired by index; no tool STARTS after an abort.

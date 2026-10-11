@@ -52,10 +52,11 @@ export interface AgentDef<
    */
   readonly promptCache?: PromptCacheOption<AgentVarsArgs<TInput>>;
   /**
-   * The actions the model may call. Each must be `mcp: { expose: true }` — the same predicate an
-   * external MCP client is filtered by, so an in-app agent and an external one are offered
-   * exactly the same tools. Listing one that is not exposed is refused at declaration rather than
-   * dropped, because a tool that reads as offered and silently is not is the worst of both.
+   * What the model may call: an `action()` that is `mcp: { expose: true }` — the same predicate an
+   * external MCP client is filtered by, so both are offered the same actions — or an
+   * `inProcessTool()`, which only this process's agents ever see. Anything else is refused at
+   * declaration rather than dropped: a tool that reads as offered and silently is not is the worst
+   * of both.
    */
   readonly tools: readonly AgentTool[];
   /** Hard ceiling on model turns. Reaching it is `X_AGENT_MAX_TURNS`, never a partial answer. */

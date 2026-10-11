@@ -143,6 +143,8 @@ export type { HiveDef, HiveSplitArgs } from './hive';
 export { hive } from './hive';
 export { HiveEmptyError } from './hive-errors';
 export type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
+export type { InProcessToolDef } from './in-process-tool';
+export { inProcessTool } from './in-process-tool';
 export type { LlmAction, LlmBudget, LlmCall, LlmDef, LlmVarsArgs } from './llm';
 export { llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';

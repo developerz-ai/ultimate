@@ -435,7 +435,7 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | an aborted `ctx` unwinds the run — at the top of every turn, before every tool batch, and on the socket | the transcript IS the request, so a loop that keeps going after the caller disconnects re-sends it once per remaining turn, runs every remaining side effect and discards the answer. `ctx.signal` rides on `GenerateRequest` too, so a call already in flight is cut rather than paid for |
 | the tools of **one turn** run concurrently, results paired by `tool_use` id | a turn asking for five tools cost 5x wall clock and nothing said so. Order is positional, never by completion; the batch is bounded by what one turn asked for, and each tool is an action with its own `policy` and `rateLimit`, so a second ceiling here would be a throttle competing with those |
 | `onTurn` reports each completed turn as it happens (and an `agent.turn` span event, always) | a 90-second run emitted nothing until it returned. Observation only — it cannot steer the loop, see the transcript or reach the actor — and a throw from it fails the run rather than being swallowed |
-| a tool that is not `mcp: { expose: true }` is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client see the same catalogue |
+| a tool is an `mcp: { expose: true }` action or an `inProcessTool()`; anything else is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate for ACTIONS, so an in-app agent and an external MCP client see the same catalogue of them — and a tool no MCP client may see is declared as one that is this process's alone |
 | running out of turns is `X_AGENT_MAX_TURNS`, never a partial answer | a half-finished transcript returned as a result is working notes presented as a decision |
 | a cycle of 1 to 3 tool turns — same calls, arguments, results and failures — gone round `maxRepeatedToolCalls` (default 3) times is `X_AGENT_TOOL_LOOP` | such a turn can only be followed by another like it; a changed result is progress; a repair turn neither counts nor resets |
 | `deadlineMs` (no default) is the run's wall-clock ceiling: `X_AGENT_DEADLINE` | the in-flight model call is aborted on the socket and every tool's `ctx.signal` fires; a tool that ignores it still finishes late. A caller that leaves first is still `X_ABORTED` |
@@ -935,6 +935,8 @@ An in-app agent and an external MCP agent both end at the same `invoke` — `run
 carries it, and an action facade has no `.run` of its own. So they authorize identically. The
 actor comes from the request context, never from the model.
 
+`inProcessTool({ name, description, input, execute })` is a tool that is this process's alone: no `mcp`, no policy of its own (the agent's decides), in no catalogue but the agent's. Its own typed refusal reads back as `{"error":{"code","cause","fix"}}`. [Agents → In-process tools](https://github.com/developerz-ai/ultimate/wiki/Agents#in-process-tools).
+
 A failed tool reads back as `CODE: cause (fix: …)` — except a 5xx code whose cause core's
 `hasPublicCause` does not declare public, which reads `CODE: ` plus a fixed sentence (and a
 `callerFix`, when the `UltimateError` declared one): the rule a production problem document follows,
@@ -963,7 +965,7 @@ fail-closed `terminal` default.
 | `X_LLM_OUTPUT_INVALID` | the model failed its `output` schema on the answer and on the repair turn |
 | `X_LLM_STREAM_INVALID` | a streamed answer failed its schema, and a stream cannot take a repair turn |
 | `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering |
-| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action no MCP surface exposes |
+| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists a tool that is neither in-process nor an MCP-exposed action |
 | `X_AGENT_TOOL_LOOP` | an `agent()` made the same tool calls and read the same results `maxRepeatedToolCalls` turns in a row |
 | `X_AGENT_DEADLINE` | an `agent()` outlived its declared `deadlineMs` |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |

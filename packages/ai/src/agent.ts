@@ -23,7 +23,7 @@
 import type { Action } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { isMcpExposed, throwIfAborted, withSpan } from '@ultimat3/core';
+import { throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { AgentAction } from './agent-continue';
@@ -61,7 +61,7 @@ import { aiGateway, aiRedactor } from './runtime';
 import type { Sampling } from './sampling';
 import { ignoredSampling, screenSampling } from './sampling';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
-import { asProjectableAction, runLlmToolCall, toLlmTools, toolLabel } from './tools';
+import { asProjectableAction, isOfferedTool, runLlmToolCall, toLlmTools, toolLabel } from './tools';
 
 export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
 
@@ -75,7 +75,7 @@ export function agent<
   // first request has already been declared, registered and projected as if it worked. Asked of
   // the DECLARATION rather than of the projection: `isMcpExposed` needs no name, and a real
   // `action()` beside this one in the same module has none until `registerActions` runs at boot.
-  const unexposed = def.tools.filter((tool) => !isMcpExposed(tool.mcp));
+  const unexposed = def.tools.filter((tool) => !isOfferedTool(tool));
   if (unexposed.length > 0) {
     throw new AgentToolUnexposedError({
       agent: def.prompt.ref,

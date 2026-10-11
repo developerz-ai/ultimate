@@ -65,10 +65,16 @@ export function discloseOwnFailure(
   where: string,
 ): DisclosedFailure {
   const code = isUltimateError(error) ? stringField(error, 'code') : undefined;
+  // The model is a REMOTE reader, so the fix it gets is the caller's wherever one was written —
+  // `x actions show …` is no use to it.
+  const callerFix = code === undefined ? undefined : stringField(error, 'callerFix');
   if (code === undefined || declaredStatusFor(code) !== undefined) {
-    return discloseFailure(error, logger, where);
+    const shown = discloseFailure(error, logger, where);
+    return shown.cause === undefined || callerFix === undefined
+      ? shown
+      : { ...shown, fix: callerFix };
   }
-  const fix = stringField(error, 'callerFix') ?? stringField(error, 'fix');
+  const fix = callerFix ?? stringField(error, 'fix');
   return {
     code,
     cause: stringField(error, 'cause') ?? 'unknown',

@@ -465,7 +465,7 @@ $ x verify --json
 | `X_MCP_RATE_LIMITED` | this caller spent its per-minute allowance for the request's class ([above](#rate-limits-on-the-http-transport)) | wait out the `Retry-After`, or raise it where the route is built: `mcpHttpRoute({ rateLimits })` / `defineAppMcp({ rateLimits })`. Never `X_RATE_LIMITED`'s buckets — they do not govern this route |
 | `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | over an app's MCP: the caller's fix — ask the account owner or an administrator for the permission; a retry is refused the same way. As the app's developer: `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |
-| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action that is not MCP-exposed — refused at **declaration** | add `mcp: { expose: true, description }` to the action, or drop it from `tools` |
+| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action that is not MCP-exposed and is not an `inProcessTool()` — refused at **declaration** | `inProcessTool({ … })` for a tool only the agent may call, or add `mcp: { expose: true, description }` to the action, or drop it from `tools` |
 | `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering | tell the template when to stop and answer through the respond tool, then bump its version |
 | `X_HIVE_EMPTY` | a `hive()` split into zero members | return at least one member input, or guard the call site |
 | `X_NOT_IMPLEMENTED` | a remote driver stub was reached | configure the local/PGlite driver, or wait for the release named in `fix` |
