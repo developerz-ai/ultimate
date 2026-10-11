@@ -5,18 +5,12 @@
  */
 
 import type { CacheTag } from '@ultimat3/cache';
+import { parseTag } from '@ultimat3/cache';
 import { parseStaleMs, parseTtlMs } from './duration';
 import type { RouteDescriptor } from './registry';
 import { routePathOf } from './render-isr-key';
 import type { InvalidateMode } from './route';
 import { compilePattern } from './route-pattern';
-
-/** `post` / `post:123` → `{ entity, id? }`. Mirrors `@ultimat3/cache`'s wire form. */
-export function parseWireTag(wire: string): CacheTag {
-  const split = wire.indexOf(':');
-  if (split === -1) return { entity: wire };
-  return { entity: wire.slice(0, split), id: wire.slice(split + 1) };
-}
 
 /** What a route declared for the entries stored under it; the defaults for a key no route owns. */
 export interface IsrPolicy {
@@ -36,7 +30,7 @@ export function isrPolicyOf(descriptor: RouteDescriptor | undefined): IsrPolicy 
   const onInvalidate = descriptor?.revalidateOnInvalidate ?? 'stale';
   const declared = descriptor?.revalidateMaxStale ?? null;
   return {
-    tags: (descriptor?.revalidateTags ?? []).map(parseWireTag),
+    tags: (descriptor?.revalidateTags ?? []).map(parseTag),
     ttlMs: parseTtlMs(descriptor?.revalidateTtl),
     onInvalidate,
     maxStaleMs: declared === null ? (onInvalidate === 'purge' ? 0 : null) : parseStaleMs(declared),

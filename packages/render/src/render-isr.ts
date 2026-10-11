@@ -11,6 +11,7 @@ import {
   EVERY_TAG,
   invalidateTags,
   markInvalidated,
+  parseTag,
   registerDependent,
   registerRevalidator,
   sampleFence,
@@ -24,7 +25,7 @@ import { describePages } from './registry';
 import { DEFAULT_ISR_FAILURE_COOLDOWN_MS, failureCooldown } from './render-isr-cooldown';
 import { entryTtlMs, isrResult } from './render-isr-result';
 import type { IsrPolicy } from './render-isr-routes';
-import { isrPolicyOf, isrRouteFor, parseWireTag } from './render-isr-routes';
+import { isrPolicyOf, isrRouteFor } from './render-isr-routes';
 import type { IsrEntry } from './render-isr-store';
 import { memoryIsrStore } from './render-isr-store';
 import type {
@@ -114,7 +115,7 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
   function registerPath(path: string, descriptor: RouteDescriptor | undefined): void {
     if (descriptor === undefined || registered.has(path)) return;
     if (descriptor.revalidateTags.length === 0) return;
-    registerDependent(descriptor.revalidateTags.map(parseWireTag), { kind: 'isr-route', id: path });
+    registerDependent(descriptor.revalidateTags.map(parseTag), { kind: 'isr-route', id: path });
     registered.add(path);
   }
 
@@ -294,7 +295,7 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
     const owns = (route: RouteDescriptor): boolean =>
       tags === EVERY_TAG
         ? route.revalidateTags.length > 0
-        : tagsIntersect(tags, route.revalidateTags.map(parseWireTag));
+        : tagsIntersect(tags, route.revalidateTags.map(parseTag));
     const owners = new Set(table.filter(owns));
     if (owners.size === 0) return [];
     const owned = (key: string): boolean => {
@@ -303,7 +304,7 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
     };
     // The store's fence FIRST: a write racing this call from another process is refused from here.
     const busted =
-      tags === EVERY_TAG ? [...owners].flatMap((r) => r.revalidateTags.map(parseWireTag)) : tags;
+      tags === EVERY_TAG ? [...owners].flatMap((r) => r.revalidateTags.map(parseTag)) : tags;
     store.tagFence?.bump(entitiesOf(busted));
     for (const key of flight.keys()) if (owned(key)) invalidate(key);
     const held = store.paths().filter(owned);

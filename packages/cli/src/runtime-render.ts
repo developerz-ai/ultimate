@@ -45,6 +45,7 @@ import {
   streamResult,
 } from '@ultimat3/render/server';
 import type { DocumentOptions } from './document-options';
+import { routeQuery } from './isr-query-guard';
 import {
   type NavigationDocumentHead,
   navigationMetaOf,
@@ -193,7 +194,7 @@ export async function routeBody(
       data,
       params: ctx.params,
       url: ctx.url,
-      query: Object.fromEntries(url.searchParams) as Readonly<Record<string, string>>,
+      query: routeQuery(entry, url),
     },
     entry.file,
     { islands },

@@ -174,6 +174,8 @@ export const config = defineRoute({
 
 **Declare `query` on every `isr` route.** Omitted, the key carries whatever the visitor sent: `/blog?x=1`, `/blog?x=2`, … are each a render and a stored page (the store holds 1,000), which is a cost-amplification vector, and `utm_*` / `fbclid` / `gclid` split one page into many — each of which a withdrawal has to reach. `x verify` names every `isr` route without a declaration (the `seo` step's `warnings`), and the server logs `isr.query.undeclared` once per route the first time a visitor uses it. The default becomes `[]` in the next major.
 
+**Declare every parameter the page reads — `[]` only when it reads none.** A page that reads `?currency=` under `query: []` is ONE stored document, the first visitor's, answered to every other currency. Two nets, both best-effort: `x verify` reads each `isr` route module for `query.<name>`, `query['<name>']` and `searchParams.get('<name>')` and warns for a name the declaration omits (a read made through a helper in another file is not seen); and outside production, the `query` a page component receives warns once (`isr.query.unkeyed-read`) when the page reads a parameter the route did not declare. `load` and `meta` read the narrowed `url`, where an undeclared parameter is simply absent.
+
 **Nothing is redirected.** `/blog?utm_source=mail` is answered with the `/blog` page: `load` and `meta` are given the narrowed URL, so `canonical: url` is `/blog` and a parameter outside the key cannot change the document stored under it. A declared parameter's **values** are still the visitor's — `?page=999999` is a key — so `load` answers `withStatus(404, …)` for one that names nothing, and the bounded store evicts the rest.
 
 #### How fast a purge takes a page down

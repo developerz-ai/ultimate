@@ -328,6 +328,10 @@ const CATALOG = {
   // counts — so the line says how many and `x test <type>` prints the names.
   'cli.verify.allSkipped': 'found {skipped} test(s) and every one skipped itself',
   'cli.verify.warnings': '{count} warning(s) — --verbose or --json lists them',
+  'cli.verify.isrQueryUndeclared':
+    "{file}: render 'isr' with no revalidate.query — its stored pages are keyed on the whole query string, so any visitor can mint one per request. Declare revalidate: { query: [] } (or the parameters the page varies on)",
+  'cli.verify.isrQueryOmitted':
+    '{file}: reads the query parameter "{name}", which revalidate.query does not list — the page is stored under a key without it, so every visitor gets the document rendered for whichever value arrived first. Declare query: [{declared}], or stop reading it',
   // The other shape the same counts can take: a suite that reported no test at all, skipped ones
   // included. Its own line and not `allSkipped` with a zero, because the repair differs — there is
   // no skipped test to read a reason off, so the files the step selected hold no test.

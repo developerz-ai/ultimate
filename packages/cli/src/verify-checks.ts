@@ -295,7 +295,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       const report = validateMeta(scan.records);
       // The scan filled the route table, so the advice costs no second load. Rides here because
       // this is the step about public, shared-cache pages; it never fails it.
-      const warnings = isrQueryAdvice();
+      const warnings = await isrQueryAdvice(ctx.root);
       return {
         ok: scan.findings.length === 0 && report.ok,
         findings: [...scan.findings, ...report.issues.map(seoFinding)],

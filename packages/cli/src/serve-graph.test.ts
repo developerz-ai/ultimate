@@ -283,8 +283,11 @@ const SERVING_ROLE_CEILING = 945;
  * the module named on `SERVING_ROLE_CEILING`.
  * raised 1067 → 1072, measured 1072 (2026-10-10, isr purge + keyed query): the five render
  * modules named on `SERVING_ROLE_CEILING`, which every role carries.
+ * raised 1072 → 1073, measured 1073 (2026-10-11, PR #757 review): `cli/src/isr-query-guard.ts` —
+ * the `query` a page is handed; outside production it says once when an `isr` page reads a
+ * parameter its `revalidate.query` does not list (one stored document for every value of it).
  */
-const WEB_ROLE_CEILING = 1072;
+const WEB_ROLE_CEILING = 1073;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
