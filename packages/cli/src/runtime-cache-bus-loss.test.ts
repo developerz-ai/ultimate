@@ -4,7 +4,7 @@
 // repaired when the bus returns: the sender publishes what was refused, and every process drops
 // what it holds in its own heap, because it was deaf for a window nobody measured.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import {
   invalidateTags,
   isolateDeclaredTags,
@@ -270,6 +270,25 @@ describe('the invalidation subscribe of a role booted with the bus down', () => 
       .map((warning) => warning.meta?.['attempt']);
     expect(attempts.slice(0, 4)).toEqual([1, 2, 4, 8]);
     expect(attempts.length).toBeLessThanOrEqual(Math.ceil(Math.log2(self.subscribes())) + 1);
+  });
+
+  test('…and says ONCE, at info, after how many refusals the subscribe landed', async () => {
+    const said: (Record<string, unknown> | undefined)[] = [];
+    const info = spyOn(logger, 'info').mockImplementation((line, meta) => {
+      if (line === 'cache.broadcast.subscribe-failed recovered') said.push(meta);
+    });
+    try {
+      const broker = new FakeNatsBroker();
+      broker.offline = true;
+      const self = await replica(broker, () => 0);
+      await until(() => self.subscribes() >= 5);
+      broker.offline = false;
+      await until(() => self.landed() === 1);
+      await Bun.sleep(5);
+      expect(said).toEqual([{ after: self.subscribes() - 1 }]);
+    } finally {
+      info.mockRestore();
+    }
   });
 });
 

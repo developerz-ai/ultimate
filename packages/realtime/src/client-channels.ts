@@ -174,10 +174,21 @@ export class ChannelBook {
     }
   }
 
-  /** The sid a channel is subscribed under — what a refusal `ack` names. */
+  /**
+   * A refusal `ack` naming the sid a channel is subscribed under. `false` when no membership
+   * here answers to it.
+   */
   refused(sid: string, error: unknown): boolean {
     const entry = [...this.#byTopic.values()].find((candidate) => sidOf(candidate) === sid);
     if (entry === undefined) return false;
+    if (isTransientRefusal(error)) {
+      // Not a decision: the node's bus is away, so nothing reaches this seat (or there is none
+      // yet). `joining` — asked, unanswered — and never `failed`: the beat re-asks every interval
+      // and the node's first answer (a roster, a `records` frame, a `replay-gap`) ends it. A read
+      // in flight and a terminal refusal keep their own state.
+      if (entry.state === 'live') this.#set(entry, 'joining');
+      return true;
+    }
     entry.error = error;
     this.#set(entry, 'failed');
     return true;
@@ -359,6 +370,17 @@ export class ChannelBook {
       },
     };
   }
+}
+
+/**
+ * The one refusal that is the NODE's condition and not its verdict: its bus is away
+ * (`X_TRANSPORT_UNAVAILABLE`). Everything else an `ack` carries — a policy denial, an unknown
+ * channel, a cap — is a decision and terminal. Read off `unknown`: a refusal is the node's data.
+ */
+export function isTransientRefusal(error: unknown): boolean {
+  return (
+    (error as { readonly code?: unknown } | null | undefined)?.code === 'X_TRANSPORT_UNAVAILABLE'
+  );
 }
 
 /** A channel membership's sid is its topic behind this — what the socket engine routes on too. */

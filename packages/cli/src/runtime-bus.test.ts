@@ -3,11 +3,12 @@
 // refuses, fast and coded. Until 2026-10 every role awaited the dial, so a web pod that restarted
 // during a NATS outage never served a page.
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import {
   isUltimateError,
   logger,
   markReady,
+  type Role,
   readinessCheckCount,
   readyzPayload,
   resetLifecycle,
@@ -15,8 +16,13 @@ import {
 import { allow } from '@ultimat3/policy';
 import { channel, clearChannels } from '@ultimat3/realtime';
 import type { SelectTransportOptions } from '@ultimat3/realtime/server';
-import { FakeNatsBroker, fakeNatsConnect, publishChannelEvent } from '@ultimat3/realtime/server';
-import { busLabel, busUseFor, selectBus } from './runtime-bus';
+import {
+  BUS_CONNECT_WAIT_MS,
+  FakeNatsBroker,
+  fakeNatsConnect,
+  publishChannelEvent,
+} from '@ultimat3/realtime/server';
+import { busLabel, busUseFor, DEV_BUS_WAIT_MS, selectBus } from './runtime-bus';
 
 const ENV = { NATS_URL: 'nats://bus.test:4222' } as const;
 const NATS = { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } as const;
@@ -212,6 +218,94 @@ describe('selectBus().start(), for a role that serves sockets', () => {
     } finally {
       await running.stop();
     }
+  });
+});
+
+// `x dev` runs every role in one process. Until 2026-10-10 its `sync` role's refusal ended the whole
+// boot 15 s in — no page served — and a bus lost under a running one failed plain `/readyz`.
+describe('selectBus().start(), under x dev with a role that serves sockets', () => {
+  const ALL: readonly Role[] = ['web', 'sync', 'worker', 'scheduler'];
+
+  test('boots with NATS down: the coded refusal is logged ONCE at warn, the dial goes on, and it lands with no restart', async () => {
+    const warned: { message: string; fields: Record<string, unknown> | undefined }[] = [];
+    const warn = spyOn(logger, 'warn').mockImplementation((message, fields) => {
+      warned.push({ message, fields });
+    });
+    const broker = new FakeNatsBroker();
+    broker.offline = true;
+    const bus = selectBus({
+      env: ENV,
+      realtime: NATS,
+      roles: ALL,
+      dev: true,
+      select: { ...fake(broker), connectWithinMs: 30 },
+    });
+    expect(bus.use).toBe('sockets');
+    expect(bus.tolerant).toBe(true);
+
+    const startedAt = performance.now();
+    const running = await bus.start();
+    markReady();
+    try {
+      expect(performance.now() - startedAt).toBeLessThan(2_000);
+      expect(busLabel(running.transport)).toBe('nats(connecting)');
+      const said = warned.filter((line) => line.message.startsWith('ultimate bus is away'));
+      expect(said).toHaveLength(1);
+      expect(said[0]?.fields?.['code']).toBe('X_TRANSPORT_UNAVAILABLE');
+      expect(String(said[0]?.fields?.['cause'])).toContain('within 30ms');
+      // The pages are served from this process: the bus is a degradation, never a 503.
+      expect(readyzPayload().status).toBe(200);
+      expect(readyzPayload().body.checks).toEqual({ transport: 'degraded' });
+
+      broker.offline = false;
+      await waitFor(() => busLabel(running.transport) === 'nats(up)');
+      expect(busLabel(running.transport)).toBe('nats(up)');
+      expect(readyzPayload().body.checks).toEqual({ transport: 'ok' });
+      // Still one line: the retries in between said nothing here.
+      expect(warned.filter((line) => line.message.startsWith('ultimate bus is away'))).toHaveLength(
+        1,
+      );
+    } finally {
+      warn.mockRestore();
+      await running.stop();
+    }
+    expect(readinessCheckCount()).toBe(0);
+  });
+
+  test('a bus lost under a running x dev leaves plain /readyz at 200', async () => {
+    const broker = new FakeNatsBroker();
+    const bus = selectBus({
+      env: ENV,
+      realtime: NATS,
+      roles: ALL,
+      dev: true,
+      select: fake(broker),
+    });
+    const running = await bus.start();
+    markReady();
+    try {
+      broker.drop();
+      expect(readyzPayload().status).toBe(200);
+      expect(readyzPayload().body.checks).toEqual({ transport: 'degraded' });
+      expect(readyzPayload({ deep: true }).status).toBe(503);
+    } finally {
+      await running.stop();
+    }
+  });
+
+  test('waits 3 s for the bus by default, never the container’s 15', () => {
+    expect(DEV_BUS_WAIT_MS).toBe(3_000);
+    expect(DEV_BUS_WAIT_MS).toBeLessThan(BUS_CONNECT_WAIT_MS);
+  });
+
+  test('a container is NOT tolerant, whatever its roles — and x dev is not for a publisher', () => {
+    const broker = new FakeNatsBroker();
+    const select = fake(broker);
+    expect(selectBus({ env: ENV, realtime: NATS, roles: ['sync'], select }).tolerant).toBe(false);
+    expect(selectBus({ env: ENV, realtime: NATS, roles: ALL, select }).tolerant).toBe(false);
+    expect(
+      selectBus({ env: ENV, realtime: NATS, roles: ['web'], dev: true, select }).tolerant,
+    ).toBe(false);
   });
 });
 

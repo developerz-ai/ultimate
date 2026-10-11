@@ -118,6 +118,7 @@ class LibNatsClient implements NatsClient {
     payload: Uint8Array,
     options: NatsRequestOptions = {},
   ): Promise<NatsMessage> {
+    this.#assertLive(subject);
     const built = headersOf(options.headers);
     try {
       const reply = await this.#connection.request(subject, payload, {
@@ -140,6 +141,7 @@ class LibNatsClient implements NatsClient {
     payload: Uint8Array,
     options: NatsRequestManyOptions,
   ): Promise<readonly NatsMessage[]> {
+    this.#assertLive(subject);
     const collected: NatsMessage[] = [];
     try {
       const replies = await this.#connection.requestMany(subject, payload, {
@@ -160,6 +162,21 @@ class LibNatsClient implements NatsClient {
     this.#closing = true;
     this.#connected = false;
     await this.#connection.close();
+  }
+
+  /**
+   * A request has an answer to wait for, so one made with no live connection is refused HERE.
+   * The library takes it instead — buffered with its publishes, sent if the reconnect lands and
+   * timed out if it does not — so every presence write on a `sync` node whose bus was away held
+   * its socket's frame lane for the whole request timeout before saying what was already known.
+   * The fake has always refused it (`nats-fake.ts`, `#assertLive`); this is the client agreeing.
+   */
+  #assertLive(subject: string): void {
+    if (this.connected) return;
+    throw unavailable(
+      this.#target,
+      `${subject} was not asked: the client is reconnecting to the bus`,
+    );
   }
 
   /**

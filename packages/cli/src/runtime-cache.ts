@@ -20,7 +20,13 @@ import {
   resetTiers,
 } from '@ultimat3/cache';
 import type { AppConfig, CacheTierName } from '@ultimat3/core';
-import { backoffDelay, defineConfig, logger, renderThrowable } from '@ultimat3/core';
+import {
+  backoffDelay,
+  defineConfig,
+  isOutageMilestone,
+  logger,
+  renderThrowable,
+} from '@ultimat3/core';
 import type { Transport, TransportSubscription } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
 
@@ -280,12 +286,16 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
           },
         );
         subscribed = true;
-        if (attempt > 1) flushDeaf('cache.bus-subscribed');
+        if (attempt > 1) {
+          // The outage's one closing line, beside the thinned warnings it ends.
+          logger.info('cache.broadcast.subscribe-failed recovered', { after: attempt - 1 });
+          flushDeaf('cache.bus-subscribed');
+        }
         return subscription;
       } catch (error) {
         // Attempts 1, 2, 4, 8, …: the dial's own thinning (`NatsTransport`), so an outage is not
         // one line per retry per pod for as long as it lasts.
-        if ((attempt & (attempt - 1)) === 0) {
+        if (isOutageMilestone(attempt)) {
           logger.warn('cache.broadcast.subscribe-failed', {
             error: broadcastErrorText(error),
             attempt,

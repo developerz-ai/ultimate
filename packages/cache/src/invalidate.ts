@@ -14,6 +14,7 @@ import {
 } from '@ultimat3/core';
 import { markAllInvalidated, markInvalidated } from './fence';
 import { dependentsOfKind, graphSnapshot } from './graph';
+import { logPartial, resetPartialLog } from './partial-log';
 import type { CacheTag } from './tags';
 import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
 import { isolateTierFailures, resetTierFailures } from './tier-failures';
@@ -131,6 +132,7 @@ export function resetTiers(): void {
   broadcast = undefined;
   invalidationLog.length = 0;
   resetTierFailures();
+  resetPartialLog();
 }
 
 /**
@@ -242,6 +244,8 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
 
     const tiers: TierInvalidation[] = [];
     const errors = options.errors;
+    /** Every tier that was asked and answered: what ends that tier's run of refusals. */
+    const cleared: string[] = [];
 
     // FARTHEST tier first. Near-to-far leaves the far tier holding the old value after the near
     // ones are clear, and a read racing the bust promotes it straight back up into them — the
@@ -251,6 +255,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     for (const tier of farthestFirst.filter((one) => !isEdgeTier(one))) {
       try {
         tiers.push(await tier.invalidateTags(tags));
+        cleared.push(tier.name);
       } catch (error) {
         // `renderThrowable`, never `error.message`: a tier is app-supplied, so the value it
         // rejects with is too, and both `instanceof` and `String()` RUN app code on it. A render
@@ -263,10 +268,12 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     const cdn = dependentsOfKind(tags, 'cdn-path');
     const liveQueries = dependentsOfKind(tags, 'live-query');
 
+    let isrFailed = false;
     for (const path of isrPaths) {
       try {
         await revalidator?.(path);
       } catch (error) {
+        isrFailed = true;
         errors.push({ tier: 'isr', message: renderThrowable(error) });
       }
     }
@@ -275,9 +282,14 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     try {
       for (const path of (await tagRevalidator?.(tags)) ?? []) isrPaths.add(path);
     } catch (error) {
+      isrFailed = true;
       errors.push({ tier: 'isr', message: renderThrowable(error) });
     }
     const isr = [...isrPaths];
+    // Asked and answered: a path revalidated, or the holder read by tag — never a bust that
+    // reached no ISR holder at all, which has said nothing about an earlier refusal.
+    const isrAsked = (isr.length > 0 && revalidator !== undefined) || tagRevalidator !== undefined;
+    if (isrAsked && !isrFailed) cleared.push('isr');
 
     const wire = serializeTags(tags);
 
@@ -286,6 +298,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     if (emit && wire.length > 0 && broadcast !== undefined) {
       try {
         await broadcast(wire);
+        cleared.push('broadcast');
       } catch (error) {
         errors.push({ tier: 'broadcast', message: renderThrowable(error) });
       }
@@ -294,7 +307,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // The edge LAST, after this origin dropped its own pages and told its peers to. Purged first,
     // a request between the purge and the origin's delete was answered the old page as a public
     // hit, and the edge — already purged — kept it for a whole `s-maxage` with no purge to come.
-    await purgeEdge(farthestFirst, tags, tiers, errors);
+    await purgeEdge(farthestFirst, tags, tiers, errors, cleared);
     // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
     // printed upside down is a second thing for a reader to learn.
     tiers.sort((a, b) => CACHE_TIERS.indexOf(a.tier) - CACHE_TIERS.indexOf(b.tier));
@@ -322,7 +335,8 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
       errors: report.errors,
     });
 
-    if (errors.length > 0) logger.warn('cache.invalidate.partial', { ...report });
+    // Thinned per failing tier (`partial-log.ts`): an outage is not one line per bust.
+    logPartial(report, cleared);
     return report;
   });
 }
@@ -336,10 +350,13 @@ async function purgeEdge(
   tags: readonly CacheTag[],
   tiers: TierInvalidation[],
   errors: { tier: string; message: string }[],
+  /** Told each edge tier that was asked and answered — what ends its run of refusals in the log. */
+  cleared?: string[],
 ): Promise<void> {
   for (const tier of ordered.filter(isEdgeTier)) {
     try {
       tiers.push(await tier.invalidateTags(tags));
+      cleared?.push(tier.name);
     } catch (error) {
       errors.push({ tier: tier.name, message: renderThrowable(error) });
     }
@@ -358,8 +375,11 @@ export async function purgeEdgeAgain(
 ): Promise<readonly TierInvalidation[]> {
   const tiers: TierInvalidation[] = [];
   const errors: { tier: string; message: string }[] = [];
-  await purgeEdge(sortTiers(registry), wire.map(parseTag), tiers, errors);
-  if (errors.length > 0) logger.warn('cache.invalidate.partial', { tags: wire, tiers, errors });
+  const cleared: string[] = [];
+  await purgeEdge(sortTiers(registry), wire.map(parseTag), tiers, errors, cleared);
+  // The same thinned line a bust writes, on the same per-tier count: an edge that refuses for a
+  // whole outage is one condition, whichever of the two purges met it.
+  logPartial({ tags: wire, tiers, errors }, cleared);
   return tiers;
 }
 

@@ -120,6 +120,8 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
     appRuntime,
     'apply',
     options.roles ?? DEV_ROLES,
+    // Every role in one process: a bus that is away must not take the pages down with it.
+    true,
   );
   // The events binding the boot line reports is the bus the runtime chose, read off it.
   const services = withRealtimeEvents(resolved, env, runtime.realtime);

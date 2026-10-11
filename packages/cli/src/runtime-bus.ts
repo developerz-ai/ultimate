@@ -8,9 +8,15 @@
 // the background and a dead one is `degraded`: the pod still boots, serves and runs jobs. Until
 // 2026-10 every role awaited the dial and the JetStream bucket, so a web pod that restarted while
 // NATS was down took the app's pages, webhooks and send jobs down with a feature none of them use.
+//
+// `x dev` is the one boot that TOLERATES a missing bus for a role that serves from it: it runs
+// every role in one process, so the `sync` role's refusal took the pages, the worker and the
+// scheduler down with it — the same outage, on the developer's own machine. There the refusal is
+// logged once, coded, the dial goes on in the background, and the pages run without live until it
+// lands. A `ROLE=sync` container keeps the hard refusal: it has nothing else to serve.
 
 import type { RealtimeConfig, Role } from '@ultimat3/core';
-import { logger, registerReadinessCheck } from '@ultimat3/core';
+import { isUltimateError, logger, registerReadinessCheck } from '@ultimat3/core';
 import type { BusUse, SelectTransportOptions, Transport } from '@ultimat3/realtime/server';
 import { selectTransport, setChannelTransport } from '@ultimat3/realtime/server';
 import type { Env } from './runtime-bindings';
@@ -55,8 +61,20 @@ export interface RunningBus {
   stop(): Promise<void>;
 }
 
+/**
+ * How long `x dev` waits for a bus its realtime roles need before it boots without one. Short on
+ * purpose: a NATS started beside it is reachable by then, and one that is not is dialled in the
+ * background anyway.
+ */
+export const DEV_BUS_WAIT_MS = 3_000;
+
 export interface SelectedBus {
   readonly use: BusUse;
+  /**
+   * `x dev` with a role that serves from the bus: a bus that is away is waited for in the
+   * background rather than refused (`RunningServices.busTolerated`).
+   */
+  readonly tolerant: boolean;
   /** What the sync role must give `PresenceRegistry` (`RunningServices.presenceTtlMs`). */
   readonly presenceTtlMs: number;
   /**
@@ -76,6 +94,8 @@ export interface SelectBusInput {
   readonly override?: Transport | undefined;
   /** Injected by a test: a fake dial, a short wait. */
   readonly select?: SelectTransportOptions | undefined;
+  /** The boot is `x dev`: every role in one process, on the developer's machine. */
+  readonly dev?: boolean | undefined;
 }
 
 /**
@@ -84,9 +104,15 @@ export interface SelectBusInput {
  */
 export function selectBus(input: SelectBusInput): SelectedBus {
   const use = busUseFor(input.roles, input.realtime);
-  const selection = selectTransport(input.env, input.realtime, { ...input.select, use });
+  const tolerant = input.dev === true && use !== 'publish';
+  const selection = selectTransport(input.env, input.realtime, {
+    ...(tolerant ? { connectWithinMs: DEV_BUS_WAIT_MS } : {}),
+    ...input.select,
+    use,
+  });
   return {
     use,
+    tolerant,
     presenceTtlMs: selection.presenceTtlMs,
     async start(): Promise<RunningBus> {
       const started: (() => void | Promise<void>)[] = [];
@@ -109,7 +135,20 @@ export function selectBus(input: SelectBusInput): SelectedBus {
           // Before the dial, not after: a dial refused for being late is still in flight inside
           // the client library, and closing the transport is what releases whatever it lands as.
           started.push(() => selection.transport.close());
-          await selection.connect();
+          try {
+            await selection.connect();
+          } catch (error) {
+            if (!tolerant || !isUltimateError(error) || error.code !== 'X_TRANSPORT_UNAVAILABLE') {
+              throw error;
+            }
+            // Said ONCE, with the refusal a container would have exited on. The transport is not
+            // closed: its dial loop goes on, and `ultimate bus` is the line that says it landed.
+            logger.warn('ultimate bus is away: x dev serves without live until it answers', {
+              code: error.code,
+              cause: error.cause,
+              fix: error.fix,
+            });
+          }
           transport = selection.transport;
         }
         // The bus an app's own code publishes a channel event on (`publishChannelEvent`), in EVERY
@@ -129,7 +168,8 @@ export function selectBus(input: SelectBusInput): SelectedBus {
               () => connectable.connected,
               // A publisher serves without the bus, so losing it must not pull the pod from the
               // ingress — it is reported, and `/readyz?deep=1` is where a monitor reads it.
-              { onFailure: use === 'publish' ? 'degraded' : 'failing' },
+              // `x dev` serves its pages from the same process: its bus is a degradation too.
+              { onFailure: use === 'publish' || tolerant ? 'degraded' : 'failing' },
             ),
           );
           // Each time the bus comes (back) up, on one line: the boot line may have said

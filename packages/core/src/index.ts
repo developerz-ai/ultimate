@@ -679,6 +679,9 @@ export {
   resetMeasurementActor,
 } from './measurement-actor';
 export { nearestName } from './nearest-name';
+// An outage said on failures 1, 2, 4, 8, … and once when it ends.
+export type { OutageLog, OutageLogOptions } from './outage-log';
+export { isOutageMilestone, outageLog } from './outage-log';
 /** The message pwa's `sw.js` posts and realtime's outbox listens for. */
 export { OUTBOX_DRAIN_MESSAGE, type OutboxDrainMessage } from './outbox-drain';
 /** The `<meta name>`s render writes and the page client, realtime and pwa read. */

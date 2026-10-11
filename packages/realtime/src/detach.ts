@@ -15,13 +15,16 @@ import { logger, renderThrowable, reportError } from '@ultimat3/core';
  * with nothing above it to answer. `channel.ts` already imports it for the same reason.
  */
 export function detach(work: Promise<unknown>, operation: string, at?: string): void {
-  void work.catch((error: unknown) => {
-    logger.error(`${operation} failed`, {
-      ...(at === undefined ? {} : { at }),
-      error: renderThrowable(error),
-    });
-    // Nobody is awaiting this, so the log is the only trace it leaves — and a log is not a signal
-    // anyone is paged on. The bus is this node's dependency, never the client's.
-    reportError(error, { source: 'realtime', scope: { operation } });
+  void work.catch((error: unknown) => reportDetached(error, operation, at));
+}
+
+/** What `detach` says of a failure — also `sync-bus-outage.ts`'s answer to one that is no outage. */
+export function reportDetached(error: unknown, operation: string, at?: string): void {
+  logger.error(`${operation} failed`, {
+    ...(at === undefined ? {} : { at }),
+    error: renderThrowable(error),
   });
+  // Nobody is awaiting this, so the log is the only trace it leaves — and a log is not a signal
+  // anyone is paged on. The bus is this node's dependency, never the client's.
+  reportError(error, { source: 'realtime', scope: { operation } });
 }

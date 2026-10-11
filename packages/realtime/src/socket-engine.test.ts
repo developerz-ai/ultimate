@@ -166,6 +166,46 @@ describe('SocketEngine — one socket for every tab', () => {
     expect(heard.map((frame) => frame.op)).toEqual(['add', 'add']);
   });
 
+  test('a bus outage on the node: every tab reads `joining`, the engine keeps asking, and its answer revives them all', async () => {
+    const { servers, engineTimers, a, b } = await upAndRunning();
+    const typing = { ...orgFeed, name: 'typing', topic: () => 'typing.o1' };
+    const roster: Frame = {
+      type: 'events',
+      v: PROTOCOL_VERSION,
+      channel: 'typing.o1',
+      event: { presence: 'sync', members: [], total: 0 },
+    };
+    const held = [
+      a.client.holdChannel(typing, { orgId: 'o1' }),
+      b.client.holdChannel(typing, { orgId: 'o1' }),
+    ];
+    await settle();
+    servers[0]?.deliver(roster);
+    await settle();
+    expect(held.map((membership) => membership.state())).toEqual(['live', 'live']);
+    const asked = channelFrames(servers[0]).length;
+
+    // The node's answer to the engine's beat while its bus is away, twice.
+    for (let beat = 1; beat <= 2; beat += 1) {
+      engineTimers.fire();
+      servers[0]?.deliver({
+        type: 'ack',
+        v: PROTOCOL_VERSION,
+        ref: 'channel:typing.o1',
+        lsn: null,
+        error: { code: 'X_TRANSPORT_UNAVAILABLE', cause: 'the bus is away', fix: 'x doctor' },
+      });
+      await settle();
+      expect(held.map((membership) => membership.state())).toEqual(['joining', 'joining']);
+      expect(channelFrames(servers[0])).toHaveLength(asked + beat);
+    }
+
+    engineTimers.fire();
+    servers[0]?.deliver(roster);
+    await settle();
+    expect(held.map((membership) => membership.state())).toEqual(['live', 'live']);
+  });
+
   test('a frame reaches only the tabs that want its channel — routed, never broadcast', async () => {
     const { servers, a, b } = await upAndRunning();
     a.client.holdChannel(orgFeed, { orgId: 'o1' });

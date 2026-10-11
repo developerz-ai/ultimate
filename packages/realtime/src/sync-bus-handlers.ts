@@ -14,12 +14,15 @@ import {
   parseEnvelope,
   type SeqGapDetector,
 } from './replicator-envelope';
+import type { BusOutage } from './sync-bus-outage';
 
 export interface SyncBus {
   readonly registry: LiveQueryRegistry;
   readonly hub: ChannelHub;
   readonly gaps: SeqGapDetector;
   readonly producers: ProducerKinds;
+  /** The node's outage: a bus that reconnected has answered. */
+  readonly outage?: Pick<BusOutage, 'answered'> | undefined;
 }
 
 /**
@@ -123,6 +126,7 @@ export function changeHandler(bus: SyncBus): (payload: string) => void {
  */
 export function reconnectHandler(bus: SyncBus): () => void {
   return () => {
+    bus.outage?.answered();
     bus.gaps.forget();
     const marked = bus.registry.invalidate();
     const channelGaps = bus.hub.invalidate();

@@ -96,8 +96,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `entity/src/pg-array-decode.ts` — an `arrayOf()` cell read by its declaration, because `Bun.SQL`
  * hands `uuid[]` back as its text literal and every read of such a row was refused. The grammar
  * moved out of `realtime/src/pg-array.ts`, which stays for its oid table, so nothing left the graph.
+ * raised 639 → 641, measured 641 (2026-10-10, an outage is one fact in the log): `core/src/outage-log.ts`
+ * — failures 1, 2, 4, 8, … and one closing line, through the core barrel — and
+ * `cache/src/partial-log.ts`, which thins `cache.invalidate.partial` per failing tier with it.
  */
-const MIGRATE_CEILING = 639;
+const MIGRATE_CEILING = 641;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -195,8 +198,14 @@ const MIGRATE_CEILING = 639;
  * `render/src/revalidate-shape.ts` screens `onInvalidate` / `maxStale` / `query` at `defineRoute`,
  * and `render-isr-cooldown.ts` is the one-second memory of a failed render that stops a page whose
  * read is down from being one failing render per request.
+ * raised 945 → 950, measured 950 (2026-10-11, a channel recovers after a bus outage): the two
+ * modules named on `MIGRATE_CEILING`, and three every role carries — `realtime/src/nats-reports.ts`
+ * (the transport's reporting, split out of `nats-transport.ts` at the 500-line ceiling: a fault
+ * every time, an outage thinned, at the role's level), `realtime/src/sync-bus-outage.ts` (what a
+ * `sync` node says while its bus is away) and `cli/src/role-sync-bus-wait.ts` (`x dev` starts its
+ * node when the bus answers, where a container refuses the boot).
  */
-const SERVING_ROLE_CEILING = 945;
+const SERVING_ROLE_CEILING = 950;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -286,8 +295,10 @@ const SERVING_ROLE_CEILING = 945;
  * raised 1072 → 1073, measured 1073 (2026-10-11, PR #757 review): `cli/src/isr-query-guard.ts` —
  * the `query` a page is handed; outside production it says once when an `isr` page reads a
  * parameter its `revalidate.query` does not list (one stored document for every value of it).
+ * raised 1073 → 1078, measured 1078 (2026-10-11, a channel recovers after a bus outage): the five
+ * modules named on `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
  */
-const WEB_ROLE_CEILING = 1073;
+const WEB_ROLE_CEILING = 1078;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

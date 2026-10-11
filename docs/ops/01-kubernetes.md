@@ -119,7 +119,7 @@ down for a bus those roles only publish "re-read" events to.
 
 | Role | NATS down at pod start | NATS down while running | Needs JetStream (`-js`) |
 |---|---|---|---|
-| `sync` | retries for 15 s, then exits with `X_TRANSPORT_UNAVAILABLE`; the kubelet restarts it | not ready (`transport: failing`); reconnects on its own | yes, at boot |
+| `sync` | retries for 15 s, then exits with `X_TRANSPORT_UNAVAILABLE`; the kubelet restarts it | not ready (`transport: failing`); keeps its open sockets and reconnects on its own. An open page reads its channels as `joining` meanwhile and is live again within one heartbeat (10 s) of the return, with no reload | yes, at boot |
 | `replicator` | same | not ready while disconnected; a publish refused during a restart of a second or two is retried in place, so the stream is not torn down for it | no |
 | `web`, `worker`, `scheduler` | **boots and serves**; dials in the background (jittered, 500 ms doubling to 30 s) | **stays ready**; publishes are refused with `X_TRANSPORT_UNAVAILABLE` until it is back, then resume with no restart | no |
 
@@ -132,6 +132,22 @@ else one flush-all), and every replica that was disconnected empties its in-proc
 its tag-revalidated ISR pages stale — so expect one cold in-process cache per replica after a NATS
 restart, and the database reads that refill it. Do not add NATS to a `web` pod's
 `initContainers` or `dependsOn`: that rebuilds the dependency this removes.
+
+**The log lines of one outage** (`As of 2026-10`). Each is written on its 1st, 2nd, 4th,
+8th, … failure and once when it ends — alert on the first, never on the rate:
+
+| Line | Level | Role | Means |
+|---|---|---|---|
+| `sync.bus_unavailable` (`operation`, `failures`) | `error` | `sync` | the node cannot serve presence or deliver: page beats and presence sweeps are being refused. `sync.bus_unavailable recovered` (`after`) at `info` ends it |
+| `nats transport error` (`failures`, `code`) | `error` on `sync` and the replicator, **`warn`** on `web`, `worker`, `scheduler` | all | the connection dropped, or a dial was refused. `nats transport recovered` (`after`) at `info` ends it |
+| `cache.invalidate.partial` (`failures`, `errors`) | `warn` | publishers | a bust cleared this replica and could not reach the others. `cache.invalidate.partial recovered` (`tier`, `after`) ends it |
+| `live.bus_reconnected` (`desynced`, `channelGaps`) | `warn` | `sync` | the bus is back: that many windows and topics were told to re-read |
+| `ultimate bus` (`bus: nats(up)`) | `info` | all | the connection landed |
+
+A server that **accepts the socket and then goes silent** (a dead conntrack entry, a blackholing
+firewall) is noticed by ping: 10 s apart, two allowed unanswered, so about 30 s — measured at 30.0 s
+against a real server. Inside that window a publish is taken and lost, and a `sync` node already
+refuses page beats (its presence write times out after 5 s); after it, both are refused at once.
 
 ### Replication is a cluster-wide grant
 

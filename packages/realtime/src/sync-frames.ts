@@ -22,6 +22,8 @@ export interface FrameRouterOptions {
   readonly heartbeatMs?: number | undefined;
   /** Shared with the node, which names a seat's sid when a re-auth drops it. */
   readonly channelSids?: ChannelSids | undefined;
+  /** Told when a presence read or write landed: the bus answered (`sync-bus-outage.ts`). */
+  readonly busAnswered?: (() => void) | undefined;
 }
 
 /**
@@ -73,6 +75,7 @@ export function frameRouter(options: FrameRouterOptions): FrameRouter {
       : beat && (await presence.heartbeat(name, socket.id))
         ? await presence.roster(name)
         : await presence.join(name, { id: socket.id, actorId: socket.actorId });
+    if (presence) options.busAnswered?.();
     // Read, though nothing here can repair it: the next beat re-sends the set, and the log is the
     // only trace a dropped one leaves anywhere.
     if (!socket.send(presenceFrame(name, 'sync', roster.members, roster.total))) {
