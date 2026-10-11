@@ -962,6 +962,8 @@ fail-closed `terminal` default.
 | `X_VECTOR_UNSCOPED` | a store with no tenant bound was read inside a request acting for an org; `scope: UNSCOPED` is the named opt-out |
 | `X_NOT_IMPLEMENTED` | a remote driver with no key or transport; the fix names the env var |
 
+A failure thrown after a provider call was started carries what the run was billed on `meta.billed` (`billedOf(error)` → `{ usage, cost, calls, unsettled }`); `unsettled` counts the calls whose bill cannot be known. [Agents → Unattended runs](https://github.com/developerz-ai/ultimate/wiki/Agents#unattended-runs).
+
 ### Error classes
 
 Every error class `src/index.ts` exports, for `instanceof` inside one process. Across a wire or

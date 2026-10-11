@@ -48,6 +48,8 @@ import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { parseJsonish, RESPOND, respondFor } from './respond';
+import type { RunMeter } from './run-meter';
+import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor } from './runtime';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
@@ -268,16 +270,19 @@ async function generate<
     );
     const sink = currentLlmSink();
 
-    return withBudget(ledger, async () => {
+    // Every provider call goes through the meter, so a failure AFTER one answered — a refusal, a
+    // truncation, a schema no repair satisfied — is thrown carrying what it was billed.
+    const meter = runMeter();
+    const answer = async (): Promise<InferOutput<TOutput>> => {
       if (sink !== undefined) {
-        const value = await streamedAnswer(def.output, name, gateway, base, sink, span);
+        const value = await streamedAnswer(def.output, name, gateway, base, sink, span, meter);
         await cache?.remember(value);
         return value;
       }
       let messages: readonly AiMessage[] = request.messages;
       let issues = 'no output';
       for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-        const result = await gateway.generate({ ...request, messages });
+        const result = await meter.call(gateway.generate({ ...request, messages }));
         span.setAttributes({ 'llm.attempts': attempt, ...answerAttributes(result) });
         // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial
         // content, so parsing it first reports a schema disagreement — a cause that is wrong, a
@@ -314,7 +319,12 @@ async function generate<
             : [...messages, { role: 'assistant', content: echo }, repair(issues)];
       }
       throw new LlmOutputInvalidError({ prompt: name, attempts: ATTEMPTS, issues });
-    });
+    };
+    return withBudget(ledger, () =>
+      answer().catch((error: unknown) => {
+        throw meter.fail(error);
+      }),
+    );
   });
 }
 
@@ -350,8 +360,9 @@ async function streamedAnswer<TOutput extends StandardSchemaV1>(
   request: GenerateRequest,
   sink: LlmSink,
   span: Span,
+  meter: RunMeter,
 ): Promise<InferOutput<TOutput>> {
-  const result = await streamOneTurn(gateway, request, sink);
+  const result = await meter.call(streamOneTurn(gateway, request, sink));
   span.setAttributes({ 'llm.attempts': 1, ...answerAttributes(result) });
   if (result.stopReason === 'refusal') {
     throw new LlmRefusedError({

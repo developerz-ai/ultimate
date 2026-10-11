@@ -367,6 +367,34 @@ Three bounds stop a run nobody is watching, beside `maxTurns` and `budget.tokens
 
 A caller that goes away mid-call is `X_ABORTED`, not the transport failure (`X_AI_PROVIDER_UNAVAILABLE`, retryable) the aborted socket used to be reported as. `X_ABORTED` is core's and unclassified, so over HTTP it reads `terminal`; in a job the attempt count stays in charge, and a drain or an attempt timeout is settled by jobs off its own signal as before.
 
+**What a failed run cost.** Every failure thrown by `llm()` or `agent()` after a provider call was started carries the run's bill on `meta.billed`; read it with `billedOf(error)`:
+
+```ts
+import type { Billed } from '@ultimat3/ai';
+import { billedOf } from '@ultimat3/ai';
+
+declare function recordSpend(runId: string, billed: Billed): Promise<void>;
+
+export async function metered<T>(runId: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    const billed = billedOf(error); // undefined: no provider call was ever started
+    if (billed !== undefined) await recordSpend(runId, billed);
+    throw error;
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `usage` | the four token counters, summed over every provider call of the run that **answered** |
+| `cost` | the price of `usage`, `Money`, rounded up once |
+| `calls` | how many calls answered |
+| `unsettled` | calls that were started and never reported usage — aborted by the caller or the deadline, cut mid-stream, failed in transport. **Their bill cannot be known**: a provider may charge for what it generated before the socket closed, and usage is the last thing a response carries. They are counted, never estimated, and their budget reservation is given back |
+
+It is the same on `X_LLM_TRUNCATED`, `X_LLM_REFUSED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID`, `X_AGENT_MAX_TURNS`, `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_ABORTED`, `X_AI_BUDGET_EXCEEDED` and a transport failure on a later turn. The ledger the run ran under holds the same settled figures. `meta` is operator-only: it is never in a problem document. A throw that is not an `UltimateError` (an `onTurn` that threw a `TypeError`) has no `meta` to carry it; the ledger still does.
+
 ## Progress (`onTurn`)
 
 A 90-second agent run emits nothing until it returns. `onTurn` is what a progress indicator, a per-turn spend line and a transcript log read.

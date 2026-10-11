@@ -32,8 +32,6 @@ import { registerAgentFact } from './agent-facts';
 import { DEFAULT_MAX_REPEATED_TOOL_CALLS, runDeadline, toolLoopGuard } from './agent-guards';
 import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
-import type { AgentRunUsage } from './agent-usage';
-import { addUsage } from './agent-usage';
 import { LlmTruncatedError } from './answer-errors';
 import type { BudgetLimits } from './budget';
 import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
@@ -54,6 +52,7 @@ import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
+import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
 import { asProjectableAction, runLlmToolCall, toLlmTools, toolLabel } from './tools';
@@ -259,7 +258,10 @@ async function run<
       signal: deadline.signal,
     };
 
-    return withBudget(ledger, async () => {
+    // Every provider call below goes through the meter, so whatever ends the run — a ceiling, a
+    // deadline, a truncated turn, the caller leaving — is thrown carrying what the run was billed.
+    const meter = runMeter();
+    const loop = async (): Promise<InferOutput<TOutput>> => {
       // The actor is read ONCE, from the context the request established, and is the only
       // identity any tool runs as. Nothing below reads an actor out of `result` — a model cannot
       // name the identity it acts as, and a loop that let it would be an escalation primitive.
@@ -267,7 +269,6 @@ async function run<
       let messages: readonly AiMessage[] = [{ role: 'user', content: rendered }];
       let calls = 0;
       let issues: string | undefined;
-      let total: AgentRunUsage | undefined;
 
       for (let turn = 1; turn <= maxTurns; turn += 1) {
         // The caller is gone, so unwind instead of finishing. Every turn re-sends the WHOLE
@@ -276,14 +277,13 @@ async function run<
         throwIfAborted(args.ctx);
         deadline.check();
         const result = await deadline
-          .guard(gateway.generate({ ...base, messages }))
+          .guard(meter.call(gateway.generate({ ...base, messages })))
           .catch((error: unknown) => {
             // The caller left mid-call: the aborted socket reads as a provider failure, which is
             // RETRYABLE. Say what happened instead.
             throwIfAborted(args.ctx);
             throw error;
           });
-        total = addUsage(total, result);
         const requested = result.toolCalls.filter((call) => call.name !== RESPOND);
         // The same turn's `respond` calls, kept rather than forgotten: they are never RUN, but
         // `assistantTurn` replays them, and every replayed `tool_use` has to be answered.
@@ -301,7 +301,7 @@ async function run<
           stopReason: result.stopReason,
           usage: result.usage,
           cost: result.cost,
-          run: total,
+          run: meter.total() ?? { usage: result.usage, cost: result.cost },
         });
         assertAnswerable(result, name, base);
         // Before a tool runs and before the answer is read: a turn cut off at the ceiling carries
@@ -366,7 +366,12 @@ async function run<
         throw new LlmOutputInvalidError({ prompt: name, attempts: maxTurns, issues });
       }
       throw new AgentMaxTurnsError({ agent: name, turns: maxTurns, calls });
-    });
+    };
+    return withBudget(ledger, () =>
+      loop().catch((error: unknown) => {
+        throw meter.fail(error);
+      }),
+    );
   });
 }
 

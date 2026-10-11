@@ -52,7 +52,8 @@ one adds, the other adds.
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
 | `tool-idempotency.ts` | an idempotent action's reserved `idempotencyKey` tool argument — MCP's, restated (same tier), held equal by the parity test |
-| `tool-arguments.ts` / `answer-errors.ts` / `billed.ts` | one argument-string reader for both wires and what an unreadable one means (`assertToolArguments`); `X_LLM_TRUNCATED` + `X_LLM_TOOL_ARGUMENTS_INVALID`; `meta.billed` and `billedOf` |
+| `tool-arguments.ts` / `answer-errors.ts` | one argument-string reader for both wires and what an unreadable one means (`assertToolArguments`); `X_LLM_TRUNCATED` + `X_LLM_TOOL_ARGUMENTS_INVALID` |
+| `billed.ts` / `run-meter.ts` | `meta.billed` + `billedOf`; the meter every `llm()`/`agent()` provider call goes through |
 | `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged, never its message or cause |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
@@ -164,6 +165,8 @@ one adds, the other adds.
 - **Arguments that are not JSON are never thrown by a wire reader**: recorded as `malformed`, and
   the PROVIDER decides once usage is known — dropped on a truncated turn, else
   `X_LLM_TOOL_ARGUMENTS_INVALID` with `meta.billed`, which the gateway RECORDS (`settleFailure`).
+- **Every throw of `llm()`/`agent()` after a provider call STARTED carries `meta.billed`**
+  (`meter.fail`): answered calls summed, `unsettled` counted and never priced.
 - A stream ending without `message_stop` throws. **`readSse` caps the unterminated buffer**
   (`MAX_FRAME_CHARS`); `provider` is required so a transport error names its endpoint.
 - A tool call is emitted whole. Thinking chunks are never appended to `text`.
