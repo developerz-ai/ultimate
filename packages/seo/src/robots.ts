@@ -96,3 +96,27 @@ export function buildRobots(config: RobotsConfig): string {
 
   return `${lines.join('\n').trimEnd()}\n`;
 }
+
+/**
+ * `rule` as a crawler reads it: a PREFIX of the path, `*` standing for any run of characters and a
+ * trailing `$` anchoring the end. An empty rule disallows nothing.
+ */
+function disallowPattern(rule: string): RegExp | undefined {
+  if (rule === '') return undefined;
+  const anchored = rule.endsWith('$');
+  const body = (anchored ? rule.slice(0, -1) : rule)
+    .split('*')
+    .map((literal) => literal.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*');
+  return new RegExp(`^${body}${anchored ? '$' : ''}`);
+}
+
+/**
+ * A test for "do these `Disallow:` rules keep a crawler out of this path". What the sitemap asks
+ * before it lists a URL: one that `robots.txt` blocks is reported as "submitted URL blocked by
+ * robots.txt", and the two files are written from one config.
+ */
+export function disallowMatcher(rules: readonly string[]): (path: string) => boolean {
+  const patterns = rules.flatMap((rule) => disallowPattern(rule) ?? []);
+  return (path) => patterns.some((pattern) => pattern.test(path));
+}

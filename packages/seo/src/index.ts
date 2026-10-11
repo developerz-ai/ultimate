@@ -13,6 +13,7 @@ export {
   notImplementedDriver,
   SEO_ERROR_CODES,
   SeoError,
+  sitemapEntryInvalid,
   sitemapTooLarge,
 } from './errors';
 export type {
@@ -98,9 +99,9 @@ export {
   TITLE_MAX_LENGTH,
 } from './meta';
 export type { RobotsConfig, RobotsGroup } from './robots';
-export { buildRobots, isIndexable } from './robots';
-export type { ChangeFreq, RouteRecord, Surface } from './routes';
-export { expandRoute, indexableRoutes, isDynamic } from './routes';
+export { buildRobots, disallowMatcher, isIndexable } from './robots';
+export type { ChangeFreq, RouteRecord, SitemapPage, Surface } from './routes';
+export { expandRoute, expandRoutePages, indexableRoutes, isDynamic } from './routes';
 export type { BuildFeedOptions, Feed, FeedAuthor, FeedChannel, FeedItem } from './rss';
 export { buildFeed } from './rss';
 export type {
@@ -114,10 +115,14 @@ export {
   buildSitemap,
   chunk,
   SITEMAP_INDEX_MAX_FILES,
+  SITEMAP_MAX_BYTES,
   SITEMAP_MAX_URLS,
   SITEMAP_PARTS_DIR,
   sitemapUrls,
 } from './sitemap';
+export { sitemapDatetime } from './sitemap-datetime';
+export type { SitemapSection } from './sitemap-sections';
+export { sectionOf } from './sitemap-sections';
 export type { MetaIssue, MetaValidationReport, ValidateMetaOptions } from './validate';
 export { assertMeta, validateMeta } from './validate';
 export { absoluteUrl, escapeXml } from './xml';

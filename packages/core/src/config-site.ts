@@ -3,6 +3,11 @@
 // Split from `config.ts` for `config-pwa.ts`' reason: that file sits at its 500-line ceiling.
 
 import { type Input, layered } from './config-merge';
+import {
+  SITEMAP_PAGE_SIZE_MAX,
+  type SitemapSectionConfig,
+  sitemapSectionIssues,
+} from './config-sitemap';
 import { describeValue } from './error-render';
 
 export interface SiteConfig {
@@ -39,6 +44,14 @@ export interface SeoSitemapConfig {
    */
   readonly extra: readonly string[];
   readonly lastmod: SitemapLastmod;
+  /**
+   * Named parts of a sitemap index. Empty (the default): one `/sitemap.xml` urlset, split only past
+   * a cap. Any section declared: `/sitemap.xml` is a `<sitemapindex>` of `/sitemaps/<name>-<n>.xml`,
+   * the pages no section matches under `pages`.
+   */
+  readonly sections: readonly SitemapSectionConfig[];
+  /** `<url>` entries per sitemap file. Default and ceiling: 50,000, the sitemaps.org cap. */
+  readonly pageSize: number;
 }
 
 export interface SeoConfig {
@@ -75,7 +88,7 @@ export function mergeSite(layers: readonly SiteSectionsInput[]): SiteSections {
         layers.map((layer) => layer.seo?.robots),
       ),
       sitemap: layered<SeoSitemapConfig>(
-        { extra: [], lastmod: 'none' },
+        { extra: [], lastmod: 'none', sections: [], pageSize: SITEMAP_PAGE_SIZE_MAX },
         layers.map((layer) => layer.seo?.sitemap),
       ),
     },
@@ -136,4 +149,5 @@ export function siteIssues(config: SiteSections, issues: string[]): void {
       `seo.sitemap.lastmod "${String(config.seo.sitemap.lastmod)}" must be one of ${SITEMAP_LASTMOD_SOURCES.join(', ')}`,
     );
   }
+  issues.push(...sitemapSectionIssues(config.seo.sitemap.sections, config.seo.sitemap.pageSize));
 }

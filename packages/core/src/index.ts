@@ -195,6 +195,13 @@ export type {
   SiteSectionsInput,
 } from './config-site';
 export { SITEMAP_LASTMOD_SOURCES } from './config-site';
+export type { SitemapSectionConfig } from './config-sitemap';
+export {
+  SITEMAP_DEFAULT_SECTION,
+  SITEMAP_PAGE_SIZE_MAX,
+  sectionPatterns,
+  sitemapSectionIssues,
+} from './config-sitemap';
 export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-policy';
 export { resolveConflict } from './conflict-policy';
 export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';

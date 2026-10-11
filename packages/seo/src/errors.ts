@@ -19,6 +19,7 @@ export const SEO_ERROR_CODES = {
   sitemapTooLarge: 'X_SITEMAP_TOO_LARGE',
   imageQueryInvalid: 'X_IMAGE_QUERY_INVALID',
   linkInvalid: 'X_SEO_LINK_INVALID',
+  sitemapEntryInvalid: 'X_SITEMAP_ENTRY_INVALID',
 } as const;
 
 export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES];
@@ -42,6 +43,9 @@ registerErrorCodes({
   X_SITEMAP_TOO_LARGE: { title: 'sitemap exceeds the 50,000-entry protocol limit' },
   X_IMAGE_QUERY_INVALID: { title: 'an image transform query parameter is present but unusable' },
   X_SEO_LINK_INVALID: { title: 'a route meta link is unsafe or would fetch nothing' },
+  X_SITEMAP_ENTRY_INVALID: {
+    title: 'a sitemap entry carries a lastmod or a locale the sitemap cannot write',
+  },
 });
 
 export interface SeoErrorInit {
@@ -145,6 +149,19 @@ export function sitemapTooLarge(count: number, max: number): SeoError {
     cause: `sitemap index would hold ${count} sitemaps; the protocol limit is ${max}`,
     fix: 'exclude non-indexable routes with noindex, or shard the site across hostnames',
     meta: { count, max },
+  });
+}
+
+/**
+ * A page a sitemap was asked to list with a `lastmod` or a locale it cannot write. `file` is the
+ * route's source — where the `prerender()` that answered the entry lives.
+ */
+export function sitemapEntryInvalid(file: string, path: string, problem: string): SeoError {
+  return new SeoError({
+    code: SEO_ERROR_CODES.sitemapEntryInvalid,
+    cause: `${file} lists "${path}" in the sitemap with ${problem}`,
+    fix: `x verify --json   # after prerender() in ${file} answers lastmod as a Date or an ISO 8601 string with a zone (row.updatedAt), and locales naming only locales the app routes`,
+    meta: { file, path, problem },
   });
 }
 

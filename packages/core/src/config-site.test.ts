@@ -51,13 +51,94 @@ describe('seo.sitemap — refusals', () => {
   });
 });
 
+describe('seo.sitemap.sections and pageSize — refusals', () => {
+  const sections = (value: unknown, pageSize?: unknown): string =>
+    causeOf(() =>
+      defineConfig({
+        name: 'app',
+        seo: {
+          sitemap: {
+            sections: value as [],
+            ...(pageSize === undefined ? {} : { pageSize: pageSize as number }),
+          },
+        },
+      }),
+    );
+
+  test('a name that is not a lower-case slug is refused: it becomes a file name', () => {
+    for (const name of ['Blog', 'blog posts', '../x', 'blog_', '-blog', 'a--b', '', 5]) {
+      expect(sections([{ name, match: '/blog/**' }])).toContain('lower-case slug');
+    }
+  });
+
+  test('the default section`s name is reserved, and a name may be declared once', () => {
+    expect(sections([{ name: 'pages', match: '/a' }])).toContain('reserved');
+    expect(
+      sections([
+        { name: 'blog', match: '/blog/**' },
+        { name: 'blog', match: '/notas/**' },
+      ]),
+    ).toContain('twice');
+  });
+
+  test('a match that is not a path pattern is refused, naming the section', () => {
+    for (const match of ['blog/**', '/blog?x=1', '//x.co/a', '/a/**/b', '/blog/p*', [], 7]) {
+      expect(sections([{ name: 'blog', match }])).toContain('seo.sitemap.sections "blog" match');
+    }
+    expect(sections('blog')).toContain('must be a list');
+    expect(sections([null])).toContain('must be { name, match }');
+  });
+
+  test('pageSize is a whole number within the protocol cap', () => {
+    for (const pageSize of [0, -1, 2.5, 50_001, '1000', Number.NaN]) {
+      expect(sections([], pageSize)).toContain('seo.sitemap.pageSize');
+    }
+  });
+
+  test('the refusal is the typed boot error, with a runnable fix', () => {
+    let thrown: unknown;
+    try {
+      defineConfig({ name: 'app', seo: { sitemap: { sections: [{ name: 'B', match: '/b' }] } } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect((thrown as { code?: string }).code).toBe('X_CONFIG_INVALID');
+    expect((thrown as { fix?: string }).fix).toMatch(/x verify/);
+  });
+
+  test('sections and pageSize are accepted in every documented form', () => {
+    const config = defineConfig({
+      name: 'app',
+      seo: {
+        sitemap: {
+          pageSize: 1000,
+          sections: [
+            { name: 'blog', match: '/blog/**' },
+            { name: 'ciudades', match: ['/juzgados/**', '/ciudades/*'] },
+          ],
+        },
+      },
+    });
+    expect(config.seo.sitemap.pageSize).toBe(1000);
+    expect(config.seo.sitemap.sections.map((section) => section.name)).toEqual([
+      'blog',
+      'ciudades',
+    ]);
+  });
+});
+
 describe('site and seo', () => {
   test('seo.sitemap merges beside robots, key by key', () => {
     const config = defineConfig(
       { name: 'app', seo: { sitemap: { extra: ['/verificar'] } } },
       { seo: { sitemap: { lastmod: 'git' } } },
     );
-    expect(config.seo.sitemap).toEqual({ extra: ['/verificar'], lastmod: 'git' });
+    expect(config.seo.sitemap).toEqual({
+      extra: ['/verificar'],
+      lastmod: 'git',
+      sections: [],
+      pageSize: 50_000,
+    });
     expect(config.seo.robots.disallow).toEqual([]);
   });
 
@@ -66,7 +147,7 @@ describe('site and seo', () => {
     expect(config.site).toEqual({ origin: null });
     expect(config.seo).toEqual({
       robots: { disallow: [] },
-      sitemap: { extra: [], lastmod: 'none' },
+      sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
     });
   });
 

@@ -36,10 +36,10 @@ export {
   stylesheetsRevision,
   transformTsx,
 } from './module-loader';
+export { enumeratePrerenderEntries } from './prerender-enumerate';
 // ---- the render pipeline: one entry point per mode ----------------------------------------------
 export type { RenderHtmlOptions } from './render-html';
 export { ROOT_ELEMENT_ID, renderComponent, renderToHtml } from './render-html';
-
 export {
   DEFAULT_ISR_REGENERATE_DEADLINE_MS,
   invalidateAndRevalidate,

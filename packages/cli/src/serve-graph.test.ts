@@ -102,8 +102,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 641 → 642, measured 642 (2026-10-11, an isr page is one entry however its URL is spelled):
  * `http/src/route-path.ts` — a pathname's segments, their decoding and its one spelling, moved out
  * of `router.ts` so the matcher and the `isr` key share them; reached through the http barrel.
+ * raised 642 → 643, measured 643 (2026-10-11, sitemap sections): `core/src/config-sitemap.ts` — the
+ * shape of `seo.sitemap.sections` / `pageSize` and the one validator `defineConfig` and
+ * `@ultimat3/seo` refuse them with; split from `config-site.ts`, reached through the core barrel.
  */
-const MIGRATE_CEILING = 642;
+const MIGRATE_CEILING = 643;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -209,8 +212,15 @@ const MIGRATE_CEILING = 642;
  * node when the bus answers, where a container refuses the boot).
  * raised 950 → 951, measured 951 (2026-10-11, an isr page is one entry however its URL is spelled):
  * the module named on `MIGRATE_CEILING`.
+ * raised 951 → 956, measured 956 (2026-10-11, sitemap sections): the module named on
+ * `MIGRATE_CEILING`; three in seo, which every role reaches through the render barrel —
+ * `sitemap-sections.ts` (which named section a page files under), `sitemap-datetime.ts` (a page's
+ * `lastmod` as W3C Datetime, no ambient zone) and `sitemap-xml.ts` (the urlset and index XML and
+ * the split on both caps, moved out of `sitemap.ts` at the file ceiling); and
+ * `render/src/prerender-enumerate.ts` — `prerender()`'s three item forms normalised, moved out of
+ * `render-static.ts` with the entry form (`{ params, lastmod, locales }`).
  */
-const SERVING_ROLE_CEILING = 951;
+const SERVING_ROLE_CEILING = 956;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -305,8 +315,10 @@ const SERVING_ROLE_CEILING = 951;
  * raised 1078 → 1080, measured 1080 (2026-10-11, an isr page is one entry however its URL is
  * spelled): the module named on `MIGRATE_CEILING`, and `cli/src/runtime-address.ts` — the URL a
  * `static` or `isr` document is rendered at and kept under, the address the router matched.
+ * raised 1080 → 1085, measured 1085 (2026-10-11, sitemap sections): the five modules named on
+ * `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
  */
-const WEB_ROLE_CEILING = 1080;
+const WEB_ROLE_CEILING = 1085;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

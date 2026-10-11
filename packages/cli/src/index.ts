@@ -157,8 +157,9 @@ export {
 export { quoteArg } from './shell-quote';
 export type { SiteSettings } from './site-config';
 export { loadSiteSettings, publicOrigin } from './site-config';
-export type { SiteSeo, SiteSeoOptions } from './site-seo';
+export type { SiteSeo, SiteSeoOptions, SiteSeoSitemap } from './site-seo';
 export { ROBOTS_PATH, SITEMAP_PATH, siteSeo } from './site-seo';
+export { writeSiteSeo } from './site-seo-write';
 export { eachSourceFile, isGenerated, isTest, SOURCE_GLOBS } from './source-files';
 export type { SkippedRoute, StaticReport } from './static-report';
 export { parseStaticReport } from './static-report';

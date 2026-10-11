@@ -10,6 +10,25 @@ export type Surface = 'site' | 'app' | 'api';
 
 export type ChangeFreq = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
+/**
+ * One concrete page of a route, as a sitemap lists it. A bare string is the same thing with nothing
+ * to add: `'/blog/a'` is `{ path: '/blog/a' }`.
+ */
+export interface SitemapPage {
+  /** The concrete path, WITHOUT a locale prefix: `/blog/a`. */
+  readonly path: string;
+  /**
+   * When this page last changed: a `Date`, or ISO 8601 with an explicit zone (`2026-10-01`,
+   * `2026-10-01T15:04:05Z`). Written as W3C Datetime in UTC; wins over the route's own `lastmod`.
+   */
+  readonly lastmod?: string | Date;
+  /**
+   * The locales this page is LISTED in — one `<url>` each, cross-linked with hreflang among
+   * themselves only. Omitted: every locale the sitemap is built for. Empty: listed nowhere.
+   */
+  readonly locales?: readonly string[];
+}
+
 export interface RouteRecord {
   /** URL pattern, e.g. `/blog/:slug`. */
   path: string;
@@ -18,8 +37,13 @@ export interface RouteRecord {
   surface: Surface;
   render: RenderMode;
   meta?: RouteMeta;
-  /** Concrete paths for a dynamic route, from `defineRoute({ prerender })`. */
-  prerender?: () => readonly string[] | Promise<readonly string[]>;
+  /** The route's concrete pages, from `defineRoute({ prerender })` — required for a dynamic one. */
+  prerender?: () => readonly (string | SitemapPage)[] | Promise<readonly (string | SitemapPage)[]>;
+  /**
+   * The locales every page of this route is listed in, unless the page names its own
+   * (`SitemapPage.locales`). Omitted: every locale the sitemap is built for.
+   */
+  locales?: readonly string[];
   /** Keep out of the sitemap and emit `noindex`. */
   noindex?: boolean;
   /**
@@ -47,9 +71,20 @@ export function indexableRoutes(routes: readonly RouteRecord[]): readonly RouteR
   );
 }
 
+/**
+ * Every concrete page a route resolves to, each in the one object form. A route that declares
+ * `prerender()` is the pages it answers — with or without params: a page with none may still say
+ * its own `lastmod` and `locales` there. Without one, a static path is its one page and a dynamic
+ * one is none.
+ */
+export async function expandRoutePages(route: RouteRecord): Promise<readonly SitemapPage[]> {
+  if (route.prerender === undefined) return isDynamic(route.path) ? [] : [{ path: route.path }];
+  return (await route.prerender()).map((page) =>
+    typeof page === 'string' ? { path: page } : page,
+  );
+}
+
 /** Every concrete URL a route resolves to, expanding `prerender()`. */
 export async function expandRoute(route: RouteRecord): Promise<readonly string[]> {
-  if (!isDynamic(route.path)) return [route.path];
-  if (route.prerender === undefined) return [];
-  return await route.prerender();
+  return (await expandRoutePages(route)).map((page) => page.path);
 }

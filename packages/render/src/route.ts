@@ -186,10 +186,29 @@ export type RouteMetaAsyncFn<TData = RouteData> = (
   ctx: RouteMetaContext<TData>,
 ) => Promise<RouteMeta>;
 
-/** Returns the params to build at deploy time. Bare strings fill a single dynamic param. */
-export type PrerenderFn = () =>
-  | readonly (string | RouteParams)[]
-  | Promise<readonly (string | RouteParams)[]>;
+/**
+ * One page `prerender()` answers, with what the page says about itself for the SITEMAP. The build
+ * reads `params` alone: every routed locale's document is still rendered.
+ */
+export interface PrerenderEntry {
+  readonly params: RouteParams;
+  /**
+   * When this page last changed — the sitemap's `<lastmod>` for it. A `Date`, or ISO 8601 with an
+   * explicit zone (`row.updatedAt`); a moment in the future is written as now.
+   */
+  readonly lastmod?: string | Date;
+  /**
+   * The locales this page is LISTED in: one sitemap `<url>` each, cross-linked with hreflang among
+   * themselves only. Omitted: every routed locale. Empty: built, and listed nowhere.
+   */
+  readonly locales?: readonly string[];
+}
+
+/** One item of a `prerender()` answer: a bare string, a params object, or an entry. */
+export type PrerenderItem = string | RouteParams | PrerenderEntry;
+
+/** Returns the pages to build at deploy time. Bare strings fill a single dynamic param. */
+export type PrerenderFn = () => readonly PrerenderItem[] | Promise<readonly PrerenderItem[]>;
 
 /**
  * The rule that makes the no-`load` fallback true: a route that loads nothing renders

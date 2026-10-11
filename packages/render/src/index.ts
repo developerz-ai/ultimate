@@ -182,7 +182,9 @@ export {
 export type {
   InvalidateMode,
   LoadRequirement,
+  PrerenderEntry,
   PrerenderFn,
+  PrerenderItem,
   RenderResult,
   RevalidateConfig,
   RouteAlternate,
