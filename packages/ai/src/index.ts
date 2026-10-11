@@ -262,6 +262,7 @@ export {
   configureAi,
   semanticCacheFor,
 } from './runtime';
+export type { Sampling } from './sampling';
 export type { Scorer } from './scorers';
 export {
   contains,

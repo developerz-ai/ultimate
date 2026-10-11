@@ -51,6 +51,13 @@ The framework ships no default model and no catalogue row (25.0.0): every id is 
 | none of the three names a model | `X_AI_MODEL_UNRESOLVED`, naming all three | `model:` on the declaration or in `definePrompt`, or `providerGateway({ defaultModel })` |
 | the id was never registered | `X_AI_MODEL_UNKNOWN`, before any provider call or budget reservation | `registerModel({ id, … })` at boot, in the app's `models.ts` |
 
+## Two per-model rows worth knowing
+
+| Row | When |
+|---|---|
+| `sampling: { temperature: true, seed: true }` | the model accepts `temperature` / `seed`. Absent, a declaration's `temperature` and `seed` are not sent to it |
+| `forcedToolChoice: false` | the model rejects a **forced** tool choice. `llm()` offers exactly one tool (`respond`) and the chat-completions wire names it in `tool_choice`; a model whose thinking is always on answers that with a 400 — measured 2026-10-11 through OpenRouter on `anthropic/claude-sonnet-5.5`: `tool_choice: type "tool" and "any" are not supported for this model`. With the row, the tool is offered under the endpoint's default and a prose answer takes the repair turn. `agent()` never forces a choice and is unaffected |
+
 ## Quick answers
 
 | Question | Answer |
@@ -129,6 +136,7 @@ export const supportAgent = agent({
 | `maxToolResultChars` | no | **4,000** | one tool result's ceiling; truncation says so in the transcript |
 | `maxRepeatedToolCalls` | no | **3** | consecutive turns that may repeat the same calls **and** results; reaching it is `X_AGENT_TOOL_LOOP` → [Unattended runs](#unattended-runs) |
 | `deadlineMs` | no | none | wall-clock ceiling for the whole run; passing it is `X_AGENT_DEADLINE` |
+| `temperature`, `seed` | no | not sent | determinism knobs for a verifier or a classifier (`temperature` 0 to 2, `seed` a whole number). **Sent only to a model whose row takes them** — `registerModel({ …, sampling: { temperature: true, seed: true } })`; to any other they are left out, because a reasoning model answers a sampling parameter with a 400, and the `llm.sampling.ignored` span attribute names what was left out. `seed` exists on the chat-completions wire only (the Messages API has none) and is best effort where it exists; `temperature: 0` narrows variation, it does not promise identical answers. Same two keys on `llm()` |
 | `system` | no | — | system text loaded at run time, as `{ stable?, run? }` → [Provider prompt caching](#provider-prompt-caching) |
 | `promptCache` | no | **`'auto'`** | `'auto'` \| `'off'` \| `{ session }` — asks the provider to cache each turn's prefix |
 | `budget` | no | unmetered | `tokensIn`, `costPerCall`, `tokensPerRun` |

@@ -443,5 +443,8 @@ export function promptCacheKey(request: GenerateRequest): string {
     thinking: request.thinking ?? 'adaptive',
     tools: request.tools ?? [],
     stop: request.stopSequences ?? [],
+    // Only when asked for: an absent knob must leave every key written before it existed as it was.
+    ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+    ...(request.seed === undefined ? {} : { seed: request.seed }),
   });
 }

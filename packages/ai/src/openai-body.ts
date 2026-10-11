@@ -11,6 +11,7 @@ import { modelSpec } from './models';
 import { toOpenAiMessages, toOpenAiTools, toolChoiceFor } from './openai-messages';
 import { OPENAI_CACHE_KEY_MAX, promptCacheRule, SESSION_KEY_MAX } from './prompt-cache';
 import type { GenerateRequest } from './provider';
+import { samplingBody } from './sampling';
 
 export interface ChatCompletionBodyInput {
   readonly request: GenerateRequest;
@@ -25,8 +26,8 @@ export interface ChatCompletionBodyInput {
 
 /**
  * The body. What is deliberately absent is as load-bearing as what is present:
- *   - no `temperature` / `top_p` / `presence_penalty`. Steering is the prompt's job, and a sampling
- *     knob on a reasoning model in this family is a 400.
+ *   - no `top_p` / `presence_penalty`, and `temperature` / `seed` only for a model whose row takes
+ *     them (`ModelSpec.sampling`): a sampling knob on a reasoning model in this family is a 400.
  *   - no `response_format`. The output schema is projected into the `respond` tool by `llm()`, and
  *     that projection is the framework's ONE structured-output path — see the README.
  *   - `max_completion_tokens`, never the deprecated `max_tokens`, which current reasoning models
@@ -44,10 +45,12 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
     messages: toOpenAiMessages(request.system, request.messages, { provider, model }, marked),
     max_completion_tokens: Math.min(request.maxTokens, spec.maxOutput),
     ...reasoningFields(model, request.effort, request.thinking),
+    ...samplingBody('openai', model, request),
   };
   if (request.tools !== undefined && request.tools.length > 0) {
     body['tools'] = toOpenAiTools(request.tools);
-    const choice = toolChoiceFor(request.tools);
+    // Forced unless the row says this model rejects a forced choice (`forcedToolChoice: false`).
+    const choice = spec.forcedToolChoice === false ? undefined : toolChoiceFor(request.tools);
     if (choice !== undefined) body['tool_choice'] = choice;
   }
   if (request.stopSequences !== undefined && request.stopSequences.length > 0) {

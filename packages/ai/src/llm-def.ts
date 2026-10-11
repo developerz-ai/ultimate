@@ -58,6 +58,15 @@ export interface LlmDef<
   /** Enforced completion ceiling. The model never sees it, so it can be cut off mid-answer. */
   readonly maxTokens?: number;
   /**
+   * `temperature` (0 to 2) and `seed` (a whole number), for a call that should answer the same way
+   * twice — a verifier, a classifier. Sent only to a model whose row takes them
+   * (`registerModel({ sampling })`); to any other they are NOT sent, because a reasoning model
+   * answers one with a 400 — the `llm.sampling.ignored` span attribute names what was left out.
+   * `seed` exists on the chat-completions wire only, and is best effort where it exists.
+   */
+  readonly temperature?: number;
+  readonly seed?: number;
+  /**
    * Called once per PROVIDER call this invocation makes — the answer, and the repair turn when
    * there is one — before the answer is read. What `agent()`'s `onTurn` is to a run: the usage and
    * cost of each call, and on a repair call the issues the model was told to fix.

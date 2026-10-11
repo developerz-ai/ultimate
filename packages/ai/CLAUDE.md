@@ -169,8 +169,11 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
 - A stream ending without `message_stop` throws. **`readSse` caps the unterminated buffer**
   (`MAX_FRAME_CHARS`); `provider` is required so a transport error names its endpoint.
 - A tool call is emitted whole. Thinking chunks are never appended to `text`.
-- Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
-  `output_config`. Model IDs are exact aliases, never date-suffixed.
+- Anthropic body: no `top_p`/`top_k`, no `budget_tokens`, `effort` inside `output_config`. Model
+  IDs are exact aliases, never date-suffixed.
+- **`temperature`/`seed` (`sampling.ts`) are sent ONLY to a row with `sampling: { … : true }`** —
+  else left out (never refused; `llm.sampling.ignored`); no `seed` on the Anthropic wire; in
+  `promptCacheKey` only when set.
 - **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** The
   registry starts EMPTY; a model resolves declaration → prompt → `Gateway.defaultModel`
   (`resolveModel` / `modelForCall`), none is `X_AI_MODEL_UNRESOLVED` (no gateway at all:
@@ -195,7 +198,7 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bou
 - **`openAiProvider()` is a FORMAT, not a vendor** — `baseUrl`, `auth`, `headers` are the
   differences; never a second class per vendor:
   - structured output is the `respond` tool, never `response_format`; `tool_choice` names the tool
-    only when the request offers exactly one;
+    only when the request offers exactly one and the row is not `forcedToolChoice: false`;
   - `strict: true` only when `satisfiesStrictMode` says the schema qualifies;
   - `max_completion_tokens`; `role: 'system'`; `stream_options: { include_usage: true }` and an
     ESTIMATE when usage never arrives; subtract `cached_tokens` from `prompt_tokens`;

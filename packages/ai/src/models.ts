@@ -91,6 +91,18 @@ export interface ModelSpec {
   readonly cacheMinimumTokens: number;
   readonly reasoning: ModelReasoning;
   /**
+   * The sampling knobs this model TAKES (`./sampling`). Absent is none: a `temperature` or `seed` a
+   * request asks for is then not sent, because a reasoning model answers one with a 400. A row for
+   * a model that does take them says `{ temperature: true, seed: true }`.
+   */
+  readonly sampling?: { readonly temperature?: boolean; readonly seed?: boolean };
+  /**
+   * `false` for a model that rejects a FORCED tool choice (a 400 naming `tool_choice`, which
+   * always-thinking models answer). `llm()`'s one `respond` tool is then offered under the
+   * endpoint's default, and a prose answer takes the repair turn. Absent is forced, as before.
+   */
+  readonly forcedToolChoice?: boolean;
+  /**
    * The non-text blocks a message to this model may carry. Absent is TEXT ONLY, deliberately: an
    * app's own row for a text-only endpoint must not have an image sent to it, and the refusal
    * (`X_AI_CONTENT_UNSUPPORTED`) names this field, so a row that does take images is one edit.

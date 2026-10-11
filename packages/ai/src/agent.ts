@@ -58,6 +58,8 @@ import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
 import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor } from './runtime';
+import type { Sampling } from './sampling';
+import { ignoredSampling, screenSampling } from './sampling';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
 import { asProjectableAction, runLlmToolCall, toLlmTools, toolLabel } from './tools';
 
@@ -81,6 +83,7 @@ export function agent<
     });
   }
   const bounds = screenBounds(def);
+  const sampling = screenSampling(SUBJECT, def);
   // Projected on FIRST RUN, memoised, for the reason above: `agent()` is evaluated at module
   // scope and a tool's name is stamped by `registerAction` at boot, so naming it here would make
   // the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED`.
@@ -94,7 +97,7 @@ export function agent<
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: (args) => run(def, respond, adapt(), bounds, args),
+    handle: (args) => run(def, respond, adapt(), { ...bounds, sampling }, args),
   });
   // A thunk, resolved when the manifest asks: every name in the row is stamped at boot, and this
   // line runs at module scope.
@@ -135,7 +138,7 @@ async function run<
   def: AgentDef<TInput, TOutput, V>,
   respond: Respond,
   adapted: Adapted,
-  bounds: AgentBounds,
+  bounds: AgentBounds & { readonly sampling: Sampling },
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
@@ -181,6 +184,7 @@ async function run<
       'agent.max_turns': maxTurns,
       'llm.redacted': rendered !== rawPrompt || !sameSystem(system, rawSystem),
       'llm.prompt_cache': promptCache !== undefined,
+      'llm.sampling.ignored': ignoredSampling(model, bounds.sampling).join(','),
     });
 
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
@@ -197,6 +201,7 @@ async function run<
       maxTokens: bounds.maxTokens,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
+      ...bounds.sampling,
       tools: [...adapted.offered, respond.tool],
       // The caller's own signal, forwarded to the transport. A disconnect has to reach the socket,
       // not just the top of the next turn: a provider call already in flight is the expensive one.

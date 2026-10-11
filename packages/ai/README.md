@@ -214,6 +214,8 @@ registerModel({
 configureAi({ gateway: providerGateway({ providers: [new InternalGatewayProvider()] }) });
 ```
 
+Two optional per-model rows: `sampling: { temperature: true, seed: true }` (the model takes the `temperature` / `seed` an `llm()` or `agent()` declares — absent, they are not sent) and `forcedToolChoice: false` (the model rejects a forced `tool_choice`, so `llm()`'s one `respond` tool is offered under the endpoint's default).
+
 **The framework registers no model.** `registerModel` is the one way into the catalogue and only the
 app calls it — at boot, by convention in its own `models.ts`, each row with the page and the date its
 numbers were read from, so a stale price is a diff in the app's repo rather than a framework release.

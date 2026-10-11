@@ -16,6 +16,7 @@ import { modelSpec, reasoningBody } from './models';
 import type { PromptCacheHint, SystemPrompt } from './prompt-cache';
 import { promptCacheRule, systemText } from './prompt-cache';
 import { anthropicPrompt } from './prompt-cache-blocks';
+import { samplingBody } from './sampling';
 import { readSse } from './sse';
 import { assertToolArguments } from './tool-arguments';
 import type { LlmTool, LlmToolCall } from './tools';
@@ -85,6 +86,10 @@ export interface GenerateRequest {
   readonly thinking?: ThinkingMode;
   readonly tools?: readonly LlmTool[];
   readonly stopSequences?: readonly string[];
+  /** Sent only to a model whose row takes it (`ModelSpec.sampling`, `./sampling`). 0 to 2. */
+  readonly temperature?: number;
+  /** As `temperature`; chat-completions only — the Messages API has no seed. */
+  readonly seed?: number;
   /**
    * The caller's abort signal, forwarded to the socket by every provider in this package.
    *
@@ -227,7 +232,8 @@ export function anthropicProvider(input: AnthropicProviderInput): AnthropicProvi
 /**
  * The real Messages API shape. The request-surface rules are encoded rather than documented,
  * because getting them wrong is a 400:
- *   - `temperature`/`top_p`/`top_k` are REJECTED on every current model. Steer with the prompt.
+ *   - `top_p`/`top_k` are never sent, and `temperature` only to a model whose row takes it
+ *     (`ModelSpec.sampling`): a reasoning model rejects all three.
  *   - `thinking.budget_tokens` is REJECTED. Use `output_config.effort`.
  *   - `effort` and adaptive thinking are per-model, and ./models owns which model takes which.
  */
@@ -343,6 +349,7 @@ export class AnthropicProvider implements Provider {
       max_tokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
       messages: prompt.messages,
       ...reasoningBody(model, request.effort, request.thinking),
+      ...samplingBody('anthropic', model, request),
     };
     if (prompt.system !== undefined) body['system'] = prompt.system;
     if (request.tools !== undefined && request.tools.length > 0) body['tools'] = request.tools;

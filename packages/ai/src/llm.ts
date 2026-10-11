@@ -49,6 +49,8 @@ import { parseJsonish, RESPOND, respondFor } from './respond';
 import type { RunMeter } from './run-meter';
 import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor } from './runtime';
+import type { Sampling } from './sampling';
+import { ignoredSampling, screenSampling } from './sampling';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
 const ATTEMPTS = 2;
@@ -103,12 +105,13 @@ export function llm<
   // off for the life of the process. A floor of 1 because a completion ceiling of zero tokens is
   // a call that cannot answer.
   finiteCount('llm', 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
+  const sampling = screenSampling('llm', def);
   const built = action<TInput, TOutput>({
     input: def.input,
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: (args) => generate(def, respond, args),
+    handle: (args) => generate(def, respond, sampling, args),
   });
   return streamable(built);
 }
@@ -146,6 +149,7 @@ async function generate<
 >(
   def: LlmDef<TInput, TOutput, V>,
   respond: Respond,
+  sampling: Sampling,
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
@@ -178,6 +182,7 @@ async function generate<
       // an audit asks evidence for, and a redactor that silently stopped matching looks identical
       // to one that had nothing to remove until this attribute separates them.
       'llm.redacted': redacted,
+      'llm.sampling.ignored': ignoredSampling(model, sampling).join(','),
     });
 
     // A cached answer is still data of unknown provenance, so it goes through the schema like
@@ -205,6 +210,7 @@ async function generate<
       maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
+      ...sampling,
       // The caller's own signal, forwarded to the transport exactly as `agent()` does — and
       // inherited by `streamedAnswer` from this same `base`. Without it a disconnected caller left
       // the provider call in flight, billed and unread, and the repair turn bought a SECOND one.
