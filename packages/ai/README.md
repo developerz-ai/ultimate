@@ -451,7 +451,7 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 
 ### Continuing a run
 
-`agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is screened (`X_AGENT_TRANSCRIPT_INVALID`). Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
+`agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is signed, bound to the agent, model, tools and tenant, and screened (`X_AGENT_TRANSCRIPT_INVALID`); a failed call leaves an updated one on the error (`transcriptOf(error)`), which is the one a job stores. Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
 
 ### Provider prompt caching
 

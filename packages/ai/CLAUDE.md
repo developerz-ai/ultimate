@@ -235,10 +235,11 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
     rule a hive member's `reason` follows too. Never a second copy. One widening, for an
     `inProcess` tool only (`discloseOwnFailure`): a branded error under a code with NO declared
     status is shown as `{ error: { code, cause, fix } }`; `discloseErrors: false` opts out.
-- **`.run()`/`.continue()` are the SAME action**, marked by an ambient session (as `.stream()` is).
-  The handle is screened before anything is loaded (`screenTranscript`); `maxTurns` and
-  `tokensPerRun` are cumulative — the remainder is the ceiling, NEVER a ledger debit (it would
-  charge actor/org twice); `vars()` is not re-run; the open `respond` call is answered first.
+- **`.run()`/`.continue()` are the SAME action**, marked by an ambient session only the declaring
+  agent may claim, once (a nested agent starts fresh). The handle is SIGNED (`sealTranscript`: the
+  cursor secret, own label) and bound to agent, model, tool names and `orgId`; screened before
+  anything is loaded. `maxTurns`/`tokensPerRun` are cumulative — the remainder is the ceiling,
+  NEVER a ledger debit. A failure seals an updated handle onto the error (`transcriptOf`).
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
   member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
   order with `index`; the hive never names an actor; no hive budget code; a member's throw goes

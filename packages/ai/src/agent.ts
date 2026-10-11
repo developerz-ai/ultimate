@@ -26,13 +26,14 @@ import type { Ctx } from '@ultimat3/core';
 import { throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
-import type { AgentAction } from './agent-continue';
+import type { AgentAction, TranscriptBinding } from './agent-continue';
 import {
   claimAgentSession,
-  continuationTurn,
+  continued,
   screenTranscript,
+  sealTranscript,
   sessionCalls,
-  TRANSCRIPT_VERSION,
+  withTranscript,
 } from './agent-continue';
 import type { AgentBounds } from './agent-declared';
 import { factsOf, limitsOf, SUBJECT, screenBounds } from './agent-declared';
@@ -150,14 +151,22 @@ async function run<
   // anything is loaded, reserved or sent.
   const session = claimAgentSession(bounds.owner);
   const resume = session?.resume;
-  const prior = resume === undefined ? undefined : screenTranscript(name, resume.transcript);
   if (resume !== undefined && resume.user.trim() === '') {
     throw new AgentTranscriptInvalidError({ agent: name, reason: 'the user turn is empty' });
   }
   // Screened first: a bad declaration is refused whether or not a gateway exists.
-  const limits = limitsOf(def, prior?.usage);
+  limitsOf(def);
   // The declaration, its prompt, then the gateway's `defaultModel` — the app's three places.
   const model = modelForCall('agent', name, def.model, prompt.model);
+  // What a handle is bound to, read off the declaration and the request — never off the handle.
+  const binding: TranscriptBinding = {
+    agent: name,
+    model,
+    tools: [...adapted.tools.map((tool) => tool.name), RESPOND],
+    org: args.ctx.actor.orgId ?? null,
+  };
+  const prior = resume === undefined ? undefined : screenTranscript(binding, resume.transcript);
+  const limits = limitsOf(def, prior?.usage);
   // Armed before anything is loaded: `vars()` is part of the run a deadline bounds.
   const deadline = runDeadline(name, def.deadlineMs, args.ctx.signal);
   const redact = aiRedactor();
@@ -215,22 +224,23 @@ async function run<
     // Every provider call below goes through the meter, so whatever ends the run — a ceiling, a
     // deadline, a truncated turn, the caller leaving — is thrown carrying what the run was billed.
     const meter = runMeter();
+    // Where a failure would resume from: the request in flight, and the turns answered so far.
+    const at = { messages: [] as readonly AiMessage[], turns: prior?.turns ?? 0 };
     const loop = async (): Promise<InferOutput<TOutput>> => {
       // The actor is read ONCE, from the context the request established, and is the only
       // identity any tool runs as. Nothing below reads an actor out of `result` — a model cannot
       // name the identity it acts as, and a loop that let it would be an escalation primitive.
       const { actor } = args.ctx;
       let messages: readonly AiMessage[] =
-        prior === undefined
-          ? [{ role: 'user', content: rendered }]
-          : [...prior.messages, continuationTurn(prior, rendered)];
+        prior === undefined ? [{ role: 'user', content: rendered }] : continued(prior, rendered);
       let calls = 0;
       let issues: string | undefined;
       // The issues of the answer the turn in flight is repairing — `onTurn`'s `repairOf`.
       let rejected: readonly string[] | undefined;
 
       // `maxTurns` counts the run AND its continuations: a handle that used them all takes none.
-      for (let turn = (prior?.turns ?? 0) + 1; turn <= maxTurns; turn += 1) {
+      for (let turn = at.turns + 1; turn <= maxTurns; turn += 1) {
+        at.messages = messages;
         // The caller is gone, so unwind instead of finishing. Every turn re-sends the WHOLE
         // transcript, so a loop that keeps going after a disconnect spends the rest of the run's
         // budget, runs every remaining tool's side effects, and discards the answer.
@@ -244,6 +254,7 @@ async function run<
             throwIfAborted(args.ctx);
             throw error;
           });
+        at.turns = turn;
         const requested = result.toolCalls.filter((call) => call.name !== RESPOND);
         // The same turn's `respond` calls, kept rather than forgotten: they are never RUN, but
         // `assistantTurn` replays them, and every replayed `tool_use` has to be answered.
@@ -321,13 +332,11 @@ async function run<
           if (session !== undefined) {
             const usage = runTotal(result.model, prior?.usage, meter.total());
             session.finished = {
-              transcript: {
-                v: TRANSCRIPT_VERSION,
-                agent: name,
+              transcript: sealTranscript(binding, {
                 messages: [...messages, assistantTurn(result)],
                 turns: turn,
                 usage: usage.usage,
-              },
+              }),
               turns: turn,
               usage,
             };
@@ -341,6 +350,7 @@ async function run<
         messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];
       }
 
+      at.messages = messages;
       // Two different exhaustions, so two different causes: a loop that kept calling tools and
       // never answered is not the same event as one that answered the wrong shape every time.
       if (issues !== undefined) {
@@ -355,7 +365,16 @@ async function run<
     };
     return withBudget(ledger, () =>
       loop().catch((error: unknown) => {
-        throw meter.fail(error);
+        const failed = meter.fail(error);
+        // A failed `.run()` / `.continue()` leaves a handle too: the transcript up to the request
+        // the failed turn was answering, with `turns` and `usage` counting what this call was
+        // billed. Without it a retry resumes from the OLD handle, which never heard of that spend
+        // — six truncated continuations billed six times against a ceiling that saw none of them.
+        if (session !== undefined && at.messages.length > 0) {
+          const { usage } = runTotal(model, prior?.usage, meter.billed());
+          withTranscript(failed, sealTranscript(binding, { ...at, usage }));
+        }
+        throw failed;
       }),
     );
   });

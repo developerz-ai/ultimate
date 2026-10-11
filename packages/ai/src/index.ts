@@ -11,7 +11,12 @@ export type {
   AgentRun,
   AgentTranscript,
 } from './agent-continue';
-export { MAX_TRANSCRIPT_CHARS, TRANSCRIPT_VERSION } from './agent-continue';
+export {
+  MAX_TRANSCRIPT_CHARS,
+  TRANSCRIPT_META,
+  TRANSCRIPT_VERSION,
+  transcriptOf,
+} from './agent-continue';
 export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
 export {
   AgentDeadlineError,

@@ -48,7 +48,7 @@ export function addUsage(total: AgentRunUsage | undefined, result: GenerateResul
 export function runTotal(
   model: ModelId,
   prior: TokenUsage | undefined,
-  own: AgentRunUsage | undefined,
+  own: { readonly usage: TokenUsage } | undefined,
 ): AgentRunUsage {
   return priced(model, plus(prior ?? ZERO, own?.usage ?? ZERO));
 }

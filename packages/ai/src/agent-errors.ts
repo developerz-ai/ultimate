@@ -56,11 +56,13 @@ export class AgentDeadlineError extends UltimateError {
  * another format would resume a conversation this declaration never had.
  */
 export class AgentTranscriptInvalidError extends UltimateError {
-  constructor(input: { agent: string; reason: string }) {
+  constructor(input: { agent: string; reason: string; fix?: string }) {
     super({
       code: 'X_AGENT_TRANSCRIPT_INVALID',
       cause: `agent "${input.agent}" cannot continue from the transcript it was given: ${input.reason}`,
-      fix: 'agent.run(input, { ctx })   # start a new run and store ITS transcript — pass back exactly the value .run() or .continue() returned, from the same agent and prompt version',
+      fix:
+        input.fix ??
+        'agent.run(input, { ctx })   # start a new run and store ITS transcript — pass back exactly the value .run() or .continue() returned, from the same agent and prompt version',
       meta: { agent: input.agent },
     });
   }
