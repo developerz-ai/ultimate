@@ -42,7 +42,7 @@ export class AgentDeadlineError extends UltimateError {
   constructor(input: { agent: string; deadlineMs: number }) {
     super({
       code: 'X_AGENT_DEADLINE',
-      cause: `agent "${input.agent}" was still running after its ${input.deadlineMs}ms deadline; the model call in flight was aborted and no further turn or tool was started`,
+      cause: `agent "${input.agent}" was still running after its ${input.deadlineMs}ms deadline; whatever was in flight (setup, a model call or a tool) was signalled to stop, and no further turn or tool was started`,
       fix: 'deadlineMs: 300_000   # on the agent, only once a trace shows the run converging — otherwise lower maxTurns, or shorten the slow tool the agent.turn span events name',
       meta: { agent: input.agent, deadlineMs: input.deadlineMs },
     });
