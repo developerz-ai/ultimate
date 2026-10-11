@@ -26,6 +26,14 @@ export const config = defineRoute({
 export function Page(props: { data: Post }) { /* the SAME object meta was given */ }
 ```
 
+`prerender()` answers the pages to build: a bare string (a one-param route), a params object, or an
+entry — `{ params, lastmod?, locales? }` (`PrerenderEntry`) — mixed freely. The build reads `params`
+alone and renders every routed locale; `lastmod` (a `Date` or ISO 8601 with a zone) and `locales`
+are what the page says of itself for the sitemap: its `<lastmod>`, and the locales it is listed and
+cross-linked in. `enumeratePrerender()` answers params, `enumeratePrerenderEntries()` the entries.
+A key outside the three, a `lastmod` that is neither a string nor a `Date`, or `locales` that is
+not a list of names is `X_PRERENDER_FAILED`, naming the route file.
+
 ## `load` is the one server-side data seam
 
 Optional, and the only way a page gets data. It runs **once per render** and the result is handed

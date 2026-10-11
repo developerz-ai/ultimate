@@ -18,6 +18,7 @@ enforced where they are built: each builder throws.
 | `X_SEO_CANONICAL_MISMATCH` | `meta.canonical` does not resolve to the route's own URL | a wrong canonical de-indexes the page in favour of another |
 | `X_LD_INVALID` | a JSON-LD node missing a required schema.org field | invalid structured data drops the rich result silently |
 | `X_SITEMAP_TOO_LARGE` | the sitemap index exceeds 50,000 files | past the protocol limit the whole sitemap is discarded |
+| `X_SITEMAP_ENTRY_INVALID` | a page's `lastmod` is not a `Date` or ISO 8601 with a zone, or its `locales` names a locale the sitemap is not built for | a wrong date teaches a crawler to distrust every date in the file; a typo'd locale drops the page from one silently |
 
 Performance budgets are **not** here: `x verify`'s `budgets` step is `@ultimat3/cli`'s
 `checkBudgets`, over the route manifest and the build's own stats, and it throws
@@ -47,8 +48,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `meta.ts` | the metadata model, `renderMeta()` → head tags: title template, canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per colour scheme. **`robots: { index: false }` withdraws every `og:*`, `article:*` and `twitter:*` tag** — declared or derived; there is no `social` switch |
 | `validate.ts` | the build gate — `validateMeta()` (`--json`-shaped) and `assertMeta()` |
 | `ld.ts` | typed JSON-LD builders; required fields are required in the **input type** |
-| `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates, automatic index splitting past 50k — the index stays `/sitemap.xml`, the parts are `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`) |
-| `robots.ts` | `buildRobots()`, environment-aware and fail-closed; `disallow` reaches **every** group, and a `User-agent: *` group is emitted for it when none is declared |
+| `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates. One urlset at `/sitemap.xml`; past a cap (`SITEMAP_MAX_URLS` 50,000, `SITEMAP_MAX_BYTES` 50 MB) the index stays `/sitemap.xml` and the parts are `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`). With `sections` it is always an index of `/sitemaps/<name>-<n>.xml` — see below |
+| `sitemap-sections.ts` | `sectionOf(path, sections)`: which named section a page files under (`/blog/**`, `/blog/*`, exact), first match wins, else `pages` |
+| `sitemap-datetime.ts` | `sitemapDatetime(value, now)`: a page's `lastmod` as W3C Datetime in UTC, or `undefined` — a zoneless time is not a date here |
+| `sitemap-xml.ts` | the `<urlset>` and `<sitemapindex>` XML, and `paginate()` — files that each fit both caps |
+| `robots.ts` | `buildRobots()`, environment-aware and fail-closed; `disallow` reaches **every** group, and a `User-agent: *` group is emitted for it when none is declared |. `disallowMatcher(rules)` reads those rules as a crawler does — what `buildSitemap({ disallow })` leaves out
 | `rss.ts` | `buildFeed()` → RSS 2.0 + Atom + JSON Feed from one item list. Channel `author`/`copyright`/`icon` → Atom `<author>`/`<rights>`/`<icon>`; an item `author` → Atom `<author>`, RSS `<author>` when it has an email, `<dc:creator>` when it does not; an item `image` → Atom `<link rel="enclosure">`, RSS `<media:content medium="image">`. Extra RSS namespaces are declared only when used |
 | `feed-dates.ts` | the one place a feed timestamp is parsed or formatted — an item date that will not parse is *absent*, never `Invalid Date` and never a crash |
 | `images.ts` | `srcset` widths (never past the intrinsic width or `MAX_IMAGE_WIDTH`, 8192), modern formats before the original — `DEFAULT_FORMATS` is what the built-in driver encodes (`webp`); pass `formats: FORMAT_ORDER` for AVIF behind a CDN driver — inlined intrinsic dimensions, and `parseImageQuery()` — reads a minted URL back into a transform request |
@@ -63,6 +67,33 @@ ld.Article({ headline: 'Ship it', author: { name: 'Ada' } });
 
 A missing `datePublished` is a compile error, not a Search Console warning three
 weeks later.
+
+## Sitemap: pages, sections, caps
+
+```ts
+import { buildSitemap, type RouteRecord } from '@ultimat3/seo';
+
+declare const routes: readonly RouteRecord[];
+
+await buildSitemap(routes, {
+  baseUrl: 'https://notificado.co',
+  locales: ['es-co', 'en'],
+  defaultLocale: 'es-co',
+  maxUrls: 1000,                                      // page size; default 50,000
+  sections: [{ name: 'blog', match: '/blog/**' }],    // omitted: one urlset
+  disallow: ['/panel'],                               // robots.txt rules: never listed
+});
+// → index /sitemap.xml · files /sitemaps/pages-1.xml, /sitemaps/blog-1.xml, /sitemaps/blog-2.xml …
+```
+
+| Rule | |
+|---|---|
+| a page | `RouteRecord.prerender()` answers `'/blog/a'` or a `SitemapPage` — `{ path, lastmod?, locales? }`. `expandRoutePages()` reads both; `expandRoute()` still answers paths |
+| `lastmod` | a `Date` or ISO 8601 with a zone, written in UTC. No zone, or no date: `X_SITEMAP_ENTRY_INVALID`. After `now`: clamped to `now` — one row from a clock a second ahead must not fail every page, and a future date is one a crawler stops believing |
+| `locales` | per page, else `RouteRecord.locales`, else all. One `<url>` per listed locale, hreflang among those only; `x-default` only when the default is listed; a page left in one locale of several carries no alternates; `[]` lists it nowhere. An unknown name is `X_SITEMAP_ENTRY_INVALID` |
+| sections | matched on the unprefixed path, so a page and its locale copies share a file. `pages` (reserved) first, then declaration order; inside one, sorted by path. Numbered from 1; an empty one writes nothing; the index `<lastmod>` of a child is the newest inside it (`SitemapFile.lastmod`) |
+| no sections | byte-for-byte the output before sections existed — `sitemap-sections.test.ts` pins the hash |
+| names | `sections` and `maxUrls` are refused by `@ultimat3/core`'s `sitemapSectionIssues`, the validator `defineConfig` runs for `seo.sitemap` |
 
 ## robots.txt is fail-closed
 

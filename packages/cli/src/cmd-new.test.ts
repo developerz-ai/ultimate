@@ -362,7 +362,9 @@ describe('unit · x new · the sitemap and robots.txt it wires', () => {
     const entry = emitted('apps/web/prerender.ts', true);
     expect(entry).toContain("from '@ultimat3/cli'");
     expect(entry).toContain('siteSeo(');
-    expect(entry).toContain("'robots.txt'");
+    // `writeSiteSeo` puts every file of that answer on disk: the sitemap, each part of an index
+    // (`/sitemaps/*.xml`) and `robots.txt` — `site-seo-sections.test.ts` holds it to the bytes.
+    expect(entry).toContain('writeSiteSeo(out, seo)');
     expect(emitted('package.json', true)).toContain('"@ultimat3/seo"');
   });
 });

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e7c9d5de792d076bf2174805dbeec082841bf128e7692d3778cc31119ef57910",
+  "buildId": "dd1b939f88b14962605f053fc98e521bf728bdf30d7825e9d8dd651d77fffff6",
   "tiers": {
     "0": [
       "core",
@@ -3878,6 +3878,11 @@
       "code": "X_SIDE_EFFECTS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SITEMAP_ENTRY_INVALID",
+      "owner": "seo",
+      "at": "packages/seo/src/errors.ts"
     },
     {
       "code": "X_SITEMAP_EXTRA_INVALID",

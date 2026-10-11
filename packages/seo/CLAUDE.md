@@ -46,6 +46,15 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   which costs the alternates that WERE right. `defaultLocaleUrl` answers `undefined` unless the
   default locale's own URL is among the ones this route emits — the same explicit-fallback shape
   `meta.ts`'s `hreflangSet` takes. Never re-derive it from `path`.
+- **No `sections`, no byte changes.** The unsectioned sitemap is pinned by hash in
+  `sitemap-sections.test.ts`. Sorting, a child's own index `<lastmod>` and `<name>-<n>` naming
+  belong to the sectioned path only; a fix that must reach both paths re-pins the hash on purpose.
+- **A page's `lastmod` never reads the ambient zone, and a future one is clamped.**
+  `sitemapDatetime` refuses a zoneless time before `Date.parse` can read it in the process's zone.
+  Refusing a future date would fail a whole enumeration for one skewed row; clamping to `now` is
+  the true upper bound. A route's `lastmod` string is the caller's and is written as given.
+- **The hreflang cluster, `x-default` and the `<loc>`s read ONE trimmed list** — the page's
+  `locales`, minus what `disallow` blocks. Never trim one of the three alone.
 - **Errors name the file, not the URL.** `RouteRecord.file` is in every cause and every fix; an agent must be able to open the source without guessing.
 - **Fail closed, and core reads the key.** `isIndexable()` is `environment === 'production'` and
   nothing else — `staging`, a laptop, a typo and an unset variable all disallow. `ULTIMATE_ENV` has

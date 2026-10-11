@@ -4,11 +4,15 @@
  * the precache revision in `sw.js`, and the asset filename suffix.
  */
 
-import { BUILD_ID_HEADER, renderCauseValue, renderThrowable, useContext } from '@ultimat3/core';
+import { BUILD_ID_HEADER, renderThrowable, useContext } from '@ultimat3/core';
 import { PrerenderFailedError, RouteModeInvalidError } from './errors';
+import { enumeratePrerender } from './prerender-enumerate';
 import type { RouteEntry } from './registry';
 import type { RenderResult, RouteParams } from './route';
 import { filePathOf, filledSegments, urlPathOf } from './static-path';
+
+// Re-exported where it has always been imported from; the enumeration is `prerender-enumerate.ts`'s.
+export { enumeratePrerender } from './prerender-enumerate';
 
 export interface StaticArtifact {
   readonly path: string;
@@ -59,59 +63,6 @@ export function assertNoPerRequestState(file: string): void {
       `change render to 'ssr' in ${file}, or move the request-dependent part into an island`,
     );
   }
-}
-
-/** Normalize `prerender()` output. A bare string fills the route's one dynamic param. */
-export async function enumeratePrerender(entry: RouteEntry): Promise<readonly RouteParams[]> {
-  const prerender = entry.config.prerender;
-  if (prerender === undefined) {
-    return entry.pattern.keys.length === 0 ? [{}] : [];
-  }
-
-  let produced: readonly (string | RouteParams)[];
-  try {
-    produced = await prerender();
-  } catch (error) {
-    throw new PrerenderFailedError(
-      // `renderThrowable`, never `.message`/`String()`: `prerender` is app code and may throw a
-      // value whose read raises in turn — this frame is what makes the build failure a coded one.
-      `prerender() for ${entry.path} threw: ${renderThrowable(error)}`,
-      `fix prerender in ${entry.file} — it runs at build time with no request context`,
-    );
-  }
-
-  if (!Array.isArray(produced)) {
-    throw new PrerenderFailedError(
-      `prerender() for ${entry.path} returned ${typeof produced}, expected an array`,
-      `return an array of params from prerender in ${entry.file}`,
-    );
-  }
-
-  const keys = entry.pattern.keys;
-  return produced.map((item: unknown) => {
-    if (typeof item !== 'string') return paramsOf(entry, item);
-    const only = keys[0];
-    if (keys.length !== 1 || only === undefined) {
-      throw new PrerenderFailedError(
-        `prerender() for ${entry.path} returned the bare string ${renderCauseValue(item)} ` +
-          `but the route has ${keys.length} dynamic params (${keys.join(', ')})`,
-        `return objects from prerender in ${entry.file}, e.g. { ${keys.join(': …, ')}: … }`,
-      );
-    }
-    return { [only]: item };
-  });
-}
-
-/**
- * One `prerender()` item that is not a bare string: a params object, or a coded refusal. A `null`
- * reached `Object.hasOwn` in `static-path.ts` and left the build as a bare `TypeError`.
- */
-function paramsOf(entry: RouteEntry, item: unknown): RouteParams {
-  if (typeof item === 'object' && item !== null && !Array.isArray(item)) return item as RouteParams;
-  throw new PrerenderFailedError(
-    `prerender() for ${entry.path} returned ${renderCauseValue(item)} as one of its items, which is neither a params object nor a string`,
-    `return an array of params objects (or strings, for a one-param route) from prerender in ${entry.file}`,
-  );
 }
 
 export interface StaticBuildOptions {

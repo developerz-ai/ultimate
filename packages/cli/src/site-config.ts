@@ -11,14 +11,14 @@ export interface SiteSettings {
   readonly origin: string | null;
   /** `seo.robots.disallow` — the paths a production `robots.txt` keeps crawlers out of. */
   readonly disallow: readonly string[];
-  /** `seo.sitemap` — public `app/` pages to list, and where `<lastmod>` comes from. */
+  /** `seo.sitemap` — public `app/` pages to list, where `<lastmod>` comes from, sections, page size. */
   readonly sitemap: SeoSitemapConfig;
 }
 
 export const NO_SITE_SETTINGS: SiteSettings = {
   origin: null,
   disallow: [],
-  sitemap: { extra: [], lastmod: 'none' },
+  sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
 };
 
 const trimSlash = (origin: string): string => origin.replace(/\/+$/, '');
