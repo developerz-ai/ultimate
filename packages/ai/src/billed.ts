@@ -34,6 +34,9 @@ const COUNTERS = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteT
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+const isScale = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 15;
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -67,7 +70,12 @@ export function billedOf(error: unknown): Billed | undefined {
       cacheReadTokens: usage['cacheReadTokens'] as number,
       cacheWriteTokens: usage['cacheWriteTokens'] as number,
     },
-    cost: { minor: cost['minor'], currency: cost['currency'] },
+    // The scale travels with the amount: an exact cost read without it is a million times over.
+    cost: {
+      minor: cost['minor'],
+      currency: cost['currency'],
+      ...(isScale(cost['scale']) ? { scale: cost['scale'] } : {}),
+    },
     calls: record['calls'],
     unsettled: record['unsettled'],
   };

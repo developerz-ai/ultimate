@@ -7,7 +7,7 @@
 // The multiplication is done in bigint, so no call, however large, loses a digit on the way.
 
 import type { Money } from '@ultimat3/money';
-import { exponentOf, minorAt } from '@ultimat3/money';
+import { commonScale, exponentOf, minorAt } from '@ultimat3/money';
 import type { ModelId, ModelSpec } from './models';
 import { modelSpec, PRICE_SCALE_DIGITS } from './models';
 import type { TokenUsage } from './provider';
@@ -93,3 +93,40 @@ const ceilDiv = (numerator: bigint, denominator: bigint): bigint =>
 /** Back to the `number` `Money` carries. Past 2^53 minor units there is no honest answer. */
 const toSafe = (value: bigint): number =>
   value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value);
+
+/**
+ * `a` against `b` as MONEY — negative, zero or positive — at the finer of their two scales. Never
+ * `a.minor - b.minor`: `{ minor: 500, scale: 3 }` is fifty cents, and read by `minor` alone it
+ * outranked four dollars.
+ */
+export function compareMoney(a: Money, b: Money): number {
+  const scale = commonScale(a, b);
+  const left = minorAt(a, scale);
+  const right = minorAt(b, scale);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** Two amounts of one currency as one, at the finer scale — stated only when either stated one. */
+export function addMoney(a: Money, b: Money): Money {
+  const scale = commonScale(a, b);
+  const minor = toSafe(minorAt(a, scale) + minorAt(b, scale));
+  return a.scale === undefined && b.scale === undefined
+    ? { minor, currency: a.currency }
+    : { minor, currency: a.currency, scale };
+}
+
+/**
+ * A cost as a `Provider` reported it, made bookable. The built-in providers price in integers, but
+ * `Provider` is an interface an app implements, and its `cost.minor` was summed as a plain number
+ * until the ledger went exact: a fraction was accepted. So a fraction is ROUNDED UP (never down:
+ * under-reporting spend defeats a budget), and a value that is no amount at all — `NaN`, an
+ * infinity, a negative, which a ledger would read as a credit — is booked as zero. Never a throw:
+ * this runs after the provider was paid, and a bookkeeping error must not cost the answer.
+ */
+export function bookableCost(cost: Money): Money {
+  const minor = Number.isFinite(cost.minor) && cost.minor > 0 ? Math.ceil(cost.minor) : 0;
+  const scale = Number.isInteger(cost.scale) ? cost.scale : undefined;
+  return scale === undefined
+    ? { minor, currency: cost.currency }
+    : { minor, currency: cost.currency, scale };
+}

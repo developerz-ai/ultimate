@@ -193,7 +193,17 @@ class GatewayImpl implements Gateway {
       await settleFailure(ledger, reservation, error);
       throw error;
     }
-    await ledger?.record(result.usage, result.costExact ?? result.cost, reservation);
+    // The provider was PAID by now. Nothing below may turn that answer into a failure: a ledger
+    // that cannot book it gives the reservation back and says so, and the answer is returned.
+    try {
+      await ledger?.record(result.usage, result.costExact ?? result.cost, reservation);
+    } catch (error) {
+      await ledger?.release(reservation).catch(() => undefined);
+      logger.warn('ai.budget.record_failed', {
+        provider: result.provider ?? 'unknown',
+        error: renderThrowable(error),
+      });
+    }
     // A refusal is not an answer, so it is not cached. Storing one would keep serving a decision
     // the classifier might not make twice, long after the prompt that provoked it was fixed.
     if (result.stopReason !== 'refusal') await this.remember(cacheKey, result);
@@ -250,8 +260,12 @@ class GatewayImpl implements Gateway {
       }
     } catch (error) {
       // Thrown after the provider reported usage: the bill is recorded, exactly as `generate` does.
-      settled = true;
-      await settleFailure(ledger, reservation, error);
+      // Only when nothing settled yet — a provider that throws AFTER its `done` chunk was already
+      // recorded, and releasing again would credit the ledger a second time.
+      if (!settled) {
+        settled = true;
+        await settleFailure(ledger, reservation, error);
+      }
       throw error;
     } finally {
       // A stream its consumer abandoned never reached `done` — so nothing reconciled the

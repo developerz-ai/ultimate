@@ -9,6 +9,7 @@ import type { AgentRunUsage } from './agent-usage';
 import { addUsage } from './agent-usage';
 import type { Billed } from './billed';
 import { BILLED_META, billedOf } from './billed';
+import { addMoney } from './cost';
 import type { GenerateResult } from './provider';
 import { ZERO_USAGE } from './wire';
 
@@ -107,10 +108,7 @@ function sum(a: Billed, b: Billed): Billed {
       cacheReadTokens: a.usage.cacheReadTokens + b.usage.cacheReadTokens,
       cacheWriteTokens: a.usage.cacheWriteTokens + b.usage.cacheWriteTokens,
     },
-    cost:
-      a.cost.currency === b.cost.currency
-        ? { minor: a.cost.minor + b.cost.minor, currency: a.cost.currency }
-        : a.cost,
+    cost: a.cost.currency === b.cost.currency ? addMoney(a.cost, b.cost) : a.cost,
     calls: a.calls + b.calls,
     unsettled: a.unsettled + b.unsettled,
   };
