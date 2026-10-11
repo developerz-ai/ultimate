@@ -36,6 +36,16 @@ export interface RouteFact {
   readonly offline?: OfflineStrategy;
   readonly hydrate?: HydrateStrategy;
   readonly revalidateTags?: readonly string[];
+  /**
+   * An `isr` route's `revalidate.onInvalidate`, written for EVERY `isr` route — `'stale'` too — so
+   * a route flipping `'purge'` back to `'stale'` is a change `x manifest diff` can see. Its
+   * presence is also what says this manifest knows the two keys below.
+   */
+  readonly onInvalidate?: 'stale' | 'purge';
+  /** `revalidate.maxStale`, as declared; absent when the route declared none. */
+  readonly maxStale?: string | number;
+  /** `revalidate.query`, sorted; absent when the route declared none (it keys on the whole query). */
+  readonly query?: readonly string[];
   readonly budget?: { readonly js?: string };
   /** Which surface the route lives in — `site` may never import from `app`. */
   readonly surface?: 'site' | 'app' | 'api';

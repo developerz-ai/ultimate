@@ -180,6 +180,7 @@ export {
   routePathFromFile,
 } from './registry';
 export type {
+  InvalidateMode,
   LoadRequirement,
   PrerenderFn,
   RenderResult,
@@ -211,7 +212,7 @@ export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
 export type { CompiledPattern } from './route-pattern';
 export { compilePattern } from './route-pattern';
-export { routeStatusOf, withStatus } from './route-status';
+export { noStore, routeNoStoreOf, routeStatusOf, withStatus } from './route-status';
 export type { SpeculationRules } from './speculation-rules';
 export {
   SPECULATION_RULES_TYPE,

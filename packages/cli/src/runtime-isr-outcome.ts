@@ -2,25 +2,66 @@
 // decided. A returned discriminated outcome, never a throw: the controller's regeneration treats
 // anything thrown as a failure and logs it, and a redirect is an ordinary answer, not a failure.
 
+import { logger } from '@ultimat3/core';
 import type { RedirectIntent, RequestContext, RouteParams } from '@ultimat3/http';
 import { asCtx, takeRedirect } from '@ultimat3/http';
 import type { RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
-import { routeDataFor, routeStatusOf } from '@ultimat3/render';
+import { routeDataFor, routeNoStoreOf, routeStatusOf } from '@ultimat3/render';
 import type { IsrController, IsrEntry } from '@ultimat3/render/server';
-import { isrKey } from '@ultimat3/render/server';
+import { isrKey, isrRequestUrl, undeclaredQuery } from '@ultimat3/render/server';
 
 export type IsrOutcome =
   | { readonly kind: 'page'; readonly result: RenderResult }
   | { readonly kind: 'redirect'; readonly to: RedirectIntent };
 
+/** What `load` and `meta` are given; `url` is a string because that is what `ld.*` embeds. */
+type IsrData = { readonly url: string; readonly params: RouteParams } & Record<string, unknown>;
+
 export interface IsrRequest {
   readonly entry: RouteEntry;
-  /** What `load` and `meta` are given; `url` is a string because that is what `ld.*` embeds. */
-  readonly data: { readonly url: string; readonly params: RouteParams } & Record<string, unknown>;
+  /** The request as it arrived. `load`, `meta` and the page get `keyedData`'s narrowing of it. */
+  readonly data: IsrData;
   readonly ctx: RequestContext;
   readonly isr: IsrController;
-  /** The route's whole document for what `load` returned (`runtime-render.ts`'s `documentFrom`). */
-  readonly document: (loaded: RouteData) => Promise<string>;
+  /**
+   * The route's whole document for what `load` returned (`runtime-render.ts`'s `documentFrom`),
+   * rendered AT the data this file hands it — the narrowed URL, never the request's own.
+   */
+  readonly document: (loaded: RouteData, at: IsrData) => Promise<string>;
+}
+
+/** Route files already told, once, about a request whose query they never declared. */
+const toldUndeclared = new Set<string>();
+
+/** Names are the visitor's: a few, cut short, is all a log line needs to name the edit. */
+const NAMED_PARAMS = 5;
+const NAMED_PARAM_CHARS = 40;
+
+/**
+ * The request narrowed to what the route declared it varies on (`revalidate.query`). ONE narrowing
+ * feeds the store key, `load`, `meta` and the page, so a parameter outside the key cannot reach
+ * the document stored under it.
+ *
+ * A route that declared NOTHING still keys on the whole query, and is told so once, the first time
+ * a visitor uses that: every distinct query string is then a render and a stored page of its own.
+ */
+function keyedData(entry: RouteEntry, data: IsrData): IsrData {
+  const url = new URL(data.url);
+  const declared = entry.config.revalidate?.query ?? null;
+  if (declared === null && !toldUndeclared.has(entry.file)) {
+    const minted = undeclaredQuery(url, declared);
+    if (minted.length > 0) {
+      toldUndeclared.add(entry.file);
+      logger.warn('isr.query.undeclared', {
+        route: entry.file,
+        params: minted.slice(0, NAMED_PARAMS).map((name) => name.slice(0, NAMED_PARAM_CHARS)),
+        cause:
+          'the route declares no revalidate.query, so every distinct query string is rendered and stored as its own page',
+        fix: `revalidate: { query: [] }   // in ${entry.file}; or query: ['<name>'] for each parameter the page varies on`,
+      });
+    }
+  }
+  return { ...data, url: isrRequestUrl(url, declared).href };
 }
 
 /**
@@ -54,11 +95,12 @@ function dropPage(isr: IsrController, key: string): void {
  * the request's own (its `load` may have read a cookie), so a request that joined a run whose load
  * redirected decides for itself, exactly as the static single-flight in `appRoutes` does.
  */
-export async function isrOutcome(request: IsrRequest): Promise<IsrOutcome> {
+export async function isrOutcome(arrived: IsrRequest): Promise<IsrOutcome> {
+  const request: IsrRequest = { ...arrived, data: keyedData(arrived.entry, arrived.data) };
   const { entry, data, ctx, isr } = request;
-  // `isrKey(url, locale)`, never `url.pathname`: the query is part of what was rendered — `meta`
-  // reads `data.url` — so two URLs differing only in their query are two documents (#171). The
-  // locale is `ctx.locale`, the one the `locale` stage negotiated for THIS request.
+  // `isrKey(url, locale)`, never `url.pathname`: the DECLARED query is part of what was rendered —
+  // `meta` reads `data.url` — so two URLs differing in it are two documents (#171). The locale is
+  // `ctx.locale`, the one the `locale` stage negotiated for THIS request.
   const key = isrKey(new URL(data.url), asCtx(ctx).locale);
   let decided: RedirectIntent | undefined;
   // `{ html, status }`, never the bare string: the entry stores the status beside the HTML and
@@ -66,8 +108,13 @@ export async function isrOutcome(request: IsrRequest): Promise<IsrOutcome> {
   const served = await isr.serve(key, async () => {
     const loaded = await routeDataFor(entry.config, data);
     const to = takeRedirect(ctx);
-    if (to === undefined)
-      return { html: await request.document(loaded), status: routeStatusOf(loaded) };
+    if (to === undefined) {
+      return {
+        html: await request.document(loaded, data),
+        status: routeStatusOf(loaded),
+        noStore: routeNoStoreOf(loaded),
+      };
+    }
     // Set by THIS request's producer only. On a stale page it runs behind the answer, and when it
     // has already decided by the time `serve` returns, the redirect is still this request's own.
     decided = to;
@@ -88,7 +135,7 @@ async function ownOutcome(request: IsrRequest): Promise<IsrOutcome> {
   const loaded = await routeDataFor(request.entry.config, request.data);
   const to = takeRedirect(request.ctx);
   if (to !== undefined) return { kind: 'redirect', to };
-  const body = await request.document(loaded);
+  const body = await request.document(loaded, request.data);
   return {
     kind: 'page',
     result: {

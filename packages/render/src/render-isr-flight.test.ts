@@ -6,7 +6,8 @@ import type { CacheTag } from '@ultimat3/cache';
 import { isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import type { Scheduler } from '@ultimat3/core';
 import { clearRoutes, describePages, registerRoute } from './registry';
-import { DEFAULT_ISR_REGENERATE_DEADLINE_MS, isrController, isrKey } from './render-isr';
+import { DEFAULT_ISR_REGENERATE_DEADLINE_MS, isrController } from './render-isr';
+import { isrKey } from './render-isr-key';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 

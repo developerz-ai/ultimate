@@ -43,11 +43,40 @@ export const DEFAULT_ISLAND_HYDRATE: HydrateStrategy = 'interaction';
 export type RouteParams = Readonly<Record<string, string>>;
 export type RouteData = Readonly<Record<string, unknown>>;
 
+/**
+ * What a tag bust does to a stored `isr` page. `'stale'` keeps the copy and answers it once more
+ * while a fresh one renders behind the request; `'purge'` deletes it, on every replica, so the
+ * next request renders and waits — for a page that must come DOWN, not merely catch up.
+ */
+export type InvalidateMode = 'stale' | 'purge';
+
+export const INVALIDATE_MODES: readonly InvalidateMode[] = ['stale', 'purge'];
+
 /** ISR trigger. At least one of `tags` / `ttl` is required by `modes.ts`. */
 export interface RevalidateConfig {
   readonly tags?: readonly CacheTag[];
   /** `'5m'`, `'1h'`, `'7d'` or milliseconds. */
   readonly ttl?: string | number;
+  /**
+   * `'stale'` when omitted. `'purge'` needs `tags` (what it purges by) and a `ttl` (what bounds a
+   * replica the purge never reached), and serves nothing stale past that ttl unless `maxStale` says so.
+   */
+  readonly onInvalidate?: InvalidateMode;
+  /**
+   * How long PAST its `ttl` a stored page may still be answered stale — `'1h'`, milliseconds, or
+   * `0` for never. Older than that, it is rendered again and the request waits. Omitted, there is
+   * no bound (a page nobody asked for in a week answers its next visitor once with last week's
+   * document) — except under `onInvalidate: 'purge'`, where omitted is `0`.
+   */
+  readonly maxStale?: string | number;
+  /**
+   * The query parameters this page varies on. ONLY these are part of the stored page's key and
+   * of the `url` / `query` that `load`, `meta` and the page are given; every other parameter is
+   * dropped before either, so `?utm_source=…` is the same stored page and no visitor can mint one.
+   * `[]` is "none", and what most pages want. OMITTED, the key is the whole query string — any
+   * visitor can then mint stored pages (`x verify` says so) — until the next major makes it `[]`.
+   */
+  readonly query?: readonly string[];
 }
 
 /**

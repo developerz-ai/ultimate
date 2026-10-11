@@ -240,6 +240,10 @@ export const postStatus = {
 export const markPublished = async (orgId: OrgId, id: PostId, at: Date): Promise<PostView> =>
   writeView(await db.posts.update(id, { status: 'published', publishedAt: at }, { orgId }));
 
+/** Back to a draft, and the instant goes with the status: `post_publish_coherent` ties the two. */
+export const markWithdrawn = async (orgId: OrgId, id: PostId): Promise<PostView> =>
+  writeView(await db.posts.update(id, { status: 'draft', publishedAt: null }, { orgId }));
+
 /**
  * Insert-or-ignore: the composite primary key on `likes` makes a replayed offline like a no-op at
  * the storage layer, so the counter cannot drift on reconnect. `upsertAll` resolves with the rows

@@ -30,7 +30,34 @@ export interface IsrEntry {
   readonly status?: number;
 }
 
+/**
+ * A fence the STORE holds, for a store more than one process writes. A process's own fence
+ * (`@ultimat3/cache`'s) only knows the busts that process heard: a replica that began a render
+ * before a purge, and has not yet been told of it, would write the purged page straight back —
+ * and with the bus down it stayed for the page's whole `ttl`. So the purge moves a generation in
+ * the store itself, and a write that read an older one is refused there.
+ *
+ * Keyed by tag ENTITY (`post` for `post` and `post:1` alike), which is coarser than a tag and
+ * errs the safe way: an unrelated row's bust refuses a write, and the next request renders again.
+ * A custom store implements all three over its own backend; `setIfCurrent` must be ATOMIC there
+ * (a transaction, a Lua script, a conditional put) — a read-then-write is the race over again.
+ */
+export interface IsrTagFence {
+  /** An opaque reading of these entities' generations, taken before a render reads its rows. */
+  sample(entities: readonly string[]): string;
+  /** A bust of these entities happened: every reading taken before this call is void. */
+  bump(entities: readonly string[]): void;
+  /** `set(entry)` only while `sampled` is still the reading. `false`: refused, nothing written. */
+  setIfCurrent(entry: IsrEntry, entities: readonly string[], sampled: string): boolean;
+}
+
 export interface IsrStore {
+  /**
+   * Present on a store that is safe to SHARE between processes under `onInvalidate: 'purge'`.
+   * `memoryIsrStore` has it. A store handed to the boot without one is refused there when any
+   * route purges (`X_ROUTE_MODE_INVALID`), rather than left to re-fill a purged page in silence.
+   */
+  readonly tagFence?: IsrTagFence;
   get(path: string): IsrEntry | undefined;
   set(entry: IsrEntry): void;
   /**
@@ -66,19 +93,36 @@ export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
     options.maxEntries ?? DEFAULT_ISR_MAX_ENTRIES,
   );
   const map = new Map<string, IsrEntry>();
+  // One counter per tag entity ever busted — bounded by the entities an app declares.
+  const generations = new Map<string, number>();
+  const reading = (entities: readonly string[]): string =>
+    entities.map((entity) => String(generations.get(entity) ?? 0)).join(',');
+  const set = (entry: IsrEntry): void => {
+    // Re-inserted rather than overwritten, so the Map's iteration order IS generation order and
+    // the first key is the least recently generated page.
+    map.delete(entry.path);
+    map.set(entry.path, entry);
+    while (map.size > maxEntries) {
+      const oldest = map.keys().next();
+      if (oldest.done === true) break;
+      map.delete(oldest.value);
+    }
+  };
   return {
-    get: (path) => map.get(path),
-    set: (entry) => {
-      // Re-inserted rather than overwritten, so the Map's iteration order IS generation order and
-      // the first key is the least recently generated page.
-      map.delete(entry.path);
-      map.set(entry.path, entry);
-      while (map.size > maxEntries) {
-        const oldest = map.keys().next();
-        if (oldest.done === true) break;
-        map.delete(oldest.value);
-      }
+    tagFence: {
+      sample: reading,
+      bump: (entities) => {
+        for (const entity of entities) generations.set(entity, (generations.get(entity) ?? 0) + 1);
+      },
+      // One synchronous step in one process, so the compare and the write cannot be interleaved.
+      setIfCurrent: (entry, entities, sampled) => {
+        if (reading(entities) !== sampled) return false;
+        set(entry);
+        return true;
+      },
     },
+    get: (path) => map.get(path),
+    set,
     // In place: `map.set` on a key the Map already holds keeps its position, and that position is
     // the eviction order. Never `delete` + `set` here — that is the bug this method exists to fix.
     markStale: (path) => {

@@ -1,5 +1,5 @@
 // One `RouteDescriptor`, built from the three fields a service worker reads and defaults for the
-// eleven it does not. Its own file because `sw-artifacts.ts` takes the framework's real descriptor
+// fourteen it does not. Its own file because `sw-artifacts.ts` takes the framework's real descriptor
 // type: a partial cast would let a field the emitter starts reading arrive as `undefined` with no
 // type error, which is the class of defect the `e2e` step exists to catch rather than create.
 
@@ -25,6 +25,9 @@ export const routeDescriptor = (fixture: RouteFixture): RouteDescriptor => ({
   hydrate: 'never',
   revalidateTags: [],
   revalidateTtl: null,
+  revalidateOnInvalidate: 'stale',
+  revalidateMaxStale: null,
+  revalidateQuery: null,
   prerenderable: fixture.mode === 'static',
   dynamic: fixture.dynamic ?? false,
   hasPolicy: false,

@@ -54,6 +54,7 @@ import * as requestPostsExport from '../app/posts/actions/request-posts-export';
 import * as reviewDraft from '../app/posts/actions/review-draft';
 import * as summarize from '../app/posts/actions/summarize';
 import * as summarizePosts from '../app/posts/actions/summarize-posts';
+import * as withdrawPost from '../app/posts/actions/withdraw-post';
 import * as postExcerpts from '../app/posts/backfills/post-excerpts';
 import * as commentPosted from '../app/posts/jobs/comment-posted';
 import * as exportPosts from '../app/posts/jobs/export-posts';
@@ -106,6 +107,7 @@ export const api = defineApi({
     memberAvatar,
     createPost,
     publishPost,
+    withdrawPost,
     createComment,
     requestPostsExport,
     summarize,

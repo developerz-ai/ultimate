@@ -5,125 +5,39 @@
  * and tag-driven staleness (an action's `invalidates` marks exactly the dependent routes).
  */
 
-import type { CacheTag, Revalidator } from '@ultimat3/cache';
+import type { CacheTag, Revalidator, TagRevalidator } from '@ultimat3/cache';
 import {
   dependentsOfKind,
+  EVERY_TAG,
   invalidateTags,
   markInvalidated,
+  parseTag,
   registerDependent,
   registerRevalidator,
   sampleFence,
-  surrogateKeys,
+  tagsIntersect,
   unregisterDependent,
 } from '@ultimat3/cache';
-import type { Scheduler } from '@ultimat3/core';
 import { finiteCount, logger, renderThrowable, singleFlight } from '@ultimat3/core';
-import { unlocalizedPath } from '@ultimat3/i18n';
-import { parseTtlMs } from './duration';
-import { finiteStatus, isRenderStatus } from './finite-status';
+import { finiteStatus } from './finite-status';
 import type { RouteDescriptor } from './registry';
 import { describePages } from './registry';
-import type { IsrEntry, IsrState, IsrStore } from './render-isr-store';
+import { DEFAULT_ISR_FAILURE_COOLDOWN_MS, failureCooldown } from './render-isr-cooldown';
+import { entryTtlMs, isrResult } from './render-isr-result';
+import type { IsrPolicy } from './render-isr-routes';
+import { isrPolicyOf, isrRouteFor } from './render-isr-routes';
+import type { IsrEntry } from './render-isr-store';
 import { memoryIsrStore } from './render-isr-store';
-import { contentHash, staticHeaders } from './render-static';
+import type {
+  Generation,
+  IsrController,
+  IsrControllerOptions,
+  IsrFence,
+  IsrRendered,
+  IsrRenderFn,
+} from './render-isr-types';
+import { contentHash } from './render-static';
 import type { RenderResult } from './route';
-import { compilePattern } from './route-pattern';
-
-/**
- * The reserved query parameter the negotiated locale rides in. A parameter and not a prefix
- * because `routePathOf` splits a key at its `?`: a `es:/blog` key would match no route, so
- * `descriptorFor` would answer `undefined` and a declared `revalidate: { ttl }` would silently
- * become tag-only. Reserved spelling, so an app's own `?locale=` stays its own dimension.
- */
-export const ISR_LOCALE_PARAM = '__x_locale';
-
-/**
- * The ISR store key for one request URL: pathname, the negotiated LOCALE, and the query, **params
- * sorted**.
- *
- * Exported because deriving it is the caller's job and there may only be ONE derivation — a
- * server that keyed on `url.pathname` while the store believed it held a whole URL is the shape
- * of #171. Sorting makes `?a=1&b=2` and `?b=2&a=1` one entry rather than two renders of one page.
- *
- * The locale is REQUIRED, and required as an argument rather than read from the ambient context so
- * that every call site has to answer: a document is rendered with `<html lang>` and every `t()` in
- * the request's own locale, so one entry per path served visitor 2 the document negotiated for
- * visitor 1 — for the whole TTL, and with `s-maxage` telling the CDN to do the same. The time zone
- * is deliberately NOT a dimension: it is unbounded where a locale set is declared, and an `isr`
- * page is a shared artifact, so a date on one belongs in an explicit zone the page itself names.
- *
- * A query-carrying URL therefore gets its own entry, which is correct and is not free: a crawler
- * appending `?utm_source=…` mints one entry per value. That is bounded, not unbounded —
- * `DEFAULT_ISR_MAX_ENTRIES` evicts least-recently-generated first — and a bounded cache that
- * thrashes is the right failure next to an unbounded one that answers the wrong document.
- */
-export function isrKey(url: URL, locale: string): string {
-  const params = new URLSearchParams(url.search);
-  params.set(ISR_LOCALE_PARAM, locale);
-  params.sort();
-  return `${url.pathname}?${params.toString()}`;
-}
-
-/**
- * The path the ROUTE TABLE knows a key by. Every lookup that asks the table a question — the
- * descriptor, and therefore the TTL and the tags — has to undo what the key carries beyond the
- * route, in the order the router does before it matches (`@ultimat3/http`'s `routing` stage):
- *
- * - the query: `descriptorFor('/blog?page=2')` matches no route;
- * - the routed locale prefix: `/en/blog/a` is the `/blog/:slug` route in English. The key KEEPS the
- *   prefix — it is the URL the document was rendered for, `canonical` and all — and the table has
- *   never heard of it. Left on, a prefixed page matched no route: `ttlMs: null` and no tag edge, so
- *   it was fresh forever while the default locale's copy of the same page went stale on schedule.
- *
- * `unlocalizedPath` is i18n's, the one the router's own split is built on: a segment that names no
- * routed locale is left alone, so `/fr/blog` is still no route.
- */
-function routePathOf(key: string): string {
-  const query = key.indexOf('?');
-  return unlocalizedPath(query === -1 ? key : key.slice(0, query));
-}
-
-/**
- * A render that also answers a status — what a loader's `withStatus(404, …)` becomes once the
- * document is built. A bare string is the 200 every render before this one was: the union is
- * additive, and a render function that never learned the object shape keeps compiling.
- */
-export interface IsrRendered {
-  readonly html: string;
-  readonly status: number;
-}
-
-export type IsrRenderFn = (path: string) => string | IsrRendered | Promise<string | IsrRendered>;
-
-/** One shape for the generator, so nothing below branches on what the render handed back. */
-function renderedOf(rendered: string | IsrRendered): IsrRendered {
-  return typeof rendered === 'string' ? { html: rendered, status: 200 } : rendered;
-}
-
-export interface IsrServeResult {
-  readonly state: IsrState;
-  readonly entry: IsrEntry;
-  readonly result: RenderResult;
-  /** True when this request started a background regeneration. */
-  readonly regenerating: boolean;
-}
-
-export interface IsrControllerOptions {
-  readonly store?: IsrStore;
-  readonly buildId?: string;
-  readonly now?: () => number;
-  /** Route table provider — defaults to the real registry. */
-  readonly routes?: () => readonly RouteDescriptor[];
-  /** ISR-route dependents for a tag set; defaults to `@ultimat3/cache`'s graph. */
-  readonly isrDependents?: (tags: readonly CacheTag[]) => readonly string[];
-  /**
-   * How long one regeneration may hold its path, in whole ms (≥ 1). Defaults to
-   * `DEFAULT_ISR_REGENERATE_DEADLINE_MS`. There is no "forever": that is the bug it bounds.
-   */
-  readonly regenerateDeadlineMs?: number | undefined;
-  /** Injected so the deadline is provable without waiting one out. */
-  readonly schedule?: Scheduler | undefined;
-}
 
 /**
  * The ceiling on one regeneration's hold on its path — `@ultimat3/http`'s default
@@ -135,21 +49,18 @@ export interface IsrControllerOptions {
  */
 export const DEFAULT_ISR_REGENERATE_DEADLINE_MS = 30_000;
 
-export interface IsrController {
-  serve(path: string, render: IsrRenderFn): Promise<IsrServeResult>;
-  /** Single-flight: concurrent callers for the same path share one render. */
-  regenerate(path: string, render: IsrRenderFn): Promise<IsrEntry>;
-  markStale(path: string): boolean;
-  /** Mark every ISR page the cache graph says depends on these tags. */
-  revalidateByTags(tags: readonly CacheTag[]): readonly string[];
-  inflight(): number;
-  store(): IsrStore;
-  /**
-   * Register this controller as the framework's revalidator, so
-   * `action({ cache: { invalidates: [tag.post] } })` reaches ISR in the same hop as
-   * memo, LRU, Redis and the CDN. Returns a detach function for tests and reloads.
-   */
-  attach(): () => void;
+/** A 5xx is the app's "the read failed, ask again" — an answer about a moment, never a document. */
+const isServerError = (status: number): boolean => status >= 500;
+
+const PROCESS_FENCE: IsrFence = { sample: sampleFence, mark: markInvalidated };
+
+/** The store's fence is keyed by tag ENTITY: `post` for `post` and `post:1` alike. */
+const entitiesOf = (tags: readonly CacheTag[]): readonly string[] =>
+  [...new Set(tags.map((one) => one.entity))].sort();
+
+/** One shape for the generator, so nothing below branches on what the render handed back. */
+function renderedOf(rendered: string | IsrRendered): IsrRendered {
+  return typeof rendered === 'string' ? { html: rendered, status: 200 } : rendered;
 }
 
 /**
@@ -185,16 +96,17 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
    */
   const latest = new Map<string, object>();
   const registered = new Set<string>();
+  const fences = options.fence ?? PROCESS_FENCE;
+  const failed = failureCooldown<Generation>(
+    finiteCount(
+      'isrController',
+      'failureCooldownMs',
+      options.failureCooldownMs ?? DEFAULT_ISR_FAILURE_COOLDOWN_MS,
+    ),
+    now,
+  );
 
-  function descriptorFor(key: string): RouteDescriptor | undefined {
-    const path = routePathOf(key);
-    const table = routes();
-    return table.find((r) => r.path === path) ?? matchersOf(table).find((m) => m.test(path))?.route;
-  }
-
-  /** The route's `revalidate.tags` for a store key — what its document is purged by at the edge. */
-  const tagsOf = (key: string): readonly CacheTag[] =>
-    (descriptorFor(key)?.revalidateTags ?? []).map(parseWireTag);
+  const descriptorFor = (key: string): RouteDescriptor | undefined => isrRouteFor(routes(), key);
 
   /**
    * A rendered page joins the invalidation graph under its route's tags, so `/blog/a` and
@@ -203,8 +115,13 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
   function registerPath(path: string, descriptor: RouteDescriptor | undefined): void {
     if (descriptor === undefined || registered.has(path)) return;
     if (descriptor.revalidateTags.length === 0) return;
-    registerDependent(descriptor.revalidateTags.map(parseWireTag), { kind: 'isr-route', id: path });
+    registerDependent(descriptor.revalidateTags.map(parseTag), { kind: 'isr-route', id: path });
     registered.add(path);
+  }
+
+  function forgetPath(path: string): void {
+    if (!registered.delete(path)) return;
+    unregisterDependent({ kind: 'isr-route', id: path });
   }
 
   /**
@@ -216,12 +133,10 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
    */
   function forgetEvictedPaths(): void {
     if (registered.size === 0) return;
-    const live = new Set(store.paths());
-    for (const path of registered) {
-      if (live.has(path)) continue;
-      unregisterDependent({ kind: 'isr-route', id: path });
-      registered.delete(path);
-    }
+    // A page whose FIRST render is still running is in no store yet and is not evicted: forgotten
+    // here, a bust arriving before it settled found it in neither the graph nor the store.
+    const live = new Set([...store.paths(), ...flight.keys()]);
+    for (const path of registered) if (!live.has(path)) forgetPath(path);
   }
 
   function isFresh(entry: IsrEntry): boolean {
@@ -231,13 +146,25 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
     return now() - entry.generatedAt < ttlMs;
   }
 
+  /**
+   * `revalidate.maxStale`: past its TTL by more than the route allows, a copy is not an answer any
+   * more. Without a bound, stale-while-revalidate serves the stored page ONCE MORE however old it
+   * is — a page nobody asked for in a week answers its next visitor with last week's document.
+   */
+  function pastMaxStale(entry: IsrEntry, policy: IsrPolicy): boolean {
+    const ttlMs = entryTtlMs(entry);
+    if (policy.maxStaleMs === null || ttlMs === null) return false;
+    return now() - entry.generatedAt >= ttlMs + policy.maxStaleMs;
+  }
+
   /** One regeneration of `path`; `led` is told when THIS call started it rather than joined one. */
-  function regenerateOnce(path: string, render: IsrRenderFn, led?: () => void): Promise<IsrEntry> {
-    return flight.run(path, async (): Promise<IsrEntry> => {
+  function generate(path: string, render: IsrRenderFn, led?: () => void): Promise<Generation> {
+    return flight.run(path, async (): Promise<Generation> => {
       led?.();
       const run = {};
       latest.set(path, run);
       const descriptor = descriptorFor(path);
+      const policy = isrPolicyOf(descriptor);
       try {
         // BEFORE the render, not after: `revalidateByTags` reads the graph, so a bust arriving
         // while a cold path's first render was in flight could not see the page it was
@@ -248,44 +175,142 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
         // and a `markStale` landing in between was then ERASED by `store.set({ stale: false })`.
         // For a tag-only route `isFresh` is true forever, so the process went on serving pre-write
         // HTML for the rest of its life. One mechanism, not a second one grown here.
-        const fence = sampleFence({
-          key: path,
-          tags: (descriptor?.revalidateTags ?? []).map(parseWireTag),
-        });
-        const { html, status } = renderedOf(await render(path));
+        const fence = fences.sample({ key: path, tags: policy.tags });
+        // And the STORE's own fence, for a store another process writes: read before the rows are.
+        const entities = entitiesOf(policy.tags);
+        const reading = store.tagFence?.sample(entities);
+        const rendered = renderedOf(await render(path));
         const entry: IsrEntry = {
           path,
-          html,
-          hash: contentHash(html),
+          html: rendered.html,
+          hash: contentHash(rendered.html),
           generatedAt: now(),
-          ttlMs: parseTtlMs(descriptor?.revalidateTtl),
+          ttlMs: policy.ttlMs,
           stale: false,
           // Screened at generation, the one place a status enters the store: a `NaN` written here
           // would be served for the whole TTL as a `RangeError` on every hit.
-          status: finiteStatus('IsrRenderFn', status),
+          status: finiteStatus('IsrRenderFn', rendered.status),
         };
-        // Refused, never published stale-flagged: the next request re-renders from rows that now
-        // include the write, where a stored-but-stale entry would serve this pre-write body once
-        // more before doing the same thing. Refused too once a newer run started (`latest`).
-        if (fence.isValid() && latest.get(path) === run) store.set(entry);
+        const current = latest.get(path) === run;
+        const unstorable = isServerError(rendered.status) || rendered.noStore === true;
+        // Kept only when nothing invalidated the page while it rendered — in this process (the
+        // fence) or in any other (the store's) — and no newer run started. Refused, never
+        // published stale-flagged: the next request re-renders from rows that include the write.
+        const kept = !unstorable && fence.isValid() && current && write(entry, entities, reading);
+        if (isServerError(rendered.status)) {
+          // Never stored, and never over a good copy: one upstream blip stored for the TTL plus a
+          // stale serve was minutes of 503 for a read that recovered in a second. The copy the
+          // store holds stays (still stale, so the next request tries again); a miss has none, and
+          // answers this 5xx to its own request only.
+          logger.warn('isr.render.unstored', { path, status: String(rendered.status) });
+        } else if (rendered.noStore === true) {
+          // The loader's answer is not a failure, so the copy held is no longer the page.
+          if (current) store.delete(path);
+        }
         forgetEvictedPaths();
-        return entry;
+        // What the store did not keep, the edge may not keep either: a page rendered from rows
+        // read BEFORE a purge would otherwise reach the CDN after the purge had already run there.
+        return { entry, cacheable: kept, fenced: !unstorable && !kept };
       } finally {
         if (latest.get(path) === run) latest.delete(path);
       }
     });
   }
 
-  function regenerate(path: string, render: IsrRenderFn): Promise<IsrEntry> {
-    return regenerateOnce(path, render);
+  /** The one write: through the store's own fence when it has one, so a stale reading is refused. */
+  function write(
+    entry: IsrEntry,
+    entities: readonly string[],
+    reading: string | undefined,
+  ): boolean {
+    if (store.tagFence === undefined || reading === undefined) {
+      store.set(entry);
+      return true;
+    }
+    return store.tagFence.setIfCurrent(entry, entities, reading);
+  }
+
+  /**
+   * A generation FOR one request. A request that joined a render someone else started may have
+   * arrived after the bust that fenced it, so it does not take that page: it renders once more,
+   * and by then the fenced flight has settled, so this one began after the bust. A 5xx is
+   * remembered for the cooldown, so the requests right behind it are not each a failing render.
+   */
+  async function generateFor(path: string, render: IsrRenderFn): Promise<Generation> {
+    let led = false;
+    const lead = (): void => {
+      led = true;
+    };
+    const joined = await generate(path, render, lead);
+    const made = !led && joined.fenced ? await generate(path, render) : joined;
+    if (isServerError(made.entry.status ?? 200)) failed.remember(path, made);
+    return made;
+  }
+
+  async function regenerate(path: string, render: IsrRenderFn): Promise<IsrEntry> {
+    return (await generate(path, render)).entry;
   }
 
   function markStale(path: string): boolean {
     // The mark is recorded whether or not the store holds the page: a regeneration already in
     // flight for a path this store has never held is exactly the case the fence above exists for,
     // and `invalidateTags`' own fanout only marks the TAGS.
-    markInvalidated({ key: path });
+    fences.mark({ key: path });
     return store.markStale(path);
+  }
+
+  /**
+   * What a tag bust does to one page, as its route declared (`revalidate.onInvalidate`). `'purge'`
+   * DELETES: the next request is a miss that renders and blocks, where `'stale'` answers the copy
+   * once more, however old — the right trade for a price list, and the wrong one for an article
+   * that was withdrawn. The fence is voided either way, so a render in flight cannot put it back —
+   * and its FLIGHT is evicted, so a request arriving after this call leads a render of its own
+   * instead of joining one that read its rows before the write (up to the 30 s deadline of them).
+   */
+  function invalidate(path: string): void {
+    failed.clear(path);
+    flight.evict(path);
+    if (isrPolicyOf(descriptorFor(path)).onInvalidate !== 'purge') {
+      markStale(path);
+      return;
+    }
+    fences.mark({ key: path });
+    store.delete(path);
+    forgetPath(path);
+  }
+
+  /**
+   * Everything HELD under these tags, asked of the store, the flights and the route table rather
+   * than of the graph. The graph is this process's memory of what it rendered: an entry another
+   * controller wrote into a shared store, one that outlived a restart, or a cold page whose first
+   * render is still running, has no edge there — and under `'purge'` that is the withdrawn page,
+   * still served. No route carrying the tags is the common case, and costs no store read.
+   *
+   * By ROUTE tags: a row bust (`post:1`) reaches every stored page of a route tagged `post`. An
+   * entry records no tags of its own, so this errs toward one render too many, never one too few.
+   */
+  function revalidateHeld(tags: readonly CacheTag[] | typeof EVERY_TAG): readonly string[] {
+    const table = routes();
+    // A flush (`EVERY_TAG`) is a bust of every tag at once: every route that carries one owns.
+    const owns = (route: RouteDescriptor): boolean =>
+      tags === EVERY_TAG
+        ? route.revalidateTags.length > 0
+        : tagsIntersect(tags, route.revalidateTags.map(parseTag));
+    const owners = new Set(table.filter(owns));
+    if (owners.size === 0) return [];
+    const owned = (key: string): boolean => {
+      const route = isrRouteFor(table, key);
+      return route !== undefined && owners.has(route);
+    };
+    // The store's fence FIRST: a write racing this call from another process is refused from here.
+    const busted =
+      tags === EVERY_TAG ? [...owners].flatMap((r) => r.revalidateTags.map(parseTag)) : tags;
+    store.tagFence?.bump(entitiesOf(busted));
+    for (const key of flight.keys()) if (owned(key)) invalidate(key);
+    const held = store.paths().filter(owned);
+    // A page the graph already named was marked a moment ago; it is reported, not marked twice.
+    for (const path of held) if (store.get(path)?.stale !== true) invalidate(path);
+    return held;
   }
 
   return {
@@ -295,56 +320,73 @@ export function isrController(options: IsrControllerOptions = {}): IsrController
     markStale,
 
     async serve(path, render) {
-      const cached = store.get(path);
+      const descriptor = descriptorFor(path);
+      const policy = isrPolicyOf(descriptor);
+      const answer = (entry: IsrEntry, servedStale = false, cacheable = true): RenderResult =>
+        isrResult(entry, {
+          buildId,
+          policy,
+          servedStale,
+          cacheable,
+          ageMs: Math.max(0, now() - entry.generatedAt),
+        });
+      let cached = store.get(path);
+      if (cached !== undefined && pastMaxStale(cached, policy)) {
+        store.delete(path);
+        cached = undefined;
+      }
 
       if (cached === undefined) {
-        const entry = await regenerate(path, render);
-        const result = toResult(entry, buildId, tagsOf(path));
-        return { state: 'miss', entry, result, regenerating: false };
+        const made = failed.get(path) ?? (await generateFor(path, render));
+        const result = answer(made.entry, false, made.cacheable);
+        return { state: 'miss', entry: made.entry, result, regenerating: false };
       }
 
+      // A hit on a page ANOTHER controller rendered into a shared store joins the graph here, so
+      // the report of the next bust names it; the bust itself reaches it through `heldUnder`.
+      registerPath(path, descriptor);
       if (isFresh(cached)) {
-        return {
-          state: 'hit',
-          entry: cached,
-          result: toResult(cached, buildId, tagsOf(path)),
-          regenerating: false,
-        };
+        return { state: 'hit', entry: cached, result: answer(cached), regenerating: false };
       }
 
-      // stale-while-revalidate: answer from the stale copy now, refresh behind the request.
+      // stale-while-revalidate: answer from the stale copy now, refresh behind the request —
+      // unless the last refresh just failed, which the next one a moment later would repeat.
       let started = false;
-      void regenerateOnce(path, render, () => {
+      if (failed.get(path) !== undefined) {
+        return { state: 'stale', entry: cached, result: answer(cached, true), regenerating: false };
+      }
+      void generate(path, render, () => {
         started = true;
-      }).catch((error: unknown) => {
-        // `renderThrowable`, never `.message`/`String()`: this `.catch` is the last frame under a
-        // route's own render function, and `String()` raises on a null-prototype object — the
-        // handler that exists to REPORT the failure became a second, unhandled rejection.
-        logger.warn('isr.regenerate.failed', { path, error: renderThrowable(error) });
-      });
-      return {
-        state: 'stale',
-        entry: cached,
-        result: toResult(cached, buildId, tagsOf(path), true),
-        regenerating: started,
-      };
+      })
+        .then((made) => {
+          if (isServerError(made.entry.status ?? 200)) failed.remember(path, made);
+        })
+        .catch((error: unknown) => {
+          // `renderThrowable`, never `.message`/`String()`: this `.catch` is the last frame under a
+          // route's own render function, and `String()` raises on a null-prototype object — the
+          // handler that exists to REPORT the failure became a second, unhandled rejection.
+          logger.warn('isr.regenerate.failed', { path, error: renderThrowable(error) });
+        });
+      return { state: 'stale', entry: cached, result: answer(cached, true), regenerating: started };
     },
 
     revalidateByTags(tags) {
-      const affected = new Set<string>();
-      for (const path of isrDependents(tags)) {
-        markStale(path);
-        affected.add(path);
-      }
+      // By TAG first, as `invalidateTags` does before it calls in here: a cold page whose first
+      // render is running may be in neither the graph nor the store, and only its fence finds it.
+      fences.mark({ tags });
+      const affected = new Set<string>(isrDependents(tags));
+      for (const path of affected) invalidate(path);
+      for (const path of revalidateHeld(tags)) affected.add(path);
       return [...affected].sort();
     },
 
     attach() {
-      // The cache fanout owns the trigger; render owns only "what does stale mean here".
+      // The cache fanout owns the trigger; render owns only "what does an invalidation mean here".
       const revalidate: Revalidator = (path) => {
-        markStale(path);
+        invalidate(path);
       };
-      registerRevalidator(revalidate);
+      const revalidateTags: TagRevalidator = (tags) => revalidateHeld(tags);
+      registerRevalidator(revalidate, revalidateTags);
       installedRevalidator = revalidate;
       return () => {
         for (const path of registered) unregisterDependent({ kind: 'isr-route', id: path });
@@ -374,114 +416,4 @@ export async function invalidateAndRevalidate(
 ): Promise<readonly string[]> {
   const report = await invalidateTags(tags);
   return report.isr;
-}
-
-/** `post` / `post:123` → `{ entity, id? }`. Mirrors `@ultimat3/cache`'s wire form. */
-function parseWireTag(wire: string): CacheTag {
-  const split = wire.indexOf(':');
-  if (split === -1) return { entity: wire };
-  return { entity: wire.slice(0, split), id: wire.slice(split + 1) };
-}
-
-interface RouteMatcher {
-  readonly route: RouteDescriptor;
-  test(storedPath: string): boolean;
-}
-
-/** One compiled set per route TABLE — `describePages()` hands out one array per registry change. */
-const compiledTables = new WeakMap<readonly RouteDescriptor[], readonly RouteMatcher[]>();
-
-/**
- * A stored path belongs to a route when the route's pattern matches it — `route-pattern.ts`'s one
- * pattern compiler, never a second. Ordered MOST SPECIFIC FIRST, as `@ultimat3/http`'s trie
- * resolves a request: segment by segment, a static beats a `:param` beats a `*catch-all`. In table
- * order `/docs/*path` sorts before `/docs/:id`, so the first match gave `/docs/7` the catch-all's
- * TTL and tags — a page rendered by one route and expired by another's clock.
- */
-function matchersOf(table: readonly RouteDescriptor[]): readonly RouteMatcher[] {
-  const cached = compiledTables.get(table);
-  if (cached !== undefined) return cached;
-  // Static routes too: `/precios-españa` is the route's path and `/precios-espa%C3%B1a` the key's,
-  // so only the pattern (raw or encoded, per character) finds it.
-  const compiled = table
-    .map((route): RouteMatcher & { readonly specificity: number } => {
-      const { regex, specificity } = compilePattern(route.path);
-      return { route, specificity, test: (stored) => regex.test(stored) };
-    })
-    .sort((a, b) => b.specificity - a.specificity);
-  compiledTables.set(table, compiled);
-  return compiled;
-}
-
-/** Tag-only routes have no clock of their own; a tag bust reaches the CDN through the fanout. */
-const TAG_ONLY_S_MAX_AGE_SECONDS = 60;
-
-/**
- * `IsrStore` is a driver seam, so an entry can come back from an app's own store — one backed by
- * Redis round-trips it through JSON, where a `ttlMs` that was never written reads back as
- * `undefined` and `entry.ttlMs === null` is then false. Two failures follow from that one value
- * and neither raises: `now - generatedAt < NaN` is false, so the page is NEVER fresh and every
- * request regenerates it, and the CDN is handed `s-maxage=NaN` — an unparseable directive a
- * conforming cache IGNORES, dropping the page to heuristic caching rather than to the declared
- * age. Read on the request path, so it is TOTAL rather than a throw: a ttl that is not a positive
- * finite number of milliseconds is the tag-only `null` `parseTtlMs` would have answered for it.
- */
-function entryTtlMs(entry: IsrEntry): number | null {
-  const ttlMs = entry.ttlMs;
-  if (ttlMs === null || (Number.isFinite(ttlMs) && ttlMs > 0)) return ttlMs;
-  logger.warn('isr.entry_ttl_invalid', { path: entry.path, ttlMs: String(ttlMs) });
-  return null;
-}
-
-/**
- * The declared TTL is the route's own contract with the CDN: a shared cache must not hold the
- * page longer than the app said it stays true. A flat `s-maxage=60` made `revalidate: { ttl:
- * '5m' }` a lie in one direction and `ttl: '30s'` a lie in the other.
- */
-function cacheControl(ttlMs: number | null): string {
-  const sMaxAge = ttlMs === null ? TAG_ONLY_S_MAX_AGE_SECONDS : Math.round(ttlMs / 1_000);
-
-  return `public, max-age=0, s-maxage=${sMaxAge}, stale-while-revalidate=86400`;
-}
-
-/**
- * `entryTtlMs`'s reason, one field over: a store may hand back an entry with no `status`, or one
- * that JSON turned into something else, on the request path. Absent is 200 — the only value any
- * entry carried before the field existed — and anything the range refuses is 200 with a warning,
- * because a stored number must not 500 the page for its whole TTL.
- */
-function entryStatus(entry: IsrEntry): number {
-  const status = entry.status;
-  if (status === undefined) return 200;
-  if (isRenderStatus(status)) return status;
-  logger.warn('isr.entry_status_invalid', { path: entry.path, status: String(status) });
-  return 200;
-}
-
-function toResult(
-  entry: IsrEntry,
-  buildId: string,
-  tags: readonly CacheTag[],
-  servedStale = false,
-): RenderResult {
-  const headers: Record<string, string> = {
-    ...staticHeaders(entry.hash, buildId),
-    'cache-control': cacheControl(entryTtlMs(entry)),
-    // The store keys on the locale; a shared cache in front of it has to as well, or the CDN
-    // repeats the bug this entry was split to fix. `ssrHeaders`' own line, for the same reason.
-    // The rest of the shared key — the cookie, the zone — is added by `@ultimat3/http`'s
-    // `cache-headers` stage, which sees the actor this function cannot.
-    vary: 'accept-language',
-  };
-  // The keys an edge purges this document by — `@ultimat3/cache`'s list, never a second one, so
-  // what a bust sends and what the page carries cannot drift. Absent, an `invalidates` cleared
-  // every tier but the CDN, which held the document for its whole `s-maxage`. The tags were
-  // screened when the route registered (`registry.ts`), so this cannot refuse on the request path.
-  const keys = surrogateKeys(tags, 'isr');
-  if (keys.length > 0) {
-    headers['surrogate-key'] = keys.join(' ');
-    headers['cache-tag'] = keys.join(',');
-  }
-  if (servedStale) headers['x-ultimate-isr'] = 'stale';
-  return { status: entryStatus(entry), headers, body: entry.html };
 }

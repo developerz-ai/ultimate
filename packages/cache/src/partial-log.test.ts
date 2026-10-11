@@ -8,6 +8,7 @@ import { type LogLevel, setLogSink } from '@ultimat3/core';
 import {
   invalidateTags,
   isolateTiers,
+  purgeEdgeAgain,
   registerInvalidationBroadcast,
   registerTier,
   resetTiers,
@@ -107,5 +108,42 @@ describe('cache.invalidate.partial through a bus outage', () => {
     // The broadcast's 5th is silent; redis's 2nd is not.
     expect(lines).toHaveLength(4);
     expect(lines.every((line) => line.level === 'warn')).toBe(true);
+  });
+
+  // The edge is purged LAST in a bust, and AGAIN when a deferred batch finally reaches the peers
+  // (`purgeEdgeAgain`). An edge that refuses for a whole outage is one condition across both.
+  test('an edge that keeps refusing is thinned across the bust and the second purge, and one line ends it', async () => {
+    let edgeUp = false;
+    registerTier({
+      ...lruTier({ maxBytes: 10_000, defaultTtlMs: 3_600_000 }),
+      name: 'cdn',
+      invalidateTags: () =>
+        edgeUp
+          ? Promise.resolve({ tier: 'cdn', keys: [] })
+          : Promise.reject(new TypeError('the purge API is away')),
+    });
+
+    // Ten busts, each followed by the deferred publish's second purge: twenty refusals.
+    for (let bust = 0; bust < 10; bust += 1) {
+      const report = await invalidateTags([tag('post', String(bust))]);
+      expect(report.errors).toEqual([{ tier: 'cdn', message: 'TypeError: the purge API is away' }]);
+      expect(await purgeEdgeAgain([`post:${bust}`])).toEqual([]);
+    }
+    expect(lines.map((line) => [line.level, line.msg, line.fields['failures']])).toEqual(
+      [1, 2, 4, 8, 16].map((failures) => ['warn', INVALIDATE_PARTIAL, failures]),
+    );
+    // The 2nd refusal was the second purge's: its line carries the tags it was purging.
+    expect(lines[1]?.fields['tags']).toEqual(['post:0']);
+
+    edgeUp = true;
+    expect((await purgeEdgeAgain(['post:9'])).map((entry) => entry.tier)).toEqual(['cdn']);
+    await invalidateTags([tag('post', 'after')]);
+    expect(lines.slice(5)).toEqual([
+      {
+        level: 'info',
+        msg: `${INVALIDATE_PARTIAL} recovered`,
+        fields: expect.objectContaining({ tier: 'cdn', after: 20 }),
+      },
+    ]);
   });
 });

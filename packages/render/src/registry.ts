@@ -5,15 +5,12 @@
  * from. Nothing downstream may keep its own list of routes.
  */
 
-import type { CacheTag } from '@ultimat3/cache';
-import { serializeTag, surrogateKeys } from '@ultimat3/cache';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
-import { finiteCount, isUltimateError, renderFixLiteral } from '@ultimat3/core';
+import { finiteCount } from '@ultimat3/core';
 import { byCodeUnit } from './code-unit-order';
 import {
   RouteDuplicateError,
   RouteFileInvalidError,
-  RouteModeInvalidError,
   RouteUnnormalizedError,
   SurfaceBoundaryError,
 } from './errors';
@@ -27,7 +24,8 @@ import {
   mountedRoutes,
   setMountedRoutes,
 } from './mounted-routes';
-import type { RouteConfig, RouteData } from './route';
+import { assertPurgeableTags } from './revalidate-shape';
+import type { InvalidateMode, RouteConfig, RouteData } from './route';
 import { isRouteConfig, routeTagKeys } from './route';
 import type { RouteComponent } from './route-component';
 import type { CompiledPattern } from './route-pattern';
@@ -70,6 +68,17 @@ export interface RouteDescriptor {
   readonly hydrate: HydrateStrategy;
   readonly revalidateTags: readonly string[];
   readonly revalidateTtl: string | number | null;
+  /**
+   * The three below are optional so a descriptor built by hand before they existed still
+   * typechecks; the registry always writes them. Absent reads as `'stale'`, unbounded, undeclared.
+   */
+  readonly revalidateOnInvalidate?: InvalidateMode;
+  readonly revalidateMaxStale?: string | number | null;
+  /**
+   * `revalidate.query`, sorted: the only query parameters an `isr` page of this route keys on.
+   * `null` when the route declared none — its pages then key on the WHOLE query string.
+   */
+  readonly revalidateQuery?: readonly string[] | null;
   readonly prerenderable: boolean;
   readonly dynamic: boolean;
   readonly hasPolicy: boolean;
@@ -235,27 +244,6 @@ export interface RegisterRouteInput<TData = RouteData> {
   readonly path?: string;
   /** The page component, resolved from the module by `pageComponentOf`. */
   readonly component?: RouteComponent;
-}
-
-/**
- * A `revalidate.tags` entry goes out as a purge key on every response of the route
- * (`render-isr.ts`), so one a CDN would split is refused HERE, naming the file. Asked of
- * `@ultimat3/cache`'s own screen rather than restated: found at serve time it is a 500 on a
- * public page, found at purge time it is a document nothing can clear.
- */
-function assertPurgeableTags(file: string, tags: readonly CacheTag[] | undefined): void {
-  for (const owned of tags ?? []) {
-    try {
-      surrogateKeys([owned], file);
-    } catch (error) {
-      if (!isUltimateError(error) || error.code !== 'X_CACHE_PURGE_FAILED') throw error;
-      const wire = renderFixLiteral(serializeTag(owned), '<the tag>');
-      throw new RouteModeInvalidError(
-        `${file} declares revalidate tag ${wire}, which cannot be a CDN purge key — a key is split on whitespace and commas and capped at 1024 bytes, so every response of the route would carry one no purge can name`,
-        `edit revalidate.tags in ${file}: replace ${wire} with a tag whose entity and id carry no whitespace or comma`,
-      );
-    }
-  }
 }
 
 /** Register a route and enforce every invariant that needs the surrounding module. */
@@ -461,6 +449,10 @@ const descriptorOf = (
   hydrate: config.hydrate,
   revalidateTags: routeTagKeys(config.revalidate?.tags),
   revalidateTtl: config.revalidate?.ttl ?? null,
+  revalidateOnInvalidate: config.revalidate?.onInvalidate ?? 'stale',
+  revalidateMaxStale: config.revalidate?.maxStale ?? null,
+  revalidateQuery:
+    config.revalidate?.query === undefined ? null : [...new Set(config.revalidate.query)].sort(),
   prerenderable: config.prerender !== undefined,
   dynamic: params > 0,
   hasPolicy: config.policy !== undefined,

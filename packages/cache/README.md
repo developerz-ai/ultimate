@@ -283,6 +283,22 @@ one naming the span that triggered it. That is the log the `/_x` cache panel ren
 actually clear?" is answerable without a log dive because the one fan-out path retained the
 answer, not because a second recorder was wired next to it.
 
+### The order of one bust
+
+Read tiers, farthest first (`redis` → `lru` → `request-memo`) → the ISR revalidators → the
+broadcast to peers → the `cdn` tier **last**. The edge holds responses, not values a render reads:
+purged before the origin dropped its own page, it was handed that page again by the next request
+and kept it for a whole `s-maxage`. `report.tiers` is still the ladder in read order.
+
+### The ISR holder is asked by tag
+
+`registerRevalidator(byPath, byTags?)` takes both halves in one call (`@ultimat3/render`'s
+controller is the caller). `byPath` is told each `isr-route` dependent the graph holds; `byTags`
+(`TagRevalidator`) is handed the busted tags and answers the paths it revalidated — the pages its
+STORE holds under them, which the graph cannot know when two controllers share a store or an entry
+outlived the process that rendered it. Both lists are one `report.isr`; a rejection is a
+`report.errors` row (`tier: 'isr'`), never a failed bust. Omitting `byTags` clears the previous one.
+
 ### Across instances
 
 `invalidateTags` clears the tiers of the process that called it. On a fleet that is one pod: a user

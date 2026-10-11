@@ -40,6 +40,15 @@ export interface SingleFlight {
   ): Promise<T>;
   /** In-flight loads right now. A number that does not fall back to `0` is a leak. */
   readonly size: number;
+  /** The keys held by a load right now — what a caller that must `evict` by a rule walks. */
+  keys(): readonly string[];
+  /**
+   * Free `key` NOW, so the next `run` leads a fresh load instead of joining the one in flight.
+   * For a caller that learns the load in flight is already wrong — it began before a write its
+   * result must reflect. The load is not cancelled and its own callers still get its value; only
+   * later ones stop joining it. `false` when nothing held the key.
+   */
+  evict(key: string): boolean;
 }
 
 /** The leader's promise, the box its merged context lives in, and its deadline's canceller. */
@@ -71,6 +80,15 @@ export function singleFlight(options?: SingleFlightOptions): SingleFlight {
   return {
     get size(): number {
       return inflight.size;
+    },
+
+    keys: () => [...inflight.keys()],
+
+    evict(key: string): boolean {
+      const held = inflight.get(key);
+      if (held === undefined) return false;
+      held.cancelDeadline();
+      return inflight.delete(key);
     },
 
     run<T, C = undefined>(

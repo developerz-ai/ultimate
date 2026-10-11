@@ -39,22 +39,30 @@ export {
 // ---- the render pipeline: one entry point per mode ----------------------------------------------
 export type { RenderHtmlOptions } from './render-html';
 export { ROOT_ELEMENT_ID, renderComponent, renderToHtml } from './render-html';
+
+export {
+  DEFAULT_ISR_REGENERATE_DEADLINE_MS,
+  invalidateAndRevalidate,
+  isrController,
+} from './render-isr';
+export { DEFAULT_ISR_FAILURE_COOLDOWN_MS } from './render-isr-cooldown';
+export { ISR_LOCALE_PARAM, isrKey, isrRequestUrl, undeclaredQuery } from './render-isr-key';
+export type {
+  IsrEntry,
+  IsrState,
+  IsrStore,
+  IsrTagFence,
+  MemoryIsrStoreOptions,
+} from './render-isr-store';
+export { DEFAULT_ISR_MAX_ENTRIES, memoryIsrStore } from './render-isr-store';
 export type {
   IsrController,
   IsrControllerOptions,
+  IsrFence,
   IsrRendered,
   IsrRenderFn,
   IsrServeResult,
-} from './render-isr';
-export {
-  DEFAULT_ISR_REGENERATE_DEADLINE_MS,
-  ISR_LOCALE_PARAM,
-  invalidateAndRevalidate,
-  isrController,
-  isrKey,
-} from './render-isr';
-export type { IsrEntry, IsrState, IsrStore, MemoryIsrStoreOptions } from './render-isr-store';
-export { DEFAULT_ISR_MAX_ENTRIES, memoryIsrStore } from './render-isr-store';
+} from './render-isr-types';
 export type { SsrOptions, SsrRenderFn, SsrRenderInput } from './render-ssr';
 export { renderSsr, ssrHeaders } from './render-ssr';
 export type { StaticArtifact, StaticBuildOptions, StaticRenderFn } from './render-static';

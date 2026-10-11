@@ -12,6 +12,7 @@ import {
   isNoopPurgeDriver,
   lruTier,
   memoTier,
+  purgeEdgeAgain,
   receiveInvalidationBroadcast,
   redisTier,
   registerInvalidationBroadcast,
@@ -212,6 +213,11 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
       defer(batch);
       throw error;
     }
+    // The edge AGAIN, now that the peers are finally being told. It was purged when the bust ran,
+    // but every peer still held its copy then, and each request one of them answered since handed
+    // the edge the old page back — with no purge left to come. (Each peer purges after its own
+    // delete too; this is the sender's half, and does not depend on hearing its own publish.)
+    await purgeEdgeAgain(batch);
   };
   // ONE settle at a time. It is asked for by every reconnect and after every accepted publish,
   // and two that overlapped both published the same batch (and the same flush-all). A call that

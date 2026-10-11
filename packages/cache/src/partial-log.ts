@@ -23,8 +23,8 @@ const refusals = new Map<string, number>();
  * ASKED and answered — a tier this bust never reached (a bust with nothing to broadcast) has
  * said nothing about its own outage, so it ends none.
  */
-export function logPartial(
-  report: { readonly errors: readonly { readonly tier: string }[] },
+export function logPartial<R extends { readonly errors: readonly { readonly tier: string }[] }>(
+  report: R,
   cleared: readonly string[],
 ): void {
   for (const tier of cleared) {

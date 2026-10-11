@@ -70,6 +70,7 @@ export function diffRoutes(
         'revalidate tags changed',
       ),
     );
+    changes.push(...diffRevalidate(path, route, next));
   }
   for (const route of after) {
     if (!beforeByUrl.has(route.url)) {
@@ -77,6 +78,43 @@ export function diffRoutes(
     }
   }
   return changes;
+}
+
+/**
+ * What an invalidation does to the route's stored pages and what they are keyed on. `onInvalidate`
+ * is written for every `isr` route, so two manifests that both carry it both know `maxStale` and
+ * `query` — and only then is an ABSENT one of those a value ("undeclared") rather than no evidence.
+ */
+function diffRevalidate(
+  path: string,
+  route: RouteFact,
+  next: RouteFact,
+): readonly ManifestChange[] {
+  if (route.onInvalidate === undefined || next.onInvalidate === undefined) return [];
+  const declared = (value: unknown): unknown => (value === undefined ? null : value);
+  return [
+    ...diffScalar(
+      'internal',
+      `${path}.onInvalidate`,
+      route.onInvalidate,
+      next.onInvalidate,
+      (from, to) => `onInvalidate ${from} -> ${to}`,
+    ),
+    ...diffJson(
+      'internal',
+      `${path}.maxStale`,
+      declared(route.maxStale),
+      declared(next.maxStale),
+      'revalidate maxStale changed',
+    ),
+    ...diffJson(
+      'internal',
+      `${path}.query`,
+      declared(route.query),
+      declared(next.query),
+      'revalidate query changed',
+    ),
+  ];
 }
 
 /** The structural sibling of `diffScalar`: absent on either side is still no evidence. */

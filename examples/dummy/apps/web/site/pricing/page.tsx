@@ -61,7 +61,10 @@ const ContactSales = island({
 
 export const config = defineRoute({
   render: 'isr',
-  revalidate: { tags: [tag.plan] },
+  // `currency` is the one parameter this page varies on: `meta` reads it off `url` and the body
+  // off `props.query`. Left out of `query`, every currency was ONE stored page — the first
+  // visitor's — answered to all the others.
+  revalidate: { tags: [tag.plan], query: ['currency'] },
   offline: 'runtime',
   /**
    * No `hydrate` here on purpose: the island below is the declaration, and a route carrying one

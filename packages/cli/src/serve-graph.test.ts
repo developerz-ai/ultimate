@@ -191,14 +191,21 @@ const MIGRATE_CEILING = 641;
  * raised 939 → 940, measured 940 (2026-10-10, PR #755 review): `realtime/src/nats-dial-wait.ts` —
  * one dial's connect timeout and the bounded wait a `sync` node puts on the retry loop, split out
  * of `nats-transport.ts` when the dial-loop fixes took it past the 500-line ceiling.
- * raised 940 → 945, measured 945 (2026-10-10, a channel recovers after a bus outage): the two
+ * raised 940 → 945, measured 945 (2026-10-10, isr purge + keyed query): `render/src/render-isr.ts`
+ * sat at 487 of 500 lines and split by job before it grew — `render-isr-key.ts` (the key and the
+ * request URL narrowed to `revalidate.query`), `render-isr-routes.ts` (which route a stored key
+ * belongs to, and what it declared) and `render-isr-result.ts` (an entry as a response) —
+ * `render/src/revalidate-shape.ts` screens `onInvalidate` / `maxStale` / `query` at `defineRoute`,
+ * and `render-isr-cooldown.ts` is the one-second memory of a failed render that stops a page whose
+ * read is down from being one failing render per request.
+ * raised 945 → 950, measured 950 (2026-10-11, a channel recovers after a bus outage): the two
  * modules named on `MIGRATE_CEILING`, and three every role carries — `realtime/src/nats-reports.ts`
  * (the transport's reporting, split out of `nats-transport.ts` at the 500-line ceiling: a fault
  * every time, an outage thinned, at the role's level), `realtime/src/sync-bus-outage.ts` (what a
  * `sync` node says while its bus is away) and `cli/src/role-sync-bus-wait.ts` (`x dev` starts its
  * node when the bus answers, where a container refuses the boot).
  */
-const SERVING_ROLE_CEILING = 945;
+const SERVING_ROLE_CEILING = 950;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -283,10 +290,15 @@ const SERVING_ROLE_CEILING = 945;
  * `cli/src/runtime-bus.ts`, the module named on `SERVING_ROLE_CEILING`, which every role carries.
  * raised 1066 → 1067, measured 1067 (2026-10-10, PR #755 review): `realtime/src/nats-dial-wait.ts`,
  * the module named on `SERVING_ROLE_CEILING`.
- * raised 1067 → 1072, measured 1072 (2026-10-10, a channel recovers after a bus outage): the five
+ * raised 1067 → 1072, measured 1072 (2026-10-10, isr purge + keyed query): the five render
+ * modules named on `SERVING_ROLE_CEILING`, which every role carries.
+ * raised 1072 → 1073, measured 1073 (2026-10-11, PR #757 review): `cli/src/isr-query-guard.ts` —
+ * the `query` a page is handed; outside production it says once when an `isr` page reads a
+ * parameter its `revalidate.query` does not list (one stored document for every value of it).
+ * raised 1073 → 1078, measured 1078 (2026-10-11, a channel recovers after a bus outage): the five
  * modules named on `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
  */
-const WEB_ROLE_CEILING = 1072;
+const WEB_ROLE_CEILING = 1078;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
