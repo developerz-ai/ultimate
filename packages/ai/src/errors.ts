@@ -32,6 +32,7 @@ export const AI_ERROR_CODES = [
   'X_AI_MODEL_UNRESOLVED',
   'X_AGENT_TOOL_LOOP',
   'X_AGENT_DEADLINE',
+  'X_LLM_TOOL_ARGUMENTS_INVALID',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -65,6 +66,7 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AI_MODEL_UNRESOLVED: 'a model call named no model',
   X_AGENT_TOOL_LOOP: 'an agent repeated one tool call with one result and was stopped',
   X_AGENT_DEADLINE: 'an agent ran past its declared deadline and was stopped',
+  X_LLM_TOOL_ARGUMENTS_INVALID: 'a finished turn called a tool with arguments that are not JSON',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and
@@ -291,28 +293,6 @@ export class LlmRefusedError extends UltimateError {
           ? `edit the template in definePrompt('${input.prompt}') and bump its version — no model your app registered in its family is more capable than '${input.model}'`
           : `set model: '${input.alternative}' on the llm() declaration, or edit the template in definePrompt('${input.prompt}') and bump its version`,
       meta: { model: input.model, category: input.category },
-    });
-  }
-}
-
-/**
- * The answer was cut off at the enforced ceiling. Thrown BEFORE the answer is read, and instead of
- * a repair turn: a cut-off `respond` call arrives with no arguments, which both wires read as `{}`
- * and an `output` of optional keys accepts — and the ceiling does not move between attempts, so a
- * second answer truncates at exactly the same place and only spends money.
- */
-export class LlmTruncatedError extends UltimateError {
-  constructor(input: {
-    prompt: string;
-    maxTokens: number;
-    /** The factory whose declaration carries the ceiling. */
-    subject?: 'llm' | 'agent';
-  }) {
-    super({
-      code: 'X_LLM_TRUNCATED',
-      cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
-      fix: `set maxTokens: ${input.maxTokens * 2} on the ${input.subject ?? 'llm'}() declaration, or drop fields from its output schema`,
-      meta: { prompt: input.prompt, maxTokens: input.maxTokens },
     });
   }
 }

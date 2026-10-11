@@ -126,21 +126,24 @@ describe('a fragmented tool call', () => {
     ]);
   });
 
-  test('arguments that are not JSON are a transport failure, not an empty input', () => {
-    expect(() =>
-      drive([
-        frame({
-          choices: [
-            {
-              delta: {
-                tool_calls: [{ index: 0, id: 'c', function: { name: 'x', arguments: '{"a":' } }],
-              },
+  // Never an empty input, and never thrown mid-stream: usage arrives in a LATER frame, and the
+  // failure has to carry it (`assertToolArguments`, in the provider).
+  test('arguments that are not JSON are not a call, and are reported as malformed', () => {
+    const { chunks, stream } = drive([
+      frame({
+        choices: [
+          {
+            delta: {
+              tool_calls: [{ index: 0, id: 'c', function: { name: 'x', arguments: '{"a":' } }],
             },
-          ],
-        }),
-        frame({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }),
-      ]),
-    ).toThrow(/not JSON/);
+          },
+        ],
+      }),
+      frame({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] }),
+    ]);
+    expect(chunks).toEqual([]);
+    expect(stream.state().toolCalls).toEqual([]);
+    expect(stream.state().malformed).toEqual([{ name: 'x', chars: 5 }]);
   });
 });
 

@@ -27,6 +27,7 @@ import type {
 } from './provider';
 import { costOf, estimateInputTokens, estimateTextTokens, requiresStreaming } from './provider';
 import { readSse } from './sse';
+import { assertToolArguments } from './tool-arguments';
 import type { LlmToolCall } from './tools';
 
 const API_KEY_ENV = 'OPENAI_API_KEY';
@@ -151,6 +152,8 @@ class OpenAiProvider implements Provider {
     for await (const frame of readSse(response.body, this.name)) {
       for (const chunk of completion.push(frame)) yield chunk;
     }
+    // The socket closed: the calls of a finished turn, for a server that never sends `[DONE]`.
+    for (const chunk of completion.end()) yield chunk;
     // A connection cut mid-answer must fail, not resolve: partial text reads as a complete answer,
     // and `end_turn` would be a lie the caller has no way to detect.
     if (!completion.isComplete()) {
@@ -176,6 +179,9 @@ class OpenAiProvider implements Provider {
   /** One parsed answer, priced. The only place `cost` is applied — the provider owns prices. */
   private result(request: GenerateRequest, model: ModelId, answer: ChatAnswer): GenerateResult {
     const usage = answer.usage ?? estimatedUsage(request, answer.text, answer.toolCalls);
+    const cost = costOf(model, usage);
+    // After usage is known, so a finished turn with unreadable arguments fails WITH its bill.
+    assertToolArguments({ provider: this.name, model, ...answer, usage, cost });
     return {
       model,
       text: answer.text,
@@ -183,7 +189,7 @@ class OpenAiProvider implements Provider {
       stopReason: answer.stopReason,
       stopDetails: answer.stopDetails,
       usage,
-      cost: costOf(model, usage),
+      cost,
     };
   }
 

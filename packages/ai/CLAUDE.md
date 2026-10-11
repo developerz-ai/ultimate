@@ -52,6 +52,7 @@ one adds, the other adds.
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
 | `tool-idempotency.ts` | an idempotent action's reserved `idempotencyKey` tool argument — MCP's, restated (same tier), held equal by the parity test |
+| `tool-arguments.ts` / `answer-errors.ts` / `billed.ts` | one argument-string reader for both wires and what an unreadable one means (`assertToolArguments`); `X_LLM_TRUNCATED` + `X_LLM_TOOL_ARGUMENTS_INVALID`; `meta.billed` and `billedOf` |
 | `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged, never its message or cause |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
@@ -159,7 +160,10 @@ one adds, the other adds.
 - Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.
 - **Both wire formats answer the same question the same way** (`provider-parity.test.ts`): an in-band
   `error` in a 200 throws (`throwInBandError`); a `refusal` detail forces `stopReason: 'refusal'`; a
-  tool call's `input` is parsed (`asToolInput`); the credential is scrubbed from `detail`.
+  tool call's `input` is parsed (`parseToolArguments`); the credential is scrubbed from `detail`.
+- **Arguments that are not JSON are never thrown by a wire reader**: recorded as `malformed`, and
+  the PROVIDER decides once usage is known — dropped on a truncated turn, else
+  `X_LLM_TOOL_ARGUMENTS_INVALID` with `meta.billed`, which the gateway RECORDS (`settleFailure`).
 - A stream ending without `message_stop` throws. **`readSse` caps the unterminated buffer**
   (`MAX_FRAME_CHARS`); `provider` is required so a transport error names its endpoint.
 - A tool call is emitted whole. Thinking chunks are never appended to `text`.
@@ -197,8 +201,9 @@ one adds, the other adds.
   - `strict: true` only when `satisfiesStrictMode` says the schema qualifies;
   - `max_completion_tokens`; `role: 'system'`; `stream_options: { include_usage: true }` and an
     ESTIMATE when usage never arrives; subtract `cached_tokens` from `prompt_tokens`;
-  - tool-call deltas merge by `tool_calls[].index`; `isComplete()` accepts `[DONE]` or a finish reason,
-    except `[DONE]` with pending tool fragments, which is refused;
+  - tool-call deltas merge by `tool_calls[].index`, a differing `id` starting a new call; calls are
+    read at `end()` (`[DONE]` or socket close), never at the finish reason; `isComplete()` accepts
+    `[DONE]` or a finish reason, except `[DONE]` with pending tool fragments, which is refused;
   - no code of its own (a media refusal is the shared `X_AI_CONTENT_UNSUPPORTED`);
     `AiTransportError` takes the provider's `envVar`; the key is revealed late,
     never stored, scrubbed from `detail`.
@@ -266,27 +271,20 @@ one adds, the other adds.
 
 ## Invariants — evals, retrieval, fix lines
 
-- **No fix line may name `x ai`** (planned). An eval is selected with `x test eval --filter <name>`;
-  `eval-errors.test.ts` asserts every `x test <word>` is one of the six types.
-- Every eval result carries the prompt hash. An eval gates on the DROP from its recorded baseline,
-  mean AND per case, both sides rounded as the baseline is written (`X_EVAL_BASELINE_MISSING` /
-  `X_EVAL_BASELINE_INVALID`). `baseline` is `import.meta.resolve('./…')`. Every prompt is named by an
-  eval (`X_EVAL_MISSING`). `ULTIMATE_EVAL_RECORD=1` records; a deliberately-worse test calls `run`,
-  never `assert`; `x verify` with the flag is `X_EVAL_RECORDING` and runs no eval.
-- Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, the overlap
-  carry stops at `buffer.length - 1` and yields to a next unit it does not fit beside (no chunk over
-  `size`); `metadata.source` is written AFTER the caller's spread. `VectorStore.prune` is required.
-- **A store with no tenant bound, read inside a request whose actor has an `orgId`, is
-  `X_VECTOR_UNSCOPED`** (`assertTenantRead`, both stores, every read). `scope: UNSCOPED`
-  (`crossTenant: true`) is the named opt-in; an omitted scope is `UNBOUND`.
-- `postgresVectorStore()` is the only production vector path (pgvector + FTS in the app's Postgres);
-  `memoryVectorStore()` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a
-  Postgres without the extension (CI uses `pgvector/pgvector:pg17`).
-- The distance ordering lives in an ascending raw subquery (the only shape hnsw answers), pinned by a
-  plan assertion. hnsw scopes after the scan — assert rows, never the node; `analyze` after a backfill.
-- Tenant and policy filters are in SQL on every statement (`conditionsSql`), on BOTH fusion halves.
-  `(tenant, id)` is the primary key. `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`). Metadata is
-  bound `::text::jsonb`.
+Full text of each rule: [`docs/history/ai.md`](../../docs/history/ai.md#evals-retrieval-fix-lines).
+
+- **No fix line may name `x ai`** (planned); an eval is selected with `x test eval --filter <name>`.
+- Every eval result carries the prompt hash; an eval gates on the DROP from its recorded baseline,
+  mean AND per case (`X_EVAL_BASELINE_MISSING` / `_INVALID`); every prompt is named by an eval
+  (`X_EVAL_MISSING`); `ULTIMATE_EVAL_RECORD=1` records, and `x verify` with it is `X_EVAL_RECORDING`.
+- Retrieval is hybrid by default, no vector-only path. `chunk()` hard-wraps (no chunk over `size`);
+  `metadata.source` is written AFTER the caller's spread; `VectorStore.prune` is required.
+- **An unbound store read inside a request whose actor has an `orgId` is `X_VECTOR_UNSCOPED`**
+  (both stores, every read); `scope: UNSCOPED` is the named opt-in, an omitted scope is `UNBOUND`.
+- `postgresVectorStore()` is the only production vector path; `pg-vector.live.test.ts` refuses to
+  skip without the extension. Distance ordering is an ascending raw subquery (the shape hnsw
+  answers), pinned by a plan assertion. Tenant and policy filters are in SQL on every statement and
+  BOTH fusion halves; `(tenant, id)` is the key; `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`).
 
 ## Commands
 

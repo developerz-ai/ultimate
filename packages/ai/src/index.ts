@@ -13,6 +13,9 @@ export type { AgentJobOptions } from './agent-job';
 export { agentJob } from './agent-job';
 export type { AgentSystem } from './agent-system';
 export type { AgentRunUsage } from './agent-usage';
+export { LlmToolArgumentsError, LlmTruncatedError } from './answer-errors';
+export type { Billed } from './billed';
+export { BILLED_META, billedOf } from './billed';
 export type {
   BudgetKeys,
   BudgetLedger,
@@ -79,7 +82,6 @@ export {
   LlmOutputInvalidError,
   LlmRefusedError,
   LlmStreamInvalidError,
-  LlmTruncatedError,
   VectorDimMismatchError,
   VectorScopeWidenedError,
 } from './errors';

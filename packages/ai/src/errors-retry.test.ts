@@ -5,13 +5,13 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { ErrorRetry } from '@ultimat3/core';
 import { classifyThrown, declaredErrorRetry, registerErrorRetry } from '@ultimat3/core';
 import { AgentDeadlineError, AgentToolLoopError } from './agent-errors';
+import { LlmTruncatedError } from './answer-errors';
 import {
   AI_ERROR_CODES,
   AiBudgetExceededError,
   AiKeyMissingError,
   AiProviderUnavailableError,
   AiTransportError,
-  LlmTruncatedError,
 } from './errors';
 import { AI_ERROR_RETRY } from './errors-retry';
 import { providerGateway } from './gateway';

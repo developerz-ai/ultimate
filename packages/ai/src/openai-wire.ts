@@ -10,6 +10,8 @@ import { renderThrowable } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { StopDetails, StopReason, StreamChunk, TokenUsage } from './provider';
 import type { SseFrame } from './sse';
+import type { MalformedToolCall } from './tool-arguments';
+import { parseToolArguments } from './tool-arguments';
 import type { LlmToolCall } from './tools';
 
 /**
@@ -20,6 +22,11 @@ import type { LlmToolCall } from './tools';
 export interface ChatAnswer {
   readonly text: string;
   readonly toolCalls: readonly LlmToolCall[];
+  /**
+   * Calls whose arguments were not JSON. Never among `toolCalls` — a fragment is never a call —
+   * and what they mean is the provider's decision (`assertToolArguments`), once usage is known.
+   */
+  readonly malformed: readonly MalformedToolCall[];
   readonly stopReason: StopReason;
   readonly stopDetails: StopDetails | undefined;
   readonly usage: TokenUsage | undefined;
@@ -118,9 +125,11 @@ export function parseChatCompletion(raw: unknown, provider: string): ChatAnswer 
   const declined = message['refusal'];
   const refusal = typeof declined === 'string' && declined !== '' ? declined : undefined;
   const finish = parseFinishReason(choice['finish_reason']);
+  const read = parseToolCalls(message['tool_calls']);
   return {
     text: typeof message['content'] === 'string' ? message['content'] : '',
-    toolCalls: parseToolCalls(message['tool_calls'], provider),
+    toolCalls: read.calls,
+    malformed: read.malformed,
     // A refusal string is a refusal whatever the finish reason says: the field only ever appears
     // when the model declined, and `stop` beside it would read downstream as an empty answer.
     stopReason: refusal === undefined ? (finish ?? 'end_turn') : 'refusal',
@@ -140,38 +149,47 @@ function refusalDetails(
   return { type: 'refusal', category: 'content_filter', explanation: undefined };
 }
 
-function parseToolCalls(raw: unknown, provider: string): readonly LlmToolCall[] {
-  if (!Array.isArray(raw)) return [];
-  const calls: LlmToolCall[] = [];
+interface ReadCalls {
+  readonly calls: LlmToolCall[];
+  readonly malformed: MalformedToolCall[];
+}
+
+function parseToolCalls(raw: unknown): ReadCalls {
+  const read: ReadCalls = { calls: [], malformed: [] };
+  if (!Array.isArray(raw)) return read;
   for (const entry of raw) {
     const record = asRecord(entry);
     const fn = asRecord(record?.['function']);
     if (record === undefined || fn === undefined) continue;
     const name = typeof fn['name'] === 'string' ? fn['name'] : '';
     if (name === '') continue;
-    calls.push({
-      id: typeof record['id'] === 'string' ? record['id'] : '',
-      name,
-      input: parseArguments(fn['arguments'], name, provider),
-    });
+    const args = fn['arguments'];
+    collect(read, typeof record['id'] === 'string' ? record['id'] : '', name, args);
   }
-  return calls;
+  return read;
 }
 
-/** Arguments are a JSON string. A tool that takes none sends `''` or `'{}'`; neither is a fault. */
-function parseArguments(raw: unknown, name: string, provider: string): Record<string, unknown> {
-  if (typeof raw !== 'string' || raw.trim() === '') return {};
-  try {
-    return asRecord(JSON.parse(raw)) ?? {};
-  } catch (error) {
-    throw malformed(
-      provider,
-      `tool "${name}" returned arguments that are not JSON: ${renderThrowable(error)}`,
-    );
+/** One call, read: among the calls when its arguments parse, among the malformed when not. */
+function collect(
+  read: ReadCalls,
+  id: string,
+  name: string,
+  args: unknown,
+): LlmToolCall | undefined {
+  const raw = typeof args === 'string' ? args : '';
+  const input = parseToolArguments(raw);
+  if (input === undefined) {
+    read.malformed.push({ name, chars: raw.length });
+    return undefined;
   }
+  const call: LlmToolCall = { id, name, input };
+  read.calls.push(call);
+  return call;
 }
 
 interface PendingCall {
+  /** Where the call sorts among its turn's: the wire's `index`, else its order of arrival. */
+  readonly index: number;
   id: string;
   name: string;
   args: string;
@@ -192,8 +210,10 @@ export class ChatCompletionStream {
   private finished = false;
   private done = false;
   private usage: TokenUsage | undefined;
-  private readonly pending = new Map<number, PendingCall>();
-  private readonly toolCalls: LlmToolCall[] = [];
+  /** Every open call, in order of arrival; `byIndex` is which one a wire index currently means. */
+  private readonly pending: PendingCall[] = [];
+  private readonly byIndex = new Map<number, PendingCall>();
+  private readonly read: ReadCalls = { calls: [], malformed: [] };
   private readonly provider: string;
 
   constructor(provider: string) {
@@ -205,7 +225,7 @@ export class ChatCompletionStream {
     // The sentinel is not JSON, and parsing it is how a stream reader ends in a syntax error.
     if (frame.data.trim() === '[DONE]') {
       this.done = true;
-      return [];
+      return this.end();
     }
     const payload = this.payloadOf(frame);
     throwInBandError(payload, this.provider);
@@ -214,7 +234,29 @@ export class ChatCompletionStream {
     const choice = asRecord(Array.isArray(payload['choices']) ? payload['choices'][0] : undefined);
     if (choice === undefined) return [];
     const chunks = this.onDelta(asRecord(choice['delta']) ?? {});
-    return [...chunks, ...this.onFinish(choice['finish_reason'])];
+    this.onFinish(choice['finish_reason']);
+    return chunks;
+  }
+
+  /**
+   * The stream is over: the calls a finished turn made, whole, in index order. Called by the
+   * provider when the socket closes, and by `[DONE]` — whichever comes first; the second is empty.
+   *
+   * Here, and not when the finish reason arrives: this format has no per-call stop event, and
+   * nothing in it orders the finish reason against the last argument fragment — a call read at the
+   * reason is read half way whenever a gateway sends the reason first. A turn with no finish
+   * reason drains nothing: its fragments stay open, and `isComplete()` refuses the stream.
+   */
+  end(): readonly StreamChunk[] {
+    if (!this.finished) return [];
+    const chunks: StreamChunk[] = [];
+    for (const pending of this.pending.splice(0).sort((a, b) => a.index - b.index)) {
+      if (pending.name === '') continue;
+      const call = collect(this.read, pending.id, pending.name, pending.args);
+      if (call !== undefined) chunks.push({ type: 'tool-call', call });
+    }
+    this.byIndex.clear();
+    return chunks;
   }
 
   /** True once the answer is accounted for. False means the connection died mid-answer. */
@@ -232,15 +274,18 @@ export class ChatCompletionStream {
     // half a JSON object, and would report `end_turn` for a turn that stopped to call one. So the
     // stream is refused exactly as the Anthropic half refuses a missing `message_stop`
     // (`provider.ts`), and `openai-provider.ts`'s existing truncation guard is what raises it.
-    return this.finished || (this.done && this.pending.size === 0);
+    return this.finished || (this.done && this.pending.length === 0);
   }
 
   /** What the stream accumulated. `cost` is applied by the provider, which owns prices. */
   state(): ChatAnswer {
+    // Idempotent, so a reader that never called `end()` still sees a finished turn's calls.
+    this.end();
     const details = this.refusalDetails();
     return {
       text: this.text,
-      toolCalls: [...this.toolCalls],
+      toolCalls: [...this.read.calls],
+      malformed: [...this.read.malformed],
       // A refusal that arrived as a `refusal` delta finishes with `stop`, so the reason alone would
       // read as a complete answer that happens to be empty.
       stopReason: details === undefined ? this.stopReason : 'refusal',
@@ -279,19 +324,31 @@ export class ChatCompletionStream {
   }
 
   /**
-   * Merge one chunk's tool-call fragments into the calls they belong to. `index` is the only key —
+   * Merge one chunk's tool-call fragments into the calls they belong to. `index` is the key —
    * `id` and `name` arrive on the first fragment and are absent from every later one, so appending
    * by array position instead would build one call per chunk and lose every argument but the last.
+   *
+   * It is not the WHOLE key. A gateway translating another vendor's stream may number every call
+   * of a turn `0` (or send no index) and tell them apart by id alone; merged by index, two
+   * well-formed calls became one string — `{…}{…}` — that is not JSON. So a fragment carrying an id
+   * that is not the open call's starts a new call. An id repeated on every fragment, or absent
+   * from all but the first, is still one call.
    */
   private accumulate(raw: unknown): void {
     if (!Array.isArray(raw)) return;
     for (const entry of raw) {
       const record = asRecord(entry);
       if (record === undefined) continue;
-      const index = numberOf(record['index']) ?? 0;
-      const call = this.pending.get(index) ?? { id: '', name: '', args: '' };
-      const id = record['id'];
-      if (typeof id === 'string' && id !== '') call.id = id;
+      const index = numberOf(record['index']);
+      const rawId = record['id'];
+      const id = typeof rawId === 'string' && rawId !== '' ? rawId : undefined;
+      let call = index === undefined ? this.pending.at(-1) : this.byIndex.get(index);
+      if (call === undefined || (id !== undefined && call.id !== '' && call.id !== id)) {
+        call = { index: index ?? this.pending.length, id: '', name: '', args: '' };
+        this.pending.push(call);
+      }
+      if (index !== undefined) this.byIndex.set(index, call);
+      if (id !== undefined) call.id = id;
       const fn = asRecord(record['function']);
       const name = fn?.['name'];
       // Concatenated, not assigned: a server that splits the name across two frames is rare and
@@ -299,34 +356,15 @@ export class ChatCompletionStream {
       if (typeof name === 'string') call.name += name;
       const args = fn?.['arguments'];
       if (typeof args === 'string') call.args += args;
-      this.pending.set(index, call);
     }
   }
 
-  /**
-   * The finish reason closes the turn, and it is the only close this format has: there is no
-   * per-block stop event, so pending tool calls are emitted here — whole, in index order, exactly
-   * as the Anthropic path emits them at `content_block_stop`. A fragment is never a call.
-   */
-  private onFinish(raw: unknown): readonly StreamChunk[] {
+  /** The finish reason closes the TURN. The calls are read by `end()`, when the stream is over. */
+  private onFinish(raw: unknown): void {
     const reason = parseFinishReason(raw);
-    if (reason === undefined) return [];
+    if (reason === undefined) return;
     this.stopReason = reason;
     this.finished = true;
-    const chunks: StreamChunk[] = [];
-    for (const index of [...this.pending.keys()].sort((a, b) => a - b)) {
-      const pending = this.pending.get(index);
-      if (pending === undefined || pending.name === '') continue;
-      const call: LlmToolCall = {
-        id: pending.id,
-        name: pending.name,
-        input: parseArguments(pending.args, pending.name, this.provider),
-      };
-      this.toolCalls.push(call);
-      chunks.push({ type: 'tool-call', call });
-    }
-    this.pending.clear();
-    return chunks;
   }
 
   private payloadOf(frame: SseFrame): Record<string, unknown> {

@@ -34,6 +34,7 @@ import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import type { AgentRunUsage } from './agent-usage';
 import { addUsage } from './agent-usage';
+import { LlmTruncatedError } from './answer-errors';
 import type { BudgetLimits } from './budget';
 import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
 import {
@@ -42,7 +43,6 @@ import {
   AiRequestInvalidError,
   LlmOutputInvalidError,
   LlmRefusedError,
-  LlmTruncatedError,
 } from './errors';
 import { answerAttributes } from './llm';
 import { describedModel, type ModelSource, modelForCall } from './model-resolve';

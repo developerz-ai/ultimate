@@ -16,6 +16,7 @@ import type { PromptCacheHint, SystemPrompt } from './prompt-cache';
 import { promptCacheRule, systemText } from './prompt-cache';
 import { anthropicPrompt } from './prompt-cache-blocks';
 import { readSse } from './sse';
+import { assertToolArguments } from './tool-arguments';
 import type { LlmTool, LlmToolCall } from './tools';
 import {
   asToolInput,
@@ -332,11 +333,11 @@ export class AnthropicProvider implements Provider {
           'the stream ended before message_stop, or with a tool call still open — the answer is truncated',
       });
     }
-    const state = message.state();
-    yield {
-      type: 'done',
-      result: { model, ...state, cost: costOf(model, state.usage) },
-    };
+    const { malformed, ...state } = message.state();
+    const cost = costOf(model, state.usage);
+    // After usage is known, so a finished turn with unreadable arguments fails WITH its bill.
+    assertToolArguments({ provider: this.name, model, ...state, malformed, cost });
+    yield { type: 'done', result: { model, ...state, cost } };
   }
 
   marksPromptCache(model: ModelId): boolean {

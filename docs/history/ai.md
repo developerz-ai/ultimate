@@ -744,3 +744,30 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   consecutive-only comparison. OpenAI's `prompt_cache_key` maximum could not be confirmed (its
   guide and SDK types state none; the API reference answered 403), so a long key is hashed, not
   refused: a refusal on an unverified limit would fail calls the endpoint may accept.
+
+## Evals, retrieval, fix lines
+
+The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11, when the
+page reached its size ceiling).
+
+- **No fix line may name `x ai`** (planned). An eval is selected with `x test eval --filter <name>`;
+  `eval-errors.test.ts` asserts every `x test <word>` is one of the six types.
+- Every eval result carries the prompt hash. An eval gates on the DROP from its recorded baseline,
+  mean AND per case, both sides rounded as the baseline is written (`X_EVAL_BASELINE_MISSING` /
+  `X_EVAL_BASELINE_INVALID`). `baseline` is `import.meta.resolve('./…')`. Every prompt is named by an
+  eval (`X_EVAL_MISSING`). `ULTIMATE_EVAL_RECORD=1` records; a deliberately-worse test calls `run`,
+  never `assert`; `x verify` with the flag is `X_EVAL_RECORDING` and runs no eval.
+- Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, the overlap
+  carry stops at `buffer.length - 1` and yields to a next unit it does not fit beside (no chunk over
+  `size`); `metadata.source` is written AFTER the caller's spread. `VectorStore.prune` is required.
+- **A store with no tenant bound, read inside a request whose actor has an `orgId`, is
+  `X_VECTOR_UNSCOPED`** (`assertTenantRead`, both stores, every read). `scope: UNSCOPED`
+  (`crossTenant: true`) is the named opt-in; an omitted scope is `UNBOUND`.
+- `postgresVectorStore()` is the only production vector path (pgvector + FTS in the app's Postgres);
+  `memoryVectorStore()` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a
+  Postgres without the extension (CI uses `pgvector/pgvector:pg17`).
+- The distance ordering lives in an ascending raw subquery (the only shape hnsw answers), pinned by a
+  plan assertion. hnsw scopes after the scan — assert rows, never the node; `analyze` after a backfill.
+- Tenant and policy filters are in SQL on every statement (`conditionsSql`), on BOTH fusion halves.
+  `(tenant, id)` is the primary key. `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`). Metadata is
+  bound `::text::jsonb`.

@@ -16,7 +16,8 @@ import {
   stringField,
 } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import type { BudgetKeys, BudgetLimits, BudgetStore } from './budget';
+import { billedOf } from './billed';
+import type { BudgetKeys, BudgetLimits, BudgetReservation, BudgetStore } from './budget';
 import {
   assertFiniteLimits,
   BudgetLedger,
@@ -186,8 +187,10 @@ class GatewayImpl implements Gateway {
     try {
       result = await this.attempt(model, (provider) => provider.generate(resolved));
     } catch (error) {
-      // A call that never landed must not go on holding its reservation.
-      await ledger?.release(reservation);
+      // A call that never landed must not go on holding its reservation — and one that DID land
+      // and still failed (`billedOf`: the provider answered with something unusable) is recorded
+      // as what it cost. Releasing it told the ledger a billed call was free.
+      await settleFailure(ledger, reservation, error);
       throw error;
     }
     await ledger?.record(result.usage, result.cost, reservation);
@@ -244,9 +247,14 @@ class GatewayImpl implements Gateway {
         settled = true;
         yield { type: 'done', result: { ...chunk.result, provider: provider.name } };
       }
+    } catch (error) {
+      // Thrown after the provider reported usage: the bill is recorded, exactly as `generate` does.
+      settled = true;
+      await settleFailure(ledger, reservation, error);
+      throw error;
     } finally {
-      // A stream that threw, or that its consumer abandoned, never reached `done` — so nothing
-      // reconciled the reservation and it would hold the ceiling for the rest of the window.
+      // A stream its consumer abandoned never reached `done` — so nothing reconciled the
+      // reservation and it would hold the ceiling for the rest of the window.
       if (!settled) await ledger?.release(reservation);
     }
   }
@@ -324,6 +332,17 @@ class GatewayImpl implements Gateway {
     }
     throw new AiProviderUnavailableError({ model, attempts: failures });
   }
+}
+
+/** A failed call's reservation: reconciled against its bill when the failure carries one, else given back. */
+async function settleFailure(
+  ledger: BudgetLedger | undefined,
+  reservation: BudgetReservation | undefined,
+  error: unknown,
+): Promise<void> {
+  const billed = billedOf(error);
+  if (billed === undefined) return ledger?.release(reservation);
+  await ledger?.record(billed.usage, billed.cost, reservation);
 }
 
 /**

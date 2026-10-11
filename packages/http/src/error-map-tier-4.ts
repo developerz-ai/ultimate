@@ -133,4 +133,7 @@ export const TIER_4_ERROR_STATUS = {
   X_AGENT_TOOL_LOOP: 500,
   // @ultimat3/ai — an agent ran past its declared deadline and was stopped
   X_AGENT_DEADLINE: 504,
+  // @ultimat3/ai — the upstream model answered, and a tool call in the answer is not JSON: a bad
+  // gateway answer no retry of the same response changes
+  X_LLM_TOOL_ARGUMENTS_INVALID: 502,
 } satisfies Readonly<Record<string, number>>;

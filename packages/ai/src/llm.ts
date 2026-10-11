@@ -28,14 +28,10 @@ import { finiteCount, withSpan } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
+import { LlmTruncatedError } from './answer-errors';
 import type { BudgetLimits } from './budget';
 import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
-import {
-  LlmOutputInvalidError,
-  LlmRefusedError,
-  LlmStreamInvalidError,
-  LlmTruncatedError,
-} from './errors';
+import { LlmOutputInvalidError, LlmRefusedError, LlmStreamInvalidError } from './errors';
 import type { Gateway } from './gateway';
 import type { LlmCache } from './llm-cache';
 import { openCache } from './llm-cache';

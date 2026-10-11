@@ -994,7 +994,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `LlmOutputInvalidError` | `X_LLM_OUTPUT_INVALID` | `src/errors.ts` |
 | `LlmRefusedError` | `X_LLM_REFUSED` | `src/errors.ts` |
 | `LlmStreamInvalidError` | `X_LLM_STREAM_INVALID` | `src/errors.ts` |
-| `LlmTruncatedError` | `X_LLM_TRUNCATED` | `src/errors.ts` |
+| `LlmToolArgumentsError` | `X_LLM_TOOL_ARGUMENTS_INVALID` | `src/answer-errors.ts` |
+| `LlmTruncatedError` | `X_LLM_TRUNCATED` | `src/answer-errors.ts` |
 | `VectorDimMismatchError` | `X_VECTOR_DIM_MISMATCH` | `src/errors.ts` |
 | `VectorScopeWidenedError` | `X_VECTOR_SCOPE_WIDENED` | `src/errors.ts` |
 | `VectorUnscopedError` | `X_VECTOR_UNSCOPED` | `src/vector-scope.ts` |

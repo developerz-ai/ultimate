@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3bf777cdbdaae8bc65380baa2b92ce25532cff09e732d61f5d62b1d32131b8cf",
+  "buildId": "4930046961d01ae453787fcb464dca24f3ee8fedbdb4b01217c03407b4fa5278",
   "tiers": {
     "0": [
       "core",
@@ -2181,6 +2181,11 @@
     },
     {
       "code": "X_LLM_STREAM_INVALID",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_LLM_TOOL_ARGUMENTS_INVALID",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },
