@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.9.0 - 2026-10-11
+
 ### Added
 
 Tier 2 — http. Tier 4 — ai.
@@ -35,6 +39,11 @@ Tier 1 — seo. Tier 5 — cli.
 - **A page that is `noindex` in one locale is no longer listed — or cross-linked — in that locale.** The sitemap read each route's `meta` once, in no locale, and emitted one `<url>` per routed locale: a page whose `meta` answers `robots: { index: false }` for English only was listed at `/en/…`, and every other copy's hreflang pointed at it ("alternate page with noindex"). `meta` is now read once per routed locale; the page is listed in the locales that may be indexed and its cluster names only those. As before, this reads a route with no params and no `load` — a dynamic page says it with `locales` on its `prerender()` entry.
 - **A URL `seo.robots.disallow` blocks is no longer in the sitemap.** `robots.txt` and the sitemap are written from one config, and the sitemap listed URLs the other told crawlers not to fetch ("submitted URL blocked by robots.txt"). A rule is read as a crawler reads it — a prefix, `*`, a trailing `$`; a locale copy it blocks leaves its hreflang cluster. An app whose sitemap shrinks on upgrade was listing a blocked page: narrow the rule to keep it.
 - **A sitemap file past 50 MB is split.** Only the 50,000-URL cap was enforced; a site with many locales (every `<url>` carries the whole hreflang cluster) could pass the protocol's 50 MB uncompressed limit below it, which a crawler answers with "sitemap could not be read". Sections and the unsectioned split both cut on bytes now (`SITEMAP_MAX_BYTES`).
+
+### Commits
+
+- feat(ai): provider prompt caching for agent() and llm(); a tool-loop guard and a run deadline (#764)
+- feat(seo): a sitemap index with named, paginated sections by configuration; prerender() says a page's lastmod and the locales it is listed in (#765)
 
 ## 27.8.1 - 2026-10-11
 
