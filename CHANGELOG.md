@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.8.1 - 2026-10-11
+
 ### Fixed
 
 Tier 2 — http. Tier 4 — render. Tier 5 — cli.
@@ -18,6 +22,10 @@ Tier 2 — http. Tier 4 — render. Tier 5 — cli.
 - **`isr` under a `basePath` honours `revalidate`.** The key kept the mount (`/shop/blog/a`), which the route table has never heard of, so under any `basePath` every `isr` page matched no route: the declared `ttl` and `tags` were ignored and no bust reached anything. The key carries no base path now; the `url` a page receives still does.
 - **A served `static` page is one kept document.** The container's static memo (1,024 documents) was keyed on the raw pathname too, so `/about/`, `//about`, `/about//`, … were each a render and a slot, and a visitor could fill it before the real pages arrived — each of which was then rendered per request for the life of the process. It is keyed, and the page rendered, at the matched address, as the export writes it. `ssr` and `stream` pages still receive the URL as the visitor wrote it.
 - `@ultimat3/http` exports `canonicalPath`, `requestAddress(ctx)` and `RequestAddress`; `RequestContext` gains `routePath`. `@ultimat3/render/server` exports `isrRouteFor`. `isrKey(url, locale)` canonicalises the pathname it is given, so a caller's own keys change spelling only where the URL was not already canonical.
+
+### Commits
+
+- fix(render): an isr page is one entry however its URL is spelled; a key no route owns is never stored; isr under a basePath honours revalidate (#762)
 
 ## 27.8.0 - 2026-10-11
 
