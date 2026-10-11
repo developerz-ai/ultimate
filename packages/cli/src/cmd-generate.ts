@@ -90,6 +90,8 @@ export const generateCommand: CliCommand = {
     // A named slice that is not there is refused, never invented (X_FEATURE_UNKNOWN).
     assertFeatureExists(root, kind, featureFlag, slice);
     const sliceErrors = await readSliceErrors(root, kind, slice);
+    // And its `policy.ts`, for the same two kinds and the same reason: the action imports from it.
+    const slicePolicy = await readSliceErrors(root, kind, slice, 'policy.ts');
     // Same reason again: whether `job`/`task` may assume the tenant-scoped shape is a fact about
     // THIS feature's own `entity.ts`/`repo.ts`, not a default the template gets to assume.
     const sliceEntity = await readSliceFile(root, kind, slice, 'entity.ts');
@@ -105,6 +107,7 @@ export const generateCommand: CliCommand = {
         name: planned,
         ...(featureFlag === undefined ? {} : { feature: featureFlag }),
         ...(sliceErrors === undefined ? {} : { sliceErrors }),
+        ...(slicePolicy === undefined ? {} : { slicePolicy }),
         ...(sliceEntity === undefined ? {} : { sliceEntity }),
         ...(sliceRepo === undefined ? {} : { sliceRepo }),
         ...(at === undefined ? {} : { at }),
@@ -321,9 +324,10 @@ async function readSliceErrors(
   root: string,
   kind: Generator,
   slice: string,
+  name: 'errors.ts' | 'policy.ts' = 'errors.ts',
 ): Promise<string | undefined> {
   if (kind !== 'action' && kind !== 'mutator') return undefined;
-  const file = containedPath(root, `${slice}/errors.ts`);
+  const file = containedPath(root, `${slice}/${name}`);
   return existsSync(file) ? await Bun.file(file).text() : undefined;
 }
 

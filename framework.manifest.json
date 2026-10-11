@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "074b46da317154acf734ae4451470b6fdb1fd165b422425e197fdc0725833952",
+  "buildId": "b422a10a8655061e70a6727d09ad74c98ca3261230901d2fb190afa6f1221cb6",
   "tiers": {
     "0": [
       "core",
@@ -3923,6 +3923,11 @@
       "code": "X_SKIP_CLEANUP_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/skip-if-cleanup.ts"
+    },
+    {
+      "code": "X_SLICE_POLICY_INCOMPLETE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SOCKET_AUTH_UNAVAILABLE",

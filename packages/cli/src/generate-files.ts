@@ -70,6 +70,8 @@ export interface GenerateOptions {
   readonly sliceEntity?: string;
   /** The same kinds: the slice's `repo.ts` as it stands on disk, absent alongside `sliceEntity`. */
   readonly sliceRepo?: string;
+  /** `action` and `mutator`: the slice's `policy.ts` as it stands on disk, absent when it has none. */
+  readonly slicePolicy?: string;
   /**
    * The app's own db package, `@<app>/db` — what every generated `repo.ts` imports the typed handle
    * from. Supplied by `run` (`resolveDbModule`) for `catalogModule`'s reason: the name lives in a
@@ -152,6 +154,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
         actionFiles(options.name, {
           ...target,
           ...(options.sliceErrors === undefined ? {} : { sliceErrors: options.sliceErrors }),
+          ...(options.slicePolicy === undefined ? {} : { slicePolicy: options.slicePolicy }),
           ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
           ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
         }),
@@ -162,6 +165,7 @@ export function generate(options: GenerateOptions): readonly GeneratedFile[] {
           ...target,
           mutator: true,
           ...(options.sliceErrors === undefined ? {} : { sliceErrors: options.sliceErrors }),
+          ...(options.slicePolicy === undefined ? {} : { slicePolicy: options.slicePolicy }),
           ...(options.sliceEntity === undefined ? {} : { sliceEntity: options.sliceEntity }),
           ...(options.sliceRepo === undefined ? {} : { sliceRepo: options.sliceRepo }),
         }),
