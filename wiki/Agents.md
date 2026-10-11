@@ -337,14 +337,19 @@ export const kbAgent = agent({
 |---|---|
 | The stable block must be the same **bytes** | a cache is a prefix match. A timestamp, a request id or an unsorted list in `stable` is a full-price write on every call — put it in `run` |
 | Below the model's minimum nothing is cached | 512 to 4,096 tokens depending on the model (`ModelSpec.cacheMinimumTokens`); a shorter prefix is processed uncached, with no error |
-| `session` is a routing key, not a secret | 1 to 256 printable ASCII characters, else `X_AI_REQUEST_INVALID`. It leaves the process in a header |
+| `session` is a routing key, not a secret | on OpenRouter it leaves the process in a header: 1 to 256 printable ASCII characters, else `X_AI_REQUEST_INVALID`. On OpenAI a key over 64 characters is sent as a hash of itself (`h:` + 62 hex) — the same key always groups the same requests. OpenAI's guide states no maximum; 64 is a conservative ceiling `As of 2026-10` |
+| The Anthropic row matches any host | `anthropicProvider({ baseUrl })` pointed at a proxy still sends `cache_control`: a server speaking that wire is assumed to speak its marks |
+| Never an empty block, never a fifth mark | a mark moves back past an empty or whitespace-only text block, or is not sent; marks a raw request already carries count against the vendor's four, and the framework's are dropped first — the message before the tail, then the system block, then the tail |
+| More than about 9 tool calls in **one** turn, on OpenRouter | that turn's transcript is not read back: only the tail is marked there, the provider looks back 20 blocks from it, and each call adds two. The next turn pays a write for the transcript; the stable system block still reads |
 | No routing preference is ever sent | OpenRouter skips sticky routing when a request orders its providers, and a cache lives on one upstream |
 | `llm()` is **off** by default | `promptCache: 'auto'` on an `llm()` that is called many times with one long `system`. A one-shot call that marks its prefix pays the write premium for a cache nothing reads |
 | A direct `gateway.generate()` call | `system: { stable, run }` and `promptCache: {}` on the request — the same two fields the loop sets |
 
 **Reading it back.** `onTurn`'s `usage` carries `cacheReadTokens` and `cacheWriteTokens` per turn, `run` carries the running total (`run.usage`, `run.cost`), and the `agent.turn` span event carries `llm.cache.read_tokens` / `llm.cache.write_tokens`. A run whose later turns read nothing has an unstable prefix.
 
-**What it costs.** `costOf` prices a read at the model row's `cacheReadPerMillion` (absent: 0.1x input) and a write at `cacheWritePerMillion` (absent: 1.25x input). A token budget (`tokensPerRun`, `tokensIn`, the gateway's actor and org ceilings) counts **every** token the provider processed — input, output, cache read and cache write, each as one — so caching lowers what a run costs, not how many tokens it is allowed. The pre-flight estimate of a marked request prices the whole prompt as a cache write, the dearest it can be billed, so `costPerCall` holds on turn one.
+**What it costs.** `costOf` prices a read at the model row's `cacheReadPerMillion` (absent: 0.1x input) and a write at `cacheWritePerMillion` (absent: 1.25x input). A token budget (`tokensPerRun`, `tokensIn`, the gateway's actor and org ceilings) counts **every** token the provider processed — input, output, cache read and cache write, each as one — so caching lowers what a run costs, not how many tokens it is allowed. The pre-flight estimate prices the prompt as a cache write **only when a provider serving the model would actually mark the request** (an Anthropic model; not Gemini, OpenAI or an unknown host, whose estimate is what it was), and at the dearer of the write and input rates — so `costPerCall` holds on turn one.
+
+**Two totals, and which to read.** `run.cost` is the run's usage summed and priced once. The ledger — `gateway.spent()`, and what `costPerCall` and every token ceiling are enforced against — adds each turn's cost, and each turn's cost is rounded **up** to a minor unit on its input half and again on its output half. So the ledger can exceed `run.cost` by under 2 minor units per turn. Enforce on the ledger (declare a `budget`); report `run.cost`.
 
 Measured, 2026-10-11, one three-turn run against OpenRouter with a 19,914-token stable prefix: turn 1 wrote 19,914 tokens and read 0; turn 2 read 19,914 and wrote 72; turn 3 read 19,986 and wrote 68.
 
@@ -354,11 +359,13 @@ Three bounds stop a run nobody is watching, beside `maxTurns` and `budget.tokens
 
 | Bound | Default | Reaching it |
 |---|---|---|
-| `maxRepeatedToolCalls` | **3** | `X_AGENT_TOOL_LOOP` — that many consecutive turns made the **same tool calls and read the same results**. A polled tool whose answer changes is progress and is left alone |
-| `deadlineMs` | none | `X_AGENT_DEADLINE` — the run was still going; the model call in flight is aborted on the socket, a tool still running is no longer waited for, and no further turn starts |
+| `maxRepeatedToolCalls` | **3** | `X_AGENT_TOOL_LOOP` — the most recent tool turns are one cycle gone round that many times: the same turn over and over, or a cycle of 2 or 3 turns (A,B,A,B…). "The same" is the calls, their arguments, the results and whether each failed, so a polled tool whose answer changes is progress and is left alone. A repair turn (a wrong-shaped answer) is not a tool turn: it neither counts nor resets. A longer cycle is `maxTurns`' to stop |
+| `deadlineMs` | none | `X_AGENT_DEADLINE` — the run was still going; the model call in flight is aborted on the socket, every tool's own `ctx.signal` fires so a tool that reads it stops, and no further turn starts. A tool that ignores its signal is no longer waited for but **does run to its own end** — its effects can land after the run was refused |
 | `maxToolResultChars` | **4,000** | not an error — the result is truncated, and says so in the transcript |
 
-A caller that goes away mid-call is `X_ABORTED`, not the transport failure the aborted socket would otherwise report — that one is retryable, and a job would re-run a run nobody is waiting for.
+**Under a job.** `X_AGENT_TOOL_LOOP` and `X_AGENT_DEADLINE` are registered `terminal`: an `agentJob()` dead-letters on the first attempt instead of buying the same run once per `retry.attempts`.
+
+A caller that goes away mid-call is `X_ABORTED`, not the transport failure (`X_AI_PROVIDER_UNAVAILABLE`, retryable) the aborted socket used to be reported as. `X_ABORTED` is core's and unclassified, so over HTTP it reads `terminal`; in a job the attempt count stays in charge, and a drain or an attempt timeout is settled by jobs off its own signal as before.
 
 ## Progress (`onTurn`)
 

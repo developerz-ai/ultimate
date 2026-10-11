@@ -733,3 +733,14 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   `orgless` case `query`'s cache uses; `RetryPolicy` / `DEFAULT_GATEWAY_RETRY` keep the field names
   an app writes; the status tables and the OpenAI `estimatedUsage` fallback are the differences
   `provider-parity.test.ts` asserts between the two wire formats.
+- **Review follow-ups (same change, second commit).** The two agent stops are registered
+  `terminal` because an unclassified code keeps a job's attempt count: an `agentJob` with
+  `attempts: 3` bought a repeating run three times. `X_ABORTED` was deliberately NOT classified
+  in core: jobs raises and reads that code itself (a fenced step write, an attempt timeout), and
+  a registered `terminal` would dead-letter those on attempt one. The write-rate estimate is
+  gated on `Provider.marksPromptCache` because `estimateCost` cannot see a host, and an estimate
+  that rose 25% for a Gemini agent refused calls a tight `costPerCall` had allowed. The loop
+  guard looks for cycles of up to three turns because A,B,A,B survived fifty turns under a
+  consecutive-only comparison. OpenAI's `prompt_cache_key` maximum could not be confirmed (its
+  guide and SDK types state none; the API reference answered 403), so a long key is hashed, not
+  refused: a refusal on an unverified limit would fail calls the endpoint may accept.

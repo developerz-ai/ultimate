@@ -57,11 +57,12 @@ export interface SpendEstimate {
 }
 
 /** Price a request pre-flight. The pessimistic read on purpose — see `estimateCost`. */
-export function estimateSpend(request: GenerateRequest): SpendEstimate {
+export function estimateSpend(request: GenerateRequest, marked = false): SpendEstimate {
   return {
     inputTokens: estimateInputTokens(request),
     tokens: estimateTokens(request),
-    cost: estimateCost(request),
+    // `marked`: a provider would send this request with a cache mark, so it can bill as a write.
+    cost: estimateCost(request, marked),
   };
 }
 

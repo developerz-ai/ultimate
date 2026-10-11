@@ -435,8 +435,9 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | `onTurn` reports each completed turn as it happens (and an `agent.turn` span event, always) | a 90-second run emitted nothing until it returned. Observation only — it cannot steer the loop, see the transcript or reach the actor — and a throw from it fails the run rather than being swallowed |
 | a tool that is not `mcp: { expose: true }` is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client see the same catalogue |
 | running out of turns is `X_AGENT_MAX_TURNS`, never a partial answer | a half-finished transcript returned as a result is working notes presented as a decision |
-| `maxRepeatedToolCalls` (default 3) consecutive turns with the same calls **and** results is `X_AGENT_TOOL_LOOP` | such a turn can only be followed by another like it; a polled tool whose answer changes is left alone |
-| `deadlineMs` (no default) is the run's wall-clock ceiling: `X_AGENT_DEADLINE` | the in-flight model call is aborted on the socket; a caller that leaves first is still `X_ABORTED` |
+| a cycle of 1 to 3 tool turns — same calls, arguments, results and failures — gone round `maxRepeatedToolCalls` (default 3) times is `X_AGENT_TOOL_LOOP` | such a turn can only be followed by another like it; a changed result is progress; a repair turn neither counts nor resets |
+| `deadlineMs` (no default) is the run's wall-clock ceiling: `X_AGENT_DEADLINE` | the in-flight model call is aborted on the socket and every tool's `ctx.signal` fires; a tool that ignores it still finishes late. A caller that leaves first is still `X_ABORTED` |
+| both stops are registered `terminal` | an `agentJob()` dead-letters on attempt one instead of buying the same run per attempt |
 | every turn asks the provider to cache its prefix (`promptCache`, default `'auto'`) | the transcript IS the request, so an uncached run pays for its stable prefix once per turn — [below](#provider-prompt-caching) |
 | `budget.tokensPerRun` caps the **whole run** | a single call is bounded by `maxTokens`; a loop is bounded by nothing until this is set |
 | a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
@@ -496,8 +497,18 @@ Usage: the chat-completions reader takes `prompt_tokens_details.cached_tokens` a
 `.cache_write_tokens` out of `prompt_tokens` (which includes both) and reports them as
 `cacheReadTokens` / `cacheWriteTokens`; a missing field is zero. `costOf` prices them at the model
 row's `cacheReadPerMillion` / `cacheWritePerMillion` (absent: 0.1x / 1.25x input). A token budget
-counts all four counters, one token each; `estimateCost` prices a hinted request's prompt as a
-write. No `provider` routing object and no `usage: { include }` is ever sent.
+counts all four counters, one token each. The gateway's pre-flight estimate prices the prompt as a
+write only when a provider serving the model would mark it (`Provider.marksPromptCache`), at the
+dearer of the write and input rates. No `provider` routing object and no `usage: { include }` is
+ever sent.
+
+| Limit | Detail |
+|---|---|
+| `run.cost` vs the ledger | `AgentTurn.run.cost` is summed usage priced once; `gateway.spent()` adds each turn's cost, rounded up per turn (input and output halves), so it can be higher by under 2 minor units per turn. Budgets are enforced on the ledger; report `run.cost` |
+| the Anthropic row matches any host | an `anthropicProvider({ baseUrl })` behind a proxy still sends marks |
+| more than about 9 tool calls in one turn, on OpenRouter | only the tail is marked there and the provider looks back 20 blocks, so that turn's transcript is rewritten, not read |
+| a mark never lands on an empty or whitespace-only text block, and never makes a fifth | it moves back a block or is dropped; a raw caller's own marks are counted first |
+| `session` | OpenRouter header: 1 to 256 printable ASCII, else `X_AI_REQUEST_INVALID`. OpenAI `prompt_cache_key`: over 64 characters it is sent as `h:` + 62 hex of its SHA-256 |
 
 ## `hive()` — many members, one action
 

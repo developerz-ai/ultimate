@@ -319,7 +319,10 @@ async function run<
           throwIfAborted(args.ctx);
           deadline.check();
           const results: readonly LlmToolResult[] = await deadline.guard(
-            Promise.all(requested.map((call) => runLlmToolCall(adapted.tools, call, actor))),
+            // Inside the deadline's scope, so each tool's own `ctx.signal` carries it.
+            deadline.scope(() =>
+              Promise.all(requested.map((call) => runLlmToolCall(adapted.tools, call, actor))),
+            ),
           );
           calls += requested.length;
           // Before the next turn is bought: the same calls with the same results cannot lead

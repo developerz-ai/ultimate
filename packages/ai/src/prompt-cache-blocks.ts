@@ -4,21 +4,65 @@
 
 import type { SystemPrompt } from './prompt-cache';
 import { CACHE_MARK, systemParts } from './prompt-cache';
-import type { AiMessage } from './provider';
+import type { AiMessage, GenerateRequest } from './provider';
 
 type Marked<T> = T & { readonly cache_control?: typeof CACHE_MARK };
 type TextBlock = Marked<{ readonly type: 'text'; readonly text: string }>;
+type WireMessage = { readonly role: AiMessage['role']; readonly content: unknown };
 
-/** How many trailing messages carry a mark. With the system block: three of the four breakpoints. */
-const MARKED_TAIL = 2;
+/** The vendor's ceiling on breakpoints in one request; a fifth is a 400. */
+const MAX_BREAKPOINTS = 4;
+
+/** An empty or whitespace-only text block cannot carry a mark (and is a 400 with one). */
+const blank = (text: string): boolean => text.trim() === '';
+
+export interface AnthropicPrompt {
+  readonly system: string | readonly TextBlock[] | undefined;
+  readonly messages: readonly WireMessage[];
+}
 
 /**
- * `system`, as the wire takes it. A plain string with no mark stays the string every existing
- * request sent. Otherwise blocks, the stable one FIRST and the only one marked: it is the half
- * other runs share, and the per-run half after it is covered by the transcript's own marks.
- * An empty part is dropped — an empty text block is a 400, and a mark on one is too.
+ * `system` and `messages` as the wire takes them. Unmarked, a string system stays the string every
+ * existing request sent and the messages pass through untouched.
+ *
+ * Marked, at most three breakpoints, spent in this order: the transcript's TAIL (what the next
+ * request reads back), the stable system block (what other runs share), then the message before
+ * the tail (a second start for the 20-block lookback). Marks the caller already placed — a raw
+ * block or tool carrying its own `cache_control` — count against the four first, so this never
+ * turns a legal request into a 400; ours are the ones dropped.
  */
-export function anthropicSystem(
+export function anthropicPrompt(request: GenerateRequest, marked: boolean): AnthropicPrompt {
+  const { messages } = request;
+  if (!marked) {
+    return { system: systemOf(request.system, false), messages: messages.map(plain) };
+  }
+  let left = MAX_BREAKPOINTS - placedBy(request);
+  const take = (wanted: boolean): boolean => {
+    if (!wanted || left <= 0) return false;
+    left -= 1;
+    return true;
+  };
+  const tail = messages.length - 1;
+  const markTail = take(tail >= 0 && markableAt(messages[tail]) !== undefined);
+  const markSystem = take(!blank(systemParts(request.system).stable));
+  const markPrevious = take(tail >= 1 && markableAt(messages[tail - 1]) !== undefined);
+  return {
+    system: systemOf(request.system, markSystem),
+    messages: messages.map((message, index) =>
+      (index === tail && markTail) || (index === tail - 1 && markPrevious)
+        ? { role: message.role, content: markedContent(message.content) }
+        : plain(message),
+    ),
+  };
+}
+
+const plain = (message: AiMessage): WireMessage => ({
+  role: message.role,
+  content: message.content,
+});
+
+/** The stable block first and the only one marked; an empty part is dropped, never sent. */
+function systemOf(
   system: SystemPrompt | undefined,
   marked: boolean,
 ): string | readonly TextBlock[] | undefined {
@@ -34,28 +78,37 @@ export function anthropicSystem(
 }
 
 /**
- * The transcript, with the last block of the last two messages marked. The tail is what the NEXT
- * request reads back; the one before it gives the lookup a second start, so a turn that appended
- * more than the 20 blocks one breakpoint looks back over still finds the previous turn's entry.
+ * Where one message's mark goes: its LAST block that is not blank text, so the mark moves back
+ * past a trailing empty block rather than landing on it. `undefined` when no block can carry one.
  */
-export function anthropicMessages(
-  messages: readonly AiMessage[],
-  marked: boolean,
-): readonly { readonly role: AiMessage['role']; readonly content: unknown }[] {
-  const from = marked ? messages.length - MARKED_TAIL : messages.length;
-  return messages.map((message, index) => ({
-    role: message.role,
-    content: index >= from ? markedContent(message.content) : message.content,
-  }));
+function markableAt(message: AiMessage | undefined): number | undefined {
+  if (message === undefined) return undefined;
+  const { content } = message;
+  if (typeof content === 'string') return blank(content) ? undefined : 0;
+  for (let index = content.length - 1; index >= 0; index -= 1) {
+    const block = content[index];
+    if (block !== undefined && !(block.type === 'text' && blank(block.text))) return index;
+  }
+  return undefined;
 }
 
 function markedContent(content: AiMessage['content']): unknown {
   if (typeof content === 'string') {
-    // An empty text block cannot be marked (or sent); the string goes as it stood.
-    return content === '' ? content : [{ type: 'text', text: content, cache_control: CACHE_MARK }];
+    return [{ type: 'text', text: content, cache_control: CACHE_MARK }];
   }
-  const last = content.length - 1;
+  const at = markableAt({ role: 'user', content });
   return content.map((block, index) =>
-    index === last ? { ...block, cache_control: CACHE_MARK } : block,
+    index === at ? { ...block, cache_control: CACHE_MARK } : block,
   );
+}
+
+/** Breakpoints the caller placed itself: the types do not offer the field, a cast still sends it. */
+function placedBy(request: GenerateRequest): number {
+  const carries = (value: unknown): boolean =>
+    typeof value === 'object' && value !== null && Object.hasOwn(value, 'cache_control');
+  let count = (request.tools ?? []).filter(carries).length;
+  for (const { content } of request.messages) {
+    if (typeof content !== 'string') count += content.filter(carries).length;
+  }
+  return count;
 }

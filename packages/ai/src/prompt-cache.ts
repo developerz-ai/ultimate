@@ -39,6 +39,14 @@
 //   read turn 1's 19,914-token prefix and wrote 72), and `prompt_tokens` INCLUDES both the read and
 //   the written tokens — which is why ./openai-wire subtracts both.
 //
+// Two limits of the rows below, stated rather than hidden:
+//   - the `anthropic` row matches ANY host an `anthropicProvider({ baseUrl })` is pointed at — a
+//     proxy speaking that wire is assumed to speak its `cache_control` too;
+//   - the `parts` row marks the tail only, so the next turn finds this turn's entry through the
+//     20-position lookback alone. A turn that appends more blocks than that — more than about 9
+//     tool calls in ONE turn, each a `tool_use` and a `tool_result` — misses it and is billed as a
+//     fresh write of the whole transcript. The stable system block still reads.
+//
 // The table is DATA: a new host or model family is a row. Unknown endpoints get NOTHING — a field
 // a self-hosted server has never heard of is a 400 on some of them, and a mark is never worth that.
 
@@ -70,8 +78,16 @@ export interface PromptCacheHint {
   readonly session?: string;
 }
 
-/** OpenRouter's documented ceiling on a session id; OpenAI's key is held to the same one. */
+/** OpenRouter's documented ceiling on a session id ("Maximum length is 256 characters"). */
 export const SESSION_KEY_MAX = 256;
+
+/**
+ * The longest `prompt_cache_key` sent to OpenAI verbatim. OpenAI's prompt-caching guide and its
+ * SDK types (read 2026-10-11) state NO maximum, and its API reference could not be read from
+ * here; 64 is the conservative figure a reviewer recalled. A longer key is not refused — it is a
+ * grouping key, so it is replaced by a deterministic hash of itself: same key, same group.
+ */
+export const OPENAI_CACHE_KEY_MAX = 64;
 
 /** The one mark this package sends: the 5-minute TTL, which is the rate `costOf` prices. */
 export const CACHE_MARK = { type: 'ephemeral' } as const;

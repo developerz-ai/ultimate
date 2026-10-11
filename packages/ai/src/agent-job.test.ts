@@ -9,7 +9,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { registerAction, resetActions } from '@ultimat3/action';
-import { ctxOf, userActor } from '@ultimat3/core';
+import { ctxOf, registerErrorRetry, userActor } from '@ultimat3/core';
 import type { AnyJobHandle, ClaimedJob, JobDriver, JobExecution } from '@ultimat3/jobs';
 import {
   executeJob,
@@ -25,6 +25,7 @@ import { t } from '@ultimat3/schema';
 import { agent } from './agent';
 import { agentJob } from './agent-job';
 import { echoProvider } from './echo-provider';
+import { AI_ERROR_RETRY } from './errors-retry';
 import { providerGateway } from './gateway';
 import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { definePrompt, type Prompt } from './prompt';
@@ -101,6 +102,7 @@ function summariser(
   name: string,
   tools: readonly ProjectableAction[] = [],
   budget?: { tokensPerRun: number },
+  maxRepeatedToolCalls = 100,
 ) {
   return agent({
     input: Input,
@@ -110,7 +112,7 @@ function summariser(
     tools,
     ...(budget === undefined ? {} : { budget }),
     // A scripted model may repeat one call for ever; the ceilings under test are the others.
-    maxRepeatedToolCalls: 100,
+    maxRepeatedToolCalls,
     maxTurns: 6,
     policy: allow(),
   }).named(name);
@@ -138,6 +140,8 @@ async function runThrough(
 let driver: JobDriver;
 
 beforeEach(() => {
+  // An app gets this by importing the package; this suite imports its files one by one.
+  registerErrorRetry(AI_ERROR_RETRY);
   resetAiRuntime();
   resetActions();
   resetJobs();
@@ -321,6 +325,62 @@ describe('the ceilings shipped for the request path hold on the job path too', (
     expect(execution.error).toContain('X_AI_BUDGET_EXCEEDED');
     // Bounded, and bounded EARLY: not six turns' worth of provider calls.
     expect(provider.seen).toBeLessThan(6);
+  });
+
+  test('a run stopped for repeating itself is dead-lettered on attempt one, never bought three times', async () => {
+    const provider = scripted(true);
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider.provider] }),
+    });
+    const handle = agentJob(summariser('loopingJobAgent', [actorProbe([])], undefined, 3), {
+      name: 'summarise-looping',
+      tenant: (input) => input.orgId,
+      retry: { attempts: 3, jitter: false },
+    });
+
+    const execution = await runThrough(handle, driver, { topic: 'a', orgId: 'org-1' });
+    expect(execution.error).toContain('X_AGENT_TOOL_LOOP');
+    // `attempts: 3` would have re-run the same three turns twice more.
+    expect(execution.outcome).toBe('dead-lettered');
+    expect(provider.seen).toBe(3);
+  });
+
+  test('an attempt abandoned mid-call ends as X_ABORTED, and the job policy — not a retryable transport code — decides', async () => {
+    const aborted = new AbortController();
+    let calls = 0;
+    const hung: Provider = {
+      name: 'hung',
+      models: ['claude-opus-5'],
+      generate(request) {
+        calls += 1;
+        setTimeout(() => aborted.abort(), 5);
+        // A socket that ends only by being aborted.
+        return new Promise((_, reject) => {
+          request.signal?.addEventListener('abort', () => reject(request.signal?.reason));
+        });
+      },
+      stream: (request) => echoProvider().stream(request),
+    };
+    configureAi({ gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [hung] }) });
+    const handle = agentJob(summariser('abandonedAgent'), {
+      name: 'summarise-abandoned',
+      tenant: 'none',
+      retry: { attempts: 3, jitter: false },
+    });
+    const execution = await runThrough(
+      handle,
+      driver,
+      { topic: 'a', orgId: 'org-1' },
+      ctxOf({ role: 'worker', actor: userActor({ id: 'worker-1' }), signal: aborted.signal }),
+    );
+    // Core's code for "the caller went away" — before, the aborted socket was reported as
+    // `X_AI_PROVIDER_UNAVAILABLE`, which this package registers `retryable`.
+    expect(execution.error).toContain('X_ABORTED');
+    expect(execution.error).not.toContain('X_AI_PROVIDER_UNAVAILABLE');
+    expect(calls).toBe(1);
+    // `X_ABORTED` is core's and is UNCLASSIFIED for jobs: the attempt count stays in charge. A
+    // drain or an attempt timeout never reaches this decision — jobs reads those off its own signal.
+    expect(execution.outcome).toBe('retried');
   });
 
   test("the job's ctx.signal reaches the agent's turn loop, so a cancelled attempt buys nothing", async () => {

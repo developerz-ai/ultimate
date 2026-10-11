@@ -1,90 +1,28 @@
 /**
  * What LEAVES the process when a request carries a prompt-cache hint — one golden request per rule
- * in `PROMPT_CACHE_RULES`, asserted on the body and headers the socket is handed.
+ * in `PROMPT_CACHE_RULES` on the chat-completions wire, asserted on the body and headers the socket
+ * is handed. The Anthropic wire and the pre-flight estimate are `prompt-cache-blocks.test.ts`.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { registerModel } from './models';
 import { openAiProvider } from './openai-provider';
-import { promptCacheRule, SESSION_KEY_MAX, systemText } from './prompt-cache';
+import { OPENAI_CACHE_KEY_MAX, promptCacheRule, SESSION_KEY_MAX, systemText } from './prompt-cache';
+import {
+  CHAT_REPLY,
+  CLAUDE,
+  capture,
+  GEMINI,
+  GPT,
+  MARK,
+  marks,
+  NATIVE,
+  openRouter,
+  RUN,
+  register,
+  STABLE,
+  transcript,
+} from './prompt-cache-fixture';
 import type { GenerateRequest } from './provider';
-import { anthropicProvider, estimateCost } from './provider';
-
-const usd = (minor: number) => ({ minor, currency: 'USD' });
-const ROW = {
-  contextWindow: 200_000,
-  maxOutput: 8_000,
-  inputPerMillion: usd(300),
-  outputPerMillion: usd(1_500),
-  cacheMinimumTokens: 1_024,
-  reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
-} as const;
-const CLAUDE = 'anthropic/claude-sonnet-5.5';
-const GEMINI = 'google/gemini-2.5-flash';
-const GPT = 'gpt-5.6-luna';
-const NATIVE = 'claude-sonnet-5-5';
-
-function register(): void {
-  for (const id of [CLAUDE, GEMINI, GPT, NATIVE]) registerModel({ id, ...ROW });
-}
-
-const MARK = { type: 'ephemeral' };
-const STABLE = 'You are the firm’s assistant. RULES…';
-const RUN = 'Today is 2026-10-11.';
-
-/** A three-message transcript: the shape turn 2 of a tool loop sends. */
-const transcript: GenerateRequest['messages'] = [
-  { role: 'user', content: 'Resolve order 7.' },
-  {
-    role: 'assistant',
-    content: [{ type: 'tool_use', id: 'call-1', name: 'lookup', input: { id: '7' } }],
-  },
-  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call-1', content: 'shipped' }] },
-];
-
-interface Sent {
-  readonly url: string;
-  readonly headers: Record<string, string>;
-  readonly body: Record<string, unknown>;
-}
-
-function capture(reply: unknown): { sent: Sent[]; fetch: typeof fetch } {
-  const sent: Sent[] = [];
-  const fake = (async (url: string | URL | Request, init?: RequestInit) => {
-    sent.push({
-      url: String(url),
-      headers: { ...(init?.headers as Record<string, string>) },
-      body: JSON.parse(String(init?.body)) as Record<string, unknown>,
-    });
-    return new Response(JSON.stringify(reply), { status: 200 });
-  }) as typeof fetch;
-  return { sent, fetch: fake };
-}
-
-const CHAT_REPLY = {
-  choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
-  usage: { prompt_tokens: 10, completion_tokens: 1 },
-};
-
-async function openRouter(request: GenerateRequest, baseUrl = 'https://openrouter.ai/api/v1') {
-  register();
-  const { sent, fetch } = capture(CHAT_REPLY);
-  const provider = openAiProvider({ apiKey: 'k', baseUrl, models: [CLAUDE, GEMINI, GPT], fetch });
-  await provider.generate(request);
-  const only = sent[0];
-  if (only === undefined) return expect.unreachable('no request was sent');
-  return only;
-}
-
-/** Every `cache_control` anywhere in a body — the count a vendor caps at four. */
-function marks(value: unknown): number {
-  if (Array.isArray(value)) return value.reduce((sum: number, item) => sum + marks(item), 0);
-  if (typeof value !== 'object' || value === null) return 0;
-  return Object.entries(value).reduce(
-    (sum, [key, child]) => sum + (key === 'cache_control' ? 1 : marks(child)),
-    0,
-  );
-}
 
 describe('the rule table', () => {
   test('first match wins, per wire, host and model prefix', () => {
@@ -264,6 +202,24 @@ describe('OpenAI direct', () => {
     expect(bare.body['prompt_cache_key']).toBeUndefined();
   });
 
+  test('a key over 64 characters is hashed for prompt_cache_key — the same key, the same hash', async () => {
+    const request: GenerateRequest = { model: GPT, messages: transcript, maxTokens: 100 };
+    const long = `tenant:${'a'.repeat(100)}`;
+    const send = async (session: string) =>
+      (await openRouter({ ...request, promptCache: { session } }, 'https://api.openai.com/v1'))
+        .body['prompt_cache_key'] as string;
+    const hashed = await send(long);
+    expect(hashed).toMatch(/^h:[0-9a-f]{62}$/);
+    expect(hashed).toHaveLength(OPENAI_CACHE_KEY_MAX);
+    expect(await send(long)).toBe(hashed);
+    expect(await send(`${long}b`)).not.toBe(hashed);
+    // At the limit, verbatim.
+    expect(await send('k'.repeat(OPENAI_CACHE_KEY_MAX))).toBe('k'.repeat(OPENAI_CACHE_KEY_MAX));
+    // The same 100+ characters are a legal OpenRouter session id, and travel as written.
+    const routed = await openRouter({ ...request, model: GEMINI, promptCache: { session: long } });
+    expect(routed.headers['x-session-id']).toBe(long);
+  });
+
   test('an endpoint the table does not name gets neither mark nor session', async () => {
     const { body, headers } = await openRouter(
       {
@@ -278,114 +234,5 @@ describe('OpenAI direct', () => {
     expect(marks(body)).toBe(0);
     expect(headers['x-session-id']).toBeUndefined();
     expect(body['prompt_cache_key']).toBeUndefined();
-  });
-});
-
-describe('Anthropic Messages wire', () => {
-  const provider = () => {
-    register();
-    return anthropicProvider({ models: [NATIVE], apiKey: 'k' });
-  };
-
-  test('the stable system block and the last block of the last two messages; three marks', () => {
-    const body = provider().body({
-      model: NATIVE,
-      system: { stable: STABLE, run: RUN },
-      messages: transcript,
-      maxTokens: 100,
-      promptCache: { session: 'ignored-here' },
-    });
-    expect(body['system']).toEqual([
-      { type: 'text', text: STABLE, cache_control: MARK },
-      { type: 'text', text: RUN },
-    ]);
-    expect(body['messages']).toEqual([
-      { role: 'user', content: 'Resolve order 7.' },
-      {
-        role: 'assistant',
-        content: [
-          {
-            type: 'tool_use',
-            id: 'call-1',
-            name: 'lookup',
-            input: { id: '7' },
-            cache_control: MARK,
-          },
-        ],
-      },
-      {
-        role: 'user',
-        content: [
-          { type: 'tool_result', tool_use_id: 'call-1', content: 'shipped', cache_control: MARK },
-        ],
-      },
-    ]);
-    expect(marks(body)).toBe(3);
-  });
-
-  test('a one-message request marks it once; a string message becomes one marked block', () => {
-    const body = provider().body({
-      model: NATIVE,
-      system: STABLE,
-      messages: [{ role: 'user', content: 'hello' }],
-      maxTokens: 100,
-      promptCache: {},
-    });
-    expect(body['system']).toEqual([{ type: 'text', text: STABLE, cache_control: MARK }]);
-    expect(body['messages']).toEqual([
-      { role: 'user', content: [{ type: 'text', text: 'hello', cache_control: MARK }] },
-    ]);
-    expect(marks(body)).toBe(2);
-  });
-
-  test('no hint: a string system stays a string, two parts are two unmarked blocks', () => {
-    const plain = provider().body({
-      model: NATIVE,
-      system: STABLE,
-      messages: transcript,
-      maxTokens: 9,
-    });
-    expect(plain['system']).toBe(STABLE);
-    expect(marks(plain)).toBe(0);
-    const parts = provider().body({
-      model: NATIVE,
-      system: { stable: STABLE, run: RUN },
-      messages: transcript,
-      maxTokens: 9,
-    });
-    expect(parts['system']).toEqual([
-      { type: 'text', text: STABLE },
-      { type: 'text', text: RUN },
-    ]);
-    expect(marks(parts)).toBe(0);
-  });
-
-  test('an empty stable part is never sent as an empty block, and never marked', () => {
-    const body = provider().body({
-      model: NATIVE,
-      system: { stable: '', run: RUN },
-      messages: [{ role: 'user', content: 'hello' }],
-      maxTokens: 100,
-      promptCache: {},
-    });
-    expect(body['system']).toEqual([{ type: 'text', text: RUN }]);
-    expect(marks(body)).toBe(1);
-  });
-});
-
-describe('the pre-flight estimate', () => {
-  test('a hinted request is priced as a cache WRITE, the dearest the prompt can be billed', () => {
-    register();
-    const text = 'x'.repeat(4_000_000);
-    const request: GenerateRequest = {
-      model: NATIVE,
-      messages: [{ role: 'user', content: text }],
-      maxTokens: 1,
-    };
-    const plain = estimateCost(request).minor;
-    const hinted = estimateCost({ ...request, promptCache: {} }).minor;
-    // 1M tokens at 300 minor, then 1.25x; the single output token rounds up to one minor unit.
-    expect(plain).toBe(301);
-    expect(hinted).toBe(376);
   });
 });

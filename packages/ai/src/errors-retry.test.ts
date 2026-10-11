@@ -3,7 +3,8 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { ErrorRetry } from '@ultimat3/core';
-import { declaredErrorRetry, registerErrorRetry } from '@ultimat3/core';
+import { classifyThrown, declaredErrorRetry, registerErrorRetry } from '@ultimat3/core';
+import { AgentDeadlineError, AgentToolLoopError } from './agent-errors';
 import {
   AI_ERROR_CODES,
   AiBudgetExceededError,
@@ -120,18 +121,37 @@ describe('the permanent codes stay terminal', () => {
 });
 
 describe('the table', () => {
-  test('one exception, and it is the transport code', () => {
-    expect(Object.keys(AI_ERROR_RETRY)).toEqual(['X_AI_PROVIDER_UNAVAILABLE']);
+  test('one retryable code, the transport one; and the two agent stops registered terminal', () => {
+    expect(Object.keys(AI_ERROR_RETRY)).toEqual([
+      'X_AI_PROVIDER_UNAVAILABLE',
+      'X_AGENT_TOOL_LOOP',
+      'X_AGENT_DEADLINE',
+    ]);
     expect(AI_ERROR_RETRY.X_AI_PROVIDER_UNAVAILABLE).toBe('retryable');
   });
 
-  test('nothing is registered AS terminal, and that is the decision, not an oversight', () => {
+  test('a looped or deadlined run is never re-run by a job: terminal on attempt one', () => {
+    // Unclassified, a job with `attempts: 3` bought the same repeating run three times.
+    const stops = [
+      new AgentToolLoopError({ agent: 'a@1', repeats: 3, cycle: 1, tools: ['status'] }),
+      new AgentDeadlineError({ agent: 'a@1', deadlineMs: 30 }),
+    ];
+    for (const error of stops) {
+      expect(classifyThrown(error), error.code).toBe('terminal');
+      expect(rendered(error)).toBe('terminal');
+    }
+  });
+
+  test('nothing ELSE is registered as terminal, and that is the decision, not an oversight', () => {
     // `@ultimat3/jobs` dead-letters a REGISTERED `terminal` on attempt 1, where an unclassified
     // code keeps the job's own attempt count. That is probably right for `X_LLM_REFUSED` and
     // `X_AI_BUDGET_EXCEEDED` and it is a change to how every app's jobs fail, so it is somebody's
     // deliberate decision — and this test is what makes adding one a decision.
+    // The two agent stops are that decision made (2026-10): re-running a run that repeats itself,
+    // or one that outlived its declared deadline, buys the same run again at full price.
+    const classified: readonly string[] = Object.keys(AI_ERROR_RETRY);
     for (const code of AI_ERROR_CODES) {
-      if (code === 'X_AI_PROVIDER_UNAVAILABLE') continue;
+      if (classified.includes(code)) continue;
       expect(atImport.get(code), code).toBeUndefined();
     }
   });

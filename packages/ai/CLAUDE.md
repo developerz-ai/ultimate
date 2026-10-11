@@ -129,8 +129,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   default provider.
 - **`llm()` forwards `ctx.signal`** onto `GenerateRequest`; `.stream()` inherits it.
 - **`.stream()` is the SAME action**, marked with an ambient sink: UNVALIDATED text, then one `done`
-  with the value that satisfied `output`; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool;
-  budget reserved before the provider, reconciled at `done`; a cache hit yields `done` alone. LAZY.
+  with the validated value; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool; budget
+  reserved before the provider, reconciled at `done`. LAZY.
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
   `vars()` is `X_AI_PROMPT_SECRET` regardless. The `llm.redacted` span attribute records it.
 - **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
@@ -156,8 +156,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 - **The gateway's reads of a provider's throw are total**: `isRetryable` fails closed; the line goes
   through `renderThrowable`.
 - **`X_AI_PROVIDER_UNAVAILABLE` is the one code classified `retryable`** (`AI_ERROR_RETRY`);
-  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Every other code
-  stays UNREGISTERED on purpose.
+  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Every other
+  code but the two agent stops stays UNREGISTERED on purpose.
 - **The retry SCHEDULE is core's (`backoffDelay`, `isRetryableStatus`); the LOOP is this package's** —
   core's `retry()` retries unclassified throws, so it would retry a 400 (`gateway-backoff.test.ts`).
 - Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.
@@ -257,14 +257,16 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 
 - **`GenerateRequest.promptCache` is the one switch; what it sends is a ROW in `PROMPT_CACHE_RULES`**
   (wire, host, model prefix → marks, session carrier), never an `if`. An unnamed endpoint gets
-  NOTHING. At most 3 `cache_control` (the vendor's cap is 4); never a `provider` routing object.
+  NOTHING. At most 3 `cache_control`, a caller's own counted first (cap 4), never on a blank text
+  block; never a `provider` routing object.
 - **`agent()` defaults `'auto'`, `llm()` `'off'`.** The stable system part (`prompt.system` +
-  `system().stable`) is sent FIRST and byte-stable; the mark follows the transcript's tail. The hint
-  is not in `promptCacheKey`.
+  `system().stable`) is sent FIRST; the mark follows the tail. The hint is not in `promptCacheKey`.
 - **Usage**: chat-completions `prompt_tokens` INCLUDES read and written tokens; both are subtracted,
-  clamped. A budget debits all four counters; `estimateCost` prices a hinted prompt as a WRITE.
-- **`maxRepeatedToolCalls` compares calls AND results**; `deadlineMs` has no default and rides the
-  request's signal; a caller abort mid-call is `X_ABORTED`, never the transport's code.
+  clamped. A budget debits all four counters; the estimate prices a WRITE only where a provider
+  would mark (`marksPromptCache`), at the dearer rate.
+- **`maxRepeatedToolCalls` compares calls AND results over cycles of 1–3 turns**; `deadlineMs` has no
+  default and rides the request's AND each tool's signal; both stops are `terminal`
+  (`errors-retry.ts`).
 
 ## Invariants — evals, retrieval, fix lines
 

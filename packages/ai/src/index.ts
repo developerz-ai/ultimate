@@ -188,7 +188,13 @@ export type {
   SystemParts,
   SystemPrompt,
 } from './prompt-cache';
-export { PROMPT_CACHE_RULES, promptCacheRule, SESSION_KEY_MAX, systemText } from './prompt-cache';
+export {
+  OPENAI_CACHE_KEY_MAX,
+  PROMPT_CACHE_RULES,
+  promptCacheRule,
+  SESSION_KEY_MAX,
+  systemText,
+} from './prompt-cache';
 export { promptFences } from './prompt-fence';
 export type {
   AiContentBlock,

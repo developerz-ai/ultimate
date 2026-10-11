@@ -9,7 +9,7 @@ import { AiRequestInvalidError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { modelSpec } from './models';
 import { toOpenAiMessages, toOpenAiTools, toolChoiceFor } from './openai-messages';
-import { promptCacheRule, SESSION_KEY_MAX } from './prompt-cache';
+import { OPENAI_CACHE_KEY_MAX, promptCacheRule, SESSION_KEY_MAX } from './prompt-cache';
 import type { GenerateRequest } from './provider';
 
 export interface ChatCompletionBodyInput {
@@ -56,7 +56,7 @@ export function chatCompletionBody(input: ChatCompletionBodyInput): Record<strin
   // OpenAI's own grouping key. OpenRouter's session rides a header instead (`sessionHeaders`), so
   // the body never carries two spellings of one key.
   if (hint?.session !== undefined && rule.session === 'prompt_cache_key') {
-    body['prompt_cache_key'] = sessionKey(hint.session);
+    body['prompt_cache_key'] = cacheKey(hint.session);
   }
   if (stream) {
     body['stream'] = true;
@@ -81,8 +81,20 @@ export function sessionHeaders(
 }
 
 /**
- * Refused, never cut: a truncated key is a DIFFERENT key that two tenants can share, and a control
- * character in a header value is a request the runtime refuses with no code at all.
+ * OpenAI's grouping key. Never cut — a truncated key is a different key two tenants can share —
+ * and never refused for length: over `OPENAI_CACHE_KEY_MAX` it is sent as a hash of itself, which
+ * groups the same requests. `h:` plus 62 hex characters of its SHA-256.
+ */
+function cacheKey(session: string): string {
+  if (session === '') return sessionKey(session);
+  if (session.length <= OPENAI_CACHE_KEY_MAX) return session;
+  const digest = new Bun.CryptoHasher('sha256').update(session).digest('hex');
+  return `h:${digest.slice(0, OPENAI_CACHE_KEY_MAX - 2)}`;
+}
+
+/**
+ * OpenRouter's header. Refused, never cut: a truncated key is a DIFFERENT key that two tenants can
+ * share, and a control character in a header value is a request the runtime refuses with no code.
  */
 function sessionKey(session: string): string {
   if (session !== '' && session.length <= SESSION_KEY_MAX && !/[^\x20-\x7e]/.test(session)) {
@@ -90,7 +102,7 @@ function sessionKey(session: string): string {
   }
   throw new AiRequestInvalidError({
     detail: `the prompt-cache session key is ${session.length} characters; it must be 1 to ${SESSION_KEY_MAX} printable ASCII characters to travel as a header`,
-    fix: "promptCache: { session: 'kb-agent' }   # a short, stable, non-secret name for the runs that share a prefix",
+    fix: `promptCache: { session: 'kb-agent' }   # at most ${SESSION_KEY_MAX} printable ASCII characters (the x-session-id header's limit): a short, stable, non-secret name`,
   });
 }
 

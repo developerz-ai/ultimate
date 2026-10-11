@@ -17,6 +17,7 @@ import type { ModelId } from './models';
 import { chatCompletionBody, sessionHeaders } from './openai-body';
 import type { ChatAnswer } from './openai-wire';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
+import { promptCacheRule } from './prompt-cache';
 import type {
   GenerateRequest,
   GenerateResult,
@@ -103,6 +104,10 @@ class OpenAiProvider implements Provider {
     this.name = config.name ?? 'openai';
     this.models = config.models;
     this.config = config;
+  }
+
+  marksPromptCache(model: ModelId): boolean {
+    return promptCacheRule('openai', this.config.baseUrl, model).marks === 'parts';
   }
 
   /**

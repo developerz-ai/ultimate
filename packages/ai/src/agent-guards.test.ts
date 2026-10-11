@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { ctxOf, userActor } from '@ultimat3/core';
+import { ctxOf, useContext, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
@@ -152,6 +152,71 @@ describe('a loop that repeats itself is stopped', () => {
     expect(same).toHaveLength(3);
   });
 
+  test('a short alternating cycle is a loop too: A,B,A,B,A,B stops at the third lap', async () => {
+    const seen = model((turn) => ({ name: 'status', input: { id: turn % 2 === 0 ? 'b' : 'a' } }));
+    const run = declare(
+      [tool('status', ({ input }) => Promise.resolve(`pending ${JSON.stringify(input)}`))],
+      {
+        maxTurns: 50,
+      },
+    );
+    await expect(run({ id: 'x' }, { ctx: ctx() })).rejects.toMatchObject({
+      code: 'X_AGENT_TOOL_LOOP',
+      meta: { repeats: 3, cycle: 2 },
+    });
+    // Three laps of two turns, not fifty turns.
+    expect(seen).toHaveLength(6);
+  });
+
+  test('a cycle of three is caught; a cycle of four is past the window and left to maxTurns', async () => {
+    const three = model((turn) => ({ name: 'status', input: { id: `s${turn % 3}` } }));
+    const run = declare([tool('status', () => Promise.resolve('pending'))], { maxTurns: 50 });
+    await expect(run({ id: 'x' }, { ctx: ctx() })).rejects.toMatchObject({
+      code: 'X_AGENT_TOOL_LOOP',
+      meta: { cycle: 3 },
+    });
+    expect(three).toHaveLength(9);
+
+    const four = model((turn) => ({ name: 'status', input: { id: `s${turn % 4}` } }));
+    const wide = declare([tool('status', () => Promise.resolve('pending'))], { maxTurns: 20 });
+    await expect(wide({ id: 'x' }, { ctx: ctx() })).rejects.toMatchObject({
+      code: 'X_AGENT_MAX_TURNS',
+    });
+    expect(four).toHaveLength(20);
+  });
+
+  test('an alternating cycle whose results keep changing is progress', async () => {
+    let ran = 0;
+    const seen = model((turn) =>
+      turn <= 8
+        ? { name: 'status', input: { id: turn % 2 === 0 ? 'b' : 'a' } }
+        : { name: 'respond', input: { answer: 'done' } },
+    );
+    const run = declare(
+      [
+        tool('status', () => {
+          ran += 1;
+          return Promise.resolve(`pending ${ran}`);
+        }),
+      ],
+      { maxTurns: 12 },
+    );
+    expect(await run({ id: 'x' }, { ctx: ctx() })).toEqual({ answer: 'done' });
+    expect(seen).toHaveLength(9);
+  });
+
+  test('a repair turn between identical tool turns does not reset the count', async () => {
+    // tool, tool, a wrong-shaped answer (a repair turn, no tool ran), tool → the third identical.
+    const seen = model((turn) =>
+      turn === 3 ? { name: 'respond', input: { wrong: true } } : status(),
+    );
+    const run = declare([tool('status', () => Promise.resolve('pending'))]);
+    await expect(run({ id: 'x' }, { ctx: ctx() })).rejects.toMatchObject({
+      code: 'X_AGENT_TOOL_LOOP',
+    });
+    expect(seen).toHaveLength(4);
+  });
+
   test('the limit is the declaration’s, and a limit that could never pass a first turn is refused', async () => {
     const seen = model(status);
     const run = declare([tool('status', () => Promise.resolve('pending'))], {
@@ -189,6 +254,32 @@ describe('a run has a deadline when it declares one', () => {
     await expect(run({ id: 'x' }, { ctx: ctx() })).rejects.toMatchObject({
       code: 'X_AGENT_DEADLINE',
     });
+    expect(seen).toHaveLength(1);
+  });
+
+  test('a tool reads the deadline on its own ctx.signal, so a cooperative tool stops with the run', async () => {
+    const seen = model(status);
+    let heard: 'no signal' | 'waiting' | 'aborted' = 'no signal';
+    const run = declare(
+      [
+        tool('status', () => {
+          // What a real `action()` tool is handed as `ctx.signal`.
+          const { signal } = useContext();
+          heard = 'waiting';
+          return new Promise<string>((resolve) => {
+            signal.addEventListener('abort', () => {
+              heard = 'aborted';
+              resolve('stopped');
+            });
+          });
+        }),
+      ],
+      { deadlineMs: 30 },
+    );
+    await expect(run({ id: 'x' }, { ctx: ctx() })).rejects.toMatchObject({
+      code: 'X_AGENT_DEADLINE',
+    });
+    expect(heard as string).toBe('aborted');
     expect(seen).toHaveLength(1);
   });
 

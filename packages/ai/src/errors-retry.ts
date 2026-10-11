@@ -38,6 +38,12 @@ export const AI_ERROR_RETRY = {
   // be both, and registering the code here is what makes the override honoured: core reads an
   // instance `terminal` on an UNREGISTERED code as unclassified.
   X_AI_PROVIDER_UNAVAILABLE: 'retryable',
+  // The two stops an unattended `agent()` run makes, REGISTERED terminal — the deliberate decision
+  // the paragraph above leaves to whoever makes it. A run stopped for repeating itself repeats
+  // itself again, and a run that outlived its declared deadline is the same run against the same
+  // deadline: unclassified, an `agentJob` with `attempts: 3` paid for it three times.
+  X_AGENT_TOOL_LOOP: 'terminal',
+  X_AGENT_DEADLINE: 'terminal',
 } as const satisfies Readonly<Partial<Record<AiErrorCode, ErrorRetry>>>;
 
 // `Partial`, so the table may be a subset — but every key is still checked against the declared set,

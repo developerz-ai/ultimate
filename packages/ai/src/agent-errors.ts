@@ -13,14 +13,22 @@ import { UltimateError } from '@ultimat3/core';
  * same non-answer over a transcript that is one turn longer.
  */
 export class AgentToolLoopError extends UltimateError {
-  constructor(input: { agent: string; repeats: number; tools: readonly string[] }) {
+  constructor(input: {
+    agent: string;
+    /** Laps of the cycle. */
+    repeats: number;
+    /** Turns in one lap: 1 is the same turn over and over, 2 is A,B,A,B. */
+    cycle: number;
+    tools: readonly string[];
+  }) {
     super({
       code: 'X_AGENT_TOOL_LOOP',
       cause:
-        `agent "${input.agent}" made the same tool calls (${input.tools.join(', ')}) and read the ` +
-        `same results ${input.repeats} turns in a row`,
+        input.cycle === 1
+          ? `agent "${input.agent}" made the same tool calls (${input.tools.join(', ')}) and read the same results ${input.repeats} turns in a row`
+          : `agent "${input.agent}" went round the same ${input.cycle} tool turns (${input.tools.join(', ')}), reading the same results, ${input.repeats} times in a row`,
       fix: 'maxRepeatedToolCalls: 5   # on the agent, ONLY for a tool that is polled and answers identically while it waits — otherwise tell the template what to do when a tool result does not change, then bump its version',
-      meta: { agent: input.agent, repeats: input.repeats, tools: input.tools },
+      meta: { agent: input.agent, repeats: input.repeats, cycle: input.cycle, tools: input.tools },
     });
   }
 }

@@ -108,7 +108,14 @@ export function toOpenAiMessages(
 function systemPartsOf(system: SystemPrompt | undefined): readonly OpenAiContentPart[] {
   const { stable, run } = systemParts(system);
   const parts: OpenAiContentPart[] = [];
-  if (stable !== '') parts.push({ type: 'text', text: stable, cache_control: CACHE_MARK });
+  // A whitespace-only part is sent as it stands and never marked.
+  if (stable !== '') {
+    parts.push({
+      type: 'text',
+      text: stable,
+      ...(stable.trim() === '' ? {} : { cache_control: CACHE_MARK }),
+    });
+  }
   if (run !== '') parts.push({ type: 'text', text: run });
   return parts;
 }
@@ -124,8 +131,8 @@ function markTail(out: OpenAiMessage[]): void {
   const parts: readonly OpenAiContentPart[] =
     typeof tail.content === 'string' ? [{ type: 'text', text: tail.content }] : tail.content;
   const last = parts.at(-1);
-  // Only a text part carries the mark here, and never an empty one.
-  if (last === undefined || last.type !== 'text' || last.text === '') return;
+  // Only a text part carries the mark here, and never an empty or whitespace-only one.
+  if (last === undefined || last.type !== 'text' || last.text.trim() === '') return;
   out[out.length - 1] = {
     ...tail,
     content: [...parts.slice(0, -1), { ...last, cache_control: CACHE_MARK }],
