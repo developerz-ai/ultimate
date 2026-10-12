@@ -103,5 +103,11 @@ export function ignoredSamplingAttribute(
     return { 'llm.sampling.ignored': '' };
   }
   if (!isModelRegistered(model)) return {};
-  return { 'llm.sampling.ignored': ignoredSampling(model, request, wires()).join(',') };
+  // A report never fails the call it describes: an installed gateway may throw from
+  // `samplingWires`, and the attribute is then left out rather than replacing the call's result.
+  try {
+    return { 'llm.sampling.ignored': ignoredSampling(model, request, wires()).join(',') };
+  } catch {
+    return {};
+  }
 }

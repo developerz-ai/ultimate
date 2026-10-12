@@ -98,3 +98,46 @@ describe('a catalogue registered by the gateway on first use', () => {
     expect(attribute('ai.llm')).toBe('temperature');
   });
 });
+
+describe('the report never changes the call it describes', () => {
+  test('a gateway whose samplingWires throws: the answer stands, the attribute is left out', async () => {
+    const inner = lazyGateway(stub({ answer: 'done' }).provider);
+    const throwing = {
+      ...inner,
+      samplingWires: (): never => {
+        throw new Error('samplingWires broke');
+      },
+    } as Gateway;
+    configureAi({ gateway: throwing });
+    const run = lazyAgent({ temperature: 0 }).named('lazyCatalogueThrowingWiresAgent');
+    expect(await run({ postId: POST_ID }, { ctx: anonymousCtx() })).toEqual({ answer: 'done' });
+    expect(attribute('ai.agent')).toBeUndefined();
+  });
+
+  test('a failed run still reports what was left out', async () => {
+    configureAi({ gateway: lazyGateway(stub({ wrong: 1 }).provider) });
+    const run = lazyAgent({ seed: 7 }).named('lazyCatalogueFailingAgent');
+    await expect(run({ postId: POST_ID }, { ctx: anonymousCtx() })).rejects.toBeDefined();
+    expect(attribute('ai.agent')).toBe('seed');
+  });
+
+  test('a model the catalogue never names: the call keeps its own error, no attribute', async () => {
+    configureAi({ gateway: lazyGateway(stub({ answer: 'done' }).provider) });
+    const run = agent({
+      input: t.object({ postId: t.uuid }),
+      output: t.object({ answer: t.string }),
+      prompt: promptFor(),
+      model: 'nobody/unlisted-model',
+      vars: ({ input }) => ({ postId: input.postId }),
+      tools: [],
+      policy: allow(),
+      temperature: 0,
+    }).named('lazyCatalogueUnlistedAgent');
+    const error = await run({ postId: POST_ID }, { ctx: anonymousCtx() }).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeDefined();
+    expect(attribute('ai.agent')).toBeUndefined();
+  });
+});
