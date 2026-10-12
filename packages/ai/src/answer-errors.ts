@@ -54,7 +54,7 @@ export class LlmToolArgumentsError extends UltimateError {
         input.unkeyed === true
           ? `provider "${input.provider}" streamed tool-call fragments for model "${input.model}" with no index and no id, and more than one of them named a tool — the calls cannot be told apart, so none was run`
           : `model "${input.model}" on provider "${input.provider}" finished its turn calling tool "${input.tool}" with ${input.chars} characters of arguments that are not JSON`,
-      fix: `maxTokens: 8192   # on the declaration, if the arguments were long — and shorten or split the string fields in the input schema of "${input.tool}", the place a model breaks JSON. Terminal for a job: to try the same request once more, catch this code and re-enqueue deliberately`,
+      fix: `maxTokens: 8192   # on the declaration, if the arguments were long — and shorten or split the string fields in the input schema of "${input.tool}", the place a model breaks JSON. Terminal for a job: to run the same request once more, catch this code and re-enqueue it deliberately`,
       meta: {
         provider: input.provider,
         model: input.model,
