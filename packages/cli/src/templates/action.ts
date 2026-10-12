@@ -10,6 +10,7 @@ import { names } from './naming';
 import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
 import {
   exportsUnknown,
+  grantOf,
   sliceExports,
   sliceFoundation,
   sliceTakesScaffoldRow,
@@ -183,6 +184,12 @@ interface HandlerShape {
   /** The slice still takes the row `x g entity` scaffolds, so the test may store one. */
   readonly storesRow: boolean;
   readonly dbModule: string;
+  /**
+   * The permission the writer is granted — `<feature>:write` for the policy this generator wrote,
+   * the one literal `can('<perm>')` of a handwritten one, or `undefined` when that policy's grant
+   * cannot be read, and then no assertion depends on it.
+   */
+  readonly grant: string | undefined;
 }
 
 /**
@@ -210,6 +217,12 @@ unitTest('the local twin invents no row the store never held', () => {
 
 /** The authoritative half's cases, refusal first, in the shape the slice earns. */
 const handlerTests = (feature: NameSet, shape: HandlerShape): string => {
+  if (shape.grant === undefined) {
+    return `
+// No handler assertion: ../policy.ts is hand-written and its grant is not one literal can('…'),
+// so which actor reaches the handler is the author's to state — add that test here.
+`;
+  }
   const answer = shape.isMutator ? "{ id, title: 'a title' }" : '{ id }';
   if (!shape.lookup) {
     return `
@@ -259,7 +272,8 @@ unitTest('the handler answers the row it found', async () => {
  * it would be a guess about someone else's table.
  */
 const actionUnitTest = (name: NameSet, feature: NameSet, shape: HandlerShape): string => {
-  const stores = shape.lookup && shape.storesRow;
+  const known = shape.grant !== undefined;
+  const stores = known && shape.lookup && shape.storesRow;
   const testing = [
     ...(stores ? ['afterEach'] : []),
     'expect',
@@ -270,7 +284,7 @@ const actionUnitTest = (name: NameSet, feature: NameSet, shape: HandlerShape): s
 // process, so all three belong to the \`unit\` step. The contract projections are next door.
 ${sortedImports([
   ...(stores ? ["import { ctxOf, runWithContext } from '@ultimat3/core';"] : []),
-  "import { testActor } from '@ultimat3/policy';",
+  ...(known ? ["import { testActor } from '@ultimat3/policy';"] : []),
   `import { ${testing} } from '@ultimat3/testing';`,
   ...(stores ? [`import { driver } from '${shape.dbModule}';`] : []),
 ])}${stores ? "\nimport * as repo from '../repo';" : ''}
@@ -284,11 +298,15 @@ ${shape.isMutator ? `\n// The client store's table: the entity's own, so the twi
 // At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
 // object, so each projection of it works there with nothing to remember.
 const target = ${name.camel}.named('${name.camel}');
-
-// Holds the grant in the org the input names: past the policy, so what answers is the handler.
-const grant = ['${feature.kebab}:write'];
-const writer = testActor('writer', { orgId, permissions: grant }).actor;
 ${
+  known
+    ? `
+// Holds the grant in the org the input names: past the policy, so what answers is the handler.
+const grant = ['${shape.grant}'];
+const writer = testActor('writer', { orgId, permissions: grant }).actor;
+`
+    : ''
+}${
   stores
     ? `
 // One store per process: without this, one test's rows are the next test's fixtures.
@@ -311,9 +329,11 @@ const actionContractTest = (
   name: NameSet,
   feature: NameSet,
   isMutator: boolean,
+  /** The slice's policy is the one this generator wrote, so its tenancy rule is known. */
+  scaffoldPolicy = true,
 ): string => `// ${name.camel}: the contract every action owes, and the foreign-org actor it denies before the
 // handler runs. One declaration, every surface.
-${preamble(name, feature, isMutator, 'contractTest, expect', true)}
+${preamble(name, feature, isMutator, 'contractTest, expect', scaffoldPolicy)}
 contractTest('${name.camel} passes the action contract', async () => {
   // Three assertions the framework makes for any action, without knowing what this one does:
   // garbage input is rejected, an anonymous actor is denied, and the operation reaches the
@@ -321,13 +341,19 @@ contractTest('${name.camel} passes the action contract', async () => {
   for (const contract of target.contract()) await contract.run();
 });
 
-contractTest('${name.camel} denies a foreign org', async () => {
+${
+  scaffoldPolicy
+    ? `contractTest('${name.camel} denies a foreign org', async () => {
   // \`.as()\` is the one execution path with the actor swapped, so this denial is the same one
   // HTTP, MCP and the job surface would produce — and no repo call happened to produce it.
   const denied = await target.as(outsider, input).catch((error: unknown) => error);
   expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
-
+`
+    : `// No foreign-org assertion: ../policy.ts is hand-written, and whether it checks the org is the
+// author's rule to state — add that test here.
+`
+}
 // No MCP tool until it is described: a placeholder description misleads the agent reading it.
 contractTest('${name.camel} projects one operation and no tool', () => {
   expect(target.openapi().operationId).toBe('${name.camel}');
@@ -403,11 +429,16 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
         lookup,
         storesRow: sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),
         dbModule: target.dbModule ?? PLACEHOLDER_DB_MODULE,
+        // The policy this run writes grants `<feature>:write`; a handwritten one, what it says.
+        grant:
+          target.slicePolicy === undefined
+            ? `${feature.kebab}:write`
+            : grantOf(target.slicePolicy, `can${feature.pascal}Write`),
       }),
     },
     {
       path: `${dir}/${name.kebab}.contract.test.ts`,
-      contents: actionContractTest(name, feature, isMutator),
+      contents: actionContractTest(name, feature, isMutator, target.slicePolicy === undefined),
     },
   ];
 }

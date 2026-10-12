@@ -214,3 +214,16 @@ export function sliceTakesScaffoldRow(
   if (wanted === '' || columnsOf(sliceEntity) !== wanted) return false;
   return sliceRepo === undefined || sliceExports(sliceRepo, 'insert');
 }
+
+/**
+ * The ONE permission `name` grants, when `source` declares it as a single literal call:
+ * `export const canBlogWrite = can('blog:publish');`. Anything else — a predicate argument,
+ * `and`/`or`, a function, a re-export — is `undefined`: the grant cannot be read, and a generated
+ * test must not assume one.
+ */
+export function grantOf(source: string, name: string): string | undefined {
+  const declared = new RegExp(
+    `\\bexport\\s+const\\s+${name}\\s*=\\s*can\\(\\s*(['"\`])([A-Za-z0-9_.*:-]+)\\1\\s*\\)\\s*;`,
+  );
+  return declared.exec(stripComments(source))?.[2];
+}
