@@ -32,6 +32,9 @@ export const AI_ERROR_CODES = [
   'X_AI_MODEL_UNRESOLVED',
   'X_AGENT_TOOL_LOOP',
   'X_AGENT_DEADLINE',
+  'X_LLM_TOOL_ARGUMENTS_INVALID',
+  'X_AGENT_TRANSCRIPT_INVALID',
+  'X_AI_PROVIDER_UNEXPECTED',
 ] as const;
 
 export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
@@ -50,7 +53,8 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_LLM_TRUNCATED: 'the answer hit its maxTokens ceiling before it was complete',
   X_LLM_STREAM_INVALID: 'a streamed answer failed its output schema, and a stream cannot repair',
   X_AGENT_MAX_TURNS: 'an agent hit its turn ceiling without answering',
-  X_AGENT_TOOL_UNEXPOSED: 'an agent lists a tool that is not an MCP-exposed action',
+  X_AGENT_TOOL_UNEXPOSED:
+    'an agent lists a tool that is neither in-process nor an MCP-exposed action',
   X_HIVE_EMPTY: 'a hive split produced no members, so the run did nothing',
   X_EVAL_THRESHOLD: 'an eval scored below its tolerance',
   X_EVAL_BASELINE_MISSING: 'an eval has no recorded baseline to gate against',
@@ -65,6 +69,10 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AI_MODEL_UNRESOLVED: 'a model call named no model',
   X_AGENT_TOOL_LOOP: 'an agent repeated one tool call with one result and was stopped',
   X_AGENT_DEADLINE: 'an agent ran past its declared deadline and was stopped',
+  X_LLM_TOOL_ARGUMENTS_INVALID: 'a finished turn called a tool with arguments that are not JSON',
+  X_AGENT_TRANSCRIPT_INVALID: 'an agent was asked to continue from a transcript it cannot read',
+  X_AI_PROVIDER_UNEXPECTED:
+    'a provider ended a turn with an unknown reason and an incomplete answer',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Unconditional and
@@ -206,9 +214,20 @@ export class LlmStreamInvalidError extends UltimateError {
  * bad roll — a third attempt only spends money, so this throws instead of looping.
  */
 export class LlmOutputInvalidError extends UltimateError {
-  constructor(input: { prompt: string; attempts: number; issues: string }) {
+  constructor(input: {
+    prompt: string;
+    attempts: number;
+    issues: string;
+    /** The last answer's issues, one per entry — what a job stores; `issues` is the cause's text. */
+    list?: readonly string[];
+  }) {
     super({
       code: 'X_LLM_OUTPUT_INVALID',
+      meta: {
+        prompt: input.prompt,
+        attempts: input.attempts,
+        issues: input.list ?? [input.issues],
+      },
       cause:
         `prompt "${input.prompt}" returned output failing its schema on all ` +
         `${input.attempts} attempts: ${input.issues}`,
@@ -254,7 +273,7 @@ export class AgentToolUnexposedError extends UltimateError {
     super({
       code: 'X_AGENT_TOOL_UNEXPOSED',
       cause: `agent "${input.agent}" lists tools no MCP surface exposes: ${input.tools.join(', ')}`,
-      fix: 'add mcp: { expose: true } to the action named in cause, or drop it from the agent tools list',
+      fix: "inProcessTool({ name, description, input, execute })   # for a tool only this agent may call — or add mcp: { expose: true } to the action named in cause to offer it to MCP clients too, or drop it from the agent's tools",
     });
   }
 }
@@ -295,22 +314,6 @@ export class LlmRefusedError extends UltimateError {
   }
 }
 
-/**
- * The answer was cut off at the enforced ceiling and what arrived does not satisfy the schema.
- * Thrown instead of the repair turn on purpose: the ceiling does not move between attempts, so
- * a second answer truncates at exactly the same place and only spends money.
- */
-export class LlmTruncatedError extends UltimateError {
-  constructor(input: { prompt: string; maxTokens: number }) {
-    super({
-      code: 'X_LLM_TRUNCATED',
-      cause: `prompt "${input.prompt}" was cut off at its ${input.maxTokens}-token ceiling`,
-      fix: `set maxTokens: ${input.maxTokens * 2} on the llm() declaration, or drop fields from its output schema`,
-    });
-  }
-}
-
-/** A prompt was requested at a version whose content hash does not match the registry. */
 export class AiPromptVersionError extends UltimateError {
   constructor(input: { id: string; requested: string; available: readonly string[] }) {
     super({

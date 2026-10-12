@@ -2,12 +2,19 @@
 // pins both. One declaration projects to an HTTP route, an OpenAPI operation, a typed client, a
 // job handle, an MCP tool and these tests; the generator writes the declaration and the tests.
 
+import { SlicePolicyIncompleteError } from '../generate-slice-policy';
 import type { FeatureTarget } from './entity';
 import { sortedImports } from './imports';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
 import { PLACEHOLDER_DB_MODULE } from './scaffold-db-client';
-import { sliceExports, sliceFoundation, sliceTakesScaffoldRow } from './slice-foundation';
+import {
+  exportsUnknown,
+  grantOf,
+  sliceExports,
+  sliceFoundation,
+  sliceTakesScaffoldRow,
+} from './slice-foundation';
 import { wrapImport } from './wrap';
 
 /**
@@ -177,6 +184,12 @@ interface HandlerShape {
   /** The slice still takes the row `x g entity` scaffolds, so the test may store one. */
   readonly storesRow: boolean;
   readonly dbModule: string;
+  /**
+   * The permission the writer is granted — `<feature>:write` for the policy this generator wrote,
+   * the one literal `can('<perm>')` of a handwritten one, or `undefined` when that policy's grant
+   * cannot be read, and then no assertion depends on it.
+   */
+  readonly grant: string | undefined;
 }
 
 /**
@@ -204,6 +217,12 @@ unitTest('the local twin invents no row the store never held', () => {
 
 /** The authoritative half's cases, refusal first, in the shape the slice earns. */
 const handlerTests = (feature: NameSet, shape: HandlerShape): string => {
+  if (shape.grant === undefined) {
+    return `
+// No handler assertion: ../policy.ts is hand-written and its grant is not one literal can('…'),
+// so which actor reaches the handler is the author's to state — add that test here.
+`;
+  }
   const answer = shape.isMutator ? "{ id, title: 'a title' }" : '{ id }';
   if (!shape.lookup) {
     return `
@@ -253,7 +272,8 @@ unitTest('the handler answers the row it found', async () => {
  * it would be a guess about someone else's table.
  */
 const actionUnitTest = (name: NameSet, feature: NameSet, shape: HandlerShape): string => {
-  const stores = shape.lookup && shape.storesRow;
+  const known = shape.grant !== undefined;
+  const stores = known && shape.lookup && shape.storesRow;
   const testing = [
     ...(stores ? ['afterEach'] : []),
     'expect',
@@ -264,7 +284,7 @@ const actionUnitTest = (name: NameSet, feature: NameSet, shape: HandlerShape): s
 // process, so all three belong to the \`unit\` step. The contract projections are next door.
 ${sortedImports([
   ...(stores ? ["import { ctxOf, runWithContext } from '@ultimat3/core';"] : []),
-  "import { testActor } from '@ultimat3/policy';",
+  ...(known ? ["import { testActor } from '@ultimat3/policy';"] : []),
   `import { ${testing} } from '@ultimat3/testing';`,
   ...(stores ? [`import { driver } from '${shape.dbModule}';`] : []),
 ])}${stores ? "\nimport * as repo from '../repo';" : ''}
@@ -278,11 +298,15 @@ ${shape.isMutator ? `\n// The client store's table: the entity's own, so the twi
 // At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
 // object, so each projection of it works there with nothing to remember.
 const target = ${name.camel}.named('${name.camel}');
-
-// Holds the grant in the org the input names: past the policy, so what answers is the handler.
-const grant = ['${feature.kebab}:write'];
-const writer = testActor('writer', { orgId, permissions: grant }).actor;
 ${
+  known
+    ? `
+// Holds the grant in the org the input names: past the policy, so what answers is the handler.
+const grant = ['${shape.grant}'];
+const writer = testActor('writer', { orgId, permissions: grant }).actor;
+`
+    : ''
+}${
   stores
     ? `
 // One store per process: without this, one test's rows are the next test's fixtures.
@@ -305,9 +329,11 @@ const actionContractTest = (
   name: NameSet,
   feature: NameSet,
   isMutator: boolean,
+  /** The slice's policy is the one this generator wrote, so its tenancy rule is known. */
+  scaffoldPolicy = true,
 ): string => `// ${name.camel}: the contract every action owes, and the foreign-org actor it denies before the
 // handler runs. One declaration, every surface.
-${preamble(name, feature, isMutator, 'contractTest, expect', true)}
+${preamble(name, feature, isMutator, 'contractTest, expect', scaffoldPolicy)}
 contractTest('${name.camel} passes the action contract', async () => {
   // Three assertions the framework makes for any action, without knowing what this one does:
   // garbage input is rejected, an anonymous actor is denied, and the operation reaches the
@@ -315,13 +341,19 @@ contractTest('${name.camel} passes the action contract', async () => {
   for (const contract of target.contract()) await contract.run();
 });
 
-contractTest('${name.camel} denies a foreign org', async () => {
+${
+  scaffoldPolicy
+    ? `contractTest('${name.camel} denies a foreign org', async () => {
   // \`.as()\` is the one execution path with the actor swapped, so this denial is the same one
   // HTTP, MCP and the job surface would produce — and no repo call happened to produce it.
   const denied = await target.as(outsider, input).catch((error: unknown) => error);
   expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
-
+`
+    : `// No foreign-org assertion: ../policy.ts is hand-written, and whether it checks the org is the
+// author's rule to state — add that test here.
+`
+}
 // No MCP tool until it is described: a placeholder description misleads the agent reading it.
 contractTest('${name.camel} projects one operation and no tool', () => {
   expect(target.openapi().operationId).toBe('${name.camel}');
@@ -346,6 +378,12 @@ export interface ActionOptions extends FeatureTarget {
   readonly sliceEntity?: string;
   /** The slice's `repo.ts` as it stands on disk, or absent alongside `sliceEntity`. */
   readonly sliceRepo?: string;
+  /**
+   * The slice's `policy.ts` as it stands on disk, absent when the slice has none yet (and then the
+   * scaffolded one is written). Read for `sliceErrors`'s reason: the generated file IMPORTS from
+   * it, and what it exports is a fact about this app's disk.
+   */
+  readonly slicePolicy?: string;
 }
 
 export function actionFiles(rawName: string, target: ActionOptions): readonly GeneratedFile[] {
@@ -354,16 +392,26 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
   const dir = `${target.surfaceDir}/${target.feature}/actions`;
   const isMutator = target.mutator === true;
   const entity = target.sliceEntity !== undefined;
+  // Before a file is planned: a generated action that does not compile is refused, never written.
+  assertPolicyExports(target, feature, isMutator);
   const lookup =
     entity &&
     (target.sliceErrors === undefined ||
-      sliceExports(target.sliceErrors, `${feature.pascal}NotFoundError`));
+      sliceExports(target.sliceErrors, `${feature.pascal}NotFoundError`)) &&
+    // The lookup calls `repo.byId`: a `repo.ts` an author wrote without one gets the neutral body.
+    (target.sliceRepo === undefined || sliceExports(target.sliceRepo, 'byId'));
   return [
     // The three slice modules this action's source imports — `../errors`, `../policy`, `../repo`
     // (which comes with `../entity`, its row type). Composed rather than assumed: `x g action`
     // into a slice no `x g resource` had created emitted all three imports and wrote none of them.
     // With no entity, only the policy: a lookup-free body imports neither ../errors nor ../repo.
-    ...sliceFoundation(target, entity ? ['entity', 'policy', 'errors'] : ['policy']),
+    // And ONLY those: an action is not a resource scaffold. A module already on disk is its
+    // author's — it gets no test from here and no admin labels, both of which assert the shape
+    // `x g resource` writes, not the one that is there (`withoutOwned`).
+    ...withoutOwned(
+      sliceFoundation(target, entity ? ['entity', 'policy', 'errors'] : ['policy']),
+      target,
+    ),
     {
       path: `${dir}/${name.kebab}.ts`,
       contents: isMutator
@@ -381,11 +429,63 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
         lookup,
         storesRow: sliceTakesScaffoldRow(target, target.sliceEntity, target.sliceRepo),
         dbModule: target.dbModule ?? PLACEHOLDER_DB_MODULE,
+        // The policy this run writes grants `<feature>:write`; a handwritten one, what it says.
+        grant:
+          target.slicePolicy === undefined
+            ? `${feature.kebab}:write`
+            : grantOf(target.slicePolicy, `can${feature.pascal}Write`),
       }),
     },
     {
       path: `${dir}/${name.kebab}.contract.test.ts`,
-      contents: actionContractTest(name, feature, isMutator),
+      contents: actionContractTest(name, feature, isMutator, target.slicePolicy === undefined),
     },
   ];
+}
+
+/** The slice modules a run may find already written, and the files each would otherwise be handed. */
+const OWNED = [
+  ['sliceEntity', ['/entity.ts', '/entity.test.ts', '.json']],
+  ['sliceRepo', ['/repo.ts', '/repo.test.ts']],
+  ['slicePolicy', ['/policy.ts', '/policy.test.ts']],
+] as const;
+
+/**
+ * The planted slice files, minus everything that belongs to a module ALREADY on disk. `if-absent`
+ * protects a file; it does not know that `repo.test.ts` belongs to a `repo.ts` somebody wrote, so
+ * a hand-written slice was handed three tests asserting the scaffold's shape and six admin labels
+ * (the catalog `.json`) for an entity it had declared itself. A module this run does write keeps
+ * every companion.
+ */
+function withoutOwned(
+  files: readonly GeneratedFile[],
+  target: ActionOptions,
+): readonly GeneratedFile[] {
+  const owned = OWNED.flatMap(([module, suffixes]) =>
+    target[module] === undefined ? [] : suffixes,
+  );
+  return files.filter((file) => !owned.some((suffix) => file.path.endsWith(suffix)));
+}
+
+/**
+ * Refuse a slice whose own `policy.ts` lacks what the generated file imports from it. An absent
+ * `policy.ts` is not this case — the scaffolded one is written beside the action, with both names.
+ *
+ * Refused rather than adapted, unlike a missing `<Feature>NotFoundError`: there is no neutral
+ * policy to fall back to. An inline `can('<feature>:write')` names a permission the slice's
+ * `definePermissions()` never declared, which is a type error of its own.
+ */
+function assertPolicyExports(target: ActionOptions, feature: NameSet, isMutator: boolean): void {
+  const source = target.slicePolicy;
+  // A barrel re-exporting a module nobody could read: cannot tell, so never refused on a guess.
+  if (source === undefined || exportsUnknown(source)) return;
+  const needed = [`can${feature.pascal}Write`, ...(isMutator ? [] : [`${feature.camel}Tag`])];
+  const missing = needed.filter((name) => !sliceExports(source, name));
+  if (missing.length === 0) return;
+  throw new SlicePolicyIncompleteError({
+    policy: `${target.surfaceDir}/${target.feature}/policy.ts`,
+    feature: target.feature,
+    missing,
+    kind: isMutator ? 'mutator' : 'action',
+  });
 }

@@ -205,7 +205,7 @@ registerModel({
   id: 'llama-internal-70b',
   contextWindow: 128_000,
   maxOutput: 8_192,
-  inputPerMillion:  { minor: 20, currency: 'USD' },   // YOUR price, integer minor units
+  inputPerMillion:  { minor: 20, currency: 'USD' },   // YOUR price, integer minor units — or finer: { minor: 75, currency: 'USD', scale: 3 } is $0.075
   outputPerMillion: { minor: 40, currency: 'USD' },
   cacheMinimumTokens: 0,
   reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
@@ -213,6 +213,8 @@ registerModel({
 
 configureAi({ gateway: providerGateway({ providers: [new InternalGatewayProvider()] }) });
 ```
+
+Two optional per-model rows: `sampling: { temperature: true, seed: true }` (the model takes the `temperature` / `seed` an `llm()` or `agent()` declares — absent, they are not sent) and `forcedToolChoice: false` (the model rejects a forced `tool_choice`, so `llm()`'s one `respond` tool is offered under the endpoint's default).
 
 **The framework registers no model.** `registerModel` is the one way into the catalogue and only the
 app calls it — at boot, by convention in its own `models.ts`, each row with the page and the date its
@@ -433,7 +435,7 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | an aborted `ctx` unwinds the run — at the top of every turn, before every tool batch, and on the socket | the transcript IS the request, so a loop that keeps going after the caller disconnects re-sends it once per remaining turn, runs every remaining side effect and discards the answer. `ctx.signal` rides on `GenerateRequest` too, so a call already in flight is cut rather than paid for |
 | the tools of **one turn** run concurrently, results paired by `tool_use` id | a turn asking for five tools cost 5x wall clock and nothing said so. Order is positional, never by completion; the batch is bounded by what one turn asked for, and each tool is an action with its own `policy` and `rateLimit`, so a second ceiling here would be a throttle competing with those |
 | `onTurn` reports each completed turn as it happens (and an `agent.turn` span event, always) | a 90-second run emitted nothing until it returned. Observation only — it cannot steer the loop, see the transcript or reach the actor — and a throw from it fails the run rather than being swallowed |
-| a tool that is not `mcp: { expose: true }` is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client see the same catalogue |
+| a tool is an `mcp: { expose: true }` action or an `inProcessTool()`; anything else is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate for ACTIONS, so an in-app agent and an external MCP client see the same catalogue of them — and a tool no MCP client may see is declared as one that is this process's alone |
 | running out of turns is `X_AGENT_MAX_TURNS`, never a partial answer | a half-finished transcript returned as a result is working notes presented as a decision |
 | a cycle of 1 to 3 tool turns — same calls, arguments, results and failures — gone round `maxRepeatedToolCalls` (default 3) times is `X_AGENT_TOOL_LOOP` | such a turn can only be followed by another like it; a changed result is progress; a repair turn neither counts nor resets |
 | `deadlineMs` (no default) is the run's wall-clock ceiling: `X_AGENT_DEADLINE` | the in-flight model call is aborted on the socket and every tool's `ctx.signal` fires; a tool that ignores it still finishes late. A caller that leaves first is still `X_ABORTED` |
@@ -442,6 +444,14 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | `budget.tokensPerRun` caps the **whole run** | a single call is bounded by `maxTokens`; a loop is bounded by nothing until this is set |
 | a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
 | **no semantic cache** | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second |
+
+### What a call cost
+
+`cost` is the currency's minor units, rounded up once per call; `costExact` beside it is the same figure exactly (`Money` at a finer `scale`, from `exactCostOf`). `agent()` reports both per turn and for the run in `onTurn`; `llm()` per provider call in `onCall`; a ledger sums exact costs and rounds once when read. `repairOf` on either event is what a repair turn was told to fix.
+
+### Continuing a run
+
+`agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is signed, bound to the agent, model, tools and tenant, and screened (`X_AGENT_TRANSCRIPT_INVALID`); a failed call leaves an updated one on the error (`transcriptOf(error)`), which is the one a job stores. Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
 
 ### Provider prompt caching
 
@@ -504,7 +514,7 @@ ever sent.
 
 | Limit | Detail |
 |---|---|
-| `run.cost` vs the ledger | `AgentTurn.run.cost` is summed usage priced once; `gateway.spent()` adds each turn's cost, rounded up per turn (input and output halves), so it can be higher by under 2 minor units per turn. Budgets are enforced on the ledger; report `run.cost` |
+| `run.cost` and the ledger | one contract: cost is computed exactly and rounded up once. `AgentTurn.run.cost` is the run's summed usage priced once; `gateway.spent()` / `BudgetLedger.report().cost` is the exact cost of every recorded call summed, rounded once when read (`costExact` beside it). They agree for a run on built-in providers; a `Provider` that states no `costExact` is summed from its rounded `cost`. Budgets are enforced against the ledger |
 | the Anthropic row matches any host | an `anthropicProvider({ baseUrl })` behind a proxy still sends marks |
 | more than about 9 tool calls in one turn, on OpenRouter | only the tail is marked there and the provider looks back 20 blocks, so that turn's transcript is rewritten, not read |
 | a mark never lands on an empty or whitespace-only text block, and never makes a fifth | it moves back a block or is dropped; a raw caller's own marks are counted first |
@@ -925,6 +935,8 @@ An in-app agent and an external MCP agent both end at the same `invoke` — `run
 carries it, and an action facade has no `.run` of its own. So they authorize identically. The
 actor comes from the request context, never from the model.
 
+`inProcessTool({ name, description, input, execute })` is a tool that is this process's alone: no `mcp`, no policy of its own (the agent's decides), in no catalogue but the agent's. Its own typed refusal reads back as `{"error":{"code","cause","fix"}}`. [Agents → In-process tools](https://github.com/developerz-ai/ultimate/wiki/Agents#in-process-tools).
+
 A failed tool reads back as `CODE: cause (fix: …)` — except a 5xx code whose cause core's
 `hasPublicCause` does not declare public, which reads `CODE: ` plus a fixed sentence (and a
 `callerFix`, when the `UltimateError` declared one): the rule a production problem document follows,
@@ -953,7 +965,7 @@ fail-closed `terminal` default.
 | `X_LLM_OUTPUT_INVALID` | the model failed its `output` schema on the answer and on the repair turn |
 | `X_LLM_STREAM_INVALID` | a streamed answer failed its schema, and a stream cannot take a repair turn |
 | `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering |
-| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action no MCP surface exposes |
+| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists a tool that is neither in-process nor an MCP-exposed action |
 | `X_AGENT_TOOL_LOOP` | an `agent()` made the same tool calls and read the same results `maxRepeatedToolCalls` turns in a row |
 | `X_AGENT_DEADLINE` | an `agent()` outlived its declared `deadlineMs` |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
@@ -961,6 +973,8 @@ fail-closed `terminal` default.
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |
 | `X_VECTOR_UNSCOPED` | a store with no tenant bound was read inside a request acting for an org; `scope: UNSCOPED` is the named opt-out |
 | `X_NOT_IMPLEMENTED` | a remote driver with no key or transport; the fix names the env var |
+
+A failure thrown after a provider call was started carries what the run was billed on `meta.billed` (`billedOf(error)` → `{ usage, cost, calls, unsettled }`); `unsettled` counts the calls whose bill cannot be known. [Agents → Unattended runs](https://github.com/developerz-ai/ultimate/wiki/Agents#unattended-runs).
 
 ### Error classes
 
@@ -972,6 +986,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `AgentDeadlineError` | `X_AGENT_DEADLINE` | `src/agent-errors.ts` |
 | `AgentMaxTurnsError` | `X_AGENT_MAX_TURNS` | `src/errors.ts` |
 | `AgentToolLoopError` | `X_AGENT_TOOL_LOOP` | `src/agent-errors.ts` |
+| `AgentTranscriptInvalidError` | `X_AGENT_TRANSCRIPT_INVALID` | `src/agent-errors.ts` |
 | `AgentToolUnexposedError` | `X_AGENT_TOOL_UNEXPOSED` | `src/errors.ts` |
 | `AiBudgetExceededError` | `X_AI_BUDGET_EXCEEDED` | `src/errors.ts` |
 | `AiContentUnsupportedError` | `X_AI_CONTENT_UNSUPPORTED` | `src/content-errors.ts` |
@@ -994,7 +1009,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `LlmOutputInvalidError` | `X_LLM_OUTPUT_INVALID` | `src/errors.ts` |
 | `LlmRefusedError` | `X_LLM_REFUSED` | `src/errors.ts` |
 | `LlmStreamInvalidError` | `X_LLM_STREAM_INVALID` | `src/errors.ts` |
-| `LlmTruncatedError` | `X_LLM_TRUNCATED` | `src/errors.ts` |
+| `LlmToolArgumentsError` | `X_LLM_TOOL_ARGUMENTS_INVALID` | `src/answer-errors.ts` |
+| `LlmTruncatedError` | `X_LLM_TRUNCATED` | `src/answer-errors.ts` |
 | `VectorDimMismatchError` | `X_VECTOR_DIM_MISMATCH` | `src/errors.ts` |
 | `VectorScopeWidenedError` | `X_VECTOR_SCOPE_WIDENED` | `src/errors.ts` |
 | `VectorUnscopedError` | `X_VECTOR_UNSCOPED` | `src/vector-scope.ts` |

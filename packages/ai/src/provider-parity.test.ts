@@ -154,11 +154,12 @@ describe('an empty refusal string is not a refusal', () => {
 });
 
 describe('a stop reason this build has never seen', () => {
-  // One rule on every read path: FAIL CLOSED, as a cut-off answer. The OpenAI format read an
-  // unknown `finish_reason` as `end_turn` (non-streamed) or as no finish at all (streamed) while
-  // the Anthropic format read it as `max_tokens` — the same new reason, a complete answer on one
-  // provider and a truncated one on the other.
-  test('is max_tokens on both formats, streamed and not', () => {
+  // The Messages API's reasons are a closed, documented list, so an unknown one FAILS CLOSED as
+  // a cut-off answer. Chat-completions is a FORMAT many endpoints speak with their own words for
+  // "done", and a truncated turn is refused before it is read — so there an unknown reason is
+  // reported as unknown and the turn judged by its content (`finish-reason.test.ts`), streamed
+  // and not alike.
+  test('fails closed on the Anthropic wire; on chat-completions it is unknown, both ways', () => {
     const anthropic = parseMessage(ANTHROPIC_MODEL, {
       content: [],
       stop_reason: 'stopped_for_a_new_reason',
@@ -177,8 +178,14 @@ describe('a stop reason this build has never seen', () => {
 
     expect(anthropic.stopReason).toBe('max_tokens');
     expect(stream.state().stopReason).toBe('max_tokens');
-    expect(openai.stopReason).toBe('max_tokens');
-    expect(completion.state().stopReason).toBe('max_tokens');
+    expect(openai).toMatchObject({
+      stopReason: 'end_turn',
+      unknownFinish: 'stopped_for_a_new_reason',
+    });
+    expect(completion.state()).toMatchObject({
+      stopReason: 'end_turn',
+      unknownFinish: 'stopped_for_a_new_reason',
+    });
   });
 
   test('a null finish_reason on a streamed delta is still "not finished"', () => {

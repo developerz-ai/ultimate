@@ -744,3 +744,118 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   consecutive-only comparison. OpenAI's `prompt_cache_key` maximum could not be confirmed (its
   guide and SDK types state none; the API reference answered 403), so a long key is hashed, not
   refused: a refusal on an unverified limit would fail calls the endpoint may accept.
+
+## Evals, retrieval, fix lines
+
+The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11, when the
+page reached its size ceiling).
+
+- **No fix line may name `x ai`** (planned). An eval is selected with `x test eval --filter <name>`;
+  `eval-errors.test.ts` asserts every `x test <word>` is one of the six types.
+- Every eval result carries the prompt hash. An eval gates on the DROP from its recorded baseline,
+  mean AND per case, both sides rounded as the baseline is written (`X_EVAL_BASELINE_MISSING` /
+  `X_EVAL_BASELINE_INVALID`). `baseline` is `import.meta.resolve('./…')`. Every prompt is named by an
+  eval (`X_EVAL_MISSING`). `ULTIMATE_EVAL_RECORD=1` records; a deliberately-worse test calls `run`,
+  never `assert`; `x verify` with the flag is `X_EVAL_RECORDING` and runs no eval.
+- Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, the overlap
+  carry stops at `buffer.length - 1` and yields to a next unit it does not fit beside (no chunk over
+  `size`); `metadata.source` is written AFTER the caller's spread. `VectorStore.prune` is required.
+- **A store with no tenant bound, read inside a request whose actor has an `orgId`, is
+  `X_VECTOR_UNSCOPED`** (`assertTenantRead`, both stores, every read). `scope: UNSCOPED`
+  (`crossTenant: true`) is the named opt-in; an omitted scope is `UNBOUND`.
+- `postgresVectorStore()` is the only production vector path (pgvector + FTS in the app's Postgres);
+  `memoryVectorStore()` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a
+  Postgres without the extension (CI uses `pgvector/pgvector:pg17`).
+- The distance ordering lives in an ascending raw subquery (the only shape hnsw answers), pinned by a
+  plan assertion. hnsw scopes after the scan — assert rows, never the node; `analyze` after a backfill.
+- Tenant and policy filters are in SQL on every statement (`conditionsSql`), on BOTH fusion halves.
+  `(tenant, id)` is the primary key. `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`). Metadata is
+  bound `::text::jsonb`.
+
+## Bounds and budget
+
+The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11).
+
+- **Every numeric option is screened; `??` is not the screen** (`finiteOption`/`finiteCount`;
+  `bun run finite-bounds` is the ratchet, blind to a required option, a default parameter and a
+  cross-field product). **`maxTokens` is the worst**: it IS the budget's pre-flight estimate, and a
+  `NaN` switches every ceiling off — the gateway, `registerModel` (`maxOutput`) and `llm()`/`agent()`
+  (at DECLARATION) each screen theirs.
+- **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun` in `limitsOf`
+  before the ledger's `request`; `retrieve()`'s own `k`; `remoteEmbedder()`'s `maxResponseBytes`).
+- A per-call budget `derive`s from the ambient ledger and only TIGHTENS. **A derived ledger reports
+  back up the chain** (every debit on every ancestor; `reserve` checks each `request` scope); the
+  STORE is written once, by the ledger the call was made on.
+- **`reserve` debits, then checks — never a read-then-write across an `await`.** The store's scopes
+  go through `BudgetStore.take(key, tokens, limit)`: REQUIRED, atomic (never `spent` + `add`). A
+  refusal at a later scope gives back what the earlier ones took.
+- **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`).
+  `memoryBudgetStore()` has no window and no eviction (a ceiling bypass); a zero counter is deleted.
+- **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
+  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an empty org).
+  `callLedger` is required on `Gateway`; `hive()` asks `installedGateway()`.
+- **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
+  (`providerGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
+  clamps at zero leaks the ceiling.
+- Cost is `Money` (integer minor units), rounded **up**. A budget throws `X_AI_BUDGET_EXCEEDED`
+  **before** the provider call. Never truncate. List price over-reserves (no introductory prices).
+- **`Gateway.stream` routes BEFORE it reserves**, and `settled = true` comes after
+  `await ledger.record(...)`.
+
+## Models and providers are the app's
+
+The full wording of three rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11).
+
+- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** No
+  default model, no catalogue row, no id list ships; the registry starts EMPTY and `resetModels()`
+  empties it. A model resolves declaration → prompt → `Gateway.defaultModel` through `resolveModel`
+  / `modelForCall` only; none is `X_AI_MODEL_UNRESOLVED` naming all three (with no gateway and nothing
+  declared, `X_AI_GATEWAY_MISSING` — the third place does not exist yet). `vendor-neutral.test.ts`
+  proves it in a fresh process; no fix line names a vendor id.
+- **`ModelId` is `string`; the catalogue is an open registry** — `modelSpec(id)` refuses an
+  unregistered id (`X_AI_MODEL_UNKNOWN`, fix `registerModel(…)`) at `costOf`, the budget estimate and
+  the body builders, before a socket or a reservation. **Re-registering REPLACES the spec and keeps
+  its rung** (negotiated rates). **Registration order is the ladder within a `family`**, read only by
+  `moreCapableThan`, over the APP's rows; `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
+- **Every provider serves the app's list**: `anthropicProvider({ models })` / `openAiProvider({ models })`
+  require a non-empty one (`X_AI_REQUEST_INVALID`); `echoProvider().models` reads the registry. **No
+  provider has a model of its own**: a direct call naming none is `X_AI_MODEL_UNRESOLVED` from all three.
+
+## llm() invariants
+
+The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11).
+
+- **`llm()` returns an `action`**, never a ninth primitive; it adds only the model half: render the
+  prompt, project `output` into the one `respond` tool, reserve the budget, consult the semantic cache.
+- **A non-object `output` is wrapped in `{ value }` and unwrapped** (`respond.ts`) — a tool's input is
+  an object; never refused, because `.stream()` serves `output: t.string`. `parseJsonish` is two
+  `indexOf` scans, never a backtracking pattern.
+- `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts`).
+- One repair turn, then `X_LLM_OUTPUT_INVALID`. A refusal (a 200 with no answer) is `X_LLM_REFUSED`
+  before the parse, carrying `stopDetails.category`; a truncated turn is `X_LLM_TRUNCATED` before
+  the schema AND before any tool runs (a cut `respond` reads `{}`).
+  The gateway never caches a refusal.
+- **Semantic scopes are separate cache INSTANCES**; the instance key carries the prompt hash AND
+  `ctx.locale` (in the unconditional half). **The default scope is the calling ACTOR**
+  (`JSON.stringify([actor.kind, actor.id, actor.orgId ?? null])`); `scope` receives
+  `{ input, ctx }`; widening is `scope: () => 'global'`. The instance map is bounded
+  (core's `MAX_CACHED_FORMATTERS`).
+- `cache.invalidates` is not on `llm()`: a `SemanticCache` is not a `CacheTier`. Version bump + `ttl`
+  is the invalidation.
+- The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`, never a
+  default provider.
+- **`llm()` forwards `ctx.signal`** onto `GenerateRequest`; `.stream()` inherits it.
+- **`.stream()` is the SAME action**, marked with an ambient sink: UNVALIDATED text, then one `done`
+  with the validated value; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool; budget
+  reserved before the provider, reconciled at `done`. LAZY.
+- **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
+  `vars()` is `X_AI_PROMPT_SECRET` regardless. The `llm.redacted` span attribute records it.
+- **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
+  is stamped by the gateway and put on the span as `llm.provider`.
+- Server-side `fallbacks` (beta) are never sent — the stable `2023-06-01` surface only.
+- **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks, in the ASSEMBLED
+  prompt, every fence closer a fenced value wrote any character of (never per value: two slots can
+  each hold half) — never deletes, never touches a template-only closer. The
+  fences are read once at `definePrompt`; no hash moves.
+- `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
+  `canonicalJson`; an absent schema hashes as `''`.

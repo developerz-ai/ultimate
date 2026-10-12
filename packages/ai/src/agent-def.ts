@@ -52,12 +52,19 @@ export interface AgentDef<
    */
   readonly promptCache?: PromptCacheOption<AgentVarsArgs<TInput>>;
   /**
-   * The actions the model may call. Each must be `mcp: { expose: true }` — the same predicate an
-   * external MCP client is filtered by, so an in-app agent and an external one are offered
-   * exactly the same tools. Listing one that is not exposed is refused at declaration rather than
-   * dropped, because a tool that reads as offered and silently is not is the worst of both.
+   * What the model may call: an `action()` that is `mcp: { expose: true }` — the same predicate an
+   * external MCP client is filtered by, so both are offered the same actions — or an
+   * `inProcessTool()`, which only this process's agents ever see. Anything else is refused at
+   * declaration rather than dropped: a tool that reads as offered and silently is not is the worst
+   * of both.
    */
   readonly tools: readonly AgentTool[];
+  /**
+   * `false` withholds the refusals of EVERY in-process tool this agent runs, as a projected tool's
+   * are — for an agent whose transcript leaves the tenant it ran for. Default `true`; one tool
+   * opts out with `inProcessTool({ discloseErrors: false })`.
+   */
+  readonly discloseToolErrors?: boolean;
   /** Hard ceiling on model turns. Reaching it is `X_AGENT_MAX_TURNS`, never a partial answer. */
   readonly maxTurns?: number;
   readonly maxToolResultChars?: number;
@@ -76,6 +83,15 @@ export interface AgentDef<
   readonly mcp?: ActionMcp;
   /** Enforced completion ceiling PER TURN. The model never sees it. */
   readonly maxTokens?: number;
+  /**
+   * `temperature` (0 to 2) and `seed` (a whole number), for a call that should answer the same way
+   * twice — a verifier, a classifier. Sent only to a model whose row takes them
+   * (`registerModel({ sampling })`); to any other they are NOT sent, because a reasoning model
+   * answers one with a 400 — the `llm.sampling.ignored` span attribute names what was left out.
+   * `seed` exists on the chat-completions wire only, and is best effort where it exists.
+   */
+  readonly temperature?: number;
+  readonly seed?: number;
   /**
    * Called once per completed model turn, before the answer or the tool calls are acted on. The
    * one thing a multi-turn run could not do until 2026-08: a 90-second loop emitted nothing until
@@ -104,8 +120,15 @@ export interface AgentTurn {
   readonly toolCalls: readonly string[];
   readonly stopReason: StopReason;
   readonly usage: TokenUsage;
-  /** This turn's cost alone, integer minor units — never the run's running total. */
+  /** This turn's cost alone, integer minor units, rounded up — never the run's running total. */
   readonly cost: Money;
+  /** This turn's cost exactly (`Money` at a finer `scale`); absent when the provider stated none. */
+  readonly costExact?: Money;
+  /**
+   * Set on a REPAIR turn: the schema issues of the previous turn's answer, which is what the
+   * model was told to fix before it produced this one. Absent on every other turn.
+   */
+  readonly repairOf?: readonly string[];
   /** The running total, this turn included — on the last turn, the whole run. */
   readonly run: AgentRunUsage;
 }

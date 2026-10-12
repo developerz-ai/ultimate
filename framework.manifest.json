@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3bf777cdbdaae8bc65380baa2b92ce25532cff09e732d61f5d62b1d32131b8cf",
+  "buildId": "973cf00f265ddefc9902c95adc006b9f66cafda0d27ec1e6d37a6f63cc84f422",
   "tiers": {
     "0": [
       "core",
@@ -395,6 +395,11 @@
       "at": "packages/ai/src/errors.ts"
     },
     {
+      "code": "X_AGENT_TRANSCRIPT_INVALID",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
       "code": "X_AGENTS_MD_MISSING",
       "owner": "manifest",
       "at": "packages/manifest/src/errors.ts"
@@ -461,6 +466,11 @@
     },
     {
       "code": "X_AI_PROVIDER_UNAVAILABLE",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_AI_PROVIDER_UNEXPECTED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },
@@ -2181,6 +2191,11 @@
     },
     {
       "code": "X_LLM_STREAM_INVALID",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_LLM_TOOL_ARGUMENTS_INVALID",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },
@@ -3913,6 +3928,11 @@
       "code": "X_SKIP_CLEANUP_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/skip-if-cleanup.ts"
+    },
+    {
+      "code": "X_SLICE_POLICY_INCOMPLETE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SOCKET_AUTH_UNAVAILABLE",

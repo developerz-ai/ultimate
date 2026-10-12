@@ -9,18 +9,13 @@ does), `jobs` (`agentJob()`), `money`, `policy`, `schema`, `time`.
 
 `jobs` is declared for `agentJob()`: the action→job bridge has to live at tier 4+.
 
-`mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`
-rather than imported. Same contract, two wire formats — and the same *decision*: `toLlmTools` and
-`runLlmToolCall` ask `isMcpExposed` from `@ultimat3/core` (tier 0, reachable by both), never a
-local `=== true`. An in-app agent and an external one must be offered exactly the same tools.
-
-**And the same NAME**: `toLlmTool` passes `action.name` through untouched (the export name
-`@ultimat3/mcp` serves); `llm()` and `agent()` tool names are verbatim too. Never derive one.
-
-**And the same TOOL**: `asProjectableAction` and mcp's `primitiveFromAction` are two copies the
-tier table forces; `scripts/ai-mcp-tool-parity.test.ts` holds them equal — name, description,
-exposure, the whole input schema (an idempotent action's reserved `idempotencyKey` argument,
-`tool-idempotency.ts`), the policy verdict and the replay. A field one adds, the other adds.
+`mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`, never
+imported: same contract, same *decision* (`isMcpExposed` from `@ultimat3/core`, never a local
+`=== true`), same NAME (`action.name` verbatim, never derived) and the same TOOL —
+`asProjectableAction` and mcp's `primitiveFromAction` are two copies the tier table forces, held
+equal by `scripts/ai-mcp-tool-parity.test.ts` (name, description, exposure, the whole input schema
+incl. `tool-idempotency.ts`'s reserved `idempotencyKey`, the policy verdict, the replay). A field
+one adds, the other adds.
 
 ## Owns
 
@@ -29,7 +24,7 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts — and NO row of its own |
 | `model-resolve.ts` | `resolveModel` / `modelForCall` — declaration → prompt → gateway `defaultModel`, none is `X_AI_MODEL_UNRESOLVED` naming all three; `describedModel` for a published fact |
 | `model-fixture.ts` | the rows this package's own suites register (`useFixtureModels()`). Not shipped |
-| `provider.ts` | `Provider` interface, the request half, the money arithmetic, `anthropicProvider()` |
+| `provider.ts` | `Provider` interface, the request half, `anthropicProvider()` |
 | `echo-provider.ts` | `echoProvider()`, the deterministic double — split from `provider.ts` at its line ceiling |
 | `content-blocks.ts` | the `image` / `document` block shapes, the screen every request runs them through, their token estimate |
 | `content-errors.ts` | the `X_AI_CONTENT_UNSUPPORTED` class; its code and title belong in `errors.ts` |
@@ -57,17 +52,21 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
 | `tool-idempotency.ts` | an idempotent action's reserved `idempotencyKey` tool argument — MCP's, restated (same tier), held equal by the parity test |
-| `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged as code, name and stack frames — never its message or cause |
+| `tool-arguments.ts` / `answer-errors.ts` | one argument-string reader for both wires and what an unreadable one means (`assertToolArguments`); `X_LLM_TRUNCATED` + `X_LLM_TOOL_ARGUMENTS_INVALID` |
+| `billed.ts` / `run-meter.ts` | `meta.billed` + `billedOf`; the meter every `llm()`/`agent()` provider call goes through |
+| `failure-disclosure.ts` | `discloseFailure` — the ONE rule for what of a throw a remote reader sees (tool result, hive member); the withheld half is logged, never its message or cause |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `respond.ts` | the `respond` tool for one `output` (a non-object one wrapped in `{ value }`), its reader, and `parseJsonish` |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` | `agent()` — the tool loop, declared as an `action` |
-| `agent-def.ts` / `agent-system.ts` / `agent-usage.ts` | the declaration's types; the system one run sends; its running usage |
+| `agent-def.ts` / `agent-declared.ts` / `agent-system.ts` / `agent-usage.ts` | the declaration's types; its defaults, bound screen, limits and fact row; the system one run sends; its running usage |
+| `llm-def.ts` / `cost.ts` | `llm()`'s declaration types and `LlmCall`; the money arithmetic (`costOf`, `exactCostOf`) |
 | `agent-guards.ts` / `agent-errors.ts` | the repeated-turn detector and the run deadline; their two classes |
 | `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
+| `agent-continue.ts` / `agent-turn.ts` | `.run()` / `.continue()`, the transcript handle and its screen; one turn's report and refusals |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
-| `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish: nothing reads it yet, because `manifest` is tier 4 like this package and the consumer has to be `cli` at tier 5 |
+| `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish (its consumer has to be `cli`, tier 5) |
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
 | `hive.ts` | `hive()` — one action fanned out over many inputs, declared as an `action` |
 | `hive-result.ts` | `HiveMember` / `HiveResult`, and the SCHEMA built from the member's own `output` |
@@ -81,65 +80,54 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 
 ## Invariants — bounds and budget
 
+Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#bounds-and-budget).
+
 - **Every numeric option is screened; `??` is not the screen** (`finiteOption`/`finiteCount`;
-  `bun run finite-bounds` is the ratchet, blind to a required option, a default parameter and a
-  cross-field product). **`maxTokens` is the worst**: it IS the budget's pre-flight estimate, and a
-  `NaN` switches every ceiling off — the gateway, `registerModel` (`maxOutput`) and `llm()`/`agent()`
-  (at DECLARATION) each screen theirs.
-- **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun` in `limitsOf`
-  before the ledger's `request`; `retrieve()`'s own `k`; `remoteEmbedder()`'s `maxResponseBytes`).
-- A per-call budget `derive`s from the ambient ledger and only TIGHTENS. **A derived ledger reports
-  back up the chain** (every debit on every ancestor; `reserve` checks each `request` scope); the
-  STORE is written once, by the ledger the call was made on.
-- **`reserve` debits, then checks — never a read-then-write across an `await`.** The store's scopes
-  go through `BudgetStore.take(key, tokens, limit)`: REQUIRED, atomic (never `spent` + `add`). A
-  refusal at a later scope gives back what the earlier ones took.
-- **The store is touched only for a scope whose ceiling is DECLARED** (`takeScope`, `meteredKeys`).
-  `memoryBudgetStore()` has no window and no eviction (a ceiling bypass); a zero counter is deleted.
+  `bun run finite-bounds`). **`maxTokens` is the worst**: it IS the pre-flight estimate, and a `NaN`
+  switches every ceiling off — screened by the gateway, `registerModel` and `llm()`/`agent()`.
+- **A bound is screened under the key the DECLARATION uses** (`budget.tokensPerRun`, not `request`).
+- A per-call budget `derive`s from the ambient ledger and only TIGHTENS; a derived ledger reports
+  back up the chain; the STORE is written once, by the ledger the call was made on.
+- **`reserve` debits, then checks — never a read-then-write across an `await`**:
+  `BudgetStore.take(key, tokens, limit)` is REQUIRED and atomic; a later refusal gives back.
+- **The store is touched only for a scope whose ceiling is DECLARED**; `memoryBudgetStore()` has no
+  window and no eviction; a zero counter is deleted.
 - **`llm()`, `agent()`, `hive()` root as `currentBudget() ?? gateway.callLedger(budgetKeysFor(ctx.actor))`**
-  — the gateway's ceilings, keyed `actor:<kind>:<id>` / `org:<orgId>` (none for an empty org).
-  `callLedger` is required on `Gateway`; `hive()` asks `installedGateway()`.
-- **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**
-  (`providerGateway({ budgetStore })`). `add` takes a negative `tokens` for a release — a store that
-  clamps at zero leaks the ceiling.
-- Cost is `Money` (integer minor units), rounded **up**. A budget throws `X_AI_BUDGET_EXCEEDED`
-  **before** the provider call. Never truncate. List price over-reserves (no introductory prices).
-- **`Gateway.stream` routes BEFORE it reserves**, and `settled = true` comes after
-  `await ledger.record(...)`.
+  (`actor:<kind>:<id>` / `org:<orgId>`). `callLedger` is required on `Gateway`.
+- **`BudgetStore` is where `actor` and `org` live; the default is per PROCESS**; `add` takes a
+  negative `tokens` for a release — a store that clamps at zero leaks the ceiling.
+- A budget throws `X_AI_BUDGET_EXCEEDED` **before** the provider call. Never truncate. List price
+  over-reserves.
+- **Cost is exact in bigint (`cost.ts`, `Money` at `costScale`), rounded UP once**: per call by
+  `costOf`, per ledger at `report()`, per run from the summed usage — never a sum of round-ups. A
+  price may state a `scale` (≤ `PRICE_SCALE_DIGITS` finer); it is always read through `minorAt`.
+- **`Gateway.stream` routes BEFORE it reserves**; `settled = true` comes after `ledger.record`.
 
 ## Invariants — `llm()`
 
+Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm-invariants).
+
 - **`llm()` returns an `action`**, never a ninth primitive; it adds only the model half: render the
-  prompt, project `output` into the one `respond` tool, reserve the budget, consult the semantic cache.
-- **A non-object `output` is wrapped in `{ value }` and unwrapped** (`respond.ts`) — a tool's input is
-  an object; never refused, because `.stream()` serves `output: t.string`. `parseJsonish` is two
-  `indexOf` scans, never a backtracking pattern.
+  prompt, project `output` into the one `respond` tool, reserve the budget, consult the cache.
+- **A non-object `output` is wrapped in `{ value }` and unwrapped** (`respond.ts`), never refused;
+  `parseJsonish` is two `indexOf` scans, never a backtracking pattern.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim** (`index.test.ts`).
 - One repair turn, then `X_LLM_OUTPUT_INVALID`. A refusal (a 200 with no answer) is `X_LLM_REFUSED`
-  before the parse, carrying `stopDetails.category`; a truncated invalid answer is `X_LLM_TRUNCATED`.
-  The gateway never caches a refusal.
-- **Semantic scopes are separate cache INSTANCES**; the instance key carries the prompt hash AND
-  `ctx.locale` (in the unconditional half). **The default scope is the calling ACTOR**
-  (`JSON.stringify([actor.kind, actor.id, actor.orgId ?? null])`); `scope` receives
-  `{ input, ctx }`; widening is `scope: () => 'global'`. The instance map is bounded
-  (core's `MAX_CACHED_FORMATTERS`).
-- `cache.invalidates` is not on `llm()`: a `SemanticCache` is not a `CacheTier`. Version bump + `ttl`
-  is the invalidation.
-- The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`, never a
-  default provider.
+  before the parse; a truncated turn is `X_LLM_TRUNCATED` before the schema AND before any tool
+  runs (a cut `respond` reads `{}`). The gateway never caches a refusal.
+- **Semantic scopes are separate cache INSTANCES** (key: prompt hash AND `ctx.locale`); **the
+  default scope is the calling ACTOR**; widening is `scope: () => 'global'`; the map is bounded.
+  `cache.invalidates` is not on `llm()`: version bump + `ttl` is the invalidation.
+- The gateway is ambient (`configureAi`); absent at call time is `X_AI_GATEWAY_MISSING`.
 - **`llm()` forwards `ctx.signal`** onto `GenerateRequest`; `.stream()` inherits it.
 - **`.stream()` is the SAME action**, marked with an ambient sink: UNVALIDATED text, then one `done`
-  with the validated value; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool; budget
-  reserved before the provider, reconciled at `done`. LAZY.
+  with the validated value; no repair turn (`X_LLM_STREAM_INVALID`), no `respond` tool. LAZY.
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider**; a `Secret` in
-  `vars()` is `X_AI_PROMPT_SECRET` regardless. The `llm.redacted` span attribute records it.
+  `vars()` is `X_AI_PROMPT_SECRET` regardless.
 - **Fallback is across PROVIDERS serving one model, never across models**; `GenerateResult.provider`
-  is stamped by the gateway and put on the span as `llm.provider`.
-- Server-side `fallbacks` (beta) are never sent — the stable `2023-06-01` surface only.
-- **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks, in the ASSEMBLED
-  prompt, every fence closer a fenced value wrote any character of (never per value: two slots can
-  each hold half) — never deletes, never touches a template-only closer. The
-  fences are read once at `definePrompt`; no hash moves.
+  is stamped by the gateway. Server-side `fallbacks` (beta) are never sent.
+- **A slot inside a tag pair is DATA** (`prompt-fence.ts`, #689): `render` breaks every fence closer
+  a fenced value wrote, in the ASSEMBLED prompt — never deletes, never touches a template's own.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
   `canonicalJson`; an absent schema hashes as `''`.
 
@@ -147,7 +135,8 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 
 - **The response cache key is core's `fingerprint` over the request, each tool WHOLE** (every `llm()`
   tool is `respond`); a throwing `cache.set` is logged (`ai.cache.write_failed`), never a failure.
-- **An unknown stop/finish reason FAILS CLOSED as `max_tokens` on both formats**, streamed or not.
+- **An unknown stop reason FAILS CLOSED as `max_tokens` on the Anthropic wire; on chat-completions
+  it is UNKNOWN** (`readFinishReason`): a whole turn is a stop, else `X_AI_PROVIDER_UNEXPECTED`.
 - **One failure-body reader** (`error-body.ts`'s `detailOf`, bounded at `READ_LIMIT`) and one
   `withoutKey` scrub — the embedder included.
 - **`attempt` collects TRANSPORT failures only**: an `UltimateError` other than
@@ -156,33 +145,37 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 - **The gateway's reads of a provider's throw are total**: `isRetryable` fails closed; the line goes
   through `renderThrowable`.
 - **`X_AI_PROVIDER_UNAVAILABLE` is the one code classified `retryable`** (`AI_ERROR_RETRY`);
-  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Every other
-  code but the two agent stops stays UNREGISTERED on purpose.
+  `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Six
+  deterministic failures are `terminal` (`errors-retry.ts`); the rest stay UNREGISTERED on purpose.
 - **The retry SCHEDULE is core's (`backoffDelay`, `isRetryableStatus`); the LOOP is this package's** —
   core's `retry()` retries unclassified throws, so it would retry a 400 (`gateway-backoff.test.ts`).
 - Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.
 - **Both wire formats answer the same question the same way** (`provider-parity.test.ts`): an in-band
   `error` in a 200 throws (`throwInBandError`); a `refusal` detail forces `stopReason: 'refusal'`; a
-  tool call's `input` is parsed (`asToolInput`); the credential is scrubbed from `detail`.
+  tool call's `input` is parsed (`parseToolArguments`); the credential is scrubbed from `detail`.
+- **Arguments that are not JSON are never thrown by a wire reader**: recorded as `malformed`, and
+  the PROVIDER decides once usage is known — dropped on a truncated turn, else
+  `X_LLM_TOOL_ARGUMENTS_INVALID` with `meta.billed`, which the gateway RECORDS (`settleFailure`).
+- **Every throw of `llm()`/`agent()` after a provider call STARTED carries `meta.billed`**
+  (`meter.fail`): answered calls summed, `unsettled` counted and never priced.
 - A stream ending without `message_stop` throws. **`readSse` caps the unterminated buffer**
   (`MAX_FRAME_CHARS`); `provider` is required so a transport error names its endpoint.
 - A tool call is emitted whole. Thinking chunks are never appended to `text`.
-- Anthropic body: no `temperature`/`top_p`/`top_k`, no `budget_tokens`, `effort` inside
-  `output_config`. Model IDs are exact aliases, never date-suffixed.
-- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** No
-  default model, no catalogue row, no id list ships; the registry starts EMPTY and `resetModels()`
-  empties it. A model resolves declaration → prompt → `Gateway.defaultModel` through `resolveModel`
-  / `modelForCall` only; none is `X_AI_MODEL_UNRESOLVED` naming all three (with no gateway and nothing
-  declared, `X_AI_GATEWAY_MISSING` — the third place does not exist yet). `vendor-neutral.test.ts`
-  proves it in a fresh process; no fix line names a vendor id.
+- Anthropic body: no `top_p`/`top_k`, no `budget_tokens`, `effort` inside `output_config`. Model
+  IDs are exact aliases, never date-suffixed.
+- **`temperature`/`seed` (`sampling.ts`) are sent ONLY to a row with `sampling: { … : true }`** —
+  else left out (never refused; `llm.sampling.ignored`); no `seed` on the Anthropic wire; in
+  `promptCacheKey` only when set.
+- **Apps bring their own models and providers (M12, 25.0.0): no vendor choice, no vendor data.** The
+  registry starts EMPTY; a model resolves declaration → prompt → `Gateway.defaultModel`
+  (`resolveModel` / `modelForCall`), none is `X_AI_MODEL_UNRESOLVED` (no gateway at all:
+  `X_AI_GATEWAY_MISSING`). `vendor-neutral.test.ts` proves it; no fix line names a vendor id.
 - **`ModelId` is `string`; the catalogue is an open registry** — `modelSpec(id)` refuses an
-  unregistered id (`X_AI_MODEL_UNKNOWN`, fix `registerModel(…)`) at `costOf`, the budget estimate and
-  the body builders, before a socket or a reservation. **Re-registering REPLACES the spec and keeps
-  its rung** (negotiated rates). **Registration order is the ladder within a `family`**, read only by
-  `moreCapableThan`, over the APP's rows; `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
-- **Every provider serves the app's list**: `anthropicProvider({ models })` / `openAiProvider({ models })`
-  require a non-empty one (`X_AI_REQUEST_INVALID`); `echoProvider().models` reads the registry. **No
-  provider has a model of its own**: a direct call naming none is `X_AI_MODEL_UNRESOLVED` from all three.
+  unregistered id (`X_AI_MODEL_UNKNOWN`) before a socket or a reservation. Re-registering REPLACES
+  the spec and keeps its rung; registration order is the ladder within a `family`
+  (`moreCapableThan`); `X_LLM_REFUSED`'s fix names a rung ABOVE or nothing.
+- **Every provider serves the app's list** (`{ models }` required, non-empty); no provider has a
+  model of its own.
 - **The reasoning controls are PER MODEL (`models.ts`)**: an unasked control is omitted; an asked
   control the model lacks is `X_AI_REQUEST_INVALID`, never dropped. Adding a model is a row the app
   registers. `disableThinkingUpTo: 'never'` refuses `thinking: 'disabled'` at every effort;
@@ -197,12 +190,13 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 - **`openAiProvider()` is a FORMAT, not a vendor** — `baseUrl`, `auth`, `headers` are the
   differences; never a second class per vendor:
   - structured output is the `respond` tool, never `response_format`; `tool_choice` names the tool
-    only when the request offers exactly one;
+    only when the request offers exactly one and the row is not `forcedToolChoice: false`;
   - `strict: true` only when `satisfiesStrictMode` says the schema qualifies;
   - `max_completion_tokens`; `role: 'system'`; `stream_options: { include_usage: true }` and an
     ESTIMATE when usage never arrives; subtract `cached_tokens` from `prompt_tokens`;
-  - tool-call deltas merge by `tool_calls[].index`; `isComplete()` accepts `[DONE]` or a finish reason,
-    except `[DONE]` with pending tool fragments, which is refused;
+  - tool-call deltas merge by `tool_calls[].index`, a differing `id` starting a new call; calls are
+    read at `end()` (`[DONE]` or socket close), never at the finish reason; `isComplete()` accepts
+    `[DONE]` or a finish reason, except `[DONE]` with pending tool fragments, which is refused;
   - no code of its own (a media refusal is the shared `X_AI_CONTENT_UNSUPPORTED`);
     `AiTransportError` takes the provider's `envVar`; the key is revealed late,
     never stored, scrubbed from `detail`.
@@ -223,7 +217,9 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   - `tools` takes a real `action()` (`AgentTool = AnyAction | ProjectableAction`,
     `asProjectableAction`); projection happens on the FIRST RUN, memoised. An agent can be another
     agent's tool.
-  - A tool not `mcp: { expose: true }` is `X_AGENT_TOOL_UNEXPOSED` at DECLARATION.
+  - A tool is an exposed action or an `inProcessTool()` (`isOfferedTool`); anything else is
+    `X_AGENT_TOOL_UNEXPOSED` at DECLARATION. An in-process tool is never an action, never projected
+    to MCP, has no policy (the agent's decides) and parses its own input.
   - `ctx.signal` is read at the top of every turn, before every tool batch, and forwarded to
     `fetch`; `X_ABORTED` is core's.
   - One turn's tools run concurrently, results paired by index; no tool STARTS after an abort.
@@ -237,7 +233,14 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
   - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it** (status from
     `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
     same verdict a problem document and `@ultimat3/mcp` give, from `failure-disclosure.ts` — the
-    rule a hive member's `reason` follows too. Never a second copy.
+    rule a hive member's `reason` follows too. Never a second copy. One widening, for an
+    `inProcess` tool only (`discloseOwnFailure`): a branded error under a code with NO declared
+    status is shown as `{ error: { code, cause, fix } }`; `discloseErrors: false` opts out.
+- **`.run()`/`.continue()` are the SAME action**, marked by an ambient session only the declaring
+  agent may claim, once (a nested agent starts fresh). The handle is SIGNED (`sealTranscript`: the
+  cursor secret, own label) and bound to agent, model, tool names and `orgId`; screened before
+  anything is loaded. `maxTurns`/`tokensPerRun` are cumulative — the remainder is the ceiling,
+  NEVER a ledger debit. A failure seals an updated handle onto the error (`transcriptOf`).
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
   member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
   order with `index`; the hive never names an actor; no hive budget code; a member's throw goes
@@ -270,27 +273,20 @@ exposure, the whole input schema (an idempotent action's reserved `idempotencyKe
 
 ## Invariants — evals, retrieval, fix lines
 
-- **No fix line may name `x ai`** (planned). An eval is selected with `x test eval --filter <name>`;
-  `eval-errors.test.ts` asserts every `x test <word>` is one of the six types.
-- Every eval result carries the prompt hash. An eval gates on the DROP from its recorded baseline,
-  mean AND per case, both sides rounded as the baseline is written (`X_EVAL_BASELINE_MISSING` /
-  `X_EVAL_BASELINE_INVALID`). `baseline` is `import.meta.resolve('./…')`. Every prompt is named by an
-  eval (`X_EVAL_MISSING`). `ULTIMATE_EVAL_RECORD=1` records; a deliberately-worse test calls `run`,
-  never `assert`; `x verify` with the flag is `X_EVAL_RECORDING` and runs no eval.
-- Retrieval is hybrid by default; no vector-only path. **`chunk()` hard-wraps**, the overlap
-  carry stops at `buffer.length - 1` and yields to a next unit it does not fit beside (no chunk over
-  `size`); `metadata.source` is written AFTER the caller's spread. `VectorStore.prune` is required.
-- **A store with no tenant bound, read inside a request whose actor has an `orgId`, is
-  `X_VECTOR_UNSCOPED`** (`assertTenantRead`, both stores, every read). `scope: UNSCOPED`
-  (`crossTenant: true`) is the named opt-in; an omitted scope is `UNBOUND`.
-- `postgresVectorStore()` is the only production vector path (pgvector + FTS in the app's Postgres);
-  `memoryVectorStore()` enforces the same envelope. **`pg-vector.live.test.ts` refuses to skip** on a
-  Postgres without the extension (CI uses `pgvector/pgvector:pg17`).
-- The distance ordering lives in an ascending raw subquery (the only shape hnsw answers), pinned by a
-  plan assertion. hnsw scopes after the scan — assert rows, never the node; `analyze` after a backfill.
-- Tenant and policy filters are in SQL on every statement (`conditionsSql`), on BOTH fusion halves.
-  `(tenant, id)` is the primary key. `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`). Metadata is
-  bound `::text::jsonb`.
+Full text of each rule: [`docs/history/ai.md`](../../docs/history/ai.md#evals-retrieval-fix-lines).
+
+- **No fix line may name `x ai`** (planned); an eval is selected with `x test eval --filter <name>`.
+- Every eval result carries the prompt hash; an eval gates on the DROP from its recorded baseline,
+  mean AND per case (`X_EVAL_BASELINE_MISSING` / `_INVALID`); every prompt is named by an eval
+  (`X_EVAL_MISSING`); `ULTIMATE_EVAL_RECORD=1` records, and `x verify` with it is `X_EVAL_RECORDING`.
+- Retrieval is hybrid by default, no vector-only path. `chunk()` hard-wraps (no chunk over `size`);
+  `metadata.source` is written AFTER the caller's spread; `VectorStore.prune` is required.
+- **An unbound store read inside a request whose actor has an `orgId` is `X_VECTOR_UNSCOPED`**
+  (both stores, every read); `scope: UNSCOPED` is the named opt-in, an omitted scope is `UNBOUND`.
+- `postgresVectorStore()` is the only production vector path; `pg-vector.live.test.ts` refuses to
+  skip without the extension. Distance ordering is an ascending raw subquery (the shape hnsw
+  answers), pinned by a plan assertion. Tenant and policy filters are in SQL on every statement and
+  BOTH fusion halves; `(tenant, id)` is the key; `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`).
 
 ## Commands
 

@@ -264,10 +264,10 @@ describe('usage and cost, per turn and per run', () => {
     expect(turns.map((turn) => turn.usage.cacheWriteTokens)).toEqual([6_000, 300, 300]);
     expect(turns.map((turn) => turn.usage.cacheReadTokens)).toEqual([0, 6_000, 6_300]);
     // Turn 1: 20 in @200 + 6,000 written @250 + 30 out @1,000 per million = 0.004 + 1.5 + 0.03
-    // minor units of input side → ceil(1.504) + ceil(0.03) = 2 + 1.
-    expect(turns[0]?.cost).toEqual(usd(3));
-    // Turn 2: 10 in + 6,000 READ @10 + 300 written = 0.002 + 0.06 + 0.075 → 1, plus 1 for output.
-    expect(turns[1]?.cost).toEqual(usd(2));
+    // = 1.534 minor units, rounded up ONCE (it read 3 while each half was rounded on its own).
+    expect(turns[0]?.cost).toEqual(usd(2));
+    // Turn 2: 10 in + 6,000 READ @10 + 300 written + 30 out = 0.002 + 0.06 + 0.075 + 0.03 → 1.
+    expect(turns[1]?.cost).toEqual(usd(1));
     // The run: summed usage, priced once — never three round-ups added together.
     const last = turns.at(-1)?.run;
     expect(last?.usage).toEqual({
@@ -276,8 +276,8 @@ describe('usage and cost, per turn and per run', () => {
       cacheReadTokens: 12_300,
       cacheWriteTokens: 6_600,
     });
-    // 40@200 + 12,300@10 + 6,600@250 = 0.008 + 0.123 + 1.65 = 1.781 → 2; output 0.1 → 1.
-    expect(last?.cost).toEqual(usd(3));
+    // 40@200 + 12,300@10 + 6,600@250 + 100@1,000 = 0.008 + 0.123 + 1.65 + 0.1 = 1.881 → 2.
+    expect(last?.cost).toEqual(usd(2));
     expect(turns[0]?.run.usage).toEqual(turns[0]?.usage as TokenUsage);
   });
 

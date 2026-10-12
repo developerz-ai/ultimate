@@ -362,7 +362,7 @@ Long or multi-call chains are `job`s with steps, so a model call that fails on s
 | `agentJob()` | `job()` | an agent as durable, retried, cancellable queue work — `As of 2026-08` the only way an agent reaches a queue |
 | `backfill()` | `job()` | the resumable, paced sweep those run over → [Migrations and backfills](Migrations-And-Backfills) |
 
-A tool is a real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue and authorize identically. An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
+A tool is one of two things. A real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue of actions and authorize identically. Or an `inProcessTool({ name, description, input, execute })`: a tool that is this process's alone, with no `mcp` flag, in no MCP catalogue, route or `openapi.json`, running as `ctx.actor` under the agent's own policy → [In-process tools](Agents#in-process-tools). An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
 
 Full reference, including the at-least-once trap that makes every mutating tool's idempotency your obligation: [Agents](Agents).
 
@@ -465,7 +465,7 @@ $ x verify --json
 | `X_MCP_RATE_LIMITED` | this caller spent its per-minute allowance for the request's class ([above](#rate-limits-on-the-http-transport)) | wait out the `Retry-After`, or raise it where the route is built: `mcpHttpRoute({ rateLimits })` / `defineAppMcp({ rateLimits })`. Never `X_RATE_LIMITED`'s buckets — they do not govern this route |
 | `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | over an app's MCP: the caller's fix — ask the account owner or an administrator for the permission; a retry is refused the same way. As the app's developer: `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |
-| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action that is not MCP-exposed — refused at **declaration** | add `mcp: { expose: true, description }` to the action, or drop it from `tools` |
+| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action that is not MCP-exposed and is not an `inProcessTool()` — refused at **declaration** | `inProcessTool({ … })` for a tool only the agent may call, or add `mcp: { expose: true, description }` to the action, or drop it from `tools` |
 | `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering | tell the template when to stop and answer through the respond tool, then bump its version |
 | `X_HIVE_EMPTY` | a `hive()` split into zero members | return at least one member input, or guard the call site |
 | `X_NOT_IMPLEMENTED` | a remote driver stub was reached | configure the local/PGlite driver, or wait for the release named in `fix` |

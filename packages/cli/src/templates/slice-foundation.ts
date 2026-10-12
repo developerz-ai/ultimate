@@ -131,7 +131,59 @@ export function sliceExports(source: string, name: string): boolean {
   const declared = new RegExp(
     `\\bexport\\s+(?:abstract\\s+)?(?:class|const|let|var|(?:async\\s+)?function|enum)\\s+${name}\\b`,
   );
-  return declared.test(code) || listedExports(code).includes(name);
+  return (
+    declared.test(code) || listedExports(code).includes(name) || destructured(code).includes(name)
+  );
+}
+
+/** The names an `export const { a, b: c } = …` declares — `a` and `c`, never `b`. */
+const destructured = (code: string): readonly string[] =>
+  [...code.matchAll(/\bexport\s+(?:const|let|var)\s*\{([^}]*)\}\s*=/g)].flatMap((match) =>
+    (match[1] ?? '')
+      .split(',')
+      .map((entry) => (entry.split(':').at(-1) ?? '').split('=')[0]?.trim() ?? '')
+      .filter((entry) => entry !== ''),
+  );
+
+const STAR = /\bexport\s*\*\s*from\s*['"]([^'"]+)['"]\s*;?/g;
+
+/**
+ * `source` with each `export * from '<specifier>'` replaced by the module `read` answers for it —
+ * ONE level, which is what a slice's barrel is. A specifier `read` cannot answer (a package, a
+ * missing file) is left as it stands, and that leftover is what `exportsUnknown` reports.
+ */
+export function inlineReexports(
+  source: string,
+  read: (specifier: string) => string | undefined,
+): string {
+  return stripComments(source).replace(STAR, (statement: string, specifier: string) => {
+    const inner = read(specifier);
+    // Its own `export *` lines are dropped rather than followed: one level, and a module that
+    // re-exports further is "cannot tell" only if THIS file still says so.
+    return inner === undefined ? statement : stripComments(inner).replace(STAR, '');
+  });
+}
+
+/** Whether `source` re-exports a module nobody read: what it exports cannot be known from here. */
+export const exportsUnknown = (source: string): boolean => {
+  const code = stripComments(source);
+  return /\bexport\s*\*\s*from\b/.test(code) || nestedPattern(code);
+};
+
+/**
+ * Whether an exported destructuring pattern is one the flat reader above cannot spell: a nested
+ * object or array pattern, or a rest element. Its names are then UNKNOWN — never "missing".
+ */
+function nestedPattern(code: string): boolean {
+  for (const match of code.matchAll(/\bexport\s+(?:const|let|var)\s*\{/g)) {
+    let depth = 1;
+    for (let at = (match.index ?? 0) + match[0].length; at < code.length && depth > 0; at += 1) {
+      const char = code[at];
+      if (char === '{' || char === '[' || code.startsWith('...', at)) return true;
+      if (char === '}') depth -= 1;
+    }
+  }
+  return false;
 }
 
 /** `    title: text({ max: 200 }),` — one column of an entity, as its name and its builder. */
@@ -161,4 +213,17 @@ export function sliceTakesScaffoldRow(
   const wanted = columnsOf(String(scaffold?.contents ?? ''));
   if (wanted === '' || columnsOf(sliceEntity) !== wanted) return false;
   return sliceRepo === undefined || sliceExports(sliceRepo, 'insert');
+}
+
+/**
+ * The ONE permission `name` grants, when `source` declares it as a single literal call:
+ * `export const canBlogWrite = can('blog:publish');`. Anything else — a predicate argument,
+ * `and`/`or`, a function, a re-export — is `undefined`: the grant cannot be read, and a generated
+ * test must not assume one.
+ */
+export function grantOf(source: string, name: string): string | undefined {
+  const declared = new RegExp(
+    `\\bexport\\s+const\\s+${name}\\s*=\\s*can\\(\\s*(['"\`])([A-Za-z0-9_.*:-]+)\\1\\s*\\)\\s*;`,
+  );
+  return declared.exec(stripComments(source))?.[2];
 }

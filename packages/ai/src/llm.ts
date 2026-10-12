@@ -21,38 +21,36 @@
  * same rules.
  */
 
-import type { Action, ActionMcp, ActionPolicy, InvokeOptions } from '@ultimat3/action';
+import type { Action, InvokeOptions } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
 import type { Ctx, Span, SpanAttributes } from '@ultimat3/core';
 import { finiteCount, withSpan } from '@ultimat3/core';
-import type { Money } from '@ultimat3/money';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
+import { runTotal } from './agent-usage';
+import { LlmTruncatedError } from './answer-errors';
 import type { BudgetLimits } from './budget';
 import { budgetKeysFor, currentBudget, screenedMoney, withBudget } from './budget';
-import {
-  LlmOutputInvalidError,
-  LlmRefusedError,
-  LlmStreamInvalidError,
-  LlmTruncatedError,
-} from './errors';
+import { LlmOutputInvalidError, LlmRefusedError, LlmStreamInvalidError } from './errors';
 import type { Gateway } from './gateway';
-import type { LlmCache } from './llm-cache';
 import { openCache } from './llm-cache';
+import type { LlmBudget, LlmDef } from './llm-def';
 import type { LlmSink, LlmStreamChunk } from './llm-stream';
 import { currentLlmSink, llmStream, streamOneTurn, withLlmSink } from './llm-stream';
 import { modelForCall } from './model-resolve';
-import type { ModelId } from './models';
 import { moreCapableThan } from './models';
-import type { Prompt, PromptVars } from './prompt';
-import type { PromptCacheOption } from './prompt-cache';
+import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { parseJsonish, RESPOND, respondFor } from './respond';
-import { aiGateway, aiRedactor } from './runtime';
+import type { RunMeter } from './run-meter';
+import { runMeter } from './run-meter';
+import { aiGateway, aiRedactor, installedGateway } from './runtime';
+import type { Sampling } from './sampling';
+import { ignoredSampling, screenSampling } from './sampling';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
 const ATTEMPTS = 2;
@@ -63,52 +61,7 @@ const ATTEMPTS = 2;
  */
 const DEFAULT_MAX_TOKENS = 4_096;
 
-/** Per-call ceilings, checked before the provider is reached. Never truncates — refuses. */
-export interface LlmBudget {
-  /** Prompt tokens. */
-  readonly tokensIn?: number;
-  /** Worst-case price of one call, integer minor units. */
-  readonly costPerCall?: Money;
-}
-
-export interface LlmVarsArgs<TInput extends StandardSchemaV1> {
-  readonly input: InferOutput<TInput>;
-  readonly ctx: Ctx;
-}
-
-export interface LlmDef<
-  TInput extends StandardSchemaV1,
-  TOutput extends StandardSchemaV1,
-  V extends PromptVars,
-> {
-  /**
-   * Overrides the prompt artifact's own model. The prompt's is part of its content hash and
-   * travels with it; this one is the deployment decision, so it wins.
-   */
-  readonly model?: ModelId;
-  readonly input: TInput;
-  readonly output: TOutput;
-  readonly prompt: Prompt<V>;
-  /**
-   * Everything the prompt is allowed to see, derived from the parsed input. Required, and
-   * async, because the input is usually an id and the prompt needs the row behind it — this
-   * is the one declared place a model call loads data, so a reader can see what was sent.
-   */
-  vars(args: LlmVarsArgs<TInput>): V | Promise<V>;
-  readonly cache?: LlmCache<InferOutput<TInput>>;
-  /**
-   * PROVIDER prompt caching (`./prompt-cache`) — not `cache`, which is this package's own semantic
-   * cache. Default `'off'`: a one-shot call marked for caching pays the write premium (1.25x on
-   * Anthropic) for a prefix nothing may ever read back. `'auto'` is for a call made many times
-   * inside the cache's lifetime with one long `system`; the repair turn reads it back either way.
-   */
-  readonly promptCache?: PromptCacheOption<LlmVarsArgs<TInput>>;
-  readonly budget?: LlmBudget;
-  readonly policy: ActionPolicy;
-  readonly mcp?: ActionMcp;
-  /** Enforced completion ceiling. The model never sees it, so it can be cut off mid-answer. */
-  readonly maxTokens?: number;
-}
+export type { LlmBudget, LlmCall, LlmDef, LlmVarsArgs } from './llm-def';
 
 /**
  * An `action` with one extra way to be called. Every projection an action has, it has — its MCP tool,
@@ -152,12 +105,13 @@ export function llm<
   // off for the life of the process. A floor of 1 because a completion ceiling of zero tokens is
   // a call that cannot answer.
   finiteCount('llm', 'maxTokens', def.maxTokens ?? DEFAULT_MAX_TOKENS, 1);
+  const sampling = screenSampling('llm', def);
   const built = action<TInput, TOutput>({
     input: def.input,
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: (args) => generate(def, respond, args),
+    handle: (args) => generate(def, respond, sampling, args),
   });
   return streamable(built);
 }
@@ -195,6 +149,7 @@ async function generate<
 >(
   def: LlmDef<TInput, TOutput, V>,
   respond: Respond,
+  sampling: Sampling,
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
@@ -227,6 +182,11 @@ async function generate<
       // an audit asks evidence for, and a redactor that silently stopped matching looks identical
       // to one that had nothing to remove until this attribute separates them.
       'llm.redacted': redacted,
+      'llm.sampling.ignored': ignoredSampling(
+        model,
+        sampling,
+        installedGateway()?.samplingWires?.(model),
+      ).join(','),
     });
 
     // A cached answer is still data of unknown provenance, so it goes through the schema like
@@ -254,6 +214,7 @@ async function generate<
       maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
+      ...sampling,
       // The caller's own signal, forwarded to the transport exactly as `agent()` does — and
       // inherited by `streamedAnswer` from this same `base`. Without it a disconnected caller left
       // the provider call in flight, billed and unread, and the repair turn bought a SECOND one.
@@ -272,17 +233,22 @@ async function generate<
     );
     const sink = currentLlmSink();
 
-    return withBudget(ledger, async () => {
+    // Every provider call goes through the meter, so a failure AFTER one answered — a refusal, a
+    // truncation, a schema no repair satisfied — is thrown carrying what it was billed.
+    const meter = runMeter();
+    const answer = async (): Promise<InferOutput<TOutput>> => {
       if (sink !== undefined) {
-        const value = await streamedAnswer(def.output, name, gateway, base, sink, span);
+        const value = await streamedAnswer(def, name, gateway, base, sink, span, meter);
         await cache?.remember(value);
         return value;
       }
       let messages: readonly AiMessage[] = request.messages;
       let issues = 'no output';
+      let rejected: readonly string[] | undefined;
       for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
-        const result = await gateway.generate({ ...request, messages });
+        const result = await meter.call(gateway.generate({ ...request, messages }));
         span.setAttributes({ 'llm.attempts': attempt, ...answerAttributes(result) });
+        await observeCall(def, meter, result, attempt, rejected);
         // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial
         // content, so parsing it first reports a schema disagreement — a cause that is wrong, a
         // fix that does not apply, and a repair turn spent buying the same refusal again.
@@ -298,25 +264,38 @@ async function generate<
             explanation: result.stopDetails?.explanation,
           });
         }
+        // Cut off, so there is no answer to read — and it is read BEFORE the schema for the reason
+        // the refusal is: a `respond` call stopped at the ceiling arrives with no arguments, both
+        // wires read that as `{}`, and `{}` SATISFIES an `output` whose keys are optional. The
+        // ceiling is the same on the next attempt, so the repair turn is a second truncation.
+        if (isTruncated(result.stopReason)) {
+          throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
+        }
         const parsed = await validateAsync(def.output, respond.read(result));
         if (parsed.issues === undefined) {
           await cache?.remember(parsed.value);
           return parsed.value;
         }
-        // A cut-off answer that also fails its schema is not a disagreement about the shape: the
-        // ceiling is the same on the next attempt, so the repair turn is a second truncation.
-        if (isTruncated(result.stopReason)) {
-          throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
-        }
-        issues = formatIssues(parsed.issues).join('; ');
+        rejected = formatIssues(parsed.issues);
+        issues = rejected.join('; ');
         const echo = assistantEcho(result);
         messages =
           echo === undefined
             ? [...messages, repair(issues)]
             : [...messages, { role: 'assistant', content: echo }, repair(issues)];
       }
-      throw new LlmOutputInvalidError({ prompt: name, attempts: ATTEMPTS, issues });
-    });
+      throw new LlmOutputInvalidError({
+        prompt: name,
+        attempts: ATTEMPTS,
+        issues,
+        ...(rejected === undefined ? {} : { list: rejected }),
+      });
+    };
+    return withBudget(ledger, () =>
+      answer().catch((error: unknown) => {
+        throw meter.fail(error);
+      }),
+    );
   });
 }
 
@@ -345,16 +324,23 @@ export function answerAttributes(result: GenerateResult): SpanAttributes {
  * carries empty or partial content and parsing it first reports a schema disagreement that is not
  * one. Truncation is the same call it is on the non-streaming path.
  */
-async function streamedAnswer<TOutput extends StandardSchemaV1>(
-  output: TOutput,
+async function streamedAnswer<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  V extends PromptVars,
+>(
+  def: LlmDef<TInput, TOutput, V>,
   name: string,
   gateway: Gateway,
   request: GenerateRequest,
   sink: LlmSink,
   span: Span,
+  meter: RunMeter,
 ): Promise<InferOutput<TOutput>> {
-  const result = await streamOneTurn(gateway, request, sink);
+  const { output } = def;
+  const result = await meter.call(streamOneTurn(gateway, request, sink));
   span.setAttributes({ 'llm.attempts': 1, ...answerAttributes(result) });
+  await observeCall(def, meter, result, 1, undefined);
   if (result.stopReason === 'refusal') {
     throw new LlmRefusedError({
       prompt: name,
@@ -377,6 +363,32 @@ async function streamedAnswer<TOutput extends StandardSchemaV1>(
   throw new LlmStreamInvalidError({
     prompt: name,
     issues: formatIssues(fallback.issues).join('; '),
+  });
+}
+
+/** One provider call, reported to the declaration's `onCall`. Awaited; a throw fails the call. */
+async function observeCall<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  V extends PromptVars,
+>(
+  def: LlmDef<TInput, TOutput, V>,
+  meter: RunMeter,
+  result: GenerateResult,
+  attempt: number,
+  repairOf: readonly string[] | undefined,
+): Promise<void> {
+  if (def.onCall === undefined) return;
+  await def.onCall({
+    attempt,
+    model: result.model,
+    provider: result.provider,
+    stopReason: result.stopReason,
+    usage: result.usage,
+    cost: result.cost,
+    ...(result.costExact === undefined ? {} : { costExact: result.costExact }),
+    ...(repairOf === undefined ? {} : { repairOf }),
+    run: runTotal(result.model, undefined, meter.total()),
   });
 }
 

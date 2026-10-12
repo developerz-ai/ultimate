@@ -224,6 +224,7 @@ export {
   CURSOR_SECRET_KEY,
   CursorInvalidError,
   configureCursorSigning,
+  currentSigningSecret,
   decodeCursor,
   encodeCursor,
   resetCursorSigning,

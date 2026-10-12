@@ -233,6 +233,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ISLAND_MODULE_DUPLICATED',
   'X_BACKFILL_SLICE_ENTITY',
   'X_LAYOUT_SIBLING_MODULE',
+  'X_SLICE_POLICY_INCOMPLETE',
 ] as const;
 
 /**
@@ -422,6 +423,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ISLAND_MODULE_DUPLICATED: 'An island chunk bundles one module more than once',
   X_BACKFILL_SLICE_ENTITY: 'the slice holds no entity a generated backfill can sweep',
   X_LAYOUT_SIBLING_MODULE: 'a primitive module beside its directory',
+  X_SLICE_POLICY_INCOMPLETE: 'a generator needs an export the slice policy.ts does not declare',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

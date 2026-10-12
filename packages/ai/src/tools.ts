@@ -24,7 +24,7 @@ import type { Actor } from '@ultimat3/core';
 import { isMcpExposed, tryUseContext } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 import { toWireSchema } from '@ultimat3/schema';
-import { discloseFailure } from './failure-disclosure';
+import { discloseFailure, discloseOwnFailure } from './failure-disclosure';
 import { takeToolIdempotencyKey, withToolIdempotencyKey } from './tool-idempotency';
 
 /**
@@ -69,6 +69,14 @@ export interface ProjectableAction {
   readonly description?: string;
   readonly mcp?: { readonly expose?: boolean; readonly description?: string };
   readonly inputJsonSchema?: JsonSchema;
+  /**
+   * The tool runs IN PROCESS — the app's own code, called by its own agent — and is not the
+   * projection of an exposed action. Its typed refusal is then shown to the model whole, as a
+   * structured error (`discloseOwnFailure`); a projected tool keeps the rule MCP follows.
+   */
+  readonly inProcess?: boolean;
+  /** In-process only: `false` withholds its refusals as a projected tool's are. Default `true`. */
+  readonly discloseErrors?: boolean;
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
 }
 
@@ -148,13 +156,23 @@ export function toLlmTool(action: ProjectableAction): LlmTool {
 }
 
 /**
+ * Whether an agent may be OFFERED this tool: an action an MCP surface exposes (`isMcpExposed`,
+ * core's one predicate — an in-app agent and an external one see the same catalogue of ACTIONS), or
+ * a tool that is this process's alone (`inProcessTool()`), which no surface but the agent sees.
+ */
+export const isOfferedTool = (tool: {
+  readonly mcp?: ProjectableAction['mcp'];
+  readonly inProcess?: boolean;
+}): boolean => tool.inProcess === true || isMcpExposed(tool.mcp);
+
+/**
  * Every exposed action as a tool definition, in stable name order. The gateway and MCP ask
  * `isMcpExposed` — @ultimat3/core's one predicate — so an in-app agent and an external one are
  * offered exactly the same tools.
  */
 export function toLlmTools(actions: readonly ProjectableAction[]): readonly LlmTool[] {
   return actions
-    .filter((a) => isMcpExposed(a.mcp))
+    .filter(isOfferedTool)
     .map(toLlmTool)
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
@@ -167,8 +185,10 @@ export async function runLlmToolCall(
   actions: readonly ProjectableAction[],
   call: LlmToolCall,
   actor: Actor,
+  /** `discloseErrors: false` withholds every in-process tool's refusal (`agent({ discloseToolErrors })`). */
+  options: { readonly discloseErrors?: boolean } = {},
 ): Promise<LlmToolResult> {
-  const action = actions.find((a) => a.name === call.name && isMcpExposed(a.mcp));
+  const action = actions.find((a) => a.name === call.name && isOfferedTool(a));
   if (action === undefined) {
     return { toolUseId: call.id, content: `unknown tool: ${call.name}`, isError: true };
   }
@@ -177,7 +197,8 @@ export async function runLlmToolCall(
     return resultOf(call.id, output);
   } catch (error) {
     // A policy denial is an outcome the model should read and react to, not a crash.
-    return { toolUseId: call.id, content: describeFailure(error, call.name), isError: true };
+    const content = describeFailure(error, action, options.discloseErrors !== false);
+    return { toolUseId: call.id, content, isError: true };
   }
 }
 
@@ -212,14 +233,38 @@ function resultOf(toolUseId: string, output: unknown): LlmToolResult {
 export const HIDDEN_TOOL_CAUSE =
   'the tool failed inside the server; the details are withheld from this conversation; the server log records its code and where it failed';
 
+/** The most of an in-process refusal's `cause` / `fix` a model is sent. */
+export const OWN_CAUSE_CHARS = 1_000;
+export const OWN_FIX_CHARS = 500;
+
+const clip = (text: string, chars: number): string =>
+  text.length <= chars ? text : `${text.slice(0, chars - 1)}…`;
+
 /**
  * `discloseFailure`'s verdict, rendered as the `tool_result` line — the same rule a hive member's
  * reason follows, so what an agent may read of a throw is decided once. An uncoded throw says only
  * that it failed; a withheld cause becomes `HIDDEN_TOOL_CAUSE`, and the log has the rest.
+ *
+ * An in-process tool's OWN refusal is rendered as JSON — `{ error: { code, cause, fix } }` — the
+ * structured form of the three authored fields, and nothing but them.
  */
-function describeFailure(error: unknown, toolName: string): string {
-  const shown = discloseFailure(error, tryUseContext()?.logger, `tool ${toolName}`);
+function describeFailure(error: unknown, tool: ProjectableAction, disclose: boolean): string {
+  const logger = tryUseContext()?.logger;
+  const where = `tool ${tool.name}`;
+  const own = disclose && tool.inProcess === true && tool.discloseErrors !== false;
+  const shown = own
+    ? discloseOwnFailure(error, logger, where)
+    : discloseFailure(error, logger, where);
   if (shown.code === undefined) return 'tool failed';
+  if (own && shown.cause !== undefined) {
+    // Bounded BEFORE it is serialised: the loop truncates a tool result at `maxToolResultChars`,
+    // and a cut through the middle of this JSON is a string the model cannot read.
+    const cause = clip(shown.cause, OWN_CAUSE_CHARS);
+    const fix = shown.fix === undefined ? undefined : clip(shown.fix, OWN_FIX_CHARS);
+    return JSON.stringify({
+      error: { code: clip(shown.code, 128), cause, ...(fix === undefined ? {} : { fix }) },
+    });
+  }
   const line = `${shown.code}: ${shown.cause ?? HIDDEN_TOOL_CAUSE}`;
   return shown.fix === undefined ? line : `${line} (fix: ${shown.fix})`;
 }

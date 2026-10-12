@@ -11,6 +11,8 @@ import { renderThrowable } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { StopDetails, StopReason, StreamChunk, TokenUsage } from './provider';
 import type { SseFrame } from './sse';
+import type { MalformedToolCall } from './tool-arguments';
+import { parseToolArguments } from './tool-arguments';
 import type { LlmToolCall } from './tools';
 
 export const ZERO_USAGE: TokenUsage = {
@@ -141,6 +143,8 @@ interface PendingTool {
 export interface StreamState {
   readonly text: string;
   readonly toolCalls: readonly LlmToolCall[];
+  /** Calls whose arguments were not JSON — never among `toolCalls`; `openai-wire.ts`'s twin. */
+  readonly malformed: readonly MalformedToolCall[];
   readonly stopReason: StopReason;
   readonly stopDetails: StopDetails | undefined;
   readonly usage: TokenUsage;
@@ -154,6 +158,7 @@ export interface StreamState {
 export class MessageStream {
   private text = '';
   private readonly toolCalls: LlmToolCall[] = [];
+  private readonly malformed: MalformedToolCall[] = [];
   private stopReason: StopReason = 'end_turn';
   private stopDetails: StopDetails | undefined;
   private usage: TokenUsage = ZERO_USAGE;
@@ -199,6 +204,7 @@ export class MessageStream {
     return {
       text: this.text,
       toolCalls: [...this.toolCalls],
+      malformed: [...this.malformed],
       // A refusal detail is a refusal whatever the stop reason says. `parseStopReason` answers
       // `end_turn` for a spelling this build has never seen, and every consumer branches on the
       // REASON, so the pair would read as a complete answer that happens to be empty.
@@ -272,22 +278,17 @@ export class MessageStream {
     const tool = this.pending.get(index);
     if (tool === undefined) return [];
     this.pending.delete(index);
-    const call: LlmToolCall = { id: tool.id, name: tool.name, input: this.inputOf(tool) };
+    // A tool with no arguments streams no `input_json_delta` at all, which is `{}`, not a fault.
+    const input = parseToolArguments(tool.json);
+    if (input === undefined) {
+      // Not thrown here: the block closes BEFORE `message_delta` says why the turn stopped, and
+      // that reason is what tells a cut-off call from broken JSON. The provider decides, at the end.
+      this.malformed.push({ name: tool.name, chars: tool.json.length });
+      return [];
+    }
+    const call: LlmToolCall = { id: tool.id, name: tool.name, input };
     this.toolCalls.push(call);
     return [{ type: 'tool-call', call }];
-  }
-
-  /** A tool with no arguments streams no `input_json_delta` at all, which is `{}`, not a fault. */
-  private inputOf(tool: PendingTool): Record<string, unknown> {
-    if (tool.json === '') return {};
-    try {
-      return asToolInput(JSON.parse(tool.json));
-    } catch (error) {
-      throw new AiTransportError({
-        provider: 'anthropic',
-        detail: `tool "${tool.name}" streamed arguments that are not JSON: ${renderThrowable(error)}`,
-      });
-    }
   }
 
   private onMessageDelta(payload: Record<string, unknown>): readonly StreamChunk[] {

@@ -66,6 +66,7 @@ export {
 } from './error-page';
 export {
   DEFAULT_STATUS,
+  declaredStatusFor,
   registerErrorStatus,
   resetErrorStatus,
   statusFor,

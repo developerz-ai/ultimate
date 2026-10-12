@@ -88,6 +88,7 @@ describe('MessageStream', () => {
     expect(message.state()).toEqual({
       text: 'Hello world',
       toolCalls: [],
+      malformed: [],
       stopReason: 'end_turn',
       // Required by `StreamState`, and asserted rather than omitted: an `end_turn` that carried
       // refusal details would be a parse bug this assertion is the only thing positioned to see.
@@ -231,7 +232,9 @@ describe('MessageStream', () => {
     expect(String((thrown as { cause: unknown }).cause)).not.toContain('function');
   });
 
-  test('tool arguments that never parse are a transport failure', () => {
+  // Recorded, never thrown at the block: the stop reason that tells a cut-off call from broken
+  // JSON arrives AFTER the block closes, and so does the usage a failure has to carry.
+  test('tool arguments that never parse are not a call, and are reported as malformed', () => {
     const message = new MessageStream();
     message.push(
       frame({
@@ -247,9 +250,9 @@ describe('MessageStream', () => {
         delta: { type: 'input_json_delta', partial_json: '{"a":' },
       }),
     );
-    expect(() => message.push(frame({ type: 'content_block_stop', index: 0 }))).toThrow(
-      /streamed arguments that are not JSON/,
-    );
+    expect(message.push(frame({ type: 'content_block_stop', index: 0 }))).toEqual([]);
+    expect(message.state().toolCalls).toEqual([]);
+    expect(message.state().malformed).toEqual([{ name: 'broken', chars: 5 }]);
   });
 });
 

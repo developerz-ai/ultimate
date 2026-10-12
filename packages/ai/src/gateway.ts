@@ -16,7 +16,8 @@ import {
   stringField,
 } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import type { BudgetKeys, BudgetLimits, BudgetStore } from './budget';
+import { billedOf } from './billed';
+import type { BudgetKeys, BudgetLimits, BudgetReservation, BudgetStore } from './budget';
 import {
   assertFiniteLimits,
   BudgetLedger,
@@ -28,6 +29,7 @@ import { AiProviderUnavailableError } from './errors';
 import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
+import type { SamplingWire } from './sampling';
 
 /**
  * Response cache. Structurally satisfied by `@ultimat3/cache`'s memo/LRU tiers; declared as
@@ -82,6 +84,8 @@ export interface ProviderGatewayInput {
 }
 
 export interface Gateway {
+  /** The wire formats of the providers serving `model` — what `llm.sampling.ignored` is read from. */
+  samplingWires?(model: ModelId): readonly SamplingWire[];
   /**
    * The model a call with none declared runs on — `providerGateway({ defaultModel })`. Read by
    * `llm()` and `agent()` after the declaration and its prompt, so the app's choice is the one
@@ -186,11 +190,23 @@ class GatewayImpl implements Gateway {
     try {
       result = await this.attempt(model, (provider) => provider.generate(resolved));
     } catch (error) {
-      // A call that never landed must not go on holding its reservation.
-      await ledger?.release(reservation);
+      // A call that never landed must not go on holding its reservation — and one that DID land
+      // and still failed (`billedOf`: the provider answered with something unusable) is recorded
+      // as what it cost. Releasing it told the ledger a billed call was free.
+      await settleFailure(ledger, reservation, error);
       throw error;
     }
-    await ledger?.record(result.usage, result.cost, reservation);
+    // The provider was PAID by now. Nothing below may turn that answer into a failure: a ledger
+    // that cannot book it gives the reservation back and says so, and the answer is returned.
+    try {
+      await ledger?.record(result.usage, result.costExact ?? result.cost, reservation);
+    } catch (error) {
+      await ledger?.release(reservation).catch(() => undefined);
+      logger.warn('ai.budget.record_failed', {
+        provider: result.provider ?? 'unknown',
+        error: renderThrowable(error),
+      });
+    }
     // A refusal is not an answer, so it is not cached. Storing one would keep serving a decision
     // the classifier might not make twice, long after the prompt that provoked it was fixed.
     if (result.stopReason !== 'refusal') await this.remember(cacheKey, result);
@@ -240,15 +256,31 @@ class GatewayImpl implements Gateway {
         }
         // Settled only once `record` has LANDED. Marking it first left a store that threw here
         // holding the reservation and half the record — the `finally` saw a settled stream.
-        await ledger?.record(chunk.result.usage, chunk.result.cost, reservation);
+        const { usage, cost, costExact } = chunk.result;
+        await ledger?.record(usage, costExact ?? cost, reservation);
         settled = true;
         yield { type: 'done', result: { ...chunk.result, provider: provider.name } };
       }
+    } catch (error) {
+      // Thrown after the provider reported usage: the bill is recorded, exactly as `generate` does.
+      // Only when nothing settled yet — a provider that throws AFTER its `done` chunk was already
+      // recorded, and releasing again would credit the ledger a second time.
+      if (!settled) {
+        settled = true;
+        await settleFailure(ledger, reservation, error);
+      }
+      throw error;
     } finally {
-      // A stream that threw, or that its consumer abandoned, never reached `done` — so nothing
-      // reconciled the reservation and it would hold the ceiling for the rest of the window.
+      // A stream its consumer abandoned never reached `done` — so nothing reconciled the
+      // reservation and it would hold the ceiling for the rest of the window.
       if (!settled) await ledger?.release(reservation);
     }
+  }
+
+  samplingWires(model: ModelId): readonly SamplingWire[] {
+    return this.config.providers
+      .filter((p) => p.models.includes(model))
+      .flatMap((p) => (p.wire === undefined ? [] : [p.wire]));
   }
 
   /** Whether any provider serving `model` would send a hinted request with a cache mark. */
@@ -324,6 +356,17 @@ class GatewayImpl implements Gateway {
     }
     throw new AiProviderUnavailableError({ model, attempts: failures });
   }
+}
+
+/** A failed call's reservation: reconciled against its bill when the failure carries one, else given back. */
+async function settleFailure(
+  ledger: BudgetLedger | undefined,
+  reservation: BudgetReservation | undefined,
+  error: unknown,
+): Promise<void> {
+  const billed = billedOf(error);
+  if (billed === undefined) return ledger?.release(reservation);
+  await ledger?.record(billed.usage, billed.cost, reservation);
 }
 
 /**
@@ -423,5 +466,8 @@ export function promptCacheKey(request: GenerateRequest): string {
     thinking: request.thinking ?? 'adaptive',
     tools: request.tools ?? [],
     stop: request.stopSequences ?? [],
+    // Only when asked for: an absent knob must leave every key written before it existed as it was.
+    ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+    ...(request.seed === undefined ? {} : { seed: request.seed }),
   });
 }

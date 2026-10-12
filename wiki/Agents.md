@@ -51,6 +51,13 @@ The framework ships no default model and no catalogue row (25.0.0): every id is 
 | none of the three names a model | `X_AI_MODEL_UNRESOLVED`, naming all three | `model:` on the declaration or in `definePrompt`, or `providerGateway({ defaultModel })` |
 | the id was never registered | `X_AI_MODEL_UNKNOWN`, before any provider call or budget reservation | `registerModel({ id, … })` at boot, in the app's `models.ts` |
 
+## Two per-model rows worth knowing
+
+| Row | When |
+|---|---|
+| `sampling: { temperature: true, seed: true }` | the model accepts `temperature` / `seed`. Absent, a declaration's `temperature` and `seed` are not sent to it |
+| `forcedToolChoice: false` | the model rejects a **forced** tool choice. `llm()` offers exactly one tool (`respond`) and the chat-completions wire names it in `tool_choice`; a model whose thinking is always on answers that with a 400 — measured 2026-10-11 through OpenRouter on `anthropic/claude-sonnet-5.5`: `tool_choice: type "tool" and "any" are not supported for this model`. With the row, the tool is offered under the endpoint's default and a prose answer takes the repair turn. `agent()` never forces a choice and is unaffected |
+
 ## Quick answers
 
 | Question | Answer |
@@ -129,6 +136,7 @@ export const supportAgent = agent({
 | `maxToolResultChars` | no | **4,000** | one tool result's ceiling; truncation says so in the transcript |
 | `maxRepeatedToolCalls` | no | **3** | consecutive turns that may repeat the same calls **and** results; reaching it is `X_AGENT_TOOL_LOOP` → [Unattended runs](#unattended-runs) |
 | `deadlineMs` | no | none | wall-clock ceiling for the whole run; passing it is `X_AGENT_DEADLINE` |
+| `temperature`, `seed` | no | not sent | determinism knobs for a verifier or a classifier (`temperature` 0 to 2, `seed` a whole number). **Sent only to a model whose row takes them** — `registerModel({ …, sampling: { temperature: true, seed: true } })`; to any other they are left out, because a reasoning model answers a sampling parameter with a 400, and the `llm.sampling.ignored` span attribute names what was left out. `seed` exists on the chat-completions wire only (the Messages API has none) and is best effort where it exists; `temperature: 0` narrows variation, it does not promise identical answers. Same two keys on `llm()` |
 | `system` | no | — | system text loaded at run time, as `{ stable?, run? }` → [Provider prompt caching](#provider-prompt-caching) |
 | `promptCache` | no | **`'auto'`** | `'auto'` \| `'off'` \| `{ session }` — asks the provider to cache each turn's prefix |
 | `budget` | no | unmetered | `tokensIn`, `costPerCall`, `tokensPerRun` |
@@ -141,16 +149,56 @@ export const supportAgent = agent({
 
 | Rule | Why |
 |---|---|
-| A tool must declare `mcp: { expose: true }` | `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client are offered exactly the same catalogue |
-| A tool that is not exposed is `X_AGENT_TOOL_UNEXPOSED` **at declaration**, never filtered at the call | a silently dropped tool reads as offered and is not — the worst of both |
+| An **action** used as a tool must declare `mcp: { expose: true }` | `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client are offered exactly the same catalogue of actions. A tool no MCP client may ever see is an [`inProcessTool()`](#in-process-tools) instead |
+| A tool that is neither is `X_AGENT_TOOL_UNEXPOSED` **at declaration**, never filtered at the call | a silently dropped tool reads as offered and is not — the worst of both |
 | The tool's name is its **export name, verbatim** | the same name `tools/call`, `scopes:` and `openapi.json` use. No second spelling |
 | The tool's own `policy` decides every call | there is no "LLM permissions" concept, because there is no second authz system |
 | The tool's own `input:` parses what the model sent | which is what drops an `{ actor: 'admin' }` the model invented, before any handler sees it |
 | A tool failure is a `tool_result` flagged `is_error`, not a crash | a policy denial is an outcome the model should read and react to |
 | A 5xx failure's cause reaches the model only when its code declares it public | the provider keeps every request it is sent; a `X_DB_STATEMENT_FAILED` reads as the code and a fixed sentence — the verdict a production problem document and an MCP client get |
+| An **in-process** tool's own typed refusal reaches the model whole | a tool marked `inProcess: true` is the app's code called by its own agent. An `UltimateError` it throws under a code nobody gave an HTTP status is rendered as `{"error":{"code","cause","fix"}}` (the `callerFix` when it has one) — the model needs exactly that to correct its call. Still withheld: an uncoded throw, a framework 5xx, a code the app registered ≥ 500, a look-alike object; never a stack. `discloseErrors: false` opts out |
 | The actor is **`ctx.actor`**, read once, and nothing the model emits can reach it | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
 
 An unknown tool name answers `unknown tool: <name>` as an error result rather than throwing — the model asked for something it was not offered, which is a turn to correct, not a run to abort.
+
+### In-process tools
+
+`As of 2026-10`. A tool that exists only for an agent in this process — a knowledge-base read for an unattended writer, a scratch calculation — is not an action and is never an MCP tool:
+
+```ts
+import { inProcessTool } from '@ultimat3/ai';
+import { UltimateError } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
+
+declare function loadDoc(id: string): Promise<{ id: string; body: string } | undefined>;
+
+export const kbRead = inProcessTool({
+  name: 'kbRead',
+  description: 'Read one knowledge-base document by id.',
+  input: t.object({ id: t.string }),
+  execute: async ({ input }) => {
+    const doc = await loadDoc(input.id);
+    if (doc === undefined) {
+      throw new UltimateError({
+        code: 'X_KB_DOC_NOT_FOUND',
+        cause: `no knowledge-base document has the id "${input.id}"`,
+        fix: 'kbList()   # call it first and pass one of the ids it returns',
+      });
+    }
+    return doc;
+  },
+});
+```
+
+| | |
+|---|---|
+| What it needs | `name` (letters, digits, `_`, `-`; ≤ 64; not `respond`), `description`, `input`, `execute`. No `mcp`, no `policy`, no registration |
+| What sees it | the agents that list it. It is in no MCP catalogue, no HTTP route, no `openapi.json`, no manifest row |
+| Authorization | the **agent** is the operation with a policy. `execute` runs as `ctx.actor` inside it, exactly as code in the agent's own handler would; anything it reaches that needs its own authorization is an `action()` it calls, whose policy decides |
+| Its input | parsed by `input` before `execute` runs; arguments that fail read back to the model as `X_INPUT_INVALID` naming the fields |
+| Its refusals | an `UltimateError` it throws reaches the model as `{"error":{"code","cause","fix"}}` (row above). `cause` is cut to 1,000 characters and `fix` to 500 **before** it is serialised, so `maxToolResultChars` never cuts the JSON mid-string |
+| What a refusal must not say | the `cause` and `fix` you write are sent to the model's provider, which keeps every request. **Never put another tenant's data, a row's contents or SQL in them** — name the id the model passed and what to do instead. The framework cannot check this: it is the app's own text |
+| Withholding them | one tool: `inProcessTool({ discloseErrors: false })`. Every in-process tool of one agent: `agent({ discloseToolErrors: false })`. Either way the model reads the code and a fixed sentence, as it does for a projected tool |
 
 ## An agent is a tool of another agent
 
@@ -194,7 +242,7 @@ There is no JSON mode and no `response_format`. `output` is projected into one t
 | Validation fails | the failure is fed back as a message naming the issues, and the loop takes **another turn** — unlike `llm()`, which gets exactly one repair |
 | Every turn used, and the last failure was a shape | `X_LLM_OUTPUT_INVALID`, naming the attempts and the issues |
 | Every turn used, and the loop kept calling tools | `X_AGENT_MAX_TURNS`, naming the turns and the tool-call count |
-| A repair turn hit its `maxTokens` | `X_LLM_TRUNCATED` |
+| Any turn stops at its `maxTokens` (or the context window) | `X_LLM_TRUNCATED`, before a tool runs and before the answer is validated: a cut-off `respond` call reads as `{}`, which an `output` of optional keys would accept |
 | The provider refused | `X_LLM_REFUSED`, carrying `stopDetails.category` and naming a more capable model |
 
 Two exhaustions, two codes, on purpose: a loop that kept calling tools and never answered is not the same event as one that answered the wrong shape every time.
@@ -349,7 +397,7 @@ export const kbAgent = agent({
 
 **What it costs.** `costOf` prices a read at the model row's `cacheReadPerMillion` (absent: 0.1x input) and a write at `cacheWritePerMillion` (absent: 1.25x input). A token budget (`tokensPerRun`, `tokensIn`, the gateway's actor and org ceilings) counts **every** token the provider processed — input, output, cache read and cache write, each as one — so caching lowers what a run costs, not how many tokens it is allowed. The pre-flight estimate prices the prompt as a cache write **only when a provider serving the model would actually mark the request** (an Anthropic model; not Gemini, OpenAI or an unknown host, whose estimate is what it was), and at the dearer of the write and input rates — so `costPerCall` holds on turn one.
 
-**Two totals, and which to read.** `run.cost` is the run's usage summed and priced once. The ledger — `gateway.spent()`, and what `costPerCall` and every token ceiling are enforced against — adds each turn's cost, and each turn's cost is rounded **up** to a minor unit on its input half and again on its output half. So the ledger can exceed `run.cost` by under 2 minor units per turn. Enforce on the ledger (declare a `budget`); report `run.cost`.
+**One total.** Cost is computed exactly and rounded up once. `run.cost` is the run's usage summed and priced once. The ledger — `gateway.spent()`, and what `costPerCall` and every token ceiling are enforced against — sums the exact cost of every recorded call and rounds once when it is read, so for a run on the built-in providers the two agree. A `Provider` an app wrote that states no `costExact` is summed from its rounded `cost`, and can then read higher by under one minor unit per call.
 
 Measured, 2026-10-11, one three-turn run against OpenRouter with a 19,914-token stable prefix: turn 1 wrote 19,914 tokens and read 0; turn 2 read 19,914 and wrote 72; turn 3 read 19,986 and wrote 68.
 
@@ -363,9 +411,79 @@ Three bounds stop a run nobody is watching, beside `maxTurns` and `budget.tokens
 | `deadlineMs` | none | `X_AGENT_DEADLINE` — the run was still going; the model call in flight is aborted on the socket, every tool's own `ctx.signal` fires so a tool that reads it stops, and no further turn starts. A tool that ignores its signal is no longer waited for but **does run to its own end** — its effects can land after the run was refused |
 | `maxToolResultChars` | **4,000** | not an error — the result is truncated, and says so in the transcript |
 
-**Under a job.** `X_AGENT_TOOL_LOOP` and `X_AGENT_DEADLINE` are registered `terminal`: an `agentJob()` dead-letters on the first attempt instead of buying the same run once per `retry.attempts`.
+**Under a job.** `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_LLM_TRUNCATED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID` and `X_AGENT_TRANSCRIPT_INVALID` are registered `terminal` — the same input fails the same way, so the caller changes `maxTokens` or the prompt: an `agentJob()` dead-letters on the first attempt instead of buying the same run once per `retry.attempts`.
 
 A caller that goes away mid-call is `X_ABORTED`, not the transport failure (`X_AI_PROVIDER_UNAVAILABLE`, retryable) the aborted socket used to be reported as. `X_ABORTED` is core's and unclassified, so over HTTP it reads `terminal`; in a job the attempt count stays in charge, and a drain or an attempt timeout is settled by jobs off its own signal as before.
+
+**What a failed run cost.** Every failure thrown by `llm()` or `agent()` after a provider call was started carries the run's bill on `meta.billed`; read it with `billedOf(error)`:
+
+```ts
+import type { Billed } from '@ultimat3/ai';
+import { billedOf } from '@ultimat3/ai';
+
+declare function recordSpend(runId: string, billed: Billed): Promise<void>;
+
+export async function metered<T>(runId: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    const billed = billedOf(error); // undefined: no provider call was ever started
+    if (billed !== undefined) await recordSpend(runId, billed);
+    throw error;
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `usage` | the four token counters, summed over every provider call of the run that **answered** |
+| `cost` | the price of `usage`, `Money`, rounded up once |
+| `calls` | how many calls answered |
+| `unsettled` | calls that were started and never reported usage — aborted by the caller or the deadline, cut mid-stream, failed in transport. **Their bill cannot be known**: a provider may charge for what it generated before the socket closed, and usage is the last thing a response carries. They are counted, never estimated, and their budget reservation is given back |
+
+A tool that itself calls `llm()` or another `agent()` spends under the run that called it: that spend is in `usage`, `calls` and `cost` here, in `onTurn`'s `run`, and in `AgentRun.usage` — including a nested call that failed and reached the model only as a tool error.
+
+It is the same on `X_LLM_TRUNCATED`, `X_LLM_REFUSED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID`, `X_AGENT_MAX_TURNS`, `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_ABORTED`, `X_AI_BUDGET_EXCEEDED` and a transport failure on a later turn. The ledger the run ran under holds the same settled figures. `meta` is operator-only: it is never in a problem document. A throw that is not an `UltimateError` (an `onTurn` that threw a `TypeError`) has no `meta` to carry it; the ledger still does.
+
+## Continuing a run (`.run()` / `.continue()`)
+
+`As of 2026-10`. A plain call returns the answer and keeps nothing. To correct a finished answer without starting over, keep the transcript and continue from it:
+
+```ts
+import type { AgentAction, AgentTranscript } from '@ultimat3/ai';
+import type { Ctx } from '@ultimat3/core';
+import type { t } from '@ultimat3/schema';
+
+type Article = ReturnType<typeof t.object<{ title: typeof t.string }>>;
+declare const writeArticle: AgentAction<ReturnType<typeof t.object<{ topic: typeof t.string }>>, Article>;
+declare function store(transcript: AgentTranscript): Promise<void>;
+
+export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: string }> {
+  const input = { topic: 'tides' };
+  const first = await writeArticle.run(input, { ctx });
+  await store(first.transcript); // JSON; pass back exactly this value
+  const second = await writeArticle.continue(
+    input,
+    { transcript: first.transcript, user: `Fix this and answer again: ${problem}` },
+    { ctx },
+  );
+  return second.output;
+}
+```
+
+| | |
+|---|---|
+| `.run(input, opts)` | the same action — policy, audit, rate limit, budget — resolving to `{ output, transcript, turns, usage }` |
+| `.continue(input, { transcript, user }, opts)` | appends ONE user turn and resumes the loop. `input` is the run's own input again (the policy and `system()` read it); `vars()` is not called and the prompt is not re-rendered — the transcript holds it. `user` is redacted like the prompt |
+| what is re-sent | the whole transcript, byte for byte, then the new turn. A provider has no session, so the tokens are sent again — but the prefix is the one the previous request cached, so it is read at the cache rate, and **no tool runs twice** |
+| `maxTurns` | counts the run **and every continuation**: a run that used 5 of 8 has 3 left; one that used them all is `X_AGENT_MAX_TURNS` before a provider call |
+| `budget.tokensPerRun` | cumulative too: the ceiling for a continuation is what the earlier calls left; none left is `X_AI_BUDGET_EXCEEDED` before a provider call. The actor and org scopes are charged once per call, as always |
+| `deadlineMs`, `maxRepeatedToolCalls` | per call |
+| `usage`, `onTurn`'s `run` and `turn` | cumulative across continuations; `meta.billed` on a failure is the failed **call's** own bill |
+
+**The handle is signed data.** `AgentTranscript` is plain JSON that the app stores; treat it as opaque. It holds what the model was sent (already redacted) and what the tools answered, so store it where tool results may live. It also carries the run's own ceilings — `turns` and `usage` — so it is **signed**: an HMAC-SHA256 over its canonical bytes with the framework's signing secret (`ULTIMATE_CURSOR_SECRET`, under a label of its own), and **bound** to the agent (`id@version` of its prompt: a bumped prompt starts a new run), the model, the set of declared tool names, and the tenant (`orgId`) of the actor it was written for. On the way back, before anything is loaded or spent, `.continue()` checks: at most `MAX_TRANSCRIPT_CHARS` (2,000,000) of JSON; the signature; each binding (a handle written for org A is refused for an actor of org B); then its shape — roles alternating, only the three block kinds a loop writes, every tool call answered by the next message, every tool call naming a tool the agent declares. Anything else is `X_AGENT_TRANSCRIPT_INVALID` (422, `terminal` for a job). An edited handle is therefore refused, not trusted: zeroing `usage`, lowering `turns`, rewriting a message or fabricating a tool result all break the signature. Rotating the secret invalidates stored handles. In production a process still on the shipped development key refuses `.continue()` and names `ULTIMATE_CURSOR_SECRET`; in development and test the development key signs. What the signature does not do: it does not make the transcript an authority — tools still run as `ctx.actor` under their own policies — and it does not stop a holder of a **valid** handle from continuing it, so store it per tenant like any other row.
+
+**A failed call leaves a handle too.** When `.run()` or `.continue()` throws after a provider answered, the error carries a signed handle — `transcriptOf(error)` — holding the transcript up to the request the failed turn was answering, with `turns` and `usage` counting everything the failed call was billed. **A job stores that handle, not the one it started with.** Continuing from the old handle forgets the failed call's spend: `maxTurns` and `budget.tokensPerRun` then count from the old figures, and only the actor and org ceilings bound the retries. A call aborted before it reported usage is not in the handle (its bill is unknown — `billedOf(error).unsettled`). A plain call keeps nothing and leaves no handle.
 
 ## Progress (`onTurn`)
 
@@ -379,6 +497,17 @@ onTurn: ({ turn, maxTurns, model, toolCalls, stopReason, usage, cost }) => {
   // the event also carries `run` — the running total, this turn included: run.usage, run.cost
 },
 ```
+
+| Field | |
+|---|---|
+| `cost` | this turn alone, in the currency's minor units, rounded up **once** over the whole turn |
+| `costExact` | the same figure exactly — `Money` at a finer `scale` (`{ minor: 450_000, currency: 'USD', scale: 8 }` is 0.45 cents). Absent when an app-written `Provider` states none |
+| `run.cost` / `run.costExact` | the run so far, priced once from the summed usage: 14 turns of 0.45 cents are 7 cents, not 14 |
+| `repairOf` | on a **repair turn** only: the schema issues of the previous turn's answer — what the model was told to fix before it produced this one |
+
+`llm()` has the same hook per provider call — `onCall({ attempt, model, provider, stopReason, usage, cost, costExact, repairOf, run })` — `attempt` 2 being its one repair turn. It is not called on a semantic-cache hit: nothing was sent.
+
+**Cost is exact, and rounded once.** `exactCostOf(model, usage)` prices a call in micro-units of the currency's minor unit, in integers; `costOf` is that figure rounded up to the minor unit. A ledger (`gateway.spent()`, `BudgetLedger.report()`) sums the exact figures and rounds once when it is read (`cost`, with `costExact` beside it). A price below one minor unit per million tokens is a row with a `scale`: `inputPerMillion: { minor: 75, currency: 'USD', scale: 3 }` is $0.075 per million.
 
 | Rule | Detail |
 |---|---|
@@ -575,13 +704,15 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 
 | Code | Cause | Fix |
 |---|---|---|
-| `X_AGENT_TOOL_UNEXPOSED` | a `tools` entry declares no `mcp` block, or `mcp: { expose: false }`. Raised at **declaration** | add `mcp: { expose: true, description }` to the action `cause` names, or drop it from `tools` |
+| `X_AGENT_TOOL_UNEXPOSED` | a `tools` entry is an action with no `mcp` block (or `mcp: { expose: false }`) and is not an `inProcessTool()`. Raised at **declaration** | `inProcessTool({ name, description, input, execute })` for a tool only this agent may call; or `mcp: { expose: true, description }` on the action to offer it to MCP clients too; or drop it from `tools` |
 | `X_AGENT_MAX_TURNS` | the loop used every turn calling tools and never answered | tell the template when to stop and answer through the respond tool, then bump its version |
 | `X_AGENT_TOOL_LOOP` | consecutive turns made the same tool calls and read the same results | `maxRepeatedToolCalls: 5` on the agent, only for a tool that really is polled; otherwise tell the template what to do when the result does not change, then bump its version |
 | `X_AGENT_DEADLINE` | the run outlived its declared `deadlineMs` | `deadlineMs: 300_000` on the agent, once a trace shows the run converging; otherwise lower `maxTurns` |
 | `X_LLM_OUTPUT_INVALID` | every turn's answer failed the `output` schema | describe the shape in the template and bump its version, or widen `output` |
 | `X_LLM_REFUSED` | the provider's classifiers declined; `stopDetails.category` names why | set `model:` to the more capable one the thrown `fix:` names, or edit the template and bump its version |
-| `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing | raise `maxTokens:` on the declaration, or drop fields from `output` |
+| `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing — read before the answer, so nothing truncated is ever validated or run. A tool call cut off mid-arguments is this code too, streamed or not | raise `maxTokens:` on the declaration, or drop fields from `output`. A model that reasons spends the same ceiling on reasoning: a measured 28,000-character answer used 12,954 output tokens |
+| `X_AGENT_TRANSCRIPT_INVALID` | `.continue()` was handed a transcript that did not pass its screen | start a new `.run()` and store its transcript; pass back exactly the value returned, to the same agent and prompt version |
+| `X_LLM_TOOL_ARGUMENTS_INVALID` | the turn finished and a tool call's arguments are not JSON. Billed (`meta.billed`), recorded on the ledger, not retried by the gateway, `terminal` for a job | raise `maxTokens:` if the arguments were long, and shorten or split the string fields of that tool's input schema; to try once more, catch the code and re-enqueue deliberately |
 | `X_HIVE_EMPTY` | `split()` produced zero members | return at least one member input, or guard the call site |
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains | raise that scope's ceiling, or shorten the prompt |
 | `X_AI_PROMPT_SECRET` | `vars()` returned a `Secret` | drop the key from `vars()` and the template, or `revealSecret(value)` if the model genuinely has to read it |

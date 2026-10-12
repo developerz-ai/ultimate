@@ -304,6 +304,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x errors explain X_BACKFILL_SLICE_ENTITY --json   # the refusal itself names the x g job line for this slice',
   X_LAYOUT_SIBLING_MODULE:
     'x verify --only boundaries --json   # then move each declaration in X.ts to X/<name>.ts, one primitive per file',
+  X_SLICE_POLICY_INCOMPLETE:
+    'x policy list --json   # names the slice policy module; add the export lines the thrown fix spells out to it, then run the generator again',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

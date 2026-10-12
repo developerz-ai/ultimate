@@ -13,7 +13,8 @@
 import type { Actor } from '@ultimat3/core';
 import { assert, asyncContext, finiteCount } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import { assertSameCurrency } from '@ultimat3/money';
+import { assertSameCurrency, commonScale, exponentOf, minorAt } from '@ultimat3/money';
+import { compareMoney, costScale, ledgerUnits, roundUpCost } from './cost';
 import { AiBudgetExceededError } from './errors';
 import type { GenerateRequest, TokenUsage } from './provider';
 import { estimateCost, estimateInputTokens, estimateTokens, totalTokens } from './provider';
@@ -187,7 +188,10 @@ export interface BudgetLedgerInput {
 
 export interface BudgetReport {
   readonly requestTokens: number;
+  /** Everything recorded, rounded up ONCE to the currency's minor unit. */
   readonly cost: Money;
+  /** The same sum exactly, at `costScale(currency)` — micro-units of the minor unit. */
+  readonly costExact: Money;
   readonly limits: BudgetLimits;
   readonly actorSpent: number;
   readonly orgSpent: number;
@@ -199,7 +203,8 @@ export class BudgetLedger {
   private readonly orgKey: string | undefined;
   private readonly store: BudgetStore;
   private requestTokens = 0;
-  private costMinor = 0;
+  /** Summed EXACTLY, in micro-units of the minor unit, and rounded up once — when it is read. */
+  private costMicro = 0n;
   private readonly currency: string;
   /**
    * The ledger this one was `derive`d from, or `undefined` for a scope's root. Set by `derive`
@@ -335,8 +340,11 @@ export class BudgetLedger {
   async record(usage: TokenUsage, cost: Money, reservation?: BudgetReservation): Promise<void> {
     // Up the chain, because `derive` copies the currency: a scope's reported cost is its own
     // calls plus every call made under a ledger derived from it.
+    // `cost` may be exact (`GenerateResult.costExact`, a finer `scale`) or already rounded; either
+    // way it is widened to one scale and summed there, so fourteen cheap calls are rounded once.
+    const micro = ledgerUnits(cost);
     for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
-      l.costMinor += cost.minor;
+      l.costMicro += micro;
     }
     await this.debit(totalTokens(usage) - (reservation?.tokens ?? 0));
   }
@@ -374,10 +382,20 @@ export class BudgetLedger {
   async report(): Promise<BudgetReport> {
     return {
       requestTokens: this.requestTokens,
-      cost: { minor: this.costMinor, currency: this.currency },
+      cost: roundUpCost(this.exactCost()),
+      costExact: this.exactCost(),
       limits: this.limits,
       actorSpent: this.actorKey === undefined ? 0 : await this.store.spent(this.actorKey),
       orgSpent: this.orgKey === undefined ? 0 : await this.store.spent(this.orgKey),
+    };
+  }
+
+  private exactCost(): Money {
+    const minor = Number(this.costMicro);
+    return {
+      minor: Number.isSafeInteger(minor) ? minor : Number.MAX_SAFE_INTEGER,
+      currency: this.currency,
+      scale: costScale(this.currency),
     };
   }
 
@@ -394,13 +412,21 @@ export class BudgetLedger {
     const limit = this.limits.costPerCall;
     if (limit === undefined) return;
     assertSameCurrency(limit, cost);
-    if (cost.minor > limit.minor) {
+    if (compareMoney(cost, limit) > 0) {
+      // ONE scale for all three figures: the estimate is in the currency's minor units and the
+      // ceiling may be finer, and printing each in its own under one label compares nothing.
+      const scale = commonScale(cost, limit);
+      const ceiling = Number(minorAt(limit, scale));
       throw new AiBudgetExceededError({
         scope: 'costPerCall',
-        requested: cost.minor,
-        remaining: limit.minor,
-        limit: limit.minor,
-        unit: `${limit.currency} minor units`,
+        requested: Number(minorAt(cost, scale)),
+        remaining: ceiling,
+        limit: ceiling,
+        // The currency's own minor units say so as they always did; a finer ceiling names its scale.
+        unit:
+          scale === exponentOf(limit.currency)
+            ? `${limit.currency} minor units`
+            : `${limit.currency} at scale ${scale}`,
       });
     }
   }
@@ -456,7 +482,8 @@ function tighterMoney(a: Money | undefined, b: Money | undefined): Money | undef
   if (a === undefined) return b;
   if (b === undefined) return a;
   assertSameCurrency(a, b);
-  return a.minor <= b.minor ? a : b;
+  // As money: a ceiling at a finer `scale` is not larger for having a larger `minor`.
+  return compareMoney(a, b) <= 0 ? a : b;
 }
 
 const storage = asyncContext<BudgetLedger>('an AI budget');

@@ -5,14 +5,37 @@
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export { agent } from './agent';
+export type {
+  AgentAction,
+  AgentContinuation,
+  AgentRun,
+  AgentTranscript,
+} from './agent-continue';
+export {
+  MAX_TRANSCRIPT_CHARS,
+  TRANSCRIPT_META,
+  TRANSCRIPT_VERSION,
+  transcriptOf,
+} from './agent-continue';
 export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
-export { AgentDeadlineError, AgentToolLoopError } from './agent-errors';
+export {
+  AgentDeadlineError,
+  AgentToolLoopError,
+  AgentTranscriptInvalidError,
+} from './agent-errors';
 export type { AgentBudgetFact, AgentFact } from './agent-facts';
 export { describeAgents, resetAgents } from './agent-facts';
 export type { AgentJobOptions } from './agent-job';
 export { agentJob } from './agent-job';
 export type { AgentSystem } from './agent-system';
 export type { AgentRunUsage } from './agent-usage';
+export {
+  AiProviderUnexpectedError,
+  LlmToolArgumentsError,
+  LlmTruncatedError,
+} from './answer-errors';
+export type { Billed } from './billed';
+export { BILLED_META, billedOf } from './billed';
 export type {
   BudgetKeys,
   BudgetLedger,
@@ -48,6 +71,7 @@ export {
 } from './content-blocks';
 export type { ContentRefusal } from './content-errors';
 export { AiContentUnsupportedError } from './content-errors';
+export { COST_SCALE_DIGITS, costScale, exactCostOf, roundUpCost } from './cost';
 export type { EchoProvider, EchoProviderInput } from './echo-provider';
 export { echoProvider } from './echo-provider';
 export type { Embedder, HashEmbedder, HashEmbedderInput } from './embeddings';
@@ -79,7 +103,6 @@ export {
   LlmOutputInvalidError,
   LlmRefusedError,
   LlmStreamInvalidError,
-  LlmTruncatedError,
   VectorDimMismatchError,
   VectorScopeWidenedError,
 } from './errors';
@@ -129,7 +152,9 @@ export type { HiveDef, HiveSplitArgs } from './hive';
 export { hive } from './hive';
 export { HiveEmptyError } from './hive-errors';
 export type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
-export type { LlmAction, LlmBudget, LlmDef, LlmVarsArgs } from './llm';
+export type { InProcessToolDef } from './in-process-tool';
+export { inProcessTool } from './in-process-tool';
+export type { LlmAction, LlmBudget, LlmCall, LlmDef, LlmVarsArgs } from './llm';
 export { llm } from './llm';
 export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
@@ -248,6 +273,7 @@ export {
   configureAi,
   semanticCacheFor,
 } from './runtime';
+export type { Sampling } from './sampling';
 export type { Scorer } from './scorers';
 export {
   contains,

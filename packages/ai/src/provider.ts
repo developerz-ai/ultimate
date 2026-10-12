@@ -1,11 +1,12 @@
-// The `Provider` interface, `AnthropicProvider` (the real Messages API, streaming and not) and
-// the money arithmetic over a call's reported usage — `EchoProvider`, the double, is
-// ./echo-provider's. The REQUEST half only: ./models owns the catalogue and the per-model rules,
+// The `Provider` interface and `AnthropicProvider` (the real Messages API, streaming and not) —
+// `EchoProvider`, the double, is ./echo-provider's, and the money arithmetic is ./cost's
+// (`costOf` is re-exported here, where every caller has always imported it from). The REQUEST half only: ./models owns the catalogue and the per-model rules,
 // ./wire owns the response half.
 
 import type { Money } from '@ultimat3/money';
 import type { AiMediaBlock } from './content-blocks';
 import { assertMediaContent, blockText, mediaTokenEstimate } from './content-blocks';
+import { costOf, exactCostOf } from './cost';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import type { AiFetch } from './fetch-seam';
@@ -15,7 +16,10 @@ import { modelSpec, reasoningBody } from './models';
 import type { PromptCacheHint, SystemPrompt } from './prompt-cache';
 import { promptCacheRule, systemText } from './prompt-cache';
 import { anthropicPrompt } from './prompt-cache-blocks';
+import type { SamplingWire } from './sampling';
+import { samplingBody } from './sampling';
 import { readSse } from './sse';
+import { assertToolArguments } from './tool-arguments';
 import type { LlmTool, LlmToolCall } from './tools';
 import {
   asToolInput,
@@ -83,6 +87,10 @@ export interface GenerateRequest {
   readonly thinking?: ThinkingMode;
   readonly tools?: readonly LlmTool[];
   readonly stopSequences?: readonly string[];
+  /** Sent only to a model whose row takes it (`ModelSpec.sampling`, `./sampling`). 0 to 2. */
+  readonly temperature?: number;
+  /** As `temperature`; chat-completions only — the Messages API has no seed. */
+  readonly seed?: number;
   /**
    * The caller's abort signal, forwarded to the socket by every provider in this package.
    *
@@ -147,8 +155,14 @@ export interface GenerateResult {
   /** Required, not optional: a provider that forgets it turns a refusal into a silent empty answer. */
   readonly stopDetails: StopDetails | undefined;
   readonly usage: TokenUsage;
-  /** Cost of this call, computed from `usage` and the model's prices. */
+  /** Cost of this call in the currency's minor units, rounded up once (`costOf`). */
   readonly cost: Money;
+  /**
+   * The same cost EXACTLY, as `Money` at a finer `scale` (`exactCostOf`) — what a ledger sums, so
+   * a run of cheap calls is rounded once at the end and not once per call. Optional: a `Provider`
+   * an app wrote may not state it, and its `cost` is summed in its place.
+   */
+  readonly costExact?: Money;
 }
 
 /** One streamed increment. `done` carries the assembled result. */
@@ -157,6 +171,8 @@ export type StreamChunk =
   | { readonly type: 'thinking'; readonly text: string }
   | { readonly type: 'tool-call'; readonly call: LlmToolCall }
   | { readonly type: 'done'; readonly result: GenerateResult };
+
+export { costOf } from './cost';
 
 export interface Provider {
   readonly name: string;
@@ -170,33 +186,8 @@ export interface Provider {
    * can happen.
    */
   marksPromptCache?(model: ModelId): boolean;
-}
-
-/**
- * Cost of one call, in integer minor units. Rounded UP: a fraction of a cent that we round
- * away is money the framework silently absorbs, and under-reporting spend defeats a budget.
- */
-export function costOf(model: ModelId, usage: TokenUsage): Money {
-  // The one price lookup: a model the app never `registerModel`-ed is `X_AI_MODEL_UNKNOWN` here,
-  // so no call is priced — and no budget reserved — against a number nobody chose.
-  const spec = modelSpec(model);
-  const input = spec.inputPerMillion.minor;
-  // In TWENTIETHS of a minor unit, so the standard multipliers stay integral on any whole price:
-  // a cache read is 0.1x input (2/20) and a 5-minute write 1.25x (25/20) unless the row states
-  // its own — Opus 5.5 reads at 0.05x and Fable 5.1 at 0.025x, which a fixed 0.1x overstated.
-  const read =
-    spec.cacheReadPerMillion === undefined ? input * 2 : spec.cacheReadPerMillion.minor * 20;
-  const write =
-    spec.cacheWritePerMillion === undefined ? input * 25 : spec.cacheWritePerMillion.minor * 20;
-  const inputUnits =
-    usage.inputTokens * input * 20 + usage.cacheReadTokens * read + usage.cacheWriteTokens * write;
-  const inputMinor = divideCeil(inputUnits, 20_000_000);
-  const outputMinor = divideCeil(usage.outputTokens * spec.outputPerMillion.minor, 1_000_000);
-  return { minor: inputMinor + outputMinor, currency: spec.inputPerMillion.currency };
-}
-
-function divideCeil(numerator: number, denominator: number): number {
-  return Math.ceil(numerator / denominator);
+  /** Which wire format this provider speaks, when it is one of the two built in (`./sampling`). */
+  readonly wire?: SamplingWire;
 }
 
 /** Total tokens a usage record accounts for — what a budget is debited by. */
@@ -244,12 +235,14 @@ export function anthropicProvider(input: AnthropicProviderInput): AnthropicProvi
 /**
  * The real Messages API shape. The request-surface rules are encoded rather than documented,
  * because getting them wrong is a 400:
- *   - `temperature`/`top_p`/`top_k` are REJECTED on every current model. Steer with the prompt.
+ *   - `top_p`/`top_k` are never sent, and `temperature` only to a model whose row takes it
+ *     (`ModelSpec.sampling`): a reasoning model rejects all three.
  *   - `thinking.budget_tokens` is REJECTED. Use `output_config.effort`.
  *   - `effort` and adaptive thinking are per-model, and ./models owns which model takes which.
  */
 export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
+  readonly wire = 'anthropic' as const;
   /** The app's list, never the registry's: a model served elsewhere must not be routed here. */
   readonly models: readonly ModelId[];
   private readonly config: AnthropicProviderInput;
@@ -332,10 +325,13 @@ export class AnthropicProvider implements Provider {
           'the stream ended before message_stop, or with a tool call still open — the answer is truncated',
       });
     }
-    const state = message.state();
+    const { malformed, ...state } = message.state();
+    const cost = costOf(model, state.usage);
+    // After usage is known, so a finished turn with unreadable arguments fails WITH its bill.
+    assertToolArguments({ provider: this.name, model, ...state, malformed, cost });
     yield {
       type: 'done',
-      result: { model, ...state, cost: costOf(model, state.usage) },
+      result: { model, ...state, cost, costExact: exactCostOf(model, state.usage) },
     };
   }
 
@@ -357,6 +353,7 @@ export class AnthropicProvider implements Provider {
       max_tokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
       messages: prompt.messages,
       ...reasoningBody(model, request.effort, request.thinking),
+      ...samplingBody('anthropic', model, request),
     };
     if (prompt.system !== undefined) body['system'] = prompt.system;
     if (request.tools !== undefined && request.tools.length > 0) body['tools'] = request.tools;
@@ -445,6 +442,7 @@ export function parseMessage(model: ModelId, raw: Record<string, unknown>): Gene
     stopDetails,
     usage,
     cost: costOf(model, usage),
+    costExact: exactCostOf(model, usage),
   };
 }
 
