@@ -13,7 +13,7 @@
 import type { Actor } from '@ultimat3/core';
 import { assert, asyncContext, finiteCount } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import { assertSameCurrency, commonScale, minorAt } from '@ultimat3/money';
+import { assertSameCurrency, commonScale, exponentOf, minorAt } from '@ultimat3/money';
 import { compareMoney, costScale, ledgerUnits, roundUpCost } from './cost';
 import { AiBudgetExceededError } from './errors';
 import type { GenerateRequest, TokenUsage } from './provider';
@@ -422,7 +422,11 @@ export class BudgetLedger {
         requested: Number(minorAt(cost, scale)),
         remaining: ceiling,
         limit: ceiling,
-        unit: `${limit.currency} at scale ${scale}`,
+        // The currency's own minor units say so as they always did; a finer ceiling names its scale.
+        unit:
+          scale === exponentOf(limit.currency)
+            ? `${limit.currency} minor units`
+            : `${limit.currency} at scale ${scale}`,
       });
     }
   }
