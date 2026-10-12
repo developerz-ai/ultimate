@@ -13,8 +13,8 @@
 import type { Actor } from '@ultimat3/core';
 import { assert, asyncContext, finiteCount } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import { assertSameCurrency, minorAt } from '@ultimat3/money';
-import { bookableCost, compareMoney, costScale, roundUpCost } from './cost';
+import { assertSameCurrency, commonScale, minorAt } from '@ultimat3/money';
+import { compareMoney, costScale, ledgerUnits, roundUpCost } from './cost';
 import { AiBudgetExceededError } from './errors';
 import type { GenerateRequest, TokenUsage } from './provider';
 import { estimateCost, estimateInputTokens, estimateTokens, totalTokens } from './provider';
@@ -342,7 +342,7 @@ export class BudgetLedger {
     // calls plus every call made under a ledger derived from it.
     // `cost` may be exact (`GenerateResult.costExact`, a finer `scale`) or already rounded; either
     // way it is widened to one scale and summed there, so fourteen cheap calls are rounded once.
-    const micro = minorAt(bookableCost(cost), costScale(cost.currency));
+    const micro = ledgerUnits(cost);
     for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
       l.costMicro += micro;
     }
@@ -413,12 +413,16 @@ export class BudgetLedger {
     if (limit === undefined) return;
     assertSameCurrency(limit, cost);
     if (compareMoney(cost, limit) > 0) {
+      // ONE scale for all three figures: the estimate is in the currency's minor units and the
+      // ceiling may be finer, and printing each in its own under one label compares nothing.
+      const scale = commonScale(cost, limit);
+      const ceiling = Number(minorAt(limit, scale));
       throw new AiBudgetExceededError({
         scope: 'costPerCall',
-        requested: cost.minor,
-        remaining: limit.minor,
-        limit: limit.minor,
-        unit: `${limit.currency} minor units`,
+        requested: Number(minorAt(cost, scale)),
+        remaining: ceiling,
+        limit: ceiling,
+        unit: `${limit.currency} at scale ${scale}`,
       });
     }
   }

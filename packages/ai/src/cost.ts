@@ -7,7 +7,7 @@
 // The multiplication is done in bigint, so no call, however large, loses a digit on the way.
 
 import type { Money } from '@ultimat3/money';
-import { commonScale, exponentOf, minorAt } from '@ultimat3/money';
+import { commonScale, exponentOf, minorAt, moneyScale } from '@ultimat3/money';
 import type { ModelId, ModelSpec } from './models';
 import { modelSpec, PRICE_SCALE_DIGITS } from './models';
 import type { TokenUsage } from './provider';
@@ -129,4 +129,18 @@ export function bookableCost(cost: Money): Money {
   return scale === undefined
     ? { minor, currency: cost.currency }
     : { minor, currency: cost.currency, scale };
+}
+
+/**
+ * `cost` in units of the ledger's scale (`costScale`), as a bigint. A coarser cost is widened
+ * exactly; a FINER one — a provider pricing to twelve places — is rounded UP to the ledger's
+ * digit, here, in bigint: `minorAt` only widens and throws on the rest, and `rescale` answers a
+ * `Money` whose `minor` can leave the safe range.
+ */
+export function ledgerUnits(cost: Money): bigint {
+  const booked = bookableCost(cost);
+  const target = costScale(booked.currency);
+  const from = moneyScale(booked);
+  if (from <= target) return minorAt(booked, target);
+  return ceilDiv(BigInt(booked.minor), 10n ** BigInt(from - target));
 }

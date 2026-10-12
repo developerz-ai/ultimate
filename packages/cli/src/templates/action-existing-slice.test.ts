@@ -11,7 +11,7 @@
 import { describe, expect, test } from 'bun:test';
 import { INVOICE_ENTITY } from '../scaffold-fixture';
 import { actionFiles } from './action';
-import { inlineReexports, sliceExports } from './slice-foundation';
+import { exportsUnknown, inlineReexports, sliceExports } from './slice-foundation';
 
 const HANDWRITTEN_POLICY = `import { can } from '@ultimat3/policy';
 
@@ -50,7 +50,7 @@ describe('unit · x g action into a hand-written slice refuses what it cannot co
       expect(refused?.code).toBe('X_SLICE_POLICY_INCOMPLETE');
       expect(refused?.cause).toContain('apps/web/app/blog/policy.ts');
       expect(refused?.cause).toContain('canBlogWrite');
-      expect(refused?.fix).toContain('x g policy blog --dry-run --json');
+      expect(refused?.fix).toContain('export const canBlogWrite');
     });
   }
 
@@ -149,5 +149,33 @@ describe('unit · a policy.ts whose exports are not spelled one per line is not 
     expect(() => actionFiles('write-article', { ...slice, slicePolicy: inlined })).toThrow(
       'X_SLICE_POLICY_INCOMPLETE',
     );
+  });
+});
+
+describe('unit · what the scan cannot read is unknown, and what it refuses it can fix', () => {
+  test('a NESTED destructured export is "cannot tell", never a missing export', () => {
+    const nested = 'export const { rules: { canBlogWrite }, blogTag } = policy;\n';
+    expect(exportsUnknown(nested)).toBe(true);
+    expect(() => actionFiles('write-article', { ...slice, slicePolicy: nested })).not.toThrow();
+    // A flat pattern is still read, and still refused when a name is missing.
+    expect(exportsUnknown('export const { canBlogWrite } = policy;\n')).toBe(false);
+    expect(() =>
+      actionFiles('write-article', { ...slice, slicePolicy: 'export const { other } = policy;\n' }),
+    ).toThrow('X_SLICE_POLICY_INCOMPLETE');
+  });
+
+  test("the refusal's fix IS the lines to add — nothing to run that prints something else", () => {
+    const fixOf = (mutator: boolean): string => {
+      try {
+        actionFiles('write-article', { ...slice, mutator, slicePolicy: HANDWRITTEN_POLICY });
+      } catch (error) {
+        return (error as { fix: string }).fix;
+      }
+      return expect.unreachable('not refused');
+    };
+    expect(fixOf(false)).toContain("export const canBlogWrite = can('blog:write');");
+    expect(fixOf(false)).toContain("export const blogTag = tag('blog');");
+    expect(fixOf(true)).not.toContain('blogTag');
+    expect(fixOf(false)).not.toContain('--dry-run');
   });
 });

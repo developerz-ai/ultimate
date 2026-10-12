@@ -165,8 +165,26 @@ export function inlineReexports(
 }
 
 /** Whether `source` re-exports a module nobody read: what it exports cannot be known from here. */
-export const exportsUnknown = (source: string): boolean =>
-  /\bexport\s*\*\s*from\b/.test(stripComments(source));
+export const exportsUnknown = (source: string): boolean => {
+  const code = stripComments(source);
+  return /\bexport\s*\*\s*from\b/.test(code) || nestedPattern(code);
+};
+
+/**
+ * Whether an exported destructuring pattern is one the flat reader above cannot spell: a nested
+ * object or array pattern, or a rest element. Its names are then UNKNOWN — never "missing".
+ */
+function nestedPattern(code: string): boolean {
+  for (const match of code.matchAll(/\bexport\s+(?:const|let|var)\s*\{/g)) {
+    let depth = 1;
+    for (let at = (match.index ?? 0) + match[0].length; at < code.length && depth > 0; at += 1) {
+      const char = code[at];
+      if (char === '{' || char === '[' || code.startsWith('...', at)) return true;
+      if (char === '}') depth -= 1;
+    }
+  }
+  return false;
+}
 
 /** `    title: text({ max: 200 }),` — one column of an entity, as its name and its builder. */
 const COLUMN_LINE = /^ {4}([A-Za-z_$][\w$]*): ([A-Za-z_$][\w$]*)\(/gm;

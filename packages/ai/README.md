@@ -514,7 +514,7 @@ ever sent.
 
 | Limit | Detail |
 |---|---|
-| `run.cost` vs the ledger | `AgentTurn.run.cost` is summed usage priced once; `gateway.spent()` adds each turn's cost, rounded up per turn (input and output halves), so it can be higher by under 2 minor units per turn. Budgets are enforced on the ledger; report `run.cost` |
+| `run.cost` and the ledger | one contract: cost is computed exactly and rounded up once. `AgentTurn.run.cost` is the run's summed usage priced once; `gateway.spent()` / `BudgetLedger.report().cost` is the exact cost of every recorded call summed, rounded once when read (`costExact` beside it). They agree for a run on built-in providers; a `Provider` that states no `costExact` is summed from its rounded `cost`. Budgets are enforced against the ledger |
 | the Anthropic row matches any host | an `anthropicProvider({ baseUrl })` behind a proxy still sends marks |
 | more than about 9 tool calls in one turn, on OpenRouter | only the tail is marked there and the provider looks back 20 blocks, so that turn's transcript is rewritten, not read |
 | a mark never lands on an empty or whitespace-only text block, and never makes a fifth | it moves back a block or is dropped; a raw caller's own marks are counted first |

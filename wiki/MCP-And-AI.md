@@ -362,7 +362,7 @@ Long or multi-call chains are `job`s with steps, so a model call that fails on s
 | `agentJob()` | `job()` | an agent as durable, retried, cancellable queue work — `As of 2026-08` the only way an agent reaches a queue |
 | `backfill()` | `job()` | the resumable, paced sweep those run over → [Migrations and backfills](Migrations-And-Backfills) |
 
-A tool is a real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue and authorize identically. An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
+A tool is one of two things. A real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue of actions and authorize identically. Or an `inProcessTool({ name, description, input, execute })`: a tool that is this process's alone, with no `mcp` flag, in no MCP catalogue, route or `openapi.json`, running as `ctx.actor` under the agent's own policy → [In-process tools](Agents#in-process-tools). An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
 
 Full reference, including the at-least-once trap that makes every mutating tool's idempotency your obligation: [Agents](Agents).
 
