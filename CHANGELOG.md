@@ -8,7 +8,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+Tier 4 — ai.
+
+- **An app that registers its model catalogue when its gateway is first used is no longer refused `X_AI_MODEL_UNKNOWN` on its first call.** 27.10.0 read the model's row at the top of `agent()` and `llm()` to set the `llm.sampling.ignored` span attribute (`ignoredSampling` → `modelSpec`), before the gateway was asked anything, and whether or not the declaration named a `temperature` or `seed`. A gateway built lazily from the env, which registers the rows as it builds, had not run yet, so every first call in a process failed on a span attribute. Until 27.9.0 the gateway's own call was the first read of the catalogue, and it is again: the attribute is set when the run ends (answered or failed), a call that asks for no knob reads no row for it, and a model still unregistered by then leaves the attribute out instead of throwing over the call's own failure.
 
 ## 27.10.0 - 2026-10-12
 

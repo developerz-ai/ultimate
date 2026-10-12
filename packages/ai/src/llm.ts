@@ -50,7 +50,7 @@ import type { RunMeter } from './run-meter';
 import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { Sampling } from './sampling';
-import { ignoredSampling, screenSampling } from './sampling';
+import { ignoredSamplingAttribute, screenSampling } from './sampling';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
 const ATTEMPTS = 2;
@@ -182,12 +182,13 @@ async function generate<
       // an audit asks evidence for, and a redactor that silently stopped matching looks identical
       // to one that had nothing to remove until this attribute separates them.
       'llm.redacted': redacted,
-      'llm.sampling.ignored': ignoredSampling(
-        model,
-        sampling,
-        installedGateway()?.samplingWires?.(model),
-      ).join(','),
     });
+    // Read when the call ends, not here: the gateway may be what registers the model's row.
+    const reportSampling = (): void => {
+      span.setAttributes(
+        ignoredSamplingAttribute(model, sampling, () => installedGateway()?.samplingWires?.(model)),
+      );
+    };
 
     // A cached answer is still data of unknown provenance, so it goes through the schema like
     // any other. One that no longer fits — the schema moved under it — is a miss, not a
@@ -201,7 +202,10 @@ async function generate<
     });
     const hit = await accept(def.output, await cache?.lookup());
     span.setAttribute('llm.cache.hit', hit !== undefined);
-    if (hit !== undefined) return hit.value;
+    if (hit !== undefined) {
+      reportSampling();
+      return hit.value;
+    }
 
     // No `tools` yet: the `respond` projection belongs to the non-streaming path alone. A tool
     // call is emitted whole, so forcing the answer through one leaves a stream with nothing to
@@ -292,9 +296,11 @@ async function generate<
       });
     };
     return withBudget(ledger, () =>
-      answer().catch((error: unknown) => {
-        throw meter.fail(error);
-      }),
+      answer()
+        .catch((error: unknown) => {
+          throw meter.fail(error);
+        })
+        .finally(reportSampling),
     );
   });
 }
