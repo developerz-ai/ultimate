@@ -11,7 +11,7 @@
 
 import { AiRequestInvalidError } from './errors';
 import type { ModelId } from './models';
-import { modelSpec } from './models';
+import { isModelRegistered, modelSpec } from './models';
 
 export interface Sampling {
   /** 0 to 2. `0` is the most repeatable a model offers; it is not a guarantee of determinism. */
@@ -74,6 +74,8 @@ export function ignoredSampling(
   /** The wire formats of the providers serving `model`, when the gateway can say. */
   wires?: readonly SamplingWire[],
 ): readonly string[] {
+  // Nothing asked, nothing ignored — and no row read: a model none asked of needs none here.
+  if (request.temperature === undefined && request.seed === undefined) return [];
   const accepts = modelSpec(model).sampling;
   // A knob no serving wire has a word for is dropped too — `seed` on the Messages API.
   const sendable = (knob: 'temperature' | 'seed'): boolean =>
@@ -83,4 +85,29 @@ export function ignoredSampling(
   return (['temperature', 'seed'] as const).filter(
     (knob) => request[knob] !== undefined && (accepts?.[knob] !== true || !sendable(knob)),
   );
+}
+
+/**
+ * The `llm.sampling.ignored` span attribute, set when a run ENDS — answered or failed — never at
+ * its start. The catalogue is the app's, and an app may register it when its gateway is first used
+ * (a gateway built lazily from the env): read at the top of `agent()` / `llm()`, before the gateway
+ * was asked anything, the row was not there yet and a REPORT refused the call `X_AI_MODEL_UNKNOWN`.
+ * A model still unregistered by then has no row to report against; the call's own failure says so.
+ */
+export function ignoredSamplingAttribute(
+  model: ModelId,
+  request: Sampling,
+  wires: () => readonly SamplingWire[] | undefined,
+): Record<'llm.sampling.ignored', string> | Record<string, never> {
+  if (request.temperature === undefined && request.seed === undefined) {
+    return { 'llm.sampling.ignored': '' };
+  }
+  if (!isModelRegistered(model)) return {};
+  // A report never fails the call it describes: an installed gateway may throw from
+  // `samplingWires`, and the attribute is then left out rather than replacing the call's result.
+  try {
+    return { 'llm.sampling.ignored': ignoredSampling(model, request, wires()).join(',') };
+  } catch {
+    return {};
+  }
 }

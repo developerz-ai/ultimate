@@ -60,7 +60,7 @@ import { RESPOND, respondFor } from './respond';
 import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { Sampling } from './sampling';
-import { ignoredSampling, screenSampling } from './sampling';
+import { ignoredSamplingAttribute, screenSampling } from './sampling';
 import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
 import { asProjectableAction, isOfferedTool, runLlmToolCall, toLlmTools, toolLabel } from './tools';
 
@@ -196,12 +196,15 @@ async function run<
       'agent.max_turns': maxTurns,
       'llm.redacted': rendered !== rawPrompt || !sameSystem(system, rawSystem),
       'llm.prompt_cache': promptCache !== undefined,
-      'llm.sampling.ignored': ignoredSampling(
-        model,
-        bounds.sampling,
-        installedGateway()?.samplingWires?.(model),
-      ).join(','),
     });
+    // Read when the run ends, not here: the gateway may be what registers the model's row.
+    const reportSampling = (): void => {
+      span.setAttributes(
+        ignoredSamplingAttribute(model, bounds.sampling, () =>
+          installedGateway()?.samplingWires?.(model),
+        ),
+      );
+    };
 
     // Rooted in the GATEWAY's own ceilings when no scope is open — an empty root ignored them.
     const gateway = aiGateway(name);
@@ -371,18 +374,21 @@ async function run<
       throw new AgentMaxTurnsError({ agent: name, turns: maxTurns, calls });
     };
     return withBudget(ledger, () =>
-      meter.within(loop).catch((error: unknown) => {
-        const failed = meter.fail(error);
-        // A failed `.run()` / `.continue()` leaves a handle too: the transcript up to the request
-        // the failed turn was answering, with `turns` and `usage` counting what this call was
-        // billed. Without it a retry resumes from the OLD handle, which never heard of that spend
-        // — six truncated continuations billed six times against a ceiling that saw none of them.
-        if (session !== undefined && at.messages.length > 0) {
-          const { usage } = runTotal(model, prior?.usage, meter.billed());
-          withTranscript(failed, sealTranscript(binding, { ...at, usage }));
-        }
-        throw failed;
-      }),
+      meter
+        .within(loop)
+        .catch((error: unknown) => {
+          const failed = meter.fail(error);
+          // A failed `.run()` / `.continue()` leaves a handle too: the transcript up to the request
+          // the failed turn was answering, with `turns` and `usage` counting what this call was
+          // billed. Without it a retry resumes from the OLD handle, which never heard of that spend
+          // — six truncated continuations billed six times against a ceiling that saw none of them.
+          if (session !== undefined && at.messages.length > 0) {
+            const { usage } = runTotal(model, prior?.usage, meter.billed());
+            withTranscript(failed, sealTranscript(binding, { ...at, usage }));
+          }
+          throw failed;
+        })
+        .finally(reportSampling),
     );
   });
 }
