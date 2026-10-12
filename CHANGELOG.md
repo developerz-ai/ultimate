@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.10.0 - 2026-10-12
+
 ### Added
 
 Tier 2 — http. Tier 4 — ai.
@@ -56,6 +60,10 @@ Tier 2 — http. Tier 4 — ai.
 - **A failed run says what it was billed.** A failure after the provider answered was thrown with nothing about its cost, and for unparseable tool arguments the ledger was told nothing either. Every failure `llm()` (plain or `.stream()`) and `agent()` throw once a provider call has been started now carries `meta.billed` — `{ usage, cost, calls, unsettled }`, read with `billedOf(error)`: the usage of every call that answered, summed; its cost; and `unsettled`, the number of calls that were started and never reported usage (an abort, a deadline, a cut stream), **whose bill cannot be known** and is never estimated. That covers `X_LLM_TRUNCATED`, `X_LLM_REFUSED`, `X_LLM_OUTPUT_INVALID`, `X_LLM_TOOL_ARGUMENTS_INVALID`, `X_AGENT_MAX_TURNS`, `X_AGENT_TOOL_LOOP`, `X_AGENT_DEADLINE`, `X_ABORTED` and a budget or transport failure on a later turn. The ledger already held the settled calls; it now also holds a call that ended in `X_LLM_TOOL_ARGUMENTS_INVALID`. `meta` is operator-only and is not in a problem document.
 - **Two streamed tool calls that share one `index` are two calls.** The chat-completions assembler merged fragments by `tool_calls[].index` alone. An endpoint that numbers every call of a turn `0` (or sends no index) and tells them apart by `id` had its calls concatenated into one argument string — `{…}{…}` — and one name (`readDocreadDoc`), which then failed to parse. A fragment whose `id` differs from the open call's now starts a new call; an id repeated on every fragment, or sent only on the first, is still one call.
 - **A streamed call is read when the stream ends, not when the finish reason arrives.** Nothing in the format orders the finish reason against the last argument fragment, and an endpoint may send the reason twice (OpenRouter repeats it on the usage chunk). `ChatCompletionStream.end()` drains the calls at `[DONE]` or when the socket closes; tool-call chunks are yielded then.
+
+### Commits
+
+- fix(ai): unattended agents: a cut-off answer is never a success, streamed tool calls parse or fail typed, failures carry their bill; continue, sampling, in-process tools (#767)
 
 ## 27.9.0 - 2026-10-11
 
