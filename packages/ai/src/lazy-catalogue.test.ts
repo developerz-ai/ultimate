@@ -10,7 +10,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx } from '@ultimat3/action';
 import type { ReadableSpan } from '@ultimat3/core';
-import { configureTelemetry, memoryExporter, resetTelemetry } from '@ultimat3/core';
+import { configureTelemetry, memoryExporter, resetTelemetry, UltimateError } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { agent } from './agent';
@@ -105,7 +105,11 @@ describe('the report never changes the call it describes', () => {
     const throwing = {
       ...inner,
       samplingWires: (): never => {
-        throw new Error('samplingWires broke');
+        throw new UltimateError({
+          code: 'X_TEST_SAMPLING_WIRES',
+          cause: 'samplingWires broke',
+          fix: 'nothing: the test throws on purpose',
+        });
       },
     } as Gateway;
     configureAi({ gateway: throwing });
@@ -122,7 +126,26 @@ describe('the report never changes the call it describes', () => {
   });
 
   test('a model the catalogue never names: the call keeps its own error, no attribute', async () => {
-    configureAi({ gateway: lazyGateway(stub({ answer: 'done' }).provider) });
+    // The call's own error is the gateway's: identity proves the report did not replace it
+    // (27.10.0 read the row first and threw X_AI_MODEL_UNKNOWN before the gateway was asked).
+    const own = new UltimateError({
+      code: 'X_TEST_GATEWAY_REFUSED',
+      cause: 'the gateway refused the call',
+      fix: 'nothing: the test refuses on purpose',
+    });
+    const refuse = (): never => {
+      throw own;
+    };
+    configureAi({
+      gateway: {
+        defaultModel: undefined,
+        generate: refuse,
+        stream: refuse,
+        scope: refuse,
+        spent: refuse,
+        callLedger: refuse,
+      } as unknown as Gateway,
+    });
     const run = agent({
       input: t.object({ postId: t.uuid }),
       output: t.object({ answer: t.string }),
@@ -137,7 +160,7 @@ describe('the report never changes the call it describes', () => {
       () => undefined,
       (thrown: unknown) => thrown,
     );
-    expect(error).toBeDefined();
+    expect(error).toBe(own);
     expect(attribute('ai.agent')).toBeUndefined();
   });
 });
