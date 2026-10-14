@@ -41,6 +41,7 @@ triage:
     - No ninth primitive — a feature that fits none of the eight does not ship
     - Containers only — no platform-specific deploy primitives (Vercel, Lambda, Workers)
     - No plugin API — an app wraps a primitive instead
+    - Outside changes to CI, release or publish automation (.github/, scripts/release*, PUBLISHING.md) — members maintain that pipeline
   close_unanswered_repro_after_days: 14
   stale_after_days: 60
   stale_action: comment_then_close
@@ -56,8 +57,11 @@ pr:
   required_checks: [verify]
   auto_merge: true
   # WHOSE pull requests the bot merges and babysits: its own, the dependency bots', and outside
-  # contributors' (repo permission read or none). Never an org member's or a collaborator's (write,
-  # maintain, admin): those are reviewed, then left to their author. Membership is the author's real
+  # contributors' (repo permission read, triage or none). Never one by an author with write, maintain
+  # or admin on this repo — an org member or an invited collaborator alike: reviewed, then left to
+  # its author. An outside PR that changes CI, release or publish automation is declined by the
+  # `non_goals` line above (security audit, 2026-10-14): with no branch protection and no publish
+  # reviewer, an auto-merged workflow edit would run beside the job holding `id-token: write`. Membership is the author's real
   # repo permission, never `author_association`, which reports a private org member as CONTRIBUTOR
   # (developerz.ai #6363, deployed 2026-10-14). An unreadable permission holds the PR, never merges
   # it. This repo's fleet PRs are authored by the App (`app/developerz-ai`), so they stay in scope.
