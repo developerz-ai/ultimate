@@ -3,7 +3,7 @@
 # installed and then upgraded by `x deploy --method helm`, while a load pod inside the cluster
 # sends mixed GET and POST through the Service. Green means the upgrade dropped ZERO requests.
 #
-#   bash docker/deploy-proof/run.sh            # from the repo root; needs docker kind helm kubectl bun jq
+#   bash docker/deploy-proof/run.sh            # from the repo root; needs docker kind helm kubectl bun jq timeout
 #   KEEP_CLUSTER=1 bash docker/deploy-proof/run.sh   # leave the kind cluster up to poke at
 #
 # The app is built from THIS tree, not from npm: every packages/* is packed into the app's
@@ -23,7 +23,7 @@ export KUBECONFIG="$WORK/kubeconfig"
 refuse() { echo "::error title=deploy proof::$1"; exit 1; }
 step() { echo "── $1"; }
 
-for tool in docker kind helm kubectl bun jq; do
+for tool in docker kind helm kubectl bun jq timeout; do
   command -v "$tool" >/dev/null || refuse "$tool is not on PATH. fix: install $tool, then re-run bash docker/deploy-proof/run.sh"
 done
 
@@ -49,7 +49,17 @@ done
     pkg.overrides[`@ultimat3/${name}`] = `file:./${file}`;
   }
   await Bun.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
-' && bun install >/dev/null && bunx x db gen initial --json >/dev/null)
+' && bun install >/dev/null)
+
+step "x db gen initial, bounded"
+# Bounded, so a hang is this step's named failure and not the job's silent 15-minute cancel: an
+# embedded-database boot that never became ready spun here at full CPU (PGlite 0.5.10).
+gen_status=0
+(cd "$APP" && timeout "${DB_GEN_SECONDS:-180}" bunx x db gen initial --json >"$WORK/db-gen.json") || gen_status=$?
+[ "$gen_status" != 124 ] \
+  || refuse "x db gen initial did not finish within ${DB_GEN_SECONDS:-180}s. fix: cd $APP && bunx x db gen initial --json, then read packages/db/src/pglite.ts's boot (loadPgliteDriver)"
+[ "$gen_status" = 0 ] \
+  || refuse "x db gen initial exited $gen_status: $(jq -c '.findings // .' "$WORK/db-gen.json" 2>/dev/null || cat "$WORK/db-gen.json"). fix: cd $APP && bunx x db gen initial --json"
 
 step "two images, differing only by BUILD_ID"
 for build in v1 v2; do
