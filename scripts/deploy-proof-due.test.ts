@@ -63,8 +63,13 @@ describe('unit · deploy-proof-due · the decision', () => {
     const decision = deployProofDue(push({ subject: 'release: 24.0.0 (#646)', changed: [] }));
     expect(decision.run).toBe(true);
     expect(decision.reason).toContain('release');
+    // The subject `scripts/release.ts` commits are merged under today, squash-merged as a PR.
+    expect(
+      deployProofDue(push({ subject: 'chore: release 27.10.1 (#770)', changed: [] })).run,
+    ).toBe(true);
     // A subject that merely mentions a release is not one.
     expect(deployProofDue(push({ subject: 'docs: the release: notes' })).run).toBe(false);
+    expect(deployProofDue(push({ subject: 'chore: release notes wording' })).run).toBe(false);
   });
 
   test('anything but a push to main — a manual run — always runs it', () => {
@@ -93,6 +98,7 @@ describe('unit · deploy-proof-due · the paths that decide the verdict', () => 
       'package.json',
       // The rule itself: a change to it is proved, never skipped by itself.
       'scripts/deploy-proof-due.ts',
+      'scripts/lib/release-subject.ts',
       // What `x new` writes is the proof app: the command and every template it emits from.
       'packages/cli/src/cmd-new.ts',
       'packages/cli/src/cmd-new-spec.ts',

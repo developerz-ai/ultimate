@@ -1,0 +1,197 @@
+name: release-tag
+
+# Merging the release PR IS the release. When ci.yml passes on the push of a RELEASE COMMIT to main
+# — its subject matches `scripts/lib/release-subject.ts` (`chore: release X.Y.Z (#N)`) — and the
+# version it stamps has no tag yet, this workflow cuts that release as a maintainer used to by hand: the ANNOTATED tag on the commit ci.yml judged, the GitHub Release with that version's
+# CHANGELOG.md section as its notes, and a dispatch of release.yml at the tag.
+#
+# The hand step is what went wrong, for humans and the bot alike: a lightweight tag (which
+# `--follow-tags` never pushes and release-preflight refuses), a Release cut before the bump
+# (developerz-ai[bot] made those — release.yml runs 35827049144 and 35789073198), a tag nobody
+# pushed. One path now, and `bun run scripts/release-due.ts` is how anyone decides a bump is owed.
+#
+# Why a dispatch, and why it cannot double-publish: a Release created with GITHUB_TOKEN does not
+# fire `release: published` (GitHub suppresses workflow events from that token), while
+# `workflow_dispatch` is GitHub's documented exception. The dispatch runs at `refs/tags/v<version>`,
+# which satisfies release.yml's ref check and the `npm-publish` environment's `v*` tag rule, and
+# release.yml's `check` job still reads ci.yml's push run on the tagged commit before any publish.
+#
+# A tag that already exists stops this run quietly: a maintainer who still tags by hand, or a re-run
+# of ci.yml on an already-released commit, races nothing. ONLY the release commit is ever tagged: a
+# later green commit (a Dependabot merge whose CI finished first, or the next push after a release
+# commit whose CI was red) is not the release its notes describe. A release commit whose own CI never
+# went green is cut by hand, or by re-running its failed jobs (`gh run rerun <id> --failed`), which
+# fires this workflow again for that commit.
+#
+# Two jobs, so no dependency code runs beside a write token: `prepare` (contents: read) checks out,
+# installs and runs this repo's scripts; `cut` (contents + actions: write) has no checkout and no
+# install — `gh` and the values `prepare` handed it, nothing else.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+
+# One release cut at a time, and never cancelled: a tag without its Release, or a Release without
+# its dispatch, is a half-cut release a human then has to finish.
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    # A green ci.yml run, from a push to main of THIS repository — never a fork's pull_request run,
+    # and never a red one: release.yml would refuse that commit anyway, after the tag existed. The
+    # subject prefix is a cheap pre-filter so an ordinary push installs nothing; the step below
+    # holds the subject to the full rule.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (startsWith(github.event.workflow_run.head_commit.message, 'chore: release ') ||
+       startsWith(github.event.workflow_run.head_commit.message, 'release: '))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      cut: ${{ steps.release.outputs.cut }}
+      version: ${{ steps.release.outputs.version }}
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      # The commit ci.yml judged, never the tip of main when this run started: a push that landed
+      # since would otherwise be tagged under the earlier commit's verdict.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # The one release-subject rule, the one deploy-proof-due.ts and release-due.ts read — not the
+      # prefix above, which `chore: release notes wording` would also pass. A miss stops quietly.
+      - name: the judged commit is a release commit
+        id: subject
+        env:
+          MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          set -euo pipefail
+          bun -e "const { RELEASE_SUBJECT } = await import('./scripts/lib/release-subject.ts'); const subject = (process.env.MESSAGE ?? '').split('\n')[0] ?? ''; console.log(RELEASE_SUBJECT.test(subject) ? 'release=true' : 'release=false'); console.error('subject: ' + JSON.stringify(subject));" >> "$GITHUB_OUTPUT"
+
+      # The version the publishable manifests carry, read the way release.yml's publish list is —
+      # `scripts/list-workspaces.ts`, never a second parser — and whether its tag exists on the
+      # REMOTE, which is the only place a maintainer's hand-pushed tag is visible from here.
+      - name: is this commit an untagged release
+        id: release
+        if: steps.subject.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(bun run scripts/list-workspaces.ts --json | jq -r '[.data[] | select(.publish == "public") | .version] | first')"
+          if [ -z "$version" ] || [ "$version" = null ]; then
+            echo "::error::scripts/list-workspaces.ts named no publishable version — run it locally: bun run scripts/list-workspaces.ts --json"
+            exit 1
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${version}" --silent 2>/dev/null; then
+            echo "v${version} is already tagged — nothing to cut."
+            echo "cut=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v${version} has no tag yet — cutting it."
+            echo "cut=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Every file the version is stamped in, not the manifests alone — the same question
+      # release.yml asks before it publishes, asked before anything irreversible exists.
+      - name: the tree is stamped at that version
+        if: steps.release.outputs.cut == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: bun run scripts/release.ts --check "$VERSION" --json
+
+      # Multi-line, so written as a delimited output: `cut` reads it without a checkout.
+      - name: the release notes are that version's CHANGELOG.md section
+        id: notes
+        if: steps.release.outputs.cut == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          bun run scripts/release-notes.ts --version "$VERSION" --json | jq -r '.data.notes' > "$RUNNER_TEMP/notes.md"
+          test -s "$RUNNER_TEMP/notes.md"
+          delimiter="NOTES_$(openssl rand -hex 16)"
+          {
+            echo "notes<<${delimiter}"
+            cat "$RUNNER_TEMP/notes.md"
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
+
+  # The only job holding a write token, and it runs no code from this repository or its
+  # dependencies: no checkout, no install — `gh` against the API, with what `prepare` decided.
+  cut:
+    needs: prepare
+    if: needs.prepare.outputs.cut == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # The tag object, its ref and the Release.
+      contents: write
+      # `gh workflow run release.yml`. Nothing else.
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      # ANNOTATED: a tag object, then the ref pointing at it. `gh release create` on a missing tag
+      # makes a LIGHTWEIGHT one, which is why the tag comes first and the Release says
+      # `--verify-tag`. A ref that already exists by now is a maintainer who tagged by hand
+      # between `prepare` and this job: theirs stands, and this run stops.
+      - name: annotated tag on the judged commit
+        id: tag
+        run: |
+          set -euo pipefail
+          object="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="v${VERSION}" -f message="v${VERSION}" -f object="$SHA" -f type=commit --jq .sha)"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/v${VERSION}" -f sha="$object" --silent; then
+            echo "tagged v${VERSION} -> ${SHA} (tag object ${object})"
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          elif gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${VERSION}" --silent 2>/dev/null; then
+            echo "::notice::v${VERSION} appeared while this run was cutting it — a hand-cut release stands; stopping."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::could not create refs/tags/v${VERSION}. Cut it by hand: git tag -a v${VERSION} -m v${VERSION} ${SHA} && git push origin v${VERSION}"
+            exit 1
+          fi
+
+      - name: GitHub Release from the tag
+        if: steps.tag.outputs.created == 'true'
+        env:
+          NOTES: ${{ needs.prepare.outputs.notes }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+          gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" \
+            --notes-file "$RUNNER_TEMP/notes.md" || {
+            # A re-run would find the tag and stop, so the rest of the cut is named here.
+            echo "::error::v${VERSION} is tagged but has no Release. Finish by hand: bun run scripts/release-notes.ts --version ${VERSION} --json | jq -r .data.notes > notes.md && gh release create v${VERSION} --verify-tag --title v${VERSION} --notes-file notes.md && gh workflow run release.yml --ref v${VERSION} -f version=${VERSION}"
+            exit 1
+          }
+
+      # The publish itself is release.yml's, from the tag, through its own `check` job.
+      - name: dispatch release.yml at the tag
+        if: steps.tag.outputs.created == 'true'
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml --ref "v${VERSION}" -f version="${VERSION}" || {
+            echo "::error::v${VERSION} is tagged and released but release.yml was not dispatched. Finish by hand: gh workflow run release.yml --ref v${VERSION} -f version=${VERSION}"
+            exit 1
+          }
+          echo "dispatched release.yml for v${VERSION} — watch it: gh run list --workflow release.yml --limit 1"

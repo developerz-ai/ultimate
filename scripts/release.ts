@@ -12,11 +12,7 @@ import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { promoteUnreleased, releaseDate } from './lib/release-changelog';
-import {
-  annotatedTagCommand,
-  compareReleaseVersions,
-  treeDirtyFindings,
-} from './lib/release-preflight';
+import { compareReleaseVersions, treeDirtyFindings } from './lib/release-preflight';
 import {
   performedWriteLine,
   performReleaseWrites,
@@ -146,9 +142,13 @@ export const releaseInvocation = (input: {
     ...(input.json ? ['--json'] : []),
   ].join(' ');
 
-/** What a finished release owes next, with the one tag command this repo prints. */
+/**
+ * What a finished bump owes next. No tag: `.github/workflows/release-tag.yml` cuts the annotated
+ * tag, the Release and the publish once ci.yml passes on the merged commit, and the hand tag this
+ * line used to print was the step that kept going wrong.
+ */
 export const releaseNextLine = (version: string): string =>
-  `  next      bun install, commit, ${annotatedTagCommand(version)}, then publish a GitHub Release`;
+  `  next      bun install, commit, open the \`chore: release ${version}\` PR; merging it is the release (release-tag.yml)`;
 
 /** The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent. */
 const EXACT_PIN = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;

@@ -9,6 +9,9 @@
 import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
+// A release commit is what release.yml publishes from, so its proof is never inherited. It matched
+// `release:` alone until 2026-10, so every `chore: release X.Y.Z (#N)` merge could inherit one.
+import { RELEASE_SUBJECT } from './lib/release-subject';
 import { repoRoot, run } from './lib/run';
 
 /**
@@ -22,13 +25,10 @@ import { repoRoot, run } from './lib/run';
  * release applies in the cluster) and `x deploy` (`cmd-deploy*`).
  */
 export const VERDICT_PATHS =
-  /^(\.github\/workflows\/ci\.yml|\.github\/actions\/setup\/|docker\/|bun\.lock$|package\.json$|scripts\/deploy-proof-due\.ts$|packages\/[^/]+\/package\.json$|packages\/cli\/src\/templates\/|packages\/cli\/src\/(cmd-new(-[^/]+)?\.ts$|cmd-db\.ts$|db-generate\.ts$|cmd-deploy|serve|role-|runtime-)|packages\/core\/src\/lifecycle|packages\/http\/src\/(server|stages)\.ts)/;
+  /^(\.github\/workflows\/ci\.yml|\.github\/actions\/setup\/|docker\/|bun\.lock$|package\.json$|scripts\/deploy-proof-due\.ts$|scripts\/lib\/release-subject\.ts$|packages\/[^/]+\/package\.json$|packages\/cli\/src\/templates\/|packages\/cli\/src\/(cmd-new(-[^/]+)?\.ts$|cmd-db\.ts$|db-generate\.ts$|cmd-deploy|serve|role-|runtime-)|packages\/core\/src\/lifecycle|packages\/http\/src\/(server|stages)\.ts)/;
 
 /** The job whose conclusion is the verdict being carried forward. Its id in ci.yml. */
 export const PROOF_JOB = 'deploy-proof';
-
-/** A `release:` commit is what release.yml publishes from, so its proof is never inherited. */
-const RELEASE_SUBJECT = /^release:/;
 
 export interface CiRun {
   readonly id: number;

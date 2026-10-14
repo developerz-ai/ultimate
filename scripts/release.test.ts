@@ -354,10 +354,13 @@ describe('unit · a release only moves forward, and is asked for one way', () =>
 });
 
 describe('unit · the commands a release prints are the safe form', () => {
-  test('the next line tags with -a, never a lightweight tag --follow-tags would skip', () => {
+  // Merging the release PR is the release: release-tag.yml tags it. A hand tag the next line
+  // printed was the step that went wrong — lightweight, unpushed, or cut before the bump.
+  test('the next line opens the release PR and never tells anyone to tag by hand', () => {
     const line = releaseNextLine('1.3.0');
-    expect(line).toContain('git tag -a v1.3.0 -m v1.3.0 && git push origin v1.3.0');
-    expect(line).not.toMatch(/tag v1\.3\.0/);
+    expect(line).toContain('open the `chore: release 1.3.0` PR');
+    expect(line).toContain('merging it is the release (release-tag.yml)');
+    expect(line).not.toMatch(/git tag|gh release create/);
   });
 
   test('the rerun names only validated flags, in the form the script parses', () => {

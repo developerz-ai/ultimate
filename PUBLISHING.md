@@ -56,7 +56,8 @@ what each answer means.
 | what npm serves, and what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
 | provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` — `GitHub Actions` is the workflow; a person's name is a hand publish with no attestation |
 | the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — the ref **and** its peeled `^{}` line. Not `git tag --list`, which reads the local repository. `git tag -a` only: `--follow-tags` never pushes a lightweight tag |
-| the GitHub Release exists — the Release triggers the workflow | `gh release view v<version> --json tagName,isDraft,publishedAt` |
+| the GitHub Release exists — `release-tag.yml` creates it when the release PR merges | `gh release view v<version> --json tagName,isDraft,publishedAt` |
+| a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command` |
 | the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 | which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
 
@@ -78,14 +79,15 @@ bun install                                    # regenerate bun.lock, by hand �
 bun install --frozen-lockfile                  # confirms what the bump already corrected
 bun run scripts/release.ts --check 1.1.0       # what the release workflow asks before it publishes
 bun run verify                                 # the gate, including the lockstep check
-git add -A && git commit -m "release: 1.1.0"
-git tag -a v1.1.0 -m 1.1.0 && git push origin v1.1.0   # -a: --follow-tags SKIPS a lightweight tag
+git add -A && git commit -m "chore: release 1.1.0"   # on a branch; open the PR and merge it
 ```
 
 `bun run scripts/lockfile-pins.ts --write` is no longer a step — the bump performs it. It is still
 the repair when something else moves a manifest, and running it after a bump is a no-op.
 
-Then publish a GitHub Release for the tag — that is what triggers the workflow.
+**Merging that PR is the release.** Nobody tags and nobody runs `gh release create`:
+`.github/workflows/release-tag.yml` does both once ci.yml is green on the merged commit, then
+dispatches the publish — [Ongoing releases](#ongoing-releases-automated), step 2.
 
 The release script rewrites **every** workspace manifest, not just the ones that publish: the
 reference app under `examples/` is private and never reaches npm, but it resolves `@ultimat3/*`
@@ -360,12 +362,28 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
    changes in it (`X_RELEASE_TREE_DIRTY` — the release commit would carry them; the cause lists the
    paths), and a version that does not move forward (`X_RELEASE_VERSION_INVALID` — `--version` at or
    below the current one, or `--version` and `--bump` together, where one used to win silently).
-2. Commit, push to `main`, and let ci.yml go green on that commit. Then tag it —
-   `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. Annotated: `--follow-tags` skips a
-   lightweight tag, and `release.ts` prints this exact command as its `next` line.
-3. Publish a GitHub Release for that tag (or **Actions → release → Run workflow** with the tag
-   selected and the version typed in). **A branch will not do**: the workflow's first step refuses
-   any ref that is not `refs/tags/v*`.
+2. Commit on a branch, open the `chore: release X.Y.Z` PR and merge it. **That is the whole
+   release**, `As of 2026-10`, for a maintainer and `developerz-ai[bot]` alike — no hand tag, no
+   `gh release create`. When ci.yml concludes `success` on the push of the **release commit** to
+   `main` — its subject matches `scripts/lib/release-subject.ts`, so no later commit (a Dependabot
+   merge whose CI finished first) is ever tagged with notes that do not describe it —
+   `.github/workflows/release-tag.yml` reads the stamped version and, if `vX.Y.Z` does not exist
+   yet: refuses unless `bun run scripts/release.ts --check X.Y.Z` passes, creates the **annotated**
+   tag on the commit ci.yml judged (a tag object, then its ref), creates the GitHub Release with that
+   version's `CHANGELOG.md` section as its notes (`bun run scripts/release-notes.ts --version X.Y.Z`)
+   and `--verify-tag`, and dispatches `release.yml` at the tag. If the tag already exists it stops
+   quietly — a maintainer who still tags by hand races nothing. A release commit whose own CI was
+   red or cancelled is cut by re-running its failed jobs (`gh run rerun <run-id> --failed`), which
+   fires the workflow again for that commit. Two jobs, so no dependency code runs beside a write
+   token: `prepare` (read-only) checks out, installs and runs the scripts; `cut` (contents and
+   actions write) has no checkout and no install, only `gh`.
+3. Why a dispatch: a Release made with `GITHUB_TOKEN` fires no `release: published`, while
+   `workflow_dispatch` is GitHub's exception, so exactly one publish run starts. It runs at
+   `refs/tags/vX.Y.Z`, which the first step of `release.yml` requires (**a branch will not do**) and
+   the `npm-publish` environment's `v*` rule admits. A half-cut release — a tag with no Release, a
+   Release with no dispatch — is finished with the command the failed step prints; a re-run stops
+   at the existing tag. The manual equivalent stays legal: **Actions → release → Run workflow** with
+   the tag selected and the version typed in.
 4. The workflow's **`check` job** runs first, with no environment and no `id-token`: the ref must
    be `refs/tags/v*`, the tree must be stamped at the tag's version (`release.ts --check`), and
    ci.yml's whole run — the merged gate and every app, scaffold, package and container job beside
@@ -373,7 +391,7 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
    minutes for a run still in flight. A Release cut before the bump (the
    `developerz-ai[bot]` shape) fails here, before any `npm-publish` deployment is requested.
 5. Only then does the **`publish` job** start behind `environment: npm-publish` — nobody approves
-   anything today, the environment has no reviewers (step 2 above) — and publish each tier over
+   anything today, the environment has no reviewers (human step 2 above) — and publish each tier over
    OIDC.
 6. Then the **`npm-scaffold` job** proves what npm SERVES, with no `id-token` and no workspace on
    the path. It waits until `registry-audit` sees every package at the version, attested, then runs
@@ -382,6 +400,29 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
    workspace links, so this is the one check that a registry-only gap (an export the tarball lacks)
    cannot pass. Red means the release shipped broken and the next patch is owed — never an unpublish.
 
+### When a release is due
+
+`bun run scripts/release-due.ts --json` answers it, read-only, and is the check the maintainer bot
+runs on its daily schedule before it opens a release PR. The window is every commit since the
+highest `v*` tag HEAD contains, release commits excluded. A commit **ships** when it changes a path
+a published tarball packs — each package's `files` field, plus its `package.json` — minus `*.md`,
+tests and fixtures. Root tooling, `bun.lock`, `.github/`, docs, the wiki and both tracked apps ship
+nothing.
+
+| `.data.reason` | Not due because |
+|---|---|
+| `awaiting_tag` | the tree is stamped past the last tag: a release PR merged and `release-tag.yml` has not tagged it yet |
+| `nothing_ships` | no commit in the window changes a published file |
+| `major_needs_a_maintainer` | a `BREAKING —` line under `[Unreleased]`, or a `!:` subject: a major's `wiki/Upgrading.md` walkthrough is a maintainer's judgement |
+| `settling` | the oldest shipping commit is younger than `--settle-hours` (default 24); `.data.dueAt` says when. A maintainer usually releases their own work at once — the bot releases what nobody did |
+
+Otherwise `.data.due` is `true` with the bump (`BREAKING —` or `!:` major, `### Added` or a
+`feat:` subject minor, else patch — `### Changed` alone is a patch, as 20.1.2 and 20.2.1 were),
+`.data.next`, the shipping commits, and `.data.command` — `bun run scripts/release.ts --version
+<next>`. `.data.notes` names what `[Unreleased]` owes first: a Dependabot-only window adds nothing
+there, so the releaser writes a `### Changed` line naming each bumped dependency, still a patch.
+No `vX.Y.Z` tag reachable — a shallow or tagless clone — is `X_RELEASE_TAG_UNREACHABLE`.
+
 **A publish that failed half way is resumed by re-running it**:
 `gh run rerun <run-id> --failed`. The publish step asks `npm view <pkg>@<version> version` first
 and skips, with a `::notice::`, every package npm already holds at that version. Until 2026-09-23
@@ -389,7 +430,7 @@ the re-run died `E403` on the first package the failed attempt had published.
 
 ## Releasing without a human in the loop
 
-**The flow is: publish a GitHub Release for the tag, and CI publishes to npm.** Nothing else
+**The flow is: merge the release PR, and CI tags, releases and publishes to npm.** Nothing else
 publishes. No token is involved anywhere in it — the workflow authenticates over OIDC as the
 trusted publisher, which is what stamps every tarball with a provenance attestation.
 
@@ -409,7 +450,8 @@ workflow and carries both. A release that trades provenance for convenience is w
 that waits.
 
 **An agent can drive the whole flow unattended**, because none of it needs a secret it does not
-already have: tag, push, publish the Release, then approve the environment through the API below.
+already have: `bun run scripts/release-due.ts --json`, then the bump PR, then the merge on green CI.
+`release-tag.yml` cuts the tag and the Release; nobody approves the environment.
 
 What the credentials are actually for:
 
@@ -418,8 +460,8 @@ What the credentials are actually for:
 | `NPM_TOTP_SECRET` | generating an OTP for `scripts/trust-publishers.ts --check --json`, which reads as `0/30 missing` without one | — |
 | `NPM_TOKEN` | `npm whoami`, and the **one-time bootstrap** of a package that has never been published (step 1) — the only publish a trusted publisher cannot do, because it cannot attach to a package that does not exist yet | every other publish |
 
-**Step 4 without a person** is the default since 2026-09-05: the environment carries no
-reviewer, so a published GitHub Release for a `v*` tag publishes on its own. The checks a
+**Step 5 without a person** is the default since 2026-09-05: the environment carries no
+reviewer, so a release dispatched at a `v*` tag publishes on its own. The checks a
 reviewer used to make are the ones the release commit and the workflow already run — the tree
 stamped at the tag (`bun run scripts/release.ts --check X.Y.Z`), the full gate, the publish
 order (`bun run scripts/release-workflow.ts --json`), and for a major the upgrade section in
@@ -447,6 +489,7 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | `publishConfig.access: public` + `provenance: true` | every package.json |
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
+| `release-tag.yml` on ci.yml's green push run of the release commit to `main` | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
 | `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version — see below |
 | ci.yml's whole run `success` on the tagged commit | nothing reaches the registry unverified: the framework gate (`verify`, the merge of every `gate` part) AND every tracked app, scaffold, per-package coverage bar and container build of the same run. It read the `verify` job alone until 2026-10, so a tag with a red app gate published. The workflow used to re-run `verify` itself with no services: the 21.0.0 run executed 10 of 342 live tests |
 | a package already on npm at the version is skipped | a failed publish is resumable (`gh run rerun <run-id> --failed`) |
