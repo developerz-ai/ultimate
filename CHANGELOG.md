@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.10.2 - 2026-10-14
+
 ### Fixed
 
 - **`x db gen` and `x db migrate` no longer hang on `@electric-sql/pglite` 0.5.10.** That release
@@ -30,6 +34,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   dual-stack `localhost` both bound and the browser reached `/metrics`'s 404.
 - **e2e `waitFor` survives a navigation committing mid-poll** (#774): Chrome's "Inspected target
   navigated or closed" now reads as "not yet" while the tab lives, and still fails fast once closed.
+
+### Commits
+
+- fix: main red + every known flake â€” shared ports, lost stack headers, a navigation mid-poll, the reconnect double paint (#779)
+- fix(db): a fresh PGlite boot is ready before it is snapshotted â€” x db gen no longer hangs on pglite 0.5.10 (#775)
+- feat(release,policy): ultimate is AI-maintained â€” the bot cuts releases; merging the bump is the release (#772)
+- chore(docker): Bump redis from 7-alpine to 8-alpine in /docker (#771)
 
 ## 27.10.1 - 2026-10-12
 
