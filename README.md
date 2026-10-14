@@ -389,9 +389,9 @@ Twelve milestones, each ending in a working demo app and a green gate. **0–10 
 | Who or what | What happens |
 |---|---|
 | you — an issue | triaged; asked for a reproduction when one is missing; a real bug is fixed and released; a request against a [design axiom](#design-axioms) is declined with the axiom quoted |
-| you — a pull request | reviewed by CodeRabbit and the developerz.ai reviewer, then merged by a maintainer |
+| you — a pull request | reviewed (CodeRabbit and the developerz.ai reviewer), driven to green, merged |
 | Dependabot | driven to green and merged |
-| a developerz-ai org member | reviewed; the rest is theirs |
+| a developerz-ai org member's pull request | reviewed, then left to its author to merge |
 | a breaking change | never merged unattended — a major is a migration for every app, and waits for a maintainer |
 
 Releases follow the work, not a calendar: when a fix that ships has merged and nobody has released it, the bot opens the version bump (`bun run scripts/release-due.ts` decides), and merging that bump publishes all packages to npm with provenance — [PUBLISHING.md](PUBLISHING.md). The bot's policy is committed: [`.dz/maintainer/maintainer.yml`](.dz/maintainer/maintainer.yml).
