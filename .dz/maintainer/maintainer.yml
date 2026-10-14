@@ -41,7 +41,7 @@ triage:
     - No ninth primitive — a feature that fits none of the eight does not ship
     - Containers only — no platform-specific deploy primitives (Vercel, Lambda, Workers)
     - No plugin API — an app wraps a primitive instead
-    - Outside changes to CI, release or publish automation (.github/, scripts/release*, PUBLISHING.md) — members maintain that pipeline
+    - Outside human contributors' changes to CI, release or publish automation (.github/, scripts/release*, PUBLISHING.md) — members maintain that pipeline
   close_unanswered_repro_after_days: 14
   stale_after_days: 60
   stale_action: comment_then_close
