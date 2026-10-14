@@ -338,6 +338,9 @@ export class ChannelBook {
   }
 
   #drain(entry: Entry, answered?: CatchUpRecords): void {
+    // Released while the read was out: its rows and frames are a seat nobody holds, and a new hold
+    // of the topic may already hold newer rows. Nothing lands and nothing is re-read.
+    if (this.#byTopic.get(entry.topic) !== entry) return;
     const held = entry.buffered ?? [];
     // A newer epoch arrived while the read was in flight (the node restarted mid-read): the read
     // answered for the OLD one, so it is re-read in the new one, keeping only that epoch's frames.

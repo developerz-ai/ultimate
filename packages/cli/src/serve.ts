@@ -9,7 +9,7 @@ import { assertNoSchemaDrift, checkDrift, migrate } from '@ultimat3/db';
 import { loadAppRuntime } from './app-runtime';
 import { acceptCreatedTables } from './db-accept-created';
 import { type BootedHold, holdWhileBooting } from './hold';
-import { startMetricsEndpoint } from './metrics-endpoint';
+import { rolePorts, startMetricsEndpoint } from './metrics-endpoint';
 import { readMigrations } from './migrations';
 import { resolveServices } from './runtime-bindings';
 import { startQueue } from './runtime-queue';
@@ -143,6 +143,9 @@ export async function serveApp(input: ServeOptions): Promise<ServedApp> {
     port: metricsPortFor(options.env, port, options.metricsPort),
     hostname: containerBinding(options.env, options.hostname).hostname,
     role,
+    // Opened before the roles are, so the check `startRoles` makes is made here: adopted, the
+    // listener is never re-checked, and one on the web or sync port would take it first.
+    reserved: rolePorts(port, [role]),
   });
   // Everything acquired from here down, in order, so a throw anywhere below gives it all back.
   const acquired: (() => void | Promise<void>)[] = [() => metrics.stop()];

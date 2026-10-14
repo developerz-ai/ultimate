@@ -9,7 +9,7 @@ import { catchUpRead } from './channel-catch-up';
 import { ChannelBook } from './client-channels';
 import { resetPage } from './hooks-fixture';
 import { RecordStore } from './record-store';
-import { PROTOCOL_VERSION } from './sync-protocol';
+import { type ChannelRecordsFrame, PROTOCOL_VERSION } from './sync-protocol';
 
 const TOPIC = 'org-feed.o1';
 const orgFeed = {
@@ -91,5 +91,38 @@ describe('a catch-up read across a principal change', () => {
     waiting[0]?.resolve(answered);
     await turns();
     expect(store.peek('posts', 'p1')).toBeUndefined();
+  });
+});
+
+describe('a catch-up read whose channel was released while it was out', () => {
+  test('lands nothing and re-reads nothing: a new hold of the topic keeps its newer rows', async () => {
+    const store = new RecordStore();
+    const { waiting, catchUp } = reads();
+    const book = new ChannelBook({
+      store,
+      send: () => undefined,
+      connected: () => true,
+      catchUp,
+      report: () => undefined,
+    });
+    const first = book.hold(orgFeed, { orgId: 'o1' });
+    book.gap(gap);
+    first.release();
+    book.hold(orgFeed, { orgId: 'o1' });
+    const fresh: ChannelRecordsFrame = {
+      type: 'records',
+      v: PROTOCOL_VERSION,
+      channel: TOPIC,
+      seq: 1,
+      epoch: 'e2',
+      adopt: { posts: { p1: { id: 'p1', likes: 9 } } },
+    };
+    book.records(fresh);
+    expect(store.peek('posts', 'p1')?.['likes']).toBe(9);
+
+    waiting[0]?.resolve({ records: { posts: { p1: { id: 'p1', likes: 5 } } } });
+    await turns();
+    expect(store.peek('posts', 'p1')?.['likes']).toBe(9);
+    expect(waiting).toHaveLength(1);
   });
 });

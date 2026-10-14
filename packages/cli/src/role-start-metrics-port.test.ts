@@ -110,3 +110,32 @@ test('unit · x dev with no METRICS_PORT (`free`) takes a free scrape port besid
     scrape.stop();
   }
 });
+
+test('unit · the fix never names a port a role holds, at the top of the range too', () => {
+  const web = { role: 'web', port: 65_534 };
+  const held = [web, { role: 'sync', port: 65_535 }, { role: 'other', port: 9090 }];
+  const fix = new MetricsPortSharedError({ port: 65_534, with: web, reserved: held }).fix;
+  const named = Number(/METRICS_PORT=(\d+)/.exec(fix)?.[1]);
+  expect(named).toBeGreaterThan(0);
+  expect(named).toBeLessThanOrEqual(65_535);
+  expect(held.map((one) => one.port)).not.toContain(named);
+});
+
+test('unit · a container refuses METRICS_PORT equal to its web port before it binds either', async () => {
+  const { serveApp } = await import('./serve');
+  const port = releasedPort();
+  const outcome = await serveApp({
+    root: ROOT,
+    env: { ULTIMATE_ENV: 'development' },
+    role: 'web',
+    port,
+    metricsPort: port,
+  }).then(
+    async (served) => {
+      await served.stop?.();
+      return 'booted';
+    },
+    (error: unknown) => (error as { cause?: string }).cause ?? 'uncoded',
+  );
+  expect(outcome).toContain(`web port ${String(port)}`);
+});

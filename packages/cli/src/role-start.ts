@@ -32,7 +32,7 @@ import { errorPageHook } from './error-pages';
 import { BadFlagError, RuntimeDriverSplitError } from './errors';
 import {
   DEFAULT_METRICS_PORT,
-  type RolePort,
+  rolePorts,
   startMetricsEndpoint,
   whenMetricsPortTaken,
 } from './metrics-endpoint';
@@ -434,16 +434,4 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     }
     throw error;
   }
-}
-
-/**
- * The ports this boot's own roles will bind, which the scrape port must not be: the web role's, and
- * `PORT + 1` for the sync node (`syncPortFor`, which refuses the top of the range on its own).
- */
-function rolePorts(port: number, selected: readonly Role[]): readonly RolePort[] {
-  if (port === 0) return [];
-  return [
-    ...(selected.includes('web') ? [{ role: 'web', port }] : []),
-    ...(selected.includes('sync') ? [{ role: 'sync', port: port + 1 }] : []),
-  ];
 }

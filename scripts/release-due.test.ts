@@ -8,7 +8,8 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
+import { bounded, git as gitIn } from './lib/release-due-git';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { decideAt, lastReleaseTag, parseWindowLog, readWindow, settleHoursOf } from './release-due';
 
 // Each test spawns a dozen git processes; the CLI test boots the real tree.
@@ -31,11 +32,12 @@ const CHANGELOG =
 async function released(options: { readonly tag: boolean } = { tag: true }) {
   const dir = await mkdtemp(join(tmpdir(), 'release-due-'));
   madeDirs.push(dir);
-  const git = (argv: readonly string[], hoursAgo = 72): string => {
+  // Through the one bounded, non-interactive spawn the script uses: no call here can outlive
+  // SPAWN_TIMEOUT_MS or wait on stdin, whatever git or the machine is doing.
+  const git = async (argv: readonly string[], hoursAgo = 72): Promise<string> => {
     const date = new Date(NOW - hoursAgo * HOUR).toISOString();
-    const out = Bun.spawnSync(
+    const out = await gitIn(
       [
-        'git',
         '-c',
         'user.email=t@example.test',
         '-c',
@@ -44,25 +46,20 @@ async function released(options: { readonly tag: boolean } = { tag: true }) {
         'tag.gpgsign=false',
         ...argv,
       ],
+      dir,
       {
-        cwd: dir,
-        // A hook that runs this suite exports GIT_DIR, and git would follow it to the real repo.
-        env: {
-          ...Object.fromEntries(Object.entries(Bun.env).filter(([key]) => !key.startsWith('GIT_'))),
-          GIT_AUTHOR_NAME: 't',
-          GIT_COMMITTER_NAME: 't',
-          GIT_COMMITTER_DATE: date,
-          GIT_AUTHOR_DATE: date,
-        },
-        timeout: 30_000,
+        GIT_AUTHOR_NAME: 't',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_DATE: date,
+        GIT_AUTHOR_DATE: date,
       },
     );
-    expect({ argv, code: out.exitCode, err: out.stderr.toString() }).toEqual({
+    expect({ argv, ok: out.ok, output: out.output }).toEqual({
       argv,
-      code: 0,
-      err: expect.any(String),
+      ok: true,
+      output: expect.any(String),
     });
-    return out.stdout.toString();
+    return out.output;
   };
   const land = async (
     files: Readonly<Record<string, string>>,
@@ -71,13 +68,13 @@ async function released(options: { readonly tag: boolean } = { tag: true }) {
     author?: string,
   ): Promise<void> => {
     for (const [path, body] of Object.entries(files)) await Bun.write(join(dir, path), body);
-    git(['add', '-A'], hoursAgo);
-    git(
+    await git(['add', '-A'], hoursAgo);
+    await git(
       ['commit', '--quiet', '-m', subject, ...(author === undefined ? [] : ['--author', author])],
       hoursAgo,
     );
   };
-  git(['init', '--quiet', '-b', 'main']);
+  await git(['init', '--quiet', '-b', 'main']);
   await land(
     {
       'packages/core/package.json': MANIFEST('1.0.0'),
@@ -86,7 +83,7 @@ async function released(options: { readonly tag: boolean } = { tag: true }) {
     },
     'chore: release 1.0.0 (#1)',
   );
-  if (options.tag) git(['tag', '-a', 'v1.0.0', '-m', 'v1.0.0']);
+  if (options.tag) await git(['tag', '-a', 'v1.0.0', '-m', 'v1.0.0']);
   return { dir, git, land };
 }
 
@@ -134,12 +131,12 @@ describe('unit · release-due · read from a real repository', () => {
 
   test('the last release is the highest tag HEAD contains, never one on another branch', async () => {
     const { dir, git, land } = await released();
-    git(['checkout', '--quiet', '-b', 'side']);
+    await git(['checkout', '--quiet', '-b', 'side']);
     await land({ 'packages/core/src/b.ts': 'export const b = 1;\n' }, 'feat: side');
-    git(['tag', '-a', 'v9.0.0', '-m', 'v9.0.0']);
-    git(['checkout', '--quiet', 'main']);
+    await git(['tag', '-a', 'v9.0.0', '-m', 'v9.0.0']);
+    await git(['checkout', '--quiet', 'main']);
     expect(await lastReleaseTag(dir)).toBe('1.0.0');
-    git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'rc']);
+    await git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'rc']);
     expect(await lastReleaseTag(dir)).toBe('1.0.0');
   });
 
@@ -154,7 +151,7 @@ describe('unit · release-due · read from a real repository', () => {
 });
 
 describe('unit · release-due · refusals that name their own cause', () => {
-  // `readWindow` is only reached once `git describe` has named a reachable tag, so a log that fails
+  // `readWindow` is only reached once `git tag --merged HEAD` has named a reachable tag, so a log that fails
   // there is not a tag miss: it is its own code with its own fix. A tag git cannot resolve stands in
   // for whatever makes the log fail.
   test('a git log that fails over a found tag is X_RELEASE_WINDOW_UNREADABLE, not a tag miss', async () => {
@@ -211,7 +208,9 @@ describe('unit · release-due · parsing and flags', () => {
   });
 
   test('--json on the real tree is one envelope a bot can branch on', async () => {
-    const out = await run(['bun', 'run', 'scripts/release-due.ts', '--json'], { cwd: repoRoot() });
+    const out = await bounded(['bun', 'run', 'scripts/release-due.ts', '--json'], {
+      cwd: repoRoot(),
+    });
     const parsed = JSON.parse(out.output) as {
       ok: boolean;
       script: string;

@@ -3,6 +3,7 @@
 // `docker/helm`'s HPAs read a number instead of `<unknown>`. Opening it starts the process's own
 // series (`process_*`): a role that can be scraped reports what it costs.
 
+import type { Role } from '@ultimat3/core';
 import {
   BUILD_ID_HEADER,
   finiteCount,
@@ -18,7 +19,7 @@ import {
   stringField,
   UltimateError,
 } from '@ultimat3/core';
-import { neighbouringPort } from './flag-number';
+import { neighbouringPort, PORT_RANGE } from './flag-number';
 import { quoteArg } from './shell-quote';
 
 /**
@@ -55,6 +56,15 @@ export class MetricsPortInUseError extends UltimateError {
   }
 }
 
+/**
+ * The same code, for a collision the kernel may NOT report: bound to `localhost` where that names
+ * both `::1` and `127.0.0.1`, a scrape listener and a role on one number each get an address family
+ * and both succeed, and the browser's requests reach `/metrics`'s `not found` (CI, 2026-10-14). So
+ * it is refused by number, before either binds. The fix names 9090 unless a role holds it.
+ */
+// Which ports this boot's own roles bind, and a scrape port apart from them: one copy, read by
+// both openers of the scrape listener — `startRoles` and `serve.ts`, which opens it before the roles.
+
 /** A port one of this process's own roles binds — what a scrape port must never be. */
 export interface RolePort {
   readonly role: string;
@@ -62,17 +72,35 @@ export interface RolePort {
 }
 
 /**
- * The same code, for a collision the kernel may NOT report: bound to `localhost` where that names
- * both `::1` and `127.0.0.1`, a scrape listener and a role on one number each get an address family
- * and both succeed, and the browser's requests reach `/metrics`'s `not found` (CI, 2026-10-14). So
- * it is refused by number, before either binds. The fix names 9090 unless a role holds it.
+ * The web role's port, and `PORT + 1` for the sync node (`syncPortFor`, which refuses the top of
+ * the range on its own). Port 0 reserves nothing: the kernel picks, and never a bound port.
  */
+export function rolePorts(port: number, roles: readonly Role[]): readonly RolePort[] {
+  if (port === 0) return [];
+  return [
+    ...(roles.includes('web') ? [{ role: 'web', port }] : []),
+    ...(roles.includes('sync') && port < PORT_RANGE.max ? [{ role: 'sync', port: port + 1 }] : []),
+  ];
+}
+
+/**
+ * A port a `fix:` may name: `preferred` unless a role holds it, else the first free one above every
+ * reservation, else the first below — a handful of reservations can never fill the range.
+ */
+export function portApartFrom(reserved: readonly RolePort[], preferred: number): number {
+  const held = new Set(reserved.map((one) => one.port));
+  if (!held.has(preferred)) return preferred;
+  for (let port = Math.max(...held) + 1; port <= PORT_RANGE.max; port += 1) {
+    if (!held.has(port)) return port;
+  }
+  let port = Math.min(...held) - 1;
+  while (held.has(port)) port -= 1;
+  return port;
+}
+
 export class MetricsPortSharedError extends UltimateError {
   constructor(input: { port: number; with: RolePort; reserved: readonly RolePort[] }) {
-    const held = input.reserved.map((one) => one.port);
-    const apart = held.includes(DEFAULT_METRICS_PORT)
-      ? neighbouringPort(Math.max(...held))
-      : DEFAULT_METRICS_PORT;
+    const apart = portApartFrom(input.reserved, DEFAULT_METRICS_PORT);
     super({
       code: 'X_PORT_IN_USE',
       cause: `the metrics port ${input.port} is this process's ${input.with.role} port ${input.with.port}, so two listeners would answer on one number`,
