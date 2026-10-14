@@ -154,8 +154,9 @@ describe('unit · release-due · read from a real repository', () => {
 });
 
 describe('unit · release-due · refusals that name their own cause', () => {
-  // The tag was found; the log over it failed. Fetching tags fixes the first and not this one, so
-  // the two are separate codes with separate fixes.
+  // `readWindow` is only reached once `git describe` has named a reachable tag, so a log that fails
+  // there is not a tag miss: it is its own code with its own fix. A tag git cannot resolve stands in
+  // for whatever makes the log fail.
   test('a git log that fails over a found tag is X_RELEASE_WINDOW_UNREADABLE, not a tag miss', async () => {
     const { dir } = await released();
     const read = await readWindow(dir, '9.9.9');

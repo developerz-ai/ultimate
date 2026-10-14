@@ -5,4 +5,4 @@
  * `chore: release 27.10.1 (#770)`, the squash-merged release PR, and `release: 6.0.0`, what
  * `scripts/release.ts` commits were titled before. A subject that only mentions a release is not one.
  */
-export const RELEASE_SUBJECT = /^(?:chore(?:\([^)]*\))?: release|release:) \d+\.\d+\.\d+\b/;
+export const RELEASE_SUBJECT = /^(?:chore(?:\([^)]*\))?: release|release:) \d+\.\d+\.\d+(?=\s|$)/;
