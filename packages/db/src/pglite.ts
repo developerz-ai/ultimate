@@ -216,6 +216,10 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
   // of the caller's. A dump that fails leaves no cache and a working database.
   if (file !== undefined && key !== undefined && driver.dumpDataDir !== undefined) {
     try {
+      // Ready first, asked the way `restore` asks: PGlite 0.5.10 takes the dump inside its query
+      // mutex, and one asked mid-`initdb` waits for a readiness that never comes — `x db gen`
+      // spun at full CPU until CI's timeout (`pglite-snapshot-ready.test.ts`).
+      await driver.query('select 1');
       // Uncompressed, by measurement: gzip costs the boot that WRITES the snapshot ~0.3 s of
       // CPU and saves nothing on the one that reads it. A fresh CI checkout always writes, so
       // the cache must cost a cold boot nothing; the price is ~40 MB under `.x/cache`.
