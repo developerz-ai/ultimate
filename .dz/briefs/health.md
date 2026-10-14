@@ -10,11 +10,11 @@ through here.
 | Signal | Command | Healthy |
 |---|---|---|
 | `main` is green | `gh run list --workflow ci.yml --branch main --event push --limit 1 --json conclusion,headSha` | `success` |
-| the last publish ran | `gh run list --workflow release.yml --limit 1 --json conclusion,displayTitle` | `success`, or no run since the last tag |
-| the last tag became a release | `gh run list --workflow release-tag.yml --limit 3 --json conclusion` | no `failure` |
+| the last tag published | `t=$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main)`, then `gh run list --workflow release.yml --branch "$t" --json conclusion` | a `success` run for exactly that tag — none at all, or only a red one, is unhealthy |
+| a release commit was tagged | `gh run list --workflow release-tag.yml --limit 3 --json conclusion` | no `failure` |
 | npm serves what the tree says | `bun run scripts/registry-audit.ts --json` | `ok: true` (lags for minutes after a publish; re-run before filing) |
 | automation's own alarms | `gh issue list --state open --label registry-drift` | none |
-| Dependabot is not stuck | `gh pr list --author app/dependabot --json number,createdAt,statusCheckRollup` | none older than 7 days |
+| Dependabot is not stuck | `gh pr list --app dependabot --json number,createdAt,statusCheckRollup` | none older than 7 days |
 | the deployed demo shipped | `gh run list --workflow deploy-social-demo.yml --limit 1 --json conclusion` | `success` |
 
 ## What to file
