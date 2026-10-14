@@ -63,6 +63,12 @@ describe('factsOf', () => {
     expect(facts.fix).toBe('x errors list --json   # then fix the throwing call site');
   });
 
+  test('a stack the runtime left opening on a bare `Error` names its class again (#773)', () => {
+    const thrown = { name: 'TypeError', message: 'x', stack: 'Error\n    at f (a.ts:1:2)' };
+    expect(factsOf(thrown).stack).toBe('TypeError: x\n    at f (a.ts:1:2)');
+    expect(factsOf({ name: 'TypeError', message: 'x', stack: '' }).stack).toBeUndefined();
+  });
+
   test('renders the same three lines the terminal prints', () => {
     const lines = renderErrorLines(rateLimited('actor:1', 30)).split('\n');
     expect(lines[0]).toStartWith('X_RATE_LIMITED:');

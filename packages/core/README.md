@@ -7,6 +7,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 |---|---|
 | `UltimateError`, the 3-line rendering, `--json` shape | `errors.ts` |
 | rendering an app's value into a `cause` / `fix` without throwing | `error-render.ts` |
+| a thrown value's stack, its `name: message` line restored when Bun dropped it — `failureStack` | `error-stack.ts` |
 | code → `{ title, docs }` registry, `registerErrorCodes()` | `error-codes.ts` |
 | the one lazy `AsyncLocalStorage`, every ambient scope in the framework | `async-context.ts` |
 | request context on that seam | `context.ts` |

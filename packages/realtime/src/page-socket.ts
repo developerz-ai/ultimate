@@ -3,7 +3,7 @@
 // the connection lifecycle: a hook reaches it as `services.socket`, off the page object.
 
 import { onRescope, pageClient } from '@ultimat3/core/page';
-import { queryClientMethodFor } from '@ultimat3/query/client';
+import { catchUpRead } from './channel-catch-up';
 import { LiveClient } from './client';
 import { DEFAULT_HEARTBEAT_MS } from './client-heartbeat';
 import { peekOutbox } from './outbox-slot';
@@ -33,8 +33,7 @@ export function pageSocket(hook: string): LiveClient {
     buildId: target.buildId,
     actorId: pageClient().scope.principal ?? null,
     store: page.store,
-    // The channel's catch-up read is an ordinary query read: core's transport adopts its records.
-    catchUp: (query, params) => queryClientMethodFor(query, { baseUrl: '' })(params),
+    catchUp: catchUpRead,
   });
   page.socket = client;
   pageClient().socket = client;

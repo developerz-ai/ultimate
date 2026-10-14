@@ -50,11 +50,18 @@ export interface TransportRequest {
   /** This call's retry override, handed to the `flight`. */
   readonly retry?: ClientRetry | undefined;
   /**
-   * The decoded records envelope, after its records were adopted — only when the answer carried
+   * The decoded records envelope, after its records were adopted (with `adopt: false`, they are
+   * not; the caller adopts them) — only when the answer carried
    * `x-ultimate-records: 1` and belongs to the current principal. What a caller reads to know the
    * ORDER of `records[type]`, which the store (keyed, unordered) cannot give it back.
    */
   readonly onEnvelope?: ((envelope: RecordEnvelope) => void) | undefined;
+  /**
+   * `false`: the records are NOT adopted here — the caller adopts them from `onEnvelope`, inside a
+   * notification of its own. For a read whose rows must land together with something only the
+   * caller holds: a channel's catch-up and the frames held behind it (`@ultimat3/realtime`).
+   */
+  readonly adopt?: boolean | undefined;
   /**
    * How a 2xx body is read. `'json'` (the default) decodes it and adopts a records envelope;
    * `'text'` answers the body as a string, untouched — an HTML fragment, a CSV — sends

@@ -76,7 +76,7 @@ export async function clientTransport<T = unknown>(req: TransportRequest): Promi
   // A write that crossed a rescope HAS landed, so its caller is told — but its rows are the
   // previous principal's, and the new scope's store never sees them.
   if (current === issued) {
-    adopt(envelope);
+    if (req.adopt !== false) adopt(envelope);
     if (answer.enveloped) req.onEnvelope?.(envelope);
   }
   return envelope.data as T;

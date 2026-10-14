@@ -44,6 +44,7 @@ export {
   retryFor,
   statedDelayMs,
 } from '../error-retry';
+export { failureStack } from '../error-stack';
 export type {
   CodedErrorInit,
   ErrorAudience,

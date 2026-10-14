@@ -32,6 +32,7 @@ import { errorPageHook } from './error-pages';
 import { BadFlagError, RuntimeDriverSplitError } from './errors';
 import {
   DEFAULT_METRICS_PORT,
+  rolePorts,
   startMetricsEndpoint,
   whenMetricsPortTaken,
 } from './metrics-endpoint';
@@ -287,6 +288,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
         // `x dev` is one process running several roles: its `process_info` says which.
         role: selected.join('+'),
         whenTaken: whenMetricsPortTaken(binding.dev, options.env),
+        reserved: rolePorts(options.port, selected),
       });
     started.push(async () => metrics.stop());
     // Opened here or adopted from `serve-boot.ts`, this is where the build id is known (#734).

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { PortProbe } from './free-port';
-import { BROWSER_REFUSED_PORTS, freePort } from './free-port';
+import { BROWSER_REFUSED_PORTS, freePort, freePortApartFrom } from './free-port';
 
 /** A listener that answers `ports` in order and records what was released, and when. */
 const scripted = (ports: readonly number[]) => {
@@ -51,5 +51,27 @@ describe('freePort', () => {
   test('the refused list is the unprivileged part of Chromium’s, which is all an OS can hand out', () => {
     expect([...BROWSER_REFUSED_PORTS].every((port) => port >= 1024)).toBe(true);
     expect(BROWSER_REFUSED_PORTS.has(4045)).toBe(true);
+  });
+});
+
+describe('freePortApartFrom', () => {
+  test('a port this caller already handed out is never handed out again, nor its neighbour', () => {
+    // The OS may answer with a port the caller released a moment ago: the web role's 44829 came
+    // back as the scrape port, and the app served half its requests from `/metrics`.
+    const { listen, log } = scripted([44_829, 44_830, 51_234]);
+    expect(freePortApartFrom([44_829, 44_830], listen)).toBe(51_234);
+    expect(log).toEqual([
+      'listen 44829',
+      'listen 44830',
+      'listen 51234',
+      'stop 51234',
+      'stop 44829',
+      'stop 44830',
+    ]);
+  });
+
+  test('a browser-refused port is still refused beside the taken ones', () => {
+    const { listen } = scripted([6000, 44_829, 51_234]);
+    expect(freePortApartFrom([44_829], listen)).toBe(51_234);
   });
 });

@@ -5,6 +5,7 @@
 import {
   ERROR_DOCS_URL,
   FRAMEWORK_CODE,
+  failureStack,
   hasPublicCause,
   isUltimateError,
   renderCauseValue,
@@ -102,7 +103,8 @@ export const factsOf = (error: unknown): ErrorFacts => {
     // 404 on every problem document this package has ever rendered.
     docs: str(error, 'docs') ?? ERROR_DOCS_URL,
     status: statusFor(code),
-    stack: str(error, 'stack'),
+    // Its header restored when Bun dropped it (#773); an empty one is dropped, as `str` does.
+    stack: failureStack(error) || undefined,
   };
 };
 

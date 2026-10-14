@@ -2,6 +2,7 @@
 // per-channel cursor that decides duplicate from new, and the catch-up read a `replay-gap` or a
 // new epoch triggers. `records` frames go to the store and nowhere else; `events` go to handlers.
 
+import type { CatchUpRecords } from './channel-catch-up';
 import { type PresenceEvent, readPresence } from './channel-presence';
 import type { JsonObject } from './json';
 import { carriedBy, type RecordKey } from './record-key';
@@ -35,8 +36,14 @@ export interface ChannelBookDeps {
   readonly store: RecordStore;
   send(frame: SubscribeFrame): void;
   connected(): boolean;
-  /** Re-run the channel's catch-up read; its records land in the store through the transport. */
-  catchUp(query: string, params: Readonly<Record<string, string>>): Promise<unknown>;
+  /**
+   * Re-run the channel's catch-up read and answer its records UNADOPTED (`channel-catch-up.ts`): the
+   * book adopts them in one notification with the frames it held behind the read.
+   */
+  catchUp(
+    query: string,
+    params: Readonly<Record<string, string>>,
+  ): Promise<CatchUpRecords | undefined>;
   report(error: unknown): void;
   /**
    * When a failed catch-up tries again on its own, on the client's reconnect curve. Absent, a
@@ -303,10 +310,14 @@ export class ChannelBook {
     entry.disarm?.();
     entry.disarm = null;
     this.#set(entry, 'catching-up');
-    // Names no write, by decision (O-507, #648, 2026-10-07): a pending write this read already
-    // reflects settles on its own HTTP answer. Reopen only on an observed double paint.
+    // The read names no write (O-507, reopened 2026-10-14 on an observed double paint). FIXED: a
+    // pending write whose echo is HELD behind the read is settled in the same notification as the
+    // read's rows (`#drain`). NOT fixed: an echo that arrives AFTER the read answered (replication
+    // slower than the read's round trip) — the rows are truth under the still-pending twin until
+    // that echo or the write's own answer settles it. Closing it needs the read to name the writes
+    // its snapshot reflects, which is a server-side change (O-507 in full).
     this.#deps.catchUp(entry.catchUp, entry.params).then(
-      () => this.#drain(entry),
+      (answered) => this.#drain(entry, answered),
       (error: unknown) => {
         this.#deps.report(error);
         // NOT live: the frames held behind the read would land over a store it never refreshed.
@@ -326,7 +337,10 @@ export class ChannelBook {
     );
   }
 
-  #drain(entry: Entry): void {
+  #drain(entry: Entry, answered?: CatchUpRecords): void {
+    // Released while the read was out: its rows and frames are a seat nobody holds, and a new hold
+    // of the topic may already hold newer rows. Nothing lands and nothing is re-read.
+    if (this.#byTopic.get(entry.topic) !== entry) return;
     const held = entry.buffered ?? [];
     // A newer epoch arrived while the read was in flight (the node restarted mid-read): the read
     // answered for the OLD one, so it is re-read in the new one, keeping only that epoch's frames.
@@ -335,6 +349,9 @@ export class ChannelBook {
     if (entry.again !== null || newer !== undefined) {
       const epoch = newer?.epoch ?? entry.again?.epoch ?? entry.epoch;
       entry.again = null;
+      // Its rows land now, alone: they are newer than the store's, and a re-read that fails would
+      // otherwise leave the older ones for the whole retry curve. The frames wait for the re-read.
+      this.#adopt(answered);
       entry.buffered = held.filter((frame) => frame.epoch === epoch);
       this.#restart(entry, epoch);
       this.#read(entry);
@@ -343,11 +360,27 @@ export class ChannelBook {
     entry.buffered = null;
     entry.failures = 0;
     const current = [...held].sort((a, b) => a.seq - b.seq);
-    for (const frame of current) {
-      if (entry.contiguous === null) entry.contiguous = frame.seq - 1;
-      this.#apply(entry, frame);
-    }
+    const store = this.#deps.store;
+    // `#adopt` and `#apply` open batches of their own inside this one: `RecordStore.batch` nests,
+    // so the read's rows and every held frame are still ONE notification.
+    store.batch(() => {
+      this.#adopt(answered);
+      for (const frame of current) {
+        if (entry.contiguous === null) entry.contiguous = frame.seq - 1;
+        this.#apply(entry, frame);
+      }
+    });
     if (entry.state === 'catching-up') this.#set(entry, 'live');
+  }
+
+  /** A catch-up read's rows, unless the principal it was read for has left (`CatchUpRecords`). */
+  #adopt(answered: CatchUpRecords | undefined): void {
+    if (answered === undefined || answered.current?.() === false) return;
+    const store = this.#deps.store;
+    store.batch(() => {
+      for (const [type, rows] of Object.entries(answered.records ?? {})) store.adopt(type, rows);
+      for (const [type, keys] of Object.entries(answered.removed ?? {})) store.remove(type, keys);
+    });
   }
 
   #set(entry: Entry, state: ChannelState): void {

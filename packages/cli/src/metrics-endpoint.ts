@@ -3,6 +3,7 @@
 // `docker/helm`'s HPAs read a number instead of `<unknown>`. Opening it starts the process's own
 // series (`process_*`): a role that can be scraped reports what it costs.
 
+import type { Role } from '@ultimat3/core';
 import {
   BUILD_ID_HEADER,
   finiteCount,
@@ -18,7 +19,7 @@ import {
   stringField,
   UltimateError,
 } from '@ultimat3/core';
-import { neighbouringPort } from './flag-number';
+import { neighbouringPort, PORT_RANGE, syncPortFor } from './flag-number';
 import { quoteArg } from './shell-quote';
 
 /**
@@ -56,6 +57,60 @@ export class MetricsPortInUseError extends UltimateError {
 }
 
 /**
+ * The same code, for a collision the kernel may NOT report: bound to `localhost` where that names
+ * both `::1` and `127.0.0.1`, a scrape listener and a role on one number each get an address family
+ * and both succeed, and the browser's requests reach `/metrics`'s `not found` (CI, 2026-10-14). So
+ * it is refused by number, before either binds. The fix names 9090 unless a role holds it.
+ */
+// Which ports this boot's own roles bind, and a scrape port apart from them: one copy, read by
+// both openers of the scrape listener — `startRoles` and `serve.ts`, which opens it before the roles.
+
+/** A port one of this process's own roles binds — what a scrape port must never be. */
+export interface RolePort {
+  readonly role: string;
+  readonly port: number;
+}
+
+/**
+ * The web role's port, and the sync node's — `syncPortFor`'s answer, the one rule the node binds
+ * by (so it refuses the top of the range here exactly as the boot would). Port 0 reserves nothing:
+ * the kernel picks, and never a bound port.
+ */
+export function rolePorts(port: number, roles: readonly Role[]): readonly RolePort[] {
+  if (port === 0) return [];
+  return [
+    ...(roles.includes('web') ? [{ role: 'web', port }] : []),
+    ...(roles.includes('sync') ? [{ role: 'sync', port: syncPortFor(port) }] : []),
+  ];
+}
+
+/**
+ * A port a `fix:` may name: `preferred` unless a role holds it, else the first free one above every
+ * reservation, else the first below — a handful of reservations can never fill the range.
+ */
+export function portApartFrom(reserved: readonly RolePort[], preferred: number): number {
+  const held = new Set(reserved.map((one) => one.port));
+  if (!held.has(preferred)) return preferred;
+  for (let port = Math.max(...held) + 1; port <= PORT_RANGE.max; port += 1) {
+    if (!held.has(port)) return port;
+  }
+  let port = Math.min(...held) - 1;
+  while (held.has(port)) port -= 1;
+  return port;
+}
+
+export class MetricsPortSharedError extends UltimateError {
+  constructor(input: { port: number; with: RolePort; reserved: readonly RolePort[] }) {
+    const apart = portApartFrom(input.reserved, DEFAULT_METRICS_PORT);
+    super({
+      code: 'X_PORT_IN_USE',
+      cause: `the metrics port ${input.port} is this process's ${input.with.role} port ${input.with.port}, so two listeners would answer on one number`,
+      fix: `METRICS_PORT=${quoteArg(String(apart))} x dev --json`,
+    });
+  }
+}
+
+/**
  * Bun surfaces the bind failure as an `Error` carrying the libc code; nothing else is ours. Read
  * through `stringField`, never `error instanceof Error` plus a property access: both run on a value
  * this process did not build, and either can throw one line before the guard that was meant to make
@@ -83,6 +138,8 @@ export interface MetricsEndpointOptions {
    * `x dev` with no `METRICS_PORT`, where two apps on one laptop both default to 9090.
    */
   readonly whenTaken?: 'refuse' | 'free';
+  /** The ports this process's roles bind (web, the sync node beside it): refused as the scrape port. */
+  readonly reserved?: readonly RolePort[];
 }
 
 /**
@@ -165,7 +222,18 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
   // — no code, no `fix:` — at exactly the boot path the refusal below exists to stop reporting
   // that way. Floor 0, because 0 asks the kernel for a free port and `role-start.ts` passes it for
   // an ephemeral boot; the ceiling stays Bun's, which names the range it refuses.
-  const port = finiteCount('startMetricsEndpoint', 'port', options.port ?? DEFAULT_METRICS_PORT);
+  const asked = finiteCount('startMetricsEndpoint', 'port', options.port ?? DEFAULT_METRICS_PORT);
+  const shared = asked === 0 ? undefined : options.reserved?.find((one) => one.port === asked);
+  // `free` is the laptop that named no port: a role on the default is the same "taken" as another
+  // app on it, and the answer is the same free port. A port somebody declared is refused.
+  if (shared !== undefined && options.whenTaken !== 'free') {
+    throw new MetricsPortSharedError({
+      port: asked,
+      with: shared,
+      reserved: options.reserved ?? [],
+    });
+  }
+  const port = shared === undefined ? asked : 0;
   let buildId: string | null = null;
   // `startRoles` opens this FIRST, before any role, so `Bun.serve`'s own bare `Error` was what a
   // second `x dev` on one machine reported: no code, no fix, at the boot path this package owns.

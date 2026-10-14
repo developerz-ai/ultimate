@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import type { CdpConnection, CdpResult } from './cdp-connection';
 import type { E2eTab } from './cdp-e2e-page';
 import { cdpE2eTab } from './cdp-e2e-page';
+import { CdpCallFailedError } from './cdp-errors';
 
 interface Call {
   readonly method: string;
@@ -235,6 +236,89 @@ describe('cdpE2eTab', () => {
 
     await tabOn(connection).waitFor('document.body.textContent', 'the page', 1_000);
     expect(polls).toBe(2);
+  });
+
+  // #774: a poll whose `Runtime.evaluate` is in flight when the document commits is refused by
+  // Chrome itself — measured 30/30 on an evaluate pending across `location.assign` — and the wait
+  // died on the one navigation it was written to wait out.
+  test.each([
+    'Inspected target navigated or closed',
+    'Execution context was destroyed.',
+    'Cannot find context with specified id',
+  ])('waitFor keeps polling through a poll the browser refused as "%s"', async (detail) => {
+    let polls = 0;
+    const asked: string[] = [];
+    const connection: CdpConnection = {
+      send(method): Promise<CdpResult> {
+        asked.push(method);
+        if (method !== 'Runtime.evaluate') return Promise.resolve({ result: { targetInfo: {} } });
+        polls += 1;
+        return polls === 1
+          ? Promise.reject(new CdpCallFailedError({ method: 'call 7', detail }))
+          : Promise.resolve({ result: { result: { value: true } } });
+      },
+      once: () => Promise.resolve(true),
+      on: () => () => undefined,
+      close: () => undefined,
+    };
+
+    await tabOn(connection).waitFor('document.title === "B"', 'B', 1_000);
+    expect(polls).toBe(2);
+    expect(asked).toEqual(['Runtime.evaluate', 'Target.getTargetInfo', 'Runtime.evaluate']);
+  });
+
+  test('a CLOSED tab still refuses at once: the same refusal, and no target behind it', async () => {
+    let polls = 0;
+    const connection: CdpConnection = {
+      send(method): Promise<CdpResult> {
+        if (method === 'Target.getTargetInfo') {
+          return Promise.reject(
+            new CdpCallFailedError({ method: 'call 8', detail: 'No target with given id found' }),
+          );
+        }
+        polls += 1;
+        return Promise.reject(
+          new CdpCallFailedError({
+            method: 'call 7',
+            detail: 'Inspected target navigated or closed',
+          }),
+        );
+      },
+      once: () => Promise.resolve(true),
+      on: () => () => undefined,
+      close: () => undefined,
+    };
+    const thrown = await tabOn(connection)
+      .waitFor('window.ready', 'the ready flag', 5_000)
+      .catch((error: unknown) => error);
+
+    expect(polls).toBe(1);
+    expect((thrown as { code?: string }).code).toBe('X_CDP_CALL_FAILED');
+    expect((thrown as { cause?: string }).cause).toContain('Inspected target navigated or closed');
+  });
+
+  test('any other refusal is not a navigation: it still refuses at once', async () => {
+    let polls = 0;
+    const connection: CdpConnection = {
+      send(): Promise<CdpResult> {
+        polls += 1;
+        return Promise.reject(
+          new CdpCallFailedError({
+            method: 'call 7',
+            detail: 'the CDP connection is already closed',
+          }),
+        );
+      },
+      once: () => Promise.resolve(true),
+      on: () => () => undefined,
+      close: () => undefined,
+    };
+    const thrown = await tabOn(connection)
+      .waitFor('window.ready', 'the ready flag', 5_000)
+      .catch((error: unknown) => error);
+
+    expect(polls).toBe(1);
+    expect((thrown as { cause?: string }).cause).toContain('already closed');
   });
 
   test('a waitFor whose expression ALWAYS throws still refuses, naming what it threw', async () => {

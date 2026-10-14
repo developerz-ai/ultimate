@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { LiveClient } from './client';
+import type { LiveClientOptions } from './client-contract';
 import { FakeSocket } from './hooks-fixture';
 import { RecordStore } from './record-store';
 import { REAP_AFTER_BEATS, SocketEngine } from './socket-engine';
@@ -46,7 +47,7 @@ interface Rig {
   readonly servers: FakeSocket[];
   readonly clock: ReturnType<typeof frozenClock>;
   readonly engineTimers: ReturnType<typeof timers>;
-  tab(catchUp?: (query: string) => Promise<unknown>): {
+  tab(catchUp?: LiveClientOptions['catchUp']): {
     client: LiveClient;
     store: RecordStore;
     host: SocketHost;

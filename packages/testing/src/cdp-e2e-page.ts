@@ -30,6 +30,20 @@ const evaluated = (result: Record<string, unknown> | undefined): unknown => {
   return (remote as Record<string, unknown>)['value'];
 };
 
+/**
+ * What Chrome answers a `Runtime.evaluate` that was in flight when the document committed (#774):
+ * the call is refused at the protocol level, not thrown in the page. The same first text is also
+ * what a CLOSED tab answers, which is why `waitFor` asks for the target before it polls again.
+ */
+const NAVIGATED_AWAY = [
+  'Inspected target navigated or closed',
+  'Execution context was destroyed',
+  'Cannot find context with specified id',
+] as const;
+
+const navigatedAway = (error: unknown): error is CdpCallFailedError =>
+  error instanceof CdpCallFailedError && NAVIGATED_AWAY.some((text) => error.cause.includes(text));
+
 /** One tab: the port the driver drives, plus what a multi-tab acceptance suite asks of one. */
 export interface E2eTab extends E2eBrowserPage {
   readonly targetId: string;
@@ -96,11 +110,33 @@ export function cdpE2eTab(options: CdpE2eTabOptions): E2eTab {
   // leaves the next poll reading a document whose `<body>` is not parsed, and
   // `document.body.textContent` throws there once and holds a poll later. The last throw is kept
   // and named at the deadline, so an expression that can never evaluate still says why.
+  //
+  // A poll the browser REFUSED because the document committed under it is the same "not yet"
+  // (#774) — but only while the tab is still there: a closed tab answers with the same text, and
+  // still refuses at once. Any other refusal (a dead connection) refuses at once too.
+  const tabOpen = (): Promise<boolean> =>
+    send('Target.getTargetInfo', { targetId: options.targetId }).then(
+      () => true,
+      () => false,
+    );
+  const poll = async (expression: string): Promise<Record<string, unknown> | 'navigated'> => {
+    try {
+      return (await evaluateRaw(`Boolean(${expression})`)).result ?? {};
+    } catch (error) {
+      if (navigatedAway(error) && (await tabOpen())) return 'navigated';
+      throw error;
+    }
+  };
   const waitFor = async (expression: string, what: string, timeoutMs = options.loadTimeoutMs) => {
     // Only the PAGE's throw is swallowed: a connection that died still refuses at once.
     let threw: string | undefined;
     for (let waited = 0; waited < timeoutMs; waited += POLL_MS) {
-      const answer = (await evaluateRaw(`Boolean(${expression})`)).result;
+      const answer = await poll(expression);
+      if (answer === 'navigated') {
+        threw = 'the document committed while the poll was in flight';
+        await Bun.sleep(POLL_MS);
+        continue;
+      }
       threw = thrownIn(answer);
       if (threw === undefined && evaluated(answer) === true) return;
       await Bun.sleep(POLL_MS);

@@ -8,12 +8,12 @@
 import type { Actor, Clock, Ctx, ServiceBag } from '@ultimat3/core';
 import {
   anonymousActor,
+  failureStack,
   isUltimateError,
   logger,
   renderThrowable,
   reportError,
   runWithContext,
-  stringField,
   useContext,
   withChildContext,
 } from '@ultimat3/core';
@@ -372,7 +372,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // "do not keep" was re-claimed and re-run forever with its attempt counter climbing.
     const dropped = !decision.retry && !decision.deadLetter;
     const recorded = recordedFailure(failureForRow(error), decision);
-    const stack = stringField(error, 'stack');
+    const stack = failureStack(error);
     const settled = landed(
       await driver.nack(claimed.id, {
         ...by(),

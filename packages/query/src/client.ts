@@ -53,8 +53,11 @@ export interface QueryCallOptions {
   /**
    * The decoded record envelope, after its rows were adopted — only for a read declaring an
    * entity's `rows:`. The store is keyed and unordered; this is where a caller reads the ORDER.
+   * With `adopt: false`, the rows are not adopted; the caller adopts them.
    */
   readonly onEnvelope?: (envelope: RecordEnvelope) => void;
+  /** `false`: the rows are handed to `onEnvelope` and NOT adopted — the caller adopts them. */
+  readonly adopt?: boolean;
 }
 
 /**
@@ -192,6 +195,7 @@ function read(
     ...(callOptions.fresh === undefined ? {} : { fresh: callOptions.fresh }),
     ...(callOptions.retry === undefined ? {} : { retry: callOptions.retry }),
     ...(callOptions.onEnvelope === undefined ? {} : { onEnvelope: callOptions.onEnvelope }),
+    ...(callOptions.adopt === undefined ? {} : { adopt: callOptions.adopt }),
     ...(options.fetch === undefined ? {} : { fetchImpl: options.fetch }),
   });
 }

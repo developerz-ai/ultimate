@@ -133,6 +133,32 @@ export const indexedDbDump = `(async () => {
   return out.join('\\n');
 })()`;
 
+/**
+ * How many writes this origin's outbox holds on DISK, waiting to be sent. The like paints at once,
+ * but it is durable only once the outbox has written it: a reload before that loses it, measured
+ * (2026-10-14, 3 of 24 runs under load reloaded into an empty outbox and showed the seed's count).
+ */
+export const queuedOnDisk = `new Promise((resolve) => {
+  const open = indexedDB.open('ultimate-client');
+  open.onerror = () => resolve(-1);
+  open.onsuccess = () => {
+    if (![...open.result.objectStoreNames].includes('outbox')) {
+      open.result.close();
+      resolve(0);
+      return;
+    }
+    const read = open.result.transaction('outbox').objectStore('outbox').getAll();
+    read.onerror = () => resolve(-1);
+    read.onsuccess = () => {
+      open.result.close();
+      resolve(
+        read.result.filter((value) => typeof value === 'object' && value !== null && value.status === 'pending')
+          .length,
+      );
+    };
+  };
+})`;
+
 export async function readText(tab: E2eTab, expression: string): Promise<string> {
   const value = await tab.evaluate(expression);
   return typeof value === 'string' ? value : fail(`${expression.slice(0, 60)}… answered no text`);

@@ -8,10 +8,11 @@
 import { flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { git } from './lib/release-due-git';
 import type { DueDecision, WindowCommit } from './lib/release-due-rule';
 import { DEFAULT_SETTLE_HOURS, releaseDue } from './lib/release-due-rule';
 import { packageFiles, shippingPackage } from './lib/release-due-ships';
-import { repoRoot, run } from './lib/run';
+import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/workspaces';
 import { sectionBody, UNRELEASED_VERSION } from './release-notes';
@@ -22,12 +23,21 @@ const STABLE_TAG = /^v(\d+\.\d+\.\d+)$/;
 const RECORD = '\x1e';
 const FIELD = '\x1f';
 
-/** The highest stable `v*` tag HEAD contains, without its `v` — or undefined when there is none. */
-export async function lastReleaseTag(root: string): Promise<string | undefined> {
-  const tags = await run(['git', 'tag', '--merged', 'HEAD', '--list', 'v*', '--sort=-v:refname'], {
-    cwd: root,
-  });
-  if (!tags.ok) return undefined;
+/** git could not answer — failed or timed out: what was asked is unknown, never "none". */
+const gitUnreadable = (asked: string, output: string): Finding => ({
+  code: 'X_RELEASE_WINDOW_UNREADABLE',
+  cause: `${asked} failed, so the commits since the last release are unknown: ${output.slice(0, 300)}`,
+  fix: 'git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json',
+  at: 'scripts/release-due.ts',
+});
+
+/**
+ * The highest stable `v*` tag HEAD contains, without its `v`; undefined when there is none; a
+ * finding when git itself could not answer, which is not the same as a tagless clone.
+ */
+export async function lastReleaseTag(root: string): Promise<string | undefined | Finding> {
+  const tags = await git(['tag', '--merged', 'HEAD', '--list', 'v*', '--sort=-v:refname'], root);
+  if (!tags.ok) return gitUnreadable('git tag --merged HEAD', tags.output);
   for (const line of tags.output.split('\n')) {
     const version = STABLE_TAG.exec(line.trim())?.[1];
     if (version !== undefined) return version;
@@ -40,8 +50,7 @@ export async function lastReleaseTag(root: string): Promise<string | undefined> 
  * BOTH ends of a rename — a delete of the old path and an add of the new — where rename detection
  * would list only the new one, and a file moved out of `packages/<pkg>/src` would ship nothing.
  */
-export const windowLogCommand = (tag: string): readonly string[] => [
-  'git',
+export const windowLogArgs = (tag: string): readonly string[] => [
   'log',
   '--no-merges',
   '--no-renames',
@@ -85,14 +94,10 @@ export async function readWindow(
   root: string,
   tagged: string,
 ): Promise<readonly WindowCommit[] | Finding> {
-  const log = await run(windowLogCommand(tagged), { cwd: root });
-  if (log.ok) return parseWindowLog(log.output);
-  return {
-    code: 'X_RELEASE_WINDOW_UNREADABLE',
-    cause: `git log v${tagged}..HEAD failed, so the commits since the last release are unknown: ${log.output.slice(0, 300)}`,
-    fix: 'git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json',
-    at: 'scripts/release-due.ts',
-  };
+  const log = await git(windowLogArgs(tagged), root);
+  return log.ok
+    ? parseWindowLog(log.output)
+    : gitUnreadable(`git log v${tagged}..HEAD`, log.output);
 }
 
 /** The settle window, refused unless a finite number of hours at or above zero. */
@@ -132,6 +137,7 @@ export async function decideAt(
   }
   const tagged = await lastReleaseTag(root);
   if (tagged === undefined) return unreachable();
+  if (typeof tagged !== 'string') return tagged;
   const commits = await readWindow(root, tagged);
   if ('code' in commits) return commits;
   const files = await packageFiles(publishable);

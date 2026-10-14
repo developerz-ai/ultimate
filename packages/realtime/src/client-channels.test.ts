@@ -2,7 +2,7 @@
 // up-to-date resume is answered with the frame at the cursor; an events channel with its roster.
 
 import { describe, expect, test } from 'bun:test';
-import { ChannelBook, type ChannelMembership } from './client-channels';
+import { ChannelBook, type ChannelBookDeps, type ChannelMembership } from './client-channels';
 import { RecordStore } from './record-store';
 import {
   type ChannelEventsFrame,
@@ -18,7 +18,7 @@ const orgFeed = {
 };
 const TOPIC = 'org-feed.o1';
 
-function harness(catchUp: () => Promise<unknown> = async () => undefined) {
+function harness(catchUp: ChannelBookDeps['catchUp'] = async () => undefined) {
   const sent: SubscribeFrame[] = [];
   const store = new RecordStore();
   const book = new ChannelBook({
@@ -115,8 +115,8 @@ describe('an events frame', () => {
     let land: () => void = () => undefined;
     const { book, membership } = harness(
       () =>
-        new Promise<void>((resolve) => {
-          land = resolve;
+        new Promise<undefined>((resolve) => {
+          land = () => resolve(undefined);
         }),
     );
     book.gap({ type: 'replay-gap', v: PROTOCOL_VERSION, channel: TOPIC, epoch: 'e1' });

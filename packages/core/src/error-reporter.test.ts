@@ -68,6 +68,17 @@ describe('reportError', () => {
     expect(event.error).toBe(thrown);
   });
 
+  test('a stack the runtime left opening on a bare `Error` is reported with its class (#773)', () => {
+    const reporter = install();
+    reportError(
+      { name: 'TypeError', message: 'x', stack: 'Error\n    at f (a.ts:1:2)' },
+      {
+        source: 'job',
+      },
+    );
+    expect((reporter.events[0] as ErrorReport).stack).toBe('TypeError: x\n    at f (a.ts:1:2)');
+  });
+
   test('the ambient context fills the scope the caller did not name', () => {
     const reporter = install();
     const ctx = ctxOf({

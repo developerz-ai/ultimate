@@ -3,6 +3,7 @@
 // probed `NaN`, which `portFree` reports as free — a check that CANNOT FAIL — `x dev --port abc`
 // handed `NaN` to `Bun.serve` and bound an arbitrary port, and `x test --workers 4abc` ran four.
 
+import { UltimateError } from '@ultimat3/core';
 import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
@@ -80,3 +81,37 @@ export const neighbouringPort = (port: number): number =>
  */
 export const portPairAfter = (port: number): number =>
   port + 2 < PORT_RANGE.max ? port + 2 : port - 2;
+
+/**
+ * Beside its one thrower rather than in `errors.ts`, which is near its 500-line ceiling — the
+ * arrangement `db-seed.ts` and `metrics-endpoint.ts` already take. The code is
+ * `X_PORT_INVALID`, this package's own: "the port asked for is not one" is what it already means,
+ * and a second code for the same fact is the synonym the registry exists to prevent.
+ */
+class SyncPortUnavailableError extends UltimateError {
+  constructor(input: { port: number }) {
+    super({
+      code: 'X_PORT_INVALID',
+      cause: `the sync role binds PORT + 1, and PORT=${input.port} is the top of the range — it would ask for ${input.port + 1}, which is not a TCP port`,
+      fix: `x dev --port ${neighbouringPort(input.port)}   # leaves ${PORT_RANGE.max} free for the sync node`,
+      meta: { port: input.port },
+    });
+  }
+}
+
+/**
+ * The port the sync node listens on. `PORT + 1`, and `0` stays `0` — the kernel picks, and adding
+ * one to it would pick a specific port instead.
+ *
+ * REFUSED at the top of the range, never clamped. `PORT_RANGE.max` is 65535 and `portValue`
+ * accepts it, so `x dev --port 65535` handed `Bun.serve` 65536 and the bare `RangeError` reached
+ * the terminal as `X_CLI_UNEXPECTED` with `fix: x doctor --json`. Clamping to 65534 would be worse
+ * than refusing: `PORT + 1` is the rule `docker/docker-compose.prod.yml` publishes `3001:3001`
+ * from and `docker/helm` derives `PORT = .port - 1` from, so a node quietly on `PORT - 1` is a
+ * socket nothing else in the deployment computes.
+ */
+export function syncPortFor(port: number): number {
+  if (port === 0) return 0;
+  if (port >= PORT_RANGE.max) throw new SyncPortUnavailableError({ port });
+  return port + 1;
+}
