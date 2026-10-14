@@ -11,7 +11,7 @@ through here.
 |---|---|---|
 | `main` is green | `gh run list --workflow ci.yml --branch main --event push --limit 1 --json conclusion,headSha` | `success` |
 | the last tag published | `t=$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main)`, then `gh run list --workflow release.yml --branch "$t" --json conclusion` | a `success` run for exactly that tag — none at all, or only a red one, is unhealthy |
-| a release commit was tagged | `gh run list --workflow release-tag.yml --limit 3 --json conclusion` | no `failure` |
+| a release commit was tagged | `gh run list --workflow release-tag.yml --limit 5 --json status,conclusion` | every completed run `success` (or `skipped`: not a release commit); `failure`, `cancelled` and `timed_out` are unhealthy; one still running is pending, not healthy |
 | npm serves what the tree says | `bun run scripts/registry-audit.ts --json` | `ok: true` (lags for minutes after a publish; re-run before filing) |
 | automation's own alarms | `gh issue list --state open --label registry-drift` | none |
 | Dependabot is not stuck | `gh pr list --app dependabot --json number,createdAt,statusCheckRollup` | none older than 7 days |
