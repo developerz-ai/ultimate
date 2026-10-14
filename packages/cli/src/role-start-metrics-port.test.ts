@@ -134,7 +134,7 @@ test('unit · the fix never names a port a role holds, at the top of the range t
 test('unit · a container refuses METRICS_PORT equal to its web port before it binds either', async () => {
   const { serveApp } = await import('./serve');
   const port = releasedPort();
-  const outcome = await serveApp({
+  const refused = await serveApp({
     root: ROOT,
     env: { ULTIMATE_ENV: 'development' },
     role: 'web',
@@ -143,15 +143,22 @@ test('unit · a container refuses METRICS_PORT equal to its web port before it b
   }).then(
     async (served) => {
       await served.stop?.();
-      return 'booted';
+      return expect.unreachable('a container with METRICS_PORT equal to its web port booted');
     },
-    (error: unknown) => (error as { cause?: string }).cause ?? 'uncoded',
+    (error: unknown) => error,
   );
-  expect(outcome).toContain(`web port ${String(port)}`);
+  expect(refused).toBeUltimateError('X_PORT_IN_USE');
+  expect(refused).toMatchObject({ cause: expect.stringContaining(`web port ${String(port)}`) });
 });
 
 test('unit · the reserved set is the sync node’s own rule, refusal at the top of the range included', () => {
   expect(rolePorts(3000, ['web', 'sync']).map((one) => one.port)).toEqual([3000, 3001]);
   expect(rolePorts(0, ['web', 'sync'])).toEqual([]);
-  expect(() => rolePorts(65_535, ['sync'])).toThrow('X_PORT_INVALID');
+  let refused: unknown;
+  try {
+    rolePorts(65_535, ['sync']);
+  } catch (error) {
+    refused = error;
+  }
+  expect(refused).toBeUltimateError('X_PORT_INVALID');
 });
