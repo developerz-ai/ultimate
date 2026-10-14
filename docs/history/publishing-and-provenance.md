@@ -19,6 +19,22 @@ and left the tag local — `--follow-tags` pushes **annotated** tags only. The G
 then not be created against a ref the remote did not have. `git tag -a` is the only form
 [`PUBLISHING.md`](../../PUBLISHING.md) writes, for this reason.
 
+**Merging the release PR is the release**, `As of 2026-10`. The hand step after the merge — tag,
+push, `gh release create` — was the one that kept going wrong: a bare `git tag` that
+`--follow-tags` never pushed (v4.0.0, above), and `developerz-ai[bot]` publishing Releases on
+lightweight tags before the bump, which release.yml's `check` job then refused (runs 35827049144,
+35789073198). With the repository maintained by that bot, a release has to happen when it is due
+and not only when a human remembers. So [`.github/workflows/release-tag.yml`](../../.github/workflows/release-tag.yml)
+now cuts it on ci.yml's green push run of the release commit itself — a subject match, so a later
+green commit is never tagged with notes that do not describe it: the annotated tag through the git-data API (tag object,
+then ref), the Release with `--verify-tag` and the changelog section as notes, then a
+`workflow_dispatch` of `release.yml` — dispatched because a Release made with `GITHUB_TOKEN` fires
+no `release: published`. Only that last job holds a write token, and it checks nothing out and
+installs nothing. An existing tag stops it quietly, so a maintainer who still tags by hand
+races nothing. Whether a bump is owed at all is `bun run scripts/release-due.ts --json`: shipping
+commits since the last tag, a 24-hour settle so a maintainer releases their own work first, and
+never a major, whose `wiki/Upgrading.md` walkthrough stays a maintainer's call.
+
 **There are no publication holes, and `scripts/registry-audit.ts` is what keeps it that way.**
 `@ultimat3/scraping` was the last one, bootstrapped by hand at 2.0.0 on 2026-08-19 —
 `npm publish --access public --provenance=false`, the one-time step every package needs before a

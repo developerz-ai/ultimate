@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3d08f71cf609f036ffc27292035f6e6f7ddad6bb45bcc03eeb72f7c97f2eed52",
+  "buildId": "c849e60ebea9728df19854f825222482f7ceef6e91288763725a8bce7ae1f503",
   "tiers": {
     "0": [
       "core",
@@ -3230,6 +3230,11 @@
       "at": "scripts/release.ts"
     },
     {
+      "code": "X_RELEASE_TAG_UNREACHABLE",
+      "owner": "scripts",
+      "at": "scripts/release-due.ts"
+    },
+    {
       "code": "X_RELEASE_TREE_DIRTY",
       "owner": "scripts",
       "at": "scripts/lib/release-preflight.ts"
@@ -3253,6 +3258,11 @@
       "code": "X_RELEASE_VERSION_UNSTATED",
       "owner": "scripts",
       "at": "scripts/release.ts"
+    },
+    {
+      "code": "X_RELEASE_WINDOW_UNREADABLE",
+      "owner": "scripts",
+      "at": "scripts/release-due.ts"
     },
     {
       "code": "X_REPLICATION_FAILED",

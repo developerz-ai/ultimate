@@ -4,6 +4,13 @@ name: release
 # npm mints a short-lived token from the GitHub Actions id-token and verifies it against the
 # trusted publisher configured for each package on npmjs.com. Provenance is automatic.
 #
+# How a run starts: merging the `chore: release X.Y.Z` PR. When ci.yml passes on that push to main,
+# `.github/workflows/release-tag.yml` creates the annotated `vX.Y.Z` tag and the GitHub Release, then
+# DISPATCHES this workflow at the tag — a Release made with GITHUB_TOKEN fires no `release:
+# published`, so the dispatch is the one run. `release: published` stays for a Release a person
+# publishes by hand; nobody needs to. A hand tag is only the recovery release-tag.yml prints when
+# one of its own steps fails.
+#
 # Prerequisites (one-time, per package, on npmjs.com — see PUBLISHING.md):
 #   1. The package must already exist on the registry (bootstrap the first version by hand).
 #   2. Package → Settings → Trusted Publisher → GitHub Actions:
@@ -79,7 +86,7 @@ jobs:
           case "$REF" in
             refs/tags/v*) echo "ok: publishing from $REF" ;;
             *)
-              echo "::error::refusing to publish from $REF — an npm publish cannot be undone, so it runs from a vX.Y.Z tag only. Tag the release commit with an ANNOTATED tag (git tag -a v<version> -m v<version> && git push origin v<version> — --follow-tags skips a lightweight one), then publish a GitHub Release for it, or dispatch this workflow with that tag selected."
+              echo "::error::refusing to publish from $REF — an npm publish cannot be undone, so it runs from a vX.Y.Z tag only. Merging the chore: release X.Y.Z PR makes that tag: release-tag.yml cuts it once ci.yml passes on main and dispatches this workflow there. To publish a tag that already exists, dispatch with it selected: gh workflow run release.yml --ref v<version> -f version=<version>. Only if release-tag.yml failed before tagging, cut it by hand, annotated: git tag -a v<version> -m v<version> <sha> && git push origin v<version>."
               exit 1
               ;;
           esac

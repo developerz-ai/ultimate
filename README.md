@@ -10,6 +10,7 @@
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.4-black.svg?logo=bun)](https://bun.sh)
+[![AI-maintained](https://img.shields.io/badge/maintained%20by-developerz.ai-8a2be2.svg)](#ai-maintained)
 [![Version](https://img.shields.io/npm/v/%40ultimat3%2Fcore?label=version&color=blue)](https://www.npmjs.com/package/@ultimat3/core)
 
 [Wiki — the reference manual](https://github.com/developerz-ai/ultimate/wiki) ·
@@ -380,6 +381,20 @@ An app extends the framework by **wrapping**, never by forking, patching or peti
 Twelve milestones, each ending in a working demo app and a green gate. **0–10 are shipped; 11 is open on one thing** — the demo app proven on Compose *and* Kubernetes from a single image, rolling restart invisible. Its artifacts all ship, including a Helm chart written by `x new`; the proof needs real infrastructure and has not been run. The status markers in that table are enforced by the gate's `roadmap` step, so they cannot quietly rot.
 
 → [The full roadmap](docs/idea/14-roadmap.md) · [The risks, stated plainly](docs/idea/15-risks.md) · [What is deliberately excluded](docs/idea/00-thesis.md)
+
+## AI-maintained
+
+**Ultimate is feature-complete and maintained by AI**, `As of 2026-10` — by [developerz.ai](https://developerz.ai), the way a human maintainer looks after an open-source project. The owner and the developerz-ai org come back with new ideas once or twice a year; in between, the project keeps being looked after:
+
+| Who or what | What happens |
+|---|---|
+| you — an issue | triaged; asked for a reproduction when one is missing; a real bug is fixed and released; a request against a [design axiom](#design-axioms) is declined with the axiom quoted |
+| you — a pull request | reviewed by CodeRabbit and the developerz.ai reviewer, then merged by a maintainer |
+| Dependabot | driven to green and merged |
+| a developerz-ai org member | reviewed; the rest is theirs |
+| a breaking change | never merged unattended — a major is a migration for every app, and waits for a maintainer |
+
+Releases follow the work, not a calendar: when a fix that ships has merged and nobody has released it, the bot opens the version bump (`bun run scripts/release-due.ts` decides), and merging that bump publishes all packages to npm with provenance — [PUBLISHING.md](PUBLISHING.md). The bot's policy is committed: [`.dz/maintainer/maintainer.yml`](.dz/maintainer/maintainer.yml).
 
 ## Contributing
 

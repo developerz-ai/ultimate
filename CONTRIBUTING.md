@@ -129,8 +129,10 @@ It scaffolds the seven contract files, an `UltimateError` subclass, and two pass
    confirm the tier is the lowest one its real imports allow).
 2. Write `README.md` (what it owns, its public API, why it exists) and `CLAUDE.md` (boundary, deps,
    commands, under 40 lines).
-3. Add it to the correct tier step in `.github/workflows/release.yml` and to the table in
-   `PUBLISHING.md`. Lockstep versioning means it releases with everything else.
+3. Add it to the publish-order table in `PUBLISHING.md`. `.github/workflows/release.yml` needs no
+   edit: its publish list is derived from `scripts/list-workspaces.ts`. Lockstep versioning means it
+   releases with everything else — after its one-time bootstrap publish, which
+   `bun run scripts/registry-audit.ts --json` names when it is owed.
 4. `bun run scripts/verify.ts`.
 
 ## ✍️ Commits and PRs

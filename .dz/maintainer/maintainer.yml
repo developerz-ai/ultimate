@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=https://developerz.ai/schemas/maintainer.v1.json
+# developerz.ai maintainer policy for developerz-ai/ultimate.
+#
+# Ultimate is feature-complete and AI-maintained: the platform bot looks after it the way a human
+# OSS maintainer would. As of 2026-10, the owner's split:
+#
+#   outside users     their issues are triaged, junk is closed, real bugs are fixed by the fleet,
+#                     and their pull requests are driven to green and merged
+#   Dependabot        driven to green and merged, majors included — CI is the verdict
+#   org members       reviewed, and otherwise left alone: their issues and pull requests are theirs
+#                     (the owner or another org member visits once or twice a year with new ideas,
+#                     ships them and releases them)
+#   releases          cut when due: `scripts/release-due.ts` decides, the bot opens the bump PR,
+#                     merging it IS the release (`.github/workflows/release-tag.yml`)
+#
+# Every pull request is reviewed, whoever wrote it — `review.force` below.
+#
+# Read from here first; the root `.maintainer.yml` this replaces is only the platform's legacy
+# fallback, and two files would be two answers. Docs: https://developerz.ai/docs/maintainer-yml
+version: 1
+
+# `bun run verify`'s live suites grade against a real Postgres (they skip without one, which grades
+# nothing). The closed vocabulary has no NATS; those suites skip on a box without it.
+services: [postgres]
+
+tone:
+  voice: friendly
+  language: en
+
+triage:
+  ask_for_repro: true
+  required_fields: [steps, expected, actual, version]
+  qualify_into: [bug, feature, dupe, question, docs]
+  # The design axioms, in the words the bot quotes when it declines (CLAUDE.md, docs/idea/).
+  # This list is the ONLY thing that lets it decline a request as out of scope.
+  non_goals:
+    - Bun only — no Node.js or Deno runtime support
+    - Postgres only — no other database
+    - SolidJS only — no React, Vue or Svelte renderer
+    - No second way to do something the framework already does one way
+    - No ninth primitive — a feature that fits none of the eight does not ship
+    - Containers only — no platform-specific deploy primitives (Vercel, Lambda, Workers)
+    - No plugin API — an app wraps a primitive instead
+  close_unanswered_repro_after_days: 14
+  stale_after_days: 60
+  stale_action: comment_then_close
+
+handoff:
+  # A qualified bug becomes coding work on the account's own boxes; no webhook.
+  mode: fleet
+  ask_reporter_first: false
+
+pr:
+  wait_for_other_bots: [coderabbit]
+  # The verdict job; `ci.yml`'s header says why it is the one that answers for the run.
+  required_checks: [verify]
+  auto_merge: true
+  # INTERIM: the bot's own pull requests and Dependabot's. The owner's intent is every author
+  # except org members — outside contributors included — which needs a platform scope that does
+  # not exist yet (developerz.ai, queued as `not_project`). Until it ships, an outside
+  # contributor's PR is reviewed and fixed but merged by a member.
+  auto_merge_scope: own_and_dependency_bots
+  require_review: true
+  # No `human_merge` lane: the owner's ruling is no human in the loop (2026-10-14). The risk is
+  # stated, not hidden (security audit, 2026-10-14): `main` has no branch protection and
+  # `npm-publish` no reviewers, so an auto-merged PR (the bot's own, or a Dependabot action bump to
+  # a compromised SHA) can change what runs in the job holding `id-token: write`. What stands in
+  # for a person: Dependabot's 14-day cooldown (most upstream compromises are caught inside it),
+  # actions pinned by SHA, the release lane's shape pinned by tests the gate runs
+  # (scripts/release-workflow-shape.test.ts, scripts/release-tag-workflow-shape.test.ts), and two
+  # reviewers on every PR. A member who wants a person back adds the paths here.
+  close_awaiting_author_after_days: 21
+
+review:
+  # Run alongside CodeRabbit rather than standing down for it. Measured on prod 2026-08-31: with the
+  # default `force: false` the platform deferred every PR to CodeRabbit (202 of 202 swept), while
+  # CodeRabbit reviewed 73 — the other ~129 were reviewed by nobody.
+  force: true
+
+release:
+  # `.github/workflows/release.yml` is the ONE publish path (axiom 1). The platform's own cut
+  # (`release-please`, lightweight-tag Releases) made a second one: v23.0.1, v24.0.1 and v24.0.2
+  # were Releases with no bump behind them, one left marked Latest while npm served 24.0.0. The bot
+  # releases the way a member does — the bump PR — so its release manager stays off.
+  manager: none
+  channels: []
+
+escalate:
+  # An org member looks in once or twice a year (owner, 2026-10-14), so anything held here waits months.
+  # Held: a breaking change only. A major is a migration for every app (wiki/Upgrading.md) and the
+  # semver promise is the framework's; an outside PR that needs one is declined with that reason,
+  # not parked. Not held, deliberately: a first-time contributor's PR (CodeRabbit + this bot's
+  # review + the full gate decide it, as for anyone), a large PR, and a major dependency bump
+  # (CI is the verdict; `bun run verify` covers every package that imports it).
+  ask_before_acting: [breaking_change]
+
+schedules:
+  - name: release-due
+    days: [mon, tue, wed, thu, fri]
+    hours_utc: [6]
+    brief_file: .dz/briefs/release-due.md
+  # The failures nothing announces: a red `main`, a publish that did not land, npm drift, a stuck
+  # Dependabot PR. Bot-authored alarm issues never pass intake, so this is how they reach the bot.
+  - name: health
+    days: [mon, tue, wed, thu, fri, sat, sun]
+    hours_utc: [7]
+    brief_file: .dz/briefs/health.md

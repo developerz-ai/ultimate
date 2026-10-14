@@ -199,9 +199,11 @@ Free runners (`ubuntu-latest`; `windows-latest` for `windows`, free on a public 
 - `verify` — the verdict: `x verify merge` over the parts, red for a step no part ran.
 - `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
 
-Other workflows, each explained by its own header: `release.yml` (a **published** GitHub Release
-→ npm via OIDC trusted publishing, after `check`), `registry-audit.yml` (daily; a `registry-drift`
-issue on disagreement), `deploy-social-demo.yml` (green `ci` on `main` → the demo image),
+Other workflows, each explained by its own header: `release-tag.yml` (green `ci` on a release
+commit at an untagged version → annotated tag, Release, `release.yml` dispatched: merging the
+release PR is the release), `release.yml` (that dispatch or a **published** Release → npm via OIDC
+trusted publishing, after `check`), `registry-audit.yml` (daily; a `registry-drift` issue on
+disagreement), `deploy-social-demo.yml` (green `ci` on `main` → the demo image),
 `wiki.yml` (push to `main` → the GitHub wiki).
 
 ## How to work
