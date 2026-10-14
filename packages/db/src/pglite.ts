@@ -212,9 +212,17 @@ export async function loadPgliteDriver(options: PgliteOptions = {}): Promise<Pgl
   } catch (error) {
     throw missing(`PGlite could not open its data directory (dataDir=${dataDir})`, error);
   }
+  // Ready before it is handed back, asked the way `restore` asks. PGlite 0.5.10 runs `dumpDataDir`
+  // and `close` inside its query mutex, and either, asked mid-`initdb`, waits for a readiness that
+  // never comes: `x db gen` spun at full CPU until CI's timeout (`pglite-ready.test.ts`). A boot
+  // that fails here is not reported here: the caller's first statement types it, as it always has.
+  const ready = await driver.query('select 1').then(
+    () => true,
+    () => false,
+  );
   // Taken before the caller's first statement, so what is cached is `initdb`'s output and nothing
   // of the caller's. A dump that fails leaves no cache and a working database.
-  if (file !== undefined && key !== undefined && driver.dumpDataDir !== undefined) {
+  if (ready && file !== undefined && key !== undefined && driver.dumpDataDir !== undefined) {
     try {
       // Uncompressed, by measurement: gzip costs the boot that WRITES the snapshot ~0.3 s of
       // CPU and saves nothing on the one that reads it. A fresh CI checkout always writes, so

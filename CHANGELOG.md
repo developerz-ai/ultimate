@@ -8,7 +8,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`x db gen` and `x db migrate` no longer hang on `@electric-sql/pglite` 0.5.10.** That release
+  (2026-10-14) makes `dumpDataDir()` and `close()` wait for the database to be ready, and wait
+  forever when nothing has run yet. A fresh in-memory boot snapshotted at once, so every new app
+  (whose `^0.5.4` range resolves 0.5.10) spun in `x db gen initial` with no output. A fresh boot
+  now runs one statement before it is handed back, and a boot that never gets ready is returned
+  uncached, its first statement reporting why. The repo's own suites now run on 0.5.10.
 
 ## 27.10.1 - 2026-10-12
 
