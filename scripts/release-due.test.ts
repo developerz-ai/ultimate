@@ -186,12 +186,17 @@ describe('unit · release-due · parsing and flags', () => {
     const parsed = JSON.parse(out.output) as {
       ok: boolean;
       script: string;
-      data: { due: boolean; lastTag: string; reason?: string };
+      data?: { due: boolean; lastTag: string; reason?: string };
+      findings?: readonly { code: string }[];
     };
     expect(parsed.script).toBe('release-due');
-    expect(parsed.ok).toBe(true);
-    expect(typeof parsed.data.due).toBe('boolean');
-    expect(parsed.data.lastTag).toMatch(/^v\d+\.\d+\.\d+$/);
-    if (!parsed.data.due) expect(parsed.data.reason).toBeDefined();
+    // CI checks out shallow and tagless; there the one legal answer is the coded refusal.
+    if (!parsed.ok) {
+      expect(parsed.findings?.map((f) => f.code)).toEqual(['X_RELEASE_TAG_UNREACHABLE']);
+      return;
+    }
+    expect(typeof parsed.data?.due).toBe('boolean');
+    expect(parsed.data?.lastTag).toMatch(/^v\d+\.\d+\.\d+$/);
+    if (!parsed.data?.due) expect(parsed.data?.reason).toBeDefined();
   });
 });
