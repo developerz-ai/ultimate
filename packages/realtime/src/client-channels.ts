@@ -361,6 +361,8 @@ export class ChannelBook {
     entry.failures = 0;
     const current = [...held].sort((a, b) => a.seq - b.seq);
     const store = this.#deps.store;
+    // `#adopt` and `#apply` open batches of their own inside this one: `RecordStore.batch` nests,
+    // so the read's rows and every held frame are still ONE notification.
     store.batch(() => {
       this.#adopt(answered);
       for (const frame of current) {

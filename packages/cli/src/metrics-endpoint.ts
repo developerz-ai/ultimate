@@ -19,7 +19,7 @@ import {
   stringField,
   UltimateError,
 } from '@ultimat3/core';
-import { neighbouringPort, PORT_RANGE } from './flag-number';
+import { neighbouringPort, PORT_RANGE, syncPortFor } from './flag-number';
 import { quoteArg } from './shell-quote';
 
 /**
@@ -72,14 +72,15 @@ export interface RolePort {
 }
 
 /**
- * The web role's port, and `PORT + 1` for the sync node (`syncPortFor`, which refuses the top of
- * the range on its own). Port 0 reserves nothing: the kernel picks, and never a bound port.
+ * The web role's port, and the sync node's — `syncPortFor`'s answer, the one rule the node binds
+ * by (so it refuses the top of the range here exactly as the boot would). Port 0 reserves nothing:
+ * the kernel picks, and never a bound port.
  */
 export function rolePorts(port: number, roles: readonly Role[]): readonly RolePort[] {
   if (port === 0) return [];
   return [
     ...(roles.includes('web') ? [{ role: 'web', port }] : []),
-    ...(roles.includes('sync') && port < PORT_RANGE.max ? [{ role: 'sync', port: port + 1 }] : []),
+    ...(roles.includes('sync') ? [{ role: 'sync', port: syncPortFor(port) }] : []),
   ];
 }
 

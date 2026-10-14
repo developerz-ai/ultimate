@@ -53,6 +53,7 @@ export interface QueryCallOptions {
   /**
    * The decoded record envelope, after its rows were adopted — only for a read declaring an
    * entity's `rows:`. The store is keyed and unordered; this is where a caller reads the ORDER.
+   * With `adopt: false`, the rows are not adopted; the caller adopts them.
    */
   readonly onEnvelope?: (envelope: RecordEnvelope) => void;
   /** `false`: the rows are handed to `onEnvelope` and NOT adopted — the caller adopts them. */

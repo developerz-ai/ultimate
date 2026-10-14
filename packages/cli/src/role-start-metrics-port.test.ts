@@ -6,7 +6,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { resetLifecycle } from '@ultimat3/core';
-import { MetricsPortSharedError, startMetricsEndpoint } from './metrics-endpoint';
+import { MetricsPortSharedError, rolePorts, startMetricsEndpoint } from './metrics-endpoint';
 import type { RunningRoles } from './role-start';
 import { startRoles } from './role-start';
 import { fixtureRuntime, resetDevRolesState } from './role-start-fixture';
@@ -95,19 +95,29 @@ test('unit · the fix names 9090, or a port past every role port when a role hol
   expect(fix).toContain('METRICS_PORT=9092 ');
 });
 
-test('unit · x dev with no METRICS_PORT (`free`) takes a free scrape port beside --port 9090', () => {
-  const web = { role: 'web', port: 9090 };
-  const scrape = startMetricsEndpoint({
-    port: 9090,
-    whenTaken: 'free',
-    reserved: [web, { role: 'sync', port: 9091 }],
-  });
+test('unit · x dev with no METRICS_PORT (`free`) takes a free scrape port beside the role ports', () => {
+  // The role ports are HELD while the scrape port is chosen, so the kernel cannot hand either out
+  // whatever its ephemeral range: the assertion below is about the code, never about the host.
+  const roles = [0, 1].map(() => Bun.serve({ port: 0, fetch: () => new Response() }));
+  const [web, sync] = roles.map((server) => server.port ?? 0);
   try {
-    const bound = Number(new URL(scrape.url).port);
-    expect(bound).toBeGreaterThan(0);
-    expect([9090, 9091]).not.toContain(bound);
+    const scrape = startMetricsEndpoint({
+      port: web ?? 0,
+      whenTaken: 'free',
+      reserved: [
+        { role: 'web', port: web ?? 0 },
+        { role: 'sync', port: sync ?? 0 },
+      ],
+    });
+    try {
+      const bound = Number(new URL(scrape.url).port);
+      expect(bound).toBeGreaterThan(0);
+      expect([web, sync]).not.toContain(bound);
+    } finally {
+      scrape.stop();
+    }
   } finally {
-    scrape.stop();
+    for (const server of roles) server.stop(true);
   }
 });
 
@@ -138,4 +148,10 @@ test('unit · a container refuses METRICS_PORT equal to its web port before it b
     (error: unknown) => (error as { cause?: string }).cause ?? 'uncoded',
   );
   expect(outcome).toContain(`web port ${String(port)}`);
+});
+
+test('unit · the reserved set is the sync node’s own rule, refusal at the top of the range included', () => {
+  expect(rolePorts(3000, ['web', 'sync']).map((one) => one.port)).toEqual([3000, 3001]);
+  expect(rolePorts(0, ['web', 'sync'])).toEqual([]);
+  expect(() => rolePorts(65_535, ['sync'])).toThrow('X_PORT_INVALID');
 });

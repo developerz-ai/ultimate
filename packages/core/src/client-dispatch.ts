@@ -50,7 +50,8 @@ export interface TransportRequest {
   /** This call's retry override, handed to the `flight`. */
   readonly retry?: ClientRetry | undefined;
   /**
-   * The decoded records envelope, after its records were adopted — only when the answer carried
+   * The decoded records envelope, after its records were adopted (with `adopt: false`, they are
+   * not; the caller adopts them) — only when the answer carried
    * `x-ultimate-records: 1` and belongs to the current principal. What a caller reads to know the
    * ORDER of `records[type]`, which the store (keyed, unordered) cannot give it back.
    */
