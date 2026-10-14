@@ -12,6 +12,7 @@ import type { DueDecision, WindowCommit } from './lib/release-due-rule';
 import { DEFAULT_SETTLE_HOURS, releaseDue } from './lib/release-due-rule';
 import { packageFiles, shippingPackage } from './lib/release-due-ships';
 import { repoRoot, run } from './lib/run';
+import { ScriptError } from './lib/script-error';
 import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/workspaces';
 import { sectionBody, UNRELEASED_VERSION } from './release-notes';
 
@@ -34,7 +35,11 @@ export async function lastReleaseTag(root: string): Promise<string | undefined> 
   return undefined;
 }
 
-/** `git log` of the window, both ends of a rename, merges skipped (their parents are listed). */
+/**
+ * `git log` of the window, merges skipped (their parents are listed). `--no-renames` is what lists
+ * BOTH ends of a rename — a delete of the old path and an add of the new — where rename detection
+ * would list only the new one, and a file moved out of `packages/<pkg>/src` would ship nothing.
+ */
 export const windowLogCommand = (tag: string): readonly string[] => [
   'git',
   'log',
@@ -62,12 +67,33 @@ export function parseWindowLog(output: string): readonly WindowCommit[] {
   });
 }
 
-const unreachable = (cause: string): Finding => ({
+const unreachable = (): Finding => ({
   code: 'X_RELEASE_TAG_UNREACHABLE',
-  cause,
+  cause:
+    'no vX.Y.Z tag is reachable from HEAD, so there is no last release to count commits from — a shallow or tagless clone',
   fix: 'git fetch --tags origin && bun run scripts/release-due.ts --json',
   at: 'scripts/release-due.ts',
 });
+
+/**
+ * The commits since `v<tagged>`, or the refusal when git could not list them. A different code
+ * from a missing tag: the tag WAS found, so fetching tags fixes nothing — a clone too shallow to
+ * hold the range between the tag and HEAD does, which `--unshallow` fetches (and errors on, harmlessly,
+ * in a full clone, hence the `;`).
+ */
+export async function readWindow(
+  root: string,
+  tagged: string,
+): Promise<readonly WindowCommit[] | Finding> {
+  const log = await run(windowLogCommand(tagged), { cwd: root });
+  if (log.ok) return parseWindowLog(log.output);
+  return {
+    code: 'X_RELEASE_WINDOW_UNREADABLE',
+    cause: `git log v${tagged}..HEAD failed, so the commits since the last release are unknown: ${log.output.slice(0, 300)}`,
+    fix: 'git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json',
+    at: 'scripts/release-due.ts',
+  };
+}
 
 /** The settle window, refused unless a finite number of hours at or above zero. */
 export function settleHoursOf(raw: string | undefined): number | Finding {
@@ -91,26 +117,31 @@ export async function decideAt(
   { readonly tagged: string; readonly stamped: string; readonly decision: DueDecision } | Finding
 > {
   const workspaces = await listWorkspaces(root);
+  const publishable = publishOrder(workspaces);
+  // The version is read, never invented: no publishable workspace is the publish-floor refusal.
   const [floor] = publishFloorFindings(workspaces);
   if (floor !== undefined) return floor;
-  const publishable = publishOrder(workspaces);
-  const tagged = await lastReleaseTag(root);
-  if (tagged === undefined) {
-    return unreachable(
-      'no vX.Y.Z tag is reachable from HEAD, so there is no last release to count commits from — a shallow or tagless clone',
-    );
+  const stamped = publishable[0]?.version;
+  if (stamped === undefined) {
+    // The floor above refuses exactly this tree, so reaching here is a broken invariant.
+    throw new ScriptError({
+      code: 'X_CORPUS_UNSCANNED',
+      cause: 'publishFloorFindings passed a tree with no publishable workspace',
+      fix: 'bun run scripts/list-workspaces.ts --json',
+    });
   }
-  const log = await run(windowLogCommand(tagged), { cwd: root });
-  if (!log.ok) return unreachable(`git log v${tagged}..HEAD failed: ${log.output.slice(0, 300)}`);
+  const tagged = await lastReleaseTag(root);
+  if (tagged === undefined) return unreachable();
+  const commits = await readWindow(root, tagged);
+  if ('code' in commits) return commits;
   const files = await packageFiles(publishable);
   const changelog = await Bun.file(`${root}/CHANGELOG.md`)
     .text()
     .catch(() => '');
-  const stamped = publishable[0]?.version ?? '0.0.0';
   const decision = releaseDue({
     tagged,
     stamped,
-    commits: parseWindowLog(log.output),
+    commits,
     unreleased: sectionBody(changelog, UNRELEASED_VERSION) ?? '',
     nowMs,
     settleHours,

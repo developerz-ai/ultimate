@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e7adcc79f3d70d8db0538f30280cfc9e4eb2910023ec2bcb88bef9ee48ef1fe5",
+  "buildId": "c849e60ebea9728df19854f825222482f7ceef6e91288763725a8bce7ae1f503",
   "tiers": {
     "0": [
       "core",
@@ -3258,6 +3258,11 @@
       "code": "X_RELEASE_VERSION_UNSTATED",
       "owner": "scripts",
       "at": "scripts/release.ts"
+    },
+    {
+      "code": "X_RELEASE_WINDOW_UNREADABLE",
+      "owner": "scripts",
+      "at": "scripts/release-due.ts"
     },
     {
       "code": "X_REPLICATION_FAILED",

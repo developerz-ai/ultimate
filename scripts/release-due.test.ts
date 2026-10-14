@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
-import { decideAt, lastReleaseTag, parseWindowLog, settleHoursOf } from './release-due';
+import { decideAt, lastReleaseTag, parseWindowLog, readWindow, settleHoursOf } from './release-due';
 
 // Each test spawns a dozen git processes; the CLI test boots the real tree.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -150,6 +150,34 @@ describe('unit · release-due · read from a real repository', () => {
     const read = await decideAt(dir, 24, NOW);
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('awaiting_tag');
+  });
+});
+
+describe('unit · release-due · refusals that name their own cause', () => {
+  // The tag was found; the log over it failed. Fetching tags fixes the first and not this one, so
+  // the two are separate codes with separate fixes.
+  test('a git log that fails over a found tag is X_RELEASE_WINDOW_UNREADABLE, not a tag miss', async () => {
+    const { dir } = await released();
+    const read = await readWindow(dir, '9.9.9');
+    expect('code' in read && read.code).toBe('X_RELEASE_WINDOW_UNREADABLE');
+    expect('fix' in read && read.fix).not.toContain('--tags origin &&');
+  });
+
+  // No version is invented: a tree whose only workspace is private is refused, never read as 0.0.0.
+  test('a tree with no publishable workspace is refused before a version is read', async () => {
+    const { dir, land } = await released();
+    await land(
+      {
+        'packages/core/package.json': JSON.stringify({
+          name: '@ultimat3/core',
+          version: '1.0.0',
+          private: true,
+        }),
+      },
+      'chore: make it private',
+    );
+    const read = await decideAt(dir, 24, NOW);
+    expect('code' in read && read.code).toBe('X_CORPUS_UNSCANNED');
   });
 });
 

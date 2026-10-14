@@ -98,4 +98,23 @@ describe('unit · release-notes · the CLI', () => {
     },
     REPO_SCAN_TIMEOUT_MS,
   );
+
+  // The workflow pipes `--json` into jq under `pipefail`: a missing section must be one coded JSON
+  // document and exit 1 — never a crash after the refusal, which jq would read as no notes at all.
+  test(
+    'a version with no section exits 1 with one coded JSON document',
+    async () => {
+      const out = await run(
+        ['bun', 'run', 'scripts/release-notes.ts', '--version', '0.0.0-absent', '--json'],
+        { cwd: repoRoot() },
+      );
+      expect(out.code).toBe(1);
+      const parsed = JSON.parse(out.output) as { ok: boolean; findings: { code: string }[] };
+      expect(parsed.ok).toBe(false);
+      expect(parsed.findings.map((finding) => finding.code)).toEqual([
+        'X_DOC_CHANGELOG_SECTION_INVALID',
+      ]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });

@@ -384,7 +384,7 @@ Twelve milestones, each ending in a working demo app and a green gate. **0–10 
 
 ## AI-maintained
 
-**Ultimate is feature-complete and maintained by AI** — by [developerz.ai](https://developerz.ai), the way a human maintainer looks after an open-source project. The owner and the developerz-ai org come back with new ideas once or twice a year; in between, the project keeps being looked after:
+**Ultimate is feature-complete and maintained by AI**, `As of 2026-10` — by [developerz.ai](https://developerz.ai), the way a human maintainer looks after an open-source project. The owner and the developerz-ai org come back with new ideas once or twice a year; in between, the project keeps being looked after:
 
 | Who or what | What happens |
 |---|---|
