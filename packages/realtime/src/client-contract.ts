@@ -3,6 +3,7 @@
 // shapes without importing the connection lifecycle underneath — and the bytes that come with it.
 
 import type { Clock, Row } from '@ultimat3/core/page';
+import type { CatchUpRecords } from './channel-catch-up';
 import type { LiveCursor } from './cursor';
 import type { LiveState } from './live-rows';
 import type { RecordStore } from './record-store';
@@ -71,8 +72,12 @@ export interface LiveClientOptions {
   /** Where a failure nobody awaits is reported. Defaults to `console.error`. */
   readonly onError?: (error: unknown) => void;
   /**
-   * A channel's catch-up read, re-run on `replay-gap` or a new epoch: the named query, through
-   * core's transport, so its records land in the store. `page-socket.ts` supplies the real one.
+   * A channel's catch-up read, re-run on `replay-gap` or a new epoch: the named query, answering its
+   * records UNADOPTED for the channel book to adopt with the frames held behind the read.
+   * `page-socket.ts` supplies the real one (`channel-catch-up.ts`).
    */
-  readonly catchUp: (query: string, params: Readonly<Record<string, string>>) => Promise<unknown>;
+  readonly catchUp: (
+    query: string,
+    params: Readonly<Record<string, string>>,
+  ) => Promise<CatchUpRecords | undefined>;
 }

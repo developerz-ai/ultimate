@@ -231,6 +231,28 @@ describe('the trace an operator opens', () => {
     expect(trace?.progress).toBeNull();
   });
 
+  // #773: Bun 1.4 renders an error's stack lazily, and a full collection after the rejection has
+  // crossed an `await` but before the first `.stack` read leaves it opening with a bare `Error`.
+  // CI's coverage run hit it by chance; this forces it on every run.
+  test('names the thrown class and message even when a collection ran before the stack was read', async () => {
+    const driver = memoryJobDriver({ clock });
+    const handle = itemJob({
+      run: async () => {
+        const thrown = await Promise.reject(new TypeError('selector moved')).catch(
+          (error: unknown) => error,
+        );
+        Bun.gc(true);
+        throw thrown;
+      },
+    });
+    const id = await enqueueItem(driver, handle);
+    await workerOn(harness, driver, 'worker-a').tick();
+
+    const stack = (await inspectJob(driver, id))?.stack ?? '';
+    expect(stack.split('\n')[0]).toBe('TypeError: selector moved');
+    expect(stack).toContain('operator-surface.test.ts');
+  });
+
   test('promoteJob names the state of a job that is not waiting on its run time', async () => {
     const driver = memoryJobDriver({ clock });
     const handle = itemJob({ run: () => Promise.resolve() });

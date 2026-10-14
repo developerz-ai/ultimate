@@ -6,7 +6,8 @@
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
 import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from './environment';
-import { renderThrowable, stringField } from './error-render';
+import { renderThrowable } from './error-render';
+import { failureStack } from './error-stack';
 import { toUltimateError } from './errors';
 import { logger } from './logger';
 import type { Role } from './roles';
@@ -181,9 +182,9 @@ export function errorReport(error: unknown, options: ReportErrorOptions): ErrorR
     meta: normalized.meta,
     // The thrown value's own stack, not the wrapper's: `toUltimateError` builds its `InternalError`
     // at this line, so the wrapper's stack points here rather than at the throw. Read through
-    // `stringField`, because `error instanceof Error` and `.stack` are both property operations
-    // on a caught value — and this function's own contract is that reporting never throws.
-    stack: stringField(error, 'stack') ?? normalized.stack,
+    // `failureStack` (total, and its header restored when Bun dropped it), because `.stack` is a
+    // property operation on a caught value — and reporting never throws.
+    stack: failureStack(error) ?? normalized.stack,
     resource: serviceResource(),
     environment: environmentNow(),
     release: release ?? ctx?.buildId ?? null,

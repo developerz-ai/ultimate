@@ -28,19 +28,32 @@ const listenOnAnyPort = (): PortProbe => {
  * open. A refused port is KEPT listening while the next is asked for, so the OS cannot answer with
  * it again: the walk ends after at most one ask per refused port, with no counter and no retry.
  */
-export const freePort = (listen: () => PortProbe = listenOnAnyPort): number => {
-  const refused: PortProbe[] = [];
+export const freePort = (listen: () => PortProbe = listenOnAnyPort): number =>
+  freePortApartFrom([], listen);
+
+/**
+ * The same, and none of `taken` — the ports this caller already handed out and RELEASED, which the
+ * OS is free to answer with again. Two bare `freePort()` calls for one app gave its web role and
+ * its scrape listener the same number (CI, 2026-10-14). Both bound it — `localhost` names `::1` and
+ * `127.0.0.1` there — and the browser's requests reached `/metrics`'s `not found` instead of the
+ * app. Held like a refused port, so the walk still ends.
+ */
+export const freePortApartFrom = (
+  taken: readonly number[],
+  listen: () => PortProbe = listenOnAnyPort,
+): number => {
+  const held: PortProbe[] = [];
   try {
     for (;;) {
       const probe = listen();
-      if (BROWSER_REFUSED_PORTS.has(probe.port)) {
-        refused.push(probe);
+      if (BROWSER_REFUSED_PORTS.has(probe.port) || taken.includes(probe.port)) {
+        held.push(probe);
         continue;
       }
       probe.stop();
       return probe.port;
     }
   } finally {
-    for (const probe of refused) probe.stop();
+    for (const probe of held) probe.stop();
   }
 };

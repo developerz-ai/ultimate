@@ -6,7 +6,7 @@
 import { frozenClock } from '@ultimat3/core';
 import { pageClient } from '@ultimat3/core/page';
 import { type ClientSocket, LiveClient } from './client';
-import type { SignalFactory } from './client-contract';
+import type { LiveClientOptions, SignalFactory } from './client-contract';
 import { installPageRuntime } from './page-runtime';
 import type { InstalledPage } from './page-store';
 import { installRealtime, uninstallRealtime } from './reactivity';
@@ -96,11 +96,7 @@ export interface PageHarness {
  * signal, and the page socket pre-seated with a client over a fake socket — so `pageSocket()`
  * finds it and never reaches `new WebSocket`.
  */
-export function pageHarness(
-  options: {
-    catchUp?: (query: string, params: Readonly<Record<string, string>>) => Promise<unknown>;
-  } = {},
-): PageHarness {
+export function pageHarness(options: { catchUp?: LiveClientOptions['catchUp'] } = {}): PageHarness {
   resetPage();
   const page = installPageRuntime();
   installRealtime({ signal, sync: { url: 'ws://node.test/_x/sync', buildId: 'build-1' } });

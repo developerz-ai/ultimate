@@ -6,14 +6,14 @@ change to every package.
 
 | Rule | |
 |---|---|
-| Deps | `@ultimat3/schema` only (`bun-types` for types) |
+| Deps | `@ultimat3/schema` only (`bun-types`: types) |
 | Errors | subclass `UltimateError`; never `throw new Error` |
 | Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
 | A value in a `fix:` a shell READS | `renderFixShellArg(value, placeholder)` — `renderFixLiteral`'s double quotes leave `$(…)`, `` ` `` and `${…}` live. An ordinary path or URL passes through; anything a shell would read becomes the placeholder |
 | Whether that value TRAVELS | `isFixShellSafe(value)`, the predicate `renderFixShellArg` is built on. A placeholder is not a runnable command, so a `fix:` whose value sits mid-command asks this first and emits PROSE when the answer is no (`@ultimat3/auth`'s `jwks.ts`, `@ultimat3/scraping`'s `profileLocked`) |
 | Rendering the 3-line format | nothing to remember — `UltimateError`'s CONSTRUCTOR escapes `code`, `title`, `cause`, `fix` and `docs` with `singleLine()`. Call it yourself only for a shape this class never built (a `Finding`) |
 | A value a CALLER supplied | `describeValue()` — shape, never content. `renderCauseValue` is safe against throwing, not against leaking |
-| Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()`; never `error.message`, `instanceof Error` or `typeof error.code === 'string'` |
+| Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()` / `failureStack()`; never `error.message`, `instanceof Error` or `typeof error.code === 'string'` |
 | New code | add to `CORE_CODE_TITLES` in `core-error-codes.ts` — a side-effect anchor the barrel bare-imports, so `UltimateError` alone never carries the table |
 | Where an error points | `ERROR_DOCS_URL` — one constant, never a per-code URL. `docs:` is omitted at construction and resolved from the registry |
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |

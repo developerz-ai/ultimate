@@ -48,6 +48,20 @@ describe('a withheld failure is logged without its content', () => {
     expect(lines.join('\n')).not.toContain('ceo@corp.com');
   });
 
+  // #773: Bun can hand back a stack whose `name: message` line is a bare `Error`. Skipping the
+  // message's two lines off THAT stack ate the first frame, so the log said nowhere it was thrown.
+  test('a stack whose header the runtime dropped still logs its first frame', () => {
+    const { lines, logger } = capture();
+    const thrown = {
+      name: 'TypeError',
+      message: 'first line\nsecond: ceo@corp.com',
+      stack: 'Error\n    at insertUser (users.ts:4:2)',
+    };
+    discloseFailure(thrown, logger, 'tool insertUser');
+    expect(lines.join('\n')).toContain('at insertUser (users.ts:4:2)');
+    expect(lines.join('\n')).not.toContain('ceo@corp.com');
+  });
+
   test('a shown failure logs nothing', () => {
     const { lines, logger } = capture();
     const shown = discloseFailure(

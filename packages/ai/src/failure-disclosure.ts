@@ -3,7 +3,7 @@
 // it withholds goes to the log as content-free facts (code, name, frames) — never its text.
 
 import type { Logger } from '@ultimat3/core';
-import { hasPublicCause, isUltimateError, stringField } from '@ultimat3/core';
+import { failureStack, hasPublicCause, isUltimateError, stringField } from '@ultimat3/core';
 import { declaredStatusFor, statusFor } from '@ultimat3/http';
 
 /**
@@ -91,7 +91,8 @@ export function discloseOwnFailure(
 const FRAME = /^\s+at\s/;
 
 function framesOf(error: unknown): string | null {
-  const stack = stringField(error, 'stack');
+  // The header restored first: a lost one (`Error`, #773) made `skip` below eat real frames.
+  const stack = failureStack(error);
   if (stack === undefined) return null;
   const lines = stack.split('\n');
   // Skip to the first frame line that FOLLOWS the message: a message may itself contain text

@@ -56,6 +56,12 @@ export interface TransportRequest {
    */
   readonly onEnvelope?: ((envelope: RecordEnvelope) => void) | undefined;
   /**
+   * `false`: the records are NOT adopted here — the caller adopts them from `onEnvelope`, inside a
+   * notification of its own. For a read whose rows must land together with something only the
+   * caller holds: a channel's catch-up and the frames held behind it (`@ultimat3/realtime`).
+   */
+  readonly adopt?: boolean | undefined;
+  /**
    * How a 2xx body is read. `'json'` (the default) decodes it and adopts a records envelope;
    * `'text'` answers the body as a string, untouched — an HTML fragment, a CSV — sends
    * the wildcard `accept` unless `headers` says otherwise, and adopts nothing. A non-2xx is decoded as a

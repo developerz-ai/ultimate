@@ -16,6 +16,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   (whose `^0.5.4` range resolves 0.5.10) spun in `x db gen initial` with no output. A fresh boot
   now runs one statement before it is handed back, and a boot that never gets ready is returned
   uncached, its first statement reporting why. The repo's own suites now run on 0.5.10.
+- **A like replayed on reconnect no longer paints twice.** The channel's catch-up read could carry
+  a replayed write while that write's optimistic overlay was still pending, and the transport
+  adopted the read in its own update — the count flashed one too high (`2 → 3 → 2`) until the
+  write's echo, held behind the read, settled it. The read and the frames held behind it now land in
+  one store update (`catchUpRead`, a transport `adopt: false` request option).
+- **A failure's recorded stack keeps its `TypeError: message` line.** Bun can drop an error's
+  stack header after a GC once the error has crossed an `await`; job traces, error reports, HTTP
+  error facts and AI failure disclosures recorded a bare `Error`. Core's `failureStack()` restores
+  it, and the AI disclosure no longer drops the first real frame of a multi-line message (#773).
+- **`x dev` refuses a metrics port that collides with a role's port** (`X_PORT_IN_USE`, before
+  anything binds), and the e2e harness never hands the web and metrics listeners one port — on a
+  dual-stack `localhost` both bound and the browser reached `/metrics`'s 404.
+- **e2e `waitFor` survives a navigation committing mid-poll** (#774): Chrome's "Inspected target
+  navigated or closed" now reads as "not yet" while the tab lives, and still fails fast once closed.
 
 ## 27.10.1 - 2026-10-12
 

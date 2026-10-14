@@ -16,7 +16,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { E2eApp, E2eTab } from '@ultimat3/testing';
 import { E2E_GOTO_MS, E2E_TAB_OPEN_MS } from '@ultimat3/testing';
-import { everyCount, like, requestsSince, until } from './fixtures/page-reads';
+import { everyCount, like, queuedOnDisk, requestsSince, until } from './fixtures/page-reads';
 import type { AcceptanceBrowser } from './fixtures/postly';
 import {
   ACCEPTANCE_CLOSE_MS,
@@ -110,6 +110,11 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
       'the optimistic like to show while offline',
     );
 
+    // Painted is not yet durable: the reload waits for the outbox to hold the write on disk.
+    await until(
+      async () => (await tab.evaluate(queuedOnDisk)) === 1,
+      'the like to be queued in the outbox on disk',
+    );
     const reloadedAt = (await history()).length;
     await tab.reload();
     await tab.waitFor(

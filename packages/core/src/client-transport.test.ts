@@ -151,6 +151,27 @@ describe('clientTransport — records', () => {
     expect(seen).toEqual([['p2', 'p1']]);
   });
 
+  test('adopt: false hands the records to onEnvelope and adopts none of them', async () => {
+    const sink = recordingSink();
+    const seen: unknown[] = [];
+    const { fetchImpl } = fakeFetch(() =>
+      json(
+        { data: [], records: { post: { p1: { id: 'p1' } } }, removed: { post: ['p0'] } },
+        { headers: { [RECORDS_HEADER]: '1' } },
+      ),
+    );
+    await clientTransport({
+      method: 'GET',
+      url: '/q',
+      fetchImpl,
+      adopt: false,
+      onEnvelope: (envelope) => seen.push(envelope.records),
+    });
+    expect(sink.adopted).toEqual([]);
+    expect(sink.removed).toEqual([]);
+    expect(seen).toEqual([{ post: { p1: { id: 'p1' } } }]);
+  });
+
   test('onEnvelope is not called for a bare answer, nor for a write across a rescope', async () => {
     let calls = 0;
     const onEnvelope = (): void => {

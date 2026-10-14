@@ -114,8 +114,13 @@ export const config = defineRoute({
    * `shared/wire.ts` is deleted); +997 B feed island — `subsetTranslator` over the `ui.*` strings
    * the server resolved (`uiCatalog`), interpolation and the CLDR plural pick included, where the
    * app's `shared/ui-strings.ts` looked a key up and nothing else.
+   * raised 158.5kb → 159kb (the reconnect double-paint fix). measured: 162,554 B (2026-10-14;
+   * `x build --target static`), against the old 161,762. why: the channel's catch-up read and the
+   * frames held behind it now land in one store update, so a replayed write's echo settles its
+   * own overlay in the same paint (it flashed one like too many, `2 → 3 → 2`): the transport's
+   * `adopt: false` request option and `catchUpRead` in the page boot.
    */
-  budget: { js: '158.5kb' },
+  budget: { js: '159kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

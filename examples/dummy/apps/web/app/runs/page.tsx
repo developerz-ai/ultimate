@@ -90,8 +90,13 @@ export const config = defineRoute({
    * page boot — `reviveWireDates`, a read's `Date` revived as a `Date`; +1,696 B run console —
    * the same revival in its typed action client's transport (+699) and `subsetTranslator` over the
    * server-resolved `ui.*` strings (+997), which replaced the app's `shared/ui-strings.ts`.
+   * raised 172.5kb → 173kb (the reconnect double-paint fix). measured: 176,826 B (2026-10-14;
+   * `x build --target static`), against the old 176,018. why: the channel's catch-up read and the
+   * frames held behind it now land in one store update, so a replayed write's echo settles its
+   * own overlay in the same paint (it flashed one like too many, `2 → 3 → 2`): the transport's
+   * `adopt: false` request option and `catchUpRead` in the page boot.
    */
-  budget: { js: '172.5kb' },
+  budget: { js: '173kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

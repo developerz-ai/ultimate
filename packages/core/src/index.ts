@@ -309,6 +309,7 @@ export {
   ERROR_RETRY_KINDS,
   errorCodeSnapshot,
   errorRetry,
+  failureStack,
   fixFor,
   formatError,
   hasErrorCode,

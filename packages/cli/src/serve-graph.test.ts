@@ -105,8 +105,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 642 → 643, measured 643 (2026-10-11, sitemap sections): `core/src/config-sitemap.ts` — the
  * shape of `seo.sitemap.sections` / `pageSize` and the one validator `defineConfig` and
  * `@ultimat3/seo` refuse them with; split from `config-site.ts`, reached through the core barrel.
+ * raised 643 → 644, measured 644 (2026-10-14, #773): `core/src/error-stack.ts` — the one reader of a
+ * thrown value's stack, recomposing the `name: message` header Bun 1.4 loses when a collection runs
+ * before the first `.stack` read; through the core barrel, for `jobs/src/execute.ts`'s failure row.
  */
-const MIGRATE_CEILING = 643;
+const MIGRATE_CEILING = 644;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -219,8 +222,9 @@ const MIGRATE_CEILING = 643;
  * the split on both caps, moved out of `sitemap.ts` at the file ceiling); and
  * `render/src/prerender-enumerate.ts` — `prerender()`'s three item forms normalised, moved out of
  * `render-static.ts` with the entry form (`{ params, lastmod, locales }`).
+ * raised 956 → 957, measured 957 (2026-10-14, #773): the module named on `MIGRATE_CEILING`.
  */
-const SERVING_ROLE_CEILING = 956;
+const SERVING_ROLE_CEILING = 957;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -317,8 +321,9 @@ const SERVING_ROLE_CEILING = 956;
  * `static` or `isr` document is rendered at and kept under, the address the router matched.
  * raised 1080 → 1085, measured 1085 (2026-10-11, sitemap sections): the five modules named on
  * `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
+ * raised 1085 → 1086, measured 1086 (2026-10-14, #773): the module named on `MIGRATE_CEILING`.
  */
-const WEB_ROLE_CEILING = 1085;
+const WEB_ROLE_CEILING = 1086;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
