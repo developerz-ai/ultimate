@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.10.3 - 2026-10-15
+
 ### Fixed
 
 - **A like tapped offline survives a reload at the instant it paints** (#777). While the browser
@@ -19,6 +23,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   be answered or echoed (`RecordStore.afterWrites`), within the existing 10 s bound; a column that
   moved meanwhile keeps its newer value, and a principal that signs out mid-hold has nothing of
   theirs land in the next one's store.
+
+### Commits
+
+- docs(changelog): 27.10.3's fixes under [Unreleased]
+- fix(realtime): an offline tap is on disk before it paints; a catch-up read waits for the page's in-flight writes (#785)
+- fix(scripts): run() has a deadline â€” a child holding its pipes can't hang the caller (#784)
+- chore(policy): an org member's issue is theirs â€” triage.skip_project_members (#783)
+- chore(policy): the bot merges outsiders' and bots' PRs, never an org member's (#782)
 
 ## 27.10.2 - 2026-10-14
 
