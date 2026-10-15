@@ -8,6 +8,7 @@ import { resolveConflict } from '@ultimat3/core/page';
 import { RebaseConflictError, RecordRejectedError } from './page-errors';
 import { ServerWait } from './record-await';
 import { isRow, type RecordKey, recordKey } from './record-key';
+import { type HeldLanding, Landings } from './record-landings';
 import { WriteNames } from './record-names';
 import { SyncedLayer } from './record-synced';
 import { type OverlayEntry, replayOverlays, sameRow } from './record-tx';
@@ -45,10 +46,16 @@ export class RecordStore implements RecordSink {
   readonly #wait: ServerWait;
   /** Which pending overlay each write digest names — what a frame's `write` is looked up in. */
   readonly #names = new WriteNames();
+  /** Server truth held behind this page's writes in flight (`afterWrites`). */
+  readonly #landings: Landings;
 
   constructor(options: RecordStoreOptions = {}) {
     this.#report = options.report ?? ((error) => console.error(error));
     this.#wait = new ServerWait(options.schedule, options.awaitMs);
+    this.#landings = new Landings(
+      (fire) => this.#wait.bound(fire),
+      (error) => this.#report(error),
+    );
   }
 
   /** The record as every holder sees it: the overlay's answer over synced truth. */
@@ -260,6 +267,33 @@ export class RecordStore implements RecordSink {
     this.#wait.start(key, this.#touched.get(key) ?? new Set(), () => this.drop(key));
   }
 
+  /**
+   * Runs `land` once every write IN FLIGHT NOW over a record of `types` is answered — settled,
+   * dropped, or waiting for server truth — or its echo is among the `echoed` digests (a frame held
+   * to land with `land`), or once the server-wait bound (`awaitMs`) passes, whichever is first. A
+   * write made later does not extend it. What a catch-up read's rows wait on (#778): adopted under
+   * a twin whose write the read already holds, they paint that write twice.
+   */
+  afterWrites(
+    types: ReadonlySet<string>,
+    land: () => void,
+    echoed: () => Iterable<string> = () => [],
+  ): HeldLanding {
+    const prefixes = [...types].map((type) => `${type}:`);
+    const over = (rk: RecordKey): boolean => prefixes.some((prefix) => rk.startsWith(prefix));
+    const writes = [...this.#overlays.keys()].filter((key) =>
+      [...(this.#touched.get(key) ?? [])].some(over),
+    );
+    const inFlight = (key: string): boolean => this.#overlays.has(key) && !this.#wait.awaiting(key);
+    return this.#landings.hold(() => {
+      const live = writes.filter(inFlight);
+      if (live.length === 0) return false;
+      const named = new Set<string | undefined>();
+      for (const digest of echoed()) named.add(this.#names.keyOf(digest));
+      return live.some((key) => !named.has(key));
+    }, land);
+  }
+
   /** Pending optimistic writes, oldest first. */
   pending(): readonly string[] {
     return [...this.#overlays.keys()];
@@ -302,6 +336,8 @@ export class RecordStore implements RecordSink {
       this.#moved.clear();
       this.#changed = null;
       if (collected.size > 0) for (const listener of this.#listeners) listener(collected);
+      // A write that settled in this batch may be the last a held landing waited on.
+      this.#landings.check();
     }
   }
 

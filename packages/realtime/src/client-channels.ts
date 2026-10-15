@@ -2,10 +2,12 @@
 // per-channel cursor that decides duplicate from new, and the catch-up read a `replay-gap` or a
 // new epoch triggers. `records` frames go to the store and nowhere else; `events` go to handlers.
 
+import { holdCatchUp } from './catch-up-hold';
 import type { CatchUpRecords } from './channel-catch-up';
 import { type PresenceEvent, readPresence } from './channel-presence';
 import type { JsonObject } from './json';
 import { carriedBy, type RecordKey } from './record-key';
+import type { HeldLanding } from './record-landings';
 import type { RecordStore } from './record-store';
 import type {
   ChannelEventsFrame,
@@ -80,6 +82,8 @@ interface Entry {
   failures: number;
   /** Disarms the scheduled retry. */
   disarm: (() => void) | null;
+  /** The read ANSWERED and waits on this page's writes in flight (`catch-up-hold.ts`). */
+  landing: HeldLanding | null;
 }
 
 export interface ChannelMembership extends Disposable {
@@ -124,6 +128,7 @@ export class ChannelBook {
         waiting: false,
         failures: 0,
         disarm: null,
+        landing: null,
       };
       this.#byTopic.set(topic, entry);
       if (this.#deps.connected()) this.#deps.send(this.#frame(entry, 'add', true));
@@ -206,6 +211,8 @@ export class ChannelBook {
     if (entry === undefined) return;
     if (entry.buffered !== null) {
       entry.buffered.push(frame);
+      // The echo of a write the answered read waits on: it lands with the read, settling it there.
+      if (frame.write !== undefined) entry.landing?.recheck();
       return;
     }
     if (entry.epoch !== null && entry.epoch !== frame.epoch) {
@@ -310,14 +317,26 @@ export class ChannelBook {
     entry.disarm?.();
     entry.disarm = null;
     this.#set(entry, 'catching-up');
-    // The read names no write (O-507, reopened 2026-10-14 on an observed double paint). FIXED: a
-    // pending write whose echo is HELD behind the read is settled in the same notification as the
-    // read's rows (`#drain`). NOT fixed: an echo that arrives AFTER the read answered (replication
-    // slower than the read's round trip) — the rows are truth under the still-pending twin until
-    // that echo or the write's own answer settles it. Closing it needs the read to name the writes
-    // its snapshot reflects, which is a server-side change (O-507 in full).
+    // The read names no write (O-507). A pending write whose echo is HELD behind the read is settled
+    // in the same notification as the read's rows (`#drain`). One whose echo comes AFTER the read
+    // answered (replication slower than the read) is waited for (#778): the read lands once the
+    // writes in flight over its types are answered or echoed, bounded by the store's server wait.
     this.#deps.catchUp(entry.catchUp, entry.params).then(
-      (answered) => this.#drain(entry, answered),
+      (answered) => {
+        if (this.#byTopic.get(entry.topic) !== entry) return;
+        let landed = false;
+        const held = holdCatchUp(
+          this.#deps.store,
+          answered,
+          () => echoes(entry),
+          (fresh) => {
+            landed = true;
+            entry.landing = null;
+            this.#drain(entry, fresh);
+          },
+        );
+        if (!landed) entry.landing = held;
+      },
       (error: unknown) => {
         this.#deps.report(error);
         // NOT live: the frames held behind the read would land over a store it never refreshed.
@@ -341,6 +360,16 @@ export class ChannelBook {
     // Released while the read was out: its rows and frames are a seat nobody holds, and a new hold
     // of the topic may already hold newer rows. Nothing lands and nothing is re-read.
     if (this.#byTopic.get(entry.topic) !== entry) return;
+    // The principal the read was made for has left (a sign-out cleared the store while the read
+    // was held): the frames held behind it are theirs too. Dropped, never applied to the next
+    // principal's store, and the channel is read again — as whoever holds the page now.
+    if (answered?.current?.() === false) {
+      entry.buffered = [];
+      entry.again = null;
+      this.#restart(entry, entry.epoch);
+      this.#read(entry);
+      return;
+    }
     const held = entry.buffered ?? [];
     // A newer epoch arrived while the read was in flight (the node restarted mid-read): the read
     // answered for the OLD one, so it is re-read in the new one, keeping only that epoch's frames.
@@ -414,6 +443,13 @@ export function isTransientRefusal(error: unknown): boolean {
   return (
     (error as { readonly code?: unknown } | null | undefined)?.code === 'X_TRANSPORT_UNAVAILABLE'
   );
+}
+
+/** The writes the frames held behind a read name — each lands, and settles, with the read. */
+function echoes(entry: Entry): string[] {
+  const named: string[] = [];
+  for (const frame of entry.buffered ?? []) if (frame.write !== undefined) named.push(frame.write);
+  return named;
 }
 
 /** A channel membership's sid is its topic behind this — what the socket engine routes on too. */

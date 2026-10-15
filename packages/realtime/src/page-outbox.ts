@@ -18,7 +18,13 @@ import type { LocalStore } from './local-store-idb';
 import { pageLocalStore, scopeKey } from './local-store-idb';
 import type { DrainReport, QueuedMutation, QueueState, QueueStore } from './offline-queue';
 import { memoryQueueStore, OfflineQueue, toQueueError } from './offline-queue';
-import { OUTBOX_KEY, type OutboxEntry, type OutboxHandle, type OutboxHost } from './outbox-slot';
+import {
+  knownOffline,
+  OUTBOX_KEY,
+  type OutboxEntry,
+  type OutboxHandle,
+  type OutboxHost,
+} from './outbox-slot';
 import { type OutboxTabs, type OutboxTabsWindow, outboxTabs } from './outbox-tabs';
 import { LocalStoreUnavailableError, OfflineQueueAbandonedError } from './page-errors';
 import { peekPageRealtime } from './page-store';
@@ -426,20 +432,4 @@ export function listenForDrain(outbox: Pick<PageOutbox, 'replay'>): () => void {
     worker?.removeEventListener('message', onMessage);
     globalThis.removeEventListener('online', replay);
   };
-}
-
-/**
- * The browser says it has no network. A replay then is an attempt that can only fail — and a
- * failed attempt is still a request on the wire: measured, a reload taken offline replayed on open,
- * that POST failed, and the real one followed on `online`, so one write went out twice. The
- * `online` event is the replay's own trigger, so nothing is lost by waiting for it. Unknown (no
- * `navigator`) is not offline.
- */
-function knownOffline(): boolean {
-  const navigator: unknown = Reflect.get(globalThis, 'navigator');
-  return (
-    typeof navigator === 'object' &&
-    navigator !== null &&
-    Reflect.get(navigator, 'onLine') === false
-  );
 }

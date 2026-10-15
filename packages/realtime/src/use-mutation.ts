@@ -6,7 +6,7 @@
 import type { ConflictPolicy } from '@ultimat3/core/page';
 import { actionPath, isSuperseded, isUltimateError, pageClient, uuidV7 } from '@ultimat3/core/page';
 import type { JsonValue } from './json';
-import { type OutboxHandle, peekOutbox } from './outbox-slot';
+import { knownOffline, type OutboxHandle, peekOutbox } from './outbox-slot';
 import { OfflineQueueAbandonedError, ServerRenderLiveError } from './page-errors';
 import { installedPage, type PageWrites, pageRealtime } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
@@ -125,14 +125,21 @@ export function useMutation(mutator: MutatorLike): Mutate {
     const key = `${mutator.name}:${uuidV7()}`;
     const local = mutator.local;
     // Called back through the mutator: `local` may be a method, and an unbound one loses `this`.
-    if (local !== undefined) {
+    const paint = (): void => {
+      if (local === undefined) return;
       page.store.push(key, (tx) => mutator.local?.(tx, input), mutator.conflict ?? 'server-wins');
-    }
-    count(writes, mutator.name, 1);
+    };
     // Older writes still wait in the outbox: this one queues BEHIND them rather than overtaking
     // them over HTTP — a like queued offline and the unlike made once the network was back could
     // otherwise land swapped. The replay sends the queue in order, this write last, under its key.
     const queued = peekOutbox();
+    // The browser SAYS it is offline (#777): a POST can only fail, so the write goes to the outbox
+    // without one, and reaches the disk BEFORE its twin reaches the screen. Painted first, it was
+    // durable only after the failed POST, the persister's flush and the queue write — a reload in
+    // that window came back with the old count and an empty outbox. The `online` event replays it.
+    const offline = queued !== undefined && knownOffline();
+    if (!offline) paint();
+    count(writes, mutator.name, 1);
     // The outbox may REFUSE: its queue's principal left mid-write (`X_OFFLINE_QUEUE_ABANDONED`),
     // or the disk would not take it. Nothing will ever send this write then, so its twin comes
     // off the screen and the caller is told — a rejected `mutate`, by code.
@@ -156,8 +163,9 @@ export function useMutation(mutator: MutatorLike): Mutate {
       }
     };
     // Asked of the DURABLE queue, re-read now: another tab of this user may have queued writes this
-    // tab's copy has not heard of yet, and sending past them reorders the user's intent.
-    if (queued !== undefined) {
+    // tab's copy has not heard of yet, and sending past them reorders the user's intent. Offline,
+    // nothing is sent, so the question is moot and its read would only delay the disk write.
+    if (queued !== undefined && !offline) {
       await queued.refresh().catch(() => undefined);
       // That read is an await: a principal that left meanwhile must not have this write POSTed, or
       // queued, as the next one. Refused by the code `enqueue` uses for the same departure.
@@ -167,9 +175,16 @@ export function useMutation(mutator: MutatorLike): Mutate {
         throw new OfflineQueueAbandonedError({ name: mutator.name });
       }
     }
-    if (queued !== undefined && queued.pending().length > 0) {
+    if (queued !== undefined && (offline || queued.pending().length > 0)) {
       try {
         await enqueue(queued);
+        if (offline) {
+          // Queued under the principal that made it; one that left since takes its page with it.
+          if (pageClient().scope.epoch !== issued) {
+            throw new OfflineQueueAbandonedError({ name: mutator.name });
+          }
+          paint();
+        }
         void queued.replay().catch(() => undefined);
         return undefined;
       } finally {

@@ -3,12 +3,25 @@
  * upgrade, one transaction over named stores, `put` / `delete` / `getAll` / `getAllKeys` — and
  * IndexedDB's own asynchrony: every request answers on a later microtask and a transaction
  * completes after its last request. Bun ships no IndexedDB, and no dependency is worth a test seam.
- * Values are structured-cloned in and out, as the real one does.
+ * Values are structured-cloned in and out, as the real one does. `reloaded()` is the disk a page
+ * reloaded NOW would open: only transactions that COMPLETED — one still running is lost with the page.
  */
 
 import type { IdbDatabaseLike, IdbFactoryLike, IdbRequestLike, IdbStoreLike } from './idb-types';
 
 type Tables = Map<string, Map<string, unknown>>;
+/** One database: what requests read and write (`tables`), and what has COMMITTED (`durable`). */
+interface Disk {
+  version: number;
+  readonly tables: Tables;
+  readonly durable: Tables;
+}
+
+/** The factory, plus the disk a reload at this instant would find. */
+export interface FakeIdb extends IdbFactoryLike {
+  /** A NEW factory over a copy of every committed transaction — what a page reloaded now opens. */
+  reloaded(): FakeIdb;
+}
 
 export interface FakeIdbOptions {
   /** `open` fails, as it does in a private window or with storage blocked. */
@@ -21,8 +34,11 @@ export interface FakeIdbOptions {
 }
 
 /** A fresh, empty database server. Share one instance to simulate a reload over the same disk. */
-export function fakeIndexedDb(options: FakeIdbOptions = {}): IdbFactoryLike {
-  const databases = new Map<string, { version: number; tables: Tables }>();
+export function fakeIndexedDb(options: FakeIdbOptions = {}): FakeIdb {
+  return factoryOver(new Map(), options);
+}
+
+function factoryOver(databases: Map<string, Disk>, options: FakeIdbOptions): FakeIdb {
   return {
     open(name: string, version: number): IdbRequestLike<IdbDatabaseLike> {
       const request = pendingRequest<IdbDatabaseLike>();
@@ -31,9 +47,9 @@ export function fakeIndexedDb(options: FakeIdbOptions = {}): IdbFactoryLike {
           request.fail(new DOMException('The operation is insecure.', 'SecurityError'));
           return;
         }
-        const known = databases.get(name) ?? { version: 0, tables: new Map() };
+        const known = databases.get(name) ?? { version: 0, tables: new Map(), durable: new Map() };
         databases.set(name, known);
-        const db = database(known.tables, options);
+        const db = database(known, options);
         request.result = db;
         if (known.version < version) {
           known.version = version;
@@ -43,18 +59,31 @@ export function fakeIndexedDb(options: FakeIdbOptions = {}): IdbFactoryLike {
       });
       return request;
     },
+    reloaded(): FakeIdb {
+      const copy = new Map<string, Disk>();
+      for (const [name, disk] of databases) {
+        const durable = structuredClone(disk.durable);
+        copy.set(name, { version: disk.version, tables: structuredClone(durable), durable });
+      }
+      return factoryOver(copy, options);
+    },
   };
 }
 
-function database(tables: Tables, options: FakeIdbOptions): IdbDatabaseLike {
+function database(disk: Disk, options: FakeIdbOptions): IdbDatabaseLike {
+  const tables = disk.tables;
   return {
     objectStoreNames: { contains: (name: string): boolean => tables.has(name) },
+    // An upgrade's version change commits with the open itself.
     createObjectStore: (name: string): void => {
       tables.set(name, new Map());
+      disk.durable.set(name, new Map());
     },
     transaction(names: string | readonly string[]) {
       let open = 0;
       let failed = false;
+      /** This transaction's writes, replayed onto the durable copy when — and only if — it completes. */
+      const writes: ((durable: Tables) => void)[] = [];
       const tx = {
         oncomplete: null as (() => void) | null,
         onerror: null as (() => void) | null,
@@ -71,6 +100,7 @@ function database(tables: Tables, options: FakeIdbOptions): IdbDatabaseLike {
       const settleLater = (): void => {
         queueMicrotask(() => {
           if (open > 0 || failed) return;
+          for (const write of writes.splice(0)) write(disk.durable);
           tx.oncomplete?.();
         });
       };
@@ -102,8 +132,14 @@ function database(tables: Tables, options: FakeIdbOptions): IdbDatabaseLike {
                 return;
               }
               table.set(key, structuredClone(value));
+              const kept = structuredClone(value);
+              writes.push((durable) => durable.get(name)?.set(key, kept));
             }),
-          delete: (key) => run(() => void table.delete(key)),
+          delete: (key) =>
+            run(() => {
+              table.delete(key);
+              writes.push((durable) => void durable.get(name)?.delete(key));
+            }),
           getAll: () => run(() => sorted().map(([, value]) => structuredClone(value))),
           getAllKeys: () => run(() => sorted().map(([key]) => key)),
         };

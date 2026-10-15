@@ -123,14 +123,19 @@ describe('a catch-up read that already holds a pending write', () => {
     expect(seen.at(-1)).toBe(2);
   });
 
-  test("a read holding only another member's write is truth under the twin, as before", async () => {
+  // The read cannot say WHOSE write it holds (#778), so while ours is in flight it waits for the
+  // answer: their like lands then, beside ours — never under our twin as a third count first.
+  test("a read holding only another member's write lands once ours is answered", async () => {
     const { page, socket } = pageHarness({ catchUp: catchUpRead });
     socket.open();
     useChannel(orgFeed, { orgId: 'o1' });
     page.store.adopt('posts', { p1: { id: 'p1', likes: 1 } });
     const held = heldFetch();
-    void useMutation(LIKE)({ postId: 'p1' });
+    const seen = paints(page.store);
+    const done = useMutation(LIKE)({ postId: 'p1' });
     await flush();
+    const post = held.find((request) => request.key !== '');
+    if (post === undefined) return expect.unreachable('the like was never sent');
 
     socket.deliver({
       type: 'replay-gap',
@@ -143,9 +148,21 @@ describe('a catch-up read that already holds a pending write', () => {
     if (read === undefined) return expect.unreachable('the catch-up read was never sent');
     read.answer(enveloped({ data: [], records: { posts: { p1: { id: 'p1', likes: 2 } } } }));
     await flush();
-
-    // Their like (1 → 2) and ours, still pending over it.
-    expect(page.store.peek('posts', 'p1')?.['likes']).toBe(3);
+    // Held: the old count with our twin over it.
+    expect(page.store.peek('posts', 'p1')?.['likes']).toBe(2);
     expect(page.store.pending()).toHaveLength(1);
+
+    // Our answer — both likes, and ours — and the read's older copy of the row does not take it back.
+    post.answer(
+      enveloped({
+        data: null,
+        records: { posts: { p1: { id: 'p1', likedByMe: true, likes: 3 } } },
+      }),
+    );
+    await done;
+    await flush();
+    expect(page.store.peek('posts', 'p1')?.['likes']).toBe(3);
+    expect(page.store.pending()).toEqual([]);
+    expect(seen.filter((likes) => likes > 3)).toEqual([]);
   });
 });

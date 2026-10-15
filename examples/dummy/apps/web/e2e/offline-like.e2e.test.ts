@@ -110,11 +110,10 @@ describe.skipIf(noBrowser)('a like taken offline', () => {
       'the optimistic like to show while offline',
     );
 
-    // Painted is not yet durable: the reload waits for the outbox to hold the write on disk.
-    await until(
-      async () => (await tab.evaluate(queuedOnDisk)) === 1,
-      'the like to be queued in the outbox on disk',
-    );
+    // Painted IS durable (#777): known offline, the write reaches the outbox on disk before its
+    // twin reaches the screen. Asked once, with no wait, and the reload follows at once — a page
+    // that painted first came back from this reload with the old count and an empty outbox.
+    expect(await tab.evaluate(queuedOnDisk)).toBe(1);
     const reloadedAt = (await history()).length;
     await tab.reload();
     await tab.waitFor(
