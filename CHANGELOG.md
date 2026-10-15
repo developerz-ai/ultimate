@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A like tapped offline survives a reload at the instant it paints** (#777). While the browser
+  reports offline, `useMutation` writes the outbox on disk first, then paints, and attempts no
+  POST; the `online` replay sends it once, under the key it was queued with. Before, the write
+  reached disk only after the failed POST, and a reload in that window dropped it.
+- **A catch-up read no longer paints one like too many when it lands before the write's echo**
+  (#778). A channel's catch-up rows wait for the page's in-flight writes over their record types to
+  be answered or echoed (`RecordStore.afterWrites`), within the existing 10 s bound; a column that
+  moved meanwhile keeps its newer value, and a principal that signs out mid-hold has nothing of
+  theirs land in the next one's store.
 
 ## 27.10.2 - 2026-10-14
 
