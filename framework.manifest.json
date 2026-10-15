@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4ba771aca76f60eb62b022a4fc3ce930c4912ef5214a931c2f196747d59a98a1",
+  "buildId": "c7d1a8896095b71735e514b37b00579f10940d736d23756b4b671d6d76ac4e75",
   "tiers": {
     "0": [
       "core",
@@ -3963,6 +3963,11 @@
       "code": "X_SOCKET_UNAUTHENTICATED",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_SPAWN_TIMED_OUT",
+      "owner": "scripts",
+      "at": "scripts/lib/run.ts"
     },
     {
       "code": "X_SPAWN_TIMEOUT_PIN_STALE",
