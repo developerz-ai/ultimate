@@ -206,6 +206,7 @@ describe('stepTimeoutFinding', () => {
           stuck: ['packages/a/src/b.test.ts'],
         },
       ],
+      finished: { runs: 0, slowestMs: 0 },
     });
   });
 
@@ -247,6 +248,59 @@ describe('stepTimeoutFinding', () => {
     );
     expect(finding.fix).toStartWith('x verify --only unit --json   # reproduce it alone');
     expect(finding.at).toBeUndefined();
+  });
+
+  test('a batched step that kept finishing runs did not hang: it outgrew its deadline, and says so', () => {
+    // As notificado.co's unit step read on a loaded 12-core box (2026-10-15): 134 coverage slices
+    // over three workers, 91 finished, the three in flight each seconds old — no process stuck.
+    const slice = (n: number): readonly string[] => [
+      'bun',
+      'test',
+      '--coverage',
+      `--coverage-dir=/app/.x/coverage/unit-1/${String(n)}`,
+      `apps/web/app/s${String(n)}/a.test.ts`,
+      `apps/web/app/s${String(n)}/b.test.ts`,
+    ];
+    const finding = stepTimeoutFinding(
+      'unit',
+      480_000,
+      {
+        killed: [{ pid: 7, command: 'bun test --coverage …' }],
+        finished: { runs: 91, slowestMs: 110_000 },
+        inFlight: [
+          { command: slice(90), output: '', runningMs: 21_000 },
+          { command: slice(93), output: '', runningMs: 4_000 },
+        ],
+      },
+      'x verify',
+    );
+    expect(finding.cause).toContain('it was not hung: 91 run(s) it started had finished');
+    expect(finding.cause).toContain('the longest still running had been going 21 s');
+    expect(finding.cause).not.toContain('did not exit');
+    expect(finding.fix).toStartWith('x verify --only unit --workers <n> --json   # it outgrew');
+    expect(finding.fix).toContain('"stepTimeoutMs": { "unit": <milliseconds> }');
+    const meta = finding.meta as StepTimeoutMeta;
+    expect(meta.finished).toEqual({ runs: 91, slowestMs: 110_000 });
+    // A slice is handed its files by name: they are counted, and its age is kept.
+    expect(meta.inFlight[0]).toMatchObject({ files: 2, workers: 1, stuck: [], runningMs: 21_000 });
+  });
+
+  test('a run in flight far longer than any that finished is still read as the hang', () => {
+    const finding = stepTimeoutFinding(
+      'unit',
+      480_000,
+      {
+        killed: [],
+        finished: { runs: 3, slowestMs: 20_000 },
+        inFlight: [{ command: ['bun', 'test', 'a.test.ts'], output: '', runningMs: 400_000 }],
+      },
+      'x verify',
+    );
+    expect(finding.cause).toContain(
+      'named no file still in flight, so the run itself did not exit',
+    );
+    expect(finding.cause).toContain('after 400 s');
+    expect(finding.fix).toStartWith('x verify --only unit --json   # reproduce it alone');
   });
 
   test('a step hung in this process: nothing in flight, and the step is still the reproduction', () => {

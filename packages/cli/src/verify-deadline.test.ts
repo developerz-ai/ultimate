@@ -199,7 +199,7 @@ async function tagged(tag: string): Promise<readonly number[]> {
  */
 function pendingRunner(pids: readonly number[]): {
   readonly runner: Runner;
-  readonly finish: (index: number) => void;
+  readonly finish: (index: number, durationMs?: number) => void;
 } {
   const settle: ((result: ExecResult) => void)[] = [];
   let next = 0;
@@ -212,10 +212,38 @@ function pendingRunner(pids: readonly number[]): {
         settle.push(resolve);
       }).then((result) => ({ ...result, command }));
     },
-    finish: (index) =>
-      settle[index]?.({ command: [], code: 1, ok: false, stdout: '', stderr: '', durationMs: 0 }),
+    finish: (index, durationMs = 0) =>
+      settle[index]?.({ command: [], code: 1, ok: false, stdout: '', stderr: '', durationMs }),
   };
 }
+
+describe('what a guard knows of its progress', () => {
+  test("expire() counts the runs that finished, the slowest of them, and each in-flight run's age", async () => {
+    const { runner, finish } = pendingRunner([process.pid + 1, process.pid + 2, process.pid + 3]);
+    const guard = guardStep(
+      runner,
+      'unit@progress',
+      {},
+      { platform: 'win32', killTree: async () => true },
+    );
+    const done = [
+      guard.runner(['bun', 'test', 'a.test.ts'], { cwd: '.' }),
+      guard.runner(['bun', 'test', 'b.test.ts'], { cwd: '.' }),
+    ];
+    finish(0, 1_500);
+    finish(1, 4_000);
+    await Promise.all(done);
+    const running = guard.runner(['bun', 'test', 'c.test.ts'], { cwd: '.' });
+    await Bun.sleep(5);
+    const settling = guard.expire();
+    finish(2, 0);
+    const expiry = await settling;
+    await running;
+    expect(expiry.finished).toEqual({ runs: 2, slowestMs: 4_000 });
+    expect(expiry.inFlight).toHaveLength(1);
+    expect(expiry.inFlight[0]?.runningMs).toBeGreaterThan(0);
+  });
+});
 
 describe('on Windows, the pids recorded at spawn', () => {
   test('expire() tree-kills every child still running, by the pid it reported at spawn', async () => {

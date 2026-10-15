@@ -5,7 +5,7 @@
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
-import type { InFlightRun, StepExpiry } from './verify-deadline';
+import type { InFlightRun, StepExpiry, StepProgress } from './verify-deadline';
 import { STEP_TIMEOUT_FIELD } from './verify-deadline';
 import type { VerifyStepName } from './verify-step';
 
@@ -16,12 +16,14 @@ import type { VerifyStepName } from './verify-step';
 export type StalledRun = {
   /** The argv without its file list: `bun test --parallel=3`. */
   readonly command: string;
-  /** Files the run was handed; 0 for a serial run, which selects by filter. */
+  /** Files the run was handed by name; 0 for a serial run that selects by filter. */
   readonly files: number;
   /** `--parallel`'s width, and 1 for a serial run. */
   readonly workers: number;
   /** The files that were still running, as bun named them. Empty when it named none. */
   readonly stuck: readonly string[];
+  /** How long it had been running when it was stopped. */
+  readonly runningMs?: number;
 };
 
 /** `X_VERIFY_STEP_TIMEOUT`'s `meta`. A `type`: an interface is not assignable to `Finding.meta`. */
@@ -30,6 +32,8 @@ export type StepTimeoutMeta = {
   readonly deadlineMs: number;
   readonly killed: readonly { readonly pid: number; readonly command: string }[];
   readonly inFlight: readonly StalledRun[];
+  /** The runs that had finished before the deadline — the step's progress. */
+  readonly finished: StepProgress;
 };
 
 /**
@@ -59,15 +63,18 @@ export function stalledRun(run: InFlightRun): StalledRun | undefined {
   const width = rest.find((arg) => arg.startsWith(PARALLEL));
   const flags = rest.filter((arg) => arg.startsWith('--') && !arg.startsWith('--timings'));
   const command = ['bun', 'test', ...flags].join(' ');
+  const age = run.runningMs === undefined ? {} : { runningMs: run.runningMs };
   if (width === undefined) {
     const last = lines.findLastIndex((line) => FILE_LINE.test(line));
     const started = last < 0 ? undefined : FILE_LINE.exec(lines[last] ?? '')?.[1];
     const failed = lines.slice(last + 1).some((line) => line.startsWith('(fail)'));
     return {
       command,
-      files: 0,
+      // A coverage slice names its files; a serial suite selects by a filter that is not a path.
+      files: rest.filter((arg) => TEST_FILE.test(arg)).length,
       workers: 1,
       stuck: started === undefined || failed ? [] : [started],
+      ...age,
     };
   }
   const files = rest.filter((arg) => !arg.startsWith('--'));
@@ -81,8 +88,31 @@ export function stalledRun(run: InFlightRun): StalledRun | undefined {
     files: files.length,
     workers: Math.max(1, Number(width.slice(PARALLEL.length)) || 1),
     stuck: [...new Set(crashed)],
+    ...age,
   };
 }
+
+const TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
+
+/**
+ * A batched step that had finished runs, none of those still in flight older than twice the
+ * slowest that finished, was making progress when its deadline passed: it outgrew the deadline
+ * at this width, and no file is stuck. Anything older than that is read as the hang it may be.
+ */
+const PROGRESS_SLACK = 2;
+
+export function outgrewDeadline(runs: readonly StalledRun[], expiry: StepExpiry): boolean {
+  const finished = expiry.finished;
+  if (finished === undefined || finished.runs === 0) return false;
+  if (runs.some((run) => run.stuck.length > 0)) return false;
+  const bound = finished.slowestMs * PROGRESS_SLACK;
+  return expiry.inFlight.every((run) => run.runningMs !== undefined && run.runningMs <= bound);
+}
+
+const seconds = (ms: number): string => String(Math.round(ms / 1000));
+
+const oldest = (expiry: StepExpiry): number =>
+  Math.max(0, ...expiry.inFlight.map((run) => run.runningMs ?? 0));
 
 /** How many paths a `cause:` spells out — the rest are in `meta`. */
 const NAMED_IN_CAUSE = 5;
@@ -99,6 +129,10 @@ export function stalledOutput(expiry: StepExpiry): string | undefined {
 }
 
 const inFlightClause = (runs: readonly StalledRun[], expiry: StepExpiry): string => {
+  if (outgrewDeadline(runs, expiry)) {
+    const finished = expiry.finished as StepProgress;
+    return `; it was not hung: ${String(finished.runs)} run(s) it started had finished (the slowest in ${seconds(finished.slowestMs)} s) and the longest still running had been going ${seconds(oldest(expiry))} s — the step needs longer than its deadline at this width`;
+  }
   const files = runs.flatMap((run) => run.stuck);
   const named = runs.find((run) => run.stuck.length > 0);
   if (named !== undefined) {
@@ -110,7 +144,7 @@ const inFlightClause = (runs: readonly StalledRun[], expiry: StepExpiry): string
   if (waiting === undefined) return '';
   return runs[0] === undefined
     ? `; it was waiting on: ${waiting.command.slice(0, 4).join(' ')}`
-    : `; its running "${runs[0].command}" named no file still in flight, so the run itself did not exit`;
+    : `; its running "${runs[0].command}" named no file still in flight, so the run itself did not exit${waiting.runningMs === undefined ? '' : ` after ${seconds(waiting.runningMs)} s`}`;
 };
 
 /**
@@ -137,12 +171,15 @@ export const stepTimeoutFinding = (
     deadlineMs: ms,
     killed: expiry.killed.map((one) => ({ pid: one.pid, command: one.command })),
     inFlight: runs,
+    finished: expiry.finished ?? { runs: 0, slowestMs: 0 },
   };
+  const wider = `${command} --only ${step} --workers <n> --json`;
   return {
     code: 'X_VERIFY_STEP_TIMEOUT',
     cause: `step "${step}" did not finish within its ${String(ms)} ms deadline, so it was stopped and ${String(expiry.killed.length)} process(es) it had started were killed${inFlightClause(runs, expiry)}`,
-    fix:
-      stuck.length > 0
+    fix: outgrewDeadline(runs, expiry)
+      ? `${wider}   # it outgrew its deadline at this width, so run it wider; or raise the deadline in x.verify.json — add "${STEP_TIMEOUT_FIELD}": { "${step}": <milliseconds> } above the ${String(ms)} it was given`
+      : stuck.length > 0
         ? `${alone}   # what had not finished, alone; the whole step: ${rerun}; ${longer}`
         : `${rerun}   # reproduce it alone; ${longer}`,
     docs: ERROR_DOCS_URL,
