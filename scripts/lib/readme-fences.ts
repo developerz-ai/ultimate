@@ -7,7 +7,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { localBin } from './local-bin';
-import { run } from './run';
+import { LONG_RUN_TIMEOUT_MS, run } from './run';
 
 export const README_GLOB = 'packages/*/README.md';
 
@@ -172,16 +172,22 @@ export async function compileFixtures(
   await rm(dir, { recursive: true, force: true });
   for (const fixture of fixtures) await Bun.write(join(dir, fixture.file), fixture.text);
   await Bun.write(join(dir, 'tsconfig.json'), TSCONFIG(exclude));
+  // One compiler over every README example: the long deadline, never the git-sized default.
   const result = await run([localBin(root, 'tsc'), '--noEmit', '-p', join(dir, 'tsconfig.json')], {
     cwd: root,
+    timeoutMs: LONG_RUN_TIMEOUT_MS,
   });
   const diagnostics = parseDiagnostics(result.output);
   // A non-zero exit with nothing this can attribute is `tsc` refusing to run — TS18003, a missing
-  // binary, a config error. Reporting that as "every example compiles" is the false green.
+  // binary, a config error. Reporting that as "every example compiles" is the false green. A run
+  // killed at its deadline is the same false green with some diagnostics: partial, never complete.
   return {
     ok: result.ok,
     diagnostics,
-    failure: result.ok || diagnostics.length > 0 ? undefined : result.output.slice(0, 400),
+    failure:
+      !result.timedOut && (result.ok || diagnostics.length > 0)
+        ? undefined
+        : result.output.slice(0, 400),
   };
 }
 

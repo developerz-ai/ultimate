@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
-import { repoRoot, run } from './lib/run';
+import { LONG_RUN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { liveSuiteLines } from './lib/test-services-hint';
 
 // A floor on CONTRIBUTORS to this repo. It is the exact patch CI runs
@@ -59,13 +59,14 @@ if (bunTooOld(Bun.version)) {
 }
 
 if (findings.length === 0 && !flagBool(args, 'skip-install')) {
-  const install = await run(['bun', 'install'], { cwd: root });
+  // A cold install downloads the whole tree: the long deadline, never the git-sized default.
+  const install = await run(['bun', 'install'], { cwd: root, timeoutMs: LONG_RUN_TIMEOUT_MS });
   if (install.ok) {
     lines.push(`  dependencies installed in ${install.durationMs}ms`);
   } else {
     findings.push({
       code: 'X_SETUP_INSTALL_FAILED',
-      cause: `bun install exited ${install.code}`,
+      cause: install.timedOut ? install.output : `bun install exited ${install.code}`,
       // `bun.lock` is NOT deleted: it is committed, and 29 packages release in lockstep off it —
       // regenerating it here resolves fresh versions nobody reviewed, on a box whose only problem
       // was a half-written node_modules. `--frozen-lockfile` fails loudly instead of rewriting it.

@@ -166,7 +166,7 @@ describe('the base the rule compares against', () => {
   const fakeGit = (fetched: boolean, calls: string[]) => async (command: readonly string[]) => {
     calls.push(command.slice(0, 2).join(' '));
     const ok = command[1] === 'fetch' ? fetched : calls.includes('git fetch') && fetched;
-    return { command, code: ok ? 0 : 1, ok, output: '', durationMs: 0 };
+    return { command, code: ok ? 0 : 1, ok, output: '', durationMs: 0, timedOut: false };
   };
 
   test('a checkout without origin/main fetches it, then compares against it', async () => {

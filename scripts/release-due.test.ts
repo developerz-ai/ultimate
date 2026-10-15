@@ -8,8 +8,8 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { bounded, git as gitIn } from './lib/release-due-git';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
+import { git as gitIn } from './lib/release-due-git';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { decideAt, lastReleaseTag, parseWindowLog, readWindow, settleHoursOf } from './release-due';
 
 // Each test spawns a dozen git processes; the CLI test boots the real tree.
@@ -32,8 +32,8 @@ const CHANGELOG =
 async function released(options: { readonly tag: boolean } = { tag: true }) {
   const dir = await mkdtemp(join(tmpdir(), 'release-due-'));
   madeDirs.push(dir);
-  // Through the one bounded, non-interactive spawn the script uses: no call here can outlive
-  // SPAWN_TIMEOUT_MS or wait on stdin, whatever git or the machine is doing.
+  // Through the one bounded, non-interactive git the script uses: no call here can outlive
+  // GIT_TIMEOUT_MS or wait on stdin, whatever git or the machine is doing.
   const git = async (argv: readonly string[], hoursAgo = 72): Promise<string> => {
     const date = new Date(NOW - hoursAgo * HOUR).toISOString();
     const out = await gitIn(
@@ -208,7 +208,7 @@ describe('unit · release-due · parsing and flags', () => {
   });
 
   test('--json on the real tree is one envelope a bot can branch on', async () => {
-    const out = await bounded(['bun', 'run', 'scripts/release-due.ts', '--json'], {
+    const out = await run(['bun', 'run', 'scripts/release-due.ts', '--json'], {
       cwd: repoRoot(),
     });
     const parsed = JSON.parse(out.output) as {
