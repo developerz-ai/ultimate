@@ -236,9 +236,13 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **The socket is READ-ONLY (protocol 3)**. A write is `useMutation`: the twin into the overlay, then
   `POST actionPath(name)` through core's `clientTransport` with an idempotency key; the answer's
   records are adopted inside the transport call, before `settle`. An `ack` is only a refusal.
+  KNOWN offline (`knownOffline()`), it is queued with no POST and painted once on disk (#777).
 - **`LiveClient` holds no signal** — plain reads plus `onStatus` / `onChange`; hooks wrap them.
 - **An answer that did not carry a touched row keeps that row's overlay** until the server's next row
   for it, bounded by `DEFAULT_AWAIT_SERVER_MS` (10 s).
+- **A catch-up read waits for the page's writes in flight over its types**
+  (`RecordStore.afterWrites`): it lands once each is answered or echoed, within that bound; a row
+  moved meanwhile is kept (#778).
 - **A frame names the write that produced it**: `records.write`, `patch.writes` (a live patch
   one, a resume each it replays, off `RowPatch.write` in the ring) — `writeDigest(key)`, from a
   REQUIRED `ChangeEvent.write: string | null`. `RecordStore.push` digests each overlay key first
@@ -294,15 +298,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## Map
 
-`index.ts` / `server.ts` are the two barrels. Server side: `sync-node.ts` (+ `sync-auth`,
-`sync-frames`, `sync-upgrade`, `sync-listen`, `drain-evictions`), `channel.ts`, `presence.ts`,
-`socket.ts`, `live-query.ts` (+ `live-definition`, `live-refusal`, `live-tenant`, `live-resume`, `query-window`, `live-fanout`, `window-lock`,
-`subscriber-gate`, `policy-gate` — the only authz seam — and `matcher-bridge`), `replicator.ts` (+ `replicator-envelope`) /
-`live-replicator.ts`, the Postgres client (`pg-*.ts`, `pgoutput.ts`), the bus (`nats-*.ts`,
-`transport-env.ts`, `fanout.ts`). Client side: `client*.ts`, `socket-engine.ts` / `socket-host.ts` /
-`sync-worker.ts`, `record-*.ts`, `page-*.ts`, `boot.ts`, `offline-queue.ts`, `use-*.ts`,
-`reactivity.ts`. Shared: `sync-protocol.ts` (the wire), `cursor.ts`, `change-buffer.ts`,
-`thundering-herd.ts`, `live-contract.ts`, `json.ts` (no hash), `type-pins.ts`.
+`index.ts` / `server.ts` are the two barrels. Server side: `sync-*.ts`, `channel*.ts`, `presence.ts`,
+`socket.ts`, `live-*.ts` (`policy-gate.ts` is the only authz seam), `replicator*.ts`, the Postgres
+client (`pg-*.ts`, `pgoutput.ts`), the bus (`nats-*.ts`, `transport-env.ts`, `fanout.ts`). Client
+side: `client*.ts`, `socket-*.ts`, `sync-worker.ts`, `record-*.ts`, `page-*.ts`, `catch-up-hold.ts`,
+`boot.ts`, `offline-queue.ts`, `use-*.ts`, `reactivity.ts`. Shared: `sync-protocol.ts` (the wire),
+`cursor.ts`, `change-buffer.ts`, `thundering-herd.ts`, `live-contract.ts`, `json.ts`, `type-pins.ts`.
 
 ## Commands
 

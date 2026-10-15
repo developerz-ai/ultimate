@@ -41,3 +41,19 @@ export type OutboxHost = { [OUTBOX_KEY]?: OutboxHandle };
 export function peekOutbox(): OutboxHandle | undefined {
   return (globalThis as OutboxHost)[OUTBOX_KEY];
 }
+
+/**
+ * The browser says it has no network. A request then is an attempt that can only fail — and a
+ * failed attempt is still a request on the wire: measured, a reload taken offline replayed on open,
+ * that POST failed, and the real one followed on `online`, so one write went out twice. The
+ * `online` event is the outbox's replay trigger, so nothing is lost by waiting for it. Unknown (no
+ * `navigator`) is not offline.
+ */
+export function knownOffline(): boolean {
+  const navigator: unknown = Reflect.get(globalThis, 'navigator');
+  return (
+    typeof navigator === 'object' &&
+    navigator !== null &&
+    Reflect.get(navigator, 'onLine') === false
+  );
+}

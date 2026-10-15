@@ -95,8 +95,13 @@ export const config = defineRoute({
    * frames held behind it now land in one store update, so a replayed write's echo settles its
    * own overlay in the same paint (it flashed one like too many, `2 → 3 → 2`): the transport's
    * `adopt: false` request option and `catchUpRead` in the page boot.
+   * raised 173kb → 175kb (#778, #777). measured: 179,141 B (2026-10-15; `x build --target static`),
+   * against the old 176,826. why: +2,315 B — the page boot holds a channel's catch-up rows until the
+   * page's in-flight writes are answered (`catch-up-hold.ts`, `record-landings.ts`), so a read
+   * that lands before a write's echo never paints one like too many; and an offline tap reaches
+   * the outbox on disk before it paints, so a reload at that instant keeps the write.
    */
-  budget: { js: '173kb' },
+  budget: { js: '175kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

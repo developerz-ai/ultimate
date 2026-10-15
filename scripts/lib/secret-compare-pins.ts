@@ -288,6 +288,13 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A subscription `queryHash` against the cursor’s, detecting that the query changed under a live subscription. Both sides are hashes of a query this process compiled.',
   },
+  // why: #778's catch-up hold (2026-10-15) — a new site, never a secret: a store address.
+  'packages/realtime/src/catch-up-hold.ts: seen.get(recordKey(type, key)) === store.synced(type, key)':
+    {
+      count: 1,
+      reason:
+        '`recordKey` is a record’s store address (`<type>:<key>`), and the comparison is object identity: did this synced row move while the catch-up read was held.',
+    },
   'packages/realtime/src/fanout.ts: token !== s[i]': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `realtime` package row.
     count: 1,

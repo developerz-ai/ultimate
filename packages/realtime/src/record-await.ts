@@ -44,6 +44,16 @@ export class ServerWait {
     this.#awaiting.set(key, { rows, cancel });
   }
 
+  /** Whether `key`'s write was answered and its overlay now waits for server truth. */
+  awaiting(key: string): boolean {
+    return this.#awaiting.has(key);
+  }
+
+  /** `fire` after this wait's bound — the one bound on waiting for the server (`awaitMs`). */
+  bound(fire: () => void): () => void {
+    return this.#schedule(fire, this.#ms);
+  }
+
   /** The overlay went some other way: its wait and what it heard go with it. */
   forget(key: string): void {
     this.#awaiting.get(key)?.cancel();

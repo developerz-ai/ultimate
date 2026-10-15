@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "0ae0c97b83806ed1",
+  "buildId": "7ecae5762a74f0e9",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -431,7 +431,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "159kb"
+        "js": "162kb"
       }
     },
     {
@@ -492,7 +492,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "173kb"
+        "js": "175kb"
       }
     },
     {
