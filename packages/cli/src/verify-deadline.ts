@@ -87,12 +87,28 @@ export interface InFlightRun {
   readonly command: readonly string[];
   /** Everything it had printed before the kill; absent when it did not settle after it. */
   readonly output?: string;
+  /** How long it had been running when the deadline passed. */
+  readonly runningMs?: number;
 }
+
+/**
+ * The runs a step had already seen settle when its deadline passed. A batched step (a coverage
+ * run's slices) that finished ninety of them did not hang — it outgrew its deadline — and a
+ * finding that cannot tell the two apart sends its reader hunting a stuck file that is not there.
+ * A `type`: it rides in `Finding.meta`, which an interface is not assignable to.
+ */
+export type StepProgress = {
+  readonly runs: number;
+  /** The longest any of them took, as its runner reported it. */
+  readonly slowestMs: number;
+};
 
 /** What a step was doing when its deadline passed — `verify-stalled.ts` turns it into the finding. */
 export interface StepExpiry {
   readonly killed: readonly KilledProcess[];
   readonly inFlight: readonly InFlightRun[];
+  /** Absent is none: a step that never started a child, or a fixture that does not say. */
+  readonly finished?: StepProgress;
 }
 
 /** A killed child's pipes close with it; this is only the bound on a runner that is not `exec`. */
@@ -138,7 +154,10 @@ export function guardStep(
 ): StepGuard {
   let expired = false;
   // Keyed by the promise itself: two batches of one step may run the very same argv.
-  const inFlight = new Map<Promise<ExecResult>, readonly string[]>();
+  const inFlight = new Map<Promise<ExecResult>, Waiting>();
+  // Settled runs, counted only before the deadline: a kill settles the rest, and those are not
+  // progress.
+  let finished = { runs: 0, slowestMs: 0 };
   // Every child's pid, recorded the moment it exists and dropped when its run settles (a settled
   // pid may be reused). Windows reads no process's environment, so this is the step's only handle.
   const spawned = new Map<number, readonly string[]>();
@@ -169,9 +188,16 @@ export function guardStep(
           options.onSpawn?.(spawnedPid);
         },
       });
-      inFlight.set(run, command);
+      inFlight.set(run, { command, startedAt: performance.now() });
       try {
-        return await run;
+        const result = await run;
+        if (!expired) {
+          finished = {
+            runs: finished.runs + 1,
+            slowestMs: Math.max(finished.slowestMs, result.durationMs),
+          };
+        }
+        return result;
       } finally {
         inFlight.delete(run);
         if (pid !== undefined) spawned.delete(pid);
@@ -179,11 +205,16 @@ export function guardStep(
     },
     async expire(): Promise<StepExpiry> {
       expired = true;
+      const progress = finished.runs === 0 ? {} : { finished };
       // Before the kill: a killed child settles its runner call, which takes it off the map.
-      const waiting = [...inFlight];
+      const at = performance.now();
+      const waiting = [...inFlight].map(
+        ([run, { command, startedAt }]) =>
+          [run, command, Math.round(at - startedAt)] as const satisfies WaitingRun,
+      );
       if (windows) {
         const killed = await killTrees(spawned, platform.killTree ?? taskkillTree);
-        return { killed, inFlight: await settleAll(waiting) };
+        return { killed, inFlight: await settleAll(waiting), ...progress };
       }
       const workers = await killTagged(tag, undefined, isTestWorker);
       if (workers.length > 0) {
@@ -193,19 +224,27 @@ export function guardStep(
       const killed = [...workers, ...rest.filter((one) => workers.every((w) => w.pid !== one.pid))];
       // After it: the kill closed the child's pipes, so its call now resolves with everything it
       // had printed — for `bun test`, the crash line of each file a worker was holding.
-      return { killed, inFlight: await settleAll(waiting) };
+      return { killed, inFlight: await settleAll(waiting), ...progress };
     },
   };
 }
 
+interface Waiting {
+  readonly command: readonly string[];
+  readonly startedAt: number;
+}
+
+/** A run the deadline found in flight: its call, its argv, and how long it had been running. */
+type WaitingRun = readonly [Promise<ExecResult>, readonly string[], number];
+
 /** What each child had printed, once the kill closed its pipes — or just its argv past `SETTLE_MS`. */
-function settleAll(
-  waiting: readonly (readonly [Promise<ExecResult>, readonly string[]])[],
-): Promise<readonly InFlightRun[]> {
+function settleAll(waiting: readonly WaitingRun[]): Promise<readonly InFlightRun[]> {
   return Promise.all(
-    waiting.map(async ([run, command]): Promise<InFlightRun> => {
+    waiting.map(async ([run, command, runningMs]): Promise<InFlightRun> => {
       const raced = await raceDeadline(run.then(execOutput), SETTLE_MS).catch(() => undefined);
-      return raced === undefined || raced.timedOut ? { command } : { command, output: raced.value };
+      return raced === undefined || raced.timedOut
+        ? { command, runningMs }
+        : { command, output: raced.value, runningMs };
     }),
   );
 }
