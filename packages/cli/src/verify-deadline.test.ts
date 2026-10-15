@@ -199,7 +199,7 @@ async function tagged(tag: string): Promise<readonly number[]> {
  */
 function pendingRunner(pids: readonly number[]): {
   readonly runner: Runner;
-  readonly finish: (index: number) => void;
+  readonly finish: (index: number, durationMs?: number) => void;
 } {
   const settle: ((result: ExecResult) => void)[] = [];
   let next = 0;

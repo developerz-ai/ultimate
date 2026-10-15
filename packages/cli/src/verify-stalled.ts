@@ -178,7 +178,7 @@ export const stepTimeoutFinding = (
     code: 'X_VERIFY_STEP_TIMEOUT',
     cause: `step "${step}" did not finish within its ${String(ms)} ms deadline, so it was stopped and ${String(expiry.killed.length)} process(es) it had started were killed${inFlightClause(runs, expiry)}`,
     fix: outgrewDeadline(runs, expiry)
-      ? `raise the deadline in x.verify.json — add "${STEP_TIMEOUT_FIELD}": { "${step}": <milliseconds> } above the ${String(ms)} it was given — or run it wider: ${wider}`
+      ? `${wider}   # it outgrew its deadline at this width, so run it wider; or raise the deadline in x.verify.json — add "${STEP_TIMEOUT_FIELD}": { "${step}": <milliseconds> } above the ${String(ms)} it was given`
       : stuck.length > 0
         ? `${alone}   # what had not finished, alone; the whole step: ${rerun}; ${longer}`
         : `${rerun}   # reproduce it alone; ${longer}`,

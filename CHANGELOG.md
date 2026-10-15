@@ -16,8 +16,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   about 11 minutes at the 3 workers a 4 GB budget plans, against the 8-minute deadline. The
   guard now counts the runs that finished (`meta.finished`) and each in-flight run's age
   (`meta.inFlight[].runningMs`); a step whose in-flight runs are no older than twice the slowest
-  finished one is reported as having outgrown its deadline, with the `stepTimeoutMs` entry or a
-  wider `--workers` as the fix. A coverage slice's `meta.inFlight[].files` counts the files it
+  finished one is reported as having outgrown its deadline; its fix reruns it wider
+  (`--workers <n>`) or raises its `stepTimeoutMs` entry. A coverage slice's `meta.inFlight[].files` counts the files it
   was handed, where it read 0.
 
 ## 27.10.3 - 2026-10-15

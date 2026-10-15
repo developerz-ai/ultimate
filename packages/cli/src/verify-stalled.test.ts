@@ -277,9 +277,8 @@ describe('stepTimeoutFinding', () => {
     expect(finding.cause).toContain('it was not hung: 91 run(s) it started had finished');
     expect(finding.cause).toContain('the longest still running had been going 21 s');
     expect(finding.cause).not.toContain('did not exit');
-    expect(finding.fix).toStartWith('raise the deadline in x.verify.json');
+    expect(finding.fix).toStartWith('x verify --only unit --workers <n> --json   # it outgrew');
     expect(finding.fix).toContain('"stepTimeoutMs": { "unit": <milliseconds> }');
-    expect(finding.fix).toContain('x verify --only unit --workers <n> --json');
     const meta = finding.meta as StepTimeoutMeta;
     expect(meta.finished).toEqual({ runs: 91, slowestMs: 110_000 });
     // A slice is handed its files by name: they are counted, and its age is kept.
