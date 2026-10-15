@@ -327,7 +327,13 @@ describe.skipIf(noBrowser)('one record, many places: the echo and the runtime', 
       expect(holding).toEqual(boots);
 
       // By behaviour: one write into THE page's store moves both islands, in one paint. An island
-      // reading a store of its own would keep the server's count.
+      // reading a store of its own would keep the server's count. Only once the org channel's
+      // first catch-up read has landed: a read answering after the write lands the server's
+      // count over it, and the badge paints `41 → 1` — a race in this test, never in the store.
+      await tab.waitFor(
+        `document.querySelector('[data-channel="live"]') !== null`,
+        'the org channel to have landed its catch-up read',
+      );
       const counts = await readNumbers(tab, likeCounts(post.id));
       await tab.evaluate(paintRecorder(BADGE_PAINTS, post.id));
       await tab.evaluate(
