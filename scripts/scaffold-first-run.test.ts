@@ -204,6 +204,16 @@ describe('stepFinding', () => {
     );
     expect(late.cause).not.toContain('null');
   });
+
+  // A signal from outside (OOM, a segfault) also answers no exit code — that is not our deadline.
+  test('a step killed by something else is never blamed on the deadline', () => {
+    const killed = stepFinding(
+      '/tmp/demoapp',
+      { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },
+      result({ code: null, ok: false, timedOut: false, output: 'Killed' }),
+    );
+    expect(killed.cause).not.toContain('deadline');
+  });
 });
 
 test('firstRunLines prints the whole output of a failing step and none of a passing one', () => {

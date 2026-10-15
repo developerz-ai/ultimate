@@ -179,11 +179,15 @@ export async function compileFixtures(
   });
   const diagnostics = parseDiagnostics(result.output);
   // A non-zero exit with nothing this can attribute is `tsc` refusing to run — TS18003, a missing
-  // binary, a config error. Reporting that as "every example compiles" is the false green.
+  // binary, a config error. Reporting that as "every example compiles" is the false green. A run
+  // killed at its deadline is the same false green with some diagnostics: partial, never complete.
   return {
     ok: result.ok,
     diagnostics,
-    failure: result.ok || diagnostics.length > 0 ? undefined : result.output.slice(0, 400),
+    failure:
+      !result.timedOut && (result.ok || diagnostics.length > 0)
+        ? undefined
+        : result.output.slice(0, 400),
   };
 }
 

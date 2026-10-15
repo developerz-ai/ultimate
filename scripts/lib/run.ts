@@ -58,9 +58,9 @@ function drain(stream: ReadableStream<Uint8Array>) {
 
 const joined = (parts: readonly string[]): string =>
   parts
-    .filter((part) => part.trim().length > 0)
-    .join('\n')
-    .trimEnd();
+    .map((part) => part.trimEnd())
+    .filter((part) => part.length > 0)
+    .join('\n');
 
 const refuse = (cause: string, fix: string): never => {
   // A caller bug, never a user's — `packages/cli/src/exec.ts` makes the identical guard at the

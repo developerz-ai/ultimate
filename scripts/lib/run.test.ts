@@ -54,6 +54,11 @@ describe('unit · run()', () => {
     expect(result.code).toBe(3);
     expect(result.timedOut).toBe(false);
   });
+
+  test('stdout then stderr, one newline apart, and the exit code', async () => {
+    const result = await run(['sh', '-c', 'echo out; echo err >&2; exit 3'], { cwd: repoRoot() });
+    expect(result).toMatchObject({ code: 3, ok: false, output: 'out\nerr', timedOut: false });
+  });
 });
 
 // Issue #780: `run()` waited for EOF on the child's pipes with no deadline, and a pipe stays open

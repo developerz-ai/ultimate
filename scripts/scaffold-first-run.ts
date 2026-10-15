@@ -106,7 +106,7 @@ export const verdict = (output: string): string => {
  */
 export const stepFinding = (dir: string, step: FirstRunStep, result: RunResult): Finding => ({
   code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
-  cause: `${step.name} ${result.code === null ? 'was killed at its deadline' : `exited ${result.code}`} in the scaffolded app: ${verdict(result.output)}`,
+  cause: `${step.name} ${result.timedOut ? 'was killed at its deadline' : `exited ${result.code}`} in the scaffolded app: ${verdict(result.output)}`,
   fix: `cd ${renderFixShellArg(dir, '<the scaffolded app directory>')} && ${appBin(dir)} ${step.args.join(' ')}`,
   at: dir,
 });

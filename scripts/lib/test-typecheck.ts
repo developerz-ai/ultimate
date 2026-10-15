@@ -80,12 +80,17 @@ export async function runTestTypecheck(root: string): Promise<TestTypecheckRun> 
     // A compiler that will not SPAWN — no `bun install` yet — throws out of `Bun.spawn`, and an
     // uncaught throw here takes the whole `manifest` step down with a stack instead of a finding.
     ok: false,
+    timedOut: false,
     output: `node_modules/.bin/tsc could not be started: ${cause instanceof Error ? cause.message : 'unknown failure'}`,
   }));
   const diagnostics = parseDiagnostics(result.output);
   return {
     diagnostics,
     counts: countByPackage(diagnostics),
-    failure: result.ok || diagnostics.length > 0 ? undefined : result.output.slice(0, 400),
+    // A compile killed at its deadline reported only some diagnostics: unscanned, never in-ratchet.
+    failure:
+      !result.timedOut && (result.ok || diagnostics.length > 0)
+        ? undefined
+        : result.output.slice(0, 400),
   };
 }
