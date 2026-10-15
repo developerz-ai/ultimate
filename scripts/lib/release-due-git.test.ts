@@ -1,52 +1,28 @@
-// The spawn `release-due` runs everything through: it returns by its deadline whatever the child
-// does — sleeps, waits on stdin, or exits leaving a grandchild that holds its pipes open.
+// The git `release-due` runs: through `run()`'s deadline, with its own shorter one, and in an
+// environment where nothing it starts can prompt, page or redirect it. The deadline itself — a
+// grandchild holding stdout, a child that never exits, stdin — is proved in `run.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { bounded, gitEnv } from './release-due-git';
-import { run } from './run';
+import { GIT_QUIET, GIT_TIMEOUT_MS, git, gitEnv } from './release-due-git';
+import { DEFAULT_RUN_TIMEOUT_MS } from './run';
 
 const cwd = import.meta.dir;
 
-describe('unit · release-due-git · bounded', () => {
-  // The CI hang's shape (PR #779): the command exits, a process it started keeps stdout open, and
-  // a reader waiting for EOF waits as long as that process lives. `run()` is such a reader.
-  test('a grandchild holding stdout cannot hold the caller past the deadline', async () => {
-    const started = performance.now();
-    const out = await bounded(['sh', '-c', 'sleep 3 & echo started'], { cwd, timeoutMs: 400 });
-    expect(out.timedOut).toBe(true);
-    expect(out.ok).toBe(false);
-    expect(performance.now() - started).toBeLessThan(2_000);
+describe('unit · release-due-git · git', () => {
+  test('runs git through run(), answering its output and exit code', async () => {
+    const out = await git(['--version'], cwd);
+    expect(out).toMatchObject({ ok: true, code: 0, timedOut: false });
+    expect(out.command).toEqual(['git', ...GIT_QUIET, '--version']);
+    expect(out.output).toStartWith('git version');
   });
 
-  test('lib/run.ts run() is that unbounded reader, which is why release-due does not use it', async () => {
-    const late = new Promise<'late'>((resolve) => setTimeout(() => resolve('late'), 1_000));
-    const settled = await Promise.race([
-      run(['sh', '-c', 'sleep 3 & echo started'], { cwd }),
-      late,
-    ]);
-    expect(settled).toBe('late');
+  test('a git that is refused is reported, never thrown', async () => {
+    const out = await git(['no-such-subcommand-780'], cwd);
+    expect(out).toMatchObject({ ok: false, timedOut: false });
   });
 
-  test('a child that never exits is killed at the deadline', async () => {
-    const started = performance.now();
-    const out = await bounded(['sleep', '30'], { cwd, timeoutMs: 300 });
-    expect(out).toMatchObject({ ok: false, timedOut: true, code: null });
-    expect(out.output).toContain('did not finish within 300 ms');
-    expect(performance.now() - started).toBeLessThan(2_000);
-  });
-
-  test("stdin is never the caller's: a reader of it sees EOF at once", async () => {
-    const out = await bounded(['cat'], { cwd, timeoutMs: 5_000 });
-    expect(out).toEqual({ ok: true, code: 0, output: '', timedOut: false });
-  });
-
-  test('a normal command answers its output and exit code', async () => {
-    expect(await bounded(['sh', '-c', 'echo out; echo err >&2; exit 3'], { cwd })).toEqual({
-      ok: false,
-      code: 3,
-      output: 'out\nerr',
-      timedOut: false,
-    });
+  test('its deadline is shorter than the default one', () => {
+    expect(GIT_TIMEOUT_MS).toBeLessThan(DEFAULT_RUN_TIMEOUT_MS);
   });
 });
 

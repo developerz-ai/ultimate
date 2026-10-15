@@ -5,7 +5,7 @@
 
 import { join } from 'node:path';
 import { localBin } from './local-bin';
-import { run } from './run';
+import { LONG_RUN_TIMEOUT_MS, run } from './run';
 
 /** The one program that reads test sources. `noEmit` there is what keeps `dist/` out of this. */
 export const TESTS_TSCONFIG = 'tsconfig.tests.json';
@@ -72,8 +72,10 @@ export interface TestTypecheckRun {
  * green this whole check exists to remove.
  */
 export async function runTestTypecheck(root: string): Promise<TestTypecheckRun> {
+  // A compiler over every test file in the tree: the long deadline, never the git-sized default.
   const result = await run([localBin(root, 'tsc'), '--noEmit', '-p', join(root, TESTS_TSCONFIG)], {
     cwd: root,
+    timeoutMs: LONG_RUN_TIMEOUT_MS,
   }).catch((cause: unknown) => ({
     // A compiler that will not SPAWN — no `bun install` yet — throws out of `Bun.spawn`, and an
     // uncaught throw here takes the whole `manifest` step down with a stack instead of a finding.

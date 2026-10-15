@@ -46,7 +46,7 @@ async function tree(
     calls.push([...command]);
     const shown = command[1] === 'show' ? then?.[(command[2] ?? '').split(':')[1] ?? ''] : '';
     const ok = then !== undefined && shown !== undefined;
-    return { command, code: ok ? 0 : 1, ok, output: shown ?? '', durationMs: 0 };
+    return { command, code: ok ? 0 : 1, ok, output: shown ?? '', durationMs: 0, timedOut: false };
   };
   return { root, git, calls, sites };
 }

@@ -1,20 +1,13 @@
-// Every subprocess `scripts/release-due.ts` and its tests start: bounded in time, never reading
-// stdin, and git made non-interactive — so no state of the machine can turn a read into a hang.
-//
-// Why its own spawn and not `lib/run.ts`: `run()` has no deadline and waits for EOF on the child's
-// pipes, and a pipe stays open as long as ANY process holds it — a git that detaches background
-// maintenance, a credential helper, a pager. `release-due.test.ts` once sat in a CI shard until the
-// step deadline killed it (PR #779, `gate (unit-2)`), with no test reported. Here the whole call,
-// pipes included, is raced against the deadline, and the child is killed when it loses.
+// The git `scripts/release-due.ts` and its tests run: non-interactive, with none of the background
+// work that outlives a command while holding its pipes, and on a deadline far shorter than the
+// default — a read-only git that takes 30 s has hung. The spawn itself is `lib/run.ts`'s, the one
+// boundary (it was a second, bounded copy here until #780 gave `run()` the deadline).
 
-export const SPAWN_TIMEOUT_MS = 30_000;
+import type { RunResult } from './run';
+import { run } from './run';
 
-export interface BoundedResult {
-  readonly ok: boolean;
-  readonly code: number | null;
-  readonly output: string;
-  readonly timedOut: boolean;
-}
+/** A read-only git's deadline, well under `DEFAULT_RUN_TIMEOUT_MS`: none of these does work. */
+export const GIT_TIMEOUT_MS = 30_000;
 
 /** The environment minus every `GIT_*` a hook or a caller exported: GIT_DIR would redirect git. */
 const withoutGit = (env: Readonly<Record<string, string | undefined>>) =>
@@ -47,61 +40,10 @@ export const GIT_QUIET = [
   'core.fsmonitor=false',
 ] as const;
 
-/** Run `command` to completion or `timeoutMs`, whichever is first; never throws on the child. */
-export async function bounded(
-  command: readonly string[],
-  options: {
-    readonly cwd: string;
-    readonly env?: Record<string, string | undefined>;
-    readonly timeoutMs?: number;
-  },
-): Promise<BoundedResult> {
-  const timeoutMs = options.timeoutMs ?? SPAWN_TIMEOUT_MS;
-  const proc = Bun.spawn([...command], {
-    cwd: options.cwd,
-    env: options.env ?? Bun.env,
-    stdin: 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: timeoutMs,
-    killSignal: 'SIGKILL',
-  });
-  const done = Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<'late'>((resolve) => {
-    timer = setTimeout(() => resolve('late'), timeoutMs);
-  });
-  const settled = await Promise.race([done, late]);
-  clearTimeout(timer);
-  if (settled === 'late') {
-    proc.kill('SIGKILL');
-    return {
-      ok: false,
-      code: null,
-      output: `${command.join(' ')} did not finish within ${timeoutMs} ms and was killed`,
-      timedOut: true,
-    };
-  }
-  const [stdout, stderr, code] = settled;
-  return {
-    ok: code === 0,
-    code,
-    output: [stdout, stderr]
-      .map((part) => part.trimEnd())
-      .filter((part) => part.length > 0)
-      .join('\n'),
-    timedOut: false,
-  };
-}
-
 /** A read-only git command in `cwd`, bounded and non-interactive. */
 export const git = (
   args: readonly string[],
   cwd: string,
   extraEnv: Readonly<Record<string, string>> = {},
-): Promise<BoundedResult> =>
-  bounded(['git', ...GIT_QUIET, ...args], { cwd, env: gitEnv(extraEnv) });
+): Promise<RunResult> =>
+  run(['git', ...GIT_QUIET, ...args], { cwd, env: gitEnv(extraEnv), timeoutMs: GIT_TIMEOUT_MS });

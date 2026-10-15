@@ -28,6 +28,7 @@ const result = (over: Partial<RunResult> = {}): RunResult => ({
   ok: true,
   output: '',
   durationMs: 1,
+  timedOut: false,
   ...over,
 });
 
@@ -189,6 +190,19 @@ describe('stepFinding', () => {
       result({ code: 1, ok: false, output: 'x'.repeat(5000) }),
     );
     expect(long.cause.length).toBeLessThan(700);
+  });
+
+  // #780: `run()` kills a step at its deadline and answers no exit code — never "exited null".
+  test('a step killed at its deadline says so, never "exited null"', () => {
+    const late = stepFinding(
+      '/tmp/demoapp',
+      { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },
+      result({ code: null, ok: false, timedOut: true, output: 'X_SPAWN_TIMED_OUT: x db gen' }),
+    );
+    expect(late.cause).toContain(
+      'db gen generated was killed at its deadline in the scaffolded app',
+    );
+    expect(late.cause).not.toContain('null');
   });
 });
 

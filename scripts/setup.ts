@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { flagBool, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
-import { repoRoot, run } from './lib/run';
+import { LONG_RUN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { liveSuiteLines } from './lib/test-services-hint';
 
 // A floor on CONTRIBUTORS to this repo. It is the exact patch CI runs
@@ -59,7 +59,8 @@ if (bunTooOld(Bun.version)) {
 }
 
 if (findings.length === 0 && !flagBool(args, 'skip-install')) {
-  const install = await run(['bun', 'install'], { cwd: root });
+  // A cold install downloads the whole tree: the long deadline, never the git-sized default.
+  const install = await run(['bun', 'install'], { cwd: root, timeoutMs: LONG_RUN_TIMEOUT_MS });
   if (install.ok) {
     lines.push(`  dependencies installed in ${install.durationMs}ms`);
   } else {
