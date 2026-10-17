@@ -6,6 +6,7 @@
 import type { PgExecutor } from '@ultimat3/core';
 import type { RateLimitDecision, RateLimitScope, RateLimitStore } from './rate-limit';
 import { rateLimitDecision } from './rate-limit';
+import { degradedFallback, isRateLimitStoreUnreachable } from './rate-limit-degrade';
 import { rateLimitStoreUnavailable } from './rate-limit-errors';
 import { rateLimitPeek, refilledTokens } from './rate-limit-peek';
 
@@ -164,18 +165,32 @@ export function postgresRateLimitStore(
   options: PostgresRateLimitStoreOptions,
 ): PostgresRateLimitStore {
   const exec = options.executor;
+  // Where a decision is taken while the database is unreachable (`rate-limit-degrade.ts`). Still
+  // `scope: 'shared'` below: the store IS the fleet's, and the degraded window is logged, bounded
+  // by the outage, and a weaker limit rather than none.
+  const fallback = degradedFallback();
+  const degrade = <T>(error: unknown, nowMs: number, decide: () => Promise<T>): Promise<T> => {
+    if (!isRateLimitStoreUnreachable(error)) throw error;
+    fallback.note(error, nowMs);
+    return decide();
+  };
 
   return {
     scope: 'shared',
 
     async take(key, bucket, cost, nowMs): Promise<RateLimitDecision> {
-      const rows = await exec.query<TakeRow>(SQL_RATE_LIMIT_TAKE, [
-        key,
-        bucket.capacity,
-        bucket.refillPerSecond,
-        cost,
-        Math.floor(nowMs),
-      ]);
+      let rows: readonly TakeRow[];
+      try {
+        rows = await exec.query<TakeRow>(SQL_RATE_LIMIT_TAKE, [
+          key,
+          bucket.capacity,
+          bucket.refillPerSecond,
+          cost,
+          Math.floor(nowMs),
+        ]);
+      } catch (error) {
+        return degrade(error, nowMs, () => fallback.store.take(key, bucket, cost, nowMs));
+      }
       const row = rows[0];
       // An upsert with `returning` answers exactly one row, so none means the executor is not
       // running the statement it was handed. Refusing loudly beats inventing a decision: the
@@ -185,7 +200,13 @@ export function postgresRateLimitStore(
     },
 
     async peek(key, bucket, nowMs) {
-      const row = (await exec.query<PeekRow>(SQL_RATE_LIMIT_PEEK, [key]))[0];
+      let rows: readonly PeekRow[];
+      try {
+        rows = await exec.query<PeekRow>(SQL_RATE_LIMIT_PEEK, [key]);
+      } catch (error) {
+        return degrade(error, nowMs, () => fallback.store.peek(key, bucket, nowMs));
+      }
+      const row = rows[0];
       const tokens =
         row === undefined
           ? bucket.capacity
@@ -194,6 +215,10 @@ export function postgresRateLimitStore(
     },
 
     async reset(key): Promise<void> {
+      // Both places a decision for this key can come from: a key exhausted in the fallback during
+      // one outage would otherwise still be denied in the NEXT one, after a reset that succeeded.
+      // The fallback first, so a reset the database refuses still clears what this pod holds.
+      await fallback.store.reset(key);
       await exec.query(SQL_RATE_LIMIT_RESET, [key]);
     },
 

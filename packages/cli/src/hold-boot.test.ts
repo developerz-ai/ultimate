@@ -9,7 +9,9 @@ import {
   configureLifecycle,
   ctxOf,
   lifecycleState,
+  markReady,
   resetLifecycle,
+  setLogSink,
 } from '@ultimat3/core';
 import type { JobDriver, NackOptions, QueueStats } from '@ultimat3/jobs';
 import { job, jobWorker, memoryJobDriver, resetJobs, type Worker } from '@ultimat3/jobs';
@@ -124,6 +126,52 @@ describe('holdWhileBooting', () => {
 
     expect(outcome).toBe(refusal);
     expect(sigtermListeners()).toBe(before);
+  });
+
+  // Prod, twice in a week: a rollout superseded a pod still booting, the SIGTERM began the drain,
+  // and the boot then reached `markReady()` — `X_LIFECYCLE_DRAINED` with a stack trace and a
+  // non-zero exit, for a pod doing exactly what it was told. A boot the drain interrupted is a
+  // clean stop: one info line, exit 0.
+  test('a boot the drain interrupted exits 0 with one info line, not a stack trace', async () => {
+    configureLifecycle({ deadlineMs: 200 });
+    const before = sigtermListeners();
+    const codes: number[] = [];
+    const lines: string[] = [];
+    const previous = setLogSink((line) => {
+      lines.push(line);
+    });
+    try {
+      await holdWhileBooting(
+        'probe',
+        async () => {
+          process.emit('SIGTERM', 'SIGTERM');
+          // The rest of the boot, reaching the server's `start()`.
+          markReady();
+          return { stop: async () => undefined };
+        },
+        { exit: (code) => codes.push(code) },
+      ).catch(() => undefined);
+    } finally {
+      setLogSink(previous);
+    }
+
+    expect(codes).toEqual([0]);
+    const interrupted = lines.filter((line) => line.includes('boot interrupted by shutdown'));
+    expect(interrupted).toHaveLength(1);
+    expect(interrupted[0]).toContain('"level":"info"');
+    expect(interrupted[0]).toContain('X_LIFECYCLE_DRAINED');
+    expect(lines.some((line) => line.includes('"level":"error"'))).toBe(false);
+    expect(sigtermListeners()).toBe(before);
+  });
+
+  test('a boot that fails with no drain under way still rethrows, and never exits 0', async () => {
+    const codes: number[] = [];
+    const refusal = new TypeError('the boot refused');
+    const outcome = await holdWhileBooting('probe', () => Promise.reject(refusal), {
+      exit: (code) => codes.push(code),
+    }).catch((error: unknown) => error);
+    expect(outcome).toBe(refusal);
+    expect(codes).toEqual([]);
   });
 
   test('a boot with no signal returns the app, and the hold waits for a shutdown', async () => {

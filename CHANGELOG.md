@@ -8,7 +8,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A database blip no longer turns every request into a 500.** `postgresRateLimitStore`'s `take`
+  and `peek` rethrew `X_DB_UNAVAILABLE`, so while Postgres was unreachable every request a web pod
+  served, a prerendered `GET /` included, failed on the limiter. On a connection-class failure only
+  (`X_DB_UNAVAILABLE`, `X_DB_POOL_EXHAUSTED`, or SQLSTATE class `08`, `57P01`â€“`57P03`, `53300`)
+  the decision is now taken from a per-process memory bucket, for every method and every route
+  (auth routes included): the limit still applies, per pod instead of fleet-wide, until the
+  database answers again. The fallback is a separate budget that starts full on each pod, so a key
+  may spend up to its capacity again per pod at the transition, on top of what it spent in Postgres.
+  `reset(key)` clears the fallback bucket as well as the shared row.
+  `http.rate_limit.degraded` is logged at warn at most once a minute.
+  Any other failure (bad SQL, a missing table, an executor bug) still refuses as before. The
+  credential limiter (`x_auth_lockouts`) is unchanged and still fails closed.
+- **A pod stopped while it is still booting exits 0.** A rollout that superseded a pod mid-boot
+  began the drain, and the boot then reached `markReady()`: `X_LIFECYCLE_DRAINED` with a stack trace
+  and a non-zero exit. `runRole` now treats a boot that fails while a drain is under way as
+  interrupted: it finishes the drain, logs `ultimate boot interrupted by shutdown` at info with the
+  error's code, and exits 0. A boot failure with no drain under way is rethrown as before.
+- **No warning for the bus's first dial.** The cache's boot subscribe races the transport's first
+  connection and lost it on nearly every pod, warning `cache.broadcast.subscribe-failed` on attempts
+  1 and 2 before landing within about a second. Refusals in the first 10 s (`FIRST_DIAL_GRACE_MS`)
+  are now silent, and so is the landing after them. A bus still refusing after that warns as
+  before, then logs `recovered` at info.
 
 ## 27.10.4 - 2026-10-15
 
