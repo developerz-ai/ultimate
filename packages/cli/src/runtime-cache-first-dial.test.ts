@@ -24,9 +24,15 @@ afterEach(async () => {
 });
 
 /** A bus that refuses until `up()` — a first dial still in progress. */
-function dialingTransport(): { transport: Transport; attempts: () => number; up: () => void } {
+function dialingTransport(): {
+  transport: Transport;
+  attempts: () => number;
+  landed: () => number;
+  up: () => void;
+} {
   const inner = new InProcessTransport();
   let attempts = 0;
+  let landed = 0;
   let isUp = false;
   const transport: Transport = {
     name: 'dialing',
@@ -43,12 +49,15 @@ function dialingTransport(): { transport: Transport; attempts: () => number; up:
           fix: 'bun test packages/cli/src/runtime-cache-first-dial.test.ts',
         });
       }
-      return inner.subscribe(subject, handler);
+      const subscription = await inner.subscribe(subject, handler);
+      landed += 1;
+      return subscription;
     },
   };
   return {
     transport,
     attempts: () => attempts,
+    landed: () => landed,
     up: () => {
       isUp = true;
     },
@@ -81,11 +90,15 @@ describe('unit · the boot subscribe during the first dial', () => {
       firstDialGraceMs: 60_000,
     });
     await until(() => bus.attempts() >= 3);
+    // The window was exercised: the subscribe was refused, more than once, before the bus came up.
+    expect(bus.attempts()).toBeGreaterThanOrEqual(3);
+    expect(bus.landed()).toBe(0);
     bus.up();
-    const before = bus.attempts();
-    await until(() => bus.attempts() > before);
+    await until(() => bus.landed() > 0);
     await Bun.sleep(5);
 
+    // And it ended in a real subscription, not a loop still failing in silence.
+    expect(bus.landed()).toBe(1);
     expect(warns.filter((line) => line.startsWith('cache.broadcast.subscribe-failed'))).toEqual([]);
     expect(infos.filter((line) => line.startsWith('cache.broadcast.subscribe-failed'))).toEqual([]);
   });

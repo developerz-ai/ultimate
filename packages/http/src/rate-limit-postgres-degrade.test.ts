@@ -70,6 +70,32 @@ describe('the postgres rate-limit store over an unreachable database', () => {
     }
   });
 
+  // A key the fallback exhausted in one outage, reset after the database came back, must not still
+  // be denied in the next outage: `reset` clears the per-process bucket as well as the shared row.
+  test('a reset after recovery clears the fallback too, so the next outage starts fresh', async () => {
+    collect();
+    let down = true;
+    const statements: string[] = [];
+    const store = postgresRateLimitStore({
+      executor: {
+        query: (text) => {
+          if (down) return Promise.reject(coded('X_DB_UNAVAILABLE'));
+          statements.push(text);
+          return Promise.resolve([]);
+        },
+      },
+    });
+    for (let index = 0; index < 2; index += 1) await store.take('k', bucket, 1, NOW);
+    expect((await store.take('k', bucket, 1, NOW)).allowed).toBe(false);
+
+    down = false;
+    await store.reset('k');
+    expect(statements).toHaveLength(1);
+
+    down = true;
+    expect((await store.take('k', bucket, 1, NOW)).allowed).toBe(true);
+  });
+
   test('one warn per window, not one per request', async () => {
     const lines = collect();
     const store = postgresRateLimitStore({ executor: failing(coded('X_DB_UNAVAILABLE')) });

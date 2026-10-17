@@ -16,7 +16,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   (`X_DB_UNAVAILABLE`, `X_DB_POOL_EXHAUSTED`, or SQLSTATE class `08`, `57P01`â€“`57P03`, `53300`)
   the decision is now taken from a per-process memory bucket, for every method and every route
   (auth routes included): the limit still applies, per pod instead of fleet-wide, until the
-  database answers again. `http.rate_limit.degraded` is logged at warn at most once a minute.
+  database answers again. The fallback is a separate budget that starts full on each pod, so a key
+  may spend up to its capacity again per pod at the transition, on top of what it spent in Postgres.
+  `reset(key)` clears the fallback bucket as well as the shared row.
+  `http.rate_limit.degraded` is logged at warn at most once a minute.
   Any other failure (bad SQL, a missing table, an executor bug) still refuses as before. The
   credential limiter (`x_auth_lockouts`) is unchanged and still fails closed.
 - **A pod stopped while it is still booting exits 0.** A rollout that superseded a pod mid-boot

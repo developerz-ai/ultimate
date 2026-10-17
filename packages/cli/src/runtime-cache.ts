@@ -23,6 +23,7 @@ import type { AppConfig, CacheTierName } from '@ultimat3/core';
 import {
   backoffDelay,
   defineConfig,
+  finiteCount,
   isOutageMilestone,
   logger,
   renderThrowable,
@@ -291,7 +292,11 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   const flushDeaf = (source: string): void => {
     void flushProcessTiers(source);
   };
-  const graceMs = options.firstDialGraceMs ?? FIRST_DIAL_GRACE_MS;
+  const graceMs = finiteCount(
+    'startCacheTiers',
+    'firstDialGraceMs',
+    options.firstDialGraceMs ?? FIRST_DIAL_GRACE_MS,
+  );
   const bootedAt = performance.now();
   /** Whether an operator has been told of this outage — what makes `recovered` worth a line. */
   let warned = false;

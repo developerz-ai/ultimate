@@ -2,10 +2,17 @@
 // memory instead, and say so once per window. Before, `take` rethrew `X_DB_UNAVAILABLE` and every
 // request a web pod served — a prerendered `GET /` included — answered 500 for the whole blip.
 //
-// WHY degrade rather than refuse: a per-process bucket still limits. Behind N replicas it is N ×
-// the declared number for the length of the outage, which is a weaker limit, never no limit; the
-// alternative was a total outage of every route to protect a counter. Every method degrades, auth
-// routes included — "per pod instead of shared" is the whole of the weakening.
+// WHY degrade rather than refuse: a per-process bucket still limits. The alternative was a total
+// outage of every route to protect a counter. Every method degrades, auth routes included.
+//
+// WHAT the weakening is, exactly: the fallback is a SEPARATE budget, not a copy of the shared one.
+// It cannot be seeded — the database it would be seeded from is the thing that is down — so each
+// pod's fallback starts full. Behind N replicas a key may spend N × the declared capacity during
+// the outage, ON TOP of whatever it had already spent in Postgres before it: a key that had just
+// emptied its shared bucket gets a fresh one per pod at the transition. When the database answers
+// again, decisions return to the shared row, which never saw the degraded takes. Weaker, bounded by
+// the outage and logged — never no limit. `reset(key)` clears both, so a key the fallback exhausted
+// is not still denied in the next outage after a reset that succeeded.
 //
 // WHY only connection-class failures: a store that answers WRONGLY (bad SQL, a missing table, an
 // executor bug) is not a store that is down, and silently switching it to memory would hide that

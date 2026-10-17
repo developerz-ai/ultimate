@@ -215,6 +215,10 @@ export function postgresRateLimitStore(
     },
 
     async reset(key): Promise<void> {
+      // Both places a decision for this key can come from: a key exhausted in the fallback during
+      // one outage would otherwise still be denied in the NEXT one, after a reset that succeeded.
+      // The fallback first, so a reset the database refuses still clears what this pod holds.
+      await fallback.store.reset(key);
       await exec.query(SQL_RATE_LIMIT_RESET, [key]);
     },
 
