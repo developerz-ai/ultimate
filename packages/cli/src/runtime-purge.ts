@@ -1,11 +1,11 @@
 // The retention sweep this boot owns: the framework tables that grow with traffic, the `purge()`
 // job that empties them and the `task` that fires it hourly.
 //
-// SEVEN TARGETS over seven tables, `As of 2026-10-02` — `x_idempotency`, `x_rate_limit`, the
-// `x_auth` limiter's table, `x_notify_deliveries`, `x_notify_inbox`, `x_notify_digests` and
-// `x_job_events`. Counted nowhere in prose but here: this header said "three" for two releases
-// after the notify tables joined the boot's DDL, which is how `x_notify_inbox` became the one
-// framework table nothing swept.
+// NINE TARGETS, `As of 2026-10-17` — `x_idempotency`, `x_rate_limit`, the `x_auth` limiter's
+// table, `x_notify_deliveries`, `x_notify_inbox`, `x_notify_digests`, `x_job_events`, `x_outbox`
+// (published rows) and `x_jobs` (finished rows, with their `x_job_steps`). Counted nowhere in prose but here: this header said
+// "three" for two releases after the notify tables joined the boot's DDL, which is how
+// `x_notify_inbox` became the one framework table nothing swept — and `x_jobs` was the next one.
 //
 // WHY here and not in the packages that own the tables: `postgresIdempotencyStore` (tier 3),
 // `postgresRateLimitStore` (tier 2) and `postgresAuthLimiter` (tier 2) cannot see each other and
@@ -58,6 +58,15 @@ export interface RetentionStores {
    * growing for the life of the deployment — which it did until this member existed.
    */
   readonly events: EventBus;
+  /**
+   * Finished jobs — `jobsPurgeTarget` over this boot's executor, with the app's
+   * `jobs.doneRetentionMs` / `jobs.deadRetentionMs`. REQUIRED for `events`' reason: until it
+   * existed `x_jobs` and `x_job_steps` kept every job ever run, `mail.send`'s recipient and body
+   * among them.
+   */
+  readonly jobs: PurgeTarget;
+  /** Published outbox rows — `outboxPurgeTarget` at `jobs.outboxRetentionMs`. REQUIRED, as `jobs`. */
+  readonly outbox: PurgeTarget;
   /**
    * The app's own answer to "how long is an unread message kept", read off the config
    * `startServices` loads (`inboxRetentionOf`). Absent windows mean the inbox is never swept,
@@ -143,6 +152,11 @@ function retentionTargets(stores: RetentionStores): readonly PurgeTarget[] {
     ...notifyTargets(stores.inboxRetention ?? NO_INBOX_RETENTION),
     // Its own clock, and so no `nowMs`: every instant in that table is the database's.
     eventsPurgeTarget(stores.events),
+    // Last: the two widest tables, batched, so every small sweep above has run before they spend
+    // the pass. Either order is safe — the outbox sweep takes only PUBLISHED rows, and the `x_jobs`
+    // sweep vetoes only a job whose outbox row is still unpublished.
+    stores.outbox,
+    stores.jobs,
   ];
 }
 

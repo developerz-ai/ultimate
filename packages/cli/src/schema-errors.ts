@@ -18,10 +18,13 @@ export class FrameworkSchemaFailedError extends UltimateError {
     super({
       code: 'X_FRAMEWORK_SCHEMA_FAILED',
       cause: `${input.pkg} could not create ${input.tables.join(', ')}: ${renderThrowable(input.cause)}`,
-      // An EDIT plus the command that CONFIRMS it, which is the house shape for a repair the gate
-      // cannot perform: the two real causes are a role without `create`, and a relation of that
-      // name already present with an incompatible shape.
-      fix: `grant create on schema public to the role in DATABASE_URL, then re-run: x db migrate`,
+      // The migrate step, as the role that owns the schema. The common cause is `42501`: a runtime
+      // role with DML only — no `create` on `public`, and not the owner of an existing framework
+      // table, which Postgres demands even of `create index if not exists`. Granting that role
+      // `create` (this line's old advice) cures the first and never the second, and widens the
+      // runtime role besides. The rarer cause, a relation of that name with another shape, is
+      // named in `cause` and reported again by the same command.
+      fix: 'x db migrate   # with DATABASE_URL naming the role that owns schema public, as ROLE=migrate runs',
       meta: { pkg: input.pkg, tables: [...input.tables] },
     });
   }

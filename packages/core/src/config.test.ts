@@ -310,6 +310,34 @@ describe('notify retention', () => {
   });
 });
 
+describe('jobs retention', () => {
+  // Unlike the inbox, a finished job row is bookkeeping whose work is over, and a `mail.send`
+  // input is personal data — so these DO default, to a window an incident review can still use.
+  test('done rows default to 14 days, dead ones to 90 and published outbox rows to 7', () => {
+    const config = defineConfig({ name: 'app' });
+    expect(config.jobs.doneRetentionMs).toBe(14 * 86_400_000);
+    expect(config.jobs.deadRetentionMs).toBe(90 * 86_400_000);
+    expect(config.jobs.outboxRetentionMs).toBe(7 * 86_400_000);
+  });
+
+  test('each window is the app’s to set, and one set leaves the other at its default', () => {
+    const config = defineConfig({ name: 'app', jobs: { doneRetentionMs: 86_400_000 } });
+    expect(config.jobs.doneRetentionMs).toBe(86_400_000);
+    expect(config.jobs.deadRetentionMs).toBe(90 * 86_400_000);
+  });
+
+  test('a window that is not a whole positive number of milliseconds is refused at boot', () => {
+    for (const key of ['doneRetentionMs', 'deadRetentionMs', 'outboxRetentionMs'] as const) {
+      for (const ms of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+        expect(
+          () => defineConfig({ name: 'app', jobs: { [key]: ms } }),
+          `${key} ${String(ms)}`,
+        ).toThrow(new RegExp(key));
+      }
+    }
+  });
+});
+
 // `pwa.enabled` was a switch with no reader for the whole life of the framework (#362): four
 // generated artifacts hung off it and none was ever produced, so an app could declare itself
 // installable, serve every page, pass the gate and never be installable in any browser. Now that

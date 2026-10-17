@@ -146,7 +146,13 @@ export type { AiConfig, AiConfigInput, McpConfig } from './config-ai';
 export type { DrainConfig, HealthConfig, ReadinessMode } from './config-health';
 export { READINESS_MODES } from './config-health';
 export type { IslandsConfig, IslandsSection, IslandsSectionInput } from './config-islands';
-export { JOBS_CONCURRENCY_DEFAULT, type JobsConcurrency } from './config-jobs';
+export {
+  JOBS_CONCURRENCY_DEFAULT,
+  JOBS_DEAD_RETENTION_MS_DEFAULT,
+  JOBS_DONE_RETENTION_MS_DEFAULT,
+  JOBS_OUTBOX_RETENTION_MS_DEFAULT,
+  type JobsConcurrency,
+} from './config-jobs';
 export type {
   MailConfig,
   MailRetainMimeConfig,

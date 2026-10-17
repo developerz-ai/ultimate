@@ -123,6 +123,10 @@ create table if not exists x_outbox (
 create index if not exists x_outbox_unpublished_idx
   on x_outbox (staged_at) where published_at is null;
 
+-- What the retention sweep reads, the other half of the table: published rows, oldest first.
+create index if not exists x_outbox_published_idx
+  on x_outbox (published_at) where published_at is not null;
+
 -- The relays claim lease. A claim stamped in the same statement that locks the row is what stops
 -- two relays publishing one row twice: for update skip locked holds its locks only until that
 -- statement ends, which under autocommit is before claim returns. claimed_at is also what gives
@@ -206,6 +210,18 @@ alter table x_jobs add column if not exists claims int not null default 0;
 -- The keyset a paged listing seeks by. Newest first, id as the tiebreak, so a page is an index
 -- range and never a sort of the whole table.
 create index if not exists x_jobs_created_idx on x_jobs (created_at desc, id desc);
+
+-- What the retention sweep reads. Partial over the four terminal states, so a live row never pays
+-- for it and the oldest finished rows are an index range rather than a scan of the whole queue.
+create index if not exists x_jobs_finished_idx
+  on x_jobs (updated_at)
+  where state in ('done', 'failed', 'dead', 'cancelled');
+
+-- The rows of one run, by run id: the retention sweep asks, per deleted row, whether another row of
+-- the run still stands before it deletes the step records of that run, and its follow-up and its
+-- orphan pass ask again. Without it each question is a scan of the whole queue. Not partial: run_id
+-- is not null, so a "where run_id is not null" predicate would index the same rows for nothing.
+create index if not exists x_jobs_run_idx on x_jobs (run_id);
 
 -- A paused queue or task, one row each. A queue pause is a fact about the QUEUE and not a column
 -- on every one of its rows: the claim reads this table with not exists, and a pause that had to

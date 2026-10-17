@@ -14,6 +14,26 @@ import { isJsonObject } from './json-object';
  */
 export const JOBS_CONCURRENCY_DEFAULT = 8;
 
+/**
+ * `jobs.doneRetentionMs` when no layer says: how long a `done` row and its step records are kept
+ * before the boot's hourly purge deletes them. Two weeks — every incident is read inside it, and
+ * a finished row is bookkeeping, unlike an inbox message: a `mail.send` input is an address and a
+ * rendered body, personal data with no reason to outlive the delivery.
+ */
+export const JOBS_DONE_RETENTION_MS_DEFAULT = 14 * 86_400_000;
+
+/**
+ * `jobs.deadRetentionMs` when no layer says: `dead`, `failed` and `cancelled` rows, which staff
+ * read to explain a failure, kept a quarter.
+ */
+export const JOBS_DEAD_RETENTION_MS_DEFAULT = 90 * 86_400_000;
+
+/**
+ * `jobs.outboxRetentionMs` when no layer says: a PUBLISHED `x_outbox` row, whose job is already in
+ * `x_jobs`, kept a week. An unpublished row is never swept, whatever this says.
+ */
+export const JOBS_OUTBOX_RETENTION_MS_DEFAULT = 7 * 86_400_000;
+
 /** One slot count for every queue, or slots per queue name — `jobWorker`'s own `concurrency`. */
 export type JobsConcurrency = number | Readonly<Record<string, number>>;
 

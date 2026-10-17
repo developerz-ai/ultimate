@@ -416,6 +416,19 @@ The stored event bus is a target too: `eventsPurgeTarget(bus)` answers
 answers the rows it removed — `x_job_events` only grew while nothing called it. Add it to
 `targets`: `targets: () => [eventsPurgeTarget(eventBus())]`.
 
+Finished jobs are one too: `jobsPurgeTarget({ executor, doneRetentionMs, deadRetentionMs })`
+deletes `done` rows past the first window and `dead`, `failed` and `cancelled` rows past the
+second, each with its `x_job_steps` once no row of the run still stands. A pass runs at most
+`maxBatches` (50) batches of `batchSize` (1,000) rows, `skip locked`; a batch is one statement, plus a
+follow-up when a row it could not see deleted still shared a run (two sweeps that split a run settle
+its steps after both commit). After the batches, one more statement removes up to `batchSize` step
+records whose run has no row left, what a sweep that died before its follow-up stranded. A live row is never deleted, nor one an
+unpublished `x_outbox` row or a `running` `x_backfills` row still names. The windows come from
+`app.config.ts` (`jobs.doneRetentionMs`, 14 days, and `jobs.deadRetentionMs`, 90 days).
+`outboxPurgeTarget({ executor, publishedRetentionMs })` is the same for `x_outbox`: published
+rows only, measured against the job's clock (the relay stamps `published_at` from its own), at
+`jobs.outboxRetentionMs` (7 days). An unpublished row is a job not yet handed over, never deleted.
+
 `@ultimat3/cli`'s boot declares both halves over the three tables it owns, so an app gets the sweep
 without writing any of the above. It needs a `worker` to run it and a `scheduler` to fire it: a
 deployment with neither has no background work at all, and this is one more thing it does not do.

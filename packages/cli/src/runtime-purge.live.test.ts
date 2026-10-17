@@ -176,6 +176,25 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         probeUrl(),
         "insert into x_auth_lockouts (key, locked_until_ms) values ('ip:9.9.9.9', 1)",
       );
+      // A `mail.send` finished 15 days ago — past the default 14-day `jobs.doneRetentionMs` — with
+      // a step record under its run. The boot's own `x_jobs` target, at the config's defaults.
+      await on(
+        probeUrl(),
+        `insert into x_jobs (id, name, input, idempotency_key, run_id, state, updated_at)
+         values ('00000000-0000-4000-8000-000000000001', 'mail.send', '{}'::jsonb, 'k', '00000000-0000-4000-8000-000000000002', 'done', now() - interval '15 days')`,
+      );
+      await on(
+        probeUrl(),
+        "insert into x_job_steps (run_id, name, status) values ('00000000-0000-4000-8000-000000000002', 'send', 'done')",
+      );
+      // `published_at` from THIS process's clock, as the relay stamps it — the sweep measures the
+      // outbox against the job's clock, which the test preload has frozen.
+      await on(
+        probeUrl(),
+        `insert into x_outbox (id, job, input, idempotency_key, published_at) values
+           ('00000000-0000-4000-8000-000000000003', 'mail.send', '{}'::jsonb, 'p', to_timestamp(${Date.now() - 8 * 86_400_000} / 1000.0)),
+           ('00000000-0000-4000-8000-000000000004', 'mail.send', '{}'::jsonb, 'u', null)`,
+      );
 
       const report = await runSweep();
 
@@ -187,12 +206,20 @@ describeLive('live · postgres · what the boot installs for auth and retention'
         'x_notify_inbox',
         'x_notify_digests',
         'x_job_events',
+        'x_outbox',
+        'x_jobs',
       ]);
+      expect(report.swept.find((sweep) => sweep.name === 'x_jobs')?.removed).toBe(1);
+      // Published 8 days ago, past the default 7-day `jobs.outboxRetentionMs`: gone. The
+      // unpublished one beside it is a job the relay has not handed over, and stays.
+      expect(report.swept.find((sweep) => sweep.name === 'x_outbox')?.removed).toBe(1);
+      expect(await countIn('x_outbox')).toBe(1);
+      expect(await countIn('x_job_steps')).toBe(0);
       // Three dead rows gone, the live attempt kept: the purge measures against the caller's
       // clock, so a sweep that read `now()` on the server would take a different set. The three
       // notify targets contribute nothing here — no `setNotifyStores` ran, which is the state of
       // an app that never wired the Postgres stores, and it must be zero rather than a throw.
-      expect(report.removed).toBe(3);
+      expect(report.removed).toBe(5);
       expect(await countIn('x_auth_lockouts')).toBe(1);
       // Empty tables, so nothing to remove — but the statements ran, which is what a missing
       // relation would have failed on.
