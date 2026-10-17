@@ -119,7 +119,7 @@ Omitting it is a **compile error**, not a lint warning. At-least-once is the onl
 | Behavior | Rule |
 |---|---|
 | Duplicate enqueue with a live key | second enqueue returns the existing job handle, no new row |
-| Key uniqueness window | `retentionpolicy` per queue; default 24h after terminal state |
+| Key uniqueness window | while a row holding the key is **live** (`ready`, `delayed`, `running`, `suspended`) — scoped by job name and tenant (`x_jobs_name_tenant_idempotency_live_idx`, `LIVE_STATES` in every driver). Once that row is terminal (`done`, `failed`, `dead`, `cancelled`) the same key enqueues a new job at once; there is no per-queue retention policy and no post-terminal window. The terminal row itself is kept for `jobs.doneRetentionMs` (14 days) or `jobs.deadRetentionMs` (90 days), then the hourly `x.purge` deletes it ([Configuration](Configuration#jobs)) |
 | Key must be | deterministic from `input` only. No timestamps, no random, no `ctx` |
 | Same key, different payload | `X_IDEMPOTENCY_CONFLICT` — `idempotency key "…" was already used with a different payload` |
 | Same key, still in flight | `X_IDEMPOTENCY_CONFLICT` — retry the same key after the first request settles |

@@ -132,8 +132,11 @@ There is no `auth.passkeys` and no `auth.trustedOrigins` in either place `As of 
 | `jobs.maxAttempts` | `number` | `5` | per-job `retry` overrides it |
 | `jobs.backoff` | `'exponential' \| 'fixed'` | `'exponential'` | **two values, not three** — there is no `'linear'` |
 | `jobs.visibilityTimeoutMs` | `number` | `30000` | milliseconds, not a duration string. Lease length; expiry is how a killed worker's job resumes |
+| `jobs.doneRetentionMs` | `number` | `1209600000` (14 days, `JOBS_DONE_RETENTION_MS_DEFAULT`) | age (from the row's last settle, `updated_at`) past which the hourly `x.purge` deletes a `done` job and its `x_job_steps`. Batched, 1,000 rows per statement and at most 50 statements per pass. A job input can hold personal data (`mail.send`: the address and the body), so this has a default, unlike the inbox windows. `As of 2026-10-17` |
+| `jobs.deadRetentionMs` | `number` | `7776000000` (90 days, `JOBS_DEAD_RETENTION_MS_DEFAULT`) | the same for `dead`, `failed` and `cancelled` rows, which staff read to explain a failure. A live row (`ready`, `delayed`, `running`, `suspended`) is never deleted, and neither is one an unpublished `x_outbox` row or a `running` `x_backfills` row still names. Not a whole number of at least 1: `X_CONFIG_INVALID` |
+| `jobs.outboxRetentionMs` | `number` | `604800000` (7 days, `JOBS_OUTBOX_RETENTION_MS_DEFAULT`) | age of `published_at` past which the hourly `x.purge` deletes a **published** `x_outbox` row (its job is already in `x_jobs`). An unpublished row is never deleted. Same batching as the job rows. `As of 2026-10-17` |
 
-There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retention` block `As of 2026-08-22` — `JobsConfig` is `{ queues, concurrency, maxAttempts, backoff, visibilityTimeoutMs }` and the flat spellings above are the whole surface.
+There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retention` block — `JobsConfig` is `{ queues, concurrency, maxAttempts, backoff, visibilityTimeoutMs, doneRetentionMs, deadRetentionMs, outboxRetentionMs }` and the flat spellings above are the whole surface.
 
 **Splitting queues across Deployments** (`As of 25.0.0`). Every Deployment runs the same image and the same `app.config.ts`, so which queues a Deployment claims is env, never config:
 

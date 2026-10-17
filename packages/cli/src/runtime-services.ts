@@ -37,6 +37,7 @@ import type { DevServices, Env } from './runtime-bindings';
 import { selectBus } from './runtime-bus';
 import { cacheTiersOf, startCacheTiers } from './runtime-cache';
 import { type WorkerConfig, workerConfigOf } from './runtime-jobs';
+import { jobsRetentionTargets } from './runtime-jobs-retention';
 import { selectAppMailDriver } from './runtime-mail';
 import { inboxRetentionOf } from './runtime-notify-retention';
 import type { RuntimeOverrides } from './runtime-overrides';
@@ -403,6 +404,7 @@ export async function startServices(
         idempotency: queue.idempotency,
         rateLimit: rateLimitStore,
         events,
+        ...jobsRetentionTargets(executor, config),
         inboxRetention: inboxRetentionOf(config),
       }),
     );

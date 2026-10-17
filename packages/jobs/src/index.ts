@@ -235,6 +235,8 @@ export type {
   JobRunArgs,
 } from './job';
 export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
+export type { JobsRetentionOptions } from './jobs-retention';
+export { jobsPurgeTarget } from './jobs-retention';
 export type { HeldLease, LeaseStore, MemoryLeaseStore, MemoryLeaseStoreOptions } from './leases';
 export { jobLeaseKey, memoryLeaseStore } from './leases';
 export type {
@@ -277,6 +279,8 @@ export type { PostgresOutboxStoreOptions } from './outbox-pg';
 export { postgresOutboxStore } from './outbox-pg';
 export type { OutboxRelay, RelayOptions } from './outbox-relay';
 export { outboxRelay } from './outbox-relay';
+export type { OutboxRetentionOptions } from './outbox-retention';
+export { outboxPurgeTarget } from './outbox-retention';
 export type { ProgressFn } from './progress';
 export type {
   PurgeDefinition,
@@ -286,6 +290,7 @@ export type {
   PurgeTarget,
 } from './purge';
 export { DEFAULT_PURGE_CRON, purge } from './purge';
+export type { PurgeBatching } from './purge-batches';
 export type { PgListener, QueueWake, QueueWakeOptions } from './queue-wake';
 export { startQueueWake } from './queue-wake';
 export type { IntervalScheduler } from './renewal-timer';

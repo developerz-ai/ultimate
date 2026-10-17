@@ -2,7 +2,12 @@
 // Split from `config.ts`, which sits at its 500-line ceiling; literals only, so it reads no key.
 
 import type { AppConfig } from './config';
-import { JOBS_CONCURRENCY_DEFAULT } from './config-jobs';
+import {
+  JOBS_CONCURRENCY_DEFAULT,
+  JOBS_DEAD_RETENTION_MS_DEFAULT,
+  JOBS_DONE_RETENTION_MS_DEFAULT,
+  JOBS_OUTBOX_RETENTION_MS_DEFAULT,
+} from './config-jobs';
 import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
 import { defaultReadinessGraceMs } from './lifecycle-grace';
 import { ROLES } from './roles';
@@ -31,6 +36,9 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
       maxAttempts: 5,
       backoff: 'exponential',
       visibilityTimeoutMs: 30_000,
+      doneRetentionMs: JOBS_DONE_RETENTION_MS_DEFAULT,
+      deadRetentionMs: JOBS_DEAD_RETENTION_MS_DEFAULT,
+      outboxRetentionMs: JOBS_OUTBOX_RETENTION_MS_DEFAULT,
     },
     // ON by default since 22.0.0, when the boot began obeying the key: an app with no section
     // keeps the `sync` node it always got, and `enabled: false` is the explicit opt-out.

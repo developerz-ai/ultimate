@@ -1,7 +1,7 @@
 // The framework's OWN tables, as one table: which package declares each, which relations it
 // creates, and the DDL. One list, read by the one applier, so "installed in dev and not in
-// production" is not a state this framework can be in — `startQueue` is on every boot path there
-// is, `ROLE=migrate` included.
+// production" is not a state this framework can be in: `ROLE=migrate` applies it and stamps the
+// build, and every other boot path meets it through `startQueue`'s `SchemaMode`.
 //
 // A framework table an app has to install by hand is a table that will be missing in production on
 // the one code path that needs it, and it surfaces as a Postgres `42P01` from inside a worker.

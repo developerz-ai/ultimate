@@ -35,7 +35,7 @@ import {
   setJobDriver,
   setJobsFacade,
 } from '@ultimat3/jobs';
-import { applyLockedSchema, verifySchema } from './framework-schema-apply';
+import { applyLockedSchema, ensureSchema, verifySchema } from './framework-schema-apply';
 import { appExtensions } from './migration-extensions';
 import type { DevServices } from './runtime-bindings';
 import type { RuntimeOverrides } from './runtime-overrides';
@@ -124,15 +124,20 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
  * schema — the same reason `SQL_JOBS_TABLE` is applied by the boot.
  */
 /**
- * `'apply'` — `ROLE=migrate`, `x dev` and every CLI command — runs the DDL under the migration
- * lock with a bounded `lock_timeout` and stamps the build. `'verify'` — a serving role on an
- * external database — runs none: an `alter table` queued behind one open transaction stalled every
- * enqueue in the fleet on each pod start, and racing `create table`s were a first-deploy `23505`.
+ * `'apply'` — `ROLE=migrate`, `x db migrate`, `x dev` and `x mcp serve` — runs the DDL under the
+ * migration lock with a bounded `lock_timeout` and stamps the build. `'verify'` — a serving role on
+ * an external database — runs none: an `alter table` queued behind one open transaction stalled
+ * every enqueue in the fleet on each pod start, and racing `create table`s were a first-deploy
+ * `23505`. `'ensure'` — every other CLI command, `x db backfill` and `x jobs` among them — runs
+ * none when this build's stamp is present and applies otherwise: those commands run as the
+ * runtime role in production, which owns no framework table and so cannot re-run even
+ * `if not exists` DDL (`framework-schema-apply.ts`).
  */
-export type SchemaMode = 'apply' | 'verify';
+export type SchemaMode = 'apply' | 'ensure' | 'verify';
 
 async function applySchema(client: DevDbClient, mode: SchemaMode): Promise<void> {
   if (mode === 'verify') await verifySchema(client);
+  else if (mode === 'ensure') await ensureSchema(client);
   else await applyLockedSchema(client);
 }
 /**
@@ -248,7 +253,11 @@ export async function startQueue(
    * this file reads it: see `startDb` for what two readers of one question cost.
    */
   env: ReplicaEnv = process.env,
-  schema: SchemaMode = 'apply',
+  /**
+   * `'ensure'` unless the caller IS the step that applies: a command that only reads or enqueues
+   * must not need the privileges of the migrate role (`SchemaMode`).
+   */
+  schema: SchemaMode = 'ensure',
 ): Promise<RunningQueue> {
   const { client: db, replica } = startDb(services, env);
   try {

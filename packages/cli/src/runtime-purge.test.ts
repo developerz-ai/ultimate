@@ -17,7 +17,7 @@ import {
 } from '@ultimat3/auth';
 import { ctxOf } from '@ultimat3/core';
 import type { PostgresRateLimitStore, RateLimitDecision, RateLimitPeek } from '@ultimat3/http';
-import type { EventBus, PurgeReport } from '@ultimat3/jobs';
+import type { EventBus, PurgeReport, PurgeTarget } from '@ultimat3/jobs';
 import {
   getJob,
   getTask,
@@ -55,8 +55,27 @@ function stubStores(): RetentionStores & { readonly at: number[] } {
       return Promise.resolve(3);
     },
   };
-  return { idempotency, rateLimit, events: eventsRemoving(0), at };
+  return {
+    idempotency,
+    rateLimit,
+    events: eventsRemoving(0),
+    outbox: outboxRemoving(0),
+    jobs: jobsRemoving(0),
+    at,
+  };
 }
+
+/** The finished-job target the boot built, answering a fixed row count (`jobs-retention.ts`). */
+const jobsRemoving = (removed: number): PurgeTarget => ({
+  name: 'x_jobs',
+  purgeExpired: (): Promise<number> => Promise.resolve(removed),
+});
+
+/** The published-outbox target the boot built, answering a fixed row count. */
+const outboxRemoving = (removed: number): PurgeTarget => ({
+  name: 'x_outbox',
+  purgeExpired: (): Promise<number> => Promise.resolve(removed),
+});
 
 /** The boot's event bus, answering a fixed row count: only the sweep is under test. */
 const eventsRemoving = (removed: number): EventBus => ({
@@ -126,7 +145,12 @@ describe('installRetentionSweep', () => {
   test('sweeps every framework table in one pass, against one clock reading', async () => {
     const stores = stubStores();
     installAuthLimiter(4);
-    installRetentionSweep({ ...stores, events: eventsRemoving(5) });
+    installRetentionSweep({
+      ...stores,
+      events: eventsRemoving(5),
+      outbox: outboxRemoving(7),
+      jobs: jobsRemoving(6),
+    });
 
     const report = await runSweep();
 
@@ -140,12 +164,17 @@ describe('installRetentionSweep', () => {
       'x_notify_inbox',
       'x_notify_digests',
       'x_job_events',
+      'x_outbox',
+      'x_jobs',
     ]);
     // The three notify targets answer 0 here: no boot in this test installed a Postgres notify
     // store, which is exactly the state of an app that never wired one.
-    expect(report.removed).toBe(14);
+    expect(report.removed).toBe(27);
     // `x_job_events` is the bus THIS boot built, swept through its own `purgeExpired`.
-    expect(report.swept.at(-1)).toEqual({ name: 'x_job_events', removed: 5 });
+    expect(report.swept.at(-3)).toEqual({ name: 'x_job_events', removed: 5 });
+    expect(report.swept.at(-2)).toEqual({ name: 'x_outbox', removed: 7 });
+    // Finished jobs last: the target the boot built from `jobs.*RetentionMs`, swept as handed over.
+    expect(report.swept.at(-1)).toEqual({ name: 'x_jobs', removed: 6 });
     // The rate-limit store is the one that takes a clock, and it must be the JOB's: `last_ms` is
     // written by whichever process took the token, so a purge measured against `now()` in Postgres
     // computes a refill from the offset between two clocks.
@@ -184,6 +213,8 @@ describe('installRetentionSweep', () => {
       'x_notify_inbox',
       'x_notify_digests',
       'x_job_events',
+      'x_outbox',
+      'x_jobs',
     ]);
   });
 

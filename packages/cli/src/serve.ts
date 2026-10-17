@@ -48,10 +48,13 @@ export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve-t
  * is what fails on it.
  */
 export async function runMigrations(options: ServeOptions): Promise<MigratedApp> {
+  // `'apply'`, never the stamp-first default: this IS the step that applies, and an operator
+  // re-running it is how a dropped framework table comes back.
   const queue = await startQueue(
     resolveServices(options.root, options.env),
     options.runtime,
     options.env,
+    'apply',
   );
   try {
     const migrations = await readMigrations(options.root);

@@ -1,7 +1,8 @@
-// The two ways a boot meets the framework schema (plan 101, s1-con #5): `applyLockedSchema` runs the
-// DDL in ONE transaction behind the migration advisory lock with a bounded `lock_timeout`, then
+// The three ways a boot meets the framework schema (plan 101, s1-con #5): `applyLockedSchema` runs
+// the DDL in ONE transaction behind the migration advisory lock with a bounded `lock_timeout`, then
 // stamps the build; `verifySchema` runs no DDL and refuses a database this build was never applied
-// to. Which boot takes which is `runtime-queue.ts`'s `SchemaMode`.
+// to; `ensureSchema` reads the stamp and applies only when this build is absent from it. Which boot
+// takes which is `runtime-queue.ts`'s `SchemaMode`.
 
 import { frameworkVersion, logger } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
@@ -70,9 +71,39 @@ export async function verifySchema(client: DbClient): Promise<void> {
   const mine = thisBuild();
   const verdict = stampVerdict(parseStamp(await readStamp(client)), mine);
   if (!verdict.applied) throw new FrameworkSchemaUnappliedError({ mine, newest: verdict.newest });
-  if (verdict.skew === undefined) return;
+  reportSkew(mine, verdict.skew);
+}
+
+/**
+ * A CLI command's boot — `x db backfill`, `x jobs`, `x auth`: no DDL when this build's stamp is
+ * already there, the locked apply when it is not.
+ *
+ * The stamp is read FIRST because re-applying idempotent DDL is not idempotent for every role.
+ * Postgres checks ownership before existence, so `create index if not exists` on a table the role
+ * does not own is `42501 must be owner` even when the index is there. A production runtime role
+ * holds DML only, and the PostSync backfill Job ran as it: every deploy's `x db backfill --all
+ * --write` died in the jobs entry and no sweep was ever enqueued. When the stamp is absent the
+ * apply still runs, so a fresh dev database needs no separate step — and a role that cannot apply
+ * it is refused with `X_FRAMEWORK_SCHEMA_FAILED`, whose fix is the migrate step.
+ */
+export async function ensureSchema(client: DbClient): Promise<void> {
+  const mine = thisBuild();
+  const verdict = stampVerdict(parseStamp(await readStamp(client)), mine);
+  if (!verdict.applied) {
+    await applyLockedSchema(client);
+    return;
+  }
+  reportSkew(mine, verdict.skew);
+}
+
+/**
+ * A fleet straddling a major is reported once and served — refusing it would crash-loop the old
+ * pods of every rolling deploy across a breaking release.
+ */
+function reportSkew(mine: StampEntry, skew: StampEntry | undefined): void {
+  if (skew === undefined) return;
   logger.warn('ultimate framework major skew', {
-    cause: `this process runs ${mine.version} and the database's framework schema was last applied by ${verdict.skew.version}: a fleet across a major boundary is mid-rollout or half rolled back`,
+    cause: `this process runs ${mine.version} and the database's framework schema was last applied by ${skew.version}: a fleet across a major boundary is mid-rollout or half rolled back`,
     fix: 'kubectl rollout status deployment --selector app.kubernetes.io/component=web',
   });
 }

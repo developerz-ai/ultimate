@@ -8,7 +8,38 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`x db backfill`, `x jobs` and `x auth` boot as a runtime role with DML only.** Every CLI
+  command re-ran the framework DDL at boot, and Postgres checks ownership before existence: as a
+  role that owns no framework table, `create index if not exists` on `x_job_counters` is
+  `42501 must be owner` even when the index is there. A production backfill Job running as the
+  runtime role failed with `X_FRAMEWORK_SCHEMA_FAILED` on every deploy and enqueued no sweep.
+  These commands now read the stamp `ROLE=migrate` leaves and run no DDL when this build's stamp is
+  there; with no stamp they apply it as before (a fresh dev database needs no other step).
+  `ROLE=migrate`, `x db migrate`, `x dev` and `x mcp serve` still apply unconditionally, and a
+  serving role still only verifies.
+- **Finished jobs no longer live forever.** The hourly `x.purge` swept seven framework tables and
+  none of the job tables, so `x_jobs` and `x_job_steps` kept every job ever run, and a `mail.send`
+  row kept its recipient address and rendered body indefinitely. A new target, `x_jobs`
+  (`jobsPurgeTarget` in `@ultimat3/jobs`), deletes `done` rows after `jobs.doneRetentionMs`
+  (default 14 days) and `dead`, `failed` and `cancelled` rows after `jobs.deadRetentionMs`
+  (default 90 days), each with its step records. Live rows are never deleted, and neither is a row
+  that an unpublished outbox row or a running backfill still names. Deletes run 1,000 rows per
+  statement with `skip locked`, at most 50 statements per pass. The new partial index
+  `x_jobs_finished_idx` serves the sweep, so the framework schema hash changes and
+  `ROLE=migrate` must run before serving roles, as on every release.
+- **Published outbox rows no longer live forever.** `x_outbox` kept every row a transaction ever
+  staged, with the job input (`mail.send`'s address and body). Another new `x.purge` target, `x_outbox`
+  (`outboxPurgeTarget`), deletes PUBLISHED rows after `jobs.outboxRetentionMs` (default 7 days),
+  batched like `x_jobs`, measured against the job's clock as the relay stamps `published_at`. An
+  unpublished row is never deleted. New partial index `x_outbox_published_idx`.
+- **The Jobs wiki states the real idempotency-key window.** It said "`retentionpolicy` per queue;
+  default 24h after terminal state", which nothing implements: a key is unique only while a row
+  holding it is live, and the same key enqueues again as soon as that row is terminal.
+- **`X_FRAMEWORK_SCHEMA_FAILED`'s fix names the migrate step's role.** It said to grant `create`
+  on `public` to the role in `DATABASE_URL`, which cannot cure `must be owner` and widens a runtime
+  role. It now says to run `x db migrate` with `DATABASE_URL` naming the role that owns the schema.
 
 ## 27.10.4 - 2026-10-15
 
