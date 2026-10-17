@@ -63,7 +63,22 @@ export interface CacheTiersOptions {
   readonly tiers: readonly CacheTierName[];
   /** The wait before re-subscribing after `attempt` failures (1-based). Injected by a test. */
   readonly subscribeRetryMs?: ((attempt: number) => number) | undefined;
+  /**
+   * How long the boot subscribe may be refused before a refusal is worth a warning. Default
+   * `FIRST_DIAL_GRACE_MS`; a test of an OUTAGE passes 0.
+   */
+  readonly firstDialGraceMs?: number | undefined;
 }
+
+/**
+ * The boot subscribe races the bus's FIRST dial, and loses it on almost every pod: in production
+ * every pod warned on attempts 1–2 and was subscribed within 1.3 s — 345 lines in three weeks of
+ * alerting noise. Refusals inside this window are not reported; a bus still refusing after it is
+ * an outage and warns as before (attempt milestones, then `recovered` at info). 10 s is several
+ * times the slowest first dial measured, and far under any window in which a missed peer bust
+ * matters: the process is flushed (`flushDeaf`) when the subscribe lands either way.
+ */
+export const FIRST_DIAL_GRACE_MS = 10_000;
 
 /** 1 s doubling to 30 s, full jitter: a bus that is down is retried without a fleet in lockstep. */
 const defaultSubscribeRetryMs = (attempt: number): number =>
@@ -276,6 +291,10 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   const flushDeaf = (source: string): void => {
     void flushProcessTiers(source);
   };
+  const graceMs = options.firstDialGraceMs ?? FIRST_DIAL_GRACE_MS;
+  const bootedAt = performance.now();
+  /** Whether an operator has been told of this outage — what makes `recovered` worth a line. */
+  let warned = false;
   const subscribing = (async (): Promise<TransportSubscription | undefined> => {
     for (let attempt = 1; !stopped; attempt += 1) {
       try {
@@ -287,15 +306,22 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
         );
         subscribed = true;
         if (attempt > 1) {
-          // The outage's one closing line, beside the thinned warnings it ends.
-          logger.info('cache.broadcast.subscribe-failed recovered', { after: attempt - 1 });
+          // The outage's one closing line, beside the thinned warnings it ends — and only then: a
+          // first dial that landed inside its window had no outage to close.
+          if (warned) {
+            logger.info('cache.broadcast.subscribe-failed recovered', { after: attempt - 1 });
+          }
           flushDeaf('cache.bus-subscribed');
         }
         return subscription;
       } catch (error) {
         // Attempts 1, 2, 4, 8, …: the dial's own thinning (`NatsTransport`), so an outage is not
         // one line per retry per pod for as long as it lasts.
-        if (isOutageMilestone(attempt)) {
+        // Silent inside the first dial's window. Past it, the FIRST refusal warns whatever its
+        // attempt number, then the milestones thin the rest.
+        const inGrace = performance.now() - bootedAt < graceMs;
+        if (!inGrace && (!warned || isOutageMilestone(attempt))) {
+          warned = true;
           logger.warn('cache.broadcast.subscribe-failed', {
             error: broadcastErrorText(error),
             attempt,

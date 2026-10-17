@@ -108,8 +108,12 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 643 → 644, measured 644 (2026-10-14, #773): `core/src/error-stack.ts` — the one reader of a
  * thrown value's stack, recomposing the `name: message` header Bun 1.4 loses when a collection runs
  * before the first `.stack` read; through the core barrel, for `jobs/src/execute.ts`'s failure row.
+ * raised 644 → 645, measured 645 (2026-10-17, a DB blip degrades the limiter):
+ * `http/src/rate-limit-degrade.ts` — which failures mean "the database is unreachable" and the
+ * per-process fallback the shared rate-limit store decides from meanwhile; reached through
+ * `rate-limit-postgres.ts` on the http barrel.
  */
-const MIGRATE_CEILING = 644;
+const MIGRATE_CEILING = 645;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -223,8 +227,10 @@ const MIGRATE_CEILING = 644;
  * `render/src/prerender-enumerate.ts` — `prerender()`'s three item forms normalised, moved out of
  * `render-static.ts` with the entry form (`{ params, lastmod, locales }`).
  * raised 956 → 957, measured 957 (2026-10-14, #773): the module named on `MIGRATE_CEILING`.
+ * raised 957 → 958, measured 958 (2026-10-17, a DB blip degrades the limiter): the module named on
+ * `MIGRATE_CEILING`.
  */
-const SERVING_ROLE_CEILING = 957;
+const SERVING_ROLE_CEILING = 958;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -322,8 +328,10 @@ const SERVING_ROLE_CEILING = 957;
  * raised 1080 → 1085, measured 1085 (2026-10-11, sitemap sections): the five modules named on
  * `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
  * raised 1085 → 1086, measured 1086 (2026-10-14, #773): the module named on `MIGRATE_CEILING`.
+ * raised 1086 → 1087, measured 1087 (2026-10-17, a DB blip degrades the limiter): the module named
+ * on `MIGRATE_CEILING`.
  */
-const WEB_ROLE_CEILING = 1086;
+const WEB_ROLE_CEILING = 1087;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
