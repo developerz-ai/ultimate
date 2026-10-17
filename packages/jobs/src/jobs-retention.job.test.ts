@@ -8,6 +8,7 @@ import { embeddedPg } from './embedded-pg-fixture';
 import {
   jobsPurgeTarget,
   SQL_JOBS_RETENTION_BATCH,
+  SQL_JOBS_RETENTION_ORPHANS,
   SQL_JOBS_RETENTION_STEPS,
 } from './jobs-retention';
 
@@ -174,11 +175,15 @@ describe('pg · the finished-job sweep', () => {
       deadRetentionMs: 90 * DAY_MS,
     });
     expect(await interleaved.purgeExpired(Date.now())).toBe(1);
-    expect(statements).toEqual([SQL_JOBS_RETENTION_BATCH, SQL_JOBS_RETENTION_STEPS]);
+    expect(statements).toEqual([
+      SQL_JOBS_RETENTION_BATCH,
+      SQL_JOBS_RETENTION_STEPS,
+      SQL_JOBS_RETENTION_ORPHANS,
+    ]);
     expect(await remaining()).toEqual({ jobs: new Set(), steps: 0 });
   });
 
-  test('a batch that held no run sends no follow-up statement', async () => {
+  test('a batch that held no run sends no follow-up, only the pass’s one orphan statement', async () => {
     const { executor } = await embeddedPg();
     await jobRow('done', 20);
     const statements: string[] = [];
@@ -193,7 +198,54 @@ describe('pg · the finished-job sweep', () => {
       deadRetentionMs: 90 * DAY_MS,
     });
     expect(await recording.purgeExpired(Date.now())).toBe(1);
-    expect(statements).toEqual([SQL_JOBS_RETENTION_BATCH]);
+    expect(statements).toEqual([SQL_JOBS_RETENTION_BATCH, SQL_JOBS_RETENTION_ORPHANS]);
+  });
+
+  // A sweep that committed its batch and DIED before the follow-up: the jobs are gone, the held
+  // run's steps are not, and no later batch will ever name that run again.
+  test('steps stranded by a sweep that died before its follow-up go on the next pass', async () => {
+    const { executor } = await embeddedPg();
+    const stranded = await jobRow('done', 20);
+    await sibling(stranded, 'done', 20);
+    await executor.query(`update x_job_steps set started_at = now() - interval '21 days'`, []);
+    await executor.query('delete from x_jobs', []);
+    expect(await remaining()).toEqual({ jobs: new Set(), steps: 1 });
+    expect(await (await target()).purgeExpired(Date.now())).toBe(0);
+    expect(await remaining()).toEqual({ jobs: new Set(), steps: 0 });
+  });
+
+  test('the orphan pass leaves a live run’s old steps and a young record alone, and is bounded', async () => {
+    const { executor } = await embeddedPg();
+    const suspended = await jobRow('suspended', 60);
+    await executor.query(`update x_job_steps set started_at = now() - interval '60 days'`, []);
+    // Two records with no job row, one older than the shorter window and one younger.
+    for (const [name, age] of [
+      ['old', '30 days'],
+      ['young', '1 day'],
+    ] as const) {
+      await executor.query(
+        `insert into x_job_steps (run_id, name, status, started_at)
+         values (gen_random_uuid(), $1, 'done', now() - $2::interval)`,
+        [name, age],
+      );
+    }
+    for (let index = 0; index < 3; index += 1) {
+      await executor.query(
+        `insert into x_job_steps (run_id, name, status, started_at)
+         values (gen_random_uuid(), 'extra', 'done', now() - interval '30 days')`,
+        [],
+      );
+    }
+    // Bounded at the batch size: two of the four old orphans per pass.
+    await (await target({ batchSize: 2 })).purgeExpired(Date.now());
+    const names = async () =>
+      (
+        await executor.query<{ name: string }>('select name from x_job_steps order by name', [])
+      ).map((row) => row.name);
+    expect(await names()).toHaveLength(4);
+    await (await target({ batchSize: 2 })).purgeExpired(Date.now());
+    expect(await names()).toEqual(['render', 'young']);
+    expect((await remaining()).jobs).toEqual(new Set([suspended]));
   });
 
   test('a window that is not a positive number is refused at construction', async () => {

@@ -7,7 +7,11 @@ import { finiteCount } from '@ultimat3/core';
 
 /** Rows per DELETE. Small enough that one statement holds its row locks for milliseconds. */
 export const DEFAULT_RETENTION_BATCH = 1_000;
-/** Statements per pass. An hourly pass clears 50,000 rows, and a backlog drains over hours. */
+/**
+ * Batches per pass — a cap on BATCHES, not statements: a target may send more than one statement
+ * per batch (`jobsPurgeTarget`'s follow-up). An hourly pass clears 50,000 rows, and a backlog
+ * drains over hours.
+ */
 export const DEFAULT_RETENTION_MAX_BATCHES = 50;
 
 export interface PurgeBatching {

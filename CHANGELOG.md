@@ -24,11 +24,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   row kept its recipient address and rendered body indefinitely. A new target, `x_jobs`
   (`jobsPurgeTarget` in `@ultimat3/jobs`), deletes `done` rows after `jobs.doneRetentionMs`
   (default 14 days) and `dead`, `failed` and `cancelled` rows after `jobs.deadRetentionMs`
-  (default 90 days), each with its step records once no row of the run still stands â€” a
-  follow-up statement, run after the batch commits, settles a run two concurrent sweeps split; both
-  find a run's rows through the new index `x_jobs_run_idx`. Live rows are never deleted, and neither is a row
-  that an unpublished outbox row or a running backfill still names. Deletes run 1,000 rows per
-  statement with `skip locked`, at most 50 statements per pass. The new partial index
+  (default 90 days), each with its step records once no row of the run still stands. Live rows
+  are never deleted, and neither is a row that an unpublished outbox row or a running backfill
+  still names. A pass runs at most 50 batches (`maxBatches`) of 1,000 rows (`batchSize`) with
+  `skip locked`; a batch is one statement, plus a follow-up after it commits when a concurrent sweep
+  split a run, and the pass ends with one statement removing up to 1,000 step records whose run has
+  no row left (a sweep that died before its follow-up). All three find a run's rows through the
+  new index `x_jobs_run_idx`. The new partial index
   `x_jobs_finished_idx` serves the sweep, so the framework schema hash changes and
   `ROLE=migrate` must run before serving roles, as on every release.
 - **Published outbox rows no longer live forever.** `x_outbox` kept every row a transaction ever

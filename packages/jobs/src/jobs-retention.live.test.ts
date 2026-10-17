@@ -12,6 +12,7 @@ import { SQL_JOBS_TABLE } from './driver-pg-sql';
 import {
   jobsPurgeTarget,
   SQL_JOBS_RETENTION_BATCH,
+  SQL_JOBS_RETENTION_ORPHANS,
   SQL_JOBS_RETENTION_STEPS,
 } from './jobs-retention';
 
@@ -124,7 +125,7 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
   // A real server's planner, over a queue the size a production one reaches (63,000 rows, a tenth
   // of them live): the run lookup must be `x_jobs_run_idx` in both statements, never a pass over
   // the whole table per batch. `explain` only plans, so nothing here is deleted.
-  test('both statements find a run’s rows through x_jobs_run_idx', async () => {
+  test('every statement finds a run’s rows through x_jobs_run_idx', async () => {
     await executor.query(
       `insert into x_jobs (id, name, input, idempotency_key, run_id, state, updated_at)
        select gen_random_uuid(), 'mail.send', '{}'::jsonb, 'k' || g, gen_random_uuid(),
@@ -134,7 +135,8 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
       [],
     );
     await executor.query(
-      `insert into x_job_steps (run_id, name, status) select run_id, 'render', 'done' from x_jobs`,
+      `insert into x_job_steps (run_id, name, status, started_at)
+       select run_id, 'render', 'done', updated_at from x_jobs`,
       [],
     );
     await executor.query('analyze x_jobs', []);
@@ -150,5 +152,8 @@ describe.skipIf(!hasPostgres)('live · postgres · two sweeps over one run', () 
     expect(await plan(SQL_JOBS_RETENTION_STEPS, [held])).toContain(
       'Index Scan using x_jobs_run_idx on x_jobs j',
     );
+    const orphans = await plan(SQL_JOBS_RETENTION_ORPHANS, [14 * DAY_MS, 1000]);
+    expect(orphans).toContain('Index Only Scan using x_jobs_run_idx on x_jobs j');
+    expect(orphans).toContain('Index Scan using x_job_steps_pkey on x_job_steps s');
   }, 60_000);
 });

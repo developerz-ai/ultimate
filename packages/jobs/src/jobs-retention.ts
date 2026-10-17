@@ -80,6 +80,38 @@ delete from x_job_steps s
 `.trim();
 
 /**
+ * Step records whose run has NO `x_jobs` row left — what the follow-up above would have removed had
+ * its process lived to send it. A sweep that commits a batch and dies before the follow-up strands
+ * a held run's steps, and no later batch names that run again: this is the pass that does. Once
+ * per pass, after the batches, at most `$2` records.
+ *
+ * Only records started before the shorter window (`$1`): a job is deleted no sooner than that after
+ * its last settle, and every step of it started before that settle, so a true orphan always
+ * qualifies — and a record younger than the window belongs to a run whose row cannot have been
+ * swept yet. Each candidate is one `x_jobs_run_idx` probe, a LATERAL with a `limit` for the reason
+ * `held` is one: as `not exists` the planner hashes the whole of `x_jobs` for a few thousand
+ * candidates (EXPLAIN, 2026-10-17), a cost that grows with the queue rather than with the old step
+ * records. The delete is the `x_job_steps` primary key. `skip locked` for the reason the batch gives.
+ */
+export const SQL_JOBS_RETENTION_ORPHANS = `
+with orphaned as (
+  select s.run_id, s.name from x_job_steps s
+    left join lateral (
+      select 1 as standing from x_jobs j where j.run_id = s.run_id limit 1
+    ) l on true
+   where s.started_at < statement_timestamp() - ($1::bigint * interval '1 millisecond')
+     and l.standing is null
+   limit $2
+     for update of s skip locked
+), gone as (
+  delete from x_job_steps s using orphaned o
+   where s.run_id = o.run_id and s.name = o.name
+  returning 1
+)
+select count(*)::int as removed from gone
+`.trim();
+
+/**
  * The two windows are REQUIRED here: their defaults are `app.config.ts`'s (`jobs.doneRetentionMs`,
  * `jobs.deadRetentionMs`, in `@ultimat3/core`), and a second default in this file would be a second
  * answer to "how long is a finished job kept".
@@ -101,8 +133,15 @@ export function jobsPurgeTarget(options: JobsRetentionOptions): PurgeTarget {
   const bounds = purgeBatching(SUBJECT, options);
   return {
     name: 'x_jobs',
-    purgeExpired: (): Promise<number> =>
-      purgeInBatches(jobsBatch(options.executor, done, dead), bounds),
+    // The count is `x_jobs` rows, the target's name; orphaned step records are its upkeep.
+    purgeExpired: async (): Promise<number> => {
+      const removed = await purgeInBatches(jobsBatch(options.executor, done, dead), bounds);
+      await options.executor.query(SQL_JOBS_RETENTION_ORPHANS, [
+        Math.min(done, dead),
+        bounds.batch,
+      ]);
+      return removed;
+    },
   };
 }
 

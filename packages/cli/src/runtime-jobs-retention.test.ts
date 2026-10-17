@@ -77,6 +77,11 @@ describe('jobsRetentionTargets', () => {
     expect([targets.jobs.name, targets.outbox.name]).toEqual(['x_jobs', 'x_outbox']);
     expect(await targets.jobs.purgeExpired(Date.now())).toBe(0);
     expect(await targets.outbox.purgeExpired(Date.now())).toBe(0);
-    expect(sent.map((text) => /delete from (\w+)/.exec(text)?.[1])).toEqual(['x_jobs', 'x_outbox']);
+    // The jobs target's batch, then its pass-closing orphan-step statement, then the outbox batch.
+    expect(sent.map((text) => /delete from (\w+)/.exec(text)?.[1])).toEqual([
+      'x_jobs',
+      'x_job_steps',
+      'x_outbox',
+    ]);
   });
 });
