@@ -217,6 +217,12 @@ create index if not exists x_jobs_finished_idx
   on x_jobs (updated_at)
   where state in ('done', 'failed', 'dead', 'cancelled');
 
+-- A run's rows by its id: the retention sweep asks, per deleted row, whether another row of the run
+-- still stands before it deletes the run's steps, and its follow-up asks again. Without it each
+-- question is a scan of the whole queue. Not partial: run_id is not null, so a 'where run_id is not
+-- null' predicate would index the same rows and only add a clause the planner must prove.
+create index if not exists x_jobs_run_idx on x_jobs (run_id);
+
 -- A paused queue or task, one row each. A queue pause is a fact about the QUEUE and not a column
 -- on every one of its rows: the claim reads this table with not exists, and a pause that had to
 -- rewrite a million rows would not take effect within one poll interval.

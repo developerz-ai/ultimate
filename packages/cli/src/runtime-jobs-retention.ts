@@ -1,10 +1,11 @@
-// `jobs.doneRetentionMs`, `jobs.deadRetentionMs` and `jobs.outboxRetentionMs`, out of the config `startServices` loads once
-// (`app-config-load.ts`), as the windows the `x_jobs` and `x_outbox` purge targets are built with. The
-// `notify` windows' sibling (`runtime-notify-retention.ts`), with one difference: these DEFAULT,
-// because a finished job is bookkeeping and an unread message is not.
+// `jobs.doneRetentionMs`, `jobs.deadRetentionMs` and `jobs.outboxRetentionMs`, out of the config
+// `startServices` loads once (`app-config-load.ts`), as the windows the `x_jobs` and `x_outbox`
+// purge targets are built with. The `notify` windows' sibling (`runtime-notify-retention.ts`), with
+// one difference: these DEFAULT, because a finished job is bookkeeping and an unread message is not.
 
 import type { AppConfig, PgExecutor } from '@ultimat3/core';
 import {
+  finiteCount,
   JOBS_DEAD_RETENTION_MS_DEFAULT,
   JOBS_DONE_RETENTION_MS_DEFAULT,
   JOBS_OUTBOX_RETENTION_MS_DEFAULT,
@@ -18,17 +19,36 @@ export interface JobsRetention {
   readonly outboxRetentionMs: number;
 }
 
+const SUBJECT = 'jobsRetentionOf';
+
 /**
- * The app's windows, or core's defaults for a boot with no config file — the same numbers
+ * The app's windows, or core's defaults for a boot with no config file or a hand-built
+ * `AppConfig` that left a key out (`JobsConfig` declares the three optional) — the same constants
  * `defineConfig` fills in, so an app without `app.config.ts` keeps finished jobs exactly as long as
- * one that never wrote the keys. Core's validator already refused a window that is not a whole
- * positive number of milliseconds.
+ * one that never wrote the keys. Core's validator refuses a bad window in a loaded file; this
+ * screen is the layered form for the config that never met it.
  */
 export function jobsRetentionOf(config: AppConfig | undefined): JobsRetention {
+  const jobs = config?.jobs;
   return {
-    doneRetentionMs: config?.jobs.doneRetentionMs ?? JOBS_DONE_RETENTION_MS_DEFAULT,
-    deadRetentionMs: config?.jobs.deadRetentionMs ?? JOBS_DEAD_RETENTION_MS_DEFAULT,
-    outboxRetentionMs: config?.jobs.outboxRetentionMs ?? JOBS_OUTBOX_RETENTION_MS_DEFAULT,
+    doneRetentionMs: finiteCount(
+      SUBJECT,
+      'jobs.doneRetentionMs',
+      jobs?.doneRetentionMs ?? JOBS_DONE_RETENTION_MS_DEFAULT,
+      1,
+    ),
+    deadRetentionMs: finiteCount(
+      SUBJECT,
+      'jobs.deadRetentionMs',
+      jobs?.deadRetentionMs ?? JOBS_DEAD_RETENTION_MS_DEFAULT,
+      1,
+    ),
+    outboxRetentionMs: finiteCount(
+      SUBJECT,
+      'jobs.outboxRetentionMs',
+      jobs?.outboxRetentionMs ?? JOBS_OUTBOX_RETENTION_MS_DEFAULT,
+      1,
+    ),
   };
 }
 

@@ -163,12 +163,17 @@ export interface JobsConfig {
   readonly maxAttempts: number;
   readonly backoff: (typeof JOB_BACKOFFS)[number];
   readonly visibilityTimeoutMs: number;
-  /** Age past which the hourly purge deletes a `done` row and its steps. Default 14 days. */
-  readonly doneRetentionMs: number;
-  /** The same for `dead`, `failed` and `cancelled` rows. Default 90 days. */
-  readonly deadRetentionMs: number;
-  /** Age of `published_at` past which a PUBLISHED `x_outbox` row goes. Default 7 days. */
-  readonly outboxRetentionMs: number;
+  /**
+   * Age past which the hourly purge deletes a `done` row and its steps. Unset: 14 days
+   * (`JOBS_DONE_RETENTION_MS_DEFAULT`). OPTIONAL, as `realtime.maxSocketsPerActor` is, so a
+   * `JobsConfig` literal written before the key existed still type-checks: `defineConfig` fills it
+   * in, and the boot (`runtime-jobs-retention.ts`) resolves the same constant for one that did not.
+   */
+  readonly doneRetentionMs?: number | undefined;
+  /** The same for `dead`, `failed` and `cancelled` rows. Unset: 90 days. */
+  readonly deadRetentionMs?: number | undefined;
+  /** Age of `published_at` past which a PUBLISHED `x_outbox` row goes. Unset: 7 days. */
+  readonly outboxRetentionMs?: number | undefined;
 }
 
 /**
@@ -280,9 +285,9 @@ function validate(config: AppConfig): void {
     ...jobsConcurrencyIssues(config.jobs.concurrency),
     countIssue('jobs.maxAttempts', config.jobs.maxAttempts, 1),
     countIssue('jobs.visibilityTimeoutMs', config.jobs.visibilityTimeoutMs, 1),
-    countIssue('jobs.doneRetentionMs', config.jobs.doneRetentionMs, 1),
-    countIssue('jobs.deadRetentionMs', config.jobs.deadRetentionMs, 1),
-    countIssue('jobs.outboxRetentionMs', config.jobs.outboxRetentionMs, 1),
+    ...(['doneRetentionMs', 'deadRetentionMs', 'outboxRetentionMs'] as const).map((key) =>
+      config.jobs[key] === undefined ? undefined : countIssue(`jobs.${key}`, config.jobs[key], 1),
+    ),
     oneOfIssue('jobs.backoff', config.jobs.backoff, JOB_BACKOFFS),
     countIssue('cache.defaultTtlMs', config.cache.defaultTtlMs, 0),
     oneOfIssue('database.driver', config.database.driver, DATABASE_DRIVERS),

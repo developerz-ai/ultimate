@@ -5,7 +5,11 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { embeddedPg } from './embedded-pg-fixture';
-import { jobsPurgeTarget } from './jobs-retention';
+import {
+  jobsPurgeTarget,
+  SQL_JOBS_RETENTION_BATCH,
+  SQL_JOBS_RETENTION_STEPS,
+} from './jobs-retention';
 
 const DAY_MS = 86_400_000;
 
@@ -35,6 +39,22 @@ async function jobRow(state: string, ageDays: number): Promise<string> {
   await executor.query(
     `insert into x_job_steps (run_id, name, status) values ($1, 'render', 'done')`,
     [runId],
+  );
+  return id;
+}
+
+/** A second row under `of`'s run, `ageDays` old in `state` — the run's steps are `of`'s. */
+async function sibling(of: string, state: string, ageDays: number): Promise<string> {
+  const { executor } = await embeddedPg();
+  seq += 1;
+  const id = crypto.randomUUID();
+  await executor.query(
+    `insert into x_jobs (id, name, input, idempotency_key, run_id, state, created_at, updated_at)
+     select $1, 'mail.send', '{}'::jsonb, $2, run_id, $3,
+            now() - ($4::bigint * interval '1 millisecond'),
+            now() - ($4::bigint * interval '1 millisecond')
+       from x_jobs where id = $5`,
+    [id, `k${seq}`, state, Math.round(ageDays * DAY_MS), of],
   );
   return id;
 }
@@ -113,6 +133,67 @@ describe('pg · the finished-job sweep', () => {
     expect(await (await target({ batchSize: 2, maxBatches: 2 })).purgeExpired(Date.now())).toBe(4);
     expect(await (await target({ batchSize: 2 })).purgeExpired(Date.now())).toBe(1);
     expect((await remaining()).jobs.size).toBe(0);
+  });
+
+  test('two finished rows of one run go in one batch, and their run’s steps with them', async () => {
+    const first = await jobRow('done', 20);
+    await sibling(first, 'dead', 120);
+    expect(await (await target()).purgeExpired(Date.now())).toBe(2);
+    expect(await remaining()).toEqual({ jobs: new Set(), steps: 0 });
+  });
+
+  test('a run with a row still standing keeps its steps, for the sweep that takes that row', async () => {
+    const old = await jobRow('done', 20);
+    const live = await sibling(old, 'ready', 20);
+    expect(await (await target()).purgeExpired(Date.now())).toBe(1);
+    const left = await remaining();
+    expect([...left.jobs]).toEqual([live]);
+    expect(left.steps).toBe(1);
+  });
+
+  // The race the live suite runs for real (`jobs-retention.live.test.ts`), one session wide: the
+  // shared run's other row is deleted by ANOTHER sweep that commits after this batch read it as
+  // standing. The follow-up statement, read after both, is what removes the steps.
+  test('a held run’s steps go once the row that held them is gone by another hand', async () => {
+    const { executor } = await embeddedPg();
+    const old = await jobRow('done', 20);
+    const other = await sibling(old, 'done', 1);
+    const statements: string[] = [];
+    const interleaved = jobsPurgeTarget({
+      executor: {
+        query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> => {
+          statements.push(text);
+          const rows = await executor.query<R>(text, values);
+          if (text === SQL_JOBS_RETENTION_BATCH) {
+            await executor.query('delete from x_jobs where id = $1', [other]);
+          }
+          return rows;
+        },
+      },
+      doneRetentionMs: 14 * DAY_MS,
+      deadRetentionMs: 90 * DAY_MS,
+    });
+    expect(await interleaved.purgeExpired(Date.now())).toBe(1);
+    expect(statements).toEqual([SQL_JOBS_RETENTION_BATCH, SQL_JOBS_RETENTION_STEPS]);
+    expect(await remaining()).toEqual({ jobs: new Set(), steps: 0 });
+  });
+
+  test('a batch that held no run sends no follow-up statement', async () => {
+    const { executor } = await embeddedPg();
+    await jobRow('done', 20);
+    const statements: string[] = [];
+    const recording = jobsPurgeTarget({
+      executor: {
+        query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> => {
+          statements.push(text);
+          return executor.query<R>(text, values);
+        },
+      },
+      doneRetentionMs: 14 * DAY_MS,
+      deadRetentionMs: 90 * DAY_MS,
+    });
+    expect(await recording.purgeExpired(Date.now())).toBe(1);
+    expect(statements).toEqual([SQL_JOBS_RETENTION_BATCH]);
   });
 
   test('a window that is not a positive number is refused at construction', async () => {

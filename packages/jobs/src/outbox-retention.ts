@@ -5,7 +5,7 @@
 import type { PgExecutor } from '@ultimat3/core';
 import { finiteCount } from '@ultimat3/core';
 import type { PurgeTarget } from './purge';
-import { type PurgeBatching, purgeBatching, purgeInBatches } from './purge-batches';
+import { countedBatch, type PurgeBatching, purgeBatching, purgeInBatches } from './purge-batches';
 
 /**
  * One batch, counted. Only `published_at is not null`: an unpublished row is a job the relay has
@@ -50,9 +50,7 @@ export function outboxPurgeTarget(options: OutboxRetentionOptions): PurgeTarget 
     name: 'x_outbox',
     purgeExpired: (nowMs: number): Promise<number> =>
       purgeInBatches(
-        options.executor,
-        SQL_OUTBOX_RETENTION_BATCH,
-        [Math.trunc(nowMs), window],
+        countedBatch(options.executor, SQL_OUTBOX_RETENTION_BATCH, [Math.trunc(nowMs), window]),
         bounds,
       ),
   };

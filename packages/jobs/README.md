@@ -418,7 +418,8 @@ answers the rows it removed — `x_job_events` only grew while nothing called it
 
 Finished jobs are one too: `jobsPurgeTarget({ executor, doneRetentionMs, deadRetentionMs })`
 deletes `done` rows past the first window and `dead`, `failed` and `cancelled` rows past the
-second, each with its `x_job_steps`, 1,000 rows per statement (`skip locked`) and at most 50
+second, each with its `x_job_steps` once no row of the run still stands (two sweeps that split a
+run settle its steps in a follow-up statement after both commit), 1,000 rows per statement (`skip locked`) and at most 50
 statements per pass (`batchSize`, `maxBatches`). A live row is never deleted, nor one an
 unpublished `x_outbox` row or a `running` `x_backfills` row still names. The windows come from
 `app.config.ts` (`jobs.doneRetentionMs`, 14 days, and `jobs.deadRetentionMs`, 90 days).

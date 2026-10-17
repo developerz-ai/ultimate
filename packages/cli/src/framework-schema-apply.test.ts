@@ -33,6 +33,14 @@ describe('unit · ensureSchema', () => {
   test(
     'a database stamped by this build receives no DDL — a role that owns nothing can boot on it',
     async () => {
+      // Stamped HERE, not by the test above: run alone (`-t`) or after a reorder, this case would
+      // otherwise read an unstamped database and fail on DDL it was never about. Idempotent, so on
+      // the shared client it is the stamp read and nothing more.
+      await ensureSchema(client);
+      const stamp = await client.query<{ readonly stamp: string | null }>(
+        sql`select obj_description(to_regclass(${STAMP_RELATION}), 'pg_class') as stamp`,
+      );
+      expect(stamp[0]?.stamp ?? '').toStartWith('ultimate-framework-schema\n');
       const written: string[] = [];
       const recording: DbClient = {
         query: (fragment) => client.query(fragment),

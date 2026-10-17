@@ -24,7 +24,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   row kept its recipient address and rendered body indefinitely. A new target, `x_jobs`
   (`jobsPurgeTarget` in `@ultimat3/jobs`), deletes `done` rows after `jobs.doneRetentionMs`
   (default 14 days) and `dead`, `failed` and `cancelled` rows after `jobs.deadRetentionMs`
-  (default 90 days), each with its step records. Live rows are never deleted, and neither is a row
+  (default 90 days), each with its step records once no row of the run still stands â€” a
+  follow-up statement, run after the batch commits, settles a run two concurrent sweeps split; both
+  find a run's rows through the new index `x_jobs_run_idx`. Live rows are never deleted, and neither is a row
   that an unpublished outbox row or a running backfill still names. Deletes run 1,000 rows per
   statement with `skip locked`, at most 50 statements per pass. The new partial index
   `x_jobs_finished_idx` serves the sweep, so the framework schema hash changes and

@@ -31,20 +31,32 @@ export function purgeBatching(
   };
 }
 
+/** One batch: up to `size` rows removed, answering how many were. */
+export type PurgeBatch = (size: number) => Promise<number>;
+
 /**
- * Run `sql` until it removes fewer than `batch` rows or `rounds` statements ran, and answer the
- * total. `sql` answers one row `{ removed }` and takes `params` with the batch size appended last.
+ * The batch most targets are: one statement answering one row `{ removed }`, taking `params` with
+ * the batch size appended last.
  */
-export async function purgeInBatches(
+export function countedBatch(
   executor: PgExecutor,
   sql: string,
   params: readonly unknown[],
+): PurgeBatch {
+  return async (size) => {
+    const rows = await executor.query<{ removed: number | string }>(sql, [...params, size]);
+    return Number(rows[0]?.removed ?? 0);
+  };
+}
+
+/** Run `batch` until it removes fewer than `bounds.batch` rows or `rounds` ran; answer the total. */
+export async function purgeInBatches(
+  batch: PurgeBatch,
   bounds: { readonly batch: number; readonly rounds: number },
 ): Promise<number> {
   let removed = 0;
   for (let round = 0; round < bounds.rounds; round += 1) {
-    const rows = await executor.query<{ removed: number | string }>(sql, [...params, bounds.batch]);
-    const count = Number(rows[0]?.removed ?? 0);
+    const count = await batch(bounds.batch);
     removed += count;
     if (count < bounds.batch) break;
   }
