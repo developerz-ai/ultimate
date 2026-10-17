@@ -179,6 +179,13 @@ function warnUnnamed(options: CacheTiersOptions): void {
  * suppresses it, and `emit` is not a public parameter.
  */
 export function startCacheTiers(options: CacheTiersOptions): () => Promise<void> {
+  // Every option checked before anything is registered: a refusal after `registerTier` or
+  // `registerInvalidationBroadcast` would leave process-global state installed with no release.
+  const graceMs = finiteCount(
+    'startCacheTiers',
+    'firstDialGraceMs',
+    options.firstDialGraceMs ?? FIRST_DIAL_GRACE_MS,
+  );
   // Built before ANY of them is registered: a refusal halfway through a list would leave the
   // process-global registry holding the rungs that came first, with no release returned to drop
   // them. Registration order does not decide read order — `sortTiers` does, by `CACHE_TIERS`.
@@ -292,11 +299,6 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   const flushDeaf = (source: string): void => {
     void flushProcessTiers(source);
   };
-  const graceMs = finiteCount(
-    'startCacheTiers',
-    'firstDialGraceMs',
-    options.firstDialGraceMs ?? FIRST_DIAL_GRACE_MS,
-  );
   const bootedAt = performance.now();
   /** Whether an operator has been told of this outage — what makes `recovered` worth a line. */
   let warned = false;

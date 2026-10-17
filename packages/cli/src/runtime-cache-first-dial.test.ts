@@ -5,7 +5,13 @@
 // that outlasts it still is, and still warns.
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
-import { isolateTiers, noopPurgeDriver } from '@ultimat3/cache';
+import {
+  invalidateTags,
+  isolateTiers,
+  noopPurgeDriver,
+  registeredTiers,
+  resetTiers,
+} from '@ultimat3/cache';
 import { logger, UltimateError } from '@ultimat3/core';
 import type { Transport } from '@ultimat3/realtime/server';
 import { InProcessTransport } from '@ultimat3/realtime/server';
@@ -120,5 +126,38 @@ describe('unit · the boot subscribe during the first dial', () => {
     bus.up();
     await until(() => infos.includes('cache.broadcast.subscribe-failed recovered'));
     expect(infos).toContain('cache.broadcast.subscribe-failed recovered');
+  });
+
+  // A refused grace used to throw AFTER the tiers and the invalidation broadcaster were installed:
+  // process-global state left registered with no release returned to drop it.
+  test('a grace that is not a whole number refuses before anything is registered', async () => {
+    restore = isolateTiers();
+    resetTiers();
+    for (const firstDialGraceMs of [Number.NaN, -1, 2.5]) {
+      const bus = dialingTransport();
+      let published = 0;
+      const transport: Transport = {
+        ...bus.transport,
+        publish: (subject, payload) => {
+          published += 1;
+          return bus.transport.publish(subject, payload);
+        },
+      };
+      expect(() =>
+        startCacheTiers({
+          env: {},
+          purge: noopPurgeDriver(),
+          transport,
+          tiers: DEFAULT_CACHE_TIERS,
+          subscribeRetryMs: () => 1,
+          firstDialGraceMs,
+        }),
+      ).toThrow('firstDialGraceMs');
+      expect(registeredTiers()).toEqual([]);
+      // No broadcaster either: a local bust reaches no transport, and no subscribe was started.
+      await invalidateTags([{ entity: 'post' }]);
+      expect(published).toBe(0);
+      expect(bus.attempts()).toBe(0);
+    }
   });
 });
