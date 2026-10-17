@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.11.0 - 2026-10-17
+
 ### Fixed
 
 - **A database blip no longer turns every request into a 500.** `postgresRateLimitStore`'s `take`
@@ -66,6 +70,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **`X_FRAMEWORK_SCHEMA_FAILED`'s fix names the migrate step's role.** It said to grant `create`
   on `public` to the role in `DATABASE_URL`, which cannot cure `must be owner` and widens a runtime
   role. It now says to run `x db migrate` with `DATABASE_URL` naming the role that owns the schema.
+
+### Commits
+
+- fix/runtime role schema and job retention (#790)
+- fix(http,cli): rate limits degrade per pod on a DB blip; a pod drained mid-boot exits 0; no first-dial bus warnings (#791)
 
 ## 27.10.4 - 2026-10-15
 
