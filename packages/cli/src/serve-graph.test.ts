@@ -108,11 +108,15 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 643 → 644, measured 644 (2026-10-14, #773): `core/src/error-stack.ts` — the one reader of a
  * thrown value's stack, recomposing the `name: message` header Bun 1.4 loses when a collection runs
  * before the first `.stack` read; through the core barrel, for `jobs/src/execute.ts`'s failure row.
- * raised 644 → 647, measured 647 (2026-10-17, #790): `jobs/src/jobs-retention.ts`,
+ * raised 644 → 645, measured 645 (2026-10-17, a DB blip degrades the limiter):
+ * `http/src/rate-limit-degrade.ts` — which failures mean "the database is unreachable" and the
+ * per-process fallback the shared rate-limit store decides from meanwhile; reached through
+ * `rate-limit-postgres.ts` on the http barrel.
+ * raised 645 → 648, measured 648 (2026-10-17, #790): `jobs/src/jobs-retention.ts`,
  * `outbox-retention.ts` and the batch loop they share, `purge-batches.ts` — the `x.purge` targets
  * that delete finished `x_jobs` rows and published `x_outbox` rows, reached through the jobs barrel.
  */
-const MIGRATE_CEILING = 647;
+const MIGRATE_CEILING = 648;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -226,11 +230,13 @@ const MIGRATE_CEILING = 647;
  * `render/src/prerender-enumerate.ts` — `prerender()`'s three item forms normalised, moved out of
  * `render-static.ts` with the entry form (`{ params, lastmod, locales }`).
  * raised 956 → 957, measured 957 (2026-10-14, #773): the module named on `MIGRATE_CEILING`.
- * raised 957 → 961, measured 961 (2026-10-17, #790): the three modules named on `MIGRATE_CEILING`
+ * raised 957 → 958, measured 958 (2026-10-17, a DB blip degrades the limiter): the module named on
+ * `MIGRATE_CEILING`.
+ * raised 958 → 962, measured 962 (2026-10-17, #790): the three modules named on `MIGRATE_CEILING`
  * for #790, and `cli/src/runtime-jobs-retention.ts` — the three `jobs.*RetentionMs` windows read
  * off the loaded config into the two targets `installRetentionSweep` takes.
  */
-const SERVING_ROLE_CEILING = 961;
+const SERVING_ROLE_CEILING = 962;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -328,10 +334,12 @@ const SERVING_ROLE_CEILING = 961;
  * raised 1080 → 1085, measured 1085 (2026-10-11, sitemap sections): the five modules named on
  * `SERVING_ROLE_CEILING` — the web role reaches every module the serving roles do.
  * raised 1085 → 1086, measured 1086 (2026-10-14, #773): the module named on `MIGRATE_CEILING`.
- * raised 1086 → 1090, measured 1090 (2026-10-17, #790): the four modules named on
+ * raised 1086 → 1087, measured 1087 (2026-10-17, a DB blip degrades the limiter): the module named
+ * on `MIGRATE_CEILING`.
+ * raised 1087 → 1091, measured 1091 (2026-10-17, #790): the four modules named on
  * `SERVING_ROLE_CEILING` for #790.
  */
-const WEB_ROLE_CEILING = 1090;
+const WEB_ROLE_CEILING = 1091;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

@@ -416,7 +416,7 @@ One outage is one fact. Each condition below is written on its 1st, 2nd, 4th, 8t
 | `nats transport recovered` `{ transport, after }` | `info` | every role | once per recovery |
 | `cache.invalidate.partial` `{ …report, failures }` | `warn` | a publisher | refusals 1, 2, 4, 8, … **per failing tier** (`broadcast`, `redis`, …). Every bust's report still carries its `errors`, and `/_x` still records every bust |
 | `cache.invalidate.partial recovered` `{ tier, after }` | `info` | a publisher | once, when that tier clears again |
-| `cache.broadcast.subscribe-failed` `{ attempt, error }` · `… recovered` `{ after }` | `warn` · `info` | every role | attempts 1, 2, 4, 8, … of the boot subscribe, and once when it lands |
+| `cache.broadcast.subscribe-failed` `{ attempt, error }` · `… recovered` `{ after }` | `warn` · `info` | every role | silent for the first 10 s of the boot subscribe (`FIRST_DIAL_GRACE_MS`: the bus's first dial is still in progress, and the subscribe lands within it on a healthy pod); past that the first refusal and then attempts 2, 4, 8, … warn, and the landing is said once at info — only after a warning. `As of 2026-10-17` |
 | `live.bus_reconnected` `{ desynced, channelGaps }` | `warn` | `sync` | once per recovery: how many windows and topics were told to re-read |
 
 Until 2026-10-10 a three-minute outage wrote `presence.sweep failed` at `error` every 10 s on every `sync` node (19 lines on one), sent the monitor one event per refused beat per socket, and wrote `cache.invalidate.partial` once per bust on every publisher. A failure that is **not** the bus being away — a policy that threw inside a presence leave — is still written every time, as `<operation> failed`.

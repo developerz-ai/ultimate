@@ -94,6 +94,9 @@ async function replica(broker: FakeNatsBroker, retryMs: (attempt: number) => num
     transport: counted,
     tiers: DEFAULT_CACHE_TIERS,
     subscribeRetryMs: retryMs,
+    // These tests are OUTAGES, so the boot's quiet first-dial window is off: every refusal here is
+    // one an operator should hear about (`runtime-cache-first-dial.test.ts` holds the window).
+    firstDialGraceMs: 0,
   });
   const lru = registeredTiers().find((tier) => tier.name === 'lru');
   if (lru === undefined) expect.unreachable('the default ladder has an lru tier');

@@ -3,7 +3,15 @@
 // before the exit code. Ctrl-C then takes core's own three-phase drain (stop accepting, finish
 // in-flight, close) instead of killing a query mid-round-trip.
 
-import { drain, installSignalHandlers, logger, onShutdown, systemClock } from '@ultimat3/core';
+import {
+  drain,
+  installSignalHandlers,
+  isDraining,
+  isUltimateError,
+  logger,
+  onShutdown,
+  systemClock,
+} from '@ultimat3/core';
 
 export interface HoldOptions {
   /**
@@ -129,7 +137,24 @@ export async function holdWhileBooting<T extends { stop(): Promise<void> }>(
   try {
     app = await boot();
   } catch (error) {
-    armed.disarm();
+    // A boot that failed BECAUSE a drain began under it — a rollout superseding a pod still
+    // booting, whose server then met `markReady()`'s `X_LIFECYCLE_DRAINED` — is a pod doing what
+    // it was told: finish the drain, say so once at info, exit 0. It printed a stack trace and
+    // exited non-zero, twice a week in production, paging on a normal rollout. A failure with no
+    // drain under way is still the boot's own refusal, rethrown untouched.
+    if (isDraining() && options.exit !== undefined) {
+      await drain();
+      armed.disarm();
+      logger.info('ultimate boot interrupted by shutdown', {
+        name,
+        code: isUltimateError(error) ? error.code : 'uncoded',
+      });
+      options.exit(0);
+    } else {
+      armed.disarm();
+    }
+    // Unreachable past a real `process.exit`; a test's `exit` spy returns, and the caller still
+    // sees the boot's error rather than an app that never booted.
     throw error;
   }
   booted = app;
