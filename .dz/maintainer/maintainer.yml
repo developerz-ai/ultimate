@@ -19,9 +19,13 @@
 # fallback, and two files would be two answers. Docs: https://developerz.ai/docs/maintainer-yml
 version: 1
 
-# `bun run verify`'s live suites grade against a real Postgres (they skip without one, which grades
-# nothing). The closed vocabulary has no NATS; those suites skip on a box without it.
-services: [postgres]
+# No `services:` — this repo brings its own. `docker/docker-compose.test.yml` starts pgvector Postgres
+# (and the second and TLS servers, Redis, NATS, S3) on 127.0.0.1, `docker/test-services.env` points
+# the live suites at them, and CI's `verify` job starts them itself. Declaring `postgres` made the
+# platform hold this repo's work for a box with something already accepting on 127.0.0.1:5432 —
+# exactly the port the compose `postgres` service publishes, so on such a box the two collide (and
+# the platform's server has neither this repo's `ultimate` user nor pgvector). A box needs `docker`,
+# which developerz-ai fleet guests have.
 
 tone:
   voice: friendly
