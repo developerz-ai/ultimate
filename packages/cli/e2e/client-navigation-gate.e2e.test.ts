@@ -11,6 +11,7 @@ import {
   currentTab,
   hover,
   noBrowser,
+  prefetched,
   ran,
   read,
   sameDocument,
@@ -46,7 +47,7 @@ describe.skipIf(noBrowser)(
       async () => {
         await start('/a');
         await hover('to-eager');
-        await Bun.sleep(400);
+        await prefetched('to-eager', '/eager');
         await click('to-eager');
         await currentTab().waitFor('document.title === "Eager"', 'Eager');
         expect(ran).toEqual(['GET /eager prefetch']);
@@ -156,7 +157,7 @@ describe.skipIf(noBrowser)(
       async () => {
         await start('/a');
         await hover('to-eager');
-        await Bun.sleep(400);
+        await prefetched('to-eager', '/eager');
         await read('document.getElementById("switch").requestSubmit()');
         await currentTab().waitFor('document.title === "Switched"', 'the answer in place');
         expect(await sameDocument()).toBe(true);

@@ -15,6 +15,7 @@ import {
   hover,
   landed,
   noBrowser,
+  prefetched,
   ran,
   read,
   recorded,
@@ -27,13 +28,6 @@ import {
 
 /** What the typed client announces after every non-GET (`@ultimat3/core`'s `notifyClientWrite`). */
 const WRITE = `globalThis[Symbol.for('ultimate.client-writes')].forEach((listener) => listener('/api/casos'))`;
-
-/** A hover whose prefetch the server answered and the page holds. */
-async function prefetched(id: string, path: string): Promise<void> {
-  await hover(id);
-  await recorded(`GET ${path} prefetch`);
-  await landed(path);
-}
 
 describe.skipIf(noBrowser)('client navigation · the prefetch cache never answers stale', () => {
   useBrowser();

@@ -468,6 +468,17 @@ export const landed = (path: string): Promise<void> =>
     `the answer for ${path} to land`,
   );
 
+/**
+ * A hover whose prefetch the server answered AND the page holds — used by every suite that needs
+ * "server recorded AND page received", never a sleep: a hover's prefetch leaves on a page timer,
+ * and a stalled renderer sends it late.
+ */
+export async function prefetched(id: string, path: string): Promise<void> {
+  await hover(id);
+  await recorded(`GET ${path} prefetch`);
+  await landed(path);
+}
+
 /** A fresh document at `path`, marked, with the router listening. */
 export async function start(path: string, on: E2eTab = tab): Promise<void> {
   // A gate a failed test never reached holds nothing in the next one.
