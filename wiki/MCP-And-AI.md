@@ -118,6 +118,16 @@ be a promise nothing enforces on the way out. The meta tools publish their own h
 `list_resources` / `describe_resource` read-only, `manage_resource` a write (it reaches every
 grouped tool); `manage_resource` answers the inner tool's `structuredContent` byte for byte.
 
+**Split by effect** (`surface: 'meta-split'`, `As of 2026-10-18`): `read_resource` (queries,
+`readOnlyHint: true`), `write_resource` (`mcp: { effect: 'write' }`) and `delete_resource`
+(`mcp: { effect: 'delete' }`, `destructiveHint: true`; `{ resource, action, params, live,
+confirmed_by_user }` — without `live: true` it answers a preview (the framework's runs nothing; an action declaring `live` answers its own), with it it runs
+only on `confirmed_by_user: true`) replace `manage_resource`, for clients and directories that
+refuse a dispatcher which both reads and writes. A grouped write without an effect fails boot
+(`X_MCP_EFFECT_UNDECLARED`); an action called on the wrong dispatcher is `X_MCP_WRONG_TOOL`
+naming the right one; an unconfirmed commit is `X_MCP_USER_CONFIRMATION_REQUIRED`. Full contract:
+[`packages/mcp/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/mcp/README.md).
+
 **What the model reads is compact.** A tool's text block is one-line JSON (the 2-space form until
 22.10 spent a third of a large answer on indentation). `list_resources` answers **plain text**, one
 line per resource and one per action, each fact said once where it is cheapest (`As of 2026-10`):

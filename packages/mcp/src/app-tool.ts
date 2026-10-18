@@ -11,7 +11,7 @@
 // apply to routes and miss tools.
 
 import { guardAction, guardActionBeforeInput, InputInvalidError } from '@ultimat3/action';
-import type { Ctx } from '@ultimat3/core';
+import type { Ctx, McpEffect } from '@ultimat3/core';
 import { actorOf, useContext } from '@ultimat3/core';
 import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
@@ -42,6 +42,11 @@ export interface AppToolDefinition<TInput extends StandardSchemaV1 = StandardSch
    * rate-limit bucket, so forgetting the flag costs throughput rather than safety.
    */
   readonly destructive?: boolean;
+  /**
+   * `'write'` | `'delete'` — which dispatcher runs this tool on a `'meta-split'` surface, where a
+   * grouped write without one is `X_MCP_EFFECT_UNDECLARED`. Ignored by every other surface.
+   */
+  readonly effect?: McpEffect;
   /** Display name for a client's UI. Absent: none published. */
   readonly title?: string;
   /**
@@ -60,6 +65,7 @@ export interface AnyAppToolDefinition {
   readonly policy: KnownPermission;
   readonly visibleTo?: readonly McpRole[];
   readonly destructive?: boolean;
+  readonly effect?: McpEffect;
   readonly title?: string;
   readonly annotations?: McpToolAnnotations;
   handle(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
@@ -98,6 +104,7 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
       description: def.description,
       ...(visibleTo !== undefined ? { visibleTo } : {}),
       ...(def.title !== undefined ? { title: def.title } : {}),
+      ...(def.effect !== undefined ? { effect: def.effect } : {}),
       ...(def.annotations !== undefined ? { annotations: def.annotations } : {}),
     },
     inputJsonSchema: toWireSchema(def.input),

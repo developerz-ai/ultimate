@@ -157,6 +157,8 @@ export const OFF_SOCKET: Pins = {
     'X_MCP_TOOL_UNKNOWN',
     'X_MCP_TOOL_UNSAFE',
     'X_MCP_CONFIRMATION_TOOL_UNKNOWN',
+    'X_MCP_EFFECT_UNDECLARED',
+    'X_MCP_EFFECT_CONFLICT',
   ],
   // tier 4 — the service worker and the PWA manifest: build-time rules, faults raised in the
   // BROWSER, where there is no response to give a status to, and the VAPID pair refused at BOOT,

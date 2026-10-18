@@ -14,6 +14,15 @@ export interface McpAnnotationHints {
   readonly openWorldHint?: boolean;
 }
 
+/**
+ * What an exposed action DOES, for a surface that dispatches by it (`@ultimat3/mcp`'s
+ * `surface: 'meta-split'`): `'write'` creates or changes app state, reversibly or within a
+ * standing budget; `'delete'` archives, cancels or deletes, sends something outside the app, or
+ * commits money. A query is a read and declares none. No default: a wrong one either hides a
+ * deletion behind an ordinary write or asks deletion-grade consent for an update.
+ */
+export type McpEffect = 'write' | 'delete';
+
 /** One comparison a list filter accepts. A filter key is `<field><op>`: `status_eq`. */
 export type McpListFilterOp = '_eq' | '_in' | '_gt' | '_lt' | '_cont';
 
@@ -64,6 +73,12 @@ export interface McpExposureDeclaration {
    * nothing, `openWorldHint: true` for one that reaches outside the app.
    */
   readonly annotations?: McpAnnotationHints;
+  /**
+   * The action's effect class — required for an action a `'meta-split'` surface groups
+   * (`X_MCP_EFFECT_UNDECLARED`), refused on a query (`X_MCP_EFFECT_CONFLICT`). Picks
+   * `write_resource` or `delete_resource`; ignored by every other surface.
+   */
+  readonly effect?: McpEffect;
   /** A list query's whitelist, carried to the tool for the meta surface. Never an action's. */
   readonly listParams?: McpListParams;
 }

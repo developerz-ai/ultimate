@@ -18,7 +18,7 @@
 // The outcomes are orthogonal on purpose. A tool can be visible and still refused for a
 // narrow token; a token holding every scope still cannot see a tool its role may not.
 
-import type { Actor } from '@ultimat3/core';
+import type { Actor, McpEffect } from '@ultimat3/core';
 import { McpToolDuplicateError } from './errors';
 import type { McpListParams } from './list-params';
 import type { ArgIssue } from './validate-args';
@@ -143,6 +143,11 @@ export interface McpTool<A extends ToolArgs = ToolArgs> {
    * the flat surface ignores it (the tool's `inputSchema` is its contract there).
    */
   readonly listParams?: McpListParams;
+  /**
+   * The action's effect class (`'write'` | `'delete'`), as its `mcp` block declared it. Picks the
+   * dispatcher on a `'meta-split'` surface; a read (`destructive: false`) carries none.
+   */
+  readonly effect?: McpEffect;
   /**
    * A catalog hint: this write answers "awaiting confirmation" and a human finishes it. Shown by
    * `list_resources` so an agent plans for the hand-off; it changes nothing about the call.

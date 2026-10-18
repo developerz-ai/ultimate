@@ -253,6 +253,31 @@ to check an id token's signature against, and the token-endpoint TLS exemption b
 caller declares, not one a provider inherits by omission. It refuses a document whose `issuer` is
 not the one asked for, too (OIDC Discovery §4.3).
 
+**Public clients** (`As of 2026-10-18`). `tokenEndpointAuth` on the provider — or on
+`discoverOAuthProvider({ tokenEndpointAuth })`, or per exchange on `credentials` — says how the
+client authenticates at the token endpoint:
+
+| `tokenEndpointAuth` | Secret read from `clientSecretEnv` | Sent |
+|---|---|---|
+| absent / `'client_secret_post'` | required (`X_ENV_MISSING`) | `client_secret` in the form body — the behaviour before the option |
+| `'client_secret_basic'` | required | `Authorization: Basic base64(urlencode(id):urlencode(secret))`; no `client_secret` in the body |
+| `'none'` | not read; a leftover value is ignored | no secret at all — `client_id` and the PKCE `code_verifier` only |
+
+```ts
+import { discoverOAuthProvider, registerOAuthProvider } from '@ultimat3/auth';
+
+registerOAuthProvider(
+  await discoverOAuthProvider({
+    id: 'equipo',
+    issuer: 'https://sso.example.test',
+    tokenEndpointAuth: 'none', // needs EQUIPO_CLIENT_ID only
+  }),
+);
+```
+
+PKCE stays mandatory for all three: for a public client it is the only thing binding the code to
+the browser that started the flow.
+
 **SAML is out of scope and will stay out of scope.** XML-DSig canonicalisation has no Bun native
 and implementing it would mean a real dependency in the primitive vocabulary, which
 [`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md) does not permit. The honest

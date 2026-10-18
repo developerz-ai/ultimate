@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "6e701f19272d3fde663cc1fb86ac815b855fc41a1fc5826c304738f871f275a7",
+  "buildId": "6320ccfc78ec34c000da4e1c644fef4f47a4d52f46705685b31d354006c84fbc",
   "tiers": {
     "0": [
       "core",
@@ -2380,6 +2380,16 @@
       "at": "packages/mcp/src/errors.ts"
     },
     {
+      "code": "X_MCP_EFFECT_CONFLICT",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_EFFECT_UNDECLARED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
       "code": "X_MCP_GROUP_CONFLICT",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
@@ -2481,6 +2491,16 @@
     },
     {
       "code": "X_MCP_TOOL_UNSAFE",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_USER_CONFIRMATION_REQUIRED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_WRONG_TOOL",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

@@ -36,6 +36,10 @@ export const MCP_ERROR_CODES = [
   'X_MCP_CONFIRMATION_TOOL_UNKNOWN',
   'X_MCP_CONFIRMATION_CONTESTED',
   'X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH',
+  'X_MCP_EFFECT_UNDECLARED',
+  'X_MCP_EFFECT_CONFLICT',
+  'X_MCP_WRONG_TOOL',
+  'X_MCP_USER_CONFIRMATION_REQUIRED',
 ] as const;
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[number];
@@ -75,6 +79,11 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_CONFIRMATION_CONTESTED: 'identical concurrent MCP calls kept racing one confirmation',
   X_MCP_CONFIRMATION_ARGUMENTS_MISMATCH:
     'an MCP confirmation approval did not carry the arguments the agent sent',
+  X_MCP_EFFECT_UNDECLARED: 'an MCP tool on a meta-split surface declares no effect',
+  X_MCP_EFFECT_CONFLICT: 'a read-only MCP tool declares an effect',
+  X_MCP_WRONG_TOOL: 'a meta-split action was called through the wrong dispatcher',
+  X_MCP_USER_CONFIRMATION_REQUIRED:
+    'a delete_resource commit did not carry confirmed_by_user: true',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is

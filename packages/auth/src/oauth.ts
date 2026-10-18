@@ -43,7 +43,18 @@ export interface OAuthProvider {
   readonly usesNonce: boolean;
   readonly clientIdEnv: string;
   readonly clientSecretEnv: string;
+  /**
+   * How this client authenticates at the token endpoint (OIDC Core 9). Absent:
+   * `'client_secret_post'`, the behaviour before the option existed. `'none'` is a PUBLIC client
+   * — no secret is read from `clientSecretEnv` and none is sent; PKCE, mandatory for every
+   * provider, is what binds the code to the browser. `'client_secret_basic'` sends the pair in
+   * `Authorization: Basic` instead of the body.
+   */
+  readonly tokenEndpointAuth?: TokenEndpointAuth | undefined;
 }
+
+/** The three token-endpoint client authentication methods this package speaks. */
+export type TokenEndpointAuth = 'none' | 'client_secret_post' | 'client_secret_basic';
 
 /**
  * Any registered provider's id — `string`, not a closed union, since 1.3.0. The union of three

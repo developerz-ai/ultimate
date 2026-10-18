@@ -1,35 +1,20 @@
-// A META caller's `tools/call`: the three meta tools, and the refusal of a grouped tool called by
-// its flat name. Split from `server.ts` for the size ceiling only — it holds no gate of its own:
-// every call it runs goes back through the server's `resolve` → `dispatch`, the flat path.
+// A META caller's `tools/call`: the meta tools, and the refusal of a grouped tool called by its
+// flat name; the split surface's dispatchers continue in `meta-split-call.ts`. Split from
+// `server.ts` for the size ceiling only — it holds no gate of its own: every call it runs goes back
+// through the server's `resolve` → `dispatch`, the flat path.
 
-import type { McpAuditor } from './audit-hook';
 import { META_UNKNOWN_FIX } from './meta-errors';
-import type { MetaSurface } from './meta-surface';
-import {
-  DESCRIBE_RESOURCE,
-  LIST_RESOURCES,
-  META_TOOL_ENTRIES,
-  renderCatalog,
-  schemaOf,
-} from './meta-surface';
-import type { McpCaller, ToolRegistry, ToolResolution } from './registry';
+import type { MetaHost } from './meta-host';
+import { resolveAddressed } from './meta-host';
+import { splitCall } from './meta-split-call';
+import { DESCRIBE_RESOURCE, LIST_RESOURCES, MetaSurface, renderCatalog } from './meta-surface';
+import type { McpCaller } from './registry';
 import { jsonResult, textResult } from './registry';
 import { validateArgs } from './validate-args';
 import type { JsonRpcId, JsonRpcResponse } from './wire';
 import { errorResponse, METHOD_NOT_FOUND, resultResponse } from './wire';
 
-/** The server's own two steps, handed in so this file cannot grow a second path. */
-export interface MetaHost {
-  readonly tools: ToolRegistry;
-  readonly audit: McpAuditor;
-  dispatch(
-    id: JsonRpcId,
-    name: string,
-    resolved: ToolResolution,
-    caller: McpCaller,
-  ): Promise<JsonRpcResponse>;
-  notFound(id: JsonRpcId, name: string, caller: McpCaller, fix: string): JsonRpcResponse;
-}
+export type { MetaHost } from './meta-host';
 
 export interface MetaRequest {
   readonly id: JsonRpcId;
@@ -45,7 +30,8 @@ export async function metaCall(
   request: MetaRequest,
 ): Promise<JsonRpcResponse | undefined> {
   const { id, name, caller } = request;
-  const entry = META_TOOL_ENTRIES.find((tool) => tool.name === name);
+  const surface = meta.surfaceFor(caller) === 'meta-split' ? 'meta-split' : 'meta';
+  const entry = MetaSurface.entriesFor(surface).find((tool) => tool.name === name);
   if (entry === undefined) {
     return meta.isGrouped(name) ? host.notFound(id, name, caller, META_UNKNOWN_FIX) : undefined;
   }
@@ -55,7 +41,7 @@ export async function metaCall(
   }
   if (name === LIST_RESOURCES) {
     host.audit.toolCall({ tool: name, outcome: 'ok', caller });
-    return resultResponse(id, textResult(renderCatalog(meta.listResources(caller))));
+    return resultResponse(id, textResult(renderCatalog(meta.listResources(caller), surface)));
   }
   if (name === DESCRIBE_RESOURCE) {
     const described = meta.describe(args.value['resources'] as readonly string[], caller);
@@ -71,22 +57,19 @@ export async function metaCall(
     host.audit.toolCall({ tool: name, outcome: 'ok', caller });
     return resultResponse(id, jsonResult({ resources: described.resources }));
   }
+  if (surface === 'meta-split')
+    return splitCall(host, meta, { id, name, caller, args: args.value });
   // `manage_resource`: address → the SAME resolve and dispatch a flat call takes, audited under
   // the tool it reached. Visibility first (a hidden pair is an absent pair), then the shared
-  // resolver's scope → args. A list whitelist's issues REPLACE the tool schema's: both are pure
-  // checks with nothing run between them, so which is evaluated first is invisible — the answer
-  // names the whitelist, which is the contract `describe_resource` published.
+  // resolver's scope → args (`resolveAddressed`).
   const resource = args.value['resource'] as string;
   const action = args.value['action'] as string;
   const tool = meta.locate(resource, action, caller);
   if (tool === undefined) return host.notFound(id, action, caller, META_UNKNOWN_FIX);
-  const input = args.value['params'] ?? {};
-  let resolved = host.tools.resolve(action, input, caller);
-  if (resolved.kind !== 'scope-denied' && resolved.kind !== 'not-found') {
-    const listed = validateArgs(schemaOf(tool), input);
-    if (!listed.ok) {
-      resolved = { kind: 'invalid-args', name: action, issues: listed.issues, tool };
-    }
-  }
-  return host.dispatch(id, action, resolved, caller);
+  return host.dispatch(
+    id,
+    action,
+    resolveAddressed(host, tool, args.value['params'] ?? {}, caller),
+    caller,
+  );
 }
