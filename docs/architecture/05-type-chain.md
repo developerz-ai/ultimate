@@ -98,15 +98,18 @@ Rename `excerpt` → `summary` in `apps/web/app/posts/entity.ts` and change noth
 | Where it breaks | Error | Message shape |
 |---|---|---|
 | `apps/web/app/posts/entity.ts` | `tsc` | `posts.$view([...])` — `'excerpt'` is not assignable to `keyof Post` |
-| `apps/web/api/posts.ts` | `tsc` | handler return type missing `summary`, only after `PostView` is fixed |
-| `apps/web/app/posts/ui/post-card.tsx` | `tsc` | `Property 'excerpt' does not exist on type 'PostView'` |
+| `apps/web/app/posts/backfills/post-excerpts.ts` | `tsc` | the sweep's `source` predicate and its row projection both name the column (hop 2 → 3) |
+| `apps/web/app/posts/repo.test.ts` | `tsc` | a test seeding a row is an insert literal like any other (hop 1 → 2) |
 | `apps/web/site/blog/[slug]/page.tsx` | `tsc` | `meta: ({ post }) => ({ description: post.excerpt })` — same error, in the SEO callback |
 | `apps/web/app/posts/repo.ts` | `tsc` | any explicit column list referencing `excerpt` |
-| `apps/web/api/posts.contract.test.ts` | `tsc` | the generated contract test asserts the view's keys |
+| `apps/web/app/posts/backfills/post-excerpts.test.ts` | `tsc` | an insert literal that hands the column to the fixture driver (hop 1 → 2) |
+| `apps/web/app/posts/backfills/post-excerpts.job.test.ts` | `tsc` | the job test's row builder, named for hop 1 → 2 |
+| `packages/db/seeds/dev.ts` | `tsc` | raw insert literals no longer match the entity's columns (hop 1 → 2) |
+| `examples/dummy/scripts/test-setup.test.ts` | `tsc` | the preload's own fixture, keyed off the entity's row type since 2026-08-24 |
 | migrations | `X_DB_DRIFT` | `cause: table "posts" has column "summary" not present in any migration` / `fix: x db gen "rename excerpt to summary"` |
 | `openapi.json`, `x.manifest.json` | `X_MANIFEST_STALE` | `fix: x manifest` |
 
-Eight failures, each naming a file and a line. Zero silent behavior changes. The rename is **complete when the build is green** — there is no ninth place to remember.
+Every rename surfaces everywhere the value flows, with a row per hop. Zero silent behavior changes. The rename is **complete when the build is green** — there is no ninth place to remember.
 
 Contrast: the same rename in a stack where the API response is hand-written and the client types are a copied interface. Nothing fails. The field arrives as `undefined`, renders as an empty paragraph, and the SEO description silently becomes blank on every blog post.
 
