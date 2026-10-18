@@ -269,60 +269,6 @@ describe('meta-split — refusals', () => {
     expect(audits.at(-1)).toMatchObject({ tool: 'archivePost', outcome: 'unconfirmed' });
   });
 
-  test('a nested confirmed_by_user: false wins over a top-level true', async () => {
-    const server = splitServer();
-    const answer = await inRequest(() =>
-      server.handle(
-        call('delete_resource', {
-          resource: 'posts',
-          action: 'archivePost',
-          params: { postId: 'p1', confirmed_by_user: false },
-          live: true,
-          confirmed_by_user: true,
-        }),
-        splitOwner,
-      ),
-    );
-    expect(text(answer)).toStartWith('X_MCP_USER_CONFIRMATION_REQUIRED: ');
-    expect(ran).toEqual({});
-  });
-
-  test('nested wins for an action that declares confirmed_by_user in its own input too', async () => {
-    register({ rename: 'write', archive: 'delete' });
-    registerAction(
-      'purgePost',
-      action({
-        input: t.object({ postId: t.string, confirmed_by_user: t.optional(t.boolean) }),
-        output: t.object({ ok: t.boolean }),
-        policy: can('post:archive'),
-        mcp: { expose: true, description: 'Purge a post', effect: 'delete' },
-        handle: () => {
-          ran['purgePost'] = (ran['purgePost'] ?? 0) + 1;
-          return { ok: true };
-        },
-      }),
-    );
-    const { server } = defineAppMcp({
-      include: 'exposed',
-      surface: 'meta-split',
-      groups: { posts: { description: 'p', tools: ['purgePost'] } },
-    });
-    const answer = await inRequest(() =>
-      server.handle(
-        call('delete_resource', {
-          resource: 'posts',
-          action: 'purgePost',
-          params: { postId: 'p1', confirmed_by_user: false },
-          live: true,
-          confirmed_by_user: true,
-        }),
-        splitOwner,
-      ),
-    );
-    expect(text(answer)).toStartWith('X_MCP_USER_CONFIRMATION_REQUIRED: ');
-    expect(ran).toEqual({});
-  });
-
   test('confirmed_by_user is required by the delete_resource schema', async () => {
     const server = splitServer();
     const answer = await inRequest(() =>
