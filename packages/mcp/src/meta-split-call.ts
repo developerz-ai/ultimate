@@ -107,9 +107,10 @@ function liftToolArgs(
 ): Lifted {
   const declared = schemaOf(tool).properties ?? {};
   const ownsPreview = Object.hasOwn(declared, LIVE);
-  const pick = (key: string): unknown =>
-    Object.hasOwn(params, key) && !Object.hasOwn(declared, key) ? params[key] : args[key];
-  const live = (ownsPreview && Object.hasOwn(params, LIVE) ? params[LIVE] : pick(LIVE)) === true;
+  // Nested wins, ALWAYS — a declared field too: a nested `confirmed_by_user: false` beside a
+  // top-level `true` is a refusal, and reading the top level there would commit anyway.
+  const pick = (key: string): unknown => (Object.hasOwn(params, key) ? params[key] : args[key]);
+  const live = pick(LIVE) === true;
   const rest: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(params)) {
     if ((key === LIVE || key === CONFIRMED) && !Object.hasOwn(declared, key)) continue;

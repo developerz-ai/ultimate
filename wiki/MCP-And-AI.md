@@ -121,7 +121,7 @@ grouped tool); `manage_resource` answers the inner tool's `structuredContent` by
 **Split by effect** (`surface: 'meta-split'`, `As of 2026-10-18`): `read_resource` (queries,
 `readOnlyHint: true`), `write_resource` (`mcp: { effect: 'write' }`) and `delete_resource`
 (`mcp: { effect: 'delete' }`, `destructiveHint: true`; `{ resource, action, params, live,
-confirmed_by_user }` — without `live: true` it answers a preview and runs nothing, with it it runs
+confirmed_by_user }` — without `live: true` it answers a preview (the framework's runs nothing; an action declaring `live` answers its own), with it it runs
 only on `confirmed_by_user: true`) replace `manage_resource`, for clients and directories that
 refuse a dispatcher which both reads and writes. A grouped write without an effect fails boot
 (`X_MCP_EFFECT_UNDECLARED`); an action called on the wrong dispatcher is `X_MCP_WRONG_TOOL`

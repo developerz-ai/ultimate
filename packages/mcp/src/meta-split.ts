@@ -95,12 +95,13 @@ export const SPLIT_TOOL_ENTRIES: readonly ToolListEntry[] = [
     name: DELETE_RESOURCE,
     title: 'Delete, send or spend',
     description:
-      'Runs one action that archives, cancels or deletes, sends something outside the app, or commits money: { resource, action, params, live, confirmed_by_user }. live: false or absent answers a preview and runs nothing; live: true runs it, only with confirmed_by_user: true. Runs the actions list_resources tags (delete).',
+      "Runs one action that archives, cancels or deletes, sends something outside the app, or commits money: { resource, action, params, live, confirmed_by_user }. live: false or absent answers a preview — the framework's, which runs nothing, or the action's own when its input declares live; live: true runs it, only with confirmed_by_user: true. Runs the actions list_resources tags (delete).",
     inputSchema: envelope(
       {
         live: {
           type: 'boolean',
-          description: 'true runs the action; false or absent answers a preview and runs nothing.',
+          description:
+            "true runs the action; false or absent answers a preview: the framework's runs nothing, and an action whose params declare live answers its own.",
         },
         confirmed_by_user: {
           type: 'boolean',

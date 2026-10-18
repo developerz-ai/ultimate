@@ -290,7 +290,7 @@ defineAppMcp({
   an app written before the split boots as it did.
 - **Wrong dispatcher → `X_MCP_WRONG_TOOL`** (an `isError` result, audited `invalid-args`): the cause
   says `wrong_tool_for_action` and names the tool that runs it (`meta.use_tool`). Nothing ran.
-- **`delete_resource`**: `live` absent or `false` answers a preview and runs nothing —
+- **`delete_resource`**: `live` absent or `false` answers the framework's preview, which runs nothing —
   `{ preview: true, ran: false, resource, action, params, commit_with: { live: true,
   confirmed_by_user: true } }`, audited `previewed`. An action whose own input declares `live`
   authors its preview instead: it is handed `live: false` and runs. `live: true` runs only with

@@ -269,6 +269,24 @@ describe('meta-split — refusals', () => {
     expect(audits.at(-1)).toMatchObject({ tool: 'archivePost', outcome: 'unconfirmed' });
   });
 
+  test('a nested confirmed_by_user: false wins over a top-level true', async () => {
+    const server = splitServer();
+    const answer = await inRequest(() =>
+      server.handle(
+        call('delete_resource', {
+          resource: 'posts',
+          action: 'archivePost',
+          params: { postId: 'p1', confirmed_by_user: false },
+          live: true,
+          confirmed_by_user: true,
+        }),
+        splitOwner,
+      ),
+    );
+    expect(text(answer)).toStartWith('X_MCP_USER_CONFIRMATION_REQUIRED: ');
+    expect(ran).toEqual({});
+  });
+
   test('confirmed_by_user is required by the delete_resource schema', async () => {
     const server = splitServer();
     const answer = await inRequest(() =>
@@ -396,6 +414,8 @@ describe('meta-split — the flat call through another door', () => {
       server.handle(call('read_resource', { resource: 'posts', action: 'listPosts' }), splitOwner),
     );
     const flatRead = await inRequest(() => server.handle(call('listPosts'), flatOwner));
+    expect(isError(read)).toBe(false);
+    expect(text(read)).toContain('p1');
     expect(read?.result).toEqual(flatRead?.result);
     const args = { postId: 'p1', title: 'x' };
     const write = await inRequest(() =>
