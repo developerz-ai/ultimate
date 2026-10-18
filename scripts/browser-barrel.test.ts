@@ -145,16 +145,15 @@ const fixture = (name: string, source: string): Promise<Chunk> =>
 const barrelPath = (name: string): string => join(repoRoot(), 'packages', name, 'src/index.ts');
 
 /**
- * A barrel is bundled as `Bun.build`'s own entry point — `packages/<name>/src/index.ts`, nothing
- * in front of it.
+ * The bare barrel — `packages/<name>/src/index.ts`, a `export { … } from '…'` file under a
+ * `sideEffects` field that does NOT name it — is bundled through a one-line wrapper the suite
+ * writes per barrel (`export * from '<barrel>'`) and then drops.
  *
- * Until Bun 1.4.1 that build was broken (#276, oven-sh/bun#40578): an entry module declaring
- * nothing of its own, under a `sideEffects` field that did not NAME it, was shaken to its
- * `export { … }` clause alone, so `@ultimat3/core` answered `"ACTION_PATH_PREFIX" is not declared
- * in this file` and every assertion here had an empty chunk to be true of. This file bundled
- * through a re-exporting wrapper instead and pinned the defect as a negative control; the control
- * redded on 1.4.2, the wrapper went with it. `and the chunk carries the code` below is what keeps
- * the build non-vacuous now.
+ * THE REASON THE WRAPPER IS NEEDED: oven-sh/bun#40578 (#276, ≤ 1.4.1) shook a barrel entry of that
+ * shape to its `export { … };` clause alone. `db-alias` below is the negative control the wrapper
+ * approximates: re-exporting the barrel is enough for the bundler to keep its transitive imports.
+ * The wrapper went away once that control redded on 1.4.2; the box the gate runs on is 1.4.0, so it
+ * had to come back. `and the chunk carries the code` below is what keeps the build non-vacuous.
  */
 const built = new Map<string, Promise<Chunk>>();
 
@@ -170,9 +169,14 @@ const built = new Map<string, Promise<Chunk>>();
 const barrelChunk = (name: string): Promise<Chunk> => {
   const held = built.get(name);
   if (held !== undefined) return held;
-  const chunk = browserChunk(barrelPath(name));
-  built.set(name, chunk);
-  return chunk;
+  const promise = (async (): Promise<Chunk> => {
+    const dir = await mkdtemp(join(tmpdir(), `ultimate-barrel-${name}-`)).then(made);
+    const entry = join(dir, 'wrapper.ts');
+    await Bun.write(entry, [`export * from ${JSON.stringify(barrelPath(name))};`, ''].join('\n'));
+    return browserChunk(entry);
+  })();
+  built.set(name, promise);
+  return promise;
 };
 
 /** The chunk minus its trailing `export { … };` clause — the half a bad tree-shake empties. */
