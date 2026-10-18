@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.12.0 - 2026-10-18
+
 ### Added
 
 - **`surface: 'meta-split'` in `@ultimat3/mcp`: the meta catalog behind three dispatchers split by
@@ -46,6 +50,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **`x new` writes Postgres 18 into both compose files** (`postgres:18-alpine`, the production
   major). The production compose mounts its volume at `/var/lib/postgresql`, where Postgres 18
   images keep the cluster. Apps already scaffolded are not touched.
+
+### Commits
+
+- feat(cli,testing): x new writes a fast, silent test stack; Postgres 18; disposable worker db (#795)
+- feat(mcp,auth): meta-split surface by effect; public OIDC clients (#794)
+- chore(dz): drop the postgres service declaration; the repo's test compose brings its own (#793)
 
 ## 27.11.0 - 2026-10-17
 
