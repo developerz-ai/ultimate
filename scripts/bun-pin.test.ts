@@ -256,6 +256,10 @@ describe('the Bun series is pinned once, in agreement', () => {
       cliFloor: cliFloor(await slurp('packages/cli/src/app-root.ts')),
       scaffoldEngines: scaffoldEnginesFloor(),
       types: await typesFloor(),
+      // The file a toolchain manager reads. `engines.bun` is a RANGE, and mise resolves no Bun from
+      // it: a box with mise but no `.bun-version` ran this gate on whatever Bun it carried, 1.4.0
+      // among them, and went red in `browser-barrel.test.ts` over oven-sh/bun#40578 (2026-10-18).
+      toolchainFile: (await slurp('.bun-version')).trim(),
     };
     for (const [path, floor] of Object.entries(await enginesFloors())) patches[path] = floor;
     for (const [image, path] of [

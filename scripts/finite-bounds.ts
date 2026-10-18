@@ -290,8 +290,8 @@ export function scanFiniteBounds(
   numeric: ReadonlySet<string>,
   tables: ReadonlySet<string> = new Set(),
   screens: RegExp = SCREENING_CALL,
+  code: string = maskLiterals(source),
 ): readonly FiniteBoundSite[] {
-  const code = maskLiterals(source);
   const spans = repairSpans(source, screens);
   const sites: FiniteBoundSite[] = [];
   for (const match of code.matchAll(DEFAULTED)) {
@@ -342,7 +342,16 @@ export function finiteBoundSites(
   const found = new Map<string, FiniteBoundSite[]>();
   for (const file of files) {
     if (!scannable(file)) continue;
-    for (const site of scanFiniteBounds(file.path, file.source, numeric, tables)) {
+    // The corpus's cached mask when the reader holds one: masking is most of a scan's cost.
+    const sites = scanFiniteBounds(
+      file.path,
+      file.source,
+      numeric,
+      tables,
+      SCREENING_CALL,
+      file.masked,
+    );
+    for (const site of sites) {
       const list = found.get(packageOf(site.path)) ?? [];
       list.push(site);
       found.set(packageOf(site.path), list);

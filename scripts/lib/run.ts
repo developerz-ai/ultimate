@@ -185,5 +185,12 @@ export const repoRoot = (): string => join(import.meta.dir, '..', '..');
  * argument stays where only some do, because the comment beside it says which scan it is paying
  * for. `scripts/repo-scan-timeout.test.ts` refuses a `scripts/` test that reads the real tree and
  * declares neither — the reason those six drifted is that nothing was checking.
+ *
+ * **Held at 180s on 2026-10-18, against a measured 195-310s.** Every one of the eight timeouts of
+ * `spawn-timeout.test.ts` that week ran under a bare `bun test` — all 2,772 files in ONE process,
+ * no `--isolate`, examples and dummies included, 1,937s and 526 unrelated failures — never under
+ * this gate. The same test is 31s alone on the slowest box measured (Xeon E5-2630L v3, 4 vCPU),
+ * so the backstop still has 6x over it there. What moved was the cost: the scan masked every file
+ * twice (`spawnGaps` re-reads the tree) instead of reading the corpus's cached mask once.
  */
 export const REPO_SCAN_TIMEOUT_MS = 180_000;

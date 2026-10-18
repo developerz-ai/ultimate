@@ -80,8 +80,11 @@ export interface SpawnSite {
  * a `timeout` that is `undefined` at run time reads as timed — and so does a `signal` that is no
  * `AbortSignal` bounding the child, since only the property NAME is read. A floor, not a proof.
  */
-export function scanSpawns(path: string, source: string): readonly SpawnSite[] {
-  const masked = maskLiterals(source);
+export function scanSpawns(
+  path: string,
+  source: string,
+  masked: string = maskLiterals(source),
+): readonly SpawnSite[] {
   const shipped = !isTestPath(path);
   const sites: SpawnSite[] = [];
   const read = (pattern: RegExp): void => {
@@ -163,8 +166,13 @@ export const spawnFindingFor = (gap: SpawnGap): Finding => {
   }
 };
 
+/**
+ * Every site in the tree, read off the shared corpus and its CACHED mask. Masking is nearly the
+ * whole cost of a scan (1.3 s of 1.3 s over 6,849 files, measured 2026-10-18), and `spawnGaps`
+ * reads the tree a second time: masked here, it paid that cost twice per call.
+ */
 export const spawnSites = async (root: string): Promise<readonly SpawnSite[]> =>
-  (await corpus(root, 'source')).flatMap((file) => scanSpawns(file.path, file.source));
+  (await corpus(root, 'source')).flatMap((file) => scanSpawns(file.path, file.source, file.masked));
 
 const PROBE: SiteProbe<SpawnSite> = { rescan: scanSpawns, line: (site) => site.line };
 
