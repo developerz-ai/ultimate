@@ -30,6 +30,13 @@ export interface WorkerDatabase {
   drop(): Promise<void>;
 }
 
+/**
+ * What `acquireWorkerDatabase` answers: the handle plus `drop()` as its async disposer, so
+ * `await using db = await acquireWorkerDatabase()` releases it however the scope exits. A separate
+ * type so a hand-built `WorkerDatabase` (a fake `acquire`) owes no disposer.
+ */
+export type DisposableWorkerDatabase = WorkerDatabase & AsyncDisposable;
+
 export const DEFAULT_TEMPLATE = 'ultimate_test_template';
 
 /**
@@ -109,7 +116,7 @@ const defaultConnect = (url: string): SqlRunner => {
 export async function acquireWorkerDatabase(
   config: TemplateDbConfig = {},
   deps: Partial<TemplateDbDeps> = {},
-): Promise<WorkerDatabase> {
+): Promise<DisposableWorkerDatabase> {
   const env = deps.env ?? (Bun.env as Readonly<Record<string, string | undefined>>);
   const connect = deps.connect ?? defaultConnect;
   const template = config.templateName ?? DEFAULT_TEMPLATE;
@@ -118,13 +125,13 @@ export async function acquireWorkerDatabase(
   const adminUrl = config.adminUrl ?? env['TEST_DATABASE_URL'] ?? env['DATABASE_URL'];
 
   if (adminUrl === undefined || adminUrl.length === 0) {
-    return {
+    return disposable({
       kind: 'pglite',
       worker,
       database,
       url: `pglite://memory/${database}`,
       drop: async () => undefined,
-    };
+    });
   }
 
   const admin = connect(adminUrl);
@@ -160,7 +167,7 @@ export async function acquireWorkerDatabase(
   }
   await admin.close();
 
-  return {
+  return disposable({
     kind: 'postgres',
     worker,
     database,
@@ -170,7 +177,12 @@ export async function acquireWorkerDatabase(
       await cleanup.exec(dropSql(database));
       await cleanup.close();
     },
-  };
+  });
+}
+
+/** The handle with its `drop` as the async disposer, so `await using` is the one release spelling. */
+function disposable(db: WorkerDatabase): DisposableWorkerDatabase {
+  return { ...db, [Symbol.asyncDispose]: () => db.drop() };
 }
 
 /**

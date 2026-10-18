@@ -81,11 +81,13 @@ x-run-once-probe: &run-once-probe
 
 services:
   db:
-    image: postgres:17-alpine
+    # Postgres 18 images keep the cluster under /var/lib/postgresql/18/docker, so the volume is the
+    # parent — mounted at .../data, as for 17, the image refuses to start.
+    image: postgres:18-alpine
     environment:
       POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${app.kebab}
-    volumes: ['pgdata:/var/lib/postgresql/data']
+    volumes: ['pgdata:/var/lib/postgresql']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s

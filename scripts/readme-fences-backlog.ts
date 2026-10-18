@@ -152,7 +152,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'storage: const grant = await grantUpload({ disk, orgId, request, quarantine: true });': 1,
   "storage: import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';": 1,
   "testing: const anAuthenticatedAction = sharedExamples<Action>('an authenticated action', (subject) => {": 1,
-  'testing: const db = await acquireWorkerDatabase({ adminUrl, migrate });': 1,
   'testing: const orgs = defineFactory(orgEntity, {': 1,
   'testing: defineFixtures({ seed: () => loadSeed, actorFor: () => actorFor });': 1,
   "testing: test('the feed reads its authors once', async ({ statements }) => {": 1,

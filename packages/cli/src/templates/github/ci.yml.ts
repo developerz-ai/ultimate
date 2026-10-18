@@ -11,6 +11,7 @@
 
 import { REQUIRED_BUN } from '../../app-root';
 import type { GeneratedFile, NameSet } from '../naming';
+import { TEST_COMPOSE_PATH, TEST_ENV_PATH } from '../scaffold-test-services';
 import { IMAGE_WORKFLOW_PATH, imageWorkflow } from './image.yml';
 import { RUNS_ON } from './runner';
 
@@ -39,9 +40,9 @@ const ci = (app: NameSet): string => `name: ${CI_WORKFLOW_NAME}
 # \`.x/build-stats.json\`, so a run with no build reports X_BUDGET_UNMEASURED. Run \`x verify\` here
 # instead and this workflow is red for a reason that has nothing to do with the commit.
 #
-# No \`services:\` block, deliberately — \`bun run setup\` brings up embedded Postgres in-process,
-# so there is nothing to provision and nothing to wait on. Add one the day this app needs a real
-# server, beside the \`DATABASE_URL\` that selects it.
+# \`bun run setup\` brings up embedded Postgres in-process; the TEST services come from
+# \`docker/docker-compose.test.yml\` — Postgres 18, Redis, NATS and S3 in RAM, durability and logs
+# off — started by the same two lines a laptop runs, never a \`services:\` block that restates them.
 
 # EVERY push, not just the default branch's. \`x new\` runs a plain \`git init\` and takes whatever
 # \`init.defaultBranch\` this machine already agreed on, so a \`branches: [main]\` filter silently
@@ -90,6 +91,9 @@ jobs:
           restore-keys: bun-\${{ runner.os }}-
       # Two steps rather than one \`&&\`, so the log names which half failed and times each.
       - run: bun run setup
+      # \`--wait\` returns once every healthcheck passes; the env file points the suites at them.
+      - run: docker compose -f ${TEST_COMPOSE_PATH} up -d --wait
+      - run: cat ${TEST_ENV_PATH} >> "$GITHUB_ENV"
       - run: bun run check
 `;
 

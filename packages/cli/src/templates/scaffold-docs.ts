@@ -11,6 +11,7 @@ import type { GeneratedFile, NameSet } from './naming';
 import { binFiles } from './scaffold-bin';
 import { claudeFiles } from './scaffold-claude';
 import { containerFiles } from './scaffold-container';
+import { testServicesFiles } from './scaffold-test-services';
 
 const agents = (app: NameSet): string => `# AGENTS.md
 
@@ -67,7 +68,14 @@ branch whose test cannot fail is worse than an uncovered one, because it reads a
 browser-only mount, a container entry point — carries its \`why\`, and is printed by \`x doctor\`.
 
 Every test the scaffold and the generators write is the idiom to copy. All of them run on the
-\`unit\` step — in process, on the in-memory driver, with no database, browser or server:
+\`unit\` step — in process, on the in-memory driver, with no database, browser or server.
+
+A suite that needs a real server reads it from \`docker/test-services.env\`: Postgres 18, Redis, NATS
+and S3 from \`docker/docker-compose.test.yml\`, in RAM, with durability and logging off — CI starts
+it before \`bun run check\`, a laptop with \`docker compose -f docker/docker-compose.test.yml up -d
+--wait\` then \`set -a; . docker/test-services.env; set +a\`. A resource a test opens is held with
+\`await using\` — \`await using db = await acquireWorkerDatabase()\` drops its database however
+the test ends:
 
 | What | How its test runs it | Copy from |
 |---|---|---|
@@ -136,6 +144,14 @@ bun run dev     # all roles in one process, embedded Postgres, /_x mounted
 bun run check   # the gate: a static build, then typecheck, lint, boundaries, tests, drift, budgets
 \`\`\`
 
+Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them:
+
+\`\`\`sh
+docker compose -f docker/docker-compose.test.yml up -d --wait
+set -a; . docker/test-services.env; set +a
+bun run check
+\`\`\`
+
 \`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bun run setup\` runs
 \`x db gen "initial"\` for you on a fresh clone. Until it has, \`x verify\`'s \`drift\` step is red
 with \`X_DB_DRIFT\`, and that is the fix it names.
@@ -173,7 +189,7 @@ const composeDev = (
 # production topology is docker-compose.prod.yml, and it is a different file for a reason.
 services:
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_PASSWORD: ${app.kebab}
       POSTGRES_DB: ${app.kebab}
@@ -214,6 +230,8 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     // The scripts `bun run setup` and `bun run check` run — TypeScript, so one file per OS.
     ...binFiles(),
     { path: 'docker/docker-compose.dev.yml', contents: composeDev(app) },
+    // What the suites run against — in RAM, silent; ci.yml starts it before the gate.
+    ...testServicesFiles(app),
     // The harness half of the same job AGENTS.md does. It lands in the app's own repo rather than
     // in a global config, so it is visible in the scaffold's diff and deletable in one line.
     ...claudeFiles(app),

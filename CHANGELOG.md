@@ -30,6 +30,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `OAuthClientCredentials`. `'none'` reads no `<PROVIDER>_CLIENT_SECRET` and sends no
   `client_secret`; `'client_secret_basic'` sends the pair in `Authorization: Basic`. PKCE stays
   mandatory. Absent means `'client_secret_post'`, the behaviour before.
+- **`x new` writes a fast, silent test stack.** `docker/docker-compose.test.yml` runs Postgres 18,
+  Redis, NATS and an S3 gateway on tmpfs, each with its log driver `none`: Postgres with `fsync`,
+  `synchronous_commit` and `full_page_writes` off, `wal_level=minimal`, `max_wal_senders=0`, the
+  logging collector off and `log_min_messages=fatal`; Redis with no RDB snapshot and no AOF.
+  `docker/test-services.env` points the suites at it (`TEST_DATABASE_URL`, the URL
+  `@ultimat3/testing` clones one database per worker from), on ports apart from the dev stack's.
+  The generated `ci.yml` starts it and loads that env before `bun run check`, and the app's
+  `AGENTS.md` says how to run it locally.
+- **`acquireWorkerDatabase()` returns an async-disposable handle**: `await using db = await
+  acquireWorkerDatabase()` drops the worker database when the scope ends.
+
+### Changed
+
+- **`x new` writes Postgres 18 into both compose files** (`postgres:18-alpine`, the production
+  major). The production compose mounts its volume at `/var/lib/postgresql`, where Postgres 18
+  images keep the cluster. Apps already scaffolded are not touched.
 
 ## 27.11.0 - 2026-10-17
 
