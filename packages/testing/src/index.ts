@@ -340,7 +340,12 @@ export {
 } from './sealed-network';
 export type { SharedExamples } from './shared-examples';
 export { behavesLike, sharedExamples } from './shared-examples';
-export type { SqlRunner, TemplateDbConfig, WorkerDatabase } from './template-db';
+export type {
+  DisposableWorkerDatabase,
+  SqlRunner,
+  TemplateDbConfig,
+  WorkerDatabase,
+} from './template-db';
 export {
   acquireWorkerDatabase,
   cloneSql,

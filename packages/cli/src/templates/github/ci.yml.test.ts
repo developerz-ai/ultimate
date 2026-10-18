@@ -83,8 +83,18 @@ describe('unit · the CI workflow x new writes', () => {
   test('it runs bun run setup and then bun run check, and restates neither', () => {
     expect(steps().flatMap((step) => (step.run === undefined ? [] : [step.run]))).toEqual([
       'bun run setup',
+      'docker compose -f docker/docker-compose.test.yml up -d --wait',
+      'cat docker/test-services.env >> "$GITHUB_ENV"',
       'bun run check',
     ]);
+  });
+
+  // The stack those two steps start and read is one the scaffold actually writes — the order is
+  // the test above's; this holds the paths to files that exist.
+  test('the test stack it starts is the one the scaffold writes', () => {
+    const written = new Set(repoFiles(app, '1.0.0', true).map((file) => file.path));
+    expect(written.has('docker/docker-compose.test.yml')).toBe(true);
+    expect(written.has('docker/test-services.env')).toBe(true);
   });
 
   // `x verify` is HALF of `bun run check`: without the build the `budgets` step has no

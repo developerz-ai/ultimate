@@ -305,8 +305,14 @@ its own, so one shared store is enough.
 ## Parallel databases
 
 ```ts
-const db = await acquireWorkerDatabase({ adminUrl, migrate });
+import { acquireWorkerDatabase } from '@ultimat3/testing';
+
+// `migrate: (url) => …` applies the app's schema into the template once; omitted here.
+await using db = await acquireWorkerDatabase({ adminUrl: Bun.env['TEST_DATABASE_URL'] });
 ```
+
+The handle is async-disposable (`As of 2026-10-18`): `await using` drops the worker's database when
+the scope ends, a failed test included; `db.drop()` is the same call spelled by hand.
 
 The first worker creates the template under a Postgres advisory lock and migrates it; every
 worker then clones it copy-on-write, under the same lock — a clone waits only 5 s for a session on

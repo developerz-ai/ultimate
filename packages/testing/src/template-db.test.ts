@@ -73,6 +73,23 @@ describe('unit · template-db', () => {
     expect(second.statements).toContain(cloneSql(DEFAULT_TEMPLATE, b.database));
   });
 
+  test('await using drops the worker database when its scope ends', async () => {
+    const { statements, connect } = recorder();
+    let name = '';
+    let inside = 0;
+    const drops = (): number => statements.filter((sql) => sql === dropSql(name)).length;
+    {
+      await using db = await acquireWorkerDatabase(
+        { adminUrl: ADMIN },
+        { connect, env: { BUN_TEST_WORKER_ID: '3' } },
+      );
+      name = db.database;
+      inside = drops();
+    }
+    expect(drops()).toBe(inside + 1);
+    expect(statements.at(-1)).toBe(dropSql(name));
+  });
+
   test('the template is created and migrated once, under an advisory lock', async () => {
     const { statements, connect } = recorder();
     const migrated: string[] = [];
