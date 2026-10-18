@@ -33,6 +33,7 @@ import {
   VERIFY_STEPS,
 } from '@ultimat3/cli';
 import { isUltimateError, renderThrowable } from '@ultimat3/core';
+import { requireBunVersion } from '../packages/cli/src/app-root';
 // The leaf, not the barrel (DX ledger #10): a guard must load while a package is mid-edit.
 import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
 import { BadFlagError, MissingPositionalError } from '../packages/cli/src/errors';
@@ -373,6 +374,12 @@ if (import.meta.main) {
   const root = repoRoot();
   const verbose = flagBool(args, 'verbose');
   try {
+    // The runtime first, as `x` itself does (`dispatch`): this script calls `runVerify` directly
+    // and so skipped that check. A gate on a Bun below the pin is not the gate CI runs — on Bun
+    // 1.4.0 (oven-sh/bun#40578, fixed in 1.4.1) every browser barrel bundles to an empty
+    // `export { … }` and `scripts/browser-barrel.test.ts` goes red over code nobody changed, after
+    // the whole gate has run. One coded line, before any step, names the cause instead.
+    requireBunVersion(Bun.version);
     const [word, ...rest] = args.positionals;
     if (word !== undefined && !(VERIFY_SUBCOMMANDS as readonly string[]).includes(word)) {
       // A stray word used to be dropped and the whole gate ran: `verify lint` is not `--only lint`.

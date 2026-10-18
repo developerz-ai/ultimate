@@ -64,6 +64,19 @@ describe('unit · a generation failure is described, never re-thrown', () => {
   });
 });
 
+describe('unit · the repo gate refuses a Bun below the pin', () => {
+  // `x` refuses one in `dispatch`; this script calls `runVerify` directly, so it must say so itself,
+  // and BEFORE the gate: on Bun 1.4.0 the gate ran to the end and went red in a bundler defect.
+  test('the runtime is checked before any step runs', async () => {
+    const source = await Bun.file(join(repoRoot(), 'scripts/verify.ts')).text();
+    const main = source.slice(source.indexOf('if (import.meta.main)'));
+    const check = main.indexOf('requireBunVersion(Bun.version)');
+    expect(check).toBeGreaterThan(0);
+    expect(check).toBeLessThan(main.indexOf('runVerify('));
+    expect(check).toBeLessThan(main.indexOf('mergeGateParts('));
+  });
+});
+
 describe('unit · the repo gate is the CLI gate', () => {
   test('the repo adds rules to steps, never steps of its own', () => {
     const names: readonly string[] = verifyStepNames();
