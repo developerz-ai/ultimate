@@ -151,6 +151,7 @@ function exposureOf(
     ...(declared.description === undefined ? {} : { description: declared.description }),
     ...(declared.visibleTo === undefined ? {} : { visibleTo: declared.visibleTo }),
     ...(declared.listParams === undefined ? {} : { listParams: declared.listParams }),
+    ...(declared.effect === undefined ? {} : { effect: declared.effect }),
     ...(declared.title === undefined ? {} : { title: declared.title }),
     ...(declared.annotations === undefined ? {} : { annotations: declared.annotations }),
   };

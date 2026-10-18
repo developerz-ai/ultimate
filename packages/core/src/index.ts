@@ -681,6 +681,7 @@ export { setLogSink } from './logger';
 export {
   isMcpExposed,
   type McpAnnotationHints,
+  type McpEffect,
   type McpExposureDeclaration,
   type McpListFilterOp,
   type McpListParams,

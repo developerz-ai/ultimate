@@ -29,6 +29,11 @@ export type McpOutcome =
    */
   | 'unconfirmed'
   /**
+   * `delete_resource` without `live: true`: resolved and admitted, and answered with a preview of
+   * the call instead of running it. Its own outcome so "previewed" never reads as "committed".
+   */
+  | 'previewed'
+  /**
    * The handler threw something that is not an authz denial: a non-authz framework refusal
    * (`db.migrate` aimed at prod), or a bug. Both want a human — a projected action rejecting
    * input MCP already validated means the JSON Schema and the real schema have drifted.
@@ -52,13 +57,14 @@ const DENIAL_CODES: ReadonlySet<string> = new Set([
  * Codes that mean the CALLER got the arguments wrong, in a way the published JSON Schema could
  * not have refused. `X_ADMIN_INVALID` is the case: `@ultimat3/admin` publishes a `type` per field
  * and nothing else, so an entity's own rules are the first thing a value meets, and a mistyped
- * `admin.create` is a client misreading a schema — `invalid-args`, at `info`.
+ * `admin.create` is a client misreading a schema — `invalid-args`, at `info`. `X_MCP_WRONG_TOOL`
+ * is the same kind of slip one level up: the right action on the wrong `meta-split` dispatcher.
  *
  * `X_INPUT_INVALID` deliberately stays OUT: a projected action publishes its whole schema, so
  * input this server already validated failing inside the action means the two have drifted, and
  * that wants a human.
  */
-const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID']);
+const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID', 'X_MCP_WRONG_TOOL']);
 
 /**
  * `mcpConfirmations`' answers for a call no live approval covers. A rejection is NOT here: a human
@@ -67,6 +73,7 @@ const ARGUMENT_CODES: ReadonlySet<string> = new Set(['X_ADMIN_INVALID']);
 const UNCONFIRMED_CODES: ReadonlySet<string> = new Set([
   'X_MCP_CONFIRMATION_PENDING',
   'X_MCP_CONFIRMATION_EXPIRED',
+  'X_MCP_USER_CONFIRMATION_REQUIRED',
 ]);
 
 /** Classify a code a tool threw. Denials are outcome 3; everything else wants a human. */
@@ -125,6 +132,7 @@ const LEVEL: ReadonlyMap<McpOutcome, 'info' | 'warn' | 'error'> = new Map([
   ['policy-denied', 'warn'],
   ['invalid-args', 'info'],
   ['unconfirmed', 'info'],
+  ['previewed', 'info'],
   ['failed', 'error'],
 ]);
 // An outcome is a closed union, so the `Map` is total; `?? 'error'` is the type's witness, not a

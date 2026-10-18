@@ -98,6 +98,7 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
   const mutates = primitive.mutates ?? true;
   const visibleTo = primitive.mcp?.visibleTo;
   const listParams = primitive.mcp?.listParams;
+  const effect = primitive.mcp?.effect;
   const title = primitive.mcp?.title;
   const outputSchema = primitive.outputJsonSchema;
   const wrap = primitive.outputWrap;
@@ -112,6 +113,7 @@ export function toolFrom(listed: ListedPrimitive): AnyMcpTool {
     destructive: mutates,
     ...(visibleTo !== undefined ? { visibleTo } : {}),
     ...(listParams !== undefined ? { listParams } : {}),
+    ...(effect !== undefined ? { effect } : {}),
     ...(primitive.admit === undefined
       ? {}
       : { admit: (caller: McpCaller) => primitive.admit?.(caller.actor) }),

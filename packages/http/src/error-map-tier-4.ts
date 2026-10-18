@@ -140,4 +140,8 @@ export const TIER_4_ERROR_STATUS = {
   X_AGENT_TRANSCRIPT_INVALID: 422,
   // @ultimat3/ai — the upstream ended a turn with a reason nobody knows and an incomplete answer
   X_AI_PROVIDER_UNEXPECTED: 502,
+  // @ultimat3/mcp — a meta-split action was called through the wrong dispatcher
+  X_MCP_WRONG_TOOL: 400,
+  // @ultimat3/mcp — a delete_resource commit did not carry confirmed_by_user: true
+  X_MCP_USER_CONFIRMATION_REQUIRED: 428,
 } satisfies Readonly<Record<string, number>>;

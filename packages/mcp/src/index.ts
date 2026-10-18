@@ -131,12 +131,25 @@ export { MCP_IDEMPOTENCY_KEY_ARG } from './idempotency-arg';
 export type { ListFilterOp, McpListParams } from './list-params';
 export { DEFAULT_LIST_MAX_LIMIT, listParamsSchema } from './list-params';
 export {
+  McpEffectConflictError,
+  McpEffectUndeclaredError,
   McpGroupConflictError,
   McpGroupUnknownError,
   McpListParamsInvalidError,
   McpSurfaceInvalidError,
+  McpUserConfirmationRequiredError,
+  McpWrongToolError,
   META_UNKNOWN_FIX,
 } from './meta-errors';
+export type { McpEffectClass } from './meta-split';
+export {
+  DELETE_RESOURCE,
+  effectOf,
+  READ_RESOURCE,
+  SPLIT_DISPATCHERS,
+  toolForEffect,
+  WRITE_RESOURCE,
+} from './meta-split';
 export type {
   DescribedAction,
   McpResourceGroup,

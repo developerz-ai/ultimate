@@ -34,6 +34,7 @@ import. The CLI wires it.
 | `readonly-sql.ts` · `readonly-sql-calls.ts` | layer 3 of `db.query` — the single-read parse — and `db.migrate`'s branch check · the banned call families |
 | `query-limits.ts` | layer 4 of `db.query` — the row, byte and timeout ceilings, and what truncation reports |
 | `meta-surface.ts` | `surface: 'meta'` catalog: `list_resources` / `describe_resource`, `groups:` boot checks; dispatch stays in `server.ts` |
+| `meta-split.ts` · `meta-split-call.ts` · `meta-host.ts` | `surface: 'meta-split'`: the three dispatchers, the effect boot check · their dispatch (wrong tool, preview, `confirmed_by_user`) · the server half both meta doors call |
 | `list-params.ts` | `listParams` whitelist → the schema `manage_resource` enforces (flat keys: `status_eq`) |
 | `meta-errors.ts` · `framework-error.ts` | meta boot refusals · a thrown value read and rendered (split from `server.ts`) |
 | `server-voice.ts` · `surface-budget.ts` | `instructions`, `errorAudience`, the invalid-args RESULT · `tools/list`/`list_resources` size, measured and budgeted |
@@ -45,6 +46,10 @@ import. The CLI wires it.
   audited under the inner tool. `tools/list` shows what `tools/call` answers PER CALLER: a meta caller
   cannot call a grouped tool by name, a flat caller never sees the meta tools, and every not-found a
   meta caller gets carries `META_UNKNOWN_FIX`. Default `'flat'` builds no `MetaSurface`.
+  **`'meta-split'` is three more doors on the same path** (`As of 2026-10-18`): the effect picks the
+  door and is never defaulted (`X_MCP_EFFECT_UNDECLARED` at boot); a wrong door runs nothing
+  (`X_MCP_WRONG_TOOL`, after visibility, before scope); `delete_resource` previews unless `live:
+  true` and commits only on `confirmed_by_user: true`, both after the policy's actor half.
 
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a `defineAppMcp` file
   imports one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on
@@ -202,19 +207,8 @@ import. The CLI wires it.
   second claim, exactly as `ToolRegistry.register` throws on a second tool name — one package
   cannot answer "this name is taken" two ways. `Map.set` made the answer whichever provider was
   wired last, and a `ultimate://` URI is quoted in AGENTS.md files.
-- **`\'` inside a string literal is refused** (`readonly-sql.ts`). `E'\''` is one quote to
-  Postgres and `standard_conforming_strings` decides the plain spelling, so the two readings
-  disagree about where the string ends — which is exactly where a `;` hides.
-  `select E'\'' ; drop table posts --'` was accepted as one read-only statement and handed back
-  verbatim to run. Only inside a single-quoted run: a comment, a `$tag$` body and a quoted
-  identifier are unambiguous and still read fine.
-- **An unterminated run is refused, never swallowed** (`readonly-sql.ts`). The stripper blanks what
-  it believes is inside a literal, so an opening delimiter that never closes hid the whole tail:
-  `select '; delete from members` counted one statement with no mutating keyword and was handed
-  back to run. All four forms now throw `X_MCP_QUERY_REJECTED` — `'`, `"`, `$tag$`, `/* */`. Not
-  exploitable through Postgres (a syntax error either way); the point is that this layer must not
-  be the thing that waves it through. `@ultimat3/admin`'s `/_x` panel failed CLOSED here where this
-  failed open, which is how it was found — a second, differently-behaved copy of one rule.
+- **`\'` inside a string literal is refused** (`readonly-sql.ts`) — why: `docs/history/mcp.md`.
+- **An unterminated run is refused, never swallowed** (`readonly-sql.ts`, all four delimiters, `X_MCP_QUERY_REJECTED`) — why: `docs/history/mcp.md`.
 - **`into` is a write keyword.** `SELECT ... INTO <table>` is `CREATE TABLE AS` in another spelling:
   a DDL write with a read LEADER, so nothing else in the scan sees it. Layer 2's `BEGIN READ ONLY`
   refuses it on the wired path — the point is that this layer must not be the thing that waves it

@@ -66,3 +66,69 @@ export class McpSurfaceInvalidError extends UltimateError {
     });
   }
 }
+
+/** A grouped write on a `'meta-split'` surface that names no effect: no dispatcher can run it. */
+export class McpEffectUndeclaredError extends UltimateError {
+  readonly names: readonly string[];
+
+  constructor(input: { names: readonly string[] }) {
+    const names = input.names.join(', ');
+    super({
+      code: 'X_MCP_EFFECT_UNDECLARED',
+      cause: `surface can be 'meta-split', and ${input.names.length} grouped write(s) declare no effect (${names}), so neither write_resource nor delete_resource can be picked for them`,
+      fix: `mcp: { expose: true, effect: 'write' }   # on ${names} — 'delete' for an archive, a cancel, a send or a spend; a hand-written tool takes tools: { <name>: { effect } }`,
+    });
+    this.names = input.names;
+  }
+}
+
+/** A grouped READ that declares an effect: a read is `read_resource`'s, whatever it says. */
+export class McpEffectConflictError extends UltimateError {
+  constructor(input: { name: string; effect: string }) {
+    super({
+      code: 'X_MCP_EFFECT_CONFLICT',
+      cause: `"${input.name}" is a read (a query, or destructive: false) and declares effect: '${input.effect}'; on a meta-split surface a read is always run by read_resource`,
+      fix: `mcp: { expose: true }   # on "${input.name}", without effect — or, if it changes state, make it an action (or a tool with destructive: true) and keep effect: '${input.effect}'`,
+    });
+  }
+}
+
+/** The right action, the wrong dispatcher. Names the dispatcher that runs it; nothing ran. */
+export class McpWrongToolError extends UltimateError {
+  readonly useTool: string;
+
+  constructor(input: { resource: string; action: string; called: string; useTool: string }) {
+    const call = `${input.useTool}({ resource: "${input.resource}", action: "${input.action}", params })`;
+    super({
+      code: 'X_MCP_WRONG_TOOL',
+      cause: `${input.resource}.${input.action} is not run by ${input.called}; it is run by ${input.useTool} (wrong_tool_for_action). Nothing ran`,
+      fix: `${call}   # the same params, on ${input.useTool}`,
+      callerFix: `call ${call} with the same params`,
+      meta: {
+        resource: input.resource,
+        action: input.action,
+        called: input.called,
+        use_tool: input.useTool,
+      },
+    });
+    this.useTool = input.useTool;
+  }
+}
+
+/** A `delete_resource` commit (`live: true`) without the user's approval. Nothing ran. */
+export class McpUserConfirmationRequiredError extends UltimateError {
+  constructor(input: { resource: string; action: string }) {
+    const call = `delete_resource({ resource: "${input.resource}", action: "${input.action}", params, live: true, confirmed_by_user: true })`;
+    super({
+      code: 'X_MCP_USER_CONFIRMATION_REQUIRED',
+      cause: `${input.resource}.${input.action} commits only with confirmed_by_user: true; nothing ran`,
+      fix: `${call}   # once the user approved this change, directly or by authorizing the task that includes it; live: false previews it without running`,
+      callerFix: `ask the user to approve ${input.resource}.${input.action}, then call ${call} with the same params`,
+      meta: {
+        resource: input.resource,
+        action: input.action,
+        retry_with: { confirmed_by_user: true },
+      },
+    });
+  }
+}

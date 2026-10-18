@@ -67,6 +67,7 @@ bound to its provider. An id token is verified against the provider's JWKS. An i
 | `redirect_uri` origin | `oauthLogin(auth, { baseUrl })`, else `APP_URL`. With neither the start leg answers `X_ENV_MISSING` — never the request's `Host` |
 | a refused leg's body | `code`, `title`, `docs`, one fixed `cause`, `fix: x errors explain <CODE> --json`. The authored cause and fix are the `auth.oauth.refused` log line |
 | `discoverOAuthProvider` | refuses a document whose `issuer` is not the one asked for (a trailing slash aside) |
+| a public client (`As of 2026-10-18`) | `tokenEndpointAuth: 'none'` on the provider, `discoverOAuthProvider` or `credentials`: no `<PROVIDER>_CLIENT_SECRET` is read and no `client_secret` is sent; PKCE still is. `'client_secret_basic'` sends the pair in `Authorization: Basic`. Absent: `'client_secret_post'`, unchanged |
 | `apple` | not a built-in since 26.0.0 ([#709](https://github.com/developerz-ai/ultimate/issues/709)): Apple POSTs its callback and both callback routes are GET, so it could never complete a sign-in. An app that needs it registers its own with `registerOAuthProvider` |
 
 ## MFA, verification, API keys, workloads

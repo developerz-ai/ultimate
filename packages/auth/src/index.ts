@@ -175,6 +175,7 @@ export type {
   OAuthProvider,
   OAuthProviderId,
   PkcePair,
+  TokenEndpointAuth,
 } from './oauth';
 export { assertOAuthCallback, beginOAuth, pkcePair } from './oauth';
 export {

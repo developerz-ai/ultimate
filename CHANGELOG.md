@@ -8,7 +8,28 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`surface: 'meta-split'` in `@ultimat3/mcp`: the meta catalog behind three dispatchers split by
+  effect.** `manage_resource` runs reads and writes alike, so it cannot carry an honest
+  `readOnlyHint` and a directory that refuses a read+write dispatcher refuses it. `'meta-split'`
+  serves `list_resources`, `describe_resource`, `read_resource` (queries, `readOnlyHint: true`),
+  `write_resource` and `delete_resource` (`destructiveHint: true`), picked from a new
+  `mcp: { effect: 'write' | 'delete' }` on the action (core's `McpEffect`; hand-written tools take
+  `effect` too). A grouped write without one fails boot with `X_MCP_EFFECT_UNDECLARED`; a query
+  declaring one with `X_MCP_EFFECT_CONFLICT`. An action called on the wrong dispatcher answers
+  `X_MCP_WRONG_TOOL` (`wrong_tool_for_action`, naming the right tool) and nothing runs.
+  `delete_resource({ resource, action, params, live, confirmed_by_user })` answers a preview and
+  runs nothing unless `live: true` (audited `previewed`; an action whose input declares `live`
+  authors its own preview), and runs only with `confirmed_by_user: true`, else
+  `X_MCP_USER_CONFIRMATION_REQUIRED`. Every call that runs takes the flat `tools/call` path: same
+  policy, scope, audit line and rate-limit bucket. `'meta'` and `'flat'` are unchanged, and a
+  `surface` function only serves `'meta-split'` once a grouped tool declares an effect.
+- **Public OIDC clients in `@ultimat3/auth`.** `tokenEndpointAuth: 'none' | 'client_secret_post' |
+  'client_secret_basic'` on `OAuthProvider`, `discoverOAuthProvider` and per exchange on
+  `OAuthClientCredentials`. `'none'` reads no `<PROVIDER>_CLIENT_SECRET` and sends no
+  `client_secret`; `'client_secret_basic'` sends the pair in `Authorization: Basic`. PKCE stays
+  mandatory. Absent means `'client_secret_post'`, the behaviour before.
 
 ## 27.11.0 - 2026-10-17
 

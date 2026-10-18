@@ -338,8 +338,12 @@ const SERVING_ROLE_CEILING = 962;
  * on `MIGRATE_CEILING`.
  * raised 1087 → 1091, measured 1091 (2026-10-17, #790): the four modules named on
  * `SERVING_ROLE_CEILING` for #790.
+ * raised 1091 → 1094, measured 1094 (2026-10-18, F13 `surface: 'meta-split'`): `mcp/src/meta-split.ts`
+ * (the three dispatchers and the effect boot check), `meta-split-call.ts` (their dispatch: wrong tool,
+ * preview, `confirmed_by_user`) and `meta-host.ts` (the server half both meta doors call, moved out of
+ * `meta-call.ts` so neither imports the other).
  */
-const WEB_ROLE_CEILING = 1091;
+const WEB_ROLE_CEILING = 1094;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

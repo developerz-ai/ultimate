@@ -21,6 +21,7 @@ import {
   type OAuthHandshake,
   type OAuthProvider,
   type OAuthProviderId,
+  type TokenEndpointAuth,
 } from './oauth';
 import { oauthExchangeFailed, restartAt } from './oauth-errors';
 import { providerFor } from './oauth-registry';
@@ -41,7 +42,10 @@ const MAX_DETAIL_LENGTH = 200;
 
 export interface OAuthClientCredentials {
   readonly clientId: string;
+  /** `''` for a public client (`tokenEndpointAuth: 'none'`), which sends none. */
   readonly clientSecret: string;
+  /** Overrides the provider's `tokenEndpointAuth` for this exchange. Absent: the provider's. */
+  readonly tokenEndpointAuth?: TokenEndpointAuth | undefined;
 }
 
 export interface OAuthTokens {
@@ -79,12 +83,14 @@ export function oauthCredentials(
   provider: OAuthProviderId,
   env: Readonly<Record<string, string | undefined>> = Bun.env,
 ): OAuthClientCredentials {
-  const { clientIdEnv, clientSecretEnv } = providerFor(provider);
+  const { clientIdEnv, clientSecretEnv, tokenEndpointAuth } = providerFor(provider);
+  const isPublic = tokenEndpointAuth === 'none';
   const clientId = env[clientIdEnv]?.trim() ?? '';
-  const clientSecret = env[clientSecretEnv]?.trim() ?? '';
+  // A public client has no secret to read, and a leftover one in the env is never sent.
+  const clientSecret = isPublic ? '' : (env[clientSecretEnv]?.trim() ?? '');
   const missing = [
     ...(clientId === '' ? [clientIdEnv] : []),
-    ...(clientSecret === '' ? [clientSecretEnv] : []),
+    ...(clientSecret === '' && !isPublic ? [clientSecretEnv] : []),
   ];
   if (missing.length > 0) {
     throw new EnvMissingError({
@@ -93,7 +99,7 @@ export function oauthCredentials(
       meta: { provider, missing },
     });
   }
-  return { clientId, clientSecret };
+  return isPublic ? { clientId, clientSecret, tokenEndpointAuth } : { clientId, clientSecret };
 }
 
 /**
@@ -160,8 +166,11 @@ export async function providerDetail(
 }
 
 function fixForStatus(provider: OAuthProviderId, status: number): string {
-  const { clientIdEnv, clientSecretEnv } = providerFor(provider);
+  const { clientIdEnv, clientSecretEnv, tokenEndpointAuth } = providerFor(provider);
   if (status === 401 || status === 403) {
+    if (tokenEndpointAuth === 'none') {
+      return `set ${clientIdEnv} to the current value in the ${provider} app settings, and confirm the client is registered as public (token_endpoint_auth_method: none)`;
+    }
     return `set ${clientIdEnv} and ${clientSecretEnv} to the current values in the ${provider} app settings`;
   }
   if (status === 400) {
@@ -174,6 +183,7 @@ async function postForm(
   provider: OAuthProviderId,
   body: URLSearchParams,
   options: OAuthExchangeOptions,
+  authorization?: string,
 ): Promise<Record<string, unknown>> {
   const doFetch: OAuthFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
   // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
@@ -196,6 +206,7 @@ async function postForm(
         Accept: 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': OAUTH_USER_AGENT,
+        ...(authorization === undefined ? {} : { Authorization: authorization }),
       },
       body: body.toString(),
       signal: AbortSignal.timeout(timeoutMs),
@@ -311,13 +322,20 @@ export async function exchangeOAuthCode(
     code: callback.code,
     redirect_uri: handshake.redirectUri,
     client_id: options.credentials.clientId,
-    client_secret: options.credentials.clientSecret,
   });
+  const auth = options.credentials.tokenEndpointAuth ?? provider.tokenEndpointAuth;
+  // `client_secret_post` (the default) puts the secret in the body; `'none'` sends no secret at
+  // all, and `client_secret_basic` sends it in the header (RFC 6749 §2.3.1).
+  if (auth === undefined || auth === 'client_secret_post') {
+    body.set('client_secret', options.credentials.clientSecret);
+  }
+  const authorization =
+    auth === 'client_secret_basic' ? basicAuthorization(options.credentials) : undefined;
   // Unconditional: PKCE is not provider-dependent, and `OAuthProvider.usesPkce` is the type-level
   // statement of that — there is no configuration in which this line is skipped.
   body.set('code_verifier', handshake.verifier);
 
-  const payload = await postForm(handshake.provider, body, options);
+  const payload = await postForm(handshake.provider, body, options, authorization);
   const accessToken = payload['access_token'];
   if (typeof accessToken !== 'string' || accessToken === '') {
     throw oauthExchangeFailed({
@@ -364,4 +382,10 @@ export async function exchangeOAuthCode(
             keys: options.keys ?? defaultIdTokenKeys(provider, options),
           }),
   };
+}
+
+/** RFC 6749 §2.3.1: each half form-encoded BEFORE the base64, so a `:` in either survives. */
+function basicAuthorization(credentials: OAuthClientCredentials): string {
+  const encode = (value: string): string => new URLSearchParams({ v: value }).toString().slice(2);
+  return `Basic ${btoa(`${encode(credentials.clientId)}:${encode(credentials.clientSecret)}`)}`;
 }

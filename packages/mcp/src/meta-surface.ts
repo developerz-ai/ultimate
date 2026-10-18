@@ -8,20 +8,26 @@
 // A grouped tool is reachable ONLY through `manage_resource` for a meta caller, and a flat caller
 // never sees the meta tools: what `tools/list` shows is what `tools/call` answers, per caller.
 
+import type { McpEffect } from '@ultimat3/core';
 import { McpToolDuplicateError } from './errors';
 import { assertListParams, listParamsSchema } from './list-params';
 import { McpGroupConflictError, McpGroupUnknownError, McpSurfaceInvalidError } from './meta-errors';
+import { assertEffects, SPLIT_DISPATCHERS, SPLIT_TOOL_ENTRIES } from './meta-split';
 import type { AnyMcpTool, McpCaller, ToolListEntry } from './registry';
 import { visibleToCaller } from './registry';
 import type { JsonSchema } from './wire';
 import { NO_ARGS } from './wire';
 
-export type McpSurface = 'flat' | 'meta';
+/**
+ * `'meta'`: one `manage_resource` runs every grouped tool. `'meta-split'`: `read_resource`,
+ * `write_resource` and `delete_resource` run them by declared effect (`meta-split.ts`).
+ */
+export type McpSurface = 'flat' | 'meta' | 'meta-split';
 
 /**
  * Which surface a caller is served. A function decides per POPULATION — staff meta, customers flat
  * — from the caller alone, never the arguments. A function that throws or answers anything but the
- * literal `'meta'` serves `'flat'`: the two surfaces reach the same tools under the same gates, so
+ * literal `'meta'` or `'meta-split'` serves `'flat'`: the two surfaces reach the same tools under the same gates, so
  * the fallback changes the shape of the catalog, never what the caller may do.
  */
 export type McpSurfaceOption = McpSurface | ((caller: McpCaller) => McpSurface);
@@ -44,6 +50,7 @@ export const META_TOOL_NAMES: readonly string[] = [
   LIST_RESOURCES,
   DESCRIBE_RESOURCE,
   MANAGE_RESOURCE,
+  ...SPLIT_DISPATCHERS,
 ];
 
 /** The three constant entries, as `tools/list` publishes them. */
@@ -90,9 +97,31 @@ export const META_TOOL_ENTRIES: readonly ToolListEntry[] = [
   },
 ];
 
+/**
+ * The catalog pair as the `'meta-split'` surface publishes it: the same tools, worded for three
+ * dispatchers instead of one. `'meta'` keeps its entries byte for byte.
+ */
+const CATALOG_ENTRIES: readonly ToolListEntry[] = META_TOOL_ENTRIES.filter(
+  (entry) => entry.name !== MANAGE_RESOURCE,
+).map((entry) =>
+  entry.name === DESCRIBE_RESOURCE
+    ? {
+        ...entry,
+        description:
+          "Full input schemas for the actions of one or more resources (batched), each with the tool that runs it. For when list_resources' one-line params are not enough. Read-only.",
+      }
+    : {
+        ...entry,
+        description:
+          'The catalog: every resource this caller may use, each action with a one-line parameter hint and the tool that runs it — read_resource, write_resource or delete_resource. Read-only.',
+      },
+);
+
 export interface MetaAction {
   readonly name: string;
   readonly kind: 'query' | 'action';
+  /** An action's declared effect — the dispatcher that runs it on `'meta-split'`. A query has none. */
+  readonly effect?: McpEffect;
   readonly description: string;
   /** One line an agent can compose a call from: `radicado: string, note?: string`. */
   readonly params: string;
@@ -116,13 +145,17 @@ export class MetaSurface {
   /** Tool name → the resource that answers it. */
   readonly #home: ReadonlyMap<string, string>;
   readonly #tools: ReadonlyMap<string, AnyMcpTool>;
+  /** Every grouped tool's effect was checked at boot, so `'meta-split'` may be served. */
+  readonly #split: boolean;
 
   private constructor(
     option: McpSurfaceOption,
     groups: ReadonlyMap<string, McpResourceGroup>,
     home: ReadonlyMap<string, string>,
     tools: ReadonlyMap<string, AnyMcpTool>,
+    split: boolean,
   ) {
+    this.#split = split;
     this.#option = option;
     this.#groups = groups;
     this.#home = home;
@@ -151,13 +184,13 @@ export class MetaSurface {
         cause: `groups: declares ${entries.length} resource(s), and surface is 'flat' for every caller, so no caller would ever see them`,
       });
     }
-    if (option !== 'meta' && typeof option !== 'function') {
+    if (option !== 'meta' && option !== 'meta-split' && typeof option !== 'function') {
       throw new McpSurfaceInvalidError({ cause: `surface is ${JSON.stringify(option)}` });
     }
     if (entries.length === 0) {
       throw new McpSurfaceInvalidError({
         cause:
-          "surface can be 'meta', and groups: declares no resource, so list_resources would always answer empty",
+          "surface can be 'meta' or 'meta-split', and groups: declares no resource, so list_resources would always answer empty",
       });
     }
     const tools = new Map(input.tools.map((tool) => [tool.name, tool]));
@@ -177,21 +210,39 @@ export class MetaSurface {
         home.set(name, group);
       }
     }
-    return new MetaSurface(option, new Map(entries), home, tools);
+    // 'meta-split' is held to the split's contract at boot. A FUNCTION is held to it once any
+    // grouped tool declares an effect — the app has opted in; until then it can only serve 'meta'
+    // (`surfaceFor`), so an app written before the split boots exactly as it did.
+    const grouped = [...home.keys()].flatMap((name) => tools.get(name) ?? []);
+    const split =
+      option === 'meta-split' ||
+      (typeof option === 'function' && grouped.some((tool) => tool.effect !== undefined));
+    if (split) assertEffects(grouped);
+    return new MetaSurface(option, new Map(entries), home, tools, split);
   }
 
-  /** The surface this caller is served. Fail-closed to `'flat'` — see `McpSurfaceOption`. */
+  /**
+   * The surface this caller is served. Fail-closed to `'flat'` — see `McpSurfaceOption`. A function's
+   * `'meta-split'` serves `'meta'` while no grouped tool declares an effect (see `build`).
+   */
   surfaceFor(caller: McpCaller): McpSurface {
     const option = this.#option;
     if (typeof option !== 'function') return option;
     try {
-      return option(caller) === 'meta' ? 'meta' : 'flat';
+      const chosen = option(caller);
+      if (chosen === 'meta-split') return this.#split ? 'meta-split' : 'meta';
+      return chosen === 'meta' ? 'meta' : 'flat';
     } catch {
       return 'flat';
     }
   }
 
-  /** True when a META caller must reach this tool through `manage_resource`, not by its name. */
+  /** The constant `tools/list` entries of a meta surface: the catalog pair plus its dispatcher(s). */
+  static entriesFor(surface: Exclude<McpSurface, 'flat'>): readonly ToolListEntry[] {
+    return surface === 'meta' ? META_TOOL_ENTRIES : [...CATALOG_ENTRIES, ...SPLIT_TOOL_ENTRIES];
+  }
+
+  /** True when a META caller must reach this tool through a dispatcher, not by its name. */
   isGrouped(name: string): boolean {
     return this.#home.has(name);
   }
@@ -278,19 +329,25 @@ export function schemaOf(tool: AnyMcpTool): JsonSchema {
  *   listCases {radicado?: string} — List the account's cases.
  *   closeCase (action; confirms) {id: string} — Close a case.
  * ```
+ *
+ * `'meta-split'` tags a write with the tool that runs it instead — `(write)` or `(delete)` — and
+ * its header names the three dispatchers; untagged still means a read.
  */
-export function renderCatalog(resources: readonly MetaResource[]): string {
+export function renderCatalog(
+  resources: readonly MetaResource[],
+  surface: 'meta' | 'meta-split' = 'meta',
+): string {
   if (resources.length === 0) return 'No resources are available to this caller.';
-  const lines = [
-    `${resources.length} resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas. Untagged = read-only query; (action) may write; (confirms) waits for a human; … = more in describe_resource.`,
-  ];
+  const lines = [surface === 'meta' ? metaHeader(resources.length) : splitHeader(resources.length)];
   for (const resource of resources) {
     const hoisted = hoistScopes(resource.actions);
     const said = hoisted.line === '' ? '' : ` (${hoisted.line})`;
     lines.push('', `${resource.name}${said} — ${oneLine(resource.description)}`);
     for (const action of resource.actions) {
       const tags = [
-        ...(action.kind === 'action' ? ['action'] : []),
+        ...(action.kind === 'action'
+          ? [surface === 'meta' ? 'action' : (action.effect ?? 'action')]
+          : []),
         ...(action.confirms === true ? ['confirms'] : []),
         ...(action.scope === undefined || hoisted.kinds.has(action.kind)
           ? []
@@ -302,6 +359,12 @@ export function renderCatalog(resources: readonly MetaResource[]): string {
   }
   return lines.join('\n');
 }
+
+const metaHeader = (count: number): string =>
+  `${count} resource(s). Run one with manage_resource({resource, action, params}); describe_resource({resources:["<name>"]}) has the full input schemas. Untagged = read-only query; (action) may write; (confirms) waits for a human; … = more in describe_resource.`;
+
+const splitHeader = (count: number): string =>
+  `${count} resource(s). Untagged = read-only, run with read_resource({resource, action, params}); (write) runs with write_resource({resource, action, params}); (delete) archives, sends or spends, run with delete_resource({resource, action, params, live, confirmed_by_user}) — live: false previews it. describe_resource({resources:["<name>"]}) has the full input schemas. (confirms) waits for a human; … = more in describe_resource.`;
 
 /**
  * The scopes said once on the resource line, and the kinds whose actions no longer repeat theirs.
@@ -339,11 +402,13 @@ function sharedScope(actions: readonly MetaAction[]): string | undefined {
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 function headOf(tool: AnyMcpTool): Omit<MetaAction, 'params'> {
+  const effect = tool.destructive === false ? undefined : tool.effect;
   return {
     name: tool.name,
     // `=== false`, as `ToolRegistry.verbClass` meters it — one answer per tool. An omitted flag is
     // an action: the header's "untagged = read-only query" holds only for a DECLARED read.
     kind: tool.destructive === false ? 'query' : 'action',
+    ...(effect === undefined ? {} : { effect }),
     description: tool.description,
     ...(tool.confirms === true ? { confirms: true } : {}),
     ...(tool.scope === undefined ? {} : { scope: tool.scope }),

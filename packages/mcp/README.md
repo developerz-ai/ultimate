@@ -250,6 +250,58 @@ else, an optional input key the whitelist left out included (an `isError` result
 `X_INPUT_INVALID`), before the query runs; a
 whitelisted key the input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boot.
 
+### Split by effect: `surface: 'meta-split'`
+
+`As of 2026-10-18`. `manage_resource` runs reads and writes alike, so it cannot carry an honest
+`readOnlyHint`, and a directory that refuses a read+write dispatcher refuses it. `'meta-split'`
+serves the same catalog pair plus three dispatchers, each running only its own effect class:
+
+| Tool | Runs | Input | Hints |
+|---|---|---|---|
+| `read_resource` | every query (`destructive: false`) | `{ resource, action, params? }` | `readOnlyHint: true` |
+| `write_resource` | actions declaring `mcp: { effect: 'write' }` | `{ resource, action, params? }` | `readOnlyHint: false`, `destructiveHint: true` |
+| `delete_resource` | actions declaring `mcp: { effect: 'delete' }` — archive, cancel, delete, an external send, a spend | `{ resource, action, params?, live?, confirmed_by_user }` | `readOnlyHint: false`, `destructiveHint: true` |
+
+```ts
+import { action } from '@ultimat3/action';
+import { defineAppMcp } from '@ultimat3/mcp';
+import { can } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
+
+// An action declares its effect in the one mcp block; a query declares none.
+export const archivePost = action({
+  input: t.object({ postId: t.string }),
+  output: t.object({ ok: t.boolean }),
+  policy: can('post:archive'),
+  mcp: { expose: true, description: 'Archive a post', effect: 'delete' },
+  handle: () => ({ ok: true }),
+});
+
+defineAppMcp({
+  include: 'exposed',
+  surface: 'meta-split',
+  groups: { posts: { description: 'Blog posts', tools: ['archivePost'] } },
+});
+```
+
+- **No default.** A grouped write without `effect` is `X_MCP_EFFECT_UNDECLARED` at boot, naming
+  every one; a read declaring one is `X_MCP_EFFECT_CONFLICT`. A `surface` function is held to this
+  once any grouped tool declares an effect; until then its `'meta-split'` answer serves `'meta'`, so
+  an app written before the split boots as it did.
+- **Wrong dispatcher → `X_MCP_WRONG_TOOL`** (an `isError` result, audited `invalid-args`): the cause
+  says `wrong_tool_for_action` and names the tool that runs it (`meta.use_tool`). Nothing ran.
+- **`delete_resource`**: `live` absent or `false` answers a preview and runs nothing —
+  `{ preview: true, ran: false, resource, action, params, commit_with: { live: true,
+  confirmed_by_user: true } }`, audited `previewed`. An action whose own input declares `live`
+  authors its preview instead: it is handed `live: false` and runs. `live: true` runs only with
+  `confirmed_by_user: true` (the user approved the change, directly or by authorizing the task);
+  anything else is `X_MCP_USER_CONFIRMATION_REQUIRED`, audited `unconfirmed`. Both flags are read
+  top-level or from `params` (nested wins) and never handed to an action that does not declare them.
+  `confirmed_by_user` is required by the schema, so a client sees it at connect time.
+- Order: visibility (absent answer) → effect (`X_MCP_WRONG_TOOL`) → scope → arguments → the policy's
+  actor half → preview / confirmation → `dispatch`, the flat path — same audit line, same bucket.
+- Ungrouped tools (`docs`, `whoami`) stay flat beside the five, exactly as on `'meta'`.
+
 ### What a client is told beyond the schema
 
 `As of 22.10`, MCP 2025-06-18. The projection derives each from the declaration; the primitive's
@@ -265,7 +317,7 @@ whitelisted key the input does not declare is `X_MCP_LIST_PARAMS_INVALID` at boo
 
 A tool's text is **compact JSON** (`jsonResult`; the 2-space form until 22.10). The meta tools
 carry their own hints: `list_resources` and `describe_resource` read-only, `manage_resource` a
-write.
+write; on `'meta-split'`, `read_resource` read-only and the other two destructive.
 
 **Budget test.** `measureMcpSurface(server, caller)` answers `{ toolsList, listResources,
 instructions }` in characters, as serialized on the wire; `assertMcpSurfaceBudget(server, caller,

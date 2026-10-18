@@ -169,3 +169,22 @@ The inherited-key defect in `validate-args.ts` (`constructor`, `toString`, `hasO
 `__proto__` read as declared) was the third instance of the class in the framework, after
 `@ultimat3/i18n`'s catalog lookup and `@ultimat3/schema`'s `coerce`. The rule itself stays in
 [`packages/mcp/CLAUDE.md`](../../packages/mcp/CLAUDE.md).
+
+## `\'` inside a string literal (moved from `packages/mcp/CLAUDE.md`, 2026-10-18)
+
+**`\'` inside a string literal is refused** (`readonly-sql.ts`). `E'\''` is one quote to
+  Postgres and `standard_conforming_strings` decides the plain spelling, so the two readings
+  disagree about where the string ends — which is exactly where a `;` hides.
+  `select E'\'' ; drop table posts --'` was accepted as one read-only statement and handed back
+  verbatim to run. Only inside a single-quoted run: a comment, a `$tag$` body and a quoted
+  identifier are unambiguous and still read fine.
+
+## An unterminated run (moved from `packages/mcp/CLAUDE.md`, 2026-10-18)
+
+**An unterminated run is refused, never swallowed** (`readonly-sql.ts`). The stripper blanks what
+  it believes is inside a literal, so an opening delimiter that never closes hid the whole tail:
+  `select '; delete from members` counted one statement with no mutating keyword and was handed
+  back to run. All four forms now throw `X_MCP_QUERY_REJECTED` — `'`, `"`, `$tag$`, `/* */`. Not
+  exploitable through Postgres (a syntax error either way); the point is that this layer must not
+  be the thing that waves it through. `@ultimat3/admin`'s `/_x` panel failed CLOSED here where this
+  failed open, which is how it was found — a second, differently-behaved copy of one rule.

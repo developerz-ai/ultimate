@@ -40,6 +40,7 @@ describe('audit levels', () => {
     'policy-denied': 'warn',
     'invalid-args': 'info',
     unconfirmed: 'info',
+    previewed: 'info',
     failed: 'error',
   };
 

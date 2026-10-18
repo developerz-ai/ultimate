@@ -10,7 +10,7 @@ import {
   renderThrowable,
 } from '@ultimat3/core';
 import { isRecord } from './json';
-import type { OAuthProvider } from './oauth';
+import type { OAuthProvider, TokenEndpointAuth } from './oauth';
 import { oauthExchangeFailed } from './oauth-errors';
 import type { OAuthFetch } from './oauth-exchange';
 import { assertFiniteAuthCount } from './policy-numbers';
@@ -36,6 +36,8 @@ export interface DiscoverOAuthProviderInput {
   readonly scopes?: readonly string[] | undefined;
   readonly clientIdEnv?: string | undefined;
   readonly clientSecretEnv?: string | undefined;
+  /** `'none'` for a public client (no secret read, none sent). Absent: `client_secret_post`. */
+  readonly tokenEndpointAuth?: TokenEndpointAuth | undefined;
   /** Injected in tests; production uses the global. */
   readonly fetch?: OAuthFetch | undefined;
   readonly timeoutMs?: number | undefined;
@@ -173,5 +175,8 @@ export async function discoverOAuthProvider(
     usesNonce: true,
     clientIdEnv: input.clientIdEnv ?? `${prefix}_CLIENT_ID`,
     clientSecretEnv: input.clientSecretEnv ?? `${prefix}_CLIENT_SECRET`,
+    ...(input.tokenEndpointAuth === undefined
+      ? {}
+      : { tokenEndpointAuth: input.tokenEndpointAuth }),
   };
 }

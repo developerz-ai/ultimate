@@ -12,8 +12,9 @@ import { McpProtocolError, McpScopeDeniedError, TOOL_UNKNOWN_FIX } from './error
 import { asFrameworkError, forAudience } from './framework-error';
 import { metaCall } from './meta-call';
 import { META_UNKNOWN_FIX } from './meta-errors';
+import { SPLIT_DISPATCHERS } from './meta-split';
 import type { McpResourceGroups, McpSurfaceOption, MetaResource } from './meta-surface';
-import { MANAGE_RESOURCE, META_TOOL_ENTRIES, META_TOOL_NAMES, MetaSurface } from './meta-surface';
+import { MANAGE_RESOURCE, META_TOOL_NAMES, MetaSurface } from './meta-surface';
 import { promptListEntry, promptsGet, visiblePrompts } from './prompts-get';
 import type {
   AnyMcpTool,
@@ -214,9 +215,12 @@ export class McpServer {
     const flat = this.tools.list(caller);
     const meta = this.metaFor(caller);
     if (meta === undefined) return flat;
-    // Constant: the three meta tools plus whatever the app left ungrouped (`docs`, `whoami`).
-    return [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...META_TOOL_ENTRIES].sort(
-      (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+    // Constant: the meta tools plus whatever the app left ungrouped (`docs`, `whoami`).
+    const entries = MetaSurface.entriesFor(
+      meta.surfaceFor(caller) === 'meta' ? 'meta' : 'meta-split',
+    );
+    return [...flat.filter((tool) => !meta.isGrouped(tool.name)), ...entries].sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
     );
   }
 
@@ -231,7 +235,7 @@ export class McpServer {
   /** The meta surface when THIS caller is served it, else `undefined`. */
   private metaFor(caller: McpCaller): MetaSurface | undefined {
     const meta = this.meta;
-    return meta !== undefined && meta.surfaceFor(caller) === 'meta' ? meta : undefined;
+    return meta !== undefined && meta.surfaceFor(caller) !== 'flat' ? meta : undefined;
   }
 
   /**
@@ -250,7 +254,7 @@ export class McpServer {
     // An unresolvable call is refused before it runs, so charging it the strict bucket
     // only costs a broken client — it never hands an unproven verb the cheap one.
     if (typeof name !== 'string') return 'write';
-    if (this.meta !== undefined && name === MANAGE_RESOURCE) {
+    if (this.meta !== undefined && (name === MANAGE_RESOURCE || SPLIT_DISPATCHERS.includes(name))) {
       // Billed as the tool it reaches, so the dispatcher is never a cheap door to a write.
       const args = params?.['arguments'];
       const action = isRecord(args) ? args['action'] : undefined;
@@ -277,6 +281,8 @@ export class McpServer {
           audit: this.audit,
           dispatch: (at, tool, resolved, who) => this.dispatch(at, tool, resolved, who),
           notFound: (at, tool, who, fix) => this.notFound(at, tool, who, fix),
+          refuse: (at, tool, error, who) =>
+            thrownResponse(at, tool, error, who, this.voice.errorAudience, this.audit),
         },
         meta,
         { id, name, rawArgs: params['arguments'], caller },
