@@ -1,6 +1,6 @@
-// `x verify --json` in a real process: one line per finished step on STDERR, the one document on
-// stdout. A job cancelled mid-run ends its log on the last step that finished (#589) — which is
-// only true if the lines leave the process as the steps finish, so this spawns one.
+// `x verify` in a real process, either render: one line per finished step on STDERR, and under
+// `--json` the one document on stdout. A job cancelled mid-run ends its log on the last step that
+// finished (#589) — only true if the lines leave the process as the steps finish, so this spawns one.
 
 import { expect, test } from 'bun:test';
 // why: Bun ships no temp-directory primitive and no recursive delete.
@@ -45,9 +45,11 @@ test('--json streams each finished step to stderr and keeps stdout one document'
     expect(json.stdout.trim().split('\n')).toHaveLength(1);
     expect(document.steps.map((step) => step.name)).toEqual(['filesize', 'package-shape']);
 
-    // The human render already reads as it goes at the end; it gets no JSON on stderr.
+    // The human render prints its table only at the end too, so it streams the same lines: a
+    // harness that kills on silence must hear from a healthy gate in either mode.
     const human = await run(root, ['--only', 'filesize']);
-    expect(human.stderr).not.toContain('"step"');
+    const humanLines = human.stderr.split('\n').filter((line) => line.startsWith('{'));
+    expect(humanLines.map((line) => JSON.parse(line).step)).toEqual(['filesize']);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -130,6 +130,11 @@ export interface VerifyContext {
    */
   readonly onStep?: (step: StepResult) => void;
   /**
+   * Called as each step starts. The heartbeat (`verify-progress.ts`) names the steps between this
+   * and `onStep`: one step can run longer than a harness's silence budget on its own.
+   */
+  readonly onStepStart?: (name: VerifyStepName) => void;
+  /**
    * The gate as it was invoked HERE, for a `fix:` that has to run where it was raised: `x verify`
    * when absent, `bun run verify` from the framework root's own entry — where `x verify` answers
    * `X_NOT_IN_APP`.

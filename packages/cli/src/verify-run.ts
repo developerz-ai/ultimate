@@ -49,6 +49,12 @@ export async function runVerify(
   // other's children.
   const runId = crypto.randomUUID().slice(0, 8);
   const run = async (step: VerifyStep, stepCtx: VerifyContext): Promise<void> => {
+    // A progress listener, like `onStep` below: one that throws must not take the gate down.
+    try {
+      ctx.onStepStart?.(step.name);
+    } catch {
+      // The step still runs; its line still reaches `onStep` and the document.
+    }
     const ran = await runStep(step, stepCtx, floor, runId);
     byName.set(step.name, ran.result);
     if (ran.coverage !== undefined) {

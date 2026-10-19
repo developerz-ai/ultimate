@@ -10,6 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
+- **`x verify` and `bun run verify` write progress on stderr in the human render too**, not only
+  under `--json`: a line per finished step, and a `still running: <steps> (<elapsed>)` heartbeat
+  every `HEARTBEAT_MS` (60 s) while a step runs. A harness that kills a process after 30 silent
+  minutes killed green gates that finished seconds past the window, and one step on a 2-core box
+  can outlast it alone. The timer is unref'd and stopped however the run ends; stdout under
+  `--json` is still the one document.
 - **`delete_resource` accepts `live` and `confirmed_by_user` inside `params`, as documented**
   (#798). Its input schema required `confirmed_by_user` at the top level, so a call carrying both
   flags only in `params` was `X_INPUT_INVALID` before the dispatcher read them. The schema now

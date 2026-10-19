@@ -552,9 +552,10 @@ below on `--workers` and batching describe 22.6 and earlier where they differ.
 | `stepTimeoutMs` | `{ "<step>": milliseconds }` — a step's own deadline. Default 8 minutes for the six suites, 5 for every other step; past it the step is `X_VERIFY_STEP_TIMEOUT` and its processes are killed |
 | `isolate` · `typecheckBin` · `agentsMdMaxBytes` | a fresh global per test file · the `tsc`-compatible binary · the `AGENTS.md` byte budget |
 
-`--json` prints one line per finished step on **stderr** — `{"step":"lint","ok":true,"ms":21987}` —
-as each finishes; stdout stays the single document. A cancelled job's log ends on the last step
-that finished.
+Either render prints one line per finished step on **stderr** — `{"step":"lint","ok":true,"ms":21987}` —
+as each finishes, and every minute a step is still running a `still running: unit (12m 3s)` line;
+under `--json` stdout stays the single document. A cancelled job's log ends on the last step that
+finished, and a harness that kills a process after N silent minutes never kills a healthy gate.
 
 The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
 with the framework repo's own `bun run verify` — and **the gate is this command with no flag**,
