@@ -3,187 +3,11 @@
 // browser run is `e2e/cdp-session.e2e.test.ts`; this is the part a fake can pin exactly.
 
 import { describe, expect, test } from 'bun:test';
-import type { CdpConnection, CdpEventListener, CdpResult } from './cdp-connection';
+import type { CdpConnection } from './cdp-connection';
 import { cdpE2eSession } from './cdp-e2e-session';
-import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
+import { type Call, confirming, fake } from './cdp-e2e-session-fake-fixture';
+import { NETWORK_PROBE } from './cdp-network-probe';
 import { OFFLINE_FIRST_SCRIPT, RESTORE_ONLINE } from './cdp-offline-script';
-
-interface Call {
-  readonly method: string;
-  readonly params: Record<string, unknown>;
-  readonly sessionId: string | undefined;
-}
-
-/**
- * When a page APPLIES a sent network condition — Chrome does it asynchronously, which is the race
- * #572 lost. `at-once`: on the send. `on-apply`: only when the test calls `apply(session)`.
- * `never`: the page keeps reading its old state.
- */
-type Lag = 'at-once' | 'on-apply' | 'never';
-
-interface FakeOptions {
-  /** Sessions that answer nothing until released — Chrome's paused SharedWorker. */
-  readonly held?: ReadonlySet<string>;
-  readonly lag?: Lag;
-  /**
-   * Sessions whose FIRST confirmation is refused by a navigation: the context it ran in is
-   * destroyed, and the new document's `Runtime.executionContextCreated` lands before the refusal.
-   */
-  readonly navigating?: ReadonlySet<string>;
-}
-
-interface Page {
-  now: boolean;
-  next: boolean;
-  /** Confirmations held by `awaitPromise` until the page reads the state each one asks for. */
-  asking: { readonly online: boolean; readonly answer: () => void }[];
-}
-
-/** The state a confirmation expression asks for, or undefined for any other evaluate. */
-const confirming = (params: Record<string, unknown>): boolean | undefined => {
-  const expression = params['expression'];
-  if (params['awaitPromise'] !== true || typeof expression !== 'string') return undefined;
-  if (expression.startsWith('navigator.onLine === true')) return true;
-  if (expression.startsWith('navigator.onLine === false')) return false;
-  return undefined;
-};
-
-/** A connection that records every call and lets the test fire events at the session. */
-function fake(options: FakeOptions = {}): {
-  readonly connection: CdpConnection;
-  readonly calls: Call[];
-  emit(method: string, params: Record<string, unknown>, sessionId?: string): void;
-  /** Resolves once `session` has been sent its release — the last step of its attachment. */
-  released(session: string): Promise<void>;
-  /** Resolves once `session` has been asked to confirm a state and is holding the answer. */
-  asked(session: string): Promise<void>;
-  /** The page applies the condition last sent to it, answering every confirmation it now meets. */
-  apply(session: string): void;
-} {
-  const { held = new Set<string>(), lag = 'at-once', navigating = new Set<string>() } = options;
-  const calls: Call[] = [];
-  const pages = new Map<string, Page>();
-  const page = (session: string): Page => {
-    const known = pages.get(session) ?? { now: true, next: true, asking: [] };
-    pages.set(session, known);
-    return known;
-  };
-  const refused = new Set<string>();
-  // One promise per (event, session), created by whichever side gets there first.
-  const signals = new Map<string, { promise: Promise<void>; resolve: () => void }>();
-  const signal = (key: string) => {
-    const known = signals.get(key);
-    if (known !== undefined) return known;
-    let resolve: () => void = () => undefined;
-    const promise = new Promise<void>((done) => {
-      resolve = done;
-    });
-    const made = { promise, resolve };
-    signals.set(key, made);
-    return made;
-  };
-  const apply = (session: string): void => {
-    const target = page(session);
-    target.now = target.next;
-    const due = target.asking.filter((asked) => asked.online === target.now);
-    target.asking = target.asking.filter((asked) => asked.online !== target.now);
-    for (const one of due) one.answer();
-  };
-  // A session in `held` answers nothing until it is released — Chrome's paused SharedWorker, whose
-  // `Network.enable` measured unanswered for the whole 30 s deadline in a full `x verify`.
-  const waiting = new Map<string, (() => void)[]>();
-  const listeners = new Map<string, CdpEventListener[]>();
-  let tabs = 0;
-  const connection: CdpConnection = {
-    send(method, params = {}, sessionId, deadlineMs = 30_000): Promise<CdpResult> {
-      calls.push({ method, params, sessionId });
-      if (method === 'Target.createTarget') {
-        tabs += 1;
-        const targetId = `tab-${String(tabs)}`;
-        const session = tabs === 1 ? 'tab-session' : `tab-session-${String(tabs)}`;
-        // Chrome announces the new tab through the auto-attach, not through this reply.
-        queueMicrotask(() =>
-          emit('Target.attachedToTarget', {
-            sessionId: session,
-            targetInfo: { type: 'page', targetId },
-          }),
-        );
-        return Promise.resolve({ result: { targetId } });
-      }
-      if (sessionId === undefined) return Promise.resolve({ result: {} });
-      if (method === 'Runtime.runIfWaitingForDebugger') signal(`released:${sessionId}`).resolve();
-      if (method === 'Network.emulateNetworkConditions') {
-        page(sessionId).next = params['offline'] !== true;
-        if (lag === 'at-once') apply(sessionId);
-      }
-      const online = method === 'Runtime.evaluate' ? confirming(params) : undefined;
-      if (online !== undefined) {
-        if (navigating.has(sessionId) && !refused.has(sessionId)) {
-          refused.add(sessionId);
-          emit('Runtime.executionContextCreated', { context: { id: 2 } }, sessionId);
-          return Promise.reject(
-            new CdpCallFailedError({ method, detail: 'Execution context was destroyed.' }),
-          );
-        }
-        const target = page(sessionId);
-        const answer = { result: { result: { type: 'boolean', value: true } } };
-        if (target.now === online) return Promise.resolve(answer);
-        // Held like the real connection holds it: answered when the page flips, refused at the
-        // call's deadline — the bound `cdpConnectOver` puts on every call.
-        return new Promise((resolve, reject) => {
-          const deadline = setTimeout(
-            () => reject(new CdpTimeoutError({ method, timeoutMs: deadlineMs })),
-            deadlineMs,
-          );
-          target.asking.push({
-            online,
-            answer: () => {
-              clearTimeout(deadline);
-              resolve(answer);
-            },
-          });
-          signal(`asked:${sessionId}`).resolve();
-        });
-      }
-      if (held.has(sessionId)) {
-        if (method === 'Runtime.runIfWaitingForDebugger') {
-          for (const answer of waiting.get(sessionId) ?? []) answer();
-          waiting.delete(sessionId);
-          return Promise.resolve({ result: {} });
-        }
-        return new Promise((resolve) => {
-          waiting.set(sessionId, [
-            ...(waiting.get(sessionId) ?? []),
-            () => resolve({ result: {} }),
-          ]);
-        });
-      }
-      return Promise.resolve({ result: {} });
-    },
-    once: () => Promise.resolve(true),
-    on(method, listener) {
-      listeners.set(method, [...(listeners.get(method) ?? []), listener]);
-      return () => {
-        listeners.set(
-          method,
-          (listeners.get(method) ?? []).filter((subscribed) => subscribed !== listener),
-        );
-      };
-    },
-    close: () => undefined,
-  };
-  const emit = (method: string, params: Record<string, unknown>, sessionId?: string): void => {
-    for (const listener of listeners.get(method) ?? []) listener(params, sessionId);
-  };
-  return {
-    connection,
-    calls,
-    emit,
-    released: (session) => signal(`released:${session}`).promise,
-    asked: (session) => signal(`asked:${session}`).promise,
-    apply,
-  };
-}
 
 describe('cdpE2eSession', () => {
   test('attaches every target at browser level, PAUSED, so a worker is watched from byte one', async () => {
@@ -400,9 +224,46 @@ describe('cdpE2eSession', () => {
       );
       expect((thrown as { code?: string }).code).toBe('X_CDP_TIMEOUT');
       const cause = (thrown as { cause?: string }).cause;
-      expect(cause).toContain('navigator.onLine === false in page session tab-session-2');
+      expect(cause).toContain(
+        'navigator.onLine === false and a request refused in page session tab-session-2',
+      );
       expect(cause).not.toContain('tab-session,');
       expect(performance.now() - started).toBeLessThan(2_000);
+    });
+
+    // CI run 39223207154: the page read `navigator.onLine === false`, offline() returned, and the
+    // test's next `fetch` still reached the server — the network service had not applied the cut.
+    test('a page that reads the switch before its network enforces it is probed until it does', async () => {
+      const { connection, calls } = fake({ netLag: 3 });
+      const session = await cdpE2eSession({ connection, loadTimeoutMs: 2_000 });
+      await session.newTab();
+      const probes = (): number =>
+        calls.filter(
+          (call) =>
+            call.method === 'Runtime.evaluate' && call.params['expression'] === NETWORK_PROBE,
+        ).length;
+
+      await session.offline(true);
+      // Three probes still met the old network, the fourth was refused — and only then returned.
+      expect(probes()).toBe(4);
+      await session.offline(false);
+      expect(probes()).toBe(8);
+      // The probes are the switch's own traffic, never the app's.
+      expect(session.requests()).toEqual([]);
+    });
+
+    test('a network that never enforces the cut is a bounded X_CDP_TIMEOUT naming the page', async () => {
+      const { connection } = fake({ netLag: Number.POSITIVE_INFINITY });
+      const session = await cdpE2eSession({ connection, loadTimeoutMs: 200 });
+      await session.newTab();
+      const thrown: unknown = await session.offline(true).then(
+        () => expect.unreachable('offline(true) resolved while requests still reached the server'),
+        (error: unknown) => error,
+      );
+      expect((thrown as { code?: string }).code).toBe('X_CDP_TIMEOUT');
+      expect((thrown as { cause?: string }).cause).toContain(
+        'a request refused in page session tab-session',
+      );
     });
 
     test('workers are not asked: navigator.onLine is a page`s to report', async () => {

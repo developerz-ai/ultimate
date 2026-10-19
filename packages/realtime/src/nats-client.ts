@@ -43,6 +43,12 @@ export interface NatsClient {
   readonly connected: boolean;
   publish(subject: string, payload: Uint8Array): void;
   subscribe(subject: string, handler: NatsMessageHandler): NatsSubscription;
+  /**
+   * Answers once the server has processed every line sent before it — a `SUB` included. `subscribe`
+   * only WRITES that line: a message another connection publishes before the server reads it is
+   * not delivered, so "subscribed" means flushed.
+   */
+  flush(): Promise<void>;
   request(subject: string, payload: Uint8Array, options?: NatsRequestOptions): Promise<NatsMessage>;
   requestMany(
     subject: string,

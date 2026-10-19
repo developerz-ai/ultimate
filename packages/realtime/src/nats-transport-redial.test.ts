@@ -223,6 +223,7 @@ describe('NatsTransport, once the library has given up on a connection', () => {
         publish: (subject, payload) => client.publish(subject, payload),
         request: (subject, payload, requested) => client.request(subject, payload, requested),
         requestMany: (subject, payload, many) => client.requestMany(subject, payload, many),
+        flush: () => client.flush(),
         close: () => client.close(),
         subscribe: (subject, handler) => {
           if (subject === 'x.denied') throw violation;

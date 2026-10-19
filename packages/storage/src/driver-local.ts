@@ -35,6 +35,7 @@ import { etagOfFile, headObject, readObjectBytes, readSidecar } from './driver-l
 import { lockOfSidecar, type Sidecar, sidecarLock } from './driver-local-sidecar';
 import {
   commitObject,
+  inTurnOfBoth,
   type KeyedQueue,
   keyedQueue,
   pendingPathOf,
@@ -286,20 +287,22 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     async copy(from: string, to: string): Promise<StorageObject> {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
-      // Measured, not merely read: the destination gets a sidecar, and one carrying `etag: ''` or
-      // a torn source's borrowed type is a durable lie every later `get()` of the copy would
-      // trust. The hash is streamed, and only for a sidecar-less source or a pair in doubt.
-      const entry = await measured(source);
-      if (entry === undefined) throw objectNotFound(registered, source);
-      const lastModified = clock.now();
-      const sidecar: Sidecar = {
-        contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
-        etag: entry.etag,
-        cacheControl: entry.cacheControl,
-        metadata: entry.metadata,
-        lastModified: lastModified.toISOString(),
-      };
-      await oneAtATime(destination, async () => {
+      // Measured AND read in one turn on both keys. Measured in the source's turn and read in the
+      // destination's, a put() of the source in between committed its NEW bytes under the OLD
+      // etag and type — a pair no marker flags, so every later `get()` of the copy trusted it.
+      return inTurnOfBoth(oneAtATime, source, destination, async () => {
+        // Measured, not merely read: a sidecar carrying `etag: ''` or a torn source's borrowed
+        // type is the same durable lie. The hash is streamed, and only for a pair in doubt.
+        const entry = await headObject(root, source, () => etagOfFile(root, source, registered));
+        if (entry === undefined) throw objectNotFound(registered, source);
+        const lastModified = clock.now();
+        const sidecar: Sidecar = {
+          contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
+          etag: entry.etag,
+          cacheControl: entry.cacheControl,
+          metadata: entry.metadata,
+          lastModified: lastModified.toISOString(),
+        };
         await refuseOverwrite(destination, 'copy onto');
         await commitObject({
           root,
@@ -307,18 +310,14 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
           disk: registered,
           body: Bun.file(filePath(source)),
           sidecar,
+        }).catch(async (error: unknown) => {
+          // The queue is this process's: another process can still take the source mid-copy.
+          if (!(await Bun.file(filePath(source)).exists()))
+            throw objectNotFound(registered, source);
+          throw error;
         });
-      }).catch(async (error: unknown) => {
-        // The source was deleted while this copy waited its turn on the destination.
-        if (!(await Bun.file(filePath(source)).exists())) throw objectNotFound(registered, source);
-        throw error;
+        return { ...entry, key: destination, contentType: sidecar.contentType, lastModified };
       });
-      return {
-        ...entry,
-        key: destination,
-        contentType: sidecar.contentType,
-        lastModified,
-      };
     },
 
     async delete(key: string): Promise<void> {

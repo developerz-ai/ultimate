@@ -167,6 +167,11 @@ class FakeNatsClient implements NatsClient {
     };
   }
 
+  /** The broker delivers synchronously, so a subscription is held the moment it is added. */
+  async flush(): Promise<void> {
+    this.#assertOpen();
+  }
+
   async request(
     subject: string,
     payload: Uint8Array,

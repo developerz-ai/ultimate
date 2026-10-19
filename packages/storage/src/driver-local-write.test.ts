@@ -125,18 +125,19 @@ describe('what a put() stages never becomes an object', () => {
   });
 
   test('a copy whose source vanishes while it waits is "not found", with nothing staged', async () => {
-    // The copy's write is queued behind the destination's other writer, so its source can be
-    // deleted in between: the staged half-copy must not outlive the refusal.
+    // The copy is queued behind the destination's other writer, so its source can be deleted in
+    // between: it must answer "not found" and leave no staged half-copy behind.
     //
-    // The destination's queue is HELD by the test, never by how long a write takes: a big body as
-    // the "slow" writer finished before the delete on a fast disk, and the precondition below
-    // failed (CI, gate unit-3). The disk is given a queue this test also holds a turn in.
+    // The destination's queue is HELD by the test, never by how long a write takes: a 4 MB body
+    // as the "slow" writer finished before the delete on a loaded runner, and the precondition
+    // below failed (CI run 38053268317, gate unit-3). The disk is given a queue the test holds.
     const queue = keyedQueue();
     const held = localDriver({ root, signingSecret: 'test-secret', queue });
     await held.put('org/o1/src.txt', bytesOf('source'));
     const gate = Promise.withResolvers<void>();
+    // `dst` sorts before `src`, so the copy's first turn is this held one and it takes the
+    // source's only after: the delete below cannot be queued behind the copy.
     const holder = queue('org/o1/dst.txt', () => gate.promise);
-    // The destination's other writer, then the copy — both parked behind the held turn, in order.
     const other = held.put('org/o1/dst.txt', bytesOf('the other writer'));
     let copyWaiting = true;
     const copy = held
@@ -149,14 +150,10 @@ describe('what a put() stages never becomes an object', () => {
     const settled = other.then(() => {
       destinationBusy = false;
     });
-    // Queued on the source's key BEHIND the copy's measurement, which `copy()` queued in its call.
     await held.delete('org/o1/src.txt');
-    // The claim this test makes: the source was measured (it queued on the source's key ahead of
-    // the delete) and the copy's write had NOT started when the source went — the destination's
-    // queue was still held. If this is false the test took the ordinary not-found path instead.
+    // The claim this test makes: the source went while the destination was still held, and the
+    // copy was still waiting for it — not refused early, not already done.
     expect(destinationBusy).toBe(true);
-    // A copy that had NOT measured its source was refused at the measurement, before the delete
-    // ran — settled by now. Still waiting means it holds a measurement of a source now gone.
     expect(await held.exists('org/o1/src.txt')).toBe(false);
     expect(copyWaiting).toBe(true);
     gate.resolve();
@@ -166,6 +163,45 @@ describe('what a put() stages never becomes an object', () => {
     expect(isStorageError(refused) ? refused.code : refused).toBe('X_STORAGE_NOT_FOUND');
     expect(await readdir(`${root}/.meta/.tmp`)).toEqual([]);
     expect(textOf((await held.get('org/o1/dst.txt')).bytes)).toBe('the other writer');
+  });
+
+  test('a copy whose source is overwritten while it waits copies one generation, whole', async () => {
+    // Measured in the source's turn and read in the destination's, the copy committed the NEW
+    // bytes under the OLD etag and type — no marker flags that pair, so `get()` trusted it.
+    const queue = keyedQueue();
+    const held = localDriver({ root, signingSecret: 'test-secret', queue });
+    await held.put('org/o1/src.txt', bytesOf('old'), { contentType: 'text/old' });
+    const gate = Promise.withResolvers<void>();
+    const holder = queue('org/o1/dst.txt', () => gate.promise);
+    const copy = held.copy('org/o1/src.txt', 'org/o1/dst.txt');
+    await held.put('org/o1/src.txt', bytesOf('new, longer'), { contentType: 'text/new' });
+    gate.resolve();
+    await holder;
+    const copied = await copy;
+    const read = await held.get('org/o1/dst.txt');
+    expect([textOf(read.bytes), read.object.contentType, read.object.etag]).toEqual([
+      'new, longer',
+      'text/new',
+      etagOf(read.bytes),
+    ]);
+    expect([copied.size, copied.etag]).toEqual([read.bytes.byteLength, read.object.etag]);
+  });
+
+  test('two copies crossing the same two keys both finish', async () => {
+    // Each copy holds both keys' turns; taken in key order, `a → b` and `b → a` cannot each hold
+    // the turn the other waits on.
+    await disk.put('org/o1/a.txt', bytesOf('a'));
+    await disk.put('org/o1/b.txt', bytesOf('b'));
+    const both = await Promise.all([
+      disk.copy('org/o1/a.txt', 'org/o1/b.txt'),
+      disk.copy('org/o1/b.txt', 'org/o1/a.txt'),
+      disk.copy('org/o1/a.txt', 'org/o1/a.txt'),
+    ]);
+    expect(both.map((object) => object.key)).toEqual([
+      'org/o1/b.txt',
+      'org/o1/a.txt',
+      'org/o1/a.txt',
+    ]);
   });
 
   test('a write that fails after staging its bytes removes them', async () => {

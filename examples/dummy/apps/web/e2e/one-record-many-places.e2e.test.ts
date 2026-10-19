@@ -340,10 +340,13 @@ describe.skipIf(noBrowser)('one record, many places: the echo and the runtime', 
         `globalThis[Symbol.for('ultimate.realtime')].store.merge('posts', ${JSON.stringify(post.id)}, { likeCount: 41 })`,
       );
       await tab.waitFor(everyCount(post.id, 41), 'every island to show the store write');
-      expect(await paintsOf(tab, BADGE_PAINTS)).toEqual([
-        counts.join(','),
-        counts.map(() => '41').join(','),
-      ]);
+      const painted = await paintsOf(tab, BADGE_PAINTS);
+      expect(painted.slice(0, 2)).toEqual([counts.join(','), counts.map(() => '41').join(',')]);
+      // The 41 was never written to the server, so a read landing after it — the channel's, or the
+      // record's own — puts truth back (CI run 38766279263: `1,1 → 41,41 → 1,1`). That is the store
+      // reconciling, not a flicker, and it too moves every island in one paint: a mixed `41,1`
+      // would be an island holding its own copy.
+      for (const later of painted.slice(2)) expect(later).toBe(counts.join(','));
     } finally {
       await tab.close();
     }
