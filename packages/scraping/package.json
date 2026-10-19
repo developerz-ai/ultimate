@@ -19,7 +19,9 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
+    "!src/**/*.test.tsx",
     "!src/**/*-fixture.ts",
+    "!src/**/*-fixture.tsx",
     "README.md",
     "LICENSE"
   ],

@@ -8,7 +8,15 @@ import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import { listWorkspaces, publishOrder } from './workspaces';
 
 /** The `files` field every package in this tree declares, `cli` adding `types`. */
-const FILES = ['src', '!src/**/*.test.ts', '!src/**/*-fixture.ts', 'CLAUDE.md', 'README.md'];
+const FILES = [
+  'src',
+  '!src/**/*.test.ts',
+  '!src/**/*.test.tsx',
+  '!src/**/*-fixture.ts',
+  '!src/**/*-fixture.tsx',
+  'CLAUDE.md',
+  'README.md',
+];
 const PACKAGES: ReadonlyMap<string, PackageFiles> = new Map([
   ['core', { dir: 'core', files: FILES }],
   ['cli', { dir: 'cli', files: [...FILES, 'types'] }],
@@ -28,7 +36,10 @@ describe('unit · release-due-ships · the files field, read as npm reads it', (
   test('a negation removes what an include matched, at any depth', () => {
     expect(inTarball('src/a.test.ts', FILES)).toBe(false);
     expect(inTarball('src/deep/a.test.ts', FILES)).toBe(false);
+    expect(inTarball('src/a.test.tsx', FILES)).toBe(false);
+    expect(inTarball('src/deep/a.test.tsx', FILES)).toBe(false);
     expect(inTarball('src/deep/a-fixture.ts', FILES)).toBe(false);
+    expect(inTarball('src/deep/a-fixture.tsx', FILES)).toBe(false);
   });
 
   test('no files field packs everything', () => {
