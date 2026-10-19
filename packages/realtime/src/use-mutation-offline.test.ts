@@ -84,6 +84,29 @@ describe('a write made while the browser knows it is offline', () => {
     expect(page.store.pending()).toEqual(kept);
   });
 
+  test('a reload right after the tap still finds the write on disk', async () => {
+    rescope('kenji');
+    const disk = fakeIndexedDb();
+    await bootedOver(disk);
+    Reflect.set(globalThis, 'navigator', { onLine: false });
+    // The browser says it has no network; a POST can only fail, so it must not be attempted.
+    globalThis.fetch = ((): Promise<Response> =>
+      Promise.reject(new TypeError('Failed to fetch'))) as unknown as typeof fetch;
+
+    // The tap returns once the write is durable (#777: paint is delayed until after `await enqueue`).
+    expect(await useMutation(LIKE)({ postId: 'p1' })).toBeUndefined();
+
+    // The page reloads NOW: drop every page-scoped handle and re-open one over the same disk.
+    resetPage();
+    const reloaded = await bootedOver(disk);
+
+    // The fresh outbox, opened over the same disk, finds kenji's like queued under its mutator name.
+    expect(reloaded.outbox.size).toBe(1);
+    const [pending] = reloaded.outbox.pending();
+    if (pending === undefined) return expect.unreachable('no pending write on reload');
+    expect(pending.name).toBe('likePost');
+  });
+
   test('back online, the queued write is sent ONCE, under the key it was queued with', async () => {
     rescope('kenji');
     const disk = fakeIndexedDb();
