@@ -70,7 +70,12 @@ describe('unit · release-due-rule · not due', () => {
   });
 
   test('a release commit is never a shipping commit, in either subject this repo has used', () => {
-    for (const subject of ['chore: release 27.10.1 (#770)', 'release: 6.0.0']) {
+    for (const subject of [
+      'chore: release 27.10.1 (#770)',
+      'release: 6.0.0',
+      'chore: release 1.0.0-rc.1 (#N)',
+      'release: 2.0.0-beta.2',
+    ]) {
       expect({ subject, release: RELEASE_SUBJECT.test(subject) }).toEqual({
         subject,
         release: true,
