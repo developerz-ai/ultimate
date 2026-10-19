@@ -4,6 +4,7 @@ import {
   BUN_TEST_TIMEOUT_MS,
   DECLARED_PACE,
   defaultTimeoutArgs,
+  PROBE_ROWS,
   PROBE_RUNS,
   pacedMs,
   paceEnv,
@@ -46,7 +47,7 @@ describe('the pace a machine runs the gate at', () => {
     expect(probeMs(work)).toBeGreaterThanOrEqual(0);
     expect(calls).toBe(PROBE_RUNS + 1);
     // The real work does something the optimizer cannot drop: its answer depends on all of it.
-    expect(probeWork()).toBe(1_000);
+    expect(probeWork()).toBe(PROBE_ROWS / 10);
   });
 });
 

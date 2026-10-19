@@ -849,7 +849,7 @@ Two sets override the table, in `failures.ts`:
 | `X_TEST_NUMBER_EXPECTED` | a matcher expected a finite number and got something else | toBeWithinBudget answered pass:false for a receiver that is not a number (NaN included), so .not.toBeWithinBudget passed on a Promise or undefined | expect(bytes).toBeWithinBudget(limit) — pass the measured number itself, e.g. (await Bun.file(path).arrayBuffer()).byteLength, never a Promise or a string |
 | `X_TEST_ISLAND_STATE_UNKNOWN` | an island state manifest declares no state with that id | `mountIslandState(manifest, id)` or `describeIslandState(manifest, id, …)` named a state the manifest does not declare. A renamed state and a typo are one symptom, so `cause` lists every declared id | name one of the ids the cause lists — or declare the state in the `<name>.island.states.ts` beside the island: `{ id: 'idle', title: 'the first paint', props: {} }` |
 | `X_TEST_APP_NOT_BOOTED` | describeApp handle read before boot | the app() accessor describeApp passes its body was called while the describe block was being registered, before its beforeAll booted the app | `test('…', () => { const handle = app(); })` |
-| `X_TEST_PACE_INVALID` | ULTIMATE_TEST_PACE is not a number at or above 1 | the variable x verify sets on its test runs was set by hand to a value that does not parse, or to one below 1 | `unset ULTIMATE_TEST_PACE` — x verify measures and sets it; a hand-run bun test reads its absence as 1 |
+| `X_TEST_PACE_INVALID` | ULTIMATE_TEST_PACE is not a number at or above 1 | the variable the gate sets on each test run it starts was set by hand to a value that does not parse, or to one below 1 | `env -u ULTIMATE_TEST_PACE bun test <file>` — the gate measures the pace and sets it itself; unset is pace 1 |
 
 ## UI
 

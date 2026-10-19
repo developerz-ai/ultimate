@@ -14,7 +14,7 @@ export class TestPaceInvalidError extends UltimateError {
     super({
       code: 'X_TEST_PACE_INVALID',
       cause: `${TEST_PACE_ENV}=${JSON.stringify(value)} is not a number at or above 1`,
-      fix: `unset ${TEST_PACE_ENV}   # x verify measures and sets it; a hand-run bun test reads its absence as 1`,
+      fix: `env -u ${TEST_PACE_ENV} bun test <file>   # the gate measures the pace and sets it on each test run itself; unset is pace 1`,
     });
   }
 }

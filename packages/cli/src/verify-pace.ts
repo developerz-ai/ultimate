@@ -19,6 +19,9 @@ export const REFERENCE_CPUS = 4;
  */
 export const REFERENCE_PROBE_MS = 40;
 
+/** Rows the probe allocates, round-trips through JSON and sorts: ~25 ms a run on the reference. */
+export const PROBE_ROWS = 30_000;
+
 /** Timed runs after one untimed warm-up, so the JIT is not what gets measured. */
 export const PROBE_RUNS = 5;
 
@@ -59,8 +62,8 @@ export const pacedMs = (ms: number, pace: MachinePace): number => Math.round(ms 
  * The result is folded into the return value so the work cannot be optimized away.
  */
 export function probeWork(): number {
-  const rows = Array.from({ length: 10_000 }, (_, i) => ({
-    id: `row-${String((i * 7919) % 10_000)}`,
+  const rows = Array.from({ length: PROBE_ROWS }, (_, i) => ({
+    id: `row-${String((i * 7919) % PROBE_ROWS)}`,
     n: i,
     tags: [i % 3, i % 5],
   }));
