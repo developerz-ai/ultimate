@@ -3,6 +3,9 @@
 
 /**
  * `chore: release 27.10.1 (#770)`, the squash-merged release PR, and `release: 6.0.0`, what
- * `scripts/release.ts` commits were titled before. A subject that only mentions a release is not one.
+ * `scripts/release.ts` commits were titled before. The prerelease form `chore: release 1.0.0-rc.1`
+ * is also recognised so a release tag cut on a candidate does not register as shipping itself. A
+ * subject that only mentions a release is not one.
  */
-export const RELEASE_SUBJECT = /^(?:chore(?:\([^)]*\))?: release|release:) \d+\.\d+\.\d+(?=\s|$)/;
+export const RELEASE_SUBJECT =
+  /^(?:chore(?:\([^)]*\))?: release|release:) \d+\.\d+\.\d+(?:-[\w.-]+)?(?=\s|$)/;

@@ -18,7 +18,7 @@ import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/worksp
 import { sectionBody, UNRELEASED_VERSION } from './release-notes';
 
 const SCRIPT = 'release-due';
-const STABLE_TAG = /^v(\d+\.\d+\.\d+)$/;
+const STABLE_TAG = /^v(\d+\.\d+\.\d+(?:-[\w.-]+)?)$/;
 // Record and field separators no subject or path contains, so a `|` in a subject splits nothing.
 const RECORD = '\x1e';
 const FIELD = '\x1f';
@@ -32,17 +32,43 @@ const gitUnreadable = (asked: string, output: string): Finding => ({
 });
 
 /**
- * The highest stable `v*` tag HEAD contains, without its `v`; undefined when there is none; a
- * finding when git itself could not answer, which is not the same as a tagless clone.
+ * The highest `v*` tag HEAD contains, prerelease tags like v1.0.0-rc.1 included, without its `v`;
+ * undefined when there is none; a finding when git itself could not answer, which is not the same
+ * as a tagless clone. Candidates are sorted in JS by semver -- git's `--sort=v:refname` (whether
+ * ascending or descending) treats a final `1.0.0` as a prefix of its `1.0.0-rc.1` and so orders
+ * the prerelease ABOVE the final, which is the opposite of what release-due means by "highest".
  */
 export async function lastReleaseTag(root: string): Promise<string | undefined | Finding> {
-  const tags = await git(['tag', '--merged', 'HEAD', '--list', 'v*', '--sort=-v:refname'], root);
+  const tags = await git(['tag', '--merged', 'HEAD', '--list', 'v*'], root);
   if (!tags.ok) return gitUnreadable('git tag --merged HEAD', tags.output);
+  const versions: string[] = [];
   for (const line of tags.output.split('\n')) {
     const version = STABLE_TAG.exec(line.trim())?.[1];
-    if (version !== undefined) return version;
+    if (version !== undefined) versions.push(version);
   }
-  return undefined;
+  if (versions.length === 0) return undefined;
+  versions.sort(semverDescending);
+  return versions[0];
+}
+
+/**
+ * Semver descending: highest first; on equal major.minor.patch, the final (no `-suffix`) outranks
+ * any prerelease. Returns >0 when `a` is lower than `b`, <0 when higher, 0 when equal.
+ */
+function semverDescending(a: string, b: string): number {
+  const [coreA = '', preA = ''] = a.split('-', 2);
+  const [coreB = '', preB = ''] = b.split('-', 2);
+  const partsA = coreA.split('.').map((n) => Number.parseInt(n, 10));
+  const partsB = coreB.split('.').map((n) => Number.parseInt(n, 10));
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i += 1) {
+    const x = partsA[i] ?? 0;
+    const y = partsB[i] ?? 0;
+    if (x !== y) return y - x;
+  }
+  if (preA === '' && preB !== '') return -1;
+  if (preA !== '' && preB === '') return 1;
+  if (preA !== preB) return preA < preB ? 1 : -1;
+  return 0;
 }
 
 /**
