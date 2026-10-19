@@ -14,10 +14,12 @@ import { availableCpus } from './test-workers';
 export const REFERENCE_CPUS = 4;
 
 /**
- * What `probeWork` takes on that runner, the median of `PROBE_RUNS`. MEASURED on GitHub's
- * `ubuntu-latest`, `As of 2026-10-19` (see `measurePace`): a machine at or under it is pace 1.
+ * What `probeWork` takes on that runner, the median of `PROBE_RUNS`: the SLOWEST of the five gate
+ * parts' readings, so the runner's own spread reads as pace 1 and its deadlines stay the declared
+ * ones. MEASURED on GitHub's `ubuntu-latest`, `As of 2026-10-19`: 31, 32, 32, 34, 35 ms (`ci` run
+ * 39208102081, each part's `data.pace.probeMs`). An idle 3.1 GHz Haswell core reads 65-90 ms.
  */
-export const REFERENCE_PROBE_MS = 40;
+export const REFERENCE_PROBE_MS = 35;
 
 /** Rows the probe allocates, round-trips through JSON and sorts: ~25 ms a run on the reference. */
 export const PROBE_ROWS = 30_000;
