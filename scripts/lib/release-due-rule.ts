@@ -67,6 +67,10 @@ export interface DueDecision {
   readonly command?: string;
   /** What the releaser owes the changelog before running `command`. */
   readonly notes: readonly string[];
+  /** Verbatim entries that triggered a major decision: `BREAKING —` lines from [Unreleased] and
+   * `!:` shipping-commit subjects. Empty on every non-major decision. The release-due bot reads
+   * this list instead of re-extracting the entries from `detail` prose on every firing. */
+  readonly breaking: readonly string[];
 }
 
 /** Conventional `type(scope)!:` — a subject declaring itself breaking. */
@@ -85,6 +89,20 @@ export function bumpOf(unreleased: string, shipping: readonly ShippingCommit[]):
     return 'minor';
   }
   return 'patch';
+}
+
+/** The verbatim entries that triggered a major decision: `BREAKING —` lines from
+ * [Unreleased], then `!:` shipping-commit subjects. Empty on every non-major decision, so callers
+ * (the release-due bot) can read it directly instead of re-extracting from `detail` prose. */
+function breakingEntries(
+  unreleased: string,
+  shipping: readonly ShippingCommit[],
+): readonly string[] {
+  const fromChangelog = unreleased.split('\n').filter((line) => BREAKING_ENTRY.test(line));
+  const fromSubjects = shipping
+    .filter((commit) => BREAKING_SUBJECT.test(commit.subject))
+    .map((commit) => commit.subject);
+  return [...fromChangelog, ...fromSubjects];
 }
 
 const isDependabotOnly = (shipping: readonly ShippingCommit[]): boolean =>
@@ -124,7 +142,12 @@ export function shippingCommits(input: DueInput): {
 
 export function releaseDue(input: DueInput): DueDecision {
   const { shipping, inert } = shippingCommits(input);
-  const base = { shipping, inert, notes: [] as readonly string[] };
+  const base = {
+    shipping,
+    inert,
+    notes: [] as readonly string[],
+    breaking: [] as readonly string[],
+  };
   if (input.stamped !== input.tagged) {
     return {
       ...base,
@@ -151,6 +174,7 @@ export function releaseDue(input: DueInput): DueDecision {
       bump,
       next,
       notes,
+      breaking: breakingEntries(input.unreleased, shipping),
       due: false,
       reason: 'major_needs_a_maintainer',
       detail: `a breaking change is pending (a \`BREAKING —\` line under [Unreleased], or a \`!:\` subject): ${next} needs a maintainer to judge its wiki/Upgrading.md walkthrough`,
