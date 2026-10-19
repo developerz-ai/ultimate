@@ -8,6 +8,7 @@
 import { flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { compareReleaseVersions } from './lib/release-preflight';
 import { git } from './lib/release-due-git';
 import type { DueDecision, WindowCommit } from './lib/release-due-rule';
 import { DEFAULT_SETTLE_HOURS, releaseDue } from './lib/release-due-rule';
@@ -18,7 +19,7 @@ import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/worksp
 import { sectionBody, UNRELEASED_VERSION } from './release-notes';
 
 const SCRIPT = 'release-due';
-const STABLE_TAG = /^v(\d+\.\d+\.\d+)$/;
+const STABLE_TAG = /^v(\d+\.\d+\.\d+(?:-[\w.-]+)?)$/;
 // Record and field separators no subject or path contains, so a `|` in a subject splits nothing.
 const RECORD = '\x1e';
 const FIELD = '\x1f';
@@ -32,17 +33,30 @@ const gitUnreadable = (asked: string, output: string): Finding => ({
 });
 
 /**
- * The highest stable `v*` tag HEAD contains, without its `v`; undefined when there is none; a
- * finding when git itself could not answer, which is not the same as a tagless clone.
+ * The highest reachable `v*` tag HEAD contains, without its `v`; undefined when there is
+ * none; a finding when git itself could not answer, which is not the same as a tagless
+ * clone. Prefers `v<stamped>` so an rc-stamped tree resolves as soon as release-tag.yml cuts
+ * the rc; else the highest by semver precedence, where a stable ranks above its sibling rc.
  */
-export async function lastReleaseTag(root: string): Promise<string | undefined | Finding> {
+export async function lastReleaseTag(
+  root: string,
+  stamped: string,
+): Promise<string | undefined | Finding> {
   const tags = await git(['tag', '--merged', 'HEAD', '--list', 'v*', '--sort=-v:refname'], root);
   if (!tags.ok) return gitUnreadable('git tag --merged HEAD', tags.output);
+  const reachable: string[] = [];
   for (const line of tags.output.split('\n')) {
     const version = STABLE_TAG.exec(line.trim())?.[1];
-    if (version !== undefined) return version;
+    if (version !== undefined) reachable.push(version);
   }
-  return undefined;
+  if (reachable.includes(stamped)) return stamped;
+  let highest: string | undefined;
+  for (const version of reachable) {
+    if (highest === undefined || compareReleaseVersions(version, highest) > 0) {
+      highest = version;
+    }
+  }
+  return highest;
 }
 
 /**
@@ -135,7 +149,7 @@ export async function decideAt(
       fix: 'bun run scripts/list-workspaces.ts --json',
     });
   }
-  const tagged = await lastReleaseTag(root);
+  const tagged = await lastReleaseTag(root, stamped);
   if (tagged === undefined) return unreachable();
   if (typeof tagged !== 'string') return tagged;
   const commits = await readWindow(root, tagged);

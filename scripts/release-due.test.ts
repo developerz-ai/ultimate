@@ -135,9 +135,9 @@ describe('unit · release-due · read from a real repository', () => {
     await land({ 'packages/core/src/b.ts': 'export const b = 1;\n' }, 'feat: side');
     await git(['tag', '-a', 'v9.0.0', '-m', 'v9.0.0']);
     await git(['checkout', '--quiet', 'main']);
-    expect(await lastReleaseTag(dir)).toBe('1.0.0');
+    expect(await lastReleaseTag(dir, '1.0.0')).toBe('1.0.0');
     await git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'rc']);
-    expect(await lastReleaseTag(dir)).toBe('1.0.0');
+    expect(await lastReleaseTag(dir, '1.0.0')).toBe('1.0.0');
   });
 
   test('a merged bump with no tag yet is awaiting_tag, not a second release', async () => {
@@ -147,6 +147,28 @@ describe('unit · release-due · read from a real repository', () => {
     const read = await decideAt(dir, 24, NOW);
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('awaiting_tag');
+  });
+
+  test('an rc-stamped tree is awaiting_tag, and stops once v<rc> is tagged', async () => {
+    const { dir, git, land } = await released();
+    // The release commit that bumps the manifest to 1.0.0-rc.1, what release.ts would land.
+    await land(
+      { 'packages/core/package.json': MANIFEST('1.0.0-rc.1') },
+      'chore: release 1.0.0-rc.1 (#2)',
+    );
+    // stamped=1.0.0-rc.1, the highest reachable tag is still v1.0.0 → awaiting_tag.
+    const read = await decideAt(dir, 24, NOW);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.stamped).toBe('1.0.0-rc.1');
+    expect(read.tagged).toBe('1.0.0');
+    expect(read.decision.reason).toBe('awaiting_tag');
+    // release-tag.yml cuts v<stamped> once ci.yml passes on main — we simulate it.
+    await git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'v1.0.0-rc.1']);
+    // v<stamped> is now reachable, lastReleaseTag prefers it — the awaiting_tag reason is gone.
+    const after = await decideAt(dir, 24, NOW);
+    if (!('decision' in after)) return expect.unreachable(after.cause);
+    expect(after.tagged).toBe('1.0.0-rc.1');
+    expect(after.decision.reason).not.toBe('awaiting_tag');
   });
 });
 
@@ -224,7 +246,7 @@ describe('unit · release-due · parsing and flags', () => {
       return;
     }
     expect(typeof parsed.data?.due).toBe('boolean');
-    expect(parsed.data?.lastTag).toMatch(/^v\d+\.\d+\.\d+$/);
+    expect(parsed.data?.lastTag).toMatch(/^v\d+\.\d+\.\d+(?:-[\w.-]+)?$/);
     if (!parsed.data?.due) expect(parsed.data?.reason).toBeDefined();
   });
 });
