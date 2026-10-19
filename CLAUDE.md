@@ -216,9 +216,17 @@ hasn't already asked for.
 
 ## Note
 
-Do not use git worktrees — work directly in this checkout. If a task is big enough to need
-subagents, run them as a team in this same checkout: split the work into disjoint pieces so no two
-agents touch the same files.
+The platform already hands you a checkout — that checkout IS the worktree, and it is the lock. A
+second checkout fragments the tree, lets the gate miss half the work, and lets one agent's edit
+rebuild another's islands. So: forbid a sub-worktree, `isolation: worktree`, or per-agent
+directories under this checkout's root; never touch `HEAD` or the remotes the platform owns; the
+file set is the only lock you hold, and every live worker holds its own.
+`packages/cli/src/dev-watch.ts:33-34` records the ai-maxxing incident this rule prevents — two
+entire copies of the app under `.claude/worktrees/`, so a second agent's edit rebuilt the first
+agent's islands.
+
+If a task is big enough to need subagents, run them as a team in this same checkout: split the
+work into disjoint pieces so no two agents touch the same files.
 
 **Only the top-level agent spawns subagents.** A subagent does the work it was given and reports
 back — it never delegates further. Nested fan-out is why a 4-agent sweep becomes 17 running agents:
