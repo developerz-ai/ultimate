@@ -17,7 +17,6 @@ import {
   useContext,
   withChildContext,
 } from '@ultimat3/core';
-import { outsideTransaction } from '@ultimat3/db';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, SettleBy } from './driver';
 import { claimOf } from './driver';
@@ -212,11 +211,13 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
    * a tenant-scoped read under it fails closed, which is right for a payload nobody could read.
    */
   //
-  // Outside any transaction, always: a worker started inside a transaction scope (a test, a boot
-  // that ran inside one) carried it into every timer of its loop, so each body saw that
-  // transaction — committed long before — as ambient, `db()` answered with it, and an enqueue from
-  // the body staged into its dead outbox. A job opens its own `withTransaction` when it wants one.
-  let inRunScope = <T>(fn: () => T): T => outsideTransaction(() => runWithContext(ctx, fn));
+  // Inherits the caller's ambient transaction. A worker started inside `withTransaction` (a test,
+  // a boot that ran inside one) carries that transaction — committed long before — into every
+  // timer of its loop, so each body sees it as ambient, `db()` answers with it, and an enqueue
+  // staged from the body rides the caller's outbox. An app that wants a step's writes independent
+  // opens its own `withTransaction` inside the body. Pre-#722 behaviour, pinned against a future
+  // rewrite that wants to drop the inheritance again — the e2e fixtures were written against it.
+  let inRunScope = <T>(fn: () => T): T => runWithContext(ctx, fn);
 
   const settle = async (outcome: JobExecution): Promise<JobExecution> => {
     const steps = await driver.steps.list(claimed.runId);
@@ -243,10 +244,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // still answer the worker's org while every ambient repository call answered the job's — one
     // run acting as two tenants, which is the same hole one layer up. It rebuilds every managed
     // factory against `runActor` and carries only the services no factory owns.
-    inRunScope = (fn) =>
-      outsideTransaction(() =>
-        runWithContext(ctx, () => withChildContext({ actor: runActor }, fn)),
-      );
+    inRunScope = (fn) => runWithContext(ctx, () => withChildContext({ actor: runActor }, fn));
     const work = inRunScope(() =>
       handle.run({
         input,

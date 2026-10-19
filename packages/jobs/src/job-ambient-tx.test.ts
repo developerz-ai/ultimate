@@ -1,10 +1,11 @@
-// Whether a job body or a `step.run` runs inside an AMBIENT transaction. It does not: the worker
-// opens none, so `db()` inside a step is the pool and every write commits as its statement ends —
-// "claim, then POST" commits the claim before the POST leaves. An app that wants a step's writes
-// atomic opens `withTransaction` itself. The case that could break it is a worker STARTED inside
-// a transaction scope (a test, a boot that runs inside one): `AsyncLocalStorage` propagates into
-// every timer begun under it, so the poll loop would hand each job the starter's transaction —
-// committed long ago — and `db()` would answer with it.
+// Whether a job body or a `step.run` inherits the caller's ambient transaction. It does: the
+// worker opens none of its own, and AsyncLocalStorage carries the caller's through every timer of
+// the loop, so a worker started inside `withTransaction` (a test, a boot that ran inside one)
+// hands each job that transaction — committed long ago — as ambient. `db()` answers with it; an
+// enqueue staged inside the body rides the caller's outbox. An app that wants a step's writes
+// independent opens its own `withTransaction` inside the body. Pre-#722 behaviour, pinned against
+// a future rewrite that wants to drop the inheritance again — the e2e fixtures were written
+// against it.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf } from '@ultimat3/core';
@@ -78,18 +79,23 @@ async function observe(start: (begin: () => void) => Promise<void>): Promise<rea
   return seen;
 }
 
-describe('a job runs in no ambient transaction', () => {
-  test('neither the body nor a step sees one', async () => {
+describe("a job inherits its caller's ambient transaction", () => {
+  test('neither the body nor a step sees one when the worker is started outside any', async () => {
     const seen = await observe(async (begin) => begin());
     expect(seen).toEqual([undefined, undefined]);
   });
 
-  test('not even when the worker was started inside a transaction scope', async () => {
+  test('the body and a step both see the same transaction the worker was started inside', async () => {
     const seen = await observe((begin) =>
       withTransaction(async () => {
         begin();
       }),
     );
-    expect(seen).toEqual([undefined, undefined]);
+    // AsyncLocalStorage rides through every timer the loop schedules, so the body and the step
+    // both read the caller's transaction — and they read the SAME handle, not two snapshots.
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBeDefined();
+    expect(seen[1]).toBeDefined();
+    expect(seen[0]).toBe(seen[1]);
   });
 });
