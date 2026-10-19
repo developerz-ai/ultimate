@@ -10,8 +10,10 @@ import { entryPatternsOf, testOnlyModules, testOnlyShippedFinding } from './test
 import {
   checkPackageShape,
   FIXTURE_EXCLUSION,
+  FIXTURE_EXCLUSION_TSX,
   PACKAGE_FILES,
   TEST_EXCLUSION,
+  TEST_EXCLUSION_TSX,
 } from './workspace-checks';
 
 const REPO_ROOT = Bun.fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\\/]$/, '');
@@ -224,7 +226,7 @@ describe('integration · package-shape', () => {
     try {
       for (const file of PACKAGE_FILES) await Bun.write(join(root, 'packages/p', file), '{}\n');
       const manifest = (extra: string): string =>
-        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}"]}\n`;
+        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":["src","${TEST_EXCLUSION}","${TEST_EXCLUSION_TSX}","${FIXTURE_EXCLUSION}","${FIXTURE_EXCLUSION_TSX}"]}\n`;
       await Bun.write(join(root, 'packages/p/package.json'), manifest(''));
       await Bun.write(join(root, 'packages/p/src/index.ts'), 'export const x = 1;\n');
       await Bun.write(join(root, 'packages/p/src/fake.ts'), 'export const fake = 1;\n');

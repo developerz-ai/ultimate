@@ -18,9 +18,11 @@ import {
   checkPackageShape,
   checkPublishShape,
   FIXTURE_EXCLUSION,
+  FIXTURE_EXCLUSION_TSX,
   PACKAGE_FILES,
   publishesTestsFinding,
   TEST_EXCLUSION,
+  TEST_EXCLUSION_TSX,
 } from './workspace-checks';
 
 /** A package directory as a Map: `src/index.ts` → its text. */
@@ -136,7 +138,7 @@ describe('a published package whose entry reaches a fixture', () => {
     try {
       for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
       const manifest = (extra: string): string =>
-        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}"]}\n`;
+        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":["src","${TEST_EXCLUSION}","${TEST_EXCLUSION_TSX}","${FIXTURE_EXCLUSION}","${FIXTURE_EXCLUSION_TSX}"]}\n`;
       await Bun.write(
         join(bad, 'tsconfig.json'),
         '{"files":[],"references":[{"path":"packages/p"}]}\n',
@@ -178,7 +180,7 @@ describe('unit · a fixture is excluded from files as a test is', () => {
       private: false,
       frameworkDeps: [],
       // No literal entry: only a literal is existence-checked, and this root holds nothing.
-      files: [TEST_EXCLUSION, 'src/**/*.ts'],
+      files: [TEST_EXCLUSION, TEST_EXCLUSION_TSX, FIXTURE_EXCLUSION_TSX, 'src/**/*.ts'],
     };
     expect(checkPublishShape('/nowhere', [manifest])).toEqual([
       publishesTestsFinding('short', FIXTURE_EXCLUSION),
