@@ -30,6 +30,12 @@ import { repoRoot } from './lib/run';
  * unchecked — which is how the README's `x g` kind list stayed four kinds short of the registry.
  * The same set `scripts/version-stamps.ts` already reads, for the same reason: an agent does not
  * know which directory a page lives in before it runs what the page told it to.
+ *
+ * `.dz/briefs/*.md` is deliberately NOT here: the developerz.ai maintainer bot's `schedules:`
+ * checkups (`.dz/maintainer/maintainer.yml`) run `gh …` and `bun run scripts/…`, never `x …`, so
+ * the four cited defects are field/row/branch/form, not x-form. The `.dz/` contract recorded in
+ * `.dz/README.md` owns the surface, and `skipDocPath` below keeps the omission a guard rather
+ * than a drift.
  */
 export const DOC_GLOBS: readonly string[] = [
   '*.md',
@@ -46,7 +52,7 @@ export const ALLOW_FILE = 'scripts/doc-commands-allow.ts';
 export const PINS_FILE = 'scripts/doc-commands.ts';
 
 /**
- * Two pages this rule does not read, for two different reasons.
+ * Three pages this rule does not read, for three different reasons.
  *
  * `docs/plans/` is a dated record of work, not an instruction to a reader — and the audit that
  * produced this check quotes every broken command it found as evidence. A rule that failed on a bug
@@ -56,11 +62,21 @@ export const PINS_FILE = 'scripts/doc-commands.ts';
  * STRICTER rule than this one: a fix may not cite a planned command, and a doc sentence may. Two
  * reporters of one condition is the duplication this repo forbids by name, so the error reference
  * has exactly one owner.
+ *
+ * `.dz/briefs/*.md` is the developerz.ai maintainer bot's `schedules:` checkup briefs
+ * (`.dz/maintainer/maintainer.yml`): `release-due.md` and `health.md` run `gh …` and
+ * `bun run scripts/…`, never `x …`. The cited defects are field/row/branch/form, not x-form, and
+ * including these pages here would invite a parallel rule this repo forbids by name — the `.dz/`
+ * contract in `.dz/README.md` owns the surface.
  */
 export const skipDocPath = (path: string): boolean =>
   path.startsWith('docs/plans/') ||
   path === 'CHANGELOG.md' ||
   path === 'wiki/Error-Codes.md' ||
+  // The developerz.ai bot's scheduled-checkup briefs (`schedules:` in `.dz/maintainer/maintainer.yml`)
+  // cite `gh …` and `bun run scripts/…`, never `x …` — the four cited defects are
+  // field/row/branch/form, not x-form, so the `.dz/` contract in `.dz/README.md` owns them.
+  path.startsWith('.dz/briefs/') ||
   // An installed dependency's or a build's pages are not this repo's to keep runnable.
   /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path);
 
