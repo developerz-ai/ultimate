@@ -56,6 +56,7 @@ function brokenClient(
         client.request(subject, payload, requestOptions),
       requestMany: (subject, payload, manyOptions) =>
         client.requestMany(subject, payload, manyOptions),
+      flush: () => client.flush(),
       close: () => client.close(),
       ...override(client),
     };

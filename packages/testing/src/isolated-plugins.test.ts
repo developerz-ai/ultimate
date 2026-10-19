@@ -17,14 +17,32 @@ const ROOT = join(import.meta.dir, '..', '.isolated-plugins-fixture', `run-${pro
 const PRELOAD = join(import.meta.dir, 'preload.ts');
 const FILES = 8;
 
-/** Each file holds ~8 MB and reports the live global objects once its own work is collected. */
+/**
+ * Each file holds ~8 MB and reports the live global objects once collection has settled. A finished
+ * file's global is not free after one `Bun.gc(true)`: the collection that finds the file dead hands
+ * its release to a task on the NEXT event-loop turn; only a collection after that turn frees it.
+ * On an idle machine an automatic collection mid-file usually got there first; on a loaded CI
+ * runner it did not, and about one run in 80 read 3 (2026-10-09, run 37935896129). So: collect,
+ * yield one turn, collect again, until the count stops falling. A retained file never falls, so
+ * it still reads one global per file.
+ */
 const leaky = (i: number): string => `
 import '@ultimat3/render/server';
 import { afterAll, expect, test } from 'bun:test';
 import { heapStats } from 'bun:jsc';
 const ballast = new Array(1_000_000).fill(${i});
 test('holds ballast ${i}', () => { expect(ballast.length).toBe(1_000_000); });
-afterAll(() => { Bun.gc(true); console.log('GLOBALS=' + heapStats().globalObjectCount); });
+afterAll(async () => {
+  let settled = Number.POSITIVE_INFINITY;
+  for (;;) {
+    Bun.gc(true);
+    const live = heapStats().globalObjectCount;
+    if (live >= settled) break;
+    settled = live;
+    await new Promise((turn) => setImmediate(turn));
+  }
+  console.log('GLOBALS=' + settled);
+});
 `;
 
 const TSX = (name: string): string => `

@@ -83,7 +83,9 @@ Gotchas:
   in which the sidecar may not describe the bytes: `get`/`stat`/`copy` re-check against the bytes,
   `list` reports no type and `etag: ''`. A fresh key is absent until its bytes land.
   `driver-local-crash.test.ts` dies at every step through `WriteSteps`. Writers and `get()` of one
-  key also queue in-process (`keyedQueue`) — unqueued, two puts interleaved 3/3.
+  key also queue in-process (`keyedQueue`) — unqueued, two puts interleaved 3/3. `copy()` holds BOTH
+  keys' turns (`inTurnOfBoth`, key order): measured in one and read in the other, an overwritten
+  source committed new bytes under the old etag.
 - **A refused write is `X_STORAGE_PUT_FAILED` and a refused read `X_STORAGE_READ_FAILED`**, on
   local and s3 (both were bare throws); a 404 mid-read stays `X_STORAGE_NOT_FOUND`; `assertPutOptions` holds `metadata`/`cacheControl`/`contentType` to their types on
   all three drivers before a byte moves.

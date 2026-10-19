@@ -98,6 +98,37 @@ describe('NatsTransport', () => {
     await transport.close();
   });
 
+  // CI run 39145087176: `subscribe` resolved once the SUB was WRITTEN, a publish from another
+  // connection reached the server first, and the message went nowhere.
+  test('subscribe resolves only once the server holds the subscription — a flush, not a write', async () => {
+    const harness = bus();
+    let flushed: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      flushed = resolve;
+    });
+    const transport = harness.transport({
+      connect: async (options) => {
+        const client = await fakeNatsConnect(harness.broker)(options);
+        client.flush = () => gate;
+        return client;
+      },
+    });
+    await transport.connect();
+
+    let resolved = false;
+    const subscribing = transport
+      .subscribe('x.change.posts', () => undefined)
+      .then(() => {
+        resolved = true;
+      });
+    await settle();
+    expect(resolved).toBe(false);
+    flushed();
+    await subscribing;
+    expect(resolved).toBe(true);
+    await transport.close();
+  });
+
   test('a change published on one node reaches a subscriber on another', async () => {
     const harness = bus();
     const publisher = harness.transport();

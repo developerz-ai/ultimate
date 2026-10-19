@@ -7,6 +7,7 @@ import type { CdpConnection } from './cdp-connection';
 import type { E2eTab } from './cdp-e2e-page';
 import { cdpE2eTab } from './cdp-e2e-page';
 import { CdpCallFailedError, CdpTimeoutError } from './cdp-errors';
+import { isNetworkProbe, networkAgrees } from './cdp-network-probe';
 import { offlineScripts } from './cdp-offline-script';
 
 export interface E2eSession {
@@ -92,6 +93,8 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
   });
   connection.on('Network.requestWillBeSent', (params) => {
     const request = params['request'];
+    // The switch's own proof, not the app's traffic: a test that counts requests never sees it.
+    if (isNetworkProbe(field(request, 'url') ?? '')) return;
     requests.push(`${field(request, 'method') ?? '?'} ${field(request, 'url') ?? ''}`);
   });
   connection.on('Target.attachedToTarget', (params) => {
@@ -232,13 +235,20 @@ export async function cdpE2eSession(options: CdpE2eSessionOptions): Promise<E2eS
   const confirmed = async (online: boolean): Promise<void> => {
     const deadline = performance.now() + options.loadTimeoutMs;
     const open = [...pageSessions].filter((session) => sessions.has(session));
+    // `navigator.onLine` first, then a real request: Chrome tells the page before its network
+    // service applies the cut, so the first alone let a `fetch` through (`cdp-network-probe.ts`).
     const answers = await Promise.all(
-      open.map(async (session) => [session, await pageReads(session, online, deadline)] as const),
+      open.map(async (session) => {
+        const reads =
+          (await pageReads(session, online, deadline)) &&
+          (await networkAgrees(send, session, online, deadline));
+        return [session, reads] as const;
+      }),
     );
     const waiting = answers.filter(([, reads]) => !reads).map(([session]) => session);
     if (waiting.length > 0) {
       throw new CdpTimeoutError({
-        method: `${ON_LINE} === ${String(online)} in page session ${waiting.join(', ')}`,
+        method: `${ON_LINE} === ${String(online)} and a request ${online ? 'reaching' : 'refused'} in page session ${waiting.join(', ')}`,
         timeoutMs: options.loadTimeoutMs,
       });
     }

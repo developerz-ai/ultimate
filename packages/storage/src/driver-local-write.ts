@@ -165,6 +165,23 @@ export async function commitObject(
 export type KeyedQueue = <T>(key: string, task: () => Promise<T>) => Promise<T>;
 
 /**
+ * `task` holding BOTH keys' turns — what a copy needs: the measured source must be the source it
+ * then reads, and the destination must be its alone. Taken in key order, so two crossing copies
+ * (`a → b`, `b → a`) never each hold the turn the other waits on; one key is taken once, since a
+ * queue's second turn on a key it already holds would wait on itself.
+ */
+export const inTurnOfBoth = <T>(
+  queue: KeyedQueue,
+  one: string,
+  other: string,
+  task: () => Promise<T>,
+): Promise<T> => {
+  if (one === other) return queue(one, task);
+  const [first, second] = one < other ? [one, other] : [other, one];
+  return queue(first, () => queue(second, task));
+};
+
+/**
  * One writer — or one reader — per key at a time, inside this process. An object is two files, so
  * two unserialised `put()`s of one key interleaved their four writes and left one's bytes under the
  * other's etag; a `get()` between a writer's two renames read the same mismatch.

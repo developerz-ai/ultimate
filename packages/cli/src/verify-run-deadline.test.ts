@@ -132,7 +132,10 @@ describe('a step past its deadline', () => {
   });
 
   test('a measured pace reaches every step and the document, and never stretches a stated number', async () => {
-    const pace = { factor: 10, cpus: 2, probeMs: 200 };
+    // ×1000, so a stretched deadline is 30 s against a stated 30 ms: the ceiling below can be wide
+    // enough for a loaded runner (it measured 522 ms against a 250 ms ceiling at ×10) and still
+    // tell the two apart.
+    const pace = { factor: 1000, cpus: 2, probeMs: 200 };
     const seen: unknown[] = [];
     const never: VerifyStep = {
       name: 'filesize',
@@ -152,9 +155,9 @@ describe('a step past its deadline', () => {
     expect(result.data).toMatchObject({ pace });
     const step = result.steps?.[0];
     // 30 ms as written, not 300: a repo's own number already is this machine's.
-    expect(step?.durationMs).toBeLessThan(250);
+    expect(step?.durationMs).toBeLessThan(5_000);
     expect(step?.findings[0]?.cause).toContain('within its 30 ms deadline, so');
-  });
+  }, 10_000);
 });
 
 describe('onStep', () => {

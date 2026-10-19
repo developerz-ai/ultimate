@@ -14,7 +14,7 @@
 // This header said "every failure leaves here as an `UltimateError`" until 2026-08, which a reader
 // took as a guarantee it never was.
 
-import { finiteOption, renderThrowable } from '@ultimat3/core';
+import { finiteOption, isUltimateError, renderThrowable } from '@ultimat3/core';
 import { connect, Events, headers, Match, type Msg, type MsgHdrs, type NatsConnection } from 'nats';
 import { TransportUnavailableError } from './errors';
 import {
@@ -111,6 +111,25 @@ class LibNatsClient implements NatsClient {
       },
     });
     return { unsubscribe: () => subscription.unsubscribe() };
+  }
+
+  async flush(): Promise<void> {
+    // Bounded like a request: the library's flush waits on a PONG forever, and a server that went
+    // silent (`nats-black-hole.live.test.ts`) never sends one.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(unavailable(this.#target, `flush unanswered after ${this.#timeoutMs}ms`)),
+        this.#timeoutMs,
+      );
+    });
+    try {
+      await Promise.race([this.#connection.flush(), late]);
+    } catch (error) {
+      throw isUltimateError(error) ? error : unavailable(this.#target, `flush: ${describe(error)}`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async request(

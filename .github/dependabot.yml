@@ -4,7 +4,9 @@ version: 2
 # without being read, which is worse than being a version behind.
 
 updates:
-  - package-ecosystem: npm
+  # `bun`, never `npm`: the tree is locked by `bun.lock` alone, and the npm ecosystem refuses to
+  # touch it — every weekly run failed `misconfigured_tooling` (run 39198764973, 2026-10-19).
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly

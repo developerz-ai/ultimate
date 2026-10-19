@@ -204,6 +204,11 @@ export class NatsTransport implements Transport {
       },
       (call) => this.#translating(`subscribe to ${subject}`, call),
     );
+    // Resolved only once the server HOLDS it: a publish from another process in the gap between
+    // writing the SUB and the server reading it was lost (`nats-black-hole.live.test.ts`, CI run
+    // 39145087176). Mid-reconnect there is no server to ask: the library re-sends the SUB on the
+    // way back, and `onReconnect` reports that gap. A flush that fails is that same case.
+    if (client.connected) await client.flush().catch(() => undefined);
     return { subject, unsubscribe: release };
   }
 

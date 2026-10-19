@@ -9,52 +9,63 @@ import { withIdempotency } from './idempotency';
 import { postgresIdempotencyStore, SQL_IDEMPOTENCY_RESERVE } from './idempotency-postgres';
 import { postgresUnderTest } from './idempotency-tx-fixture';
 
+/** An embedded Postgres boots in seconds on a loaded runner — two of them in the test below. */
+const PGLITE_BOOT_MS = 30_000;
+
 describe('the store’s DDL', () => {
-  test('is re-appliable: the column arrives on a table that predates it', async () => {
-    const client = pgliteClient();
-    try {
-      await postgresUnderTest(client);
-      // A second boot must be a no-op, not `42701`.
-      const under = await postgresUnderTest(client);
-      expect((await under.store.reserve('k', 'hash')).created).toBe(true);
-    } finally {
-      await client.close();
-    }
-  });
+  test(
+    'is re-appliable: the column arrives on a table that predates it',
+    async () => {
+      const client = pgliteClient();
+      try {
+        await postgresUnderTest(client);
+        // A second boot must be a no-op, not `42701`.
+        const under = await postgresUnderTest(client);
+        expect((await under.store.reserve('k', 'hash')).created).toBe(true);
+      } finally {
+        await client.close();
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
 });
 
 describe('a transaction on ANOTHER database', () => {
-  test('the settle stays on the store’s own pool — the other database has no x_idempotency', async () => {
-    const home = pgliteClient();
-    const shard = pgliteClient();
-    try {
-      const { store } = await postgresUnderTest(home);
-      await shard.execute(raw('create table shard_charges (id text primary key)'));
+  test(
+    'the settle stays on the store’s own pool — the other database has no x_idempotency',
+    async () => {
+      const home = pgliteClient();
+      const shard = pgliteClient();
+      try {
+        const { store } = await postgresUnderTest(home);
+        await shard.execute(raw('create table shard_charges (id text primary key)'));
 
-      // Sent to the shard's transaction, the settle is `42P01` there — which aborts the handler's
-      // own unit of work — and the record on the home database is never settled.
-      const outcome = await withTransaction(
-        (tx) =>
-          withIdempotency(store, 'k', { id: 1 }, async () => {
-            await tx.execute(raw("insert into shard_charges (id) values ('ch_1')"));
-            return { charged: 'ch_1' };
-          }),
-        { client: shard },
-      );
+        // Sent to the shard's transaction, the settle is `42P01` there — which aborts the handler's
+        // own unit of work — and the record on the home database is never settled.
+        const outcome = await withTransaction(
+          (tx) =>
+            withIdempotency(store, 'k', { id: 1 }, async () => {
+              await tx.execute(raw("insert into shard_charges (id) values ('ch_1')"));
+              return { charged: 'ch_1' };
+            }),
+          { client: shard },
+        );
 
-      expect(outcome).toEqual({ value: { charged: 'ch_1' }, replayed: false });
-      expect((await store.get('k'))?.status).toBe('settled');
-      expect(await shard.query(raw('select id from shard_charges'))).toEqual([{ id: 'ch_1' }]);
-      // Not bound to that transaction either, so the deadline never frees it.
-      const [row] = await home.query<{ tx_bound: boolean }>(
-        raw('select tx_bound from x_idempotency'),
-      );
-      expect(row?.tx_bound).toBe(false);
-    } finally {
-      await home.close();
-      await shard.close();
-    }
-  });
+        expect(outcome).toEqual({ value: { charged: 'ch_1' }, replayed: false });
+        expect((await store.get('k'))?.status).toBe('settled');
+        expect(await shard.query(raw('select id from shard_charges'))).toEqual([{ id: 'ch_1' }]);
+        // Not bound to that transaction either, so the deadline never frees it.
+        const [row] = await home.query<{ tx_bound: boolean }>(
+          raw('select tx_bound from x_idempotency'),
+        );
+        expect(row?.tx_bound).toBe(false);
+      } finally {
+        await home.close();
+        await shard.close();
+      }
+    },
+    PGLITE_BOOT_MS,
+  );
 });
 
 describe('the reservation statement says whether its settle is bound to a transaction', () => {
