@@ -59,7 +59,15 @@ export function packageJson(name: string, description: string): string {
       },
       publishConfig: { access: 'public', provenance: true },
       exports: { '.': './src/index.ts' },
-      files: ['src', '!src/**/*.test.ts', '!src/**/*-fixture.ts', 'README.md', 'LICENSE'],
+      files: [
+        'src',
+        '!src/**/*.test.ts',
+        '!src/**/*.test.tsx',
+        '!src/**/*-fixture.ts',
+        '!src/**/*-fixture.tsx',
+        'README.md',
+        'LICENSE',
+      ],
       // The floor the shipped `x` enforces and `x new` writes into an app (`scripts/bun-pin.test.ts`).
       engines: { bun: `>=${REQUIRED_BUN}` },
       scripts: { typecheck: 'tsc --noEmit -p tsconfig.json', test: 'bun test' },

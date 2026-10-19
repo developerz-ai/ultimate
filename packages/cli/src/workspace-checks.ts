@@ -215,14 +215,32 @@ export function checkLockstep(
 export const TEST_EXCLUSION = '!src/**/*.test.ts';
 
 /**
+ * The same rule for the suffix test code is written under when the surface under test is `.tsx`.
+ * A `*.test.tsx` is a test against a Solid island or interactive component, and `src` sweeps it
+ * into the tarball exactly as it sweeps a `*.test.ts`.
+ */
+export const TEST_EXCLUSION_TSX = '!src/**/*.test.tsx';
+
+/**
  * The same rule for the other suffix test code is written under. A `-fixture.ts` is a harness a
  * test imports — a fake driver, a recorded page, a scaffolded tree — and `src` sweeps it into the
  * tarball exactly as it sweeps a `*.test.ts`: six packages shipped 18 of them, 2026-10.
  */
 export const FIXTURE_EXCLUSION = '!src/**/*-fixture.ts';
 
+/**
+ * The same rule for `.tsx` fixtures. A `-fixture.tsx` is the harness that drives a `.tsx` surface,
+ * and `src` sweeps it into the tarball alongside its sibling suffixes.
+ */
+export const FIXTURE_EXCLUSION_TSX = '!src/**/*-fixture.tsx';
+
 /** Every exclusion a published package's `files` carries, in the order it is written. */
-export const TEST_CODE_EXCLUSIONS: readonly string[] = [TEST_EXCLUSION, FIXTURE_EXCLUSION];
+export const TEST_CODE_EXCLUSIONS: readonly string[] = [
+  TEST_EXCLUSION,
+  TEST_EXCLUSION_TSX,
+  FIXTURE_EXCLUSION,
+  FIXTURE_EXCLUSION_TSX,
+];
 
 export const missingPublishedFileFinding = (dir: string, entry: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',
