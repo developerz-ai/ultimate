@@ -87,6 +87,12 @@ export interface Gateway {
   /** The wire formats of the providers serving `model` — what `llm.sampling.ignored` is read from. */
   samplingWires?(model: ModelId): readonly SamplingWire[];
   /**
+   * Whether a provider serving `model` would send a hinted request with a cache mark — so its
+   * worst-case estimate prices the prompt at the write rate. Read by `agent()`'s `costPerRun`
+   * check to estimate a turn exactly as the gateway's own reservation does; absent reads as no.
+   */
+  marksPromptCache?(model: ModelId): boolean;
+  /**
    * The model a call with none declared runs on — `providerGateway({ defaultModel })`. Read by
    * `llm()` and `agent()` after the declaration and its prompt, so the app's choice is the one
    * fallback; absent, a call naming no model is refused (`X_AI_MODEL_UNRESOLVED`) — never routed to
@@ -184,7 +190,9 @@ class GatewayImpl implements Gateway {
     // The estimate is DEBITED here, not merely checked: three concurrent calls under one ledger
     // all read the same `spent()` otherwise, all pass, and all three record against a ceiling
     // only one of them fitted.
-    const reservation = await ledger?.reserve(estimateSpend(resolved, this.marks(model)));
+    const reservation = await ledger?.reserve(
+      estimateSpend(resolved, this.marksPromptCache(model)),
+    );
 
     let result: GenerateResult;
     try {
@@ -246,7 +254,9 @@ class GatewayImpl implements Gateway {
     const provider = this.providerFor(model);
 
     const ledger = currentBudget() ?? this.callLedger({});
-    const reservation = await ledger?.reserve(estimateSpend(resolved, this.marks(model)));
+    const reservation = await ledger?.reserve(
+      estimateSpend(resolved, this.marksPromptCache(model)),
+    );
     let settled = false;
     try {
       for await (const chunk of provider.stream(resolved)) {
@@ -284,7 +294,7 @@ class GatewayImpl implements Gateway {
   }
 
   /** Whether any provider serving `model` would send a hinted request with a cache mark. */
-  private marks(model: ModelId): boolean {
+  marksPromptCache(model: ModelId): boolean {
     return this.config.providers.some(
       (p) => p.models.includes(model) && p.marksPromptCache?.(model) === true,
     );

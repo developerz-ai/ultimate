@@ -20,7 +20,37 @@ export interface AgentBudget extends LlmBudget {
    * a single call is bounded by `maxTokens`, a loop is bounded by nothing until this is set.
    */
   readonly tokensPerRun?: number;
+  /**
+   * Money ceiling for the WHOLE run, every turn and every continuation counted, integer minor
+   * units. Checked before each turn against what the run has cost so far plus that turn's
+   * worst-case estimate — the run-level twin of `costPerCall`. A refusal is `X_AI_BUDGET_EXCEEDED`
+   * (scope `costPerRun`) before the provider is called.
+   */
+  readonly costPerRun?: Money;
 }
+
+/**
+ * The ceilings ONE run may lower (`limits()`), under the keys the declaration uses. Each may only
+ * be at or under the declared value (after its default); a higher one is `X_AI_REQUEST_INVALID`.
+ * One the declaration leaves unset (`deadlineMs`, a `budget` key) may be set by a run: any value
+ * is tighter than none.
+ */
+export interface AgentRunLimits {
+  readonly maxTurns?: number;
+  readonly maxTokens?: number;
+  readonly maxToolResultChars?: number;
+  readonly maxRepeatedToolCalls?: number;
+  readonly deadlineMs?: number;
+  readonly budget?: AgentBudget;
+}
+
+/**
+ * The model a run is on: an id, or a function of the run's input and context answering one —
+ * `undefined` from it falls through to the prompt's `model`, then the gateway's `defaultModel`.
+ */
+export type AgentModel<TInput extends StandardSchemaV1> =
+  | ModelId
+  | ((args: AgentVarsArgs<TInput>) => ModelId | undefined | Promise<ModelId | undefined>);
 
 export interface AgentVarsArgs<TInput extends StandardSchemaV1> {
   readonly input: InferOutput<TInput>;
@@ -32,7 +62,13 @@ export interface AgentDef<
   TOutput extends StandardSchemaV1,
   V extends PromptVars,
 > {
-  readonly model?: ModelId;
+  /**
+   * An id, or a function picking one per run (a stored override, a tier for this tenant). Either
+   * way it is resolved through the model registry — an unregistered id is `X_AI_MODEL_UNKNOWN`
+   * before anything is loaded — and bound into the transcript handle, so `.continue()` runs on the
+   * model the run started on or is refused.
+   */
+  readonly model?: AgentModel<TInput>;
   readonly input: TInput;
   readonly output: TOutput;
   readonly prompt: Prompt<V>;
@@ -60,6 +96,14 @@ export interface AgentDef<
    */
   readonly tools: readonly AgentTool[];
   /**
+   * The tool NAMES this run is offered — a subset of `tools`, picked per run (a stored permission
+   * rule, the actor's plan). Unset offers every declared tool. A name the declaration does not
+   * list is `X_AGENT_TOOL_UNDECLARED` before anything is loaded: a run narrows the catalogue and
+   * never adds to it. The model sees only the subset, a call to any other tool answers
+   * `unknown tool`, and the transcript handle is bound to the subset offered.
+   */
+  offerTools?(args: AgentVarsArgs<TInput>): readonly string[] | Promise<readonly string[]>;
+  /**
    * `false` withholds the refusals of EVERY in-process tool this agent runs, as a projected tool's
    * are — for an agent whose transcript leaves the tenant it ran for. Default `true`; one tool
    * opts out with `inProcessTool({ discloseErrors: false })`.
@@ -79,6 +123,12 @@ export interface AgentDef<
    */
   readonly deadlineMs?: number;
   readonly budget?: AgentBudget;
+  /**
+   * Ceilings for ONE run, read from its input and context (a stored override, a cheaper tier):
+   * each may only LOWER the declared one — see `AgentRunLimits`. Called once per `.run()`,
+   * `.continue()` or plain call, before the deadline is armed and before `vars()`.
+   */
+  limits?(args: AgentVarsArgs<TInput>): AgentRunLimits | Promise<AgentRunLimits>;
   readonly policy: ActionPolicy;
   readonly mcp?: ActionMcp;
   /** Enforced completion ceiling PER TURN. The model never sees it. */

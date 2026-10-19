@@ -129,8 +129,10 @@ export const supportAgent = agent({
 | `prompt` | yes | — | a `definePrompt()` artifact — versioned, content-hashed, evaluated |
 | `vars` | yes | — | the one declared place a run loads data, and the one place a redactor sees it. A `Secret` here is `X_AI_PROMPT_SECRET` |
 | `tools` | yes | — | real `action()`s. Each must be `mcp: { expose: true }` |
+| `offerTools` | no | every tool | the tool names one run is offered, a subset of `tools` → [Per-run picks](#per-run-picks-offertools-model-limits) |
+| `limits` | no | the declaration | ceilings one run may **lower** → [Per-run picks](#per-run-picks-offertools-model-limits) |
 | `policy` | yes | — | the action's own policy, evaluated on every surface identically |
-| `model` | no | the prompt's `model`, else the gateway's `defaultModel`; none is `X_AI_MODEL_UNRESOLVED` | a model id the app registered — [Register your models](#register-your-models-pick-your-provider) |
+| `model` | no | the prompt's `model`, else the gateway's `defaultModel`; none is `X_AI_MODEL_UNRESOLVED` | a model id the app registered — [Register your models](#register-your-models-pick-your-provider) — or a function of `{ input, ctx }` picking one per run → [Per-run picks](#per-run-picks-offertools-model-limits) |
 | `maxTurns` | no | **8** | reaching it is `X_AGENT_MAX_TURNS`, never a partial answer |
 | `maxTokens` | no | **4,096** | completion ceiling **per turn**. The model never sees it |
 | `maxToolResultChars` | no | **4,000** | one tool result's ceiling; truncation says so in the transcript |
@@ -139,7 +141,7 @@ export const supportAgent = agent({
 | `temperature`, `seed` | no | not sent | determinism knobs for a verifier or a classifier (`temperature` 0 to 2, `seed` a whole number). **Sent only to a model whose row takes them** — `registerModel({ …, sampling: { temperature: true, seed: true } })`; to any other they are left out, because a reasoning model answers a sampling parameter with a 400, and the `llm.sampling.ignored` span attribute names what was left out. `seed` exists on the chat-completions wire only (the Messages API has none) and is best effort where it exists; `temperature: 0` narrows variation, it does not promise identical answers. Same two keys on `llm()` |
 | `system` | no | — | system text loaded at run time, as `{ stable?, run? }` → [Provider prompt caching](#provider-prompt-caching) |
 | `promptCache` | no | **`'auto'`** | `'auto'` \| `'off'` \| `{ session }` — asks the provider to cache each turn's prefix |
-| `budget` | no | unmetered | `tokensIn`, `costPerCall`, `tokensPerRun` |
+| `budget` | no | unmetered | `tokensIn`, `costPerCall`, `tokensPerRun`, `costPerRun` |
 | `mcp` | no | not exposed | exposes the agent itself as a tool |
 | `onTurn` | no | — | one call per completed turn, awaited |
 
@@ -268,6 +270,7 @@ budget: {
   tokensIn:     8_000,                              // prompt tokens, per call
   tokensPerRun: 200_000,                            // every turn of this run, counted
   costPerCall:  { minor: 50, currency: 'USD' },     // worst-case price of one call
+  costPerRun:   { minor: 500, currency: 'USD' },    // the whole run, checked before each turn
 }
 ```
 
@@ -276,6 +279,7 @@ budget: {
 | `tokensIn` | prompt tokens of one call | `agent()`, `llm()`, `hive()` |
 | `tokensPerRun` | prompt + completion across **every turn and every nested call** of one run | `agent()`, `hive()` |
 | `costPerCall` | worst-case price of one call, integer minor units | `agent()`, `llm()`, `hive()` |
+| `costPerRun` | what the run cost so far (every turn, continuation and nested call) plus the next turn's worst case, checked before each turn → [Per-run picks](#per-run-picks-offertools-model-limits) | `agent()` |
 | `actor` / `org` | tokens across a whole window, per identity — the CALLER's: `llm()`, `agent()` and `hive()` key it `budgetKeysFor(ctx.actor)` | `providerGateway({ budget })` |
 
 A budget **refuses**; it never truncates. A shortened prompt yields a confidently wrong answer with no signal, and `X_AI_BUDGET_EXCEEDED` names the scope and what remains.
@@ -477,13 +481,69 @@ export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: 
 | `.continue(input, { transcript, user }, opts)` | appends ONE user turn and resumes the loop. `input` is the run's own input again (the policy and `system()` read it); `vars()` is not called and the prompt is not re-rendered — the transcript holds it. `user` is redacted like the prompt |
 | what is re-sent | the whole transcript, byte for byte, then the new turn. A provider has no session, so the tokens are sent again — but the prefix is the one the previous request cached, so it is read at the cache rate, and **no tool runs twice** |
 | `maxTurns` | counts the run **and every continuation**: a run that used 5 of 8 has 3 left; one that used them all is `X_AGENT_MAX_TURNS` before a provider call |
-| `budget.tokensPerRun` | cumulative too: the ceiling for a continuation is what the earlier calls left; none left is `X_AI_BUDGET_EXCEEDED` before a provider call. The actor and org scopes are charged once per call, as always |
+| `budget.tokensPerRun`, `budget.costPerRun` | cumulative too: the ceiling for a continuation is what the earlier calls left; none left is `X_AI_BUDGET_EXCEEDED` before a provider call. The actor and org scopes are charged once per call, as always |
 | `deadlineMs`, `maxRepeatedToolCalls` | per call |
 | `usage`, `onTurn`'s `run` and `turn` | cumulative across continuations; `meta.billed` on a failure is the failed **call's** own bill |
 
-**The handle is signed data.** `AgentTranscript` is plain JSON that the app stores; treat it as opaque. It holds what the model was sent (already redacted) and what the tools answered, so store it where tool results may live. It also carries the run's own ceilings — `turns` and `usage` — so it is **signed**: an HMAC-SHA256 over its canonical bytes with the framework's signing secret (`ULTIMATE_CURSOR_SECRET`, under a label of its own), and **bound** to the agent (`id@version` of its prompt: a bumped prompt starts a new run), the model, the set of declared tool names, and the tenant (`orgId`) of the actor it was written for. On the way back, before anything is loaded or spent, `.continue()` checks: at most `MAX_TRANSCRIPT_CHARS` (2,000,000) of JSON; the signature; each binding (a handle written for org A is refused for an actor of org B); then its shape — roles alternating, only the three block kinds a loop writes, every tool call answered by the next message, every tool call naming a tool the agent declares. Anything else is `X_AGENT_TRANSCRIPT_INVALID` (422, `terminal` for a job). An edited handle is therefore refused, not trusted: zeroing `usage`, lowering `turns`, rewriting a message or fabricating a tool result all break the signature. Rotating the secret invalidates stored handles. In production a process still on the shipped development key refuses `.continue()` and names `ULTIMATE_CURSOR_SECRET`; in development and test the development key signs. What the signature does not do: it does not make the transcript an authority — tools still run as `ctx.actor` under their own policies — and it does not stop a holder of a **valid** handle from continuing it, so store it per tenant like any other row.
+**The handle is signed data.** `AgentTranscript` is plain JSON that the app stores; treat it as opaque. It holds what the model was sent (already redacted) and what the tools answered, so store it where tool results may live. It also carries the run's own ceilings — `turns` and `usage` — so it is **signed**: an HMAC-SHA256 over its canonical bytes with the framework's signing secret (`ULTIMATE_CURSOR_SECRET`, under a label of its own), and **bound** to the agent (`id@version` of its prompt: a bumped prompt starts a new run), the model the run is on, the set of tool names the run was offered (every declared one unless [`offerTools()`](#per-run-picks-offertools-model-limits) narrowed it), and the tenant (`orgId`) of the actor it was written for. On the way back, before anything is loaded or spent, `.continue()` checks: at most `MAX_TRANSCRIPT_CHARS` (2,000,000) of JSON; the signature; each binding (a handle written for org A is refused for an actor of org B); then its shape — roles alternating, only the three block kinds a loop writes, every tool call answered by the next message, every tool call naming a tool the agent declares. Anything else is `X_AGENT_TRANSCRIPT_INVALID` (422, `terminal` for a job). An edited handle is therefore refused, not trusted: zeroing `usage`, lowering `turns`, rewriting a message or fabricating a tool result all break the signature. Rotating the secret invalidates stored handles. In production a process still on the shipped development key refuses `.continue()` and names `ULTIMATE_CURSOR_SECRET`; in development and test the development key signs. What the signature does not do: it does not make the transcript an authority — tools still run as `ctx.actor` under their own policies — and it does not stop a holder of a **valid** handle from continuing it, so store it per tenant like any other row.
 
 **A failed call leaves a handle too.** When `.run()` or `.continue()` throws after a provider answered, the error carries a signed handle — `transcriptOf(error)` — holding the transcript up to the request the failed turn was answering, with `turns` and `usage` counting everything the failed call was billed. **A job stores that handle, not the one it started with.** Continuing from the old handle forgets the failed call's spend: `maxTurns` and `budget.tokensPerRun` then count from the old figures, and only the actor and org ceilings bound the retries. A call aborted before it reported usage is not in the handle (its bill is unknown — `billedOf(error).unsettled`). A plain call keeps nothing and leaves no handle.
+
+## Per-run picks (`offerTools`, `model`, `limits`)
+
+`As of 2026-10`. A declaration is the agent's **ceiling**; one run may pick **inside** it — from its own input and context (a stored permission rule, a tenant's model tier, a cheaper plan) — and never outside it.
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { agent, definePrompt } from '@ultimat3/ai';
+import { can } from '@ultimat3/policy';
+
+const readDoc = action({
+  input: t.object({ id: t.string }),
+  output: t.object({ body: t.string }),
+  policy: can('doc:read'),
+  mcp: { expose: true, description: 'Read one document.' },
+  handle: ({ input }) => ({ body: `body of ${input.id}` }),
+});
+
+const publishPost = action({
+  input: t.object({ body: t.string }),
+  output: t.object({ postId: t.string }),
+  policy: can('post:publish'),
+  mcp: { expose: true, description: 'Publish one post. Idempotent on body.' },
+  handle: () => ({ postId: 'p_1' }),
+});
+
+export const writer = agent({
+  input: t.object({ topic: t.string, tier: t.string }),
+  output: t.object({ title: t.string }),
+  prompt: definePrompt<{ topic: string }>({ id: 'writer', version: '1.0.0', template: 'Write about {{topic}}.' }),
+  vars: ({ input }) => ({ topic: input.topic }),
+  tools: [readDoc, publishPost],
+  maxTurns: 8,
+  budget: { tokensPerRun: 200_000, costPerRun: { minor: 200, currency: 'USD' } },
+  policy: can('post:write'),
+  // A subset of `tools`, by name: the model is offered only these.
+  offerTools: ({ input }) => (input.tier === 'pro' ? ['readDoc', 'publishPost'] : ['readDoc']),
+  // An id the app registered — or undefined for the prompt's model, then the gateway's default.
+  model: ({ input }) => (input.tier === 'pro' ? 'house-large' : undefined),
+  // Lower only: a value over the declaration is X_AI_REQUEST_INVALID.
+  limits: ({ input }) =>
+    input.tier === 'pro' ? {} : { maxTurns: 4, budget: { costPerRun: { minor: 50, currency: 'USD' } } },
+});
+```
+
+| Pick | Contract | Refused as |
+|---|---|---|
+| `offerTools({ input, ctx })` | tool **names**, a subset of `tools`; unset offers them all. Sent in the catalogue's own order whatever order the rule lists them in, so the same subset is the same request bytes. A call to a tool left out answers `unknown tool: <name>` and runs nothing. An empty list offers `respond` alone | a name `tools` does not list: `X_AGENT_TOOL_UNDECLARED` (500, `terminal` for a job); not an array of strings: `X_AI_REQUEST_INVALID` |
+| `model: ({ input, ctx }) => id \| undefined` | the first of the three places, asked per run; `undefined` falls through to the prompt's `model`, then `defaultModel`. `describeAgents()` reports `model: null, modelFrom: 'run'` | an unregistered id: `X_AI_MODEL_UNKNOWN`; not a non-empty string: `X_AI_REQUEST_INVALID` |
+| `limits({ input, ctx })` | `{ maxTurns, maxTokens, maxToolResultChars, maxRepeatedToolCalls, deadlineMs, budget: { tokensIn, tokensPerRun, costPerCall, costPerRun } }`, each optional. Each is screened like the declared bound and held **at or under** it (after its default); one the declaration leaves unset (`deadlineMs`, a `budget` key) may be set — any value is tighter than none | a higher value: `X_AI_REQUEST_INVALID` naming the key and the declared ceiling; not a count: refused under `limits().<key>` |
+
+All three are called once per call (plain, `.run()` or `.continue()`), in the order `limits`, `offerTools`, `model`, **before** `vars()`, before the deadline is armed and before anything is reserved or sent — a refusal loads nothing. They run as the action's handler does, after its policy; keep them a read, not a model call.
+
+**The handle binds the picks.** A transcript is bound to the run's model and to the tool names **this run was offered** (plus `respond`), not the declared catalogue: a `.continue()` whose `model` or `offerTools()` answers differently for the same input is `X_AGENT_TRANSCRIPT_INVALID`. `limits()` is not bound — it is re-asked on every call, and `maxTurns` / `tokensPerRun` / `costPerRun` count the run and every continuation against whatever it answers then.
+
+**`budget.costPerRun`** is the run's money ceiling (declared, or set by `limits()`): before **each** turn, what the run has cost so far — its turns, every continuation's (priced from the handle's usage on the run's model), and every nested `llm()` / `agent()` a tool ran — plus that turn's worst-case estimate (full `maxTokens` completion, priced as the gateway's own reservation prices it) must fit. Otherwise `X_AI_BUDGET_EXCEEDED` with scope `costPerRun`, before the provider is called; the error carries `meta.billed` like any other. A nested call is not pre-checked against it — it counts once it has been billed; bound it with its own `budget`.
 
 ## Progress (`onTurn`)
 
@@ -686,11 +746,11 @@ describeAgents();
 // [{ name: 'supportAgent', prompt: 'support@1.0.0', promptId: 'support', promptHash: '…',
 //    model: 'house-large', modelFrom: 'declaration', maxTurns: 6, maxToolResultChars: 4000,
 //    tools: ['issueRefund', 'lookupOrder'],
-//    budget: { tokensIn: null, tokensPerRun: 200000, costPerCall: { minor: 50, currency: 'USD' } },
+//    budget: { tokensIn: null, tokensPerRun: 200000, costPerCall: { minor: 50, currency: 'USD' }, costPerRun: null },
 //    mcp: true }]
 ```
 
-An agent projects to an `ActionDescriptor` like every other action, and that descriptor knows nothing about turns or tools — so "how far can this loop, and what may it call" had no answer outside the source. `tools` is the agent's **blast radius**, sorted. `promptHash` is there because an agent's behaviour is its prompt: a row without one records which agent ran and not which agent it *was*. `modelFrom` says which place answered `model` — `declaration`, `prompt` or `gateway`; both are `null` when none names one yet (a call in that state is refused). `gateway` and `null` are as of the gateway installed when the row is read. Reading a row never throws.
+An agent projects to an `ActionDescriptor` like every other action, and that descriptor knows nothing about turns or tools — so "how far can this loop, and what may it call" had no answer outside the source. `tools` is the agent's **blast radius**, sorted. `promptHash` is there because an agent's behaviour is its prompt: a row without one records which agent ran and not which agent it *was*. `modelFrom` says which place answered `model` — `declaration`, `prompt` or `gateway`, or `run` (with `model: null`) when `model` is a function each run asks; both are `null` when none names one yet (a call in that state is refused). `gateway` and `null` are as of the gateway installed when the row is read. Reading a row never throws.
 
 Names are read when you ask, not when the agent was declared: `registerAction` stamps them at boot, long after `agent()` ran at module scope. An agent nothing registered has **no row**, and that is not a silent drop — an action with no name reaches no route, no tool catalogue and no queue, so there is no capability for a row to describe. Register it: `registerAction('supportAgent', support)`.
 
@@ -705,6 +765,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | Code | Cause | Fix |
 |---|---|---|
 | `X_AGENT_TOOL_UNEXPOSED` | a `tools` entry is an action with no `mcp` block (or `mcp: { expose: false }`) and is not an `inProcessTool()`. Raised at **declaration** | `inProcessTool({ name, description, input, execute })` for a tool only this agent may call; or `mcp: { expose: true, description }` on the action to offer it to MCP clients too; or drop it from `tools` |
+| `X_AGENT_TOOL_UNDECLARED` | a run's `offerTools()` named a tool `tools` does not list. Raised before anything is loaded | return only names from the agent's `tools`, or add the tool to `tools` first |
 | `X_AGENT_MAX_TURNS` | the loop used every turn calling tools and never answered | tell the template when to stop and answer through the respond tool, then bump its version |
 | `X_AGENT_TOOL_LOOP` | consecutive turns made the same tool calls and read the same results | `maxRepeatedToolCalls: 5` on the agent, only for a tool that really is polled; otherwise tell the template what to do when the result does not change, then bump its version |
 | `X_AGENT_DEADLINE` | the run outlived its declared `deadlineMs` | `deadlineMs: 300_000` on the agent, once a trace shows the run converging; otherwise lower `maxTurns` |

@@ -63,6 +63,21 @@ const readField = (raw: unknown, key: string): unknown => {
 const TITLE = '(() => JSON.stringify({ title: document.title }))()';
 
 /**
+ * Where the server's SECOND flush begins: every hole a streamed page reveals is written as one
+ * chunk opening with this tag (`revealChunk` in `@ultimat3/render`'s `render-stream.ts`, which the
+ * barrel does not export). Everything before it is the first flush — the head and the shell.
+ */
+export const REVEAL_MARK = '<template data-x-hole=';
+
+/**
+ * How long the reader waits for the rest of a flush that arrived in pieces. One server flush is
+ * ONE `enqueue`, but the transport may hand it to the page as several chunks — a read of the first
+ * network chunk alone cut the shell mid-tag and failed `toContain` on a header it really sent.
+ * A pause this long ends the read when no hole has been revealed; a reveal ends it at once.
+ */
+export const FLUSH_IDLE_MS = 250;
+
+/**
  * The first flush, read by a `fetch` INSIDE the page after the navigation, because neither
  * `ScrapePage` nor `CdpPageLike` exposes a response body — puppeteer's `page.on('response')` is
  * not on the port and adding it would be an edit to `@ultimat3/scraping`.
@@ -70,15 +85,37 @@ const TITLE = '(() => JSON.stringify({ title: document.title }))()';
  * The cost, stated rather than hidden: this is a SECOND request to the same route, so what it
  * measures is that route's streaming behaviour and not the byte-for-byte first chunk the open
  * document received. It runs in the page, so it carries the page's cookies and its origin — a
- * `fetch` from the test process would carry neither. The reader is CANCELLED after that chunk: a
- * streamed response nobody pulls stays open until its last hole fills, holding one of the page's
- * six connections to its origin for the rest of the test.
+ * `fetch` from the test process would carry neither. Chunks are joined until the first reveal
+ * (cut there) or a pause of `FLUSH_IDLE_MS`, and the reader is then CANCELLED: a streamed response
+ * nobody pulls stays open until its last hole fills, holding one of the page's six connections to
+ * its origin for the rest of the test.
  */
 const firstFlushExpression = (url: string): string =>
   `(() => fetch(${JSON.stringify(url)}, { credentials: 'same-origin' })
-    .then((response) => { const reader = response.body.getReader(); return reader.read()
-      .then((chunk) => { reader.cancel().catch(() => {}); return chunk; }); })
-    .then((chunk) => JSON.stringify({ html: new TextDecoder().decode(chunk.value || new Uint8Array()) })))()`;
+    .then((response) => {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      const mark = ${JSON.stringify(REVEAL_MARK)};
+      let html = '';
+      const finish = () => {
+        reader.cancel().catch(() => {});
+        const cut = html.indexOf(mark);
+        return JSON.stringify({ html: cut === -1 ? html : html.slice(0, cut) });
+      };
+      const pull = (first) => {
+        const read = reader.read();
+        const next = first ? read : Promise.race([
+          read,
+          new Promise((resolve) => setTimeout(() => resolve(null), ${FLUSH_IDLE_MS})),
+        ]);
+        return next.then((chunk) => {
+          if (chunk === null || chunk.done) return finish();
+          html += decoder.decode(chunk.value, { stream: true });
+          return html.includes(mark) ? finish() : pull(false);
+        });
+      };
+      return pull(true);
+    }))()`;
 
 /**
  * The adapter. Every member re-reads the live page: a `PageLike` handed to a test outlives every
