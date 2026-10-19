@@ -162,4 +162,35 @@ describe('a write made while the browser knows it is offline', () => {
     expect(painted).not.toContain(2);
     expect(mutate.pending).toBe(0);
   });
+
+  test('is still queued after a full reload taken once the tap resolves', async () => {
+    // Test 1 catches the on-disk window at the FIRST paint — the earliest a user could see the
+    // count move and reload, still mid-call. This one closes the gap the OTHER way: the reload the
+    // user can take once `await mutate(...)` has returned, the property they actually experience,
+    // and the next regression of #777's fix would hit here.
+    rescope('kenji');
+    const disk = fakeIndexedDb();
+    await bootedOver(disk);
+    Reflect.set(globalThis, 'navigator', { onLine: false });
+    const posted: string[] = [];
+    const unreachable = (url: string): Promise<Response> => {
+      posted.push(String(url));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    };
+    globalThis.fetch = unreachable as unknown as typeof fetch;
+
+    expect(await useMutation(LIKE)({ postId: 'p1' })).toBeUndefined();
+
+    // The full reload: `resetPage()` tears the page down; `bootedOver(disk)` rebuilds it over the
+    // SAME disk — a freshly-opened outbox over the IndexedDB the first boot wrote to.
+    resetPage();
+    const { outbox } = await bootedOver(disk);
+
+    // Known offline, the write's one POST is its replay's — never attempted, mid-call or post-reload.
+    expect(posted).toEqual([]);
+    // The freshly-opened outbox holds it: size 1, key under the mutator name we tapped.
+    expect(outbox.size).toBe(1);
+    const [kept] = outbox.pending();
+    expect(kept?.key).toMatch(/^likePost:/);
+  });
 });
