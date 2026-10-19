@@ -215,14 +215,34 @@ export function checkLockstep(
 export const TEST_EXCLUSION = '!src/**/*.test.ts';
 
 /**
+ * The exclusion that pairs `TEST_EXCLUSION` under the suffix `*.test.tsx` carries. The `.tsx` files
+ * live in the same `src/` and `src` sweeps them into the tarball exactly as it sweeps a
+ * `*.test.ts` — so the `*.tsx` shape of the rule is its own entry, not a separate one: the order
+ * here is the order `files` is checked.
+ */
+export const TEST_EXCLUSION_TSX = '!src/**/*.test.tsx';
+
+/**
  * The same rule for the other suffix test code is written under. A `-fixture.ts` is a harness a
  * test imports — a fake driver, a recorded page, a scaffolded tree — and `src` sweeps it into the
  * tarball exactly as it sweeps a `*.test.ts`: six packages shipped 18 of them, 2026-10.
  */
 export const FIXTURE_EXCLUSION = '!src/**/*-fixture.ts';
 
+/**
+ * The `.tsx` pair of `FIXTURE_EXCLUSION`. Adjacent to `FIXTURE_EXCLUSION` in `files` because the
+ * sweep is one pass, not two: a `-fixture.tsx` is harness source under its own suffix, and `src`
+ * carries it through the same exclusion the framework publishes the other under.
+ */
+export const FIXTURE_EXCLUSION_TSX = '!src/**/*-fixture.tsx';
+
 /** Every exclusion a published package's `files` carries, in the order it is written. */
-export const TEST_CODE_EXCLUSIONS: readonly string[] = [TEST_EXCLUSION, FIXTURE_EXCLUSION];
+export const TEST_CODE_EXCLUSIONS: readonly string[] = [
+  TEST_EXCLUSION,
+  TEST_EXCLUSION_TSX,
+  FIXTURE_EXCLUSION,
+  FIXTURE_EXCLUSION_TSX,
+];
 
 export const missingPublishedFileFinding = (dir: string, entry: string): Finding => ({
   code: 'X_PACKAGE_SHAPE',

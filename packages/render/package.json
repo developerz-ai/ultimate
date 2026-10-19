@@ -28,6 +28,8 @@
     "src",
     "!src/**/*.test.ts",
     "!src/**/*-fixture.ts",
+    "!src/**/*.test.tsx",
+    "!src/**/*-fixture.tsx",
     "CLAUDE.md",
     "README.md",
     "LICENSE"
