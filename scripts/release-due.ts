@@ -11,6 +11,7 @@ import { report } from './lib/log';
 import { git } from './lib/release-due-git';
 import type { DueDecision, WindowCommit } from './lib/release-due-rule';
 import { DEFAULT_SETTLE_HOURS, releaseDue } from './lib/release-due-rule';
+import { compareReleaseVersions } from './lib/release-preflight';
 import { packageFiles, shippingPackage } from './lib/release-due-ships';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
@@ -18,7 +19,7 @@ import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/worksp
 import { sectionBody, UNRELEASED_VERSION } from './release-notes';
 
 const SCRIPT = 'release-due';
-const STABLE_TAG = /^v(\d+\.\d+\.\d+)$/;
+const STABLE_TAG = /^v(\d+\.\d+\.\d+(?:[-+][\w.-]+)*)$/;
 // Record and field separators no subject or path contains, so a `|` in a subject splits nothing.
 const RECORD = '\x1e';
 const FIELD = '\x1f';
@@ -32,17 +33,26 @@ const gitUnreadable = (asked: string, output: string): Finding => ({
 });
 
 /**
- * The highest stable `v*` tag HEAD contains, without its `v`; undefined when there is none; a
- * finding when git itself could not answer, which is not the same as a tagless clone.
+ * The highest semver `v*` tag HEAD contains, without its `v`, ranked by
+ * compareReleaseVersions (1.0.0 > 1.0.0-rc.1, 2.0.0-rc.1 > 1.9.9); undefined when there is
+ * none; a finding when git itself could not answer, which is not the same as a tagless clone.
  */
 export async function lastReleaseTag(root: string): Promise<string | undefined | Finding> {
-  const tags = await git(['tag', '--merged', 'HEAD', '--list', 'v*', '--sort=-v:refname'], root);
+  // Semver-aware walk: a stable tag beats a higher-numbered prerelease (1.0.0 > 1.0.0-rc.1),
+  // and a higher-numbered prerelease beats a lower stable release (2.0.0-rc.1 > 1.9.9). The
+  // regex now mirrors SEMVER in packages/cli/src/workspace-checks.ts:113, and ranking uses
+  // compareReleaseVersions from release-preflight, not a lex sort on the refname.
+  const tags = await git(['tag', '--merged', 'HEAD', '--list', 'v*'], root);
   if (!tags.ok) return gitUnreadable('git tag --merged HEAD', tags.output);
+  let highest: string | undefined;
   for (const line of tags.output.split('\n')) {
     const version = STABLE_TAG.exec(line.trim())?.[1];
-    if (version !== undefined) return version;
+    if (version === undefined) continue;
+    if (highest === undefined || compareReleaseVersions(version, highest) > 0) {
+      highest = version;
+    }
   }
-  return undefined;
+  return highest;
 }
 
 /**

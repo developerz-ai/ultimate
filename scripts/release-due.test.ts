@@ -140,6 +140,66 @@ describe('unit · release-due · read from a real repository', () => {
     expect(await lastReleaseTag(dir)).toBe('1.0.0');
   });
 
+  test('a tree stamped at a prerelease and tagged with the matching vX.Y.Z-rc.N is not awaiting_tag', async () => {
+    // Same setup as `released({ tag: true })`, but the stamp and tag are 1.0.0-rc.1 —
+    // the prerelease path that the lex-sorted lastReleaseTag walk used to skip, so
+    // stamped (`1.0.0-rc.1`) and tag (`v1.0.0-rc.1`) agreed but the old regex never
+    // recognised the tag at all and the tree looked tagless.
+    const dir = await mkdtemp(join(tmpdir(), 'release-due-'));
+    madeDirs.push(dir);
+    const git = (argv: readonly string[], hoursAgo = 72): Promise<string> => {
+      const date = new Date(NOW - hoursAgo * HOUR).toISOString();
+      return gitIn(
+        [
+          '-c',
+          'user.email=t@example.test',
+          '-c',
+          'commit.gpgsign=false',
+          '-c',
+          'tag.gpgsign=false',
+          ...argv,
+        ],
+        dir,
+        {
+          GIT_AUTHOR_NAME: 't',
+          GIT_COMMITTER_NAME: 't',
+          GIT_COMMITTER_DATE: date,
+          GIT_AUTHOR_DATE: date,
+        },
+      ).then((out) => {
+        expect({ argv, ok: out.ok }).toEqual({ argv, ok: true });
+        return out.output;
+      });
+    };
+    const land = async (
+      files: Readonly<Record<string, string>>,
+      subject: string,
+      hoursAgo = 72,
+    ): Promise<void> => {
+      for (const [path, body] of Object.entries(files)) await Bun.write(join(dir, path), body);
+      await git(['add', '-A'], hoursAgo);
+      await git(['commit', '--quiet', '-m', subject], hoursAgo);
+    };
+    await git(['init', '--quiet', '-b', 'main']);
+    await land(
+      {
+        'packages/core/package.json': MANIFEST('1.0.0-rc.1'),
+        'packages/core/src/a.ts': 'export const a = 1;\n',
+        'CHANGELOG.md': CHANGELOG.replace('1.0.0 - 2026-10-01', '1.0.0-rc.1 - 2026-10-01'),
+      },
+      'release: 1.0.0-rc.1',
+    );
+    await git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'v1.0.0-rc.1']);
+    // Prerelease tags are recognised.
+    expect(await lastReleaseTag(dir)).toBe('1.0.0-rc.1');
+    const read = await decideAt(dir, 24, NOW);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.tagged).toBe('1.0.0-rc.1');
+    expect(read.stamped).toBe('1.0.0-rc.1');
+    expect(read.decision.reason).not.toBe('awaiting_tag');
+    expect(read.decision.reason).toBe('nothing_ships');
+  });
+
   test('a merged bump with no tag yet is awaiting_tag, not a second release', async () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 3;\n' }, 'fix(core): three');
