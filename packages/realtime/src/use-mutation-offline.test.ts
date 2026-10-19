@@ -162,4 +162,35 @@ describe('a write made while the browser knows it is offline', () => {
     expect(painted).not.toContain(2);
     expect(mutate.pending).toBe(0);
   });
+
+  test('is on disk by the time the call resolves: a full reload after the call keeps it', async () => {
+    rescope('kenji');
+    const disk = fakeIndexedDb();
+    await bootedOver(disk);
+    Reflect.set(globalThis, 'navigator', { onLine: false });
+    const posted: string[] = [];
+    // An input to the code under test: a fetch the browser itself refused. With the offline branch
+    // queuing the write before it reached the wire, fetch must not have been asked.
+    const unreachable = (url: string): Promise<Response> => {
+      posted.push(String(url));
+      return Promise.reject(new TypeError('Failed to fetch'));
+    };
+    globalThis.fetch = unreachable as unknown as typeof fetch;
+
+    expect(await useMutation(LIKE)({ postId: 'p1' })).toBeUndefined();
+
+    // A full page reloaded after the call returned: the latest moment a user, or the e2e's poll,
+    // could reload. If the offline branch had raced the write past the disk, the reopened outbox
+    // would see an empty queue.
+    resetPage();
+    const { outbox: dis } = await bootedOver(disk);
+
+    // The reopened outbox re-reads the durable queue on open: the previous tab's write survives.
+    expect(dis.size).toBe(1);
+    const kept = await queuedOn(disk);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatch(/^likePost:/);
+    // The network was never asked: nothing was sent, nothing could have failed, nothing is owed.
+    expect(posted).toEqual([]);
+  });
 });
