@@ -129,6 +129,8 @@ export async function serverLikeCount(
   const { id, orgId } = POSTS[post];
   const response = await fetch(`${app.base}/_x/query/post-by-id?orgId=${orgId}&postId=${id}`, {
     headers: {
+      origin: app.base,
+      'sec-fetch-site': 'same-origin',
       cookie: `${DEMO_MEMBER_COOKIE}=${member}`,
     },
   });
