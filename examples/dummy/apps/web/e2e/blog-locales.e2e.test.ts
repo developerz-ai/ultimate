@@ -48,6 +48,7 @@ describe('the public blog, in every locale', () => {
       headers: {
         'content-type': 'application/json',
         origin: app.base,
+        'sec-fetch-site': 'same-origin',
         cookie: `${DEMO_MEMBER_COOKIE}=bruno`,
       },
       body: JSON.stringify({ postId: DRAFT.id, orgId: DRAFT.orgId, ...extra }),

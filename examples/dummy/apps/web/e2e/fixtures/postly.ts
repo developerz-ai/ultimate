@@ -128,7 +128,11 @@ export async function serverLikeCount(
 ): Promise<number> {
   const { id, orgId } = POSTS[post];
   const response = await fetch(`${app.base}/_x/query/post-by-id?orgId=${orgId}&postId=${id}`, {
-    headers: { cookie: `${DEMO_MEMBER_COOKIE}=${member}` },
+    headers: {
+      origin: app.base,
+      'sec-fetch-site': 'same-origin',
+      cookie: `${DEMO_MEMBER_COOKIE}=${member}`,
+    },
   });
   const body: unknown = await response.json();
   // Bare rows, or the record envelope when the query declares entity rows.
@@ -152,6 +156,7 @@ export async function likeOverHttp(
     headers: {
       'content-type': 'application/json',
       origin: app.base,
+      'sec-fetch-site': 'same-origin',
       cookie: `${DEMO_MEMBER_COOKIE}=${member}`,
     },
     body: JSON.stringify({ postId: POSTS[post].id, orgId: POSTS[post].orgId }),
