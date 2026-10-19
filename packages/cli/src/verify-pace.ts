@@ -8,6 +8,14 @@ import { TEST_PACE_ENV } from '@ultimat3/testing';
 import { availableCpus } from './test-workers';
 
 /**
+ * The env key the gate writes the measured pace under when it starts a test run: an alias of
+ * `@ultimat3/testing`'s `TEST_PACE_ENV`, registered here so the framework's own commands reach the
+ * measured pace under any name. One owner inside this file: a future rename in
+ * `@ultimat3/testing` only changes the import above.
+ */
+export const PACE_BASIS_ENV = TEST_PACE_ENV;
+
+/**
  * The width the declared deadlines were measured at: a GitHub-hosted `ubuntu-latest` runner on a
  * public repository has 4 cores, and the `unit` deadline's "~3 minutes" is on one.
  */
@@ -117,4 +125,4 @@ export const defaultTimeoutArgs = (pace: MachinePace | undefined): readonly stri
  * test must not inherit the outer run's pace as its own. Nothing when none was measured.
  */
 export const paceEnv = (pace: MachinePace | undefined): Readonly<Record<string, string>> =>
-  pace === undefined ? {} : { [TEST_PACE_ENV]: String(pace.factor) };
+  pace === undefined ? {} : { [PACE_BASIS_ENV]: String(pace.factor) };

@@ -4,6 +4,7 @@ import {
   BUN_TEST_TIMEOUT_MS,
   DECLARED_PACE,
   defaultTimeoutArgs,
+  PACE_BASIS_ENV,
   PROBE_ROWS,
   PROBE_RUNS,
   pacedMs,
@@ -76,5 +77,11 @@ describe('what a test run at that pace is started with', () => {
     expect(paceEnv(undefined)).toEqual({});
     expect(paceEnv(DECLARED_PACE)).toEqual({ [TEST_PACE_ENV]: '1' });
     expect(paceEnv(paceOf(2, REFERENCE_PROBE_MS * 3))).toEqual({ [TEST_PACE_ENV]: '6' });
+  });
+
+  test('the alias registered here is the env the test process reads — one prop, two names', () => {
+    expect(PACE_BASIS_ENV).toBe(TEST_PACE_ENV);
+    expect(paceEnv(DECLARED_PACE)).toEqual({ [PACE_BASIS_ENV]: '1' });
+    expect(paceEnv(paceOf(2, REFERENCE_PROBE_MS * 3))).toEqual({ [PACE_BASIS_ENV]: '6' });
   });
 });
