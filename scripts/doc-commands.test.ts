@@ -116,6 +116,15 @@ describe('what is not read, and why', () => {
     expect(skipDocPath('wiki/Error-Codes.md')).toBe(true);
   });
 
+  test('.dz/briefs belongs to the developerz.ai bot, and its contract is .dz/README.md', () => {
+    // The checkup briefs cite `gh …` and `bun run scripts/…`, never `x …` — the four cited
+    // defects are field/row/branch/form, not x-form. `.dz/README.md` itself is NOT skipped: it
+    // records the surface ownership, not a runnable command.
+    expect(skipDocPath('.dz/briefs/release-due.md')).toBe(true);
+    expect(skipDocPath('.dz/briefs/health.md')).toBe(true);
+    expect(skipDocPath('.dz/README.md')).toBe(false);
+  });
+
   test('one line naming one invocation twice is one finding', () => {
     expect(gaps('| Repair | `x db query` | see `x db query` |')).toHaveLength(1);
   });
