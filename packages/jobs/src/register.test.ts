@@ -4,7 +4,9 @@
 // different handles under one name are refused rather than merged.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { hasPrimitiveRegistrar, primitiveRegistrar, UltimateError } from '@ultimat3/core';
+// why: Bun exposes no path-join primitive; Bun.file and `bun -e` take one already joined.
+import { join } from 'node:path';
+import { primitiveRegistrar, registerPrimitiveRegistrar, UltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyJobHandle, JobHandle } from './job';
 import { getJob, job, registeredJobs, resetJobs } from './job';
@@ -268,12 +270,17 @@ describe('one handle, one durable name', () => {
 });
 
 describe('the registrar announcement', () => {
-  test('job and task registrars resolve from core after importing the package', () => {
-    expect(hasPrimitiveRegistrar('job')).toBe(true);
-    expect(hasPrimitiveRegistrar('task')).toBe(true);
-    // Identity, not merely presence: `defineApi({ jobs })` must reach THIS registry, not a copy.
-    expect(primitiveRegistrar('job')).toBe(registerJobs);
-    expect(primitiveRegistrar('task')).toBe(registerTasks);
+  // `register.ts`'s module-scope `registerPrimitiveRegistrar` calls run once at import. A test
+  // in another file sharing this `bun test` process may have called `resetPrimitiveRegistrars()`
+  // between then and now — `packages/core/src/registrar.test.ts`'s beforeEach does — leaving the
+  // table empty. The functions below are the SAME exports `register.ts` announced, so re-announcing
+  // them is idempotent (`registerPrimitiveRegistrar` accepts an equal function silently) and the
+  // tests in this block still see the registrar they expect. Scoped to the only describe that
+  // reaches `primitiveRegistrar`, so no other test in this file pays the cost and the announcement
+  // itself is no longer reachable from this process's setup.
+  beforeEach(() => {
+    registerPrimitiveRegistrar('job', registerJobs);
+    registerPrimitiveRegistrar('task', registerTasks);
   });
 
   test('the announced registrar names a job exactly as the direct call does', () => {
@@ -282,6 +289,62 @@ describe('the registrar announcement', () => {
     primitiveRegistrar('job')({ onboardOrg });
 
     expect(getJob('onboardOrg')).toBe(onboardOrg as AnyJobHandle);
+  });
+});
+
+// Awaited, never `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a
+// child that does not come back is a worker the test timeout cannot end.
+const spawned = async (
+  cmd: readonly string[],
+): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
+  const child = Bun.spawn([...cmd], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  return { exitCode, stdout, stderr };
+};
+
+describe('the import-time announcement', () => {
+  // The whole point of this test: `register.ts` calls `registerPrimitiveRegistrar` at module
+  // evaluation. Removing those two lines is a silent regression the in-process announcement test
+  // could not see, because the file-scoped `beforeEach` re-installed the same functions and the
+  // table looked identical to whatever checked it. The isolated child has no beforeEach — the
+  // call must come from the import.
+  test('importing register.ts installs the job and task registrars in a fresh process', async () => {
+    // `import.meta.resolveSync` reaches the workspace copy of `@ultimat3/core` (bun -e alone
+    // resolves to the install cache, an older version whose table a sibling test cannot share).
+    const corePath = import.meta.resolveSync('@ultimat3/core');
+    const registerPath = join(import.meta.dir, 'register.ts');
+    const source = [
+      `import { hasPrimitiveRegistrar, primitiveRegistrar } from ${JSON.stringify(corePath)};`,
+      `import { registerJobs, registerTasks } from ${JSON.stringify(registerPath)};`,
+      'console.log(JSON.stringify({',
+      '  job: hasPrimitiveRegistrar("job"),',
+      '  task: hasPrimitiveRegistrar("task"),',
+      // Identity, not merely presence: `defineApi({ jobs })` must reach THIS registry, not a copy.
+      '  jobIsRegisterJobs: primitiveRegistrar("job") === registerJobs,',
+      '  taskIsRegisterTasks: primitiveRegistrar("task") === registerTasks,',
+      '}));',
+    ].join('\n');
+    const run = await spawned(['bun', '-e', source]);
+    expect(run.exitCode).toBe(0);
+    const seen = JSON.parse(run.stdout.trim()) as {
+      job: boolean;
+      task: boolean;
+      jobIsRegisterJobs: boolean;
+      taskIsRegisterTasks: boolean;
+    };
+    expect(seen).toEqual({
+      job: true,
+      task: true,
+      jobIsRegisterJobs: true,
+      taskIsRegisterTasks: true,
+    });
   });
 });
 

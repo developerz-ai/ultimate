@@ -3,10 +3,16 @@
 // causing the double charge it exists to prevent. Written failure-first: every test here fails
 // against a gate that releases on a post-commit throw.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { ctxOf, userActor } from '@ultimat3/core';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
-import { can } from '@ultimat3/policy';
+import {
+  can,
+  definePermissions,
+  knownPermissions,
+  permissionDeclarationSites,
+  restorePermissions,
+} from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { IdempotencyFailure, IdempotencyStore } from './idempotency';
@@ -24,6 +30,30 @@ const Output = t.object({ chargeId: t.string, amount: t.number.int() });
 // `Actor` has none and cannot: core is tier 0 and knows nothing about grants.
 const chargerActor: PolicyActor = { ...userActor({ id: 'u1' }), permissions: ['card:charge'] };
 const charger = ctxOf({ actor: chargerActor });
+
+// `can()` asserts its permission when the policy is BUILT, and `isKnownPermission` is permissive
+// only while the registry is EMPTY — so a `definePermissions()` any earlier file in this one
+// `bun test` process ran turns strict checking on for everyone and every `can('card:charge')`
+// below throws X_PERMISSION_UNKNOWN. Declaring the set this file uses removes the dependency on
+// which files it is sharded with; restoring the ambient set removes the mirror-image hazard for
+// whatever runs next (the rule `policy/CLAUDE.md` states, and `admin/src/dev/data.test.ts` works).
+//
+// `beforeAll`, not module scope: a module-scope declaration accumulates for the life of the worker
+// and would switch strict checking on for every later file, which is the defect being fixed here.
+// Every `can('card:charge')` below runs inside `chargeCard()`, which only the first two tests
+// call, so the declaration lands first.
+let ambientPermissions: readonly string[] = [];
+let ambientSites: Readonly<Record<string, readonly string[]>> = {};
+
+beforeAll(() => {
+  ambientPermissions = knownPermissions();
+  ambientSites = permissionDeclarationSites();
+  definePermissions(['card:charge']);
+});
+
+afterAll(() => {
+  restorePermissions(ambientPermissions, ambientSites);
+});
 
 /** Commits (increments `charges`) and then returns a value its own `output:` rejects. */
 function chargeCard() {

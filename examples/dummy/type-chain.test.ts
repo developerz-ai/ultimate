@@ -17,9 +17,11 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// `writeFileSync`, not `Bun.write`: the signal handlers below restore the fixture from inside a
-// signal handler, which has no chance to await, and an unflushed async write is exactly the dirty
-// checkout they exist to prevent. Bun ships no synchronous write.
+// `writeFileSync`, not `Bun.write`: EVERY write to the tracked schema below is synchronous — the
+// mutation, the body's `finally`, the signal handlers and the `afterAll` repair alike. A signal
+// handler has no chance to await, and an abandoned test has no `finally` at all: a pending
+// `Bun.write` never landed, and the schema stayed renamed for every file after this one. Bun ships
+// no synchronous write.
 import { writeFileSync } from 'node:fs';
 // Node-specific and unavoidable: restoring a tracked file before the runner dies needs synchronous
 // signal cleanup — `process.on`, `process.off` and `process.exit` — and Bun exposes no other way to
@@ -255,7 +257,23 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
   afterAll(async () => {
     // Exact equality, not `toContain`: the rename is a fixture, so the file has to come back byte
     // for byte whether the test below passed, failed, or was filtered out of this run entirely.
-    expect(await Bun.file(SCHEMA_FILE).text()).toBe(pristine);
+    const found = await Bun.file(SCHEMA_FILE).text();
+
+    // Repair BEFORE asserting, and this is the line the whole run's health turns on. A test that
+    // times out is ABANDONED: the runner drops the pending `await`, so the body's `finally` never
+    // runs and the signal guard only fires at process exit — long after every later file has read
+    // the schema. Left renamed, one abandoned fixture took the rest of the suite with it
+    // (`post-excerpts.test.ts` reads the `excerpt` column and failed on a column now called
+    // `summary`), which is a cascade no reader can attribute to this file. `writeFileSync` for the
+    // reason the guard at the top of this file gives: no await, no window to lose the write in.
+    // `pristine === ''` means `beforeAll` never reached its read — writing would blank a tracked
+    // file to "restore" it, which is the one outcome worse than leaving the rename.
+    if (pristine !== '' && found !== pristine) writeFileSync(SCHEMA_FILE, pristine);
+
+    // Still asserted, and still exact: the repair above puts the checkout right, it does not excuse
+    // the body. A drift here is the fixture going stale against the rename below, and it has to be
+    // loud rather than quietly written back.
+    expect(found).toBe(pristine);
   });
 
   test('excerpt → summary, and nothing else, breaks the build — never silently', async () => {
@@ -324,11 +342,14 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     let after: TypecheckRun;
     const release = guardRestore(SCHEMA_FILE, pristine);
     try {
-      await Bun.write(SCHEMA_FILE, pristine.replace(RENAME_FROM, RENAME_TO));
+      writeFileSync(SCHEMA_FILE, pristine.replace(RENAME_FROM, RENAME_TO));
       after = await typecheckApp();
     } finally {
       // Always restored, even if typechecking throws — the rename is a fixture, not a change.
-      await Bun.write(SCHEMA_FILE, pristine);
+      // `writeFileSync`, not the `Bun.write` that stood here: one synchronous rule for every write
+      // to a tracked file in this test. And its limit, which is why `afterAll` restores too — a test
+      // the runner ABANDONS on a timeout never reaches a `finally` at all.
+      writeFileSync(SCHEMA_FILE, pristine);
       release();
     }
 
@@ -382,5 +403,5 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
       introduced.filter((d) => d.file === 'apps/web/app/posts/backfills/post-excerpts.job.test.ts')
         .length,
     ).toBeGreaterThan(0);
-  }, 30_000);
+  }, 120_000);
 });

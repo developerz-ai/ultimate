@@ -2,16 +2,41 @@
 // ran as, refused for an agent, an anonymous caller and a malformed browser subscription, and an
 // unsubscribe that can only ever reach the caller's own device.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { registerAction, resetActions } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import { agentActor, anonymousActor, userActor } from '@ultimat3/core';
+import {
+  definePermissions,
+  knownPermissions,
+  permissionDeclarationSites,
+  restorePermissions,
+} from '@ultimat3/policy';
 import { pushSubscribe, pushUnsubscribe } from './push-actions';
 import { encodeBase64Url } from './push-bytes';
 import { installWebPush, resetWebPush } from './push-runtime';
 import type { PushSubscriptionStore } from './push-store';
 import { memoryPushSubscriptionStore } from './push-store';
 import { DEV_VAPID_KEYS } from './vapid-keys';
+
+// `pushSubscribe()` builds its policy with `can(options.permission)`, and `can()` asserts the name
+// when the policy is BUILT — which is inside `surface()` below. `isKnownPermission` is permissive
+// only while the registry is EMPTY, so a `definePermissions()` any earlier file in this one
+// `bun test` process ran turns strict checking on and every action this file builds throws
+// X_PERMISSION_UNKNOWN. `policy/CLAUDE.md` states the rule: declare the set you use, restore the
+// one you found, never lean on the empty registry.
+let ambientPermissions: readonly string[] = [];
+let ambientSites: Readonly<Record<string, readonly string[]>> = {};
+
+beforeAll(() => {
+  ambientPermissions = knownPermissions();
+  ambientSites = permissionDeclarationSites();
+  definePermissions(['push:subscribe']);
+});
+
+afterAll(() => {
+  restorePermissions(ambientPermissions, ambientSites);
+});
 
 afterEach(() => {
   resetActions();

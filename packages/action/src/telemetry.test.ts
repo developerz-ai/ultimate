@@ -2,7 +2,7 @@
 // `handle` alone and carried no attributes at all, so `def.row()` — the loader a row-level policy
 // needs — ran inside no span, and a 2s p99 reported 40ms with a 1.96s gap nothing named.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { ReadableSpan } from '@ultimat3/core';
 import {
   configureTelemetry,
@@ -13,7 +13,13 @@ import {
   userActor,
 } from '@ultimat3/core';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
-import { can } from '@ultimat3/policy';
+import {
+  can,
+  definePermissions,
+  knownPermissions,
+  permissionDeclarationSites,
+  restorePermissions,
+} from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { idempotencyKeyFor } from './idempotency-key';
@@ -30,6 +36,30 @@ const editor = ctxOf({ actor: editorActor });
 /** No grant at all — the denial half, and the reason `permissions: []` is written out. */
 const strangerActor: PolicyActor = { ...userActor({ id: 'u2' }), permissions: [] };
 const stranger = ctxOf({ actor: strangerActor });
+
+// `can()` asserts its permission when the policy is BUILT, and `isKnownPermission` is permissive
+// only while the registry is EMPTY — so a `definePermissions()` any earlier file in this one
+// `bun test` process ran turns strict checking on for everyone and every `can('post:publish')`
+// below throws X_PERMISSION_UNKNOWN. Declaring the set this file uses removes the dependency on
+// which files it is sharded with; restoring the ambient set removes the mirror-image hazard for
+// whatever runs next (the rule `policy/CLAUDE.md` states, and `admin/src/dev/data.test.ts` works).
+//
+// `beforeAll`, not module scope: a module-scope declaration accumulates for the life of the worker
+// and would switch strict checking on for every later file, which is the defect being fixed here.
+// Every `can()` below runs inside `publishPost()`, which only a test body calls, so the declaration
+// lands first.
+let ambientPermissions: readonly string[] = [];
+let ambientSites: Readonly<Record<string, readonly string[]>> = {};
+
+beforeAll(() => {
+  ambientPermissions = knownPermissions();
+  ambientSites = permissionDeclarationSites();
+  definePermissions(['post:publish']);
+});
+
+afterAll(() => {
+  restorePermissions(ambientPermissions, ambientSites);
+});
 
 /**
  * Records which span was ACTIVE while `row:` loaded and while the policy decided — the two stages
