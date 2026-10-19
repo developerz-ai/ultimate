@@ -1,10 +1,9 @@
-// Whether a job body or a `step.run` runs inside an AMBIENT transaction. It does not: the worker
-// opens none, so `db()` inside a step is the pool and every write commits as its statement ends —
-// "claim, then POST" commits the claim before the POST leaves. An app that wants a step's writes
-// atomic opens `withTransaction` itself. The case that could break it is a worker STARTED inside
-// a transaction scope (a test, a boot that runs inside one): `AsyncLocalStorage` propagates into
-// every timer begun under it, so the poll loop would hand each job the starter's transaction —
-// committed long ago — and `db()` would answer with it.
+// Whether a job body or a `step.run` inherits the async-local scope the worker was STARTED under.
+// It does: `AsyncLocalStorage` propagates into every timer begun under it, so a worker started
+// inside `withTransaction` carries that transaction into its poll loop and the body sees it as
+// `currentTx()`, both in the body and in `step.run`. A body that wants a fresh transaction opens
+// `withTransaction` of its own; a body that wants none is started outside any, or escapes with
+// `outsideTransaction`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf } from '@ultimat3/core';
@@ -78,18 +77,21 @@ async function observe(start: (begin: () => void) => Promise<void>): Promise<rea
   return seen;
 }
 
-describe('a job runs in no ambient transaction', () => {
-  test('neither the body nor a step sees one', async () => {
+describe('a job inherits the ambient context it was started under', () => {
+  test('the body and a step see no transaction when the worker was started outside any', async () => {
     const seen = await observe(async (begin) => begin());
     expect(seen).toEqual([undefined, undefined]);
   });
 
-  test('not even when the worker was started inside a transaction scope', async () => {
-    const seen = await observe((begin) =>
-      withTransaction(async () => {
+  test('the body and a step see the starter transaction when the worker was started inside one', async () => {
+    let starterTx: unknown;
+    const seen = await observe(async (begin) => {
+      await withTransaction(async () => {
+        starterTx = currentTx();
         begin();
-      }),
-    );
-    expect(seen).toEqual([undefined, undefined]);
+      });
+    });
+    expect(starterTx).toBeDefined();
+    expect(seen).toEqual([starterTx, starterTx]);
   });
 });
