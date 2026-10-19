@@ -13,11 +13,13 @@ export interface PackageFiles {
 
 /**
  * Packed, and still no reason to release: prose (`README.md`, `CLAUDE.md` — a typo fix is not a
- * version), tests (`.test.tsx` is not in any `files` negation today, and a test is never an API)
- * and fixtures. Read relative to the package, so a directory named `fixtures` anywhere counts.
+ * version, and the SPDX `license` field carries the declaration), tests (`.test.tsx` is not in
+ * any `files` negation today, and a test is never an API) and fixtures. Read relative to the
+ * package, so a directory named `fixtures` anywhere counts.
  */
 const NEVER_A_RELEASE: readonly RegExp[] = [
-  /\.md$/i,
+  /\.md$/i, // prose, including LICENSE.md and the copyright year on it
+  /LICENSE$/i, // a year stamp on LICENSE is not a version, the SPDX `license` field carries it
   /\.test\.tsx?$/,
   /-fixture\.tsx?$/,
   /(?:^|\/)(?:__)?fixtures?(?:__)?\//,

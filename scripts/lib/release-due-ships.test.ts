@@ -60,6 +60,31 @@ describe('unit · release-due-ships · what ships', () => {
     }
   });
 
+  test('LICENSE never ships, even when the files field includes it', () => {
+    // why: a copyright-year edit on any package's LICENSE must not mint a 31-tarball release.
+    // The test's files variant DOES include LICENSE, so the verdict rides on NEVER_A_RELEASE alone.
+    const FILES_WITH_LICENSE = [
+      'src',
+      '!src/**/*.test.ts',
+      '!src/**/*-fixture.ts',
+      'CLAUDE.md',
+      'README.md',
+      'LICENSE',
+    ];
+    const PACKAGES_WITH_LICENSE: ReadonlyMap<string, PackageFiles> = new Map([
+      ['core', { dir: 'core', files: FILES_WITH_LICENSE }],
+      ['cli', { dir: 'cli', files: [...FILES_WITH_LICENSE, 'types'] }],
+      ['create-ultimate', { dir: 'create-ultimate', files: FILES_WITH_LICENSE }],
+      ['loose', { dir: 'loose', files: undefined }],
+    ]);
+    for (const pkg of ['core', 'cli', 'create-ultimate', 'loose'] as const) {
+      expect({
+        pkg,
+        ships: shippingPackage(`packages/${pkg}/LICENSE`, PACKAGES_WITH_LICENSE),
+      }).toEqual({ pkg, ships: undefined });
+    }
+  });
+
   test('root tooling, docs, apps, unpacked package files and unknown packages do not', () => {
     for (const path of [
       'package.json',
