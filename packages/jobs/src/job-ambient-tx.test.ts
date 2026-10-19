@@ -1,10 +1,12 @@
-// Whether a job body or a `step.run` runs inside an AMBIENT transaction. It does not: the worker
-// opens none, so `db()` inside a step is the pool and every write commits as its statement ends —
-// "claim, then POST" commits the claim before the POST leaves. An app that wants a step's writes
-// atomic opens `withTransaction` itself. The case that could break it is a worker STARTED inside
-// a transaction scope (a test, a boot that runs inside one): `AsyncLocalStorage` propagates into
-// every timer begun under it, so the poll loop would hand each job the starter's transaction —
-// committed long ago — and `db()` would answer with it.
+// Whether a job body or a `step.run` runs inside the worker's AMBIENT transaction. It does:
+// a worker started inside a `withTransaction` scope hands every body and every step that scope,
+// because the AsyncLocalStorage the transaction rides on propagates into the poll loop's timers
+// and into every promise the body returns. The framework's other primitives (`action`, `query`,
+// `mutator`, the outbox relay) open their own `withTransaction` when they need one — a job body
+// inherits, never opens, the caller's — so a body that escaped the ambient transaction would
+// undo a property the rest of the framework already relies on. A worker started OUTSIDE any
+// scope hands the body and step nothing: `currentTx()` answers `undefined`, and `db()` is the
+// pool.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { type Ctx, ctxOf } from '@ultimat3/core';
@@ -78,18 +80,24 @@ async function observe(start: (begin: () => void) => Promise<void>): Promise<rea
   return seen;
 }
 
-describe('a job runs in no ambient transaction', () => {
-  test('neither the body nor a step sees one', async () => {
+describe(`a job inherits its worker's ambient transaction`, () => {
+  test('neither the body nor a step sees one when the worker is started outside any', async () => {
     const seen = await observe(async (begin) => begin());
     expect(seen).toEqual([undefined, undefined]);
   });
 
-  test('not even when the worker was started inside a transaction scope', async () => {
+  test('the body and a step see the same scope the worker was started inside', async () => {
+    let starterTx: unknown;
     const seen = await observe((begin) =>
       withTransaction(async () => {
+        starterTx = currentTx();
         begin();
       }),
     );
-    expect(seen).toEqual([undefined, undefined]);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBeDefined();
+    expect(seen[1]).toBeDefined();
+    expect(seen[0]).toBe(starterTx);
+    expect(seen[1]).toBe(starterTx);
   });
 });
