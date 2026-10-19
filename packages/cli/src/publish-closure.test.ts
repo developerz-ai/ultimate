@@ -18,9 +18,12 @@ import {
   checkPackageShape,
   checkPublishShape,
   FIXTURE_EXCLUSION,
+  FIXTURE_EXCLUSION_TSX,
   PACKAGE_FILES,
   publishesTestsFinding,
+  TEST_CODE_EXCLUSIONS,
   TEST_EXCLUSION,
+  TEST_EXCLUSION_TSX,
 } from './workspace-checks';
 
 /** A package directory as a Map: `src/index.ts` → its text. */
@@ -135,8 +138,9 @@ describe('a published package whose entry reaches a fixture', () => {
     const bad = await mkdtemp(join(tmpdir(), 'ultimate-fixture-reach-'));
     try {
       for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
+      const filesPart = JSON.stringify(['src', ...TEST_CODE_EXCLUSIONS]);
       const manifest = (extra: string): string =>
-        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}"]}\n`;
+        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":${filesPart}}\n`;
       await Bun.write(
         join(bad, 'tsconfig.json'),
         '{"files":[],"references":[{"path":"packages/p"}]}\n',
@@ -169,7 +173,8 @@ describe('a published package whose entry reaches a fixture', () => {
 
 describe('unit · a fixture is excluded from files as a test is', () => {
   // A `-fixture.ts` is test code under another suffix: six packages shipped theirs — 18 files —
-  // because only `*.test.ts` was held. Each exclusion is its own finding, naming its own entry.
+  // because only `*.test.ts` was held. Each exclusion is its own finding, naming its own entry,
+  // and the `.tsx` suffixes carry the same rule under their own suffix (TEST_CODE_EXCLUSIONS).
   test('a published package that excludes its tests and not its fixtures is a finding', () => {
     const manifest = {
       dir: 'short',
@@ -181,7 +186,9 @@ describe('unit · a fixture is excluded from files as a test is', () => {
       files: [TEST_EXCLUSION, 'src/**/*.ts'],
     };
     expect(checkPublishShape('/nowhere', [manifest])).toEqual([
+      publishesTestsFinding('short', TEST_EXCLUSION_TSX),
       publishesTestsFinding('short', FIXTURE_EXCLUSION),
+      publishesTestsFinding('short', FIXTURE_EXCLUSION_TSX),
     ]);
     expect(publishesTestsFinding('short', FIXTURE_EXCLUSION).fix).toContain(FIXTURE_EXCLUSION);
   });

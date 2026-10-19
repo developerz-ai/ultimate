@@ -15,8 +15,9 @@ import {
   checkPackageShape,
   checkPublishShape,
   countLines,
-  FIXTURE_EXCLUSION,
   filesOf,
+  FIXTURE_EXCLUSION,
+  FIXTURE_EXCLUSION_TSX,
   frameworkDepsOf,
   hasWorkspacePackages,
   LINE_CEILING,
@@ -25,7 +26,9 @@ import {
   PACKAGE_FILES,
   pinSkewFinding,
   publishesTestsFinding,
+  TEST_CODE_EXCLUSIONS,
   TEST_EXCLUSION,
+  TEST_EXCLUSION_TSX,
   workspaceDirOf,
   workspacePackages,
 } from './workspace-checks';
@@ -53,7 +56,7 @@ beforeAll(async () => {
   // real one. That includes the publish contract — a manifest with no `files` ships the directory.
   await Bun.write(
     join(dir, 'packages/short/package.json'),
-    `{"name":"short","version":"1.2.3","files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}","README.md","LICENSE"]}\n`,
+    `{"name":"short","version":"1.2.3","files":["src","${TEST_EXCLUSION}","${TEST_EXCLUSION_TSX}","${FIXTURE_EXCLUSION}","${FIXTURE_EXCLUSION_TSX}","README.md","LICENSE"]}\n`,
   );
   await Bun.write(join(dir, 'packages/long/src/index.ts'), lines(LINE_CEILING + 1));
   await Bun.write(join(dir, 'packages/long/package.json'), '{"name":"long"}\n');
@@ -220,8 +223,9 @@ describe('unit · the package shape', () => {
     const bad = await mkdtemp(join(tmpdir(), 'ultimate-refs-'));
     try {
       for (const file of PACKAGE_FILES) await Bun.write(join(bad, 'packages/p', file), '{}\n');
+      const filesPart = JSON.stringify(['src', ...TEST_CODE_EXCLUSIONS]);
       const manifest = (extra: string): string =>
-        `{"name":"p","version":"1.0.0",${extra}"files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}"]}\n`;
+        `{"name":"p","version":"1.0.0",${extra}"files":${filesPart}}\n`;
       await Bun.write(join(bad, 'tsconfig.json'), '{"files":[],"references":[]}\n');
       await Bun.write(join(bad, 'packages/p/package.json'), manifest(''));
       const findings = await checkPackageShape(bad);
@@ -282,7 +286,7 @@ const pkg = (over: Partial<ManifestFacts> & { dir: string }): ManifestFacts => (
   version: '1.0.0',
   private: false,
   frameworkDeps: [],
-  files: ['src', TEST_EXCLUSION, FIXTURE_EXCLUSION, 'README.md', 'LICENSE'],
+  files: ['src', ...TEST_CODE_EXCLUSIONS, 'README.md', 'LICENSE'],
   ...over,
 });
 
@@ -426,6 +430,23 @@ describe('a stale pin in any published field is skew', () => {
   });
 });
 
+describe('TEST_CODE_EXCLUSIONS', () => {
+  // The single source of truth the rule, the `files` template, and the per-package manifest all
+  // spell the same way. Asserting it here pins the order the gate walks it, so a future
+  // rearrangement fails at the boundary between declarations and consumers instead of as an
+  // unrelated ordering bug downstream.
+  test('declares the .ts and .tsx suffixes the package-shape rule negates, in order', () => {
+    expect(TEST_CODE_EXCLUSIONS).toEqual([
+      TEST_EXCLUSION,
+      TEST_EXCLUSION_TSX,
+      FIXTURE_EXCLUSION,
+      FIXTURE_EXCLUSION_TSX,
+    ]);
+    expect(TEST_CODE_EXCLUSIONS).toContain(TEST_EXCLUSION_TSX);
+    expect(TEST_CODE_EXCLUSIONS).toContain(FIXTURE_EXCLUSION_TSX);
+  });
+});
+
 describe('checkPublishShape', () => {
   // The 1.0.0 defect, as a test: all 28 manifests declared "license": "MIT", named LICENSE in
   // `files`, and shipped the text in none of them. npm drops a `files` entry with no file behind
@@ -451,15 +472,19 @@ describe('checkPublishShape', () => {
 
   // `src` sweeps in every `*.test.ts` beside it: 393 files across the framework, over half of
   // @ultimat3/cli's tarball, all of it run against a preloaded clock a consumer does not have.
+  // The `.tsx` suffixes carry the same rule under their own suffix, and a `*-fixture.tsx` is the
+  // same code under its own suffix (TEST_CODE_EXCLUSIONS).
   test('a published package that does not exclude its tests is a finding', () => {
     expect(checkPublishShape(dir, [pkg({ dir: 'short', files: ['src'] })])).toEqual([
       publishesTestsFinding('short', TEST_EXCLUSION),
+      publishesTestsFinding('short', TEST_EXCLUSION_TSX),
       publishesTestsFinding('short', FIXTURE_EXCLUSION),
+      publishesTestsFinding('short', FIXTURE_EXCLUSION_TSX),
     ]);
   });
 
   test('a negation and a glob are never existence-checked — only a literal promises a file', () => {
-    const files = ['src', TEST_EXCLUSION, FIXTURE_EXCLUSION, '!nothing-here', 'src/**/*.json'];
+    const files = ['src', ...TEST_CODE_EXCLUSIONS, '!nothing-here', 'src/**/*.json'];
     expect(checkPublishShape(dir, [pkg({ dir: 'short', files })])).toEqual([]);
   });
 

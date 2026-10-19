@@ -7,12 +7,7 @@ import { join } from 'node:path';
 import { fixProblem } from './error-contract';
 import type { ShippedPackage } from './test-only-shipped';
 import { entryPatternsOf, testOnlyModules, testOnlyShippedFinding } from './test-only-shipped';
-import {
-  checkPackageShape,
-  FIXTURE_EXCLUSION,
-  PACKAGE_FILES,
-  TEST_EXCLUSION,
-} from './workspace-checks';
+import { checkPackageShape, PACKAGE_FILES, TEST_CODE_EXCLUSIONS } from './workspace-checks';
 
 const REPO_ROOT = Bun.fileURLToPath(new URL('../../..', import.meta.url)).replace(/[\\/]$/, '');
 
@@ -223,8 +218,9 @@ describe('integration · package-shape', () => {
     const root = await mkdtemp(join(tmpdir(), 'ultimate-test-only-'));
     try {
       for (const file of PACKAGE_FILES) await Bun.write(join(root, 'packages/p', file), '{}\n');
+      const filesPart = JSON.stringify(['src', ...TEST_CODE_EXCLUSIONS]);
       const manifest = (extra: string): string =>
-        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":["src","${TEST_EXCLUSION}","${FIXTURE_EXCLUSION}"]}\n`;
+        `{"name":"p","version":"1.0.0",${extra}"exports":{".":"./src/index.ts"},"files":${filesPart}}\n`;
       await Bun.write(join(root, 'packages/p/package.json'), manifest(''));
       await Bun.write(join(root, 'packages/p/src/index.ts'), 'export const x = 1;\n');
       await Bun.write(join(root, 'packages/p/src/fake.ts'), 'export const fake = 1;\n');
