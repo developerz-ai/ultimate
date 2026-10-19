@@ -43,6 +43,7 @@ describe('unit · release-due-rule · due', () => {
       ['fix(core): a thing (#9)', ['core']],
     ]);
     expect(decision.notes).toEqual([]);
+    expect(decision.breaking).toEqual([]);
   });
 
   test('exactly at the settle boundary is due; a minute before it is settling', () => {
@@ -86,11 +87,13 @@ describe('unit · release-due-rule · not due', () => {
     expect(decision.due).toBe(false);
     expect(decision.reason).toBe('major_needs_a_maintainer');
     expect(decision.next).toBe('2.0.0');
+    expect(decision.breaking).toEqual(['- **BREAKING — (#1) a thing goes.** detail']);
   });
 
   test('so does a `!:` subject, while an indented or quoted BREAKING does not', () => {
     const bang = releaseDue(input({ commits: [commit({ subject: 'feat(core)!: drop a thing' })] }));
     expect(bang.reason).toBe('major_needs_a_maintainer');
+    expect(bang.breaking).toEqual(['feat(core)!: drop a thing']);
     expect(bumpOf('- **New names, nothing `BREAKING`.**', [])).toBe('patch');
   });
 
