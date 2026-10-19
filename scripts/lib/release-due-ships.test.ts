@@ -14,6 +14,7 @@ const PACKAGES: ReadonlyMap<string, PackageFiles> = new Map([
   ['cli', { dir: 'cli', files: [...FILES, 'types'] }],
   ['create-ultimate', { dir: 'create-ultimate', files: FILES }],
   ['loose', { dir: 'loose', files: undefined }],
+  ['action', { dir: 'action', files: FILES }],
 ]);
 
 describe('unit · release-due-ships · the files field, read as npm reads it', () => {
@@ -55,6 +56,16 @@ describe('unit · release-due-ships · what ships', () => {
       'packages/core/src/seed-fixture.ts',
       'packages/core/src/fixtures/app.ts',
       'packages/loose/fixtures/app.ts',
+    ]) {
+      expect({ path, ships: shippingPackage(path, PACKAGES) }).toEqual({ path, ships: undefined });
+    }
+  });
+
+  test('a LICENSE change is not a release: a copyright-year bump never ships', () => {
+    for (const path of [
+      'packages/core/LICENSE',
+      'packages/cli/LICENSE',
+      'packages/action/LICENSE',
     ]) {
       expect({ path, ships: shippingPackage(path, PACKAGES) }).toEqual({ path, ships: undefined });
     }
