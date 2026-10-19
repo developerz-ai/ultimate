@@ -297,7 +297,8 @@ defineAppMcp({
   `confirmed_by_user: true` (the user approved the change, directly or by authorizing the task);
   anything else is `X_MCP_USER_CONFIRMATION_REQUIRED`, audited `unconfirmed`. Both flags are read
   top-level or from `params` (nested wins) and never handed to an action that does not declare them.
-  `confirmed_by_user` is required by the schema, so a client sees it at connect time.
+  Neither is `required` by the schema — the dispatcher is the one gate, so a call carrying both only
+  inside `params` is read, not refused as `X_INPUT_INVALID` (#798).
 - Order: visibility (absent answer) → effect (`X_MCP_WRONG_TOOL`) → scope → arguments → the policy's
   actor half → preview / confirmation → `dispatch`, the flat path — same audit line, same bucket.
 - Ungrouped tools (`docs`, `whoami`) stay flat beside the five, exactly as on `'meta'`.

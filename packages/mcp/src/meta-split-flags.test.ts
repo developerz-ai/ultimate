@@ -57,7 +57,14 @@ afterEach(() => {
   clearRoles();
 });
 
-const commit = async (act: string): Promise<JsonRpcResponse | null> => {
+const commit = async (
+  act: string,
+  args: Readonly<Record<string, unknown>> = {
+    params: { postId: 'p1', confirmed_by_user: false },
+    live: true,
+    confirmed_by_user: true,
+  },
+): Promise<JsonRpcResponse | null> => {
   const { server } = defineAppMcp({
     include: 'exposed',
     surface: 'meta-split',
@@ -71,13 +78,7 @@ const commit = async (act: string): Promise<JsonRpcResponse | null> => {
         method: 'tools/call',
         params: {
           name: 'delete_resource',
-          arguments: {
-            resource: 'posts',
-            action: act,
-            params: { postId: 'p1', confirmed_by_user: false },
-            live: true,
-            confirmed_by_user: true,
-          },
+          arguments: { resource: 'posts', action: act, ...args },
         },
       },
       owner,
@@ -93,4 +94,14 @@ test('a nested confirmed_by_user: false wins over a top-level true', async () =>
 test('nested wins for an action that declares confirmed_by_user in its own input too', async () => {
   expect(text(await commit('purgePost'))).toStartWith('X_MCP_USER_CONFIRMATION_REQUIRED: ');
   expect(ran).toBe(0);
+});
+
+// #798: the schema required `confirmed_by_user` at the top level, so both flags nested in `params`
+// — as the docs promise — was X_INPUT_INVALID before the dispatcher ever read `params`.
+test('both flags only inside params commit', async () => {
+  const answer = await commit('archivePost', {
+    params: { postId: 'p1', live: true, confirmed_by_user: true },
+  });
+  expect(text(answer)).not.toStartWith('X_');
+  expect(ran).toBe(1);
 });

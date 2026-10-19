@@ -10,6 +10,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`delete_resource` accepts `live` and `confirmed_by_user` inside `params`, as documented**
+  (#798). Its input schema required `confirmed_by_user` at the top level, so a call carrying both
+  flags only in `params` was `X_INPUT_INVALID` before the dispatcher read them. The schema now
+  requires neither; a live call without `confirmed_by_user: true` anywhere is still
+  `X_MCP_USER_CONFIRMATION_REQUIRED`, and nested still wins.
 - **`x verify` holds a slow machine to the same deadlines as a fast one.** Every declared number —
   each step class's 5 / 8 minutes, Bun's 5 s per test, a test's own `{ timeoutMs }` — was set on a
   4-core CI runner, and on a 2-core 1.8 GHz box the same work runs five to seven times longer: the
