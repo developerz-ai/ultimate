@@ -9,6 +9,7 @@ import { execOutput } from './exec';
 import type { Finding, ShardFacts, StepResult } from './output';
 import type { TestCounts } from './test-counts';
 import type { StepTimeouts } from './verify-deadline';
+import type { MachinePace } from './verify-pace';
 
 /**
  * Every step of the gate, in cost order — cheapest and most informative first, and never a check
@@ -114,6 +115,14 @@ export interface VerifyContext {
    * with `X_VERIFY_STEP_TIMEOUT` and every process it started is killed.
    */
   readonly stepTimeoutMs?: StepTimeouts;
+  /**
+   * How much slower this machine runs than the 4-core runner the declared deadlines were measured
+   * on (`verify-pace.ts`): each step class's deadline, Bun's per-test default and a test's own
+   * declared timeout (`ULTIMATE_TEST_PACE`) are multiplied by it. Measured by the entry point —
+   * `x verify`, `x build`, the MCP host, the framework root's `scripts/verify.ts` — once, before
+   * any step. Absent is the numbers as declared.
+   */
+  readonly pace?: MachinePace;
   /**
    * Called as each step finishes, in the order they finish. `--json` prints nothing until the run
    * ends, so a job cancelled mid-run left no trace of where it hung (#589): the command streams

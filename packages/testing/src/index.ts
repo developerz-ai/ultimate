@@ -358,6 +358,7 @@ export {
   urlFor,
   workerId,
 } from './template-db';
+export { paced, TEST_PACE_ENV, TestPaceInvalidError, testPace } from './test-pace';
 export type {
   E2eBody,
   E2eDriver,

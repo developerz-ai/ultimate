@@ -26,6 +26,7 @@ import {
   renderStaticReport,
   staticReportData,
 } from './static-report';
+import { measurePace } from './verify-pace';
 import type { VerifyStepName } from './verify-step';
 
 /**
@@ -385,7 +386,12 @@ export const buildCommand: CliCommand = {
       const verifySteps = (await import('./cmd-verify')).VERIFY_STEPS.filter((step) =>
         PREFLIGHT_STEPS.includes(step.name),
       );
-      const verifyResult = await runVerify(verifySteps, { root, runner: ctx.runner, env: ctx.env });
+      const verifyResult = await runVerify(verifySteps, {
+        root,
+        runner: ctx.runner,
+        env: ctx.env,
+        pace: measurePace(),
+      });
       if (!verifyResult.ok) {
         return preflightResult(verifyResult);
       }

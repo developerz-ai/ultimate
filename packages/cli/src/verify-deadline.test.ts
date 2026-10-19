@@ -11,7 +11,7 @@ import {
   readStepTimeouts,
   STEP_TAG_ENV,
   SUITE_STEP_TIMEOUT_MS,
-  stepTimeoutMs,
+  stepDeadline,
   taggedPids,
 } from './verify-deadline';
 import { VERIFY_STEP_NAMES } from './verify-step';
@@ -36,16 +36,26 @@ const goneSoon = async (pids: readonly number[]): Promise<boolean> => {
 
 describe('the deadline a step runs under', () => {
   test('a suite gets the suite number, a check the check number', () => {
-    expect(stepTimeoutMs('unit')).toBe(SUITE_STEP_TIMEOUT_MS);
-    expect(stepTimeoutMs('e2e')).toBe(SUITE_STEP_TIMEOUT_MS);
-    expect(stepTimeoutMs('lint')).toBe(CHECK_STEP_TIMEOUT_MS);
-    expect(stepTimeoutMs('manifest')).toBe(CHECK_STEP_TIMEOUT_MS);
+    expect(stepDeadline('unit', [], 1)).toEqual({ ms: SUITE_STEP_TIMEOUT_MS });
+    expect(stepDeadline('e2e', [], 1)).toEqual({ ms: SUITE_STEP_TIMEOUT_MS });
+    expect(stepDeadline('lint', [], 1)).toEqual({ ms: CHECK_STEP_TIMEOUT_MS });
+    expect(stepDeadline('manifest', [], 1)).toEqual({ ms: CHECK_STEP_TIMEOUT_MS });
   });
 
   test('the first table that names the step wins, and one that does not is passed over', () => {
-    expect(stepTimeoutMs('unit', { unit: 50 }, { unit: 900 })).toBe(50);
-    expect(stepTimeoutMs('unit', undefined, { unit: 900 })).toBe(900);
-    expect(stepTimeoutMs('unit', { lint: 7 }, undefined)).toBe(SUITE_STEP_TIMEOUT_MS);
+    expect(stepDeadline('unit', [{ unit: 50 }, { unit: 900 }], 1)).toEqual({ ms: 50 });
+    expect(stepDeadline('unit', [undefined, { unit: 900 }], 1)).toEqual({ ms: 900 });
+    expect(stepDeadline('unit', [{ lint: 7 }, undefined], 1)).toEqual({
+      ms: SUITE_STEP_TIMEOUT_MS,
+    });
+  });
+
+  test('a slower machine stretches the declared number, never one a repo wrote down', () => {
+    expect(stepDeadline('manifest', [], 2.5)).toEqual({
+      ms: CHECK_STEP_TIMEOUT_MS * 2.5,
+      pace: 2.5,
+    });
+    expect(stepDeadline('unit', [undefined, { unit: 900 }], 2.5)).toEqual({ ms: 900 });
   });
 
   test('x.verify.json: a whole positive number per declared step, anything else refused', () => {

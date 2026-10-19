@@ -24,6 +24,8 @@ import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import { failureOf } from './test-shards';
 import { SLOT_HELD_ENV } from './test-slots';
+import type { MachinePace } from './verify-pace';
+import { defaultTimeoutArgs, paceEnv } from './verify-pace';
 import type { StepOutcome } from './verify-step';
 
 /**
@@ -83,6 +85,8 @@ export interface CoveredRunOptions {
   readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
   /** Test files per process. Absent is `COVERAGE_SLICE_FILES`; a test cuts smaller. */
   readonly sliceFiles?: number;
+  /** The machine's pace (`verify-pace.ts`): each test's default and declared deadline stretch by it. */
+  readonly pace?: MachinePace;
 }
 
 export interface CoveredRun extends StepOutcome {
@@ -95,10 +99,12 @@ export const coveredArgs = (
   files: readonly string[],
   dir: string,
   isolate: boolean,
+  pace?: MachinePace,
 ): readonly string[] => [
   'bun',
   'test',
   ...(isolate ? ['--isolate'] : []),
+  ...defaultTimeoutArgs(pace),
   '--coverage',
   '--coverage-reporter=lcov',
   `--coverage-dir=${dir}`,
@@ -116,6 +122,7 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
     ...(isolate ? { [ISOLATED_ENV]: '1' } : {}),
     ...(lease === undefined ? {} : { [SLOT_HELD_ENV]: '1' }),
+    ...paceEnv(options.pace),
   };
   const results = new Array<ExecResult>(slices.length);
   let next = 0;
@@ -125,7 +132,12 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
       const index = next;
       next += 1;
       results[index] = await options.runner(
-        coveredArgs(slices[index] as readonly string[], join(base, String(index)), isolate),
+        coveredArgs(
+          slices[index] as readonly string[],
+          join(base, String(index)),
+          isolate,
+          options.pace,
+        ),
         { cwd: options.root, env: { ...overrides, ULTIMATE_TEST_WORKER: String(slot) } },
       );
     }

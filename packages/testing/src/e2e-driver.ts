@@ -9,6 +9,7 @@ import { FixtureUnavailableError } from './errors';
 import { withFailureContext } from './failure-context';
 import { unavailableFixture } from './fixture-drivers';
 import { defineFixtures } from './fixtures';
+import { paced } from './test-pace';
 import type { E2eBody, E2eFixtures, PageLike } from './test-types';
 import { resetE2eDriver, useE2eDriver } from './test-types';
 
@@ -107,7 +108,7 @@ export function installE2eDriver(options: E2eDriverOptions): () => void {
         throw withFailureContext(error);
       }
     };
-    bunTest(name, run, test?.timeoutMs);
+    bunTest(name, run, test?.timeoutMs === undefined ? undefined : paced(test.timeoutMs));
   });
   return () => {
     // Both halves, because both were installed. Putting the DECLARATION back — rather than

@@ -8,10 +8,16 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { paced } from '@ultimat3/testing';
 import { alive, descendantsOf, leftovers, pump, reap, reapIn } from './dev-live-fixture';
 import { processRoot } from './process-root-fixture';
 
-const TIMEOUT_MS = 90_000;
+/**
+ * Boot, body and reap, at this machine's pace (`paced`): each case is ~18 s on an idle 2-core
+ * 3.1 GHz box, and a 2-core 1.8 GHz one booting `x dev` beside the gate's static steps ran past a
+ * flat 90 s on 2026-10-19.
+ */
+const TIMEOUT_MS = paced(90_000);
 const BIN = join(import.meta.dir, 'bin.ts');
 /** "Within a few seconds": the child asks once a second, and its drain takes about one more. */
 const GONE_WITHIN_MS = 8_000;

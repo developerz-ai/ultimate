@@ -39,6 +39,7 @@ import { checkErrorCodesThrown } from '../packages/cli/src/error-unthrown';
 import { BadFlagError, MissingPositionalError } from '../packages/cli/src/errors';
 import { readVerifyFloor } from '../packages/cli/src/verify-floor';
 import { mergeParts, parsePart, VerifyMergeInputError } from '../packages/cli/src/verify-merge';
+import { measurePace } from '../packages/cli/src/verify-pace';
 import { stepStream } from '../packages/cli/src/verify-progress';
 import { readTimings } from '../packages/cli/src/verify-shard';
 import { VERIFY_STEP_NAMES } from '../packages/cli/src/verify-step';
@@ -399,6 +400,8 @@ if (import.meta.main) {
             runner: exec,
             hostChecks: HOST_CHECKS,
             command: REPO_GATE,
+            // The deadlines at this machine's pace: a 2-core fleet box is not a 4-core CI runner.
+            pace: measurePace(),
             // One line per finished step on stderr under `--json`, so a cancelled CI part's log
             // ends on the last step that finished (#589). stdout stays the one document.
             ...stepStream(args.json, writeErrorLine),

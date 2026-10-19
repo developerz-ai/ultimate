@@ -5,7 +5,7 @@
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { Finding } from './output';
 import { quoteArg } from './shell-quote';
-import type { InFlightRun, StepExpiry, StepProgress } from './verify-deadline';
+import type { InFlightRun, StepDeadline, StepExpiry, StepProgress } from './verify-deadline';
 import { STEP_TIMEOUT_FIELD } from './verify-deadline';
 import type { VerifyStepName } from './verify-step';
 
@@ -30,6 +30,8 @@ export type StalledRun = {
 export type StepTimeoutMeta = {
   readonly step: string;
   readonly deadlineMs: number;
+  /** Set when `deadlineMs` is the declared number stretched to this machine (`verify-pace.ts`). */
+  readonly pace?: number;
   readonly killed: readonly { readonly pid: number; readonly command: string }[];
   readonly inFlight: readonly StalledRun[];
   /** The runs that had finished before the deadline — the step's progress. */
@@ -147,6 +149,12 @@ const inFlightClause = (runs: readonly StalledRun[], expiry: StepExpiry): string
     : `; its running "${runs[0].command}" named no file still in flight, so the run itself did not exit${waiting.runningMs === undefined ? '' : ` after ${seconds(waiting.runningMs)} s`}`;
 };
 
+/** Said only when the deadline was stretched: a reader comparing it with the declared one asks. */
+const pacedClause = (deadline: StepDeadline): string =>
+  deadline.pace === undefined
+    ? ''
+    : ` (the declared ${String(Math.round(deadline.ms / deadline.pace))} ms at this machine's pace, ×${String(deadline.pace)})`;
+
 /**
  * A step that ran past its deadline, on that step's own line. `command` is the gate as it was
  * invoked here (`x verify`, or `bun run verify` at the framework root), so the fix runs where the
@@ -155,10 +163,11 @@ const inFlightClause = (runs: readonly StalledRun[], expiry: StepExpiry): string
  */
 export const stepTimeoutFinding = (
   step: VerifyStepName,
-  ms: number,
+  deadline: StepDeadline,
   expiry: StepExpiry,
   command: string,
 ): Finding => {
+  const ms = deadline.ms;
   const runs = expiry.inFlight.flatMap((run) => stalledRun(run) ?? []);
   const stuck = runs.flatMap((run) => run.stuck);
   const rerun = `${command} --only ${step} --json`;
@@ -169,6 +178,7 @@ export const stepTimeoutFinding = (
   const meta: StepTimeoutMeta = {
     step,
     deadlineMs: ms,
+    ...(deadline.pace === undefined ? {} : { pace: deadline.pace }),
     killed: expiry.killed.map((one) => ({ pid: one.pid, command: one.command })),
     inFlight: runs,
     finished: expiry.finished ?? { runs: 0, slowestMs: 0 },
@@ -176,7 +186,7 @@ export const stepTimeoutFinding = (
   const wider = `${command} --only ${step} --workers <n> --json`;
   return {
     code: 'X_VERIFY_STEP_TIMEOUT',
-    cause: `step "${step}" did not finish within its ${String(ms)} ms deadline, so it was stopped and ${String(expiry.killed.length)} process(es) it had started were killed${inFlightClause(runs, expiry)}`,
+    cause: `step "${step}" did not finish within its ${String(ms)} ms deadline${pacedClause(deadline)}, so it was stopped and ${String(expiry.killed.length)} process(es) it had started were killed${inFlightClause(runs, expiry)}`,
     fix: outgrewDeadline(runs, expiry)
       ? `${wider}   # it outgrew its deadline at this width, so run it wider; or raise the deadline in x.verify.json — add "${STEP_TIMEOUT_FIELD}": { "${step}": <milliseconds> } above the ${String(ms)} it was given`
       : stuck.length > 0
