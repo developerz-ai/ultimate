@@ -15,7 +15,7 @@ bun run scripts/release-due.ts --json
 | `false` | `nothing_ships` | nothing |
 | `false` | `settling` | nothing — an org member may still release their own work; next checkup decides |
 | `false` | `major_needs_a_maintainer` | nothing, unless no open issue already says a major is pending: then one issue listing `data.breaking`, for a maintainer |
-| `true` | — | one ask: **Release `<data.next>`**, listing `data.commits` |
+| `true` | — | one ask: **Release `<data.next>`**, listing `data.shipping` |
 
 ## The ask, when due
 
