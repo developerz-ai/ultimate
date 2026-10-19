@@ -33,6 +33,11 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ### Fixed
 
+- **`page.gotoStreamed()` returns the whole first flush, not the first network chunk.** One server
+  flush (the head and the shell) can reach the page as several chunks, and the read took only the
+  first. `examples/dummy`'s streamed-feed e2e then failed on a header the server really sent, with
+  the shell cut mid-tag (#807, CI). The reader now joins chunks until the first hole is revealed
+  (and cuts there) or the stream pauses for 250 ms, then cancels it as before.
 - **`delete_resource` accepts `live` and `confirmed_by_user` inside `params`, as documented**
   (#798). Its input schema required `confirmed_by_user` at the top level, so a call carrying both
   flags only in `params` was `X_INPUT_INVALID` before the dispatcher read them. The schema now

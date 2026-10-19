@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { fakeE2eDocument, runInFakePage } from './e2e-dom-fixture';
 import type { E2eBrowserPage } from './e2e-page';
-import { DEFAULT_SERVICE_WORKER_TIMEOUT_MS, e2ePage } from './e2e-page';
+import { DEFAULT_SERVICE_WORKER_TIMEOUT_MS, e2ePage, REVEAL_MARK } from './e2e-page';
 
 interface Recorder extends E2eBrowserPage {
   readonly visited: readonly string[];
@@ -34,6 +34,36 @@ const recorder = (answers: readonly unknown[] = [], at = 'https://app.test/feed'
 };
 
 const BASE = 'http://127.0.0.1:3000';
+
+/** Run the in-page first-flush read against a body `write` fills, with `fetch` sealed back after. */
+async function firstFlushOf(
+  write: (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    encode: (text: string) => Uint8Array,
+  ) => void,
+): Promise<{ html: string; cancelled: boolean }> {
+  const browser = recorder([JSON.stringify({ html: '' })]);
+  await e2ePage({ page: browser, baseUrl: BASE }).gotoStreamed('/feed');
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      write(controller, (text) => new TextEncoder().encode(text));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const globals = globalThis as unknown as Record<string, unknown>;
+  const sealed = globals['fetch'];
+  globals['fetch'] = () => Promise.resolve(new Response(body));
+  try {
+    const run = new Function(`return ${browser.evaluated[0] ?? ''}`) as () => Promise<string>;
+    const { html } = JSON.parse(await run()) as { html: string };
+    return { html, cancelled };
+  } finally {
+    globals['fetch'] = sealed;
+  }
+}
 
 describe('e2e page — refusals', () => {
   test('waitForServiceWorker refuses when nothing took control', async () => {
@@ -109,38 +139,35 @@ describe('e2e page — the streamed shell', () => {
     expect(flush.html).toBe('<h1>Acme Editorial</h1>');
   });
 
-  test('it reads ONE chunk — a whole-body read would never be a first flush', async () => {
+  test('it never reads the whole body — that would never be a first flush', async () => {
     const browser = recorder([JSON.stringify({ html: '' })]);
     await e2ePage({ page: browser, baseUrl: BASE }).gotoStreamed('/feed');
     expect(browser.evaluated[0]).toContain('reader.read()');
-    expect(browser.evaluated[0]).not.toContain('for (');
     expect(browser.evaluated[0]).not.toContain('.text()');
   });
 
-  test('it CANCELS the stream after the first chunk, rather than holding the response open', async () => {
+  test('a shell split across network chunks is joined, and cut where the first hole is revealed', async () => {
+    // The failure this pins: one server flush arrived as two chunks, the read took the first,
+    // and the header after the cut was reported missing (examples/dummy, offline-feed e2e).
+    const { html, cancelled } = await firstFlushOf((controller, encode) => {
+      controller.enqueue(encode('<header><nav><a href="/feed"'));
+      controller.enqueue(encode('>Feed</a></nav><h1>Acme Editorial</h1></header><x-hole id="h1">'));
+      controller.enqueue(encode(`${REVEAL_MARK}"h1"><li>Tenancy is a column</li></template>`));
+    });
+    expect(html).toBe(
+      '<header><nav><a href="/feed">Feed</a></nav><h1>Acme Editorial</h1></header><x-hole id="h1">',
+    );
+    expect(cancelled).toBe(true);
+  });
+
+  test('a stream that pauses with holes still open ends the read and is CANCELLED', async () => {
     // A streamed document the reader stops pulling is a response the server keeps open until the
     // last hole fills — one of the six connections a page has to its origin, held for the rest of
     // the test by a read nobody will finish.
-    const browser = recorder([JSON.stringify({ html: '' })]);
-    await e2ePage({ page: browser, baseUrl: BASE }).gotoStreamed('/feed');
-    let cancelled = false;
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('<h1>first</h1>'));
-      },
-      cancel() {
-        cancelled = true;
-      },
+    const { html, cancelled } = await firstFlushOf((controller, encode) => {
+      controller.enqueue(encode('<h1>first</h1>'));
     });
-    const globals = globalThis as unknown as Record<string, unknown>;
-    const sealed = globals['fetch'];
-    globals['fetch'] = () => Promise.resolve(new Response(body));
-    try {
-      const run = new Function(`return ${browser.evaluated[0] ?? ''}`) as () => Promise<string>;
-      expect(JSON.parse(await run())).toEqual({ html: '<h1>first</h1>' });
-    } finally {
-      globals['fetch'] = sealed;
-    }
+    expect(html).toBe('<h1>first</h1>');
     expect(cancelled).toBe(true);
   });
 
