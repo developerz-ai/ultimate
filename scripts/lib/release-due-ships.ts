@@ -12,15 +12,17 @@ export interface PackageFiles {
 }
 
 /**
- * Packed, and still no reason to release: prose (`README.md`, `CLAUDE.md` — a typo fix is not a
- * version), tests (`.test.tsx` is not in any `files` negation today, and a test is never an API)
- * and fixtures. Read relative to the package, so a directory named `fixtures` anywhere counts.
+ * Packed, and still no reason to release: prose (`README.md`, `CLAUDE.md`, `LICENSE` — a typo
+ * fix is not a version), tests (`.test.tsx` is not in any `files` negation today, and a test is
+ * never an API) and fixtures. Read relative to the package, so a directory named `fixtures`
+ * anywhere counts.
  */
 const NEVER_A_RELEASE: readonly RegExp[] = [
   /\.md$/i,
   /\.test\.tsx?$/,
   /-fixture\.tsx?$/,
   /(?:^|\/)(?:__)?fixtures?(?:__)?\//,
+  /^LICENSE$/i, // a copyright-year bump is a typo fix, not a release
 ];
 
 const matchesEntry = (inner: string, entry: string): boolean =>
