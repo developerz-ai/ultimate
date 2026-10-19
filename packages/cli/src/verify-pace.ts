@@ -112,9 +112,16 @@ export const defaultTimeoutArgs = (pace: MachinePace | undefined): readonly stri
     : [`--timeout=${String(pacedMs(BUN_TEST_TIMEOUT_MS, pace))}`];
 
 /**
+ * The env key the gate writes for every test run it starts. Aliased to `@ultimat3/testing`'s
+ * `TEST_PACE_ENV` so a rename of the framework's constant flows here without a second edit, and
+ * the framework's own commands (`paced`, `testPace`) read under whatever name ships there.
+ */
+export const PACE_BASIS_ENV = TEST_PACE_ENV;
+
+/**
  * What a test run started at this pace is told, so its own declared deadlines stretch with it
  * (`@ultimat3/testing`'s `paced`). Set at 1 too, whenever a pace was measured: a gate nested in a
  * test must not inherit the outer run's pace as its own. Nothing when none was measured.
  */
 export const paceEnv = (pace: MachinePace | undefined): Readonly<Record<string, string>> =>
-  pace === undefined ? {} : { [TEST_PACE_ENV]: String(pace.factor) };
+  pace === undefined ? {} : { [PACE_BASIS_ENV]: String(pace.factor) };
