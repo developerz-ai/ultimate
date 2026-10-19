@@ -717,6 +717,7 @@ Three of them are raised at `notifier(...)`, while the app's modules load, so th
 | `X_MCP_EFFECT_CONFLICT` | a read-only MCP tool declares an effect | a query (or a tool declared destructive: false) carries mcp.effect, and on a meta-split surface a read is always read_resource's | `drop effect from the query's mcp block, or make it an action if it writes` |
 | `X_MCP_WRONG_TOOL` | a meta-split action was called through the wrong dispatcher | read_resource, write_resource and delete_resource each run only the actions of their own effect, and this action belongs to another | `repeat the call on the dispatcher the cause names, with the same resource, action and params` |
 | `X_MCP_USER_CONFIRMATION_REQUIRED` | a delete_resource commit did not carry confirmed_by_user: true | delete_resource ran with live: true and without confirmed_by_user: true, so nothing ran | `delete_resource({ resource, action, params, live: true, confirmed_by_user: true }) once the user has approved the change; live: false previews it without running` |
+| `X_AGENT_TOOL_UNDECLARED` | an agent run offered a tool its declaration does not list | an agent()'s offerTools() returned a name that is not one of the declared tools' names (the export name of an action, the name of an inProcessTool()). Refused before anything is loaded, reserved or sent: offerTools() narrows the declared catalogue for one run and can never add to it | `return only names from the agent's tools from offerTools() — add the tool to tools: on the agent declaration first if the run really needs it` |
 
 ## Scraping
 

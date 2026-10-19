@@ -4,7 +4,7 @@
 
 import { finiteCount, isMcpExposed } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import type { AgentDef } from './agent-def';
+import type { AgentBudget, AgentDef } from './agent-def';
 import type { AgentFact } from './agent-facts';
 import { DEFAULT_MAX_REPEATED_TOOL_CALLS } from './agent-guards';
 import type { BudgetLimits } from './budget';
@@ -107,7 +107,10 @@ export function factsOf<
     // The run's own precedence, so the row names the model a call would use NOW: read when the
     // facts are, at describe time, like every name in the row. `modelFrom` says which place
     // answered — `gateway` (or `null`, none yet) depends on the gateway installed at that moment.
-    ...modelFact(describedModel(def.model, def.prompt.model, installedGateway()?.defaultModel)),
+    // A model picked per run (`model` as a function) has no answer until a run asks it.
+    ...(typeof def.model === 'function'
+      ? { model: null, modelFrom: 'run' as const }
+      : modelFact(describedModel(def.model, def.prompt.model, installedGateway()?.defaultModel))),
     maxTurns: def.maxTurns ?? DEFAULT_MAX_TURNS,
     maxToolResultChars: def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS,
     tools: [...def.tools.map(toolLabel)].sort(),
@@ -115,17 +118,18 @@ export function factsOf<
       tokensIn: budget?.tokensIn ?? null,
       tokensPerRun: budget?.tokensPerRun ?? null,
       costPerCall: budget?.costPerCall ?? null,
+      costPerRun: budget?.costPerRun ?? null,
     },
     mcp: isMcpExposed(def.mcp),
   };
 }
 
-export function limitsOf<
-  TInput extends StandardSchemaV1,
-  TOutput extends StandardSchemaV1,
-  V extends PromptVars,
->(def: AgentDef<TInput, TOutput, V>, used?: TokenUsage): BudgetLimits {
-  const budget = def.budget;
+export function limitsOf(budget: AgentBudget | undefined, used?: TokenUsage): BudgetLimits {
+  // `costPerRun` is not a ledger scope — the run checks it before each turn (`assertRunCost`) —
+  // but it is screened here with the rest, so a bad one is refused before anything is loaded.
+  if (budget?.costPerRun !== undefined) {
+    screenedMoney(SUBJECT, 'budget.costPerRun', budget.costPerRun);
+  }
   return {
     // Screened under the names the DECLARATION uses, not the ledger's: `tokensPerRun` arrives at
     // `BudgetLimits` as `request`, and a fix line naming a key the app never wrote is not a fix.

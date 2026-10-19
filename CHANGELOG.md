@@ -8,6 +8,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **`agent()` runs pick inside their declaration: `offerTools()`, `model` as a function,
+  `limits()`.** Every run read its tools, model and ceilings off the declaration alone, so an app
+  storing per-tenant agent overrides (a permission rule, a model tier, a cheaper plan) declared one
+  agent per combination, or offered every tool and refused inside each policy — still showing the
+  model a tool it could never call. Each is a function of `{ input, ctx }`, called once per call
+  before `vars()`, and each only NARROWS: `offerTools()` returns a subset of the declared tool
+  names (another name is the new `X_AGENT_TOOL_UNDECLARED`, 500, `terminal` for a job); `model`
+  answers a registered id (`X_AI_MODEL_UNKNOWN` otherwise) or `undefined` for the prompt's model,
+  then `defaultModel`; `limits()` returns `{ maxTurns, maxTokens, maxToolResultChars,
+  maxRepeatedToolCalls, deadlineMs, budget }`, screened like the declared bounds and held at or
+  under each (a higher value is `X_AI_REQUEST_INVALID`). The transcript handle binds the run's model
+  and the tool names it was OFFERED. `describeAgents()` reports a per-run model as
+  `model: null, modelFrom: 'run'`. New types: `AgentModel`, `AgentRunLimits`; new class
+  `AgentToolUndeclaredError`.
+- **`budget.costPerRun` on `agent()` — a money ceiling for the whole run.** `costPerCall` bounded
+  one call and nothing bounded their sum. Before each turn, the run's cost so far (every turn,
+  every continuation, every nested call billed) plus that turn's worst-case estimate must fit, or
+  the turn is refused pre-flight as `X_AI_BUDGET_EXCEEDED` with scope `costPerRun`. Published in
+  `describeAgents()`'s `budget`; `limits()` may set or lower it. `Gateway` gains an optional
+  `marksPromptCache(model)` so the estimate prices a turn as the gateway's reservation does.
+
 ### Fixed
 
 - **`delete_resource` accepts `live` and `confirmed_by_user` inside `params`, as documented**

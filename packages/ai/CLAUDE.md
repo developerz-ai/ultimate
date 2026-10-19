@@ -64,6 +64,7 @@ one adds, the other adds.
 | `agent-guards.ts` / `agent-errors.ts` | the repeated-turn detector and the run deadline; their two classes |
 | `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
+| `agent-per-run.ts` / `agent-run-limits.ts` | one run's `offerTools()`/`model()`/`limits()`, narrow only; `costPerRun` |
 | `agent-continue.ts` / `agent-turn.ts` | `.run()` / `.continue()`, the transcript handle and its screen; one turn's report and refusals |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
 | `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish (its consumer has to be `cli`, tier 5) |
@@ -236,6 +237,9 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
     rule a hive member's `reason` follows too. Never a second copy. One widening, for an
     `inProcess` tool only (`discloseOwnFailure`): a branded error under a code with NO declared
     status is shown as `{ error: { code, cause, fix } }`; `discloseErrors: false` opts out.
+- **A run only NARROWS its declaration**: `offerTools()` ⊆ declared names (`X_AGENT_TOOL_UNDECLARED`),
+  `model()` via `modelSpec`, `limits()` screened and ≤ declared (`X_AI_REQUEST_INVALID`); all
+  before `vars()`. The handle binds the run's model and OFFERED subset; `costPerRun` is checked per turn.
 - **`.run()`/`.continue()` are the SAME action**, marked by an ambient session only the declaring
   agent may claim, once (a nested agent starts fresh). The handle is SIGNED (`sealTranscript`: the
   cursor secret, own label) and bound to agent, model, tool names and `orgId`; screened before
@@ -276,17 +280,13 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 Full text of each rule: [`docs/history/ai.md`](../../docs/history/ai.md#evals-retrieval-fix-lines).
 
 - **No fix line may name `x ai`** (planned); an eval is selected with `x test eval --filter <name>`.
-- Every eval result carries the prompt hash; an eval gates on the DROP from its recorded baseline,
-  mean AND per case (`X_EVAL_BASELINE_MISSING` / `_INVALID`); every prompt is named by an eval
-  (`X_EVAL_MISSING`); `ULTIMATE_EVAL_RECORD=1` records, and `x verify` with it is `X_EVAL_RECORDING`.
-- Retrieval is hybrid by default, no vector-only path. `chunk()` hard-wraps (no chunk over `size`);
-  `metadata.source` is written AFTER the caller's spread; `VectorStore.prune` is required.
+- An eval gates on the DROP from its baseline, mean AND per case; every prompt is named by an eval
+  (`X_EVAL_MISSING`); `ULTIMATE_EVAL_RECORD=1` records (`x verify` with it: `X_EVAL_RECORDING`).
+- Retrieval is hybrid, no vector-only path; `chunk()` hard-wraps; `VectorStore.prune` is required.
 - **An unbound store read inside a request whose actor has an `orgId` is `X_VECTOR_UNSCOPED`**
   (both stores, every read); `scope: UNSCOPED` is the named opt-in, an omitted scope is `UNBOUND`.
-- `postgresVectorStore()` is the only production vector path; `pg-vector.live.test.ts` refuses to
-  skip without the extension. Distance ordering is an ascending raw subquery (the shape hnsw
-  answers), pinned by a plan assertion. Tenant and policy filters are in SQL on every statement and
-  BOTH fusion halves; `(tenant, id)` is the key; `scoped()` only TIGHTENS (`X_VECTOR_SCOPE_WIDENED`).
+- `postgresVectorStore()` is the only production vector path (the live suite never skips); tenant
+  and policy filters in SQL on every statement and BOTH fusion halves; `scoped()` only TIGHTENS.
 
 ## Commands
 

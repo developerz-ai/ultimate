@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "75077c634d4aaadd0ddec98295301f1025b4b561c9f697c22c01f733ed2777de",
+  "buildId": "c17454efecc9b65424501bf375e435bf590bdd47ee03dfe0b88e6aa452aa9ded",
   "tiers": {
     "0": [
       "core",
@@ -386,6 +386,11 @@
     },
     {
       "code": "X_AGENT_TOOL_LOOP",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
+    },
+    {
+      "code": "X_AGENT_TOOL_UNDECLARED",
       "owner": "ai",
       "at": "packages/ai/src/errors.ts"
     },

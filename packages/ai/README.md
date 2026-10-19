@@ -442,6 +442,8 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | both stops are registered `terminal` | an `agentJob()` dead-letters on attempt one instead of buying the same run per attempt |
 | every turn asks the provider to cache its prefix (`promptCache`, default `'auto'`) | the transcript IS the request, so an uncached run pays for its stable prefix once per turn — [below](#provider-prompt-caching) |
 | `budget.tokensPerRun` caps the **whole run** | a single call is bounded by `maxTokens`; a loop is bounded by nothing until this is set |
+| `budget.costPerRun` caps the run's **money**: before each turn, what the run cost so far (continuations and nested calls included) plus that turn's worst-case estimate | `costPerCall` bounds one call and nothing bounded their sum; refused pre-flight as `X_AI_BUDGET_EXCEEDED` (scope `costPerRun`), never truncated |
+| one run may **narrow** its declaration, never widen it: `offerTools()` a subset of `tools` (another name is `X_AGENT_TOOL_UNDECLARED`), `model` as a function (resolved through the registry, `X_AI_MODEL_UNKNOWN`), `limits()` lower ceilings (a higher one is `X_AI_REQUEST_INVALID`) | a stored permission rule or model tier needed one declared agent per combination; the declaration stays the blast radius, and the handle binds the run's model and offered subset — [Agents → Per-run picks](https://github.com/developerz-ai/ultimate/wiki/Agents#per-run-picks-offertools-model-limits) |
 | a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
 | **no semantic cache** | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second |
 
@@ -701,7 +703,7 @@ import { describeAgents } from '@ultimat3/ai';
 describeAgents();
 // [{ name: 'supportAgent', prompt: 'support@1.0.0', promptHash: '…', model: 'house-large', modelFrom: 'gateway',
 //    maxTurns: 6, maxToolResultChars: 4000, tools: ['issueRefund', 'lookupOrder'],
-//    budget: { tokensIn: null, tokensPerRun: 200000, costPerCall: { minor: 50, currency: 'USD' } },
+//    budget: { tokensIn: null, tokensPerRun: 200000, costPerCall: { minor: 50, currency: 'USD' }, costPerRun: null },
 //    mcp: true }]
 ```
 
@@ -966,6 +968,7 @@ fail-closed `terminal` default.
 | `X_LLM_STREAM_INVALID` | a streamed answer failed its schema, and a stream cannot take a repair turn |
 | `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering |
 | `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists a tool that is neither in-process nor an MCP-exposed action |
+| `X_AGENT_TOOL_UNDECLARED` | an `agent()` run's `offerTools()` named a tool its declaration does not list |
 | `X_AGENT_TOOL_LOOP` | an `agent()` made the same tool calls and read the same results `maxRepeatedToolCalls` turns in a row |
 | `X_AGENT_DEADLINE` | an `agent()` outlived its declared `deadlineMs` |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
@@ -986,6 +989,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `AgentDeadlineError` | `X_AGENT_DEADLINE` | `src/agent-errors.ts` |
 | `AgentMaxTurnsError` | `X_AGENT_MAX_TURNS` | `src/errors.ts` |
 | `AgentToolLoopError` | `X_AGENT_TOOL_LOOP` | `src/agent-errors.ts` |
+| `AgentToolUndeclaredError` | `X_AGENT_TOOL_UNDECLARED` | `src/agent-errors.ts` |
 | `AgentTranscriptInvalidError` | `X_AGENT_TRANSCRIPT_INVALID` | `src/agent-errors.ts` |
 | `AgentToolUnexposedError` | `X_AGENT_TOOL_UNEXPOSED` | `src/errors.ts` |
 | `AiBudgetExceededError` | `X_AI_BUDGET_EXCEEDED` | `src/errors.ts` |
