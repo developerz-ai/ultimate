@@ -4,15 +4,10 @@
 // different handles under one name are refused rather than merged.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  hasPrimitiveRegistrar,
-  primitiveRegistrar,
-  registerPrimitiveRegistrar,
-  UltimateError,
-} from '@ultimat3/core';
-import type { StandardSchemaV1 } from '@ultimat3/schema';
 // why: Bun exposes no path-join primitive; Bun.file and `bun -e` take one already joined.
 import { join } from 'node:path';
+import { primitiveRegistrar, registerPrimitiveRegistrar, UltimateError } from '@ultimat3/core';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyJobHandle, JobHandle } from './job';
 import { getJob, job, registeredJobs, resetJobs } from './job';
 import { registerJobs, registerTasks } from './register';
@@ -326,8 +321,8 @@ describe('the import-time announcement', () => {
     const corePath = import.meta.resolveSync('@ultimat3/core');
     const registerPath = join(import.meta.dir, 'register.ts');
     const source = [
-      `import { hasPrimitiveRegistrar, primitiveRegistrar } from '${corePath}';`,
-      `import { registerJobs, registerTasks } from '${registerPath}';`,
+      `import { hasPrimitiveRegistrar, primitiveRegistrar } from ${JSON.stringify(corePath)};`,
+      `import { registerJobs, registerTasks } from ${JSON.stringify(registerPath)};`,
       'console.log(JSON.stringify({',
       '  job: hasPrimitiveRegistrar("job"),',
       '  task: hasPrimitiveRegistrar("task"),',
