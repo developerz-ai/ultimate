@@ -27,6 +27,8 @@ import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-wor
 import { runCovered } from './verify-coverage-run';
 import { withE2eApp } from './verify-e2e';
 import { readVerifyFloor } from './verify-floor';
+import type { MachinePace } from './verify-pace';
+import { DECLARED_PACE, defaultTimeoutArgs, pacedMs, paceEnv } from './verify-pace';
 import { shardFiles } from './verify-shard';
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
@@ -153,18 +155,24 @@ export const typeFiltersOf = (type: Exclude<TestType, 'unit'>): readonly string[
  */
 export const E2E_TEST_TIMEOUT_MS = 60_000;
 
-/** Unit is everything the typed suites do not claim, so no test can fall between two steps. */
-export const testStepCommand = (type: TestType): readonly string[] =>
+/**
+ * Unit is everything the typed suites do not claim, so no test can fall between two steps. Each
+ * per-test default is read at the machine's `pace` (`verify-pace.ts`).
+ */
+export const testStepCommand = (type: TestType, pace?: MachinePace): readonly string[] =>
   type === 'unit'
     ? [
         'bun',
         'test',
+        ...defaultTimeoutArgs(pace),
         ...ignoreFlags([...NEVER_A_TEST, '**/e2e/**', `**/*.${TYPED_SUFFIXES}.test.*`]),
       ]
     : [
         'bun',
         'test',
-        ...(type === 'e2e' ? [`--timeout=${String(E2E_TEST_TIMEOUT_MS)}`] : []),
+        ...(type === 'e2e'
+          ? [`--timeout=${String(pacedMs(E2E_TEST_TIMEOUT_MS, pace ?? DECLARED_PACE))}`]
+          : defaultTimeoutArgs(pace)),
         ...ignoreFlags([...NEVER_A_TEST, ...disownedBy(type)]),
         ...typeFiltersOf(type),
       ];
@@ -193,8 +201,8 @@ const filesFor = async (root: string, type: TestType): Promise<readonly TestFile
 export const resetTestDiscovery = (): void => discovered.clear();
 
 const runSerial = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome> => {
-  const command = testStepCommand(type);
-  const envOverrides = testEnvOverrides(ctx.root, ctx.env ?? Bun.env);
+  const command = testStepCommand(type, ctx.pace);
+  const envOverrides = { ...testEnvOverrides(ctx.root, ctx.env ?? Bun.env), ...paceEnv(ctx.pace) };
   const exec = (e2e: { command: readonly string[]; env: typeof envOverrides }) =>
     ctx.runner(e2e.command, {
       cwd: ctx.root,
@@ -259,6 +267,7 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
       widthReason,
       shard,
       lease,
+      pace: ctx.pace,
     });
   }
   const outcome = await runParallel({
@@ -271,6 +280,7 @@ const runType = async (ctx: VerifyContext, type: TestType): Promise<StepOutcome>
     widthReason,
     ...(lease === undefined ? {} : { lease }),
     ...(ctx.env === undefined ? {} : { env: ctx.env }),
+    ...(ctx.pace === undefined ? {} : { pace: ctx.pace }),
   });
   return shard === undefined ? outcome : { ...outcome, shard };
 };
@@ -294,6 +304,7 @@ const coveredUnit = async (
     readonly widthReason: string;
     readonly shard: ReturnType<typeof shardFiles> | undefined;
     readonly lease: ReturnType<typeof machineLease> | undefined;
+    readonly pace: MachinePace | undefined;
   },
 ): Promise<StepOutcome> => {
   const { coverage, ...outcome } = await runCovered({
@@ -305,6 +316,7 @@ const coveredUnit = async (
     widthReason: run.widthReason,
     ...(run.lease === undefined ? {} : { lease: run.lease }),
     ...(ctx.env === undefined ? {} : { env: ctx.env }),
+    ...(run.pace === undefined ? {} : { pace: run.pace }),
   });
   if (!outcome.ok) return run.shard === undefined ? outcome : { ...outcome, shard: run.shard };
   if (run.shard !== undefined) {

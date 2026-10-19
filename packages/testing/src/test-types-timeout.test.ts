@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun ships no path-join primitive.
 import { join } from 'node:path';
+import { TEST_PACE_ENV } from './test-pace';
 import type { E2eBody, TestOptions } from './test-types';
 import { e2eTest, resetE2eDriver, useE2eDriver } from './test-types';
 
@@ -38,30 +39,47 @@ evalTest('evalTest short', evalCase(20));
 evalTest('evalTest long', evalCase(2000));
 `;
 
-test('a test given timeoutMs is held to it by bun, and one given longer passes', async () => {
+/** The fixture run in a child `bun test` at `pace` — pinned, so the gate's own pace never leaks in. */
+async function runFixture(
+  pace: string,
+): Promise<{ readonly code: number; readonly output: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'ultimate-test-timeout-'));
   try {
     await Bun.write(join(dir, 'timeouts.test.ts'), FIXTURE);
     const run = Bun.spawn(['bun', 'test', './timeouts.test.ts'], {
       cwd: dir,
+      env: { ...Bun.env, [TEST_PACE_ENV]: pace },
       stdout: 'pipe',
       stderr: 'pipe',
     });
     const output = `${await new Response(run.stdout).text()}${await new Response(run.stderr).text()}`;
-    expect(await run.exited).toBe(1);
-    const helpers = ['unitTest', 'contractTest', 'liveTest', 'jobTest', 'evalTest', 'fixtureTest'];
-    for (const helper of helpers) {
-      expect(output).toMatch(new RegExp(`\\(fail\\) \\w+ · ${helper} short`));
-      // Whether Bun prints a PASSING line depends on where it runs (a terminal, or GitHub Actions'
-      // annotations); a failing one it always prints. The counts below are the witness.
-      expect(output).not.toMatch(new RegExp(`\\(fail\\) \\w+ · ${helper} long`));
-    }
-    expect(output).toContain('timed out after 20ms');
-    expect(output).toContain(' 6 pass');
-    expect(output).toContain(' 6 fail');
+    return { code: await run.exited, output };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+const HELPER_NAMES = ['unitTest', 'contractTest', 'liveTest', 'jobTest', 'evalTest', 'fixtureTest'];
+
+test('a test given timeoutMs is held to it by bun, and one given longer passes', async () => {
+  const { code, output } = await runFixture('1');
+  expect(code).toBe(1);
+  for (const helper of HELPER_NAMES) {
+    expect(output).toMatch(new RegExp(`\\(fail\\) \\w+ · ${helper} short`));
+    // Whether Bun prints a PASSING line depends on where it runs (a terminal, or GitHub Actions'
+    // annotations); a failing one it always prints. The counts below are the witness.
+    expect(output).not.toMatch(new RegExp(`\\(fail\\) \\w+ · ${helper} long`));
+  }
+  expect(output).toContain('timed out after 20ms');
+  expect(output).toContain(' 6 pass');
+  expect(output).toContain(' 6 fail');
+}, 20_000);
+
+test('the same timeoutMs is read at the pace the gate measured: 20 ms at x20 outlives the body', async () => {
+  const { code, output } = await runFixture('20');
+  expect(output).toContain(' 12 pass');
+  expect(output).toContain(' 0 fail');
+  expect(code).toBe(0);
 }, 20_000);
 
 test('e2eTest hands its options to the driver, which owns the registration', () => {

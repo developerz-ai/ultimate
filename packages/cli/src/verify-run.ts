@@ -7,8 +7,8 @@ import type { CoverageMap } from './coverage-lcov';
 import { encodeCoverage } from './coverage-lcov';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
-import type { StepGuard } from './verify-deadline';
-import { guardStep, raceDeadline, stepTimeoutMs } from './verify-deadline';
+import type { StepDeadline, StepGuard } from './verify-deadline';
+import { guardStep, raceDeadline, stepDeadline } from './verify-deadline';
 import {
   floorRequires,
   readVerifyFloor,
@@ -131,6 +131,9 @@ export async function runVerify(
       // `only` is always the LIST, in declared order — one name is a list of one.
       ...(only === undefined ? {} : { notAGateRun: true, only: [...only] }),
       ...(coverage.size === 0 ? {} : { coverage: Object.fromEntries(coverage) }),
+      // The machine the deadlines were stretched for, when the entry point measured one: a step
+      // that timed out at ×1 and one that timed out at ×6 are different findings.
+      ...(ctx.pace === undefined ? {} : { pace: { ...ctx.pace } }),
     },
     // The step's own status: one step, so `failedSteps` is that step and nothing else.
     exitCode: failedSteps.length === 0 ? 0 : 1,
@@ -239,7 +242,11 @@ async function runStep(
   // The deadline: a step that hangs fails BY NAME and its processes are killed, instead of eating
   // the CI job's whole timeout and leaving a log that says nothing (#589). The step runs on a
   // guarded runner, so everything it starts carries its tag — that is what the kill finds.
-  const limit = stepTimeoutMs(step.name, ctx.stepTimeoutMs, floor?.stepTimeoutMs);
+  const deadline = stepDeadline(
+    step.name,
+    [ctx.stepTimeoutMs, floor?.stepTimeoutMs],
+    ctx.pace?.factor ?? 1,
+  );
   const guard = guardStep(ctx.runner, `${step.name}@${runId}`);
   const raced = await raceDeadline(
     step.run({ ...ctx, runner: guard.runner }).catch(
@@ -248,10 +255,10 @@ async function runStep(
         findings: [findingOf(error, step.name, command)],
       }),
     ),
-    limit,
+    deadline.ms,
   );
   const outcome: StepOutcome = raced.timedOut
-    ? await expired(step.name, limit, guard, command)
+    ? await expired(step.name, deadline, guard, command)
     : raced.value;
   // A suite that executed nothing did not run, whatever its exit code says: `bun test` exits 0
   // over an all-skipped file, so the counts are the only channel that can tell the two apart.
@@ -293,7 +300,7 @@ async function runStep(
 /** The timed-out step's outcome: the finding naming what was in flight, over what it last printed. */
 async function expired(
   step: VerifyStepName,
-  limit: number,
+  deadline: StepDeadline,
   guard: StepGuard,
   command: string,
 ): Promise<StepOutcome> {
@@ -301,7 +308,7 @@ async function expired(
   const output = stalledOutput(expiry);
   return {
     ok: false,
-    findings: [stepTimeoutFinding(step, limit, expiry, command)],
+    findings: [stepTimeoutFinding(step, deadline, expiry, command)],
     ...(output === undefined ? {} : { output }),
   };
 }

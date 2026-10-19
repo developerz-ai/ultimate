@@ -18,6 +18,7 @@ import type { TestMail } from './fixture-mail';
 import type { TestNetwork } from './fixture-network';
 import type { TestPush } from './fixture-push';
 import type { TestStatements } from './fixture-statements';
+import { paced } from './test-pace';
 import type { PageLike, TestOptions } from './test-types';
 
 /** Built once per test, on first use. */
@@ -257,8 +258,13 @@ export async function runWithFixtures(body: FixtureRunBody): Promise<void> {
  * must not be the reason the next file inherits a queue.
  *
  * `options.timeoutMs` is the test's own deadline, the same key the six typed helpers take: a
- * fixture that builds something slow (an island, a browser) is the test that needs one.
+ * fixture that builds something slow (an island, a browser) is the test that needs one. Read at
+ * this machine's pace (`paced`), as the typed helpers read theirs.
  */
 export function fixtureTest(name: string, body: FixtureBody, options?: TestOptions): void {
-  bunTest(name, () => runWithFixtures(body), options?.timeoutMs);
+  bunTest(
+    name,
+    () => runWithFixtures(body),
+    options?.timeoutMs === undefined ? undefined : paced(options.timeoutMs),
+  );
 }

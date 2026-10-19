@@ -14,6 +14,8 @@ import { tidyBeforeTestRun } from './test-housekeeping';
 import type { TestFile } from './test-select';
 import { failureOf, TEST_TIMINGS_FILE, testArgs } from './test-shards';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
+import type { MachinePace } from './verify-pace';
+import { defaultTimeoutArgs, paceEnv } from './verify-pace';
 import type { StepOutcome } from './verify-step';
 // Type-only, so nothing here evaluates verify-tests.ts and the two files cannot form a cycle.
 import type { TestType } from './verify-tests';
@@ -34,6 +36,8 @@ export interface ParallelRunOptions {
   readonly widthReason?: string;
   /** The machine-pool lease (`test-slots.ts`), for a default-width run. */
   readonly lease?: (want: number) => Promise<{ readonly count: number; release(): void }>;
+  /** The machine's pace (`verify-pace.ts`): each test's default and declared deadline stretch by it. */
+  readonly pace?: MachinePace;
 }
 
 /**
@@ -56,6 +60,7 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
   const envOverrides = {
     ...testEnvOverrides(options.root, options.env ?? Bun.env),
     ...(options.isolate === true ? { [ISOLATED_ENV]: '1' } : {}),
+    ...paceEnv(options.pace),
   };
   // Batched exactly as `x test` batches the same selection at the same width, so the gate's
   // `fix:` line — `x test <type> --workers N` — reruns the very processes that failed.
@@ -77,6 +82,7 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
         workers: width,
         isolate: options.isolate === true,
         timings: join(options.root, TEST_TIMINGS_FILE),
+        passthrough: defaultTimeoutArgs(options.pace),
       }),
     options: {
       cwd: options.root,

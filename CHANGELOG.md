@@ -8,7 +8,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`x verify` holds a slow machine to the same deadlines as a fast one.** Every declared number —
+  each step class's 5 / 8 minutes, Bun's 5 s per test, a test's own `{ timeoutMs }` — was set on a
+  4-core CI runner, and on a 2-core 1.8 GHz box the same work runs five to seven times longer: the
+  framework's own gate went red there on `errors`, `unit`, `live`, `manifest` and `lint` or `job`
+  (2026-10-19, five of twenty steps) with no defect in the code. Each entry point (`x verify`, `x build`'s preflight, the MCP host) now
+  measures the machine's pace once, before any step — its cores against 4 and a short
+  single-threaded probe against the runner's, each held at 1 from below — and multiplies the
+  declared deadlines by it: a step's, `--timeout` on every test run, and `ULTIMATE_TEST_PACE` for a
+  test's own, read by `@ultimat3/testing`'s new `paced(ms)` and by the typed helpers'
+  `timeoutMs`. A number in `x.verify.json` is taken as written. `--json` carries `data.pace`, and
+  an `X_VERIFY_STEP_TIMEOUT` past a stretched deadline says by how much. An unparseable
+  `ULTIMATE_TEST_PACE` is `X_TEST_PACE_INVALID`.
 
 ## 27.12.0 - 2026-10-18
 

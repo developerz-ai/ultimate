@@ -55,6 +55,7 @@ import { resolveServices } from './runtime-bindings';
 import type { RunningServices } from './runtime-services';
 import { startServices } from './runtime-services';
 import { testEnvOverrides } from './test-dotenv';
+import { measurePace } from './verify-pace';
 
 export interface DevHostInput {
   readonly root: string;
@@ -317,7 +318,7 @@ function capabilities(
       // The one safe autofix this repo actually has. Anything more would be the gate rewriting
       // code it was asked to judge.
       if (fix) await runner(['bunx', 'biome', 'check', '--write', '.'], { cwd: root });
-      const result = await runVerify(VERIFY_STEPS, { root, runner });
+      const result = await runVerify(VERIFY_STEPS, { root, runner, pace: measurePace() });
       return {
         ok: result.ok,
         steps: (result.steps ?? []).map((step): VerifyStep => {

@@ -10,12 +10,16 @@ import type { VerifyStepName } from './verify-step';
 /** The `x.verify.json` key: `{ "stepTimeoutMs": { "unit": 900000 } }`. */
 export const STEP_TIMEOUT_FIELD = 'stepTimeoutMs';
 
-/** A check step — the compiler, biome, an in-process scan. Five minutes. */
+/**
+ * A check step — the compiler, biome, an in-process scan. Five minutes at a 4-core CI runner's
+ * pace; a slower machine runs it under this times its own (`stepDeadline`, `verify-pace.ts`).
+ */
 export const CHECK_STEP_TIMEOUT_MS = 300_000;
 
 /**
  * A test suite. Eight minutes: under the ten a CI job is commonly given, so the step names itself
  * before the runner cancels the job — the framework's own `unit` step is ~3 on a 4-core runner.
+ * Stretched on a slower machine the same way as the check number.
  */
 export const SUITE_STEP_TIMEOUT_MS = 480_000;
 
@@ -26,16 +30,27 @@ export const defaultStepTimeoutMs = (step: string): number =>
 
 export type StepTimeouts = Readonly<Partial<Record<VerifyStepName, number>>>;
 
-/** The caller's override, then the floor file's, then the step class's declared number. */
-export const stepTimeoutMs = (
+/**
+ * The deadline a step runs under. `pace` is set when it is the step class's declared number
+ * stretched to this machine (`verify-pace.ts`), so the finding past it can say so.
+ */
+export type StepDeadline = { readonly ms: number; readonly pace?: number };
+
+/**
+ * The caller's override, then the floor file's — each a number someone wrote down for this repo,
+ * taken as written — then the step class's declared number at this machine's pace `factor`.
+ */
+export const stepDeadline = (
   step: VerifyStepName,
-  ...overrides: readonly (StepTimeouts | undefined)[]
-): number => {
+  overrides: readonly (StepTimeouts | undefined)[],
+  factor: number,
+): StepDeadline => {
   for (const table of overrides) {
     const ms = table !== undefined && Object.hasOwn(table, step) ? table[step] : undefined;
-    if (ms !== undefined) return ms;
+    if (ms !== undefined) return { ms };
   }
-  return defaultStepTimeoutMs(step);
+  const declared = defaultStepTimeoutMs(step);
+  return factor === 1 ? { ms: declared } : { ms: Math.round(declared * factor), pace: factor };
 };
 
 /**

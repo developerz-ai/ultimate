@@ -6,6 +6,7 @@ import { test } from 'bun:test';
 import { TestEvalThresholdError } from './errors';
 import type { FixtureBody } from './fixtures';
 import { runWithFixtures } from './fixtures';
+import { paced } from './test-pace';
 
 export const TEST_TYPES = ['unit', 'contract', 'live', 'job', 'e2e', 'eval'] as const;
 
@@ -21,7 +22,10 @@ export const testName = (type: TestType, name: string): string => `${type}${SEPA
  * outlive Bun's 5 s default, which is the one-way rule broken for a number (#589).
  */
 export interface TestOptions {
-  /** This test's own deadline in milliseconds, handed to `bun:test`. Absent is Bun's default. */
+  /**
+   * This test's own deadline in milliseconds, handed to `bun:test` at this machine's pace
+   * (`paced`). Absent is the run's default, which `x verify` paces the same way.
+   */
   readonly timeoutMs?: number;
 }
 
@@ -34,7 +38,11 @@ export interface TestOptions {
 const typed =
   (type: TestType) =>
   (name: string, body: FixtureBody, options?: TestOptions): void => {
-    test(testName(type, name), () => runWithFixtures(body), options?.timeoutMs);
+    test(
+      testName(type, name),
+      () => runWithFixtures(body),
+      options?.timeoutMs === undefined ? undefined : paced(options.timeoutMs),
+    );
   };
 
 /** Pure logic: no database, no clock, no network. The cheapest test that can fail for real. */
@@ -192,7 +200,7 @@ export function evalTest<TInput, TOutput>(
         throw new TestEvalThresholdError({ name, threshold: options.threshold, detail });
       }
     },
-    options.timeoutMs,
+    options.timeoutMs === undefined ? undefined : paced(options.timeoutMs),
   );
 }
 

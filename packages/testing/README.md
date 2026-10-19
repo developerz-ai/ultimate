@@ -205,8 +205,13 @@ there is no flag on the fixture and no code to silence.
 
 Each takes an optional `{ timeoutMs }` after the body — `unitTest(name, body, { timeoutMs: 30_000 })`,
 and `test` takes the same; `evalTest` reads it off its options — handed to `bun:test` as that
-test's own deadline (`TestOptions`). Absent is Bun's 5 s default. An `E2eDriver` receives it as its
-third argument. `unitTest`, `contractTest`, `liveTest` and `jobTest` hand their body the
+test's own deadline (`TestOptions`), at this machine's pace. Absent is Bun's 5 s default, which
+`x verify` paces the same way. An `E2eDriver` receives it as its third argument.
+
+**`paced(ms)`** is a declared deadline at this machine's pace, for a bare `test(…, paced(90_000))`:
+`ms` times `ULTIMATE_TEST_PACE`, which `x verify` measures and sets on every test run it starts —
+1 on a 4-core CI runner, more on a 2-core or slower box. Absent (a hand-run `bun test`) is 1; a
+value that is not a number at or above 1 is `X_TEST_PACE_INVALID`. `unitTest`, `contractTest`, `liveTest` and `jobTest` hand their body the
 [fixture bag](#fixtures); `e2eTest` hands its own (`E2eFixtures`).
 
 **Registering one, `As of 2026-08-25`.** `@ultimat3/cli`'s `installE2eDriver({ page, baseUrl })` is

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2015c142e4d5da03f92cd3e298d949a1de2a3719cede8b301f98f0f12efb947f",
+  "buildId": "75077c634d4aaadd0ddec98295301f1025b4b561c9f697c22c01f733ed2777de",
   "tiers": {
     "0": [
       "core",
@@ -4421,6 +4421,11 @@
     },
     {
       "code": "X_TEST_OPENAPI_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_PACE_INVALID",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

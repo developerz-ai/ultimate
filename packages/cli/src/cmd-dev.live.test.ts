@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { paced } from '@ultimat3/testing';
 import { descendantsOf, leftovers, pump, reap, reapIn, waitFor } from './dev-live-fixture';
 import { processRoot } from './process-root-fixture';
 
@@ -14,9 +15,10 @@ import { processRoot } from './process-root-fixture';
  * Booting embedded Postgres, the queue and the HTTP role is seconds of real work, and bun's
  * default budget is 5s — close enough to this boot that a loaded machine decided whether the file
  * passed. Explicit and generous for that reason: a hang should be reported as a hang, never as a
- * boot that was 300ms slower than the runner's default.
+ * boot that was 300ms slower than the runner's default. At this machine's pace (`paced`): a 2-core
+ * 1.8 GHz box booting it beside the gate's static steps ran past a flat 60 s on 2026-10-19.
  */
-const BOOT_TIMEOUT_MS = 60_000;
+const BOOT_TIMEOUT_MS = paced(60_000);
 
 // `cmd-dev.test.ts` proves the app is served. This proves it is still being served a moment later.
 // `dispatch` renders a `CommandResult` and `bin.ts` exits on it, so a dev server that only lives

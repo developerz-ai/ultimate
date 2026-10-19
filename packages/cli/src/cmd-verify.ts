@@ -23,6 +23,7 @@ import { VERIFY_STEPS } from './verify-checks';
 import { readVerifyFloor } from './verify-floor';
 import type { VerifyPart } from './verify-merge';
 import { coverageRiders, mergeParts, parsePart, VerifyMergeInputError } from './verify-merge';
+import { measurePace } from './verify-pace';
 import { stepStream } from './verify-progress';
 import { runVerify } from './verify-run';
 import type { ShardSpec, Timings } from './verify-shard';
@@ -52,6 +53,7 @@ export const verifyCommand: CliCommand = {
       root,
       runner: ctx.runner,
       env: ctx.env,
+      pace: measurePace(),
       ...(workers === undefined ? {} : { workers }),
       ...(only === undefined ? {} : { only }),
       ...(shard === undefined ? {} : { shard }),

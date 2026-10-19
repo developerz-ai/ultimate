@@ -107,7 +107,7 @@ Locale and zone are declared per test when the behavior under test depends on th
 
 **Each helper takes `{ timeoutMs }`** — `unitTest(name, body, { timeoutMs: 30_000 })`, the same
 on `contractTest`, `liveTest`, `jobTest`, `e2eTest` and `test`, and a key of `evalTest`'s options.
-Handed to `bun:test`; absent is Bun's 5 s default. Never `test(testName('unit', …), body, 30_000)`
+Handed to `bun:test` at this machine's pace; absent is Bun's 5 s default, paced the same way. Never `test(testName('unit', …), body, 30_000)`
 to buy a deadline.
 
 **`unitTest`, `contractTest`, `liveTest` and `jobTest` take [the fixture bag](#the-fixture-bag)**,
@@ -773,6 +773,14 @@ $ x verify
 | `unit` `contract` `live` `job` `e2e` `eval` | 8 minutes | `X_VERIFY_STEP_TIMEOUT` on that step; every process it started is killed and the test file still running is named; the steps after it still run |
 | every other step | 5 minutes | the same |
 | one you name | `"stepTimeoutMs": { "unit": 900000 }` in `x.verify.json` | the same |
+
+**The declared numbers are a 4-core CI runner's.** `x verify` measures the machine once, before
+any step — its cores against 4, a short single-threaded probe against the runner's — and multiplies
+every declared deadline by that pace: each step's above, Bun's 5 s per test (`--timeout`), and a
+test's own `{ timeoutMs }` or `paced(ms)` (`ULTIMATE_TEST_PACE`). A faster machine is pace 1, never
+a tighter number. A number in `x.verify.json` is taken as written. `--json` carries the reading as
+`data.pace` — `{ factor, cpus, probeMs }` — and a timed-out step whose deadline was stretched says
+by how much.
 
 **`--json` says where it is.** One line per finished step on stderr —
 `{"step":"lint","ok":true,"ms":21987}` — so a cancelled CI job's log ends on the last step that
