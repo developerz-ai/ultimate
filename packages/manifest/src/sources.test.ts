@@ -12,14 +12,38 @@ import { action, jsonSchemaOf, mutator, registerAction, resetActions, t } from '
 import { tag } from '@ultimat3/cache';
 import { clearRegistry as clearEntities, entity, invariant, text, uuid } from '@ultimat3/entity';
 import { job, resetJobs } from '@ultimat3/jobs';
-import { and, can } from '@ultimat3/policy';
+import {
+  and,
+  can,
+  definePermissions,
+  knownPermissions,
+  permissionDeclarationSites,
+  restorePermissions,
+} from '@ultimat3/policy';
 import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import { channel, clearChannels } from '@ultimat3/realtime';
 import { frameworkSources } from './sources';
 
 const APP = { name: 'acme', version: '1.4.2' } as const;
 
+/**
+ * The four permissions the fixtures below name. `can()` asserts its permission when the policy is
+ * BUILT — which is in `beforeAll` here — and `isKnownPermission` is permissive only while the
+ * registry is EMPTY, so a `definePermissions()` any earlier file in this one `bun test` process ran
+ * turns strict checking on and every fixture below throws X_PERMISSION_UNKNOWN. Declaring the set
+ * this file uses removes the dependency on which files it is sharded with; restoring the ambient
+ * set in `afterAll` removes the mirror-image hazard for whatever runs next.
+ */
+const OWN_PERMISSIONS = ['org:administer', 'post:archive', 'post:publish', 'post:read'] as const;
+
+let ambientPermissions: readonly string[] = [];
+let ambientSites: Readonly<Record<string, readonly string[]>> = {};
+
 beforeAll(() => {
+  ambientPermissions = knownPermissions();
+  ambientSites = permissionDeclarationSites();
+  definePermissions([...OWN_PERMISSIONS]);
+
   clearEntities();
   resetActions();
   resetQueries();
@@ -129,6 +153,7 @@ afterAll(() => {
   resetActions();
   resetQueries();
   resetJobs();
+  restorePermissions(ambientPermissions, ambientSites);
 });
 
 describe('frameworkSources reaches every registry', () => {

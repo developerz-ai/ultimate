@@ -11,7 +11,14 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { action, registerAction, resetActions } from '@ultimat3/action';
-import { allow, can } from '@ultimat3/policy';
+import {
+  allow,
+  can,
+  definePermissions,
+  knownPermissions,
+  permissionDeclarationSites,
+  restorePermissions,
+} from '@ultimat3/policy';
 import { from, query, registerQuery, resetQueries } from '@ultimat3/query';
 import type { RouteDescriptor } from '@ultimat3/render';
 import {
@@ -31,7 +38,19 @@ import { renderRouteTable } from './route-table';
 
 let root = '';
 
+// `can()` asserts its permission when the policy is BUILT, and `isKnownPermission` is permissive
+// only while the registry is EMPTY — so a `definePermissions()` any earlier file in this one
+// `bun test` process ran turns strict checking on and `registerApi()` below throws
+// X_PERMISSION_UNKNOWN. `policy/CLAUDE.md` states the rule: a test that uses `can()` declares the
+// set it uses and restores the one it found, never leaning on the empty registry.
+let ambientPermissions: readonly string[] = [];
+let ambientSites: Readonly<Record<string, readonly string[]>> = {};
+
 beforeAll(() => {
+  ambientPermissions = knownPermissions();
+  ambientSites = permissionDeclarationSites();
+  definePermissions(['posts:publish']);
+
   root = mkdtempSync(join(tmpdir(), 'x-routes-'));
   writeFileSync(join(root, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
   // One module, so this is an app with no API routes rather than an app that loaded NOTHING —
@@ -42,6 +61,7 @@ beforeAll(() => {
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
+  restorePermissions(ambientPermissions, ambientSites);
 });
 
 const contextFor = (argv: readonly string[]): CommandContext => ({

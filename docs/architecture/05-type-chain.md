@@ -27,7 +27,7 @@ Only hops 6 and 9 emit files, and both have a drift check in `x verify`. Everyth
 ## Worked example
 
 ```ts
-// apps/web/app/posts/entity.ts                           ← hops 1, 2
+// packages/db/src/schema/posts.ts                       ← hops 1, 2
 import { entity, integer, invariant, text, timestamp, url, uuid } from '@ultimat3/entity';
 
 export const posts = entity('posts', {
@@ -93,20 +93,29 @@ export function PostCard(props: { post: PostView }) {
 
 ## Rename one column, count the errors
 
-Rename `excerpt` → `summary` in `apps/web/app/posts/entity.ts` and change nothing else. `x verify` reports, in this order:
+Rename `excerpt` → `summary` in `packages/db/src/schema/posts.ts` and change nothing else. `x verify` reports, ordered by how many diagnostics each file earns:
 
-| Where it breaks | Error | Message shape |
+Measured in `examples/dummy`, by running the real compiler over the real app:
+[`type-chain.test.ts`](../../examples/dummy/type-chain.test.ts) performs this exact rename against
+the files on disk, typechecks before and after, and asserts on the DIFF. The file set and the total
+below are what it pins; a per-file count is stated only where that file pins one too.
+
+| Where it breaks | Diagnostics | Message shape |
 |---|---|---|
-| `apps/web/app/posts/entity.ts` | `tsc` | `posts.$view([...])` — `'excerpt'` is not assignable to `keyof Post` |
-| `apps/web/api/posts.ts` | `tsc` | handler return type missing `summary`, only after `PostView` is fixed |
-| `apps/web/app/posts/ui/post-card.tsx` | `tsc` | `Property 'excerpt' does not exist on type 'PostView'` |
-| `apps/web/site/blog/[slug]/page.tsx` | `tsc` | `meta: ({ post }) => ({ description: post.excerpt })` — same error, in the SEO callback |
-| `apps/web/app/posts/repo.ts` | `tsc` | any explicit column list referencing `excerpt` |
-| `apps/web/api/posts.contract.test.ts` | `tsc` | the generated contract test asserts the view's keys |
+| `apps/web/app/posts/repo.ts` | 10 | the view mapper, the feed projection and the insert shape each name the column, and the projection's three readers cascade off it |
+| `packages/db/seeds/dev.ts` | 4 | raw insert literals no longer match the entity's columns |
+| `apps/web/app/posts/repo.test.ts` | 1 | a test seeding a row is an insert literal like any other |
+| `apps/web/app/posts/entity.ts` | ≥ 1 | the view's field list no longer names a real column — `'excerpt'` is not in `keyof Post` |
+| `apps/web/app/posts/backfills/post-excerpts.ts` | ≥ 1 | the sweep names the column in its `source` predicate and in its row projection |
+| `apps/web/app/posts/backfills/post-excerpts.job.test.ts` | ≥ 1 | its row builder is a literal |
+| `apps/web/app/posts/backfills/post-excerpts.test.ts` | ≥ 1 | it stores posts and reads the column back through the typed handle |
+| `scripts/test-setup.test.ts` | ≥ 1 | a seeded post's columns are typed off the entity's row type |
 | migrations | `X_DB_DRIFT` | `cause: table "posts" has column "summary" not present in any migration` / `fix: x db gen "rename excerpt to summary"` |
 | `openapi.json`, `x.manifest.json` | `X_MANIFEST_STALE` | `fix: x manifest` |
 
-Eight failures, each naming a file and a line. Zero silent behavior changes. The rename is **complete when the build is green** — there is no ninth place to remember.
+Exactly eight source files, 26 `tsc` diagnostics in all — both pinned — plus the two generated
+artifacts. Every diagnostic names a file and a line. Zero silent behavior changes, and the rename
+is **complete when the build is green**: there is no ninth place to remember.
 
 Contrast: the same rename in a stack where the API response is hand-written and the client types are a copied interface. Nothing fails. The field arrives as `undefined`, renders as an empty paragraph, and the SEO description silently becomes blank on every blog post.
 

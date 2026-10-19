@@ -4,7 +4,12 @@
 // different handles under one name are refused rather than merged.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { hasPrimitiveRegistrar, primitiveRegistrar, UltimateError } from '@ultimat3/core';
+import {
+  hasPrimitiveRegistrar,
+  primitiveRegistrar,
+  registerPrimitiveRegistrar,
+  UltimateError,
+} from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { AnyJobHandle, JobHandle } from './job';
 import { getJob, job, registeredJobs, resetJobs } from './job';
@@ -55,6 +60,15 @@ const codeOf = (run: () => unknown): string | undefined => {
 beforeEach(() => {
   resetJobs();
   resetTasks();
+  // `register.ts`'s module-scope `registerPrimitiveRegistrar` calls run once at import. A test
+  // in another file sharing this `bun test` process may have called
+  // `resetPrimitiveRegistrars()` between then and now —
+  // `packages/core/src/registrar.test.ts`'s beforeEach does — leaving the table empty. The
+  // functions here are the SAME exports `register.ts` announced, so re-announcing them is
+  // idempotent (`registerPrimitiveRegistrar` accepts an equal function silently) and the
+  // announcement tests below still see the registrar they expect.
+  registerPrimitiveRegistrar('job', registerJobs);
+  registerPrimitiveRegistrar('task', registerTasks);
 });
 
 afterEach(() => {

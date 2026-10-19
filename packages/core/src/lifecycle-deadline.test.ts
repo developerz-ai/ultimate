@@ -172,7 +172,8 @@ describe('the drain deadline', () => {
 
   test('the budget is REAL elapsed time — a frozen clock cannot extend a grace period', async () => {
     const clock = frozenClock(0);
-    configureLifecycle({ deadlineMs: 5_000, clock });
+    const deadlineMs = 5_000;
+    configureLifecycle({ deadlineMs, clock });
     clock.advance(1_000_000);
     let seen: number | undefined;
     onShutdown('probe', (reason) => {
@@ -184,7 +185,14 @@ describe('the drain deadline', () => {
     // `waitForIdle` sleeps on a real `setTimeout` while the budget was read off the injected
     // clock, so the two disagreed: here the old arithmetic answered 1,005,000 — a 16-minute
     // budget, on a clock a test controls, for a deadline the kubelet enforces in real seconds.
-    expect(seen).toBeLessThan(1_000_000);
+    // A RELATIVE bound on `seen - systemClock.monotonic()` instead of an absolute 1,000,000:
+    // the live-clock answer is `systemClock + deadlineMs` at drain time, the injected answer
+    // is 1,005,000 either way; the first is within `deadlineMs` of the current monotonic,
+    // the second never is. The `> 0` half survives a long test suite where
+    // `performance.now()` itself exceeds 1,000,000 — the absolute bound did not.
+    const drift = (seen ?? 0) - systemClock.monotonic();
+    expect(drift).toBeGreaterThan(0);
+    expect(drift).toBeLessThan(deadlineMs * 2);
     expect(seen).toBeGreaterThan(systemClock.monotonic());
   });
 });
