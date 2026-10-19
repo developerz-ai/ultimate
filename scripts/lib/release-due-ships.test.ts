@@ -60,6 +60,15 @@ describe('unit · release-due-ships · what ships', () => {
     }
   });
 
+  test('LICENSE never ships regardless of files — a copyright-year bump is not a release', () => {
+    // The synthetic map puts LICENSE in `files`, so a passing assertion here proves the regex
+    // refuses it — remove `/^LICENSE$/i` and `inTarball` returns true on the next line.
+    const withLicense: ReadonlyMap<string, PackageFiles> = new Map([
+      ['core', { dir: 'core', files: [...FILES, 'LICENSE'] }],
+    ]);
+    expect(shippingPackage('packages/core/LICENSE', withLicense)).toBeUndefined();
+  });
+
   test('root tooling, docs, apps, unpacked package files and unknown packages do not', () => {
     for (const path of [
       'package.json',
