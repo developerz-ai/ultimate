@@ -745,6 +745,29 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   guide and SDK types state none; the API reference answered 403), so a long key is hashed, not
   refused: a refusal on an unverified limit would fail calls the endpoint may accept.
 
+## Per-run picks: `offerTools`, `model()`, `limits()`, `costPerRun` (2026-10)
+
+- **Why.** Every `agent()` read its tools, model and ceilings off the declaration alone, so an app
+  that stores per-tenant agent overrides (a permission rule, a model tier, a cheaper plan) had to
+  declare one agent per combination, or offer every tool and refuse inside each tool's policy —
+  which still shows the model a tool it may never call. Asked for by an app running its platform
+  agents on `agent()` (gaps A1–A4).
+- **Narrow only.** A run picks INSIDE its declaration: the declaration stays the agent's blast radius
+  (`describeAgents().tools`) and its ceiling. A wider pick is refused, never clamped — clamping hides
+  a wrong rule until a run needs what it was promised.
+- **Functions of `{ input, ctx }`, like `vars()` / `system()`**, called once per call, before
+  `vars()` and before the deadline is armed, so a refusal loads, reserves and sends nothing.
+- **The handle binds the OFFERED subset and the run's model**, because `screenTranscript` refuses a
+  replayed `tool_use` for a tool the binding does not list. `limits()` is not bound: it is re-asked
+  per call, and the cumulative ceilings count against its answer.
+- **`costPerRun` is checked by the loop, not the ledger.** A ledger's `costPerCall` is per call; a
+  run total needs the run's own meter (turns, continuations priced from the handle, nested bills),
+  which only the loop has. Nested calls are counted once billed, not pre-checked.
+- **Not shipped: a deferred tool / resume with a tool result (A6).** It needs a third run outcome —
+  neither an answer nor a failure — on an action whose contract is one `output` schema, and a handle
+  that ends on an open `tool_use`, which the screen refuses by design. A run that parks answers
+  through `output` and continues with a user turn instead.
+
 ## Evals, retrieval, fix lines
 
 The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11, when the

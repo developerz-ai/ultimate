@@ -35,12 +35,14 @@ import {
   sessionCalls,
   withTranscript,
 } from './agent-continue';
-import type { AgentBounds } from './agent-declared';
 import { factsOf, limitsOf, SUBJECT, screenBounds } from './agent-declared';
 import type { AgentDef } from './agent-def';
 import { AgentTranscriptInvalidError } from './agent-errors';
 import { registerAgentFact } from './agent-facts';
 import { runDeadline, toolLoopGuard } from './agent-guards';
+import type { Adapted, PerRun } from './agent-per-run';
+import { project, resolvePerRun } from './agent-per-run';
+import { assertRunCost } from './agent-run-limits';
 import { sameSystem, systemOf } from './agent-system';
 import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import { assertAnswerable, observeTurn } from './agent-turn';
@@ -49,11 +51,10 @@ import { LlmTruncatedError } from './answer-errors';
 import { budgetKeysFor, currentBudget, withBudget } from './budget';
 import { AgentMaxTurnsError, AgentToolUnexposedError, LlmOutputInvalidError } from './errors';
 import { answerAttributes } from './llm';
-import { modelForCall } from './model-resolve';
 import type { PromptVars } from './prompt';
 import { promptCacheHint } from './prompt-cache';
 import type { AiMessage, GenerateRequest } from './provider';
-import { isTruncated } from './provider';
+import { estimateCost, isTruncated } from './provider';
 import { assertNoSecrets } from './redaction';
 import type { Respond } from './respond';
 import { RESPOND, respondFor } from './respond';
@@ -61,10 +62,17 @@ import { runMeter } from './run-meter';
 import { aiGateway, aiRedactor, installedGateway } from './runtime';
 import type { Sampling } from './sampling';
 import { ignoredSamplingAttribute, screenSampling } from './sampling';
-import type { AgentTool, LlmTool, LlmToolResult, ProjectableAction } from './tools';
-import { asProjectableAction, isOfferedTool, runLlmToolCall, toLlmTools, toolLabel } from './tools';
+import type { LlmToolResult } from './tools';
+import { isOfferedTool, runLlmToolCall, toolLabel } from './tools';
 
-export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
+export type {
+  AgentBudget,
+  AgentDef,
+  AgentModel,
+  AgentRunLimits,
+  AgentTurn,
+  AgentVarsArgs,
+} from './agent-def';
 
 export function agent<
   TInput extends StandardSchemaV1,
@@ -84,6 +92,8 @@ export function agent<
     });
   }
   const bounds = screenBounds(def);
+  // What every run is held under; a run's `limits()` may only lower it (`narrowCeilings`).
+  const declared = { bounds, deadlineMs: def.deadlineMs, budget: def.budget };
   // This declaration's identity for `.run()` / `.continue()` sessions (`claimAgentSession`).
   const owner = {};
   const sampling = screenSampling(SUBJECT, def);
@@ -100,7 +110,14 @@ export function agent<
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
-    handle: (args) => run(def, respond, adapt(), { ...bounds, sampling, owner }, args),
+    handle: async (args) =>
+      run(
+        def,
+        respond,
+        await resolvePerRun(def, { ...declared, adapted: adapt() }, args),
+        { sampling, owner },
+        args,
+      ),
   });
   // A thunk, resolved when the manifest asks: every name in the row is stamped at boot, and this
   // line runs at module scope.
@@ -123,17 +140,6 @@ function continuable<TInput extends StandardSchemaV1, TOutput extends StandardSc
   });
 }
 
-/** The tools as `runLlmToolCall` consumes them, and as the request offers them. One projection. */
-interface Adapted {
-  readonly tools: readonly ProjectableAction[];
-  readonly offered: readonly LlmTool[];
-}
-
-function project(tools: readonly AgentTool[]): Adapted {
-  const projected = tools.map(asProjectableAction);
-  return { tools: projected, offered: toLlmTools(projected) };
-}
-
 async function run<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
@@ -141,24 +147,23 @@ async function run<
 >(
   def: AgentDef<TInput, TOutput, V>,
   respond: Respond,
-  adapted: Adapted,
-  bounds: AgentBounds & { readonly sampling: Sampling; readonly owner: object },
+  /** This run's picks — model, offered tools, ceilings — resolved from the declaration. */
+  picked: PerRun,
+  fixed: { readonly sampling: Sampling; readonly owner: object },
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
   const name = prompt.ref;
   // A `.continue()` in flight: its handle is the app's stored data, so it is screened before
   // anything is loaded, reserved or sent.
-  const session = claimAgentSession(bounds.owner);
+  const session = claimAgentSession(fixed.owner);
+  const { adapted, model, bounds } = picked;
   const resume = session?.resume;
   if (resume !== undefined && resume.user.trim() === '') {
     throw new AgentTranscriptInvalidError({ agent: name, reason: 'the user turn is empty' });
   }
-  // Screened first: a bad declaration is refused whether or not a gateway exists.
-  limitsOf(def);
-  // The declaration, its prompt, then the gateway's `defaultModel` — the app's three places.
-  const model = modelForCall('agent', name, def.model, prompt.model);
-  // What a handle is bound to, read off the declaration and the request — never off the handle.
+  // What a handle is bound to, read off the declaration and the request — never off the handle:
+  // the run's own model and the tools THIS run is offered.
   const binding: TranscriptBinding = {
     agent: name,
     model,
@@ -166,9 +171,10 @@ async function run<
     org: args.ctx.actor.orgId ?? null,
   };
   const prior = resume === undefined ? undefined : screenTranscript(binding, resume.transcript);
-  const limits = limitsOf(def, prior?.usage);
+  const limits = limitsOf(picked.budget, prior?.usage);
+  const costPerRun = picked.budget?.costPerRun;
   // Armed before anything is loaded: `vars()` is part of the run a deadline bounds.
-  const deadline = runDeadline(name, def.deadlineMs, args.ctx.signal);
+  const deadline = runDeadline(name, picked.deadlineMs, args.ctx.signal);
   const redact = aiRedactor();
   // A continuation does not render the prompt again: the transcript holds what was sent, and
   // `vars()` — the load — is not run a second time. Its own turn is the caller's text.
@@ -185,6 +191,7 @@ async function run<
   const system = systemOf(prompt.system, extra, redact);
   const promptCache = promptCacheHint(def.promptCache, 'auto', args);
   const repeated = toolLoopGuard(name, bounds.maxRepeatedToolCalls);
+  const sampling = fixed.sampling;
   const { maxTurns, maxToolResultChars: chars } = bounds;
 
   return withSpan('ai.agent', async (span) => {
@@ -200,9 +207,7 @@ async function run<
     // Read when the run ends, not here: the gateway may be what registers the model's row.
     const reportSampling = (): void => {
       span.setAttributes(
-        ignoredSamplingAttribute(model, bounds.sampling, () =>
-          installedGateway()?.samplingWires?.(model),
-        ),
+        ignoredSamplingAttribute(model, sampling, () => installedGateway()?.samplingWires?.(model)),
       );
     };
 
@@ -220,7 +225,7 @@ async function run<
       maxTokens: bounds.maxTokens,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
-      ...bounds.sampling,
+      ...sampling,
       tools: [...adapted.offered, respond.tool],
       // The caller's own signal, forwarded to the transport. A disconnect has to reach the socket,
       // not just the top of the next turn: a provider call already in flight is the expensive one.
@@ -254,8 +259,17 @@ async function run<
         // budget, runs every remaining tool's side effects, and discards the answer.
         throwIfAborted(args.ctx);
         deadline.check();
+        const request: GenerateRequest = { ...base, messages };
+        if (costPerRun !== undefined) {
+          // Worst case: the run so far (continuations and nested calls included) plus this turn,
+          // estimated as the gateway's own reservation will be — at the write rate only where a
+          // provider serving the model would mark the request.
+          const spent = runTotal(model, prior?.usage, meter.total(), meter.below()).costExact;
+          const marked = gateway.marksPromptCache?.(model) === true;
+          assertRunCost(costPerRun, spent, estimateCost(request, marked));
+        }
         const result = await deadline
-          .guard(meter.call(gateway.generate({ ...base, messages })))
+          .guard(meter.call(gateway.generate(request)))
           .catch((error: unknown) => {
             // The caller left mid-call: the aborted socket reads as a provider failure, which is
             // RETRYABLE. Say what happened instead.

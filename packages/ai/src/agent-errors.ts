@@ -67,3 +67,20 @@ export class AgentTranscriptInvalidError extends UltimateError {
     });
   }
 }
+
+/**
+ * One run's `offerTools()` named a tool the declaration does not list. Refused rather than
+ * dropped, for the reason `X_AGENT_TOOL_UNEXPOSED` is: a name that reads as offered and silently is
+ * not is the worst of both — and a per-run choice can only NARROW the declared catalogue, never
+ * add to it, so the declaration stays the agent's whole blast radius.
+ */
+export class AgentToolUndeclaredError extends UltimateError {
+  constructor(input: { agent: string; tools: readonly string[]; declared: readonly string[] }) {
+    super({
+      code: 'X_AGENT_TOOL_UNDECLARED',
+      cause: `agent "${input.agent}" was offered tools its declaration does not list: ${input.tools.join(', ')} (declared: ${input.declared.join(', ') || 'none'})`,
+      fix: "offerTools: () => ['<a name from the cause's declared list>']   # on the agent — or add the tool to its tools: first if this run really needs it",
+      meta: { agent: input.agent, tools: input.tools },
+    });
+  }
+}

@@ -52,6 +52,9 @@ export const AI_ERROR_RETRY = {
   X_LLM_OUTPUT_INVALID: 'terminal',
   X_LLM_TOOL_ARGUMENTS_INVALID: 'terminal',
   X_AGENT_TRANSCRIPT_INVALID: 'terminal',
+  // A run whose `offerTools()` named an undeclared tool names it again on the next attempt: the
+  // fix is the declaration or the app's own rule, never a retry.
+  X_AGENT_TOOL_UNDECLARED: 'terminal',
 } as const satisfies Readonly<Partial<Record<AiErrorCode, ErrorRetry>>>;
 
 // `Partial`, so the table may be a subset — but every key is still checked against the declared set,

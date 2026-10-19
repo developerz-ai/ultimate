@@ -81,6 +81,7 @@ describe('describeAgents', () => {
           tokensIn: null,
           tokensPerRun: 90_000,
           costPerCall: { minor: 50, currency: 'USD' },
+          costPerRun: null,
         },
         mcp: true,
       },
@@ -152,7 +153,12 @@ describe('describeAgents', () => {
     // A row saying "maxTurns: null" would make an inherited ceiling read as no ceiling.
     expect(fact?.maxTurns).toBe(8);
     expect(fact?.maxToolResultChars).toBe(4_000);
-    expect(fact?.budget).toEqual({ tokensIn: null, tokensPerRun: null, costPerCall: null });
+    expect(fact?.budget).toEqual({
+      tokensIn: null,
+      tokensPerRun: null,
+      costPerCall: null,
+      costPerRun: null,
+    });
     expect(fact?.mcp).toBe(false);
   });
 
