@@ -148,6 +148,30 @@ describe('unit · release-due · read from a real repository', () => {
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('awaiting_tag');
   });
+
+  test('lastReleaseTag recognises a prerelease tag when it is the highest v* reachable from HEAD', async () => {
+    const { dir, git } = await released();
+    await git(['tag', '-a', 'v1.1.0-rc.1', '-m', 'v1.1.0-rc.1']);
+    expect(await lastReleaseTag(dir)).toBe('1.1.0-rc.1');
+  });
+
+  test('a tagged rc ends awaiting_tag — decideAt reports the rc as the last release', async () => {
+    const { dir, git, land } = await released();
+    await land(
+      { 'packages/core/src/a.ts': 'export const a = 2;\n' },
+      'feat(core): a is two (#2)',
+      30,
+    );
+    await land(
+      { 'packages/core/package.json': MANIFEST('1.1.0-rc.1') },
+      'chore(release): release 1.1.0-rc.1',
+    );
+    await git(['tag', '-a', 'v1.1.0-rc.1', '-m', 'v1.1.0-rc.1']);
+    const read = await decideAt(dir, 24, NOW);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.tagged).toBe('1.1.0-rc.1');
+    expect(read.decision.reason).not.toBe('awaiting_tag');
+  });
 });
 
 describe('unit · release-due · refusals that name their own cause', () => {
