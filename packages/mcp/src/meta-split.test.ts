@@ -269,7 +269,7 @@ describe('meta-split — refusals', () => {
     expect(audits.at(-1)).toMatchObject({ tool: 'archivePost', outcome: 'unconfirmed' });
   });
 
-  test('confirmed_by_user is required by the delete_resource schema', async () => {
+  test('a live call with no confirmed_by_user anywhere runs nothing', async () => {
     const server = splitServer();
     const answer = await inRequest(() =>
       server.handle(
@@ -277,11 +277,12 @@ describe('meta-split — refusals', () => {
           resource: 'posts',
           action: 'archivePost',
           params: { postId: 'p1' },
+          live: true,
         }),
         splitOwner,
       ),
     );
-    expect(text(answer)).toStartWith('X_INPUT_INVALID: ');
+    expect(text(answer)).toStartWith('X_MCP_USER_CONFIRMATION_REQUIRED: ');
     expect(ran).toEqual({});
   });
 
@@ -371,11 +372,8 @@ describe('meta-split — the catalog', () => {
       readOnlyHint: false,
       destructiveHint: true,
     });
-    expect(byName.get('delete_resource')?.inputSchema.required).toEqual([
-      'resource',
-      'action',
-      'confirmed_by_user',
-    ]);
+    // The flags may ride inside `params`, so the schema requires neither (#798).
+    expect(byName.get('delete_resource')?.inputSchema.required).toEqual(['resource', 'action']);
   });
 
   test('list_resources tags each write with the dispatcher that runs it', async () => {

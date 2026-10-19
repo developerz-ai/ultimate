@@ -109,7 +109,9 @@ export const SPLIT_TOOL_ENTRIES: readonly ToolListEntry[] = [
             'true when the user approved this change, directly or by authorizing the task that includes it. A live call without true runs nothing and answers X_MCP_USER_CONFIRMATION_REQUIRED.',
         },
       },
-      ['confirmed_by_user'],
+      // Not `required`: both flags may ride inside `params` (nested wins), and a schema requiring
+      // the top-level one refused that call as X_INPUT_INVALID before the dispatcher read it
+      // (#798). The dispatcher is the one gate: a live call without `true` runs nothing.
     ),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
   },
