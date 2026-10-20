@@ -116,6 +116,15 @@ describe('what is not read, and why', () => {
     expect(skipDocPath('wiki/Error-Codes.md')).toBe(true);
   });
 
+  test('.dz/briefs is bot scheduling input, not a page a reader runs — the briefs skip', () => {
+    // The maintainer bot reads these at `main`'s HEAD when its `schedules:` checkup fires; a brief
+    // defect (a stale command form, a missing reason row, a missing refusal branch) is a defect
+    // for the bot, not an x-form citation. The README stays in scope deliberately.
+    expect(skipDocPath('.dz/briefs/release-due.md')).toBe(true);
+    expect(skipDocPath('.dz/briefs/health.md')).toBe(true);
+    expect(skipDocPath('.dz/README.md')).toBe(false);
+  });
+
   test('one line naming one invocation twice is one finding', () => {
     expect(gaps('| Repair | `x db query` | see `x db query` |')).toHaveLength(1);
   });
