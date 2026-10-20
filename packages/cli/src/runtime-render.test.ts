@@ -2,8 +2,8 @@
 // with the headers that mode earns. Driven through `@ultimat3/http`'s real pipeline (`fetch()`,
 // no socket) so the authz stage is the same one production runs.
 
-import { afterEach, describe, expect, test } from 'bun:test';
-import { RENDER_MODES } from '@ultimat3/core';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { drain, RENDER_MODES, resetLifecycle } from '@ultimat3/core';
 import { defineHttpConfig, httpServer, setRedirect } from '@ultimat3/http';
 import { configureLocales, resetLocaleConfig } from '@ultimat3/i18n';
 import type { RegisterRouteInput, RenderMode, RouteComponent } from '@ultimat3/render';
@@ -66,9 +66,28 @@ const serve = (pwaHead?: string, themeHead?: string): ReturnType<typeof httpServ
 const get = async (path: string, headers: Record<string, string> = {}): Promise<Response> =>
   serve().fetch(new Request(`http://dev.test${path}`, { headers }));
 
+// The process lifecycle is a module global: a test elsewhere in this package that drains it (or a
+// drain still settling from one) left every route here answering 503 X_DRAINING when the files ran
+// in one process (main CI, packages 2/2, 2026-10-20). Each test starts from a live lifecycle.
+beforeEach(() => {
+  resetLifecycle();
+});
+
 afterEach(() => {
   clearRoutes();
   clearStylesheets();
+  resetLifecycle();
+});
+
+describe('unit · x dev renders the app routes, whatever ran before', () => {
+  test('an earlier test leaves the lifecycle draining', () => {
+    void drain('test-leak');
+  });
+
+  test('the next render still answers 200, not 503 X_DRAINING', async () => {
+    register({ file: 'app/leak/page.tsx', render: 'ssr' });
+    expect((await get('/leak')).status).toBe(200);
+  });
 });
 
 describe('unit · x dev renders the app routes', () => {

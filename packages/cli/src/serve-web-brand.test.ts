@@ -7,6 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
+import { resetLifecycle } from '@ultimat3/core';
 import { cspHashSource } from '@ultimat3/http';
 import { brandStyleTag, defineTheme } from '@ultimat3/ui';
 import { inlineStyleBodies } from './error-page-csp';
@@ -58,6 +59,9 @@ describe('integration · ROLE=web serves the app brand, admitted', () => {
       for (const body of bodies) expect(styleSrc).toContain(cspHashSource(body));
     } finally {
       await web.stop();
+      // stop() drains the PROCESS lifecycle (a module global): left draining, every later file in
+      // this process answered 503 X_DRAINING (main CI packages 2/2, 2026-10-20).
+      resetLifecycle();
     }
   }, 120_000);
 });
