@@ -25,6 +25,13 @@ const NOW = Date.UTC(2026, 9, 14, 12);
 
 const MANIFEST = (version: string): string =>
   `${JSON.stringify({ name: '@ultimat3/core', version, files: ['src', '!src/**/*.test.ts'] }, null, 2)}\n`;
+/**
+ * A manifest whose DEPENDENCY moved, at the same own version: what a `chore(deps):` commit lands.
+ * Moving the version instead would read as a merged release awaiting its tag, and the window would
+ * never reach the bump the notes branch hangs off.
+ */
+const DEP_BUMP = (version: string): string =>
+  `${JSON.stringify({ name: '@ultimat3/core', version, dep: '1.1.0', files: ['src', '!src/**/*.test.ts'] }, null, 2)}\n`;
 const CHANGELOG =
   '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## 1.0.0 - 2026-10-01\n\n- first\n';
 
@@ -138,6 +145,52 @@ describe('unit · release-due · read from a real repository', () => {
     expect(await lastReleaseTag(dir)).toBe('1.0.0');
     await git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'rc']);
     expect(await lastReleaseTag(dir)).toBe('1.0.0');
+  });
+
+  // A Dependabot PR that touches versions arrives without a usable `bun.lock` (PUBLISHING.md), so a
+  // regenerated lockfile rides along in the same squash. git records ONE author per commit, so the
+  // landed commit is still `dependabot[bot]` and the window stays Dependabot-only: `### Changed`
+  // must still be owed, or the release notes would name the lockfile commit and the dependency
+  // bump not at all.
+  test('a squashed Dependabot bump that also carries a regenerated bun.lock still owes ### Changed', async () => {
+    const { dir, land } = await released();
+    await land(
+      {
+        'bun.lock': '{}\n',
+        'packages/core/package.json': DEP_BUMP('1.0.0'),
+      },
+      'chore(deps): bump x (#4)',
+      72,
+      'dependabot[bot] <bot@example.test>',
+    );
+    const read = await decideAt(dir, 24, NOW);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.decision.bump).toBe('patch');
+    expect(read.decision.notes.join('\n')).toContain('### Changed');
+    expect(read.decision.notes.join('\n')).toContain('Dependabot-only');
+  });
+
+  // The same PR as two commits on main — the Dependabot bump, then a maintainer's lockfile
+  // regeneration. A `bun.lock`-only commit changes no path a published tarball packs, so it is
+  // inert and the shipping list is still Dependabot-only. If the lockfile ever began to ship, this
+  // would become a human window — which is why the assertion pins the shipping set too.
+  test('a Dependabot bump with a separate non-Dependabot bun.lock commit still owes ### Changed', async () => {
+    const { dir, land } = await released();
+    await land(
+      { 'packages/core/package.json': DEP_BUMP('1.0.0') },
+      'chore(deps): bump x (#4)',
+      72,
+      'dependabot[bot] <bot@example.test>',
+    );
+    await land({ 'bun.lock': '{}\n' }, 'chore: regenerate bun.lock after the bump');
+    const read = await decideAt(dir, 24, NOW);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    // The lockfile commit ships nothing, so it is inert rather than a human shipping commit.
+    expect(read.decision.shipping.map((c) => c.author)).toEqual(['dependabot[bot]']);
+    expect(read.decision.inert).toBe(1);
+    expect(read.decision.bump).toBe('patch');
+    expect(read.decision.notes.join('\n')).toContain('### Changed');
+    expect(read.decision.notes.join('\n')).toContain('Dependabot-only');
   });
 
   test('a merged bump with no tag yet is awaiting_tag, not a second release', async () => {
