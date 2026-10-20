@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "291b6765cb2ce572ea88d1af3eebb43cfec40ad9de98a63383debdd86a1dd7a5",
+  "buildId": "80fe0cbae55de703abd7a08632c1dfe439f73dca682cb0650cfc0669a7c20c44",
   "tiers": {
     "0": [
       "core",
@@ -1476,6 +1476,11 @@
     },
     {
       "code": "X_ENTITY_DUPLICATE",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
+    },
+    {
+      "code": "X_ENTITY_OPERATOR_UNKNOWN",
       "owner": "entity",
       "at": "packages/entity/src/entity-error.ts"
     },

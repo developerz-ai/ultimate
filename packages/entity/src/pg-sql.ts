@@ -10,6 +10,7 @@ import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
 import { searchUndeclared } from './feature-errors';
 import { microsToIso, seekAlias } from './instant';
+import { operatorUnknown } from './operator';
 import { allColumns, arrayLiteral, columnsOf, physicalName } from './pg-row';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import type { ColumnKind } from './types';
@@ -129,6 +130,11 @@ const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFr
     // answered rows the memory driver never did.
     case 'has-key':
       return typeof value === 'string' ? sql`${column} operator(pg_catalog.?) ${value}` : NEVER;
+    // An operator outside the vocabulary, cast past the type: the statement used to be built around
+    // an `undefined` fragment and refused as `X_SQL_UNSAFE`, which names the wrong mistake. The
+    // memory driver's refusal, word for word (`memory-match.ts`).
+    default:
+      throw operatorUnknown(entity.$name, predicate.column, predicate.op);
   }
 };
 

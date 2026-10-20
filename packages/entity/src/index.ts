@@ -87,6 +87,7 @@ export { compareByKind, sameValueOfKind } from './memory-match';
 export { memoryRepo, memoryTransactor } from './memory-repo';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
+export { isOperator, OPERATORS } from './operator';
 export { persistedRecordTypes } from './persisted-types';
 // For a change feed holding a table name and raw columns: `entityForTable` + `decodeRow` is the row
 // the app declared, money and all. Exported for `@ultimat3/realtime` (plan 101, 06 i).

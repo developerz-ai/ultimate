@@ -8,7 +8,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **An operator outside the predicate vocabulary is refused, not read as "no rows".** An
+  `andWhere(column, '>', n)` that nothing typechecked (a cast, an operator built from a string, a
+  plain `bun test`) fell out of the memory driver's switch as `undefined`: every row failed the
+  filter and the read returned an empty list with no error. The Postgres driver built the statement
+  around an `undefined` fragment and refused with an `X_SQL_UNSAFE` that named the wrong mistake.
+  Now `andWhere` refuses it on the line the author wrote, and both drivers refuse a hand-built plan
+  identically, all with the new `X_ENTITY_OPERATOR_UNKNOWN` (500, `terminal` for a job), whose `fix`
+  names the operator meant (`'>'` → `gt`, `>=` → `gte`, `<` → `lt`, `<=` → `lte`, `=` → `eq`,
+  `!=`/`<>` → `neq`, `'GT'` → `gt`) and the call with it substituted. `Operator` is now derived from
+  one runtime list, exported as `OPERATORS` beside `isOperator()`.
 
 ## 27.13.0 - 2026-10-20
 

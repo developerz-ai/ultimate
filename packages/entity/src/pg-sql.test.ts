@@ -59,6 +59,18 @@ describe('predicateSql, via selectStatement', () => {
   const where = (predicate: Predicate) =>
     countStatement(posts, planOf({ where: [predicate] }), SHAPE);
 
+  test('an operator outside the vocabulary is refused, never compiled to a broken statement', () => {
+    // A `'>'` cast to `Operator` used to fall out of the switch as `undefined`, and the statement
+    // was built around a hole. It is the memory driver's refusal, word for word.
+    const unknown = { column: 'title', op: '>', value: 'hi' } as unknown as Predicate;
+    expect(() => where(unknown)).toThrow(
+      expect.objectContaining({
+        code: 'X_ENTITY_OPERATOR_UNKNOWN',
+        fix: expect.stringContaining("andWhere('title', 'gt', value)"),
+      }),
+    );
+  });
+
   test('eq with a null value renders "is null", not "= $n" — NULL never equals a bound param', () => {
     const stmt = where({ column: 'title', op: 'eq', value: null });
     expect(stmt.text).toContain('"title" is null');

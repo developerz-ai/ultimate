@@ -441,3 +441,28 @@ describe('a column the row never named is NULL, as it is in the table', () => {
     expect(await matching({ column: 'price.minor', op: 'eq', value: 100 })).toEqual([VALUED]);
   });
 });
+
+describe('an operator outside the vocabulary is refused, never read as "no rows"', () => {
+  // `'>'` reaches a plan wherever the operator is not statically typed — a cast, an operator built
+  // from a string, a test run with no typecheck. With no `default` the switch answered `undefined`,
+  // every row failed the filter and the read returned nothing, with no error anywhere.
+  test.each([
+    ['>', 'gt'],
+    ['<=', 'lte'],
+    ['!=', 'neq'],
+    ['GT', 'gt'],
+  ])('%p names the operator it meant, %p', async (op, meant) => {
+    const { repo, ready } = seeded();
+    await ready;
+
+    const read = repo.findMany({
+      where: [{ column: 'seq', op, value: '9' } as unknown as Predicate],
+      orderBy: [{ column: 'seq', direction: 'asc' }],
+    });
+
+    await expect(read).rejects.toMatchObject({
+      code: 'X_ENTITY_OPERATOR_UNKNOWN',
+      fix: expect.stringContaining(`andWhere('seq', '${meant}', value)`),
+    });
+  });
+});
