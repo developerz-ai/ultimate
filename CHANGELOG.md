@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.13.0 - 2026-10-20
+
 ### Added
 
 - **`agent()` runs pick inside their declaration: `offerTools()`, `model` as a function,
@@ -70,6 +74,22 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `timeoutMs`. A number in `x.verify.json` is taken as written. `--json` carries `data.pace`, and
   an `X_VERIFY_STEP_TIMEOUT` past a stretched deadline says by how much. An unparseable
   `ULTIMATE_TEST_PACE` is `X_TEST_PACE_INVALID`.
+
+### Commits
+
+- fix(pwa): answer an unruled navigation from its preload, never send it twice (#808)
+- fix(cli): runtime-render tests start from a live lifecycle (main is red) (#810)
+- fix(cli): the gate streams a line per finished step and a 60 s heartbeat to stderr in both render modes (#809)
+- feat(ai): per-run offerTools, model and limits on agent(), and budget.costPerRun (#807)
+- docs(briefs): release-due names data.shipping, matching DueDecision (#806)
+- fix(release-due): expose breaking entries on the decision so the brief reads them verbatim (#805)
+- fix(mcp): delete_resource reads confirmed_by_user inside params, as documented (#798) (#804)
+- chore(deps): Bump lefthook (#803)
+- fix: every CI flake in 200 runs â€” offline proven by a request, subscribe flushed, a copy in both keys' turns, Dependabot on bun (#802)
+- fix(dummy): add `sec-fetch-site: same-origin` to e2e fetch helpers (#800)
+- fix(cli,testing): x verify scales its deadlines to the machine's measured pace (#801)
+- Fix `verify` red on main (first red at the merge of #631, 1cfaf429) (#799)
+- fix(scripts): pin Bun where mise reads it, refuse a lower Bun at the gate, scan masks once (#797)
 
 ## 27.12.0 - 2026-10-18
 
