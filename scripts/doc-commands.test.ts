@@ -116,6 +116,16 @@ describe('what is not read, and why', () => {
     expect(skipDocPath('wiki/Error-Codes.md')).toBe(true);
   });
 
+  test('.dz/briefs/ holds the maintainer bot brief inputs, named by brief_file', () => {
+    // `.dz/maintainer/maintainer.yml` schedules each one under `schedules:` with a `brief_file:`
+    // pointing here. The surface a reader of `.dz/` meets is `.dz/README.md` (matched by the
+    // root `*.md` glob); the briefs are platform-internal checkups, not doc sentences an agent
+    // is meant to run.
+    expect(skipDocPath('.dz/briefs/release-due.md')).toBe(true);
+    expect(skipDocPath('.dz/briefs/health.md')).toBe(true);
+    expect(skipDocPath('.dz/README.md')).toBe(false);
+  });
+
   test('one line naming one invocation twice is one finding', () => {
     expect(gaps('| Repair | `x db query` | see `x db query` |')).toHaveLength(1);
   });

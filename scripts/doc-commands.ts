@@ -30,6 +30,12 @@ import { repoRoot } from './lib/run';
  * unchecked — which is how the README's `x g` kind list stayed four kinds short of the registry.
  * The same set `scripts/version-stamps.ts` already reads, for the same reason: an agent does not
  * know which directory a page lives in before it runs what the page told it to.
+ *
+ * `.dz/briefs/*.md` is deliberately omitted: the surface a reader of `.dz/` meets is
+ * `.dz/README.md` (matched by the root `*.md` glob), and the briefs themselves are the
+ * developerz.ai maintainer bot's own inputs, named one-per-checkup by `brief_file:` under
+ * `schedules:` in `.dz/maintainer/maintainer.yml`. Reading them as doc sentences an agent quotes
+ * as instructions would cite the bot's private checkups as commands a reader runs.
  */
 export const DOC_GLOBS: readonly string[] = [
   '*.md',
@@ -46,7 +52,7 @@ export const ALLOW_FILE = 'scripts/doc-commands-allow.ts';
 export const PINS_FILE = 'scripts/doc-commands.ts';
 
 /**
- * Two pages this rule does not read, for two different reasons.
+ * Three pages this rule does not read, for three different reasons.
  *
  * `docs/plans/` is a dated record of work, not an instruction to a reader — and the audit that
  * produced this check quotes every broken command it found as evidence. A rule that failed on a bug
@@ -56,11 +62,17 @@ export const PINS_FILE = 'scripts/doc-commands.ts';
  * STRICTER rule than this one: a fix may not cite a planned command, and a doc sentence may. Two
  * reporters of one condition is the duplication this repo forbids by name, so the error reference
  * has exactly one owner.
+ *
+ * `.dz/briefs/` is the developerz.ai maintainer bot's own inputs — `.dz/maintainer/maintainer.yml`
+ * names each by `brief_file:` under `schedules:`, and the surface a reader of `.dz/` meets is
+ * `.dz/README.md` (matched by the root `*.md` glob). The briefs are platform-internal checkups,
+ * not instructions a reader is asked to run.
  */
 export const skipDocPath = (path: string): boolean =>
   path.startsWith('docs/plans/') ||
   path === 'CHANGELOG.md' ||
   path === 'wiki/Error-Codes.md' ||
+  path.startsWith('.dz/briefs/') ||
   // An installed dependency's or a build's pages are not this repo's to keep runnable.
   /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path);
 
