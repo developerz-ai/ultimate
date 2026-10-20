@@ -84,6 +84,35 @@ describe('navigation preload', () => {
     expect(sw.stamps).toEqual([null]);
   });
 
+  // The browser preloads EVERY navigation once preload is on. A navigation the worker has no rule
+  // for, left unanswered, has its preload cancelled and is requested a second time — a one-time
+  // OAuth callback then exchanges its code twice and the second exchange fails the sign-in.
+  test.each(['/auth/oauth/acme/callback?code=c&state=s', '/never/x'])(
+    'a navigation to %s, with no rule or never cached, is answered by its preload, not sent twice',
+    async (path) => {
+      const sw = swHarness();
+      sw.load(
+        generateServiceWorker(
+          routes,
+          { ...config, offline: { ...config.offline, neverCache: ['/never'] } },
+          'b',
+        ).source,
+      );
+      const answer = await sw.respondNavigate(path, preloaded('preloaded'));
+      expect(await answer.text()).toBe('preloaded');
+      expect(sw.fetched).toEqual([]);
+    },
+  );
+
+  test('an unruled navigation whose preload is empty or rejects goes to the network once', async () => {
+    const sw = worker();
+    await sw.respondNavigate('/auth/x', Promise.resolve(undefined));
+    const failed = Promise.reject(new TypeError('preload cancelled'));
+    failed.catch(() => undefined);
+    await sw.respondNavigate('/auth/y', failed);
+    expect(sw.fetched).toHaveLength(2);
+  });
+
   test('a preload answered by this build says nothing', async () => {
     const sw = worker('build-1');
     await sw.respondNavigate('/news', preloaded('same', { 'x-ultimate-build': 'build-1' }));

@@ -369,11 +369,11 @@ self.addEventListener('fetch',(event)=>{
   if(req.method!=='GET')return;
   const url=new URL(req.url);
   if(url.origin!==self.location.origin)return;
-  if(NEVER_CACHE.some((p)=>url.pathname.startsWith(p)))return;
+  if(NEVER_CACHE.some((p)=>url.pathname.startsWith(p)))return passThrough(event);
   const rule=ruleFor(url);
-  if(!rule)return;
+  if(!rule)return passThrough(event);
   const fn=STRATEGIES[rule.s];
-  if(!fn)return;
+  if(!fn)return passThrough(event);
   // Every proxied DOCUMENT carries the client's build id so the server can detect skew. An asset
   // goes as the browser asked: a no-cors request's headers cannot be extended.
   const tagged=rule.a?req:new Request(req,{headers:withBuild(req.headers)});
@@ -382,6 +382,14 @@ self.addEventListener('fetch',(event)=>{
   const pre=req.mode==='navigate'&&event.preloadResponse?Promise.resolve(event.preloadResponse).then((r)=>{if(r)seenBuild(r);return r}):undefined;
   event.respondWith(fn(tagged,cacheName(rule.c),fallbackFor(rule,req),(p)=>event.waitUntil(p),pre).then((res)=>healSkew(req,res)));
 });
+// Preload is on for EVERY navigation, so one this worker has no rule for was preloaded too. Left
+// unanswered, the browser cancels that preload and requests the URL again: the server sees it
+// twice, and a one-time OAuth callback exchanges its code twice — the second exchange fails the
+// sign-in. Answer from the preload (net: an empty or failed one is the single fetch instead).
+function passThrough(event){
+  if(event.request.mode!=='navigate'||!event.preloadResponse)return;
+  event.respondWith(net(event.request,event.preloadResponse));
+}
 function seenBuild(res){
   const server=res.headers.get(BUILD_HEADER);
   if(SKEWED||server===null||server===BUILD_ID)return;

@@ -33,6 +33,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A navigation the service worker has no rule for is answered from its preload, not sent
+  twice.** The worker turns navigation preload on for every navigation, but returned without
+  `respondWith` for a path with no route rule or under `offline.neverCache` (an app's own plain
+  routes, e.g. an OAuth start and callback). The browser then cancelled the preload — which the
+  server had already processed — and requested the URL again, so a one-time OAuth callback
+  exchanged its code twice: the first exchange signed the person in on a response the browser
+  dropped, the second failed with "code missing or expired" (`X_OAUTH_EXCHANGE_FAILED`, then
+  `X_OAUTH_STATE_INVALID` on retry). Such a navigation is now answered from
+  `event.preloadResponse`; an empty or failed preload is the one network fetch.
 - **`x verify` and `bun run verify` write progress on stderr in the human render too**, not only
   under `--json`: a line per finished step, and a `still running: <steps> (<elapsed>)` heartbeat
   every `HEARTBEAT_MS` (60 s) while a step runs. A harness that kills a process after 30 silent
