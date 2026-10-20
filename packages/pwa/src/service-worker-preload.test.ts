@@ -91,7 +91,13 @@ describe('navigation preload', () => {
     'a navigation to %s, with no rule or never cached, is answered by its preload, not sent twice',
     async (path) => {
       const sw = swHarness();
-      sw.load(generateServiceWorker(routes, { ...config, offline: { ...config.offline, neverCache: ['/never'] } }, 'b').source);
+      sw.load(
+        generateServiceWorker(
+          routes,
+          { ...config, offline: { ...config.offline, neverCache: ['/never'] } },
+          'b',
+        ).source,
+      );
       const answer = await sw.respondNavigate(path, preloaded('preloaded'));
       expect(await answer.text()).toBe('preloaded');
       expect(sw.fetched).toEqual([]);
