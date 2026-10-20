@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.13.1 - 2026-10-20
+
 ### Fixed
 
 - **An operator outside the predicate vocabulary is refused, not read as "no rows".** An
@@ -20,6 +24,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   names the operator meant (`'>'` → `gt`, `>=` → `gte`, `<` → `lt`, `<=` → `lte`, `=` → `eq`,
   `!=`/`<>` → `neq`, `'GT'` → `gt`) and the call with it substituted. `Operator` is now derived from
   one runtime list, exported as `OPERATORS` beside `isOperator()`.
+
+### Commits
+
+- fix(entity): an unknown predicate operator is refused, never read as no rows (#812)
 
 ## 27.13.0 - 2026-10-20
 
