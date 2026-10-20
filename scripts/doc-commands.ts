@@ -30,6 +30,13 @@ import { repoRoot } from './lib/run';
  * unchecked — which is how the README's `x g` kind list stayed four kinds short of the registry.
  * The same set `scripts/version-stamps.ts` already reads, for the same reason: an agent does not
  * know which directory a page lives in before it runs what the page told it to.
+ *
+ * `.dz/briefs/*.md` is deliberately NOT here: the developerz.ai maintainer bot reads those pages as
+ * scheduling inputs (one per `schedules:` checkup), they hand no reader an `x` invocation, and a
+ * brief defect — a stale command form, a missing reason row, a missing refusal branch — is not an
+ * x-form citation to fix here. `.dz/README.md` stays in scope as the platform's documentation
+ * surface, intentionally not in this list either, and is picked up by the documentation itself
+ * rather than by this globs list.
  */
 export const DOC_GLOBS: readonly string[] = [
   '*.md',
@@ -46,21 +53,34 @@ export const ALLOW_FILE = 'scripts/doc-commands-allow.ts';
 export const PINS_FILE = 'scripts/doc-commands.ts';
 
 /**
- * Two pages this rule does not read, for two different reasons.
+ * Four paths the rule does not read, each for its own reason.
  *
  * `docs/plans/` is a dated record of work, not an instruction to a reader — and the audit that
  * produced this check quotes every broken command it found as evidence. A rule that failed on a bug
  * report is a rule that makes bug reports unwritable.
  *
+ * `CHANGELOG.md` is a record of releases: a backticked command there is reporting what shipped at
+ * a version, not telling the reader what to run now. Treating it as a citation would have this
+ * rule pull at strings the file does not mean as such, and `scripts/changelog-check.ts` already
+ * owns that file's own shape.
+ *
  * `wiki/Error-Codes.md` belongs to `scripts/doc-fixes.ts`, which holds its `Fix` column to a
  * STRICTER rule than this one: a fix may not cite a planned command, and a doc sentence may. Two
  * reporters of one condition is the duplication this repo forbids by name, so the error reference
  * has exactly one owner.
+ *
+ * `.dz/briefs/*.md` is the maintainer bot's scheduling input — one page per `schedules:`
+ * checkup, read at `main`'s HEAD when the timer fires. It hands no reader an `x` invocation, and
+ * a brief defect (a stale command form, a missing reason row, a missing refusal branch) is a
+ * defect to surface to the bot, not a citation to fix here. `.dz/README.md` stays in scope, and
+ * the skip is deliberately narrower than `.dz/` so the platform's own documentation surface
+ * continues to be read.
  */
 export const skipDocPath = (path: string): boolean =>
   path.startsWith('docs/plans/') ||
   path === 'CHANGELOG.md' ||
   path === 'wiki/Error-Codes.md' ||
+  path.startsWith('.dz/briefs/') ||
   // An installed dependency's or a build's pages are not this repo's to keep runnable.
   /(?:^|\/)(?:node_modules|dist|\.x)\//.test(path);
 
