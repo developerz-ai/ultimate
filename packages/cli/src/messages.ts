@@ -337,6 +337,9 @@ const CATALOG = {
   // no skipped test to read a reason off, so the files the step selected hold no test.
   'cli.verify.ranNothing': 'found no test to run in the file(s) it selected',
   'cli.verify.merged': 'merged {parts} part(s) — {summary}',
+  // The heartbeat `verify-progress.ts` writes while a step is still running: `{steps}` is
+  // `unit (12m 3s), live (4m 0s)`, each step with the time since it started.
+  'cli.verify.stillRunning': 'still running: {steps}',
   // The `unit` step's own measurement, in `output`: what the suite covered of the app's whole
   // source tree, beside the floor it was held to. A shard says it measured a slice instead.
   'cli.verify.coverage':

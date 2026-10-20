@@ -782,9 +782,10 @@ a tighter number. A number in `x.verify.json` is taken as written. `--json` carr
 `data.pace` — `{ factor, cpus, probeMs }` — and a timed-out step whose deadline was stretched says
 by how much.
 
-**`--json` says where it is.** One line per finished step on stderr —
+**The gate says where it is.** In either render, one line per finished step on stderr —
 `{"step":"lint","ok":true,"ms":21987}` — so a cancelled CI job's log ends on the last step that
-finished. stdout stays the one document.
+finished, and a `still running: unit (12m 3s)` heartbeat every minute a step runs, so a harness
+that kills on silence never kills a slow but healthy step. Under `--json` stdout stays the one document.
 
 `x verify --json` emits the same content machine-readably → [MCP and AI](MCP-And-AI). CI runs exactly `x verify` — no bespoke pipeline steps, because a check that lives only in CI is a check developers cannot run.
 

@@ -16,6 +16,7 @@ export interface AgentBudgetFact {
   readonly tokensIn: number | null;
   readonly tokensPerRun: number | null;
   readonly costPerCall: Money | null;
+  readonly costPerRun: Money | null;
 }
 
 export interface AgentFact {
@@ -33,11 +34,17 @@ export interface AgentFact {
    * `null` when none names one yet — a call in that state is refused (`X_AI_MODEL_UNRESOLVED`).
    */
   readonly model: string | null;
-  /** Which of those answered; `gateway` and `null` are as of the gateway installed at read time. */
-  readonly modelFrom: ModelSource | null;
+  /**
+   * Which of those answered; `gateway` and `null` are as of the gateway installed at read time.
+   * `run` (with `model: null`): the declaration's `model` is a function, so each run picks its own.
+   */
+  readonly modelFrom: ModelSource | 'run' | null;
   readonly maxTurns: number;
   readonly maxToolResultChars: number;
-  /** Tool names, sorted — the catalogue this agent may call, which is its blast radius. */
+  /**
+   * Tool names, sorted — the catalogue this agent may call, which is its blast radius. A run's
+   * `offerTools()` only ever narrows it.
+   */
   readonly tools: readonly string[];
   readonly budget: AgentBudgetFact;
   /** Whether the agent itself is offered as a tool, so a supervisor could call it. */

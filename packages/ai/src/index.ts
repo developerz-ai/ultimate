@@ -17,10 +17,18 @@ export {
   TRANSCRIPT_VERSION,
   transcriptOf,
 } from './agent-continue';
-export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent-def';
+export type {
+  AgentBudget,
+  AgentDef,
+  AgentModel,
+  AgentRunLimits,
+  AgentTurn,
+  AgentVarsArgs,
+} from './agent-def';
 export {
   AgentDeadlineError,
   AgentToolLoopError,
+  AgentToolUndeclaredError,
   AgentTranscriptInvalidError,
 } from './agent-errors';
 export type { AgentBudgetFact, AgentFact } from './agent-facts';
