@@ -9,11 +9,16 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
-import { usesDevCursorSecret } from '@ultimat3/core';
+import { resetLifecycle, usesDevCursorSecret } from '@ultimat3/core';
 import { serveApp } from './serve';
 
 /** Every temp dir this file makes, removed after it: a fixture that outlives its run is a leftover (#738). */
 const madeDirs: string[] = [];
+afterAll(() => {
+  // A refused boot may still have registered drain hooks: never hand a draining process on.
+  resetLifecycle();
+});
+
 afterAll(() => {
   for (const dir of madeDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
