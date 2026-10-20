@@ -39,6 +39,7 @@ export const ENTITY_ERROR_CODES = [
   'X_ENTITY_SEALED_PREDICATE',
   'X_ENTITY_SEALED_IN_VIEW',
   'X_ENTITY_APPEND_ONLY',
+  'X_ENTITY_OPERATOR_UNKNOWN',
 ] as const;
 
 export type EntityErrorCode = (typeof ENTITY_ERROR_CODES)[number];
@@ -72,6 +73,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityErrorCode, string>> = {
     'a sealed column is read by a predicate, an order or a rule the database evaluates',
   X_ENTITY_SEALED_IN_VIEW: 'a sealed column is named in a view',
   X_ENTITY_APPEND_ONLY: 'an append-only entity was asked to rewrite or remove a row',
+  X_ENTITY_OPERATOR_UNKNOWN: 'a predicate names an operator outside the vocabulary',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the
@@ -82,8 +84,8 @@ registerErrorCodes(
 );
 
 /**
- * How the codes here that are worth classifying are retried. The two sealed-column refusals and
- * the append-only refusal: each is the app's own declaration or call, so attempt five answers what attempt one did — and
+ * How the codes here that are worth classifying are retried. The two sealed-column refusals, the
+ * append-only refusal and the unknown operator: each is the app's own declaration or call, so attempt five answers what attempt one did — and
  * left unclassified, `classifyThrown` reads them as undecided and a job spends its whole retry
  * policy re-proving it. Listed although `terminal` is the default, for the reason core's own table
  * gives for `X_NOT_IMPLEMENTED`. The rest of this package's codes are unclassified, as they were.
@@ -92,6 +94,7 @@ export const ENTITY_ERROR_RETRY = {
   X_ENTITY_SEALED_PREDICATE: 'terminal',
   X_ENTITY_SEALED_IN_VIEW: 'terminal',
   X_ENTITY_APPEND_ONLY: 'terminal',
+  X_ENTITY_OPERATOR_UNKNOWN: 'terminal',
 } as const satisfies Readonly<Partial<Record<EntityErrorCode, ErrorRetry>>>;
 
 registerErrorRetry(ENTITY_ERROR_RETRY);

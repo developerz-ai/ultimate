@@ -117,4 +117,6 @@ export const TIER_2_ERROR_STATUS = {
   X_MFA_SECRET_UNSEALED: 500,
   // @ultimat3/entity — an append-only entity was asked to rewrite or remove a row
   X_ENTITY_APPEND_ONLY: 409,
+  // @ultimat3/entity — a predicate names an operator outside the vocabulary
+  X_ENTITY_OPERATOR_UNKNOWN: 500,
 } satisfies Readonly<Record<string, number>>;

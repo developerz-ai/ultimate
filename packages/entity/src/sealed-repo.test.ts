@@ -228,6 +228,7 @@ describe('unit · the sealed refusals are terminal', () => {
       X_ENTITY_SEALED_PREDICATE: 'terminal',
       X_ENTITY_SEALED_IN_VIEW: 'terminal',
       X_ENTITY_APPEND_ONLY: 'terminal',
+      X_ENTITY_OPERATOR_UNKNOWN: 'terminal',
     });
     const repo = memoryRepo(connections);
     const thrown = await repo

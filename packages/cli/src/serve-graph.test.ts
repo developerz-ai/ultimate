@@ -115,8 +115,11 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 645 → 648, measured 648 (2026-10-17, #790): `jobs/src/jobs-retention.ts`,
  * `outbox-retention.ts` and the batch loop they share, `purge-batches.ts` — the `x.purge` targets
  * that delete finished `x_jobs` rows and published `x_outbox` rows, reached through the jobs barrel.
+ * raised 648 → 649, measured 649 (2026-10-20, an unknown predicate operator is refused):
+ * `entity/src/operator.ts` — the one runtime list `Operator` is derived from and its refusal, read
+ * by both drivers' predicate switches and `andWhere`; reached through the entity barrel.
  */
-const MIGRATE_CEILING = 648;
+const MIGRATE_CEILING = 649;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -235,8 +238,10 @@ const MIGRATE_CEILING = 648;
  * raised 958 → 962, measured 962 (2026-10-17, #790): the three modules named on `MIGRATE_CEILING`
  * for #790, and `cli/src/runtime-jobs-retention.ts` — the three `jobs.*RetentionMs` windows read
  * off the loaded config into the two targets `installRetentionSweep` takes.
+ * raised 962 → 963, measured 963 (2026-10-20, an unknown predicate operator is refused): the one
+ * module named on `MIGRATE_CEILING` for that change, `entity/src/operator.ts`.
  */
-const SERVING_ROLE_CEILING = 962;
+const SERVING_ROLE_CEILING = 963;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -342,8 +347,10 @@ const SERVING_ROLE_CEILING = 962;
  * (the three dispatchers and the effect boot check), `meta-split-call.ts` (their dispatch: wrong tool,
  * preview, `confirmed_by_user`) and `meta-host.ts` (the server half both meta doors call, moved out of
  * `meta-call.ts` so neither imports the other).
+ * raised 1094 → 1095, measured 1095 (2026-10-20, an unknown predicate operator is refused): the one
+ * module named on `MIGRATE_CEILING` for that change, `entity/src/operator.ts`.
  */
-const WEB_ROLE_CEILING = 1094;
+const WEB_ROLE_CEILING = 1095;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

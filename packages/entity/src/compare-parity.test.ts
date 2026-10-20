@@ -134,6 +134,24 @@ describe('a uuid is a value, whatever case the operand is written in', () => {
   });
 });
 
+describe('an operator outside the vocabulary is one refusal in both drivers', () => {
+  // `andWhere(column, '>', n)` from a call nothing typechecked: memory answered NO rows and no
+  // error, Postgres refused with an `X_SQL_UNSAFE` that named the wrong mistake.
+  test.each(['>', '<>', 'GTE'])('%p', async (op) => {
+    const [memory, pg] = await both(async (db) => {
+      try {
+        await db.ledger.andWhere('seats', op as Op, 5).all();
+      } catch (error) {
+        return error;
+      }
+      return expect.unreachable('an unknown operator must be refused');
+    });
+    expect(pg).toMatchObject({ code: 'X_ENTITY_OPERATOR_UNKNOWN' });
+    expect(memory).toMatchObject({ code: 'X_ENTITY_OPERATOR_UNKNOWN' });
+    expect((memory as { fix: string }).fix).toBe((pg as { fix: string }).fix);
+  });
+});
+
 describe('the rule itself, on the pairs no stored row can hold', () => {
   test.each<[ColumnKind | undefined, unknown, unknown, number]>([
     // One driver's `int8` beside a literal, with no declared kind at all.

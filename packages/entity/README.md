@@ -465,6 +465,16 @@ visibility, never its page.
 | Refused | `min`/`max` on `text` (ordering is the database's collation there and JS code-unit order here); `avg` over money (every answer would be a silent rounding of a fraction of a minor unit — `sum()` and `count()` instead, dividing where the rounding is a decision); an amount covering more than one currency **or scale**; a money total past ±2^53 minor units |
 | `approximateCount()` | `reltuples` out of `pg_class`, constant time, because `count(*)` walks every visible row and no index can make it cheaper. The whole **table** — a filtered chain and every tenant-scoped entity are `X_APPROXIMATE_COUNT_FILTERED`, and `null` means the table has never been analysed |
 
+## The operator vocabulary
+
+`andWhere(column, op, value)` takes one of `OPERATORS` — `eq`, `neq`, `in`, `gt`, `gte`, `lt`,
+`lte`, `like`, `is-null`, `is-not-null`, `contains`, `contained-by`, `overlaps`, `has-key`,
+`matches` — and the `Operator` type is derived from that one list. An op outside it (`'>'`, `'GT'`)
+is `X_ENTITY_OPERATOR_UNKNOWN` on the `andWhere` line, and in both drivers for a hand-built plan —
+never an empty result. The `fix` names the operator meant: `>`→`gt`, `>=`→`gte`, `<`→`lt`,
+`<=`→`lte`, `=`→`eq`, `!=`/`<>`→`neq`. `isOperator(value)` is the same test, for an op read off
+the wire.
+
 ## Filtering inside a json() or arrayOf() column
 
 ```ts

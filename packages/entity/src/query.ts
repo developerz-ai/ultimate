@@ -6,18 +6,18 @@
 
 import type { Page } from '@ultimat3/core';
 import { pageOf } from '@ultimat3/core';
-import type { BatchIterator } from './batch';
-import { assertBatchable, batchIterator } from './batch';
+import { assertBatchable, type BatchIterator, batchIterator } from './batch';
 import { entityNow } from './clock';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
+import { checkedPredicate, type Operator } from './operator';
 import { assertFinitePageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import { preloaded, type RelatedTables } from './preload';
 import { type PreloadOptions, type PreloadRelation, preloadsWith } from './preload-ceiling';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
 import { copyRow, pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
-import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
+import type { Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 import { type Move, transitionRow } from './transition';
 import type {
   ColumnMap,
@@ -320,7 +320,7 @@ const builder = <Source, Row>(
       }),
 
     andWhere: (column: string, op: Operator, value?: unknown) =>
-      next({ where: [...state.where, { column, op, value }] }),
+      next({ where: [...state.where, checkedPredicate(entity.$name, column, op, value)] }),
 
     // Refused HERE as well as at the statement, because this is the line the author wrote: a chain
     // over an entity that declares nothing searchable can never produce a match, and the repair is

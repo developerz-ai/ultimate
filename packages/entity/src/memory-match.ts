@@ -14,6 +14,7 @@ import { instantMicros } from './instant';
 import { isNullish as isNull } from './is-null';
 import { likeMatches } from './like';
 import { DECIMAL_TEXT, numericOrder } from './numeric-compare';
+import { operatorUnknown } from './operator';
 import type { Predicate } from './tenancy';
 import type { ColumnKind } from './types';
 
@@ -188,6 +189,11 @@ export const matchesPredicate = <Row>(
       );
     case 'has-key':
       return jsonHasKey(actual, predicate.value);
+    // Unreachable for a typed call — and that is the case it exists for: an operator built from a
+    // string or cast past the type fell out of this switch as `undefined`, every row failed the
+    // filter and the read answered an empty list with no error. `pg-sql.ts` refuses identically.
+    default:
+      throw operatorUnknown(entity.$name, predicate.column, predicate.op);
   }
 };
 

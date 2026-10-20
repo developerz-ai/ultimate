@@ -11,40 +11,11 @@ import {
   tenancyRowMismatch,
   tenancyUnscoped,
 } from './errors';
+import type { Operator } from './operator';
 import type { ColumnMap } from './types';
 
-/**
- * The predicate vocabulary, closed. The last four are the CONTAINMENT half, added 2026-08-24: a
- * `json()` or `arrayOf()` column was declared, written and then unfilterable — the ten operators
- * before them could compare a column to a scalar and nothing else — so an app storing either had
- * to leave the query language for hand-written SQL, which is the one read path in this framework
- * with no tenancy guard on it. Their meaning is Postgres', written once in `containment.ts` and
- * read by both drivers.
- *
- * There is deliberately no jsonpath EXPRESSION operator beside them: `contains` already matches
- * nested structure (`data @> '{"a":{"b":1}}'`), and a path language inside the query language
- * would be a second way to ask one question.
- */
-export type Operator =
-  | 'eq'
-  | 'neq'
-  | 'in'
-  | 'gt'
-  | 'gte'
-  | 'lt'
-  | 'lte'
-  | 'like'
-  | 'is-null'
-  | 'is-not-null'
-  | 'contains'
-  | 'contained-by'
-  | 'overlaps'
-  | 'has-key'
-  // The FULL-TEXT half, added 2026-08-24. `column` is not a column: it is `SEARCH_PROPERTY`, and
-  // both drivers branch on the OPERATOR and read the entity's own `$search` — a `tsvector` is a
-  // physical column no row carries, so resolving it as a property would be a lie in two places.
-  // The operand is a search TERM, always bound, never parsed as tsquery syntax.
-  | 'matches';
+/** The vocabulary is `OPERATORS` (`operator.ts`) — one list, and this type is derived from it. */
+export type { Operator } from './operator';
 
 export interface Predicate {
   readonly column: string;
