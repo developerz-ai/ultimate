@@ -24,7 +24,7 @@ import { readVerifyFloor } from './verify-floor';
 import type { VerifyPart } from './verify-merge';
 import { coverageRiders, mergeParts, parsePart, VerifyMergeInputError } from './verify-merge';
 import { measurePace } from './verify-pace';
-import { stepStream } from './verify-progress';
+import { withVerifyProgress } from './verify-progress';
 import { runVerify } from './verify-run';
 import type { ShardSpec, Timings } from './verify-shard';
 import { assertShardable, parseShard, readTimings, VerifyShardInvalidError } from './verify-shard';
@@ -49,19 +49,22 @@ export const verifyCommand: CliCommand = {
     const only = readOnlySteps(ctx.args);
     const shard = await readShard(ctx.args, only);
     const isolate = flagBool(ctx.args, 'isolate') ? true : undefined;
-    const result = await runVerify(VERIFY_STEPS, {
-      root,
-      runner: ctx.runner,
-      env: ctx.env,
-      pace: measurePace(),
-      ...(workers === undefined ? {} : { workers }),
-      ...(only === undefined ? {} : { only }),
-      ...(shard === undefined ? {} : { shard }),
-      ...(isolate === undefined ? {} : { isolate }),
-      // `--json` prints one document when the run ends; a line per finished step on stderr is
-      // what a cancelled CI job's log ends on (#589). stdout stays the single document.
-      ...stepStream(ctx.args.json, writeErrorLine),
-    });
+    // Either render prints its verdict only when the run ends; the progress on stderr — a line per
+    // finished step, a heartbeat while one runs — is what a cancelled job's log ends on (#589) and
+    // what keeps a silence-killing harness from killing a healthy gate. stdout stays the document.
+    const result = await withVerifyProgress(writeErrorLine, (progress) =>
+      runVerify(VERIFY_STEPS, {
+        root,
+        runner: ctx.runner,
+        env: ctx.env,
+        pace: measurePace(),
+        ...(workers === undefined ? {} : { workers }),
+        ...(only === undefined ? {} : { only }),
+        ...(shard === undefined ? {} : { shard }),
+        ...(isolate === undefined ? {} : { isolate }),
+        ...progress,
+      }),
+    );
     return shard === undefined ? result : withShardData(result, shard);
   },
 };
