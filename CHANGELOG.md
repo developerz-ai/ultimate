@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.13.2 - 2026-10-21
+
 ### Fixed
 
 - **`DATABASE_POOL_MAX` caps every served role, not just a process that installed no client.** A
@@ -18,6 +22,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   role` on its first rollout. `startDb` now layers `DATABASE_POOL_MAX` from the env the boot was
   handed over the role default, for the primary and the standby alike; `poolMaxFromEnv(env)` is
   exported and takes that env.
+
+### Commits
+
+- fix(cli,db): DATABASE_POOL_MAX caps every served role (#818)
+- test(release-due): pin isDependabotOnly over a real git window + regenerated bun.lock fallback (#814)
+- docs(wiki): stop routing #450 recurrence evidence to a closed issue (#817)
 
 ## 27.13.1 - 2026-10-20
 
