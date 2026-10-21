@@ -4,7 +4,15 @@
 // Postgres costs seconds. The embedded database's `now()` is frozen with the test clock, so one
 // notification slot lasts until rows are aged out of it — which makes "one per slot" exact.
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from 'bun:test';
 import { ctxOf } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { JobDriver } from './driver';
@@ -27,6 +35,15 @@ import { startQueueWake } from './queue-wake';
 import { postgresSchedulerState } from './scheduler-pg';
 import { jobWorker } from './worker';
 import type { Worker } from './worker-types';
+
+/**
+ * The embedded Postgres is booted, and the whole jobs DDL applied, inside the FIRST `beforeEach` —
+ * so the suite's first test carries the boot on Bun's 5000ms default, which three of these booting
+ * at once in the `job` step's parallel run passed with nothing wrong. The boot's own budget is the
+ * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason.
+ */
+const PGLITE_BOOT_MS = 30_000;
+setDefaultTimeout(PGLITE_BOOT_MS);
 
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
