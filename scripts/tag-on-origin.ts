@@ -1,9 +1,14 @@
 #!/usr/bin/env bun
 // Read whether the release tag `v<version>` is on `origin`, in the one shape every consumer of that
 // fact already reads: the `TagProbe` answer `scripts/registry-audit.ts` asks for. PUBLISHING.md's
-// "the tag is annotated and on the remote" row was a raw `git ls-remote`, so a caller had to know
+// "the tag is on the remote" row was a raw `git ls-remote`, so a caller had to know
 // that `--exit-code` answers 0 for a match, 2 for none and anything else is NO answer — and a
 // caller who read that as "absent" would conclude a release never ran.
+//
+// This answers EXISTENCE only. An annotated tag is a separate fact — a lightweight one is on
+// origin too, and only the peeled `refs/tags/v<version>^{}` ref distinguishes them — so the
+// row PUBLISHING.md carries for it is its own `git ls-remote`. Widening this probe to mean
+// "annotated" would silently narrow `registry-audit`'s dispatch gate, which only needs the ref.
 //
 // Read-only, one version, no flags beyond `--json`. A probe that could not answer reports
 // `ok: false` with the finding and never a `false` onOrigin, because "git did not say" and "origin

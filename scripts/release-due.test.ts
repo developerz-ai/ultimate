@@ -206,14 +206,35 @@ describe('unit · release-due · the remote has the last word on a tag', () => {
   test('git unable to answer: the unreachable path is unchanged, not a false denial', async () => {
     const { dir } = await released();
     const asked: string[] = [];
+    // git declining to answer is NOT a denial and NOT a pass-over: `lastReleaseTag` refuses, so a
+    // window is never counted from a tag whose remote state is unknown.
     const tag = await lastReleaseTag(
       dir,
       recording(asked, () => undefined),
     );
-    expect(tag).toBeUndefined();
+    expect(typeof tag === 'object' && tag.code).toBe('X_RELEASE_TAG_UNREACHABLE');
     expect(asked).toEqual(['v1.0.0']);
-    const read = await decideAt(dir, 24, NOW, probed());
+    // The same no-answer through `decideAt`, driven by an undefined-returning probe: with `probed()`
+    // here this assertion would hold for a plain denial and prove nothing about the no-answer path.
+    const read = await decideAt(dir, 24, NOW, async () => undefined);
     expect('code' in read && read.code).toBe('X_RELEASE_TAG_UNREACHABLE');
+  });
+
+  test('a no-answer on the higher tag refuses, never falls through to the older one', async () => {
+    const { dir, git } = await released();
+    await git(['tag', '-a', 'v0.9.0', '-m', 'v0.9.0']);
+    await git(['tag', '-a', 'v2.0.0', '-m', 'v2.0.0']);
+    const asked: string[] = [];
+    // Candidates highest first: v2.0.0 is denied, v1.0.0 cannot be asked about, v0.9.0 is on origin.
+    // Returning v0.9.0 would count the window from a release older than the one in doubt — reporting
+    // a shipped release's commits as unshipped — so the no-answer stops the scan and refuses.
+    const tag = await lastReleaseTag(
+      dir,
+      recording(asked, (t) => (t === 'v0.9.0' ? true : t === 'v1.0.0' ? undefined : false)),
+    );
+    expect(typeof tag === 'object' && tag.code).toBe('X_RELEASE_TAG_UNREACHABLE');
+    // v0.9.0 is never reached: the no-answer on the higher candidate ends the question.
+    expect(asked).toEqual(['v2.0.0', 'v1.0.0']);
   });
 });
 

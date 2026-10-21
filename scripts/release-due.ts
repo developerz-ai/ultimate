@@ -33,6 +33,14 @@ const gitUnreadable = (asked: string, output: string): Finding => ({
   at: 'scripts/release-due.ts',
 });
 
+const unreachable = (): Finding => ({
+  code: 'X_RELEASE_TAG_UNREACHABLE',
+  cause:
+    'no vX.Y.Z tag that origin also holds is reachable from HEAD, so there is no last release to count commits from — a shallow or tagless clone, or a remote that could not be asked',
+  fix: 'git fetch --tags origin && bun run scripts/release-due.ts --json',
+  at: 'scripts/release-due.ts',
+});
+
 /**
  * The highest stable `v*` tag HEAD contains that the REMOTE also holds, without its `v`; undefined
  * when there is none; a finding when git itself could not answer, which is not the same as a
@@ -42,6 +50,11 @@ const gitUnreadable = (asked: string, output: string): Finding => ({
  * window counted from a tag the remote never saw would report a maintainer's release as shipping
  * commits all over again. `probe` is injected like every other seam here — a test that reached
  * `origin` would report the remote's state, not this checkout's.
+ *
+ * `undefined` from the probe STOPS the scan; it does not step over the candidate. Whether the
+ * higher tag is on origin is then unknown, and every tag below it is a DIFFERENT release whose
+ * window this cannot honestly count — falling through would answer the question from a release
+ * older than the one in doubt, a window stretched across a release the maintainer already shipped.
  */
 export async function lastReleaseTag(
   root: string,
@@ -53,8 +66,8 @@ export async function lastReleaseTag(
     const version = STABLE_TAG.exec(line.trim())?.[1];
     if (version === undefined) continue;
     const onRemote = await probe(`v${version}`);
-    // `undefined` is git's no-answer, not a denial: keep looking, and let `unreachable()` below
-    // speak when no candidate at all was confirmed.
+    // git's no-answer, not a denial: refuse rather than fall through to an older release.
+    if (onRemote === undefined) return unreachable();
     if (onRemote === true) return version;
   }
   return undefined;
@@ -90,14 +103,6 @@ export function parseWindowLog(output: string): readonly WindowCommit[] {
     ];
   });
 }
-
-const unreachable = (): Finding => ({
-  code: 'X_RELEASE_TAG_UNREACHABLE',
-  cause:
-    'no vX.Y.Z tag that origin also holds is reachable from HEAD, so there is no last release to count commits from — a shallow or tagless clone',
-  fix: 'git fetch --tags origin && bun run scripts/release-due.ts --json',
-  at: 'scripts/release-due.ts',
-});
 
 /**
  * The commits since `v<tagged>`, or the refusal when git could not list them. A different code
