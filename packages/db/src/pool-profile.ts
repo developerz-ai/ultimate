@@ -114,8 +114,10 @@ export const POOL_MAX_ENV = 'DATABASE_POOL_MAX';
  * rather than falling back: a fleet that ignored the number it was given is the failure the
  * variable exists to prevent, and it would only be found in `pg_stat_activity` at 3am.
  */
-export function poolMaxFromEnv(): Partial<PoolProfile> {
-  const raw = process.env[POOL_MAX_ENV];
+export function poolMaxFromEnv(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Partial<PoolProfile> {
+  const raw = env[POOL_MAX_ENV];
   if (raw === undefined || raw.trim() === '') return {};
   const max = Number(raw);
   if (!Number.isSafeInteger(max) || max < 1) throw poolMaxInvalid(raw);

@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 import { getIdempotencyStore } from '@ultimat3/action';
-import { REPLICA_URL_ENV, raw, setDbClient, withTransaction } from '@ultimat3/db';
+import { POOL_MAX_ENV, REPLICA_URL_ENV, raw, setDbClient, withTransaction } from '@ultimat3/db';
 import { configureHttp, resetHttpConfig } from '@ultimat3/http';
 import { eventBus, jobDriver, resetJobDriver } from '@ultimat3/jobs';
 import { resolveServices } from './runtime-bindings';
@@ -166,5 +166,25 @@ describe('unit · which environment the boot builds its client from', () => {
     expect(attached.replica).toBeDefined();
     // And the ambient client is the PAIR, which is the object a repository reads through.
     expect(attached.client).not.toBe(attached.replica);
+  });
+
+  // The served roles install this client, so `defaultClient()` never runs and `DATABASE_POOL_MAX`
+  // had no other reader: a fleet capped at 4 per web pod ran 20, and its first roll was refused
+  // `53300 too many connections for role`.
+  test('DATABASE_POOL_MAX from the boot env caps the primary and the standby', () => {
+    const services = resolveServices(ROOT, EXTERNAL);
+    const started = startDb(services, {
+      ...EXTERNAL,
+      [POOL_MAX_ENV]: '4',
+      [REPLICA_URL_ENV]: STANDBY,
+    });
+    expect('profile' in started.client && started.client.profile.max).toBe(4);
+    expect(started.replica?.profile.max).toBe(4);
+  });
+
+  test('an unset DATABASE_POOL_MAX keeps the role default', () => {
+    const services = resolveServices(ROOT, EXTERNAL);
+    const started = startDb(services, { ...EXTERNAL });
+    expect('profile' in started.client && started.client.profile.max).toBeGreaterThan(4);
   });
 });
