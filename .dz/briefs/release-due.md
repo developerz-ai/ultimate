@@ -26,11 +26,17 @@ Title `Release <next>`. Body, verbatim steps for the box that takes it:
    `### Changed` line naming each bumped runtime dependency and its new range first.
 3. Run the `data.command` it printed (`bun run scripts/release.ts --version <next>`), then
    `bun run verify`.
-4. One PR, `chore: release <next>`, nothing else in it. It merges on green like any PR.
+4. One PR, `chore: release <next>`, nothing else in the diff. It merges on green like any PR.
 5. Merging it is the release: `.github/workflows/release-tag.yml` tags `v<next>` (annotated),
    publishes the GitHub Release and dispatches `release.yml`. Never tag, never `gh release create`,
-   never `npm publish` by hand — `PUBLISHING.md`.
+   never `npm publish` by hand — `PUBLISHING.md`. The canonical close is the workflow's own
+   `close the release ask` step — by the job that did the tag, on the exact title
+   `Release <next>`. The PR body carrying `Fixes #<ask>` is a backstop, not the path:
+   `scripts/release.ts` prints the ask link when one is open.
 
-Never file a second ask while one titled `Release <next>` is open. The box reads that with
+Never file a second ask while one titled exactly `Release <next>` is open — byte-for-byte:
+`release <v> did not publish`, `Release <v> (#N)`, `Release <other>` are not twins (the version
+is the whole title, no trailing prose). The box fetches candidates with
 `gh issue list --state open --search "Release <next> in:title"`, where `<next>` is `data.next` from
-the run above — substitute the version before running it.
+the run above — substitute the version before running it — then post-filters them by exact title
+match.

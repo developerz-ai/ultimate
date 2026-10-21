@@ -21,7 +21,7 @@ through here.
 ## What to file
 
 For each unhealthy signal, one ask, unless an open issue already names it. Its title names the
-signal (`main is red at <sha>`, `release <v> did not publish`, `Dependabot #<n> stuck since <date>`).
+signal (`main is red at <sha>`, `publish failed: <v>`, `Dependabot #<n> stuck since <date>`).
 Its body holds the command, its output and the failing run's URL. A red `main` comes first:
 nothing releases from it.
 
