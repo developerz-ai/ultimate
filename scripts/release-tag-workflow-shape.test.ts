@@ -101,11 +101,15 @@ describe('unit · release-tag.yml starts only on a green push run of a release c
 });
 
 describe('unit · release-tag.yml runs no repository code beside a write token', () => {
-  test('exactly two jobs; read-only at the top and in prepare; cut writes contents and actions', () => {
+  test('exactly two jobs; read-only at the top and in prepare; cut writes contents, actions and issues', () => {
     expect(Object.keys(workflow.jobs ?? {})).toEqual(['prepare', 'cut']);
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(job('prepare').permissions).toEqual({ contents: 'read' });
-    expect(job('cut').permissions).toEqual({ contents: 'write', actions: 'write' });
+    expect(job('cut').permissions).toEqual({
+      contents: 'write',
+      actions: 'write',
+      issues: 'write',
+    });
     for (const name of ['prepare', 'cut']) expect(job(name)['timeout-minutes']).toBeGreaterThan(0);
   });
 
@@ -156,5 +160,24 @@ describe('unit · release-tag.yml cuts the release the one way this repo cuts it
       /gh workflow run release\.yml --ref "v\$\{VERSION\}" -f version="\$\{VERSION\}"/,
     );
     expect(at(cut, 'gh release create')).toBeLessThan(at(cut, 'gh workflow run release.yml'));
+  });
+
+  // The canonical close is the workflow's own step — by the job that did the tag, on the EXACT
+  // title — not a PR body's `Fixes #<n>` (backstop). Tag → release → dispatch → close, so a
+  // dispatch failure leaves the ask open for a human to retry. The step must filter `gh issue
+  // list`'s result with `.title ==`, else `Release <v> (#N)` and `Release <other>` look like
+  // twins and get closed by accident.
+  test('cut closes the release-due ask on a successful tag, by exact title', () => {
+    const close = stepsOf('cut').find((step) => {
+      if (step.if !== "steps.tag.outputs.created == 'true'") return false;
+      if (step.run === undefined) return false;
+      const run = step.run;
+      return /gh issue list/.test(run) && /\.title\s*==/.test(run) && /gh issue close/.test(run);
+    });
+    expect(close).toBeDefined();
+    // The existing "no uses, no bun" assertions cover this step's shape too.
+    expect(close?.uses).toBeUndefined();
+    // Order: dispatch must precede close, so a dispatch failure leaves the ask open.
+    expect(at(cut, 'gh workflow run release.yml')).toBeLessThan(at(cut, 'gh issue close'));
   });
 });
