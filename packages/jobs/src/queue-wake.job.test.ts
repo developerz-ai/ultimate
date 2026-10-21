@@ -40,16 +40,22 @@ import type { Worker } from './worker-types';
  * The embedded Postgres is booted, and the whole jobs DDL applied, inside the FIRST `beforeEach` —
  * so the suite's first test carries the boot on Bun's 5000ms default, which three of these booting
  * at once in the `job` step's parallel run passed with nothing wrong. The boot's own budget is the
- * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason.
+ * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason — and
+ * it must sit ABOVE the boot, never under it: bun cancels nothing, so a hook that times out
+ * mid-boot completed later anyway and registered these taps a SECOND time, doubling every payload
+ * the rest of the file read. `test-database.test.ts` budgets the same WASM compile plus initdb
+ * generously; this box measures the boot alone at 32-42s (2026-10).
  */
-const PGLITE_BOOT_MS = 30_000;
+const PGLITE_BOOT_MS = 120_000;
 setDefaultTimeout(PGLITE_BOOT_MS);
 
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
-/** How early a woken job must NOT have started, in the arm that has no wake at all. */
-const SOON_MS = 150;
+/** Observation window with no wake: still below that arm's 400 ms poll. */
+const SOON_MS = 250;
+/** Completion budget, separate from the latency assertion, for a loaded runner. */
+const BUDGET_MS = 2_000;
 /**
  * The ceiling those loops idle at, and so the poll's own guarantee — `IDLE_POLL_CEILING_MS` in
  * `idle-backoff.ts`, which is what bounds a job committed by another process when no notification
@@ -62,7 +68,9 @@ const POLL_CEILING_MS = 2_000;
  * `SOON_MS` (150 ms), which went red on the `job` step — nineteen files over three workers, four
  * PGlite instances on one box. Four copies of this file at once measured the wake path at 206 ms.
  * So the promise asserted is the one that survives a loaded runner — the wake HALVES the poll's
- * worst case — and not a figure an idle machine produced.
+ * worst case — and not a figure an idle machine produced. Both loops idle at POLL_CEILING_MS
+ * first, so only a wake lands inside this bound. The mechanism is also pinned deterministically
+ * by the wake tests and idle-cost.test.ts's statement counts.
  */
 const WAKE_BOUND_MS = 1_000;
 
@@ -308,8 +316,8 @@ describe('the loops it wakes', () => {
     const other = postgresJobDriver({ executor: pg.executor });
     const before = performance.now();
     await enqueue(other, handle.name, 'cross-process');
-    await until(() => started.length === 1, 2_000);
-    // The wait in hand was the whole ceiling.
+    await until(() => started.length === 1, BUDGET_MS);
+    // The wait in hand was the whole ceiling — only a wake lands inside WAKE_BOUND_MS.
     expect((started[0] ?? 0) - before).toBeLessThan(WAKE_BOUND_MS);
   });
 
@@ -381,7 +389,8 @@ describe('the loops it wakes', () => {
         stagedAt: Date.now(),
       });
     });
-    await until(() => started.length === 1, 2_000);
+    await until(() => started.length === 1, BUDGET_MS);
+    // Only a wake lands inside WAKE_BOUND_MS: the relay's poll sits at POLL_CEILING_MS.
     expect((started[0] ?? 0) - before).toBeLessThan(WAKE_BOUND_MS);
   });
 

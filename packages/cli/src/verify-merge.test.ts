@@ -74,13 +74,19 @@ describe('unit · x verify merge refuses an incomplete gate', () => {
       { command: 'bun run verify' },
     );
     const absent = (result.steps ?? []).flatMap((step) => step.findings);
-    expect(absent.map((finding) => finding.at)).toEqual(['lint', 'unit', 'live']);
+    // The gate step name moved off `at` (a path an agent can open) onto `meta.step` — the
+    // same carrier `X_VERIFY_STEP_TIMEOUT` already uses (`verify-stalled.ts:180-197`).
+    expect(absent.map((finding) => finding.meta?.['step'])).toEqual(['lint', 'unit', 'live']);
     for (const finding of absent) {
       expect(finding.code).toBe('X_VERIFY_MERGE_INCOMPLETE');
       expect(finding.cause).toContain('never ran or never uploaded');
       expect(finding.cause).toContain('not a failure it reported');
       expect(finding.fix).toStartWith('bun run verify merge parts/*.json --json');
       expect(finding.fix).toContain('gh run rerun <run-id> --failed');
+      // The step name is on `meta.step`, and `at` is NOT a gate step name any more — its
+      // absence is the second assertion: the old shape cannot come back across a field.
+      expect(finding.at).toBeUndefined();
+      expect(finding.meta?.['step']).toBeDefined();
     }
   });
 

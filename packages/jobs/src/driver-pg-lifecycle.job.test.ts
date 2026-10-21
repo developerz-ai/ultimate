@@ -2,7 +2,7 @@
 // proves the logic, this proves the STATEMENTS — the claim that buries a poison row, the cancel
 // fenced on live states, the one-statement requeue. Opt-in (`.job.`): booting Postgres costs seconds.
 
-import { afterAll, afterEach, describe } from 'bun:test';
+import { afterAll, afterEach, describe, setDefaultTimeout } from 'bun:test';
 import type { JobDriver } from './driver';
 import { driverAnswerScenarios, type HoldKeys } from './driver-answers-fixture';
 import { driverLifecycleScenarios } from './driver-lifecycle-fixture';
@@ -12,6 +12,14 @@ import { resetJobs } from './job';
 import type { OperatorHarness } from './operator-surface-fixture';
 import { postgresSchedulerState } from './scheduler-pg';
 import { workerExhaustedScenarios } from './worker-exhausted-fixture';
+
+/**
+ * The FIRST scenario carries the embedded Postgres boot — `embeddedPg()` memoizes one per process —
+ * and the boot alone is ~32s here (2026-10), which put this file's first two scenarios past Bun's
+ * 5000ms default and named them in the `job` step. The ceiling `queue-wake.job.test.ts` pins.
+ */
+const PGLITE_BOOT_MS = 120_000;
+setDefaultTimeout(PGLITE_BOOT_MS);
 
 /** `count` finished rows in one statement, newest last in `g`. */
 const SEED = `

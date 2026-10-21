@@ -5,7 +5,12 @@
 import type { Bump } from '../release';
 import { nextVersion } from '../release';
 import { BREAKING_ENTRY } from './changelog-format';
-import { RELEASE_SUBJECT } from './release-subject';
+import { openReleaseAsk, RELEASE_SUBJECT } from './release-subject';
+
+export type { OpenAsk } from './release-subject';
+// The dedupe lives beside the `ASK_SUBJECT` it matches on (`release-subject.ts`); re-exported so
+// this file stays the one module the release-due readers import it from.
+export { openReleaseAsk } from './release-subject';
 
 /** Why a release is not due. A closed list: the bot and the docs branch on these words. */
 export const NOT_DUE_REASONS = [
@@ -50,6 +55,9 @@ export interface DueInput {
   readonly settleHours: number;
   /** The package a path ships in, or undefined — `release-due-ships.ts`. */
   readonly ships: (path: string) => string | undefined;
+  /** Titles of currently OPEN GitHub issues, for the release-due dedupe. Optional: a caller with
+   * no issue list simply gets no twin. Only ever read on a `due` decision. */
+  readonly openIssueTitles?: readonly string[];
 }
 
 export interface DueDecision {
@@ -196,13 +204,15 @@ export function releaseDue(input: DueInput): DueDecision {
       dueAt,
     };
   }
+  const ask = openReleaseAsk(input.openIssueTitles ?? [], next);
+  const twinNote = ask.open ? `; an ask already open: ${ask.twin}` : '';
   return {
     ...base,
     bump,
     next,
     notes,
     due: true,
-    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, unreleased for ${input.settleHours}h or more: ${bump} to ${next}`,
+    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, the oldest shipping commit is ${Math.floor((input.nowMs - oldest) / 3_600_000)}h or older: ${bump} to ${next}${twinNote}`,
     command: `bun run scripts/release.ts --version ${next}`,
   };
 }

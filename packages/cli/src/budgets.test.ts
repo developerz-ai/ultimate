@@ -69,13 +69,35 @@ const jsBytesOf = async (html: string, out: string): Promise<number> =>
 
 describe('unit · budgets', () => {
   test('a declared JS budget with no measurement is a finding, not a pass', () => {
-    const findings = checkBudgets(manifestOf(route('/pricing', { js: '20kb' })), undefined);
+    const findings = checkBudgets(
+      manifestOf(route('/pricing', { js: '20kb' })),
+      undefined,
+      [],
+      // The locator is the file an agent opens, never the URL; the route is still reachable
+      // under `--json` in `meta.route`, and the cause already spells it for the terminal.
+      (url) => (url === '/pricing' ? 'apps/web/site/pricing/page.tsx' : undefined),
+    );
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
     expect(findings[0]?.cause).toContain('/pricing');
     expect(findings[0]?.cause).toContain('JS');
     expect(findings[0]?.cause).toContain(BUILD_STATS_FILE);
     expect(findings[0]?.fix).toBe('x build --target static --json && x verify --json');
-    expect(findings[0]?.at).toBe('/pricing');
+    expect(findings[0]?.at).toBe('apps/web/site/pricing/page.tsx');
+    expect(findings[0]?.meta?.['route']).toBe('/pricing');
+  });
+
+  // A route no file declares has no path to open, so `at` is omitted rather than filled with the
+  // URL — and the route is not lost for that: `meta.route` carries it either way.
+  test('a budgeted route no file declares carries no locator, and still names its route in meta', () => {
+    const findings = checkBudgets(
+      manifestOf(route('/pricing', { js: '20kb' })),
+      undefined,
+      [],
+      () => undefined,
+    );
+    expect(findings[0]?.at).toBeUndefined();
+    expect(findings[0]?.meta?.['route']).toBe('/pricing');
+    expect(findings[0]?.cause).toContain('/pricing');
   });
 
   // Two conditions, two instructions. "No build has run" is closed by one command for every route
@@ -112,6 +134,18 @@ describe('unit · budgets', () => {
     );
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_EXCEEDED']);
     expect(findings[0]?.cause).toContain('/dash -> chart.ts');
+  });
+
+  // `at` is the same file the fix edits — one place, not two that can drift apart.
+  test('the locator and the fix name one file', () => {
+    const findings = checkBudgets(
+      manifestOf(route('/dash', { js: '10kb' })),
+      stats({ path: '/dash', jsBytes: 40_961 }),
+      [],
+      () => 'apps/web/app/dash/page.tsx',
+    );
+    expect(findings[0]?.at).toBe('apps/web/app/dash/page.tsx');
+    expect(findings[0]?.fix).toContain('edit apps/web/app/dash/page.tsx');
   });
 
   test('the JS fix is the paste: the route file, the next whole kb, the measured bytes and a why', () => {
@@ -340,8 +374,11 @@ describe('unit · an ABSENT stats file is every budget unmeasured, not nothing t
       route('/about'),
     );
     // The step hands `checkBudgets` exactly this — the reader's answer, not a stand-in for it.
+    // No route file declares these, so `at` is absent and the routes ride in `meta.route`: the
+    // one-per-budgeted-route count is still exactly what the assertion below holds.
     const findings = checkBudgets(manifest, await readBuildStats(root));
-    expect(findings.map((finding) => finding.at)).toEqual(['/', '/dash']);
+    expect(findings.map((finding) => finding.meta?.['route'])).toEqual(['/', '/dash']);
+    expect(findings.map((finding) => finding.at)).toEqual([undefined, undefined]);
     expect(new Set(findings.map((finding) => finding.code))).toEqual(
       new Set(['X_BUDGET_UNMEASURED']),
     );

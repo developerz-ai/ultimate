@@ -22,7 +22,10 @@ import { raw } from './sql';
 const MIGRATIONS = join(import.meta.dir, '../../../examples/dummy/packages/db/migrations');
 const DUMPED_TABLES = join(import.meta.dir, '../../../examples/dummy/packages/db/schema/04_tables');
 const DOWN = /^[ \t]*--[ \t]*down[ \t]*$/im;
-const BOOT_MS = 60_000;
+// Boot, every reference-app migration, a dump, the load and a second dump: ~40s quiet (2026-10),
+// past 60s the time the gate ran this step three-wide. In line with the WASM-boot budget
+// `test-database.test.ts` pins, this ceiling is a hang detector sitting above the real cost.
+const BOOT_MS = 120_000;
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;

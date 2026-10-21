@@ -15,8 +15,9 @@ import { MIGRATIONS_DIR } from './migrations';
 import { migratedDatabase } from './test-database';
 import { TEST_DB_DIR } from './test-db-template';
 
-// A WASM compile plus an initdb per template, against bun's 5 s default: a hang detector.
-const PGLITE_BOOT_MS = 120_000;
+// A WASM compile plus an initdb per template — four opens, ~110s on a quiet runner (2026-10) —
+// against bun's 5 s default: a hang detector, so the ceiling stays but sits above the real cost.
+const PGLITE_BOOT_MS = 300_000;
 
 const root = mkdtempSync(join(tmpdir(), 'x-test-database-'));
 afterAll(() => rmSync(root, { recursive: true, force: true }));

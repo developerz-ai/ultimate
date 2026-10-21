@@ -5,13 +5,14 @@
 
 import { describe, expect, test } from 'bun:test';
 import { REQUIRED_BUN } from './app-root';
-import { findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
+import { findingKey, findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
 import type { CiRun } from './ci-runs';
 import { isFailed, latestPerWorkflow, RUN_FIELDS } from './ci-runs';
 import { CI_MESSAGE_KEYS, ciCommand, RUN_LOOKBACK, TAIL_LINES } from './cmd-ci';
 import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
 import { messageKeys } from './messages';
+import type { Finding } from './output';
 import { parseArgs } from './parse';
 
 const line = (job: string, stamp: string, text: string, bom = false): string =>
@@ -321,5 +322,94 @@ describe('unit · x ci is triage in one command', () => {
     );
     expect(error.code).toBe('X_CI_RUN_NOT_FOUND');
     expect(error.fix).toContain('--branch');
+  });
+});
+
+/**
+ * One code, one cause, and a locator that differs. `ci-log`'s dedupe already keys on `at` and
+ * `meta.step` (`ci-log.ts:114`); `cmd-ci.ts`'s second dedupe — the one that folds findings across
+ * jobs and across runs — used to key on code and cause alone, so it read the second as a copy of
+ * the first and dropped it. The gate printed two problems and `x ci` reported one.
+ */
+describe('unit · x ci dedupes a finding by everything the gate printed about it', () => {
+  /** The two blocks verbatim, as `renderFinding` wrote them in the failing job. */
+  const BLOCK = [
+    line('package (cli)', '1:30.9733457', '  X_COVERAGE_BELOW (packages/cli)'),
+    line('package (cli)', '1:30.9736546', '    cause: lines below the floor'),
+    line('package (cli)', '1:30.9739891', '    fix:   cover the gap with tests beside the source'),
+    line('package (cli)', '1:31.9733457', '  X_COVERAGE_BELOW (packages/testing)'),
+    line('package (cli)', '1:31.9736546', '    cause: lines below the floor'),
+    line('package (cli)', '1:31.9739891', '    fix:   cover the gap with tests beside the source'),
+  ].join('\n');
+
+  const ONE_JOB = {
+    name: 'package (cli)',
+    status: 'completed',
+    conclusion: 'failure',
+    url: 'u/cli',
+    steps: [{ name: 'test + coverage', conclusion: 'failure', number: 2 }],
+  };
+
+  /** The same `gh` answers as `failing`, over a log of this test's own choosing. */
+  const answering = (log: string): Runner =>
+    ghTable((joined) => {
+      if (joined.startsWith('gh repo view')) return REPO;
+      if (joined.startsWith('git rev-parse')) return 'feat/x\n';
+      if (joined.includes('--log-failed')) return log;
+      if (joined.startsWith('gh run list')) return JSON.stringify([RUN_ROW]);
+      if (joined.startsWith('gh run view')) return JSON.stringify({ ...RUN_ROW, jobs: [ONE_JOB] });
+      return undefined;
+    }).runner;
+
+  test('the same code and cause at two paths are two findings, not one copy of the first', async () => {
+    // The command-level round-trip: `findingsFrom` reads both blocks out of one log, and the
+    // across-job dedupe must hand both back. A key of `code cause` alone merges them.
+    const result = await ciCommand.run(contextFor(['ci'], answering(BLOCK)));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_COVERAGE_BELOW', 'packages/cli'],
+      ['X_COVERAGE_BELOW', 'packages/testing'],
+    ]);
+    expect(result.findings).toHaveLength(2);
+  });
+
+  // Same code, same cause, no path — the pair that is indistinguishable unless `meta.step` is in
+  // the key. `X_VERIFY_MERGE_INCOMPLETE` is the shape the gate really writes: a merge gap per
+  // missing step, each with a step name in the head and none in `at`.
+  test('the same code and cause in two gate steps are two findings too', async () => {
+    const steps = [
+      line('verify', '0:10.0000000', '  X_VERIFY_MERGE_INCOMPLETE [step=lint]'),
+      line('verify', '0:10.1000000', '    cause: its result never arrived'),
+      line('verify', '0:10.2000000', '    fix:   gh run rerun <run-id> --failed'),
+      line('verify', '0:11.0000000', '  X_VERIFY_MERGE_INCOMPLETE [step=manifest]'),
+      line('verify', '0:11.1000000', '    cause: its result never arrived'),
+      line('verify', '0:11.2000000', '    fix:   gh run rerun <run-id> --failed'),
+    ].join('\n');
+    const result = await ciCommand.run(contextFor(['ci'], answering(steps)));
+    expect(result.findings?.map((finding) => finding.meta?.['step'])).toEqual(['lint', 'manifest']);
+  });
+
+  // Both halves of the fix, in one assertion: what ci-log keeps apart, the command keeps apart,
+  // and what is genuinely the same block is still folded to one. A key that took every field
+  // would stop folding anything and report a re-run twice.
+  test('a repeated block is still one finding, and the key is the one ci-log used', () => {
+    const pair = (at: string, step: string): Finding => ({
+      code: 'X_VERIFY_STEP_TIMEOUT',
+      cause: 'step "unit" passed its 300000ms deadline',
+      fix: 'bun test packages/cli',
+      at,
+      meta: { step },
+    });
+    const same = pair('packages/cli/src/output.test.ts', 'unit');
+    // The `fix:` line is not in the key: a re-run reprints the whole block, and `x ci` fences it
+    // differently per job, so keying on it would report the re-run twice.
+    expect(findingKey(same)).toBe(findingKey({ ...same, fix: 'a re-run wrote another fix line' }));
+    expect(findingKey(same)).not.toBe(findingKey(pair('packages/cli/src/other.test.ts', 'unit')));
+    expect(findingKey(same)).not.toBe(findingKey(pair('packages/cli/src/output.test.ts', 'live')));
+    // An absent locator is the empty string, not the word "undefined" — and it is the same
+    // absence `findingsFrom` reconstructs for a head the renderer wrote without one.
+    const bare: Finding = { code: 'X_A', cause: 'c', fix: 'f' };
+    expect(findingKey(bare)).toBe('X_A\0c\0\0');
+    expect(findingKey({ ...bare, meta: { step: ['lint'] } })).toBe('X_A\0c\0\0');
   });
 });

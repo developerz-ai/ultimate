@@ -128,8 +128,13 @@ export function parsePart(file: string, text: string, command: string = GATE_COM
   };
 }
 
-/** A gap finding, with a fix spelled for the entry that raised it. */
-type Gap = (cause: string, at?: string) => Finding;
+/**
+ * A gap finding, with a fix spelled for the entry that raised it. The second positional is the
+ * gate `step` name the merge is naming — matching `X_VERIFY_STEP_TIMEOUT`'s precedent at
+ * `verify-stalled.ts:180-197`, where a timeout finding carries the step name in `meta.step`,
+ * never in `at` (which is, repo-wide, a path an agent can open — `output.ts:24-25`).
+ */
+type Gap = (cause: string, step: string, at?: string) => Finding;
 
 /**
  * The gap kinds a merge can find. `present` is a document that arrived and disagrees with the
@@ -149,13 +154,17 @@ const NEVER_ARRIVED =
 const gapsFor = (command: string): Gaps => {
   const finding =
     (fix: string): Gap =>
-    (cause, at) => ({
-      code: 'X_VERIFY_MERGE_INCOMPLETE',
-      cause,
-      fix,
-      docs: ERROR_DOCS_URL,
-      ...(at === undefined ? {} : { at }),
-    });
+    (cause, step, at) => {
+      const meta: { readonly step: string } = { step };
+      return {
+        code: 'X_VERIFY_MERGE_INCOMPLETE',
+        cause,
+        fix,
+        docs: ERROR_DOCS_URL,
+        ...(at === undefined ? {} : { at }),
+        meta,
+      };
+    };
   return {
     present: finding(
       `${command} merge parts/*.json --json   # after every CI job uploaded its part`,
@@ -354,7 +363,12 @@ export function mergeParts(
     part.steps
       .filter((step) => !declared.includes(step.name))
       .map((step) =>
-        kinds.present(`${part.file} reports "${step.name}", which x verify does not run`),
+        // The unknown step's own NAME rides on `meta.step` — it is the only locator here,
+        // never a path. `part.file` is already in the cause.
+        kinds.present(
+          `${part.file} reports "${step.name}", which x verify does not run`,
+          step.name,
+        ),
       ),
   );
   const steps = declared.map((name) =>
