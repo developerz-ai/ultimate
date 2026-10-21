@@ -5,7 +5,12 @@
 import type { Bump } from '../release';
 import { nextVersion } from '../release';
 import { BREAKING_ENTRY } from './changelog-format';
-import { ASK_SUBJECT, RELEASE_SUBJECT } from './release-subject';
+import { openReleaseAsk, RELEASE_SUBJECT } from './release-subject';
+
+export type { OpenAsk } from './release-subject';
+// The dedupe lives beside the `ASK_SUBJECT` it matches on (`release-subject.ts`); re-exported so
+// this file stays the one module the release-due readers import it from.
+export { openReleaseAsk } from './release-subject';
 
 /** Why a release is not due. A closed list: the bot and the docs branch on these words. */
 export const NOT_DUE_REASONS = [
@@ -124,29 +129,6 @@ function changelogNotes(unreleased: string, shipping: readonly ShippingCommit[])
   ];
 }
 
-/** The release-due dedupe: `.dz/briefs/release-due.md` files one ask titled
- * `Release <next>` and never a second while one is open. A twin is an OPEN issue whose title is
- * exactly `Release <version>` — a failed-publish issue titled `Release 27.10.1 failed to publish`
- * does not match `ASK_SUBJECT`, so it never suppresses the real ask. Pure over the titles the
- * caller hands it. */
-export interface OpenAsk {
-  /** Whether any open issue is already an ask for `targetVersion`. */
-  readonly open: boolean;
-  /** The one open title that is a true twin, when one exists. */
-  readonly twin?: string;
-}
-
-export function openReleaseAsk(openIssueTitles: readonly string[], targetVersion: string): OpenAsk {
-  // ASK_SUBJECT is anchored at both ends, so a title it accepts is exactly `Release <version>`
-  // and the version is title.slice("Release ".length). Compare the whole version, never a prefix:
-  // `Release 27.10.10` also starts with `27.10.1` and is a different release.
-  const twin = openIssueTitles.find((title) => {
-    if (!ASK_SUBJECT.test(title)) return false;
-    return title.slice('Release '.length).trimEnd() === targetVersion;
-  });
-  return twin === undefined ? { open: false } : { open: true, twin };
-}
-
 export function shippingCommits(input: DueInput): {
   readonly shipping: readonly ShippingCommit[];
   readonly inert: number;
@@ -230,7 +212,7 @@ export function releaseDue(input: DueInput): DueDecision {
     next,
     notes,
     due: true,
-    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, unreleased for ${input.settleHours}h or more: ${bump} to ${next}${twinNote}`,
+    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, the oldest shipping commit is ${Math.floor((input.nowMs - oldest) / 3_600_000)}h or older: ${bump} to ${next}${twinNote}`,
     command: `bun run scripts/release.ts --version ${next}`,
   };
 }

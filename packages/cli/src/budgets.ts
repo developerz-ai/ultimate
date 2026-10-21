@@ -117,27 +117,34 @@ function exceededJsFix(url: string, file: string | undefined, bytes: number): st
  * run and could not weigh this one, which is `PrerenderReport.unmeasured`'s question and not a
  * second build's. Reporting the first as the second is what sends a reader to re-run a build that
  * already did everything it was going to do.
+ *
+ * `fileOf` names the file an agent opens to fix this route, exactly as it does for
+ * `X_BUDGET_EXCEEDED`: `Finding.at` is a PATH, never a URL (`output.ts`, `verify-checks.ts`),
+ * so the route rides beside it in `meta.route` and every cause below still spells the URL.
  */
 function unmeasuredFinding(
   url: string,
   declared: string,
   stats: BuildStats | undefined,
   unmeasured: readonly UnmeasuredRoute[],
+  fileOf: RouteFileOf,
 ): Finding {
+  const file = fileOf(url);
   if (stats?.stale === true) {
     return {
       code: 'X_BUDGET_UNMEASURED',
       cause: `${url} declares a ${declared} budget and ${BUILD_STATS_FILE} was written by an earlier measurement rule than this gate's (v${String(BUILD_STATS_RULES)}), so its numbers are not this gate's to read`,
       fix: 'x build --target static --json && x verify --json',
       docs: ERROR_DOCS_URL,
-      at: url,
+      ...(file === undefined ? {} : { at: file }),
+      meta: { route: url },
     };
   }
   // A build ran: the report's account of this route decides the instruction
   // (`budgets-unmeasured.ts`) — its own code, an actor edit, or the report.
   if (stats !== undefined) {
     const entry = unmeasured.find((one) => one.path === url);
-    return builtUnmeasuredFinding(url, declared, BUILD_STATS_FILE, entry);
+    return builtUnmeasuredFinding(url, declared, BUILD_STATS_FILE, entry, file);
   }
   return {
     code: 'X_BUDGET_UNMEASURED',
@@ -147,7 +154,8 @@ function unmeasuredFinding(
     // the one caller of `writeBuildStats`.
     fix: 'x build --target static --json && x verify --json',
     docs: ERROR_DOCS_URL,
-    at: url,
+    ...(file === undefined ? {} : { at: file }),
+    meta: { route: url },
   };
 }
 
@@ -161,8 +169,9 @@ function unmeasuredFinding(
  * and can be absent for the same reason; with it, a route whose measurement failed on a code in
  * `REPORTED_BY_OWN_CODE` (`budgets-unmeasured.ts`) is reported under that code, with the build's own cause and fix.
  *
- * `fileOf` names the file an `X_BUDGET_EXCEEDED` fix edits: the step runs after the app loaded,
- * so render's route table already holds it. A test hands its own.
+ * `fileOf` names the file an agent opens for a route's finding — the locator `Finding.at` carries
+ * and the file `X_BUDGET_EXCEEDED`'s fix edits: the step runs after the app loaded, so render's
+ * route table already holds it. A test hands its own.
  */
 export function checkBudgets(
   manifest: Manifest,
@@ -183,19 +192,24 @@ export function checkBudgets(
     const js = jsBudgetOf(route);
     if (measured === undefined) {
       if (js !== null) {
-        findings.push(unmeasuredFinding(route.url, 'JS', stats, unmeasured));
+        findings.push(unmeasuredFinding(route.url, 'JS', stats, unmeasured, fileOf));
       }
       continue;
     }
     if (js !== null && measured.jsBytes > js) {
-      const meta = chargedMeta(measured.jsBytes, measured.charged, measured.inlineJsBytes);
+      // `at` is the file an agent opens — the SAME resolution `exceededJsFix` edits, so the
+      // locator and the instruction name one place. The route URL it belongs to is in `cause`
+      // (`budgets-charged.test.ts` holds the per-file breakdown in `meta` only when a row carries
+      // one — adding a `route` key would conflict with that contract).
+      const file = fileOf(route.url);
+      const charged = chargedMeta(measured.jsBytes, measured.charged, measured.inlineJsBytes);
       findings.push({
         code: 'X_BUDGET_EXCEEDED',
         cause: `${route.url} ships ${formatBytes(measured.jsBytes)} of JS (minified, uncompressed) over a ${formatBytes(js)} budget via ${chainOf(measured)}${chargedClause(measured.charged, measured.inlineJsBytes)}`,
-        fix: exceededJsFix(route.url, fileOf(route.url), measured.jsBytes),
+        fix: exceededJsFix(route.url, file, measured.jsBytes),
         docs: ERROR_DOCS_URL,
-        at: route.url,
-        ...(meta === undefined ? {} : { meta }),
+        ...(file === undefined ? {} : { at: file }),
+        ...(charged === undefined ? {} : { meta: charged }),
       });
     }
   }

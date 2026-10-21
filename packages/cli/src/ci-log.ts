@@ -4,7 +4,7 @@
 // this file undoes the transport and reconstructs the `Finding`, rather than printing a wall of
 // text and asking the reader to spot the code in it.
 
-import type { Finding } from './output';
+import type { Finding, JsonValue } from './output';
 
 /** One log line, with the two columns Actions prefixes every line with taken off. */
 export interface CiLogLine {
@@ -67,10 +67,51 @@ export function jobsInLog(lines: readonly CiLogLine[]): readonly string[] {
 }
 
 const CODE = /^(X_[A-Z][A-Z0-9_]*)/;
-const LOCATOR = /\(([^()]+)\)$/;
+// The ONE way a `Finding.at` — a path an agent can open — returns from a log. The renderer
+// prints it as the parenthesised expression in the head (`renderFinding`, `output.ts`).
+//
+// Anchored to the head minus a trailing `[step=…]`, NOT to the end of the line:
+// `X_VERIFY_STEP_TIMEOUT` sets both `at` and `meta.step`, so that head reads
+// `CODE (path) [step=unit]` — an end-anchor matches only what follows the brackets, the match
+// fails, and the path is dropped. With no step the optional group is absent and the
+// parenthesised group is still the last thing on the line.
+const LOCATOR = /\(([^()]+)\)(?=\s*(?:\[step=[^[\]]+\]\s*)?$)/;
+// The second, non-path locator the renderer prints on the head — `meta.step` in the same
+// brackets-keyed form (`[step=lint]`) `renderFinding` writes — so a merge gap's gate step name
+// or any future non-path identifier survives the round-trip too. Its own brackets are what
+// `LOCATOR`'s lookahead stands aside for, so the two cannot collide in one head.
+const STEP_LOCATOR = /\[step=([^[\]]+)\]\s*$/;
 
 const after = (text: string, label: string): string | undefined =>
   text.trim().startsWith(label) ? text.trim().slice(label.length).trim() : undefined;
+
+// The `meta.step` locator the renderer prints in the head (`output.ts:185-189`): a gate step name
+// the finding carries on `meta`, never on `at`. Total on every shape `Finding.meta` may take —
+// the field is optional, and a malformed `meta` (a non-object value, an array) is read as "no
+// step", the same answer an absent `meta` gets.
+const stepOf = (finding: Finding): string => {
+  if (typeof finding.meta === 'object' && finding.meta !== null && !Array.isArray(finding.meta)) {
+    const value = (finding.meta as { readonly [key: string]: JsonValue })['step'];
+    return typeof value === 'string' ? value : '';
+  }
+  return '';
+};
+
+/**
+ * The dedupe key a finding is told apart by. Two findings are the same only if every locator
+ * the renderer prints agrees on them — `code`, `cause`, `at`, and `meta.step`. Ci-log's per-log
+ * dedupe (`findingsFrom` below) and `x ci`'s cross-log dedupe (`cmd-ci.ts`) both build the key
+ * off this formula, so a finding that survives one cannot be silently merged by the other.
+ *
+ * A re-run appends a second copy of the same block; two identical findings would read as two
+ * problems where the job has one. A `X_COVERAGE_BELOW` routed to two different packages is the
+ * opposite — two findings, where a key of code and cause alone folds the second into a duplicate.
+ * `fix` is deliberately not in it: the same block reprints its fix line, and `x ci` fences it
+ * differently per job, so keying on it would report a re-run twice.
+ */
+export function findingKey(finding: Finding): string {
+  return `${finding.code}\0${finding.cause}\0${finding.at ?? ''}\0${stepOf(finding)}`;
+}
 
 /**
  * `renderFinding`'s output, read backwards. A code line ALONE is not a finding — prose naming a
@@ -93,19 +134,26 @@ export function findingsFrom(lines: readonly CiLogLine[]): readonly Finding[] {
     if (cause === undefined || fix === undefined) continue;
     const code = head[1] ?? '';
     const at = LOCATOR.exec(texts[index] ?? '')?.[1];
+    const step = STEP_LOCATOR.exec(texts[index] ?? '')?.[1];
     const docs = after(texts[index + 3] ?? '', 'docs:');
-    const key = `${code}\0${cause}`;
-    // A re-run appends a second copy of the same block; two identical findings would read as two
-    // problems where the job has one.
-    if (!seen.has(key)) {
-      seen.add(key);
-      out.push({
-        code,
-        cause,
-        fix,
-        ...(at === undefined ? {} : { at }),
-        ...(docs === undefined ? {} : { docs }),
-      });
+    // Step name and any other reconstructed structured fact ride on `meta`, so the
+    // reconstructed finding has a place to put a non-path locator `at` cannot carry.
+    const meta = step === undefined ? undefined : { step };
+    // Built once, then keyed: `findingKey` reads `code`, `cause`, `at` and `meta.step` off it,
+    // so the per-log dedupe here and the across-log dedupe in `cmd-ci.ts` agree on what one
+    // finding is. `X_VERIFY_MERGE_INCOMPLETE` arrives here once per missing step, and only the
+    // step name tells them apart.
+    const finding: Finding = {
+      code,
+      cause,
+      fix,
+      ...(at === undefined ? {} : { at }),
+      ...(meta === undefined ? {} : { meta }),
+      ...(docs === undefined ? {} : { docs }),
+    };
+    if (!seen.has(findingKey(finding))) {
+      seen.add(findingKey(finding));
+      out.push(finding);
     }
     index += 2;
   }

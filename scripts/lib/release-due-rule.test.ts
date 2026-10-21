@@ -105,11 +105,29 @@ describe('unit · release-due-rule · not due', () => {
     expect(decision.next).toBe('1.2.4');
   });
 
-  test('the OLDEST shipping commit decides the window, not the newest', () => {
+  test('the OLDEST shipping commit decides the window, not the newest, and the success detail names its age', () => {
+    // Newest is 1h old; oldest is 30h old. The success detail must name the OLDEST's age
+    // (30h ≥ settleHours=24), and must NOT misstate the freshly-pushed newest's age nor echo
+    // settleHours as "unreleased for Xh or more". Exact wording pin.
     const decision = releaseDue(
       input({ commits: [commit({ committedAt: at(1) }), commit({ committedAt: at(30) })] }),
     );
     expect(decision.due).toBe(true);
+    expect(decision.detail).toBe(
+      '2 shipping commit(s) since v1.2.3, the oldest shipping commit is 30h or older: patch to 1.2.4',
+    );
+  });
+
+  test('the settling detail names the OLDEST shipping commit, not the newest, in a mixed-age window', () => {
+    // Newest is 1h old; oldest is 23h old. Settling engages against the oldest (23h < 24h),
+    // so the settling detail must reference the OLDEST, not the freshly-pushed newest.
+    const decision = releaseDue(
+      input({ commits: [commit({ committedAt: at(1) }), commit({ committedAt: at(23) })] }),
+    );
+    expect(decision.due).toBe(false);
+    expect(decision.reason).toBe('settling');
+    expect(decision.detail).toContain('the oldest shipping commit is younger than 24h');
+    expect(decision.detail).not.toContain('newest');
   });
 
   test('a stamped version past the last tag is a merged release awaiting its tag', () => {
@@ -229,12 +247,15 @@ describe('unit · release-due-rule · the ask dedupe', () => {
       input({
         tagged: '27.10.0',
         stamped: '27.10.0',
+        commits: [commit({ committedAt: at(1) }), commit({ committedAt: at(30) })],
         openIssueTitles: ['Release 27.10.1'],
       }),
     );
     expect(decision.due).toBe(true);
     expect(decision.next).toBe('27.10.1');
-    expect(decision.detail).toContain('Release 27.10.1');
+    expect(decision.detail).toBe(
+      '2 shipping commit(s) since v27.10.0, the oldest shipping commit is 30h or older: patch to 27.10.1; an ask already open: Release 27.10.1',
+    );
   });
 
   test('a due decision with no twin carries no twin in detail', () => {
