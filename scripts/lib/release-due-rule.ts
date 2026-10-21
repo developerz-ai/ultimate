@@ -212,7 +212,7 @@ export function releaseDue(input: DueInput): DueDecision {
     next,
     notes,
     due: true,
-    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, unreleased for ${input.settleHours}h or more: ${bump} to ${next}${twinNote}`,
+    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, the oldest shipping commit is ${Math.floor((input.nowMs - oldest) / 3_600_000)}h or older: ${bump} to ${next}${twinNote}`,
     command: `bun run scripts/release.ts --version ${next}`,
   };
 }
