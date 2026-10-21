@@ -8,7 +8,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`DATABASE_POOL_MAX` caps every served role, not just a process that installed no client.** A
+  served role (`web`, `sync`, `worker`, `scheduler`) boots through `startDb`, which installs its own
+  `postgresClient` â€” so `defaultClient()`, the only reader of `DATABASE_POOL_MAX`, never ran, and
+  every role pooled at its `POOL_PROFILES` default (web 20, sync 10, worker 8) whatever the operator
+  set. A fleet sized to fit a role's `CONNECTION LIMIT` was refused `53300 too many connections for
+  role` on its first rollout. `startDb` now layers `DATABASE_POOL_MAX` from the env the boot was
+  handed over the role default, for the primary and the standby alike; `poolMaxFromEnv(env)` is
+  exported and takes that env.
 
 ## 27.13.1 - 2026-10-20
 

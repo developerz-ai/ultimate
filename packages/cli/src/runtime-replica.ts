@@ -16,7 +16,7 @@
 // HTTP tier depend on `@ultimat3/db` — legal downward, and still a package that would then know
 // what a database is.
 
-import type { DbClient, PostgresClient } from '@ultimat3/db';
+import type { DbClient, PoolProfile, PostgresClient } from '@ultimat3/db';
 import { postgresClient, REPLICA_URL_ENV, replicatedClient, withReplicaReads } from '@ultimat3/db';
 import type { Middleware } from '@ultimat3/http';
 import type { ServiceBinding } from './runtime-bindings';
@@ -54,9 +54,10 @@ export interface ReplicaAttachment {
 export function attachReplica(
   primary: DbClient,
   replicaUrl: string | undefined,
+  profile: Partial<PoolProfile> = {},
 ): ReplicaAttachment {
   if (replicaUrl === undefined) return { client: primary, replica: undefined };
-  const replica = postgresClient({ url: replicaUrl, applicationName: 'ultimate-replica' });
+  const replica = postgresClient({ url: replicaUrl, applicationName: 'ultimate-replica', profile });
   return { client: replicatedClient(primary, replica), replica };
 }
 

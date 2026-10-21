@@ -18,6 +18,7 @@ import {
   dbExecutor,
   pgliteClient,
   pgliteDataDir,
+  poolMaxFromEnv,
   postgresClient,
   setDbClient,
 } from '@ultimat3/db';
@@ -93,6 +94,12 @@ export interface RunningQueue {
  */
 export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
   const binding = services.db;
+  // `DATABASE_POOL_MAX` from the env the boot was HANDED, for `env`'s reason below. Installing a
+  // client here means `defaultClient()` — the only other reader — never runs in a served role, so
+  // without this the operator's cap reached no booted process and every role ran its
+  // `POOL_PROFILES` default (web 20, sync 10, worker 8): a fleet sized to fit a role's
+  // `CONNECTION LIMIT` was refused `53300` on its first roll.
+  const profile = poolMaxFromEnv(env);
   const client =
     binding.mode === 'embedded'
       ? // `pgliteDataDir` is `@ultimat3/db`'s own reader of the `pglite://` form; a second parser
@@ -104,8 +111,8 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
           dataDir: pgliteDataDir(binding.url),
           extensions: () => appExtensions(services.root),
         })
-      : postgresClient({ url: binding.url });
-  const attached = attachReplica(client, replicaUrlFor(binding, env));
+      : postgresClient({ url: binding.url, profile });
+  const attached = attachReplica(client, replicaUrlFor(binding, env), profile);
   setDbClient(attached.client);
   return { client, replica: attached.replica };
 }
