@@ -40,9 +40,13 @@ import type { Worker } from './worker-types';
  * The embedded Postgres is booted, and the whole jobs DDL applied, inside the FIRST `beforeEach` —
  * so the suite's first test carries the boot on Bun's 5000ms default, which three of these booting
  * at once in the `job` step's parallel run passed with nothing wrong. The boot's own budget is the
- * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason.
+ * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason — and
+ * it must sit ABOVE the boot, never under it: bun cancels nothing, so a hook that times out
+ * mid-boot completed later anyway and registered these taps a SECOND time, doubling every payload
+ * the rest of the file read. `test-database.test.ts` budgets the same WASM compile plus initdb
+ * generously; this box measures the boot alone at 32-42s (2026-10).
  */
-const PGLITE_BOOT_MS = 30_000;
+const PGLITE_BOOT_MS = 120_000;
 setDefaultTimeout(PGLITE_BOOT_MS);
 
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
@@ -54,9 +58,11 @@ const FLOOR_MS = 25;
  * provably a consequence of the WAKE and not of the poll. What the two together prove is timing, which
  * costs a function nobody else pays: the mechanism is pinned deterministically elsewhere (a wake calls
  * the pass at once in `outbox-relay.ts:280`, and `idle-cost.test.ts` counts the statements per idle
- * minute). These budgets are how much slack a loaded machine needs, so they are not made tight.
+ * minute). These budgets are how much slack a loaded machine needs, so they are not made tight: a
+ * quiet runner measured the pickup at 166ms (2026-10), past 150. 250 is `WAKE_SLOT_MS`, the poll
+ * this wake replaced, and still below the 400ms wait in hand — only a wake lands inside it.
  */
-const SOON_MS = 150;
+const SOON_MS = 250;
 const BUDGET_MS = 2_000;
 
 let pg: EmbeddedPg;
