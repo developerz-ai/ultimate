@@ -3,6 +3,7 @@
 // measured propagation lag (minutes, PUBLISHING.md) makes "absent" the flakiest possible fixture.
 
 import { describe, expect, test } from 'bun:test';
+import type { ScriptResult } from './lib/log';
 import { ScriptError } from './lib/script-error';
 import type { PublishState, RegistryFetch } from './registry-audit';
 import {
@@ -13,6 +14,23 @@ import {
   registryAuditResult,
   registryFindings,
 } from './registry-audit';
+
+/**
+ * `ScriptResult.data` is `unknown` by design, so reading `states` out of it is a parse, not a cast:
+ * a result without the states these assertions are about must fail loudly here.
+ */
+const statesOf = (result: ScriptResult): PublishState[] => {
+  const data = result.data;
+  if (typeof data !== 'object' || data === null || !('states' in data)) {
+    throw new ScriptError({
+      code: 'X_CLI_UNEXPECTED',
+      cause: 'registryAuditResult() returned no data.states where the fixture expects them',
+      fix: 'check the data field of the result in scripts/registry-audit.ts',
+    });
+  }
+  const { states } = data as { readonly states: readonly PublishState[] };
+  return [...states];
+};
 
 /** An empty audit must fail the test loudly, never hand `findingFor` a fabricated state. */
 const only = (states: readonly PublishState[]): PublishState => {
@@ -262,5 +280,101 @@ describe('behind, and whether its release tag exists yet', () => {
     expect(fix).toContain(
       'git ls-remote --exit-code --tags origin refs/tags/v3.0.0 && gh workflow',
     );
+  });
+});
+
+describe('tagged is stamped on every state, and asked once per distinct version', () => {
+  const workspace = (dir: string, version: string) => ({
+    dir,
+    name: `@ultimat3/${dir}`,
+    version,
+    private: false,
+    path: `/nowhere/packages/${dir}`,
+    tier: 0,
+    dependsOn: [],
+  });
+
+  /** One audit over five workspaces: ok, unattested, behind, absent and unreachable in one run. */
+  const corpus = [
+    workspace('core', '9.0.0'),
+    workspace('http', '9.0.0'),
+    workspace('schema', '9.0.0'),
+    workspace('cache', '8.0.0'),
+    workspace('flags', '9.0.0'),
+  ];
+  const fetcher: RegistryFetch = async (url) => {
+    const name = decodeURIComponent(url.slice('https://registry.npmjs.org/'.length));
+    const [pkg, version] = [name.split('/')[1] ?? '', '9.0.0'];
+    if (pkg === 'schema') {
+      return new Response(packument(name, { '8.0.0': attested }, '8.0.0'));
+    }
+    if (pkg === 'flags') return new Response('{}', { status: 503 });
+    if (pkg === 'cache') {
+      return new Response(packument(name, { '8.0.0': attested }, '8.0.0'));
+    }
+    return new Response(packument(name, { [version]: attested }, version));
+  };
+  const unattestedFetcher: RegistryFetch = async (url) =>
+    url.endsWith('%2fhttp')
+      ? new Response(packument('@ultimat3/http', { '9.0.0': handPublished }, '9.0.0'))
+      : fetcher(url, { signal: AbortSignal.timeout(1000) });
+
+  test('ok, absent, behind, unattested and unreachable all carry a tagged value', async () => {
+    const asked: string[] = [];
+    const result = await registryAuditResult(corpus, unattestedFetcher, async (tag) => {
+      asked.push(tag);
+      return true;
+    });
+    const states = statesOf(result);
+    // Publish order, not array order: `publishOrder` puts the tier-0 bootstrap packages last, and
+    // the assertions below are about the KINDS, so read them as a set rather than a sequence.
+    const kinds = new Set(states.map((state) => state.kind));
+    expect(kinds).toEqual(new Set(['ok', 'unattested', 'behind', 'unreachable']));
+    // The bug this pins: `tagged` used to be stamped on `behind` alone, so an `ok` package that
+    // was published from an UNTAGGED commit looked exactly like a healthy one.
+    for (const state of states) {
+      expect(state.tagged).toBe(true);
+    }
+    // One probe per distinct version — 5 workspaces, 2 stamped versions, 2 questions.
+    expect(asked).toHaveLength(2);
+    expect([...asked].sort()).toEqual(['v8.0.0', 'v9.0.0']);
+  });
+
+  test('an untagged release is `false` everywhere, not only on `behind`', async () => {
+    const asked: string[] = [];
+    const result = await registryAuditResult(corpus, unattestedFetcher, async (tag) => {
+      asked.push(tag);
+      return false;
+    });
+    const states = statesOf(result);
+    expect(states.filter((state) => state.kind === 'ok').length).toBeGreaterThan(0);
+    for (const state of states) {
+      expect(state.tagged).toBe(false);
+    }
+    expect(asked).toHaveLength(2);
+    expect([...asked].sort()).toEqual(['v8.0.0', 'v9.0.0']);
+  });
+
+  test('31 workspaces at one version ask the remote exactly once', async () => {
+    const many = Array.from({ length: 31 }, (_, index) =>
+      workspace(`pkg-${String(index)}`, '9.1.0'),
+    );
+    const answers: string[] = [];
+    await registryAuditResult(many, fetcher, async (tag) => {
+      answers.push(tag);
+      return true;
+    });
+    expect(answers).toEqual(['v9.1.0']);
+  });
+
+  test('a git that could not answer leaves `tagged` undefined, never `false`', async () => {
+    const result = await registryAuditResult([workspace('core', '9.0.0')], fetcher, () =>
+      Promise.resolve(undefined),
+    );
+    const states = statesOf(result);
+    expect(states[0]?.kind).toBe('ok');
+    // `false` would claim the tag is absent, and the `behind` fix would then prescribe pushing one.
+    expect(states[0]?.tagged).toBeUndefined();
+    expect('tagged' in (states[0] ?? {})).toBe(false);
   });
 });
