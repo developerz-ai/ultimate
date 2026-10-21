@@ -17,7 +17,9 @@ describe('unit · release-due-git · git', () => {
   });
 
   test('a git that is refused is reported, never thrown', async () => {
-    const out = await git(['no-such-subcommand-780'], cwd);
+    // An unknown option: git's own parser refuses it at once. An unknown subcommand made git scan
+    // every PATH entry for a `git-<name>` helper, which outran the 5 s test deadline on Windows CI.
+    const out = await git(['--no-such-option-780'], cwd);
     expect(out).toMatchObject({ ok: false, timedOut: false });
   });
 
