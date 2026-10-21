@@ -143,6 +143,8 @@ jobs:
       contents: write
       # `gh workflow run release.yml`. Nothing else.
       actions: write
+      # `gh issue close` of the release-due ask this run tagged for — the canonical close.
+      issues: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -195,3 +197,25 @@ jobs:
             exit 1
           }
           echo "dispatched release.yml for v${VERSION} — watch it: gh run list --workflow release.yml --limit 1"
+
+      # Close the open ask this run tagged for. The canonical close — by the job that did the
+      # tag, on the EXACT title `Release ${VERSION}` — not by a PR body's `Fixes #<n>` (which is
+      # a backstop). Order: tag → release → dispatch → close, so a dispatch failure leaves the
+      # ask open for a human to retry. `ASK_SUBJECT` in scripts/lib/release-subject.ts is the
+      # matcher the brief feeds; the post-filter holds this step to byte-for-byte equality even
+      # if the GitHub search returns a substring twin.
+      - name: close the release ask
+        if: steps.tag.outputs.created == 'true'
+        env:
+          TITLE: Release ${{ env.VERSION }}
+        run: |
+          set -euo pipefail
+          number="$(gh issue list --state open --search "${TITLE} in:title" --json number,title \
+            | jq --arg title "${TITLE}" -r '[(.[] | select(.title == $title)).number][0] // empty')"
+          if [ -n "$number" ] && [ "$number" != null ]; then
+            gh issue close "$number" --comment "Tagged v${VERSION} by release-tag.yml." || {
+              echo "::notice::ask #${number} not closed — close by hand: gh issue close ${number} --comment 'Tagged v${VERSION} by release-tag.yml.'"
+            }
+          else
+            echo "::notice::no open ask titled exactly '${TITLE}' — open one with: bun run scripts/release-due.ts --json"
+          fi
