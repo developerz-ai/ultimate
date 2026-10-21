@@ -57,7 +57,11 @@ export type SkippedRoute = RouteFacts & {
  * re-exports the name for its own callers.
  */
 export type UnmeasuredRoute = {
-  /** The DECLARED path, as `X_BUDGET_UNMEASURED`'s `at:` spells it, so the two rows join. */
+  /**
+   * The DECLARED path, the way the finding about it spells the route: `X_BUDGET_UNMEASURED`'s
+   * `meta.route` and its `cause`, so the report row and the gate's finding join. NOT its `at:` —
+   * `Finding.at` is the file an agent opens, and the declaring page is what that holds.
+   */
   readonly path: string;
   readonly reason: string;
   /**

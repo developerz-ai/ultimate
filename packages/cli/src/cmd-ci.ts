@@ -6,7 +6,7 @@
 
 import { UltimateError } from '@ultimat3/core';
 import type { CiLogLine } from './ci-log';
-import { findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
+import { findingKey, findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
 import type { CiJob, CiRun } from './ci-runs';
 import { failedLog, isFailed, isRunning, latestPerWorkflow, listRuns, viewRun } from './ci-runs';
 import { ciSpec, TAIL_LINES } from './cmd-ci-spec';
@@ -128,9 +128,11 @@ async function inspect(
     const pool: readonly CiLogLine[] = own.length > 0 ? own : lines;
     const job = failed.find((candidate) => candidate.name === name);
     for (const finding of findingsFrom(pool)) {
+      // Keep whatever the log carried: a path-style `at` or a non-path step (now on `meta.step`).
+      // Inventing a locator from the CI JOB name would put a non-path in `at` — exactly the seam
+      // this repair closes — so when the log had nothing, the finding reads nothing.
       findings.push({
         ...finding,
-        at: finding.at ?? name,
         // Fenced and tagged: the log is foreign text, and a `fix:` reconstructed from it is the
         // log author's instruction, not this CLI's. `commentBlock` is `x pr review`'s fence.
         fix: commentBlock(`ci-log ${name}`, [finding.fix]).join('\n'),
@@ -152,12 +154,17 @@ async function inspect(
 
 /**
  * The same block can be reached twice — once per job when the log attributes nothing, once per
- * attempt when a run was re-run — and two copies of one finding read as two problems.
+ * attempt when a run was re-run — and two copies of one finding read as two problems. The
+ * inverse is a finding with the same code and cause but a different `at` or `meta.step` (a
+ * `X_COVERAGE_BELOW` routed to two packages, the same gate step failing twice for different
+ * tests): they are NOT the same finding, and the key has to take every locator the gate printed
+ * to tell them apart. `findingKey` is the same formula `ci-log`'s per-log dedupe uses, so a
+ * finding that survives one cannot be silently merged by the other.
  */
 function dedupe(findings: readonly Finding[]): readonly Finding[] {
   const seen = new Set<string>();
   return findings.filter((finding) => {
-    const key = `${finding.code} ${finding.cause}`;
+    const key = findingKey(finding);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
