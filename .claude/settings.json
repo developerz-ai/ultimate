@@ -16,7 +16,9 @@
       "Bash(git log:*)",
       "Bash(gh pr view:*)",
       "Bash(gh run list:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh pr list:*)"
     ]
   },
   "hooks": {

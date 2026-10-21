@@ -40,16 +40,30 @@ import type { Worker } from './worker-types';
  * The embedded Postgres is booted, and the whole jobs DDL applied, inside the FIRST `beforeEach` —
  * so the suite's first test carries the boot on Bun's 5000ms default, which three of these booting
  * at once in the `job` step's parallel run passed with nothing wrong. The boot's own budget is the
- * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason.
+ * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason — and
+ * it must sit ABOVE the boot, never under it: bun cancels nothing, so a hook that times out
+ * mid-boot completed later anyway and registered these taps a SECOND time, doubling every payload
+ * the rest of the file read. `test-database.test.ts` budgets the same WASM compile plus initdb
+ * generously; this box measures the boot alone at 32-42s (2026-10).
  */
-const PGLITE_BOOT_MS = 30_000;
+const PGLITE_BOOT_MS = 120_000;
 setDefaultTimeout(PGLITE_BOOT_MS);
 
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
-/** Well under one backed-off wait, well over a round trip on a loaded machine. */
-const SOON_MS = 150;
+/**
+ * The wall-clock budget for a measured pickup, generous enough for a loaded runner. `SOON_MS` below
+ * is the wait actually in hand: the loop a wake interrupts had doubled well past it, so the pickup is
+ * provably a consequence of the WAKE and not of the poll. What the two together prove is timing, which
+ * costs a function nobody else pays: the mechanism is pinned deterministically elsewhere (a wake calls
+ * the pass at once in `outbox-relay.ts:280`, and `idle-cost.test.ts` counts the statements per idle
+ * minute). These budgets are how much slack a loaded machine needs, so they are not made tight: a
+ * quiet runner measured the pickup at 166ms (2026-10), past 150. 250 is `WAKE_SLOT_MS`, the poll
+ * this wake replaced, and still below the 400ms wait in hand — only a wake lands inside it.
+ */
+const SOON_MS = 250;
+const BUDGET_MS = 2_000;
 
 let pg: EmbeddedPg;
 let heard: { channel: string; payload: string }[] = [];
@@ -292,8 +306,8 @@ describe('the loops it wakes', () => {
     const other = postgresJobDriver({ executor: pg.executor });
     const before = performance.now();
     await enqueue(other, handle.name, 'cross-process');
-    await until(() => started.length === 1, 2_000);
-    // The wait in hand was 400 ms or more.
+    await until(() => started.length === 1, BUDGET_MS);
+    // The wait in hand was 400 ms or more — only a wake, never the poll, lands inside SOON_MS.
     expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
   });
 
@@ -365,7 +379,8 @@ describe('the loops it wakes', () => {
         stagedAt: Date.now(),
       });
     });
-    await until(() => started.length === 1, 2_000);
+    await until(() => started.length === 1, BUDGET_MS);
+    // Only a wake lands inside SOON_MS: the relay's poll sits at 400 ms once it's idle.
     expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
   });
 

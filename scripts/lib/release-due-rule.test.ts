@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { DueInput, WindowCommit } from './release-due-rule';
-import { bumpOf, DEPENDABOT, releaseDue } from './release-due-rule';
+import { bumpOf, DEPENDABOT, openReleaseAsk, releaseDue } from './release-due-rule';
 import { RELEASE_SUBJECT } from './release-subject';
 
 const HOUR = 3_600_000;
@@ -195,5 +195,72 @@ describe('unit · release-due-rule · what the changelog owes', () => {
 
   test('a written [Unreleased] owes nothing', () => {
     expect(releaseDue(input({ commits: [commit({ author: DEPENDABOT })] })).notes).toEqual([]);
+  });
+});
+
+describe('unit · release-due-rule · the ask dedupe', () => {
+  // The exact failed-publish titles release-subject.test.ts:50-59 pins as non-asks. None of them is
+  // a twin, so none may suppress a real ask.
+  const FAILED_PUBLISH = [
+    'Release failed: 27.10.1',
+    'Release 27.10.1 failed to publish',
+    'Release 27.10.1 (#1)',
+    'release 27.10.1',
+    'Release 27.10.1-beta',
+    'Release 27.10.1.1',
+    'Release 27.10',
+    'Release: 27.10.1',
+    'Release X.Y.Z',
+  ];
+
+  test('a true twin — an open issue titled exactly `Release 27.10.1` — reports open', () => {
+    expect(openReleaseAsk(['Release 27.10.1'], '27.10.1')).toEqual({
+      open: true,
+      twin: 'Release 27.10.1',
+    });
+  });
+
+  test('every failed-publish title reports not open, so it never suppresses the ask', () => {
+    for (const title of FAILED_PUBLISH) {
+      expect({ title, ...openReleaseAsk([title], '27.10.1') }).toEqual({
+        title,
+        open: false,
+      });
+    }
+  });
+
+  test('an ask for a different version is not a twin', () => {
+    expect(openReleaseAsk(['Release 27.10.2'], '27.10.1').open).toBe(false);
+    expect(openReleaseAsk(['Release 1.0.0'], '27.10.1').open).toBe(false);
+  });
+
+  test('a longer version that starts with the target is not a twin: 27.10.10 ≠ 27.10.1', () => {
+    expect(openReleaseAsk(['Release 27.10.10'], '27.10.1').open).toBe(false);
+  });
+
+  test('an empty open-issue list is not open', () => {
+    expect(openReleaseAsk([], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('a due decision names the twin in detail, so the bot can decide not to file', () => {
+    const decision = releaseDue(
+      input({
+        tagged: '27.10.0',
+        stamped: '27.10.0',
+        commits: [commit({ committedAt: at(1) }), commit({ committedAt: at(30) })],
+        openIssueTitles: ['Release 27.10.1'],
+      }),
+    );
+    expect(decision.due).toBe(true);
+    expect(decision.next).toBe('27.10.1');
+    expect(decision.detail).toBe(
+      '2 shipping commit(s) since v27.10.0, the oldest shipping commit is 30h or older: patch to 27.10.1; an ask already open: Release 27.10.1',
+    );
+  });
+
+  test('a due decision with no twin carries no twin in detail', () => {
+    const decision = releaseDue(input({ openIssueTitles: FAILED_PUBLISH }));
+    expect(decision.due).toBe(true);
+    expect(decision.detail).not.toContain('already open');
   });
 });
