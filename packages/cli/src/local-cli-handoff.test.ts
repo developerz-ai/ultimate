@@ -70,6 +70,9 @@ async function armedHandOff(stdout: ReadableStream<Uint8Array>): Promise<{ child
   const decoder = new TextDecoder();
   let childPid: number | undefined;
   let armed = false;
+  // Buffered across reads: a chunk split mid-line never matches either word, so `armedHandOff`
+  // would block until both processes exited and only the dead-stdout branch would settle it.
+  let buffer = '';
   while (childPid === undefined || !armed) {
     const { done, value } = await reader.read();
     if (done) {
@@ -77,10 +80,15 @@ async function armedHandOff(stdout: ReadableStream<Uint8Array>): Promise<{ child
         `stdout closed before both ready lines (pid ${childPid}, ${armed})`,
       );
     }
-    for (const line of decoder.decode(value, { stream: true }).split('\n')) {
+    buffer += decoder.decode(value, { stream: true });
+    let newline = buffer.indexOf('\n');
+    while (newline !== -1) {
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
       const [word, pid] = line.trim().split(' ');
       if (word === 'ready') childPid = Number(pid);
       if (word === 'armed') armed = true;
+      newline = buffer.indexOf('\n');
     }
   }
   reader.releaseLock();
@@ -242,5 +250,26 @@ describe('unit · the local-CLI hand-off forwards the stop signals', () => {
         // Already gone — the passing case.
       }
     }
+  });
+
+  // Pinned read: a chunk split mid-line — bytes the OS flushed in two frames, a small `read()` in a
+  // wrapper, anything between chunk and newline — never matches either word, so the helper must
+  // buffer the unfinished suffix and only parse complete newline-terminated lines. Without that,
+  // `armedHandOff` blocks forever and the signal tests above can't finish.
+  test('armedHandOff parses across a chunk that splits a line mid-word', async () => {
+    const encoder = new TextEncoder();
+    // Hand-picked split points: `ready` straddles the first chunk boundary, `armed` straddles the
+    // second, and one split lands inside the trailing newline's predecessor. None of the three
+    // chunks is itself a complete line, so the unbuffered parse would recognise nothing.
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('rea'));
+        controller.enqueue(encoder.encode('dy 4242\nar'));
+        controller.enqueue(encoder.encode('med\n'));
+        controller.close();
+      },
+    });
+    const { childPid } = await armedHandOff(stream);
+    expect(childPid).toBe(4242);
   });
 });
