@@ -12,6 +12,7 @@ import {
   packumentUrl,
   registryAuditResult,
   registryFindings,
+  withTags,
 } from './registry-audit';
 
 /** An empty audit must fail the test loudly, never hand `findingFor` a fabricated state. */
@@ -262,5 +263,56 @@ describe('behind, and whether its release tag exists yet', () => {
     expect(fix).toContain(
       'git ls-remote --exit-code --tags origin refs/tags/v3.0.0 && gh workflow',
     );
+  });
+});
+
+describe('withTags, exported for a caller that already holds probe answers', () => {
+  const state = (over: Partial<PublishState> = {}): PublishState => ({
+    name: '@ultimat3/core',
+    version: '3.0.0',
+    ordinal: 1,
+    total: 1,
+    kind: 'behind',
+    ...over,
+  });
+
+  test('it asks once per version and attaches the answer to each behind state', async () => {
+    const asked: string[] = [];
+    const tagged = await withTags(
+      [state(), state({ name: '@ultimat3/cli', version: '3.0.0' }), state({ kind: 'ok' })],
+      async (tag) => {
+        asked.push(tag);
+        return true;
+      },
+    );
+    // Two packages at one version, one question — and a state that is not `behind` is left alone.
+    expect(asked).toEqual(['v3.0.0']);
+    expect(tagged.map((s) => s.tagged)).toEqual([true, true, undefined]);
+  });
+
+  test('a denial and a no-answer are different states, not one false', async () => {
+    const denied = await withTags([state()], () => Promise.resolve(false));
+    const unknown = await withTags([state()], () => Promise.resolve(undefined));
+    expect(denied[0]?.tagged).toBe(false);
+    expect(unknown[0]?.tagged).toBeUndefined();
+  });
+
+  test('the same shape the audit itself consumes: registryAuditResult still sets `tagged`', async () => {
+    const fetcher = fetcherFor({
+      [packumentUrl('@ultimat3/core')]: {
+        body: packument('@ultimat3/core', { '2.0.0': attested }, '2.0.0'),
+      },
+    });
+    const core = {
+      dir: 'core',
+      name: '@ultimat3/core',
+      version: '3.0.0',
+      private: false,
+      path: '/nowhere/packages/core',
+      tier: 0,
+      dependsOn: [],
+    };
+    const result = await registryAuditResult([core], fetcher, () => Promise.resolve(false));
+    expect((result.data as { states: readonly PublishState[] }).states[0]?.tagged).toBe(false);
   });
 });

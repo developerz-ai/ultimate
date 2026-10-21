@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
+import type { TagProbe } from './registry-audit';
 import { decideAt, lastReleaseTag, parseWindowLog, readWindow, settleHoursOf } from './release-due';
 
 // Each test spawns a dozen git processes; the CLI test boots the real tree.
@@ -87,10 +88,32 @@ async function released(options: { readonly tag: boolean } = { tag: true }) {
   return { dir, git, land };
 }
 
+/**
+ * The default remote each fixture stands in for. Every repository built above has an `origin` only
+ * because this probe says so — a fixture that reached the real remote would report the remote's
+ * tags, not this one's.
+ */
+const probed =
+  (...tags: readonly string[]): TagProbe =>
+  async (tag) =>
+    tags.includes(tag);
+
+/**
+ * A probe that records every tag it is asked about, in the caller's own array — spread arguments
+ * would copy it empty at call time, and the recorded order IS the assertion: candidates are walked
+ * highest first, so a rejected one must be seen before the one below it.
+ */
+const recording =
+  (asked: string[], answer: (tag: string) => boolean | undefined): TagProbe =>
+  async (tag) => {
+    asked.push(tag);
+    return answer(tag);
+  };
+
 describe('unit · release-due · read from a real repository', () => {
   test('no reachable vX.Y.Z tag is X_RELEASE_TAG_UNREACHABLE, not an empty window', async () => {
     const { dir } = await released({ tag: false });
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed());
     expect('code' in read && read.code).toBe('X_RELEASE_TAG_UNREACHABLE');
   });
 
@@ -103,7 +126,7 @@ describe('unit · release-due · read from a real repository', () => {
       72,
       'dependabot[bot] <bot@example.test>',
     );
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('nothing_ships');
     expect(read.decision.inert).toBe(2);
@@ -116,7 +139,7 @@ describe('unit · release-due · read from a real repository', () => {
       'fix(core): a is two | really (#2)',
       30,
     );
-    const settled = await decideAt(dir, 24, NOW);
+    const settled = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in settled)) return expect.unreachable(settled.cause);
     expect(settled.tagged).toBe('1.0.0');
     expect(settled.decision.due).toBe(true);
@@ -124,7 +147,7 @@ describe('unit · release-due · read from a real repository', () => {
     expect(settled.decision.shipping.map((c) => [c.subject, c.packages])).toEqual([
       ['fix(core): a is two | really (#2)', ['core']],
     ]);
-    const fresh = await decideAt(dir, 48, NOW);
+    const fresh = await decideAt(dir, 48, NOW, probed('v1.0.0'));
     if (!('decision' in fresh)) return expect.unreachable(fresh.cause);
     expect(fresh.decision.reason).toBe('settling');
   });
@@ -135,18 +158,62 @@ describe('unit · release-due · read from a real repository', () => {
     await land({ 'packages/core/src/b.ts': 'export const b = 1;\n' }, 'feat: side');
     await git(['tag', '-a', 'v9.0.0', '-m', 'v9.0.0']);
     await git(['checkout', '--quiet', 'main']);
-    expect(await lastReleaseTag(dir)).toBe('1.0.0');
+    expect(await lastReleaseTag(dir, probed('v1.0.0'))).toBe('1.0.0');
     await git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'rc']);
-    expect(await lastReleaseTag(dir)).toBe('1.0.0');
+    expect(await lastReleaseTag(dir, probed('v1.0.0'))).toBe('1.0.0');
   });
 
   test('a merged bump with no tag yet is awaiting_tag, not a second release', async () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 3;\n' }, 'fix(core): three');
     await land({ 'packages/core/package.json': MANIFEST('1.0.1') }, 'chore: release 1.0.1 (#3)');
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('awaiting_tag');
+  });
+});
+
+describe('unit · release-due · the remote has the last word on a tag', () => {
+  test('origin holding it: the highest confirmed candidate is the last release', async () => {
+    const { dir, git, land } = await released();
+    await git(['tag', '-a', 'v0.9.0', '-m', 'v0.9.0']);
+    await land({ 'packages/core/src/c.ts': 'export const c = 1;\n' }, 'fix(core): c');
+    const asked: string[] = [];
+    // Only v0.9.0 is confirmed, so the scan walks PAST v1.0.0 rather than accepting the local tag.
+    const tag = await lastReleaseTag(
+      dir,
+      recording(asked, (t) => t === 'v0.9.0'),
+    );
+    expect(tag).toBe('0.9.0');
+    expect(asked).toEqual(['v1.0.0', 'v0.9.0']);
+  });
+
+  test('origin rejecting it: a local-only tag is not a release, so the scan falls through', async () => {
+    const { dir } = await released();
+    const asked: string[] = [];
+    // v1.0.0 exists locally and is denied on origin, and nothing else is reachable: the window has
+    // no honest base, which is the coded refusal — never a window counted from a tag nobody can see.
+    const tag = await lastReleaseTag(
+      dir,
+      recording(asked, () => false),
+    );
+    expect(tag).toBeUndefined();
+    expect(asked).toEqual(['v1.0.0']);
+    const read = await decideAt(dir, 24, NOW, probed());
+    expect('code' in read && read.code).toBe('X_RELEASE_TAG_UNREACHABLE');
+  });
+
+  test('git unable to answer: the unreachable path is unchanged, not a false denial', async () => {
+    const { dir } = await released();
+    const asked: string[] = [];
+    const tag = await lastReleaseTag(
+      dir,
+      recording(asked, () => undefined),
+    );
+    expect(tag).toBeUndefined();
+    expect(asked).toEqual(['v1.0.0']);
+    const read = await decideAt(dir, 24, NOW, probed());
+    expect('code' in read && read.code).toBe('X_RELEASE_TAG_UNREACHABLE');
   });
 });
 
@@ -174,7 +241,7 @@ describe('unit · release-due · refusals that name their own cause', () => {
       },
       'chore: make it private',
     );
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     expect('code' in read && read.code).toBe('X_CORPUS_UNSCANNED');
   });
 });

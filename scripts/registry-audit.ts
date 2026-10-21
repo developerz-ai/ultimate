@@ -244,8 +244,12 @@ export const findingFor = (state: PublishState): Finding | undefined =>
 export const registryFindings = (states: readonly PublishState[]): readonly Finding[] =>
   states.map(findingFor).filter((finding): finding is Finding => finding !== undefined);
 
-/** Each `behind` state told whether its tag exists — asked once per version, never per package. */
-async function withTags(
+/**
+ * Each `behind` state told whether its tag exists — asked once per version, never per package.
+ * Exported because it is the one place that turns a `TagProbe`'s answers into state: a caller that
+ * already holds probe answers (`scripts/release-due.ts`) reuses it rather than asking a second way.
+ */
+export async function withTags(
   states: readonly PublishState[],
   probe: TagProbe,
 ): Promise<readonly PublishState[]> {
