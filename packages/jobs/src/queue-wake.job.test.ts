@@ -48,8 +48,16 @@ setDefaultTimeout(PGLITE_BOOT_MS);
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
-/** Well under one backed-off wait, well over a round trip on a loaded machine. */
+/**
+ * The wall-clock budget for a measured pickup, generous enough for a loaded runner. `SOON_MS` below
+ * is the wait actually in hand: the loop a wake interrupts had doubled well past it, so the pickup is
+ * provably a consequence of the WAKE and not of the poll. What the two together prove is timing, which
+ * costs a function nobody else pays: the mechanism is pinned deterministically elsewhere (a wake calls
+ * the pass at once in `outbox-relay.ts:280`, and `idle-cost.test.ts` counts the statements per idle
+ * minute). These budgets are how much slack a loaded machine needs, so they are not made tight.
+ */
 const SOON_MS = 150;
+const BUDGET_MS = 2_000;
 
 let pg: EmbeddedPg;
 let heard: { channel: string; payload: string }[] = [];
@@ -292,8 +300,8 @@ describe('the loops it wakes', () => {
     const other = postgresJobDriver({ executor: pg.executor });
     const before = performance.now();
     await enqueue(other, handle.name, 'cross-process');
-    await until(() => started.length === 1, 2_000);
-    // The wait in hand was 400 ms or more.
+    await until(() => started.length === 1, BUDGET_MS);
+    // The wait in hand was 400 ms or more — only a wake, never the poll, lands inside SOON_MS.
     expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
   });
 
@@ -365,7 +373,8 @@ describe('the loops it wakes', () => {
         stagedAt: Date.now(),
       });
     });
-    await until(() => started.length === 1, 2_000);
+    await until(() => started.length === 1, BUDGET_MS);
+    // Only a wake lands inside SOON_MS: the relay's poll sits at 400 ms once it's idle.
     expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
   });
 
