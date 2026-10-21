@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ERROR_DOCS_URL, singleLine } from '@ultimat3/core';
+import { findingsFrom } from './ci-log';
 import { msg } from './messages';
 import type { CommandResult, StepResult, UltimateErrorShape } from './output';
 import {
@@ -46,6 +47,65 @@ describe('unit · output', () => {
       '  cause: schema differs',
       '  fix:   x db gen "add publish_at"',
     ]);
+  });
+
+  // `meta.step` is the second, non-path locator the renderer prints. Precedent is
+  // `X_VERIFY_STEP_TIMEOUT` (`verify-stalled.ts:180-197`); the merge step name rides on it.
+  // Bracketed and keyed so `ci-log` keeps `at` on its own without colliding.
+  test('meta.step renders after the head, keyed and bracketed', () => {
+    const text = renderFinding({
+      code: 'X_VERIFY_MERGE_INCOMPLETE',
+      cause: 'step "unit" is in no part',
+      fix: 'bun run verify merge parts/*.json --json',
+      meta: { step: 'unit' },
+    });
+    expect(text.split('\n')[0]).toBe('X_VERIFY_MERGE_INCOMPLETE [step=unit]');
+  });
+
+  test('at and meta.step on the same finding render in order', () => {
+    const text = renderFinding({
+      code: 'X_DB_DRIFT',
+      cause: 'schema differs',
+      fix: 'x db gen "add publish_at"',
+      at: 'apps/web/app/pricing/page.tsx',
+      meta: { step: 'unit' },
+    });
+    expect(text.split('\n')[0]).toBe('X_DB_DRIFT (apps/web/app/pricing/page.tsx) [step=unit]');
+  });
+
+  // The render above only proves the ORDER; this proves both locators SURVIVE the trip. A
+  // head carrying `at` and `meta.step` is what `X_VERIFY_STEP_TIMEOUT` writes
+  // (`verify-stalled.ts:180-197`), so a parser that reads only one of them drops the path an
+  // agent has to open — with the step-only round-trip below staying green either way.
+  test('a finding with both locators round-trips across ci-log', () => {
+    const rendered = renderFinding({
+      code: 'X_VERIFY_STEP_TIMEOUT',
+      cause: 'step "unit" passed its 300000ms deadline',
+      fix: 'bun test packages/cli/src/output.test.ts',
+      at: 'packages/cli/src/output.test.ts',
+      meta: { step: 'unit' },
+    });
+    const lines = rendered.split('\n').map((t) => ({ text: t, job: 'verify', step: 'unit' }));
+    const [found] = findingsFrom(lines);
+    expect(found?.at).toBe('packages/cli/src/output.test.ts');
+    expect(found?.meta?.['step']).toBe('unit');
+  });
+
+  // Round-trip across `findingsFrom`: the gate step name a merge gap produces must
+  // reach `x ci` exactly as the gate wrote it.
+  test('a finding with only the step locator round-trips across ci-log', () => {
+    const rendered = renderFinding({
+      code: 'X_VERIFY_MERGE_INCOMPLETE',
+      cause: 'step "unit" is in no part',
+      fix: 'bun run verify merge parts/*.json --json',
+      docs: 'https://error-docs',
+      meta: { step: 'unit' },
+    });
+    const lines = rendered.split('\n').map((t) => ({ text: t, job: 'verify', step: 'unit' }));
+    // ci-log lives in the same package as output; the function it exports is the parser.
+    const [found] = findingsFrom(lines);
+    expect(found?.meta?.['step']).toBe('unit');
+    expect(found?.at).toBeUndefined();
   });
 
   test('the human render carries every step and every fix line', () => {

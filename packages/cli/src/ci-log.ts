@@ -67,7 +67,20 @@ export function jobsInLog(lines: readonly CiLogLine[]): readonly string[] {
 }
 
 const CODE = /^(X_[A-Z][A-Z0-9_]*)/;
-const LOCATOR = /\(([^()]+)\)$/;
+// The ONE way a `Finding.at` — a path an agent can open — returns from a log. The renderer
+// prints it as the parenthesised expression in the head (`renderFinding`, `output.ts`).
+//
+// Anchored to the head minus a trailing `[step=…]`, NOT to the end of the line:
+// `X_VERIFY_STEP_TIMEOUT` sets both `at` and `meta.step`, so that head reads
+// `CODE (path) [step=unit]` — an end-anchor matches only what follows the brackets, the match
+// fails, and the path is dropped. With no step the optional group is absent and the
+// parenthesised group is still the last thing on the line.
+const LOCATOR = /\(([^()]+)\)(?=\s*(?:\[step=[^[\]]+\]\s*)?$)/;
+// The second, non-path locator the renderer prints on the head — `meta.step` in the same
+// brackets-keyed form (`[step=lint]`) `renderFinding` writes — so a merge gap's gate step name
+// or any future non-path identifier survives the round-trip too. Its own brackets are what
+// `LOCATOR`'s lookahead stands aside for, so the two cannot collide in one head.
+const STEP_LOCATOR = /\[step=([^\[\]]+)\]\s*$/;
 
 const after = (text: string, label: string): string | undefined =>
   text.trim().startsWith(label) ? text.trim().slice(label.length).trim() : undefined;
@@ -93,10 +106,16 @@ export function findingsFrom(lines: readonly CiLogLine[]): readonly Finding[] {
     if (cause === undefined || fix === undefined) continue;
     const code = head[1] ?? '';
     const at = LOCATOR.exec(texts[index] ?? '')?.[1];
+    const step = STEP_LOCATOR.exec(texts[index] ?? '')?.[1];
     const docs = after(texts[index + 3] ?? '', 'docs:');
-    const key = `${code}\0${cause}`;
+    // Step name and any other reconstructed structured fact ride on `meta`, so the
+    // reconstructed finding has a place to put a non-path locator `at` cannot carry.
+    const meta = step === undefined ? undefined : { step };
+    const key = `${code}\0${cause}\0${at ?? ''}\0${step ?? ''}`;
     // A re-run appends a second copy of the same block; two identical findings would read as two
-    // problems where the job has one.
+    // problems where the job has one. The dedupe key now also keys on `at` and `step` so two
+    // findings with the same code and cause but different locators stay distinct — a budget
+    // finding routed to two different routes is TWO findings.
     if (!seen.has(key)) {
       seen.add(key);
       out.push({
@@ -104,6 +123,7 @@ export function findingsFrom(lines: readonly CiLogLine[]): readonly Finding[] {
         cause,
         fix,
         ...(at === undefined ? {} : { at }),
+        ...(meta === undefined ? {} : { meta }),
         ...(docs === undefined ? {} : { docs }),
       });
     }

@@ -128,9 +128,11 @@ async function inspect(
     const pool: readonly CiLogLine[] = own.length > 0 ? own : lines;
     const job = failed.find((candidate) => candidate.name === name);
     for (const finding of findingsFrom(pool)) {
+      // Keep whatever the log carried: a path-style `at` or a non-path step (now on `meta.step`).
+      // Inventing a locator from the CI JOB name would put a non-path in `at` — exactly the seam
+      // this repair closes — so when the log had nothing, the finding reads nothing.
       findings.push({
         ...finding,
-        at: finding.at ?? name,
         // Fenced and tagged: the log is foreign text, and a `fix:` reconstructed from it is the
         // log author's instruction, not this CLI's. `commentBlock` is `x pr review`'s fence.
         fix: commentBlock(`ci-log ${name}`, [finding.fix]).join('\n'),

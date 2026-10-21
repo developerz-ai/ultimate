@@ -21,7 +21,12 @@ export interface Finding {
   readonly cause: string;
   readonly fix: string;
   readonly docs?: string;
-  /** Optional locator: a file, route, or table the finding is about. */
+  /**
+   * Optional locator: a path an agent can OPEN — a source file (its path from the repo root) or
+   * a table. A gate step name, a route URL, or any other identifier that is not a file is NOT
+   * here: it belongs on `meta` (e.g. `meta.step`), and the renderer prints it in the head where
+   * `ci-log` can recover it. Set iff the finding is about a file the author can edit.
+   */
   readonly at?: string;
   /**
    * Where the finding's TEXT came from, when not from this process. `'ci-log'` is `x ci` reading
@@ -172,7 +177,18 @@ export function renderFinding(finding: Finding, indent = ''): string {
   // Every field through `singleLine`: this is the format's only renderer for the terminal and CI
   // logs, and a `cause` carrying a newline would print a line a reader takes for a real finding.
   const code = singleLine(finding.code);
-  const head = finding.at === undefined ? code : `${code} (${singleLine(finding.at)})`;
+  // The path-style locator (`at`) keeps its parenthesised form: `CODE (path)`. A non-path locator
+  // — today only `meta.step`, the gate step name — is printed AFTER, bracketed and keyed
+  // (`[step=lint]`), so `ci-log`'s existing `LOCATOR = /\(([^()]+)\)$/` still means `at` and a
+  // matching step regex can recover it without colliding. Either side may be absent; when BOTH
+  // are absent the head is the bare `CODE` it always was.
+  const stepValue =
+    typeof finding.meta === 'object' && finding.meta !== null && !Array.isArray(finding.meta)
+      ? (finding.meta as { readonly [key: string]: JsonValue })['step']
+      : undefined;
+  const stepLabel = typeof stepValue === 'string' ? ` [step=${singleLine(stepValue)}]` : '';
+  const pathLabel = finding.at === undefined ? '' : ` (${singleLine(finding.at)})`;
+  const head = `${code}${pathLabel}${stepLabel}`;
   const lines = [
     `${indent}${head}`,
     `${indent}  cause: ${singleLine(finding.cause)}`,
