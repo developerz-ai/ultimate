@@ -287,6 +287,27 @@ describe('the loops it wakes', () => {
         return Promise.resolve();
       },
     });
+    // The embedded database parses each statement afresh on a cold turn;
+    // the FIRST SQL_ENQUEUE the test's `other` driver runs is materially
+    // slower than the warmed path, and the wake-fired SQL_CLAIM right
+    // behind it is the second such turn — together they can overrun
+    // SOON_MS even though the wake itself fires synchronously inside the
+    // enqueue's `pg_notify`. A handful of throwaway enqueues here prime
+    // the statement shape against an empty queue; rows are deleted (no
+    // claim, no ack, no counters touched) so the worker's first measured
+    // poll sees the same empty queue it would without the warm, and
+    // SQL_CLAIM is warmed by the very next worker poll.
+    for (let i = 0; i < 5; i += 1) {
+      const w = postgresJobDriver({ executor: pg.executor });
+      const { id: wId } = await w.enqueue({
+        name: '_w',
+        queue: 'default',
+        input: { i },
+        idempotencyKey: 'wrm' + i,
+        maxAttempts: 1,
+      });
+      await pg.executor.query('delete from x_jobs where id = $1::uuid', [wId]);
+    }
     await idleWorker(400);
 
     const other = postgresJobDriver({ executor: pg.executor });
