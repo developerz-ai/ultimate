@@ -31,4 +31,6 @@ Title `Release <next>`. Body, verbatim steps for the box that takes it:
    publishes the GitHub Release and dispatches `release.yml`. Never tag, never `gh release create`,
    never `npm publish` by hand — `PUBLISHING.md`.
 
-Never file a second ask while one titled `Release …` is open.
+Never file a second ask while one titled `Release <next>` is open. The box reads that with
+`gh issue list --state open --search "Release <next> in:title"`, where `<next>` is `data.next` from
+the run above — substitute the version before running it.
