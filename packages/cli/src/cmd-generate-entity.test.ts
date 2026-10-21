@@ -159,6 +159,15 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
 
   // One subprocess for both: the generated repo's own test, and the app's real admin asked which
   // keys it reads for the new entity — the entity is an admin screen the moment it is in the handle.
+  //
+  // The budget is 60s, measured: three runs on an idle box took 17.0s, 16.1s and 16.6s, so 30s held
+  // barely 1.8x headroom over the cost of booting a `bun test` child, resolving three workspace
+  // specifiers through the app's tsconfig and transpiling the generated sources. `x verify` runs this
+  // under three competing unit workers, where it reported `[30004.70ms] this test timed out` while
+  // the run it wrapped was green. Same shape and same reasoning as `scaffold-typecheck.test.ts:158`
+  // ("the whole-fixture build is the coverage, so the budget moves") and
+  // `error-contract.test.ts:283` ("~5s alone, ~30s under eight competing workers"). The assertions
+  // below are the coverage — the subprocess must reach `8 pass` — so only the budget moves.
   test('the generated repo passes its own test, and the admin finds every label it reads', async () => {
     await Bun.write(join(root, 'admin-keys.test.ts'), ADMIN_KEYS_PROBE);
     const run = await exec(
@@ -174,7 +183,7 @@ describe('unit · x g entity writes a repo over the typed handle', () => {
     expect(`${run.stdout}${run.stderr}`).toContain(' 0 fail');
     expect(`${run.stdout}${run.stderr}`).toContain(' 8 pass');
     expect(run.ok).toBe(true);
-  }, 30_000);
+  }, 60_000);
 
   test('a second entity lands in key order, and owes no install', async () => {
     const result = await generateCommand.run(contextFor('gadget'));
