@@ -53,24 +53,40 @@ function heldTimer(): { schedule: Schedule; armed: () => number; expire: () => v
 }
 
 /**
- * The child's `ready <pid>` line, read until its newline arrives: a pipe hands back whatever bytes
- * are there, and a partial `ready` parsed to a NaN pid the cleanup then could not kill.
+ * The child's pid AND the parent's own `armed` line — the two facts the real-signal tests need, and
+ * only together are they a readiness signal.
+ *
+ * The child inherits this pipe, so `ready` reaches the test on the child's schedule, which is NOT
+ * the parent's: `handOff` still has to finish booting, spawn the child, and install its listeners.
+ * Signalling on `ready` alone raced that window — in roughly one run in thirty the parent was still
+ * listener-less, took the SIGINT bare, and died `128 + 2 = 130` where the test expected the child's
+ * `41`. (A correctly armed parent can never report 130 here: it exits with `handOff`'s answer, and
+ * `handOff` returns `128 + n` only for the CHILD, which exited 41.) `armed` is written by the parent
+ * the moment `handOff` has been called, and its listeners are installed synchronously before that
+ * call's first await — so the line cannot be read before the listeners exist.
  */
-async function readyPid(stdout: ReadableStream<Uint8Array>): Promise<number> {
+async function armedHandOff(stdout: ReadableStream<Uint8Array>): Promise<{ childPid: number }> {
   const reader = stdout.getReader();
   const decoder = new TextDecoder();
-  let buffered = '';
-  while (!buffered.includes('\n')) {
+  let childPid: number | undefined;
+  let armed = false;
+  while (childPid === undefined || !armed) {
     const { done, value } = await reader.read();
-    if (done) return expect.unreachable(`stdout closed before a whole ready line: ${buffered}`);
-    buffered += decoder.decode(value, { stream: true });
+    if (done) {
+      return expect.unreachable(
+        `stdout closed before both ready lines (pid ${childPid}, ${armed})`,
+      );
+    }
+    for (const line of decoder.decode(value, { stream: true }).split('\n')) {
+      const [word, pid] = line.trim().split(' ');
+      if (word === 'ready') childPid = Number(pid);
+      if (word === 'armed') armed = true;
+    }
   }
   reader.releaseLock();
-  const [word, pid] = (buffered.split('\n')[0] ?? '').trim().split(' ');
-  expect(word).toBe('ready');
-  const parsed = Number(pid);
+  const parsed = childPid;
   expect(Number.isInteger(parsed) && parsed > 0).toBe(true);
-  return parsed;
+  return { childPid: parsed };
 }
 
 describe('unit · the local-CLI hand-off forwards the stop signals', () => {
@@ -119,11 +135,17 @@ describe('unit · the local-CLI hand-off forwards the stop signals', () => {
     await Bun.write(
       parent,
       `import { handOff } from ${JSON.stringify(join(import.meta.dir, 'local-cli-handoff.ts'))};\n` +
-        `process.exit(await handOff([process.execPath, ${JSON.stringify(child)}], Bun.env));\n`,
+        // `handOff` installs its listeners synchronously before its first await, so the promise is
+        // created (armed) before this line runs. NOT awaited first: the group-SIGINT test below never
+        // sees it resolve, and would wait forever for an announcement that only a clean exit reaches.
+        `const running = handOff([process.execPath, ${JSON.stringify(child)}], Bun.env);\n` +
+        `console.log('armed');\n` +
+        `process.exit(await running);\n`,
     );
     const proc = Bun.spawn([process.execPath, parent], { stdout: 'pipe', stderr: 'inherit' });
-    // Signalled only once the child is listening, so the verdict is about forwarding, not timing.
-    const childPid = await readyPid(proc.stdout);
+    // Signalled only once the parent has armed AND the child is listening, so the verdict is about
+    // forwarding, not timing: a bare parent would answer 128 + SIGTERM = 143, not 42.
+    const { childPid } = await armedHandOff(proc.stdout);
     try {
       proc.kill('SIGTERM');
       expect(await proc.exited).toBe(42);
@@ -149,10 +171,17 @@ describe('unit · the local-CLI hand-off forwards the stop signals', () => {
     await Bun.write(
       parent,
       `import { handOff } from ${JSON.stringify(join(import.meta.dir, 'local-cli-handoff.ts'))};\n` +
-        `process.exit(await handOff([process.execPath, ${JSON.stringify(child)}], Bun.env));\n`,
+        // `handOff` installs its listeners synchronously before its first await, so the promise is
+        // created (armed) before this line runs. NOT awaited first: the group-SIGINT test below never
+        // sees it resolve, and would wait forever for an announcement that only a clean exit reaches.
+        `const running = handOff([process.execPath, ${JSON.stringify(child)}], Bun.env);\n` +
+        `console.log('armed');\n` +
+        `process.exit(await running);\n`,
     );
     const proc = Bun.spawn([process.execPath, parent], { stdout: 'pipe', stderr: 'inherit' });
-    const childPid = await readyPid(proc.stdout);
+    // Both lines: `ready` alone can land before the parent has armed its listeners, and a bare
+    // parent dies 128 + SIGINT = 130 rather than forwarding — a race, not a verdict about forwarding.
+    const { childPid } = await armedHandOff(proc.stdout);
     try {
       // The parent's pid, not its group: the child hears of it only if the hand-off says so.
       proc.kill('SIGINT');
@@ -192,11 +221,16 @@ describe('unit · the local-CLI hand-off forwards the stop signals', () => {
     await Bun.write(
       parent,
       `import { handOff } from ${JSON.stringify(join(import.meta.dir, 'local-cli-handoff.ts'))};\n` +
-        `process.exit(await handOff([process.execPath, ${JSON.stringify(child)}], Bun.env));\n`,
+        // `handOff` installs its listeners synchronously before its first await, so the promise is
+        // created (armed) before this line runs. NOT awaited first: the group-SIGINT test below never
+        // sees it resolve, and would wait forever for an announcement that only a clean exit reaches.
+        `const running = handOff([process.execPath, ${JSON.stringify(child)}], Bun.env);\n` +
+        `console.log('armed');\n` +
+        `process.exit(await running);\n`,
     );
     // `setsid` execs in place, so the parent's pid is its new group's id, as a shell job's is.
     const proc = Bun.spawn(['setsid', process.execPath, parent], { stdout: 'pipe' });
-    const childPid = await readyPid(proc.stdout);
+    const { childPid } = await armedHandOff(proc.stdout);
     try {
       process.kill(-proc.pid, 'SIGINT');
       expect(await proc.exited).toBe(130);

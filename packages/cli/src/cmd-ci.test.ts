@@ -107,6 +107,7 @@ const run = (over: Partial<CiRun> = {}): CiRun => ({
   workflow: 'ci',
   url: 'https://github.com/o/r/actions/runs/1',
   createdAt: '2026-08-21T10:00:00Z',
+  headSha: '0123456789abcdef0123456789abcdef01234567',
   ...over,
 });
 
@@ -137,6 +138,7 @@ const RUN_ROW = {
   status: 'completed',
   conclusion: 'failure',
   headBranch: 'feat/x',
+  headSha: '0123456789abcdef0123456789abcdef01234567',
   displayTitle: 'a change',
   workflowName: 'ci',
   url: 'https://github.com/o/r/actions/runs/32484583944',
@@ -258,6 +260,7 @@ describe('unit · x ci is triage in one command', () => {
     const data = result.data as {
       counts: { runs: number; failed: number; running: number; findings: number };
       runs: readonly {
+        headSha: string;
         jobs: readonly { name: string }[];
         failures: readonly {
           job: string;
@@ -267,6 +270,7 @@ describe('unit · x ci is triage in one command', () => {
       }[];
     };
     expect(data.counts).toEqual({ runs: 1, failed: 1, running: 0, findings: 2 });
+    expect(data.runs[0]?.headSha).toBe('0123456789abcdef0123456789abcdef01234567');
     expect(data.runs[0]?.jobs).toHaveLength(3);
     expect(data.runs[0]?.failures.map((failure) => failure.job)).toEqual([
       'package (cli)',
@@ -291,6 +295,27 @@ describe('unit · x ci is triage in one command', () => {
     expect(ran.some((command) => command.includes('view') && command.includes('run'))).toBe(false);
     // Absent, not empty: `jobs: []` on a run nobody opened would claim it has none.
     expect(JSON.parse(JSON.stringify(result.data)).runs[0].jobs).toBeUndefined();
+  });
+
+  // A run with no conclusion has not answered yet. `isFailed` is false for it (ci-runs.ts), so
+  // `ok: true` is right — but `running: 0` would read as green CI, so the verdict has to carry the
+  // `headSha` to watch. This case dies with the `isRunning` filter at cmd-ci.ts:171.
+  test('a run still going is ok, and counted running with its head sha', async () => {
+    const { runner } = ghTable((joined) => {
+      if (joined.startsWith('gh repo view')) return REPO;
+      if (joined.startsWith('git rev-parse')) return 'main\n';
+      if (joined.startsWith('gh run list'))
+        return JSON.stringify([{ ...RUN_ROW, status: 'in_progress', conclusion: null }]);
+      return undefined;
+    });
+    const result = await ciCommand.run(contextFor(['ci'], runner));
+    const data = result.data as {
+      counts: { runs: number; failed: number; running: number };
+      runs: readonly { headSha: string }[];
+    };
+    expect(result.ok).toBe(true);
+    expect([data.counts.runs, data.counts.failed, data.counts.running]).toEqual([1, 0, 1]);
+    expect(data.runs[0]?.headSha).toBe('0123456789abcdef0123456789abcdef01234567');
   });
 
   test('--run names the run, so neither the branch nor the run list is asked for', async () => {

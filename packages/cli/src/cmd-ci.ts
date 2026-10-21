@@ -241,6 +241,7 @@ function runJson(entry: RunReport): JsonValue {
     title: entry.run.title,
     url: entry.run.url,
     createdAt: entry.run.createdAt,
+    headSha: entry.run.headSha,
     // Absent rather than empty on a run that was never opened: `jobs: []` on a green run would
     // claim the run has no jobs, which is a different statement from "nobody asked".
     ...(entry.jobs === undefined
