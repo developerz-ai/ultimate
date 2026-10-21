@@ -6,8 +6,11 @@ import { describe, expect, test } from 'bun:test';
 import { checkChangelog } from './changelog-check';
 import { commitBlock, promoteUnreleased, releaseDate } from './lib/release-changelog';
 import {
+  askIssueArgs,
+  askLookupFailedLine,
   BUMPS,
   nextVersion,
+  parseAskIssues,
   RELEASE_FLAGS,
   readReleaseVersion,
   releaseInvocation,
@@ -370,5 +373,53 @@ describe('unit · the commands a release prints are the safe form', () => {
     expect(
       releaseInvocation({ explicit: '1.3.0', bump: undefined, dryRun: true, json: false }),
     ).toBe('bun run scripts/release.ts --version 1.3.0 --dry-run');
+  });
+});
+
+describe('unit · the ask a release closes', () => {
+  // The dedupe query, verbatim from `.dz/briefs/release-due.md`: open issues, title search only.
+  test('the gh lookup is the release-due query over number,title rows', () => {
+    const args = askIssueArgs('27.11.0');
+    expect(args[args.indexOf('--state') + 1]).toBe('open');
+    expect(args[args.indexOf('--search') + 1]).toBe('Release 27.11.0 in:title');
+    expect(args[args.indexOf('--json') + 1]).toBe('number,title');
+  });
+
+  test('an open ask for this version puts `Fixes #<n>` in the next line and closes the ask', () => {
+    const line = releaseNextLine('27.11.0', 'Fixes #813');
+    expect(line).toContain('Fixes #813');
+    expect(line).toContain('closes the ask');
+    // The close is still the merge through release-tag.yml, never a hand step.
+    expect(line).not.toMatch(/git tag|gh release create/);
+  });
+
+  test('with no ask confirmed, the next line promises no close', () => {
+    expect(releaseNextLine('27.11.0', undefined)).not.toContain('closes the ask');
+    expect(releaseNextLine('27.11.0')).not.toMatch(/Fixes #\d/);
+  });
+
+  test('a failed lookup degrades to one printed line that names no issue', () => {
+    const line = askLookupFailedLine('27.11.0');
+    expect(line.startsWith('  ask')).toBe(true);
+    expect(line).toContain('lookup failed');
+    expect(line).not.toMatch(/Fixes #\d/);
+  });
+
+  test('gh rows in, issues out; malformed rows drop, garbage is no ask', () => {
+    expect(parseAskIssues('[{"number":813,"title":"Release 27.11.0"}]')).toEqual([
+      { number: 813, title: 'Release 27.11.0' },
+    ]);
+    expect(parseAskIssues('[{"number":813,"title":"Release 27.11.0"},{"oops":true}]')).toEqual([
+      { number: 813, title: 'Release 27.11.0' },
+    ]);
+    // A string number is not the row gh promised.
+    expect(parseAskIssues('[{"number":"813","title":"Release 27.11.0"}]')).toEqual([]);
+  });
+
+  test('anything but the rows is no ask — the lookup is best effort', () => {
+    expect(parseAskIssues('gh: (NotFound) …')).toEqual([]);
+    expect(parseAskIssues('')).toEqual([]);
+    expect(parseAskIssues('{"number":813,"title":"Release 27.11.0"}')).toEqual([]);
+    expect(parseAskIssues('[{}]')).toEqual([]);
   });
 });

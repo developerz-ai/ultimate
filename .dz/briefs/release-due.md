@@ -26,10 +26,12 @@ Title `Release <next>`. Body, verbatim steps for the box that takes it:
    `### Changed` line naming each bumped runtime dependency and its new range first.
 3. Run the `data.command` it printed (`bun run scripts/release.ts --version <next>`), then
    `bun run verify`.
-4. One PR, `chore: release <next>`, nothing else in it. It merges on green like any PR.
+4. One PR, `chore: release <next>`, nothing else in the diff. It merges on green like any PR.
 5. Merging it is the release: `.github/workflows/release-tag.yml` tags `v<next>` (annotated),
    publishes the GitHub Release and dispatches `release.yml`. Never tag, never `gh release create`,
-   never `npm publish` by hand — `PUBLISHING.md`.
+   never `npm publish` by hand — `PUBLISHING.md`. The PR body carries `Fixes #<ask>` — the ask
+   this run is — so the merge closes it too; `scripts/release.ts` prints the link when the ask
+   is open.
 
 Never file a second ask while one titled `Release <next>` is open. The box reads that with
 `gh issue list --state open --search "Release <next> in:title"`, where `<next>` is `data.next` from
