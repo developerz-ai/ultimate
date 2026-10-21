@@ -74,8 +74,9 @@ export type TagProbe = (tag: string) => Promise<boolean | undefined>;
 /**
  * `git ls-remote --exit-code` answers 0 for a match and 2 for none; anything else is no answer.
  *
- * Reads `GITHUB_TOKEN` at probe time and forwards it as a basic-auth `http.extraheader` when
- * set: the checkout step in `.github/workflows/registry-audit.yml` deliberately uses
+ * Reads `GITHUB_TOKEN` at probe time and forwards it as a basic-auth header scoped to
+ * `https://github.com/` only: a different HTTPS origin must never receive a GitHub credential.
+ * The checkout step in `.github/workflows/registry-audit.yml` deliberately uses
  * `persist-credentials: false` so the runner's token never reaches `.git/config`, and a
  * non-authenticated `ls-remote` against a private mirror would otherwise exit 128 (auth
  * required), which `result.code === 0 ? true : result.code === 2 ? false : undefined`
@@ -84,7 +85,7 @@ export type TagProbe = (tag: string) => Promise<boolean | undefined>;
  * only token the probe needs is the one already in its environment.
  */
 export const remoteTagProbe =
-  (root: string): TagProbe =>
+  (root: string, execute: typeof run = run): TagProbe =>
   async (tag) => {
     const token = process.env['GITHUB_TOKEN'] ?? '';
     // why: `Buffer.from(s).toString('base64')` for basic-auth — Bun has no native base64
@@ -94,9 +95,9 @@ export const remoteTagProbe =
         ? []
         : [
             '-c',
-            `http.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
+            `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
           ];
-    const result = await run(
+    const result = await execute(
       ['git', ...auth, 'ls-remote', '--exit-code', '--tags', 'origin', `refs/tags/${tag}`],
       {
         cwd: root,
