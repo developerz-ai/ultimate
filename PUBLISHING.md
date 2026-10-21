@@ -98,6 +98,13 @@ to the registry for a version that is not there.
 a dependency PR that touches versions arrives with a lockfile that has to be regenerated locally,
 and installing over a conflicted lock produces a resolution nobody reviewed.
 
+When that regenerated lockfile does reach `main` on the Dependabot PR, the window stays
+Dependabot-only and `bun run scripts/release-due.ts` still asks for the `### Changed` line. Squash-merged,
+git records one author per commit, so the landed commit keeps the Dependabot author; committed
+separately, a `bun.lock`-only commit changes no path a published tarball packs, so it is counted
+inert and the shipping commits are still the bot's. Either way the bump is a patch and the note
+fires.
+
 ## One-time bootstrap (manual, requires npm auth)
 
 A trusted publisher can only be attached to a package that **already exists**, so a package's first
