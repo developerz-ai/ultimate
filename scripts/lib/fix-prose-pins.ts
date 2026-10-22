@@ -37,7 +37,11 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   render: 48,
   schema: 7,
   scraping: 54,
-  scripts: 173,
+  // 173 → 174: the `commits-only` finding in `changelog-check.ts`, one more fix: line in that file.
+  // why: the edit it names is to write release notes into CHANGELOG.md, which no command in this
+  // repo performs, so the line cannot open with a command — the seven sibling findings that edit
+  // that same file are already inside this number.
+  scripts: 174,
   seo: 13,
   storage: 27,
   testing: 28,
