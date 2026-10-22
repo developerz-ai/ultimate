@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.15.0 - 2026-10-22
+
 ### Added
 
 - **`useRecordChanges(types, listener)` â€” hear THAT records moved, holding none of them.** The only
@@ -31,6 +35,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   and a visible `visibilitychange` and cuts a LOCAL backoff short (`LiveClient.wake()`), so a laptop
   waking from sleep is live again before its armed wait runs out. A node-assigned drain slot is kept,
   so a deploy's herd stays spread.
+
+### Commits
+
+- feat(realtime): useRecordChanges â€” hear that records moved, holding none; useChannel().error() (#857)
+- fix(realtime): redial backoff resets on the node's first frame; wake on online/visible (#855)
+- test(release): the gh-spawning tests wait as long as gh's own deadline (#854)
 
 ## 27.14.1 - 2026-10-22
 
