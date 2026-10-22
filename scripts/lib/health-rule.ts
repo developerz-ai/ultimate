@@ -1,0 +1,400 @@
+// The eight per-row health verdicts, pure: typed inputs in, one RowVerdict out — no subprocess, no
+// Bun.* anywhere, so scripts/health.ts reads and this file judges; the document shapes it judges
+// over live in health-narrow.ts. `unverdicted` always means "no verdict yet — re-run, never
+// unhealthy": an ask filed over an unread world is the false alarm this rule exists to prevent.
+
+import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, RunRow } from './health-narrow';
+
+/** The three ways a row can answer. `unverdicted` is a re-run, never a filing. */
+export type Verdict = 'healthy' | 'unhealthy' | 'unverdicted';
+
+/** The rows, in the order `.dz/briefs/health.md`'s table defines them. */
+export const ROW_IDS = [
+  'main-green',
+  'last-tag-published',
+  'stamped-version-tagged',
+  'tag-runs-ended-well',
+  'npm-serves-tree',
+  'automation-alarms',
+  'dependabot-not-stuck',
+  'demo-shipped',
+] as const;
+
+export type RowId = (typeof ROW_IDS)[number];
+
+/** One row's answer, with the fields an ask's body quotes, per the brief's table. */
+export interface RowVerdict {
+  readonly row: RowId;
+  readonly verdict: Verdict;
+  readonly reason: string;
+  readonly conclusion?: string | null;
+  readonly status?: string | undefined;
+  readonly headSha?: string | undefined;
+  readonly expectedSha?: string;
+  readonly event?: string | undefined;
+  readonly url?: string | undefined;
+  readonly createdAt?: string | undefined;
+  readonly id?: number | undefined;
+  readonly title?: string | undefined;
+  readonly headBranch?: string | undefined;
+  readonly latched?: boolean;
+  readonly issues?: readonly AlarmIssue[];
+  readonly prs?: readonly DependabotPr[];
+}
+
+// ——— The rules. ———
+
+const fieldsOf = (run: RunRow): Partial<RowVerdict> => ({
+  conclusion: run.conclusion,
+  status: run.status,
+  headSha: run.headSha,
+  event: run.event,
+  url: run.url,
+  createdAt: run.createdAt,
+  id: run.id,
+  title: run.title,
+  headBranch: run.headBranch,
+});
+
+export interface MainGreenInput {
+  readonly ci: CiDoc;
+  readonly expectedSha: string;
+}
+
+/** Row 1. `success` at the origin/main tip is the only healthy answer; a running run is no verdict. */
+export function mainGreenVerdict(input: MainGreenInput): RowVerdict {
+  const base = { row: 'main-green' as const, expectedSha: input.expectedSha };
+  const newest = input.ci.runs[0];
+  if (newest === undefined) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: input.ci.runNotFound
+        ? 'no ci.yml push run on main at all (X_CI_RUN_NOT_FOUND) — no verdict, never unhealthy; re-run before filing'
+        : 'ci.yml has no push run on main to read — re-run before filing',
+    };
+  }
+  const green = input.ci.runs.find((run) => run.conclusion === 'success');
+  if (green === undefined) {
+    if (newest.conclusion === null) {
+      return {
+        ...base,
+        verdict: 'unverdicted',
+        ...fieldsOf(newest),
+        reason: `the newest push run is still ${newest.status ?? 'running'}, no verdict yet — re-run before filing`,
+      };
+    }
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      ...fieldsOf(newest),
+      reason: `main is red: the newest push run of ci.yml ended ${newest.conclusion}`,
+    };
+  }
+  if (green.headSha !== input.expectedSha) {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      ...fieldsOf(green),
+      reason: `ci.yml is green at ${green.headSha ?? 'an unreadable sha'}, not at the origin/main tip ${input.expectedSha} — the tip itself has no green run`,
+    };
+  }
+  return {
+    ...base,
+    verdict: 'healthy',
+    ...fieldsOf(green),
+    reason: 'the newest ci.yml push run is success at the origin/main tip',
+  };
+}
+
+export interface LastTagInput {
+  readonly tagCommit: string;
+  readonly run: RunRow | undefined;
+}
+
+/** Row 2. Match-only: a conclusion is read only off a run at the tag's own peeled commit. */
+export function lastTagVerdict(input: LastTagInput): RowVerdict {
+  const base = { row: 'last-tag-published' as const, expectedSha: input.tagCommit };
+  const run = input.run;
+  if (run === undefined) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: 'release.yml has no run yet — no verdict from this row, never unhealthy',
+    };
+  }
+  if (run.headSha !== undefined && run.headSha !== input.tagCommit) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      ...fieldsOf(run),
+      reason: `the newest release.yml run is at another commit (${run.headSha}), not the tag's peeled commit — no verdict, re-run before filing`,
+    };
+  }
+  if (run.conclusion === null) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      ...fieldsOf(run),
+      reason: 'the newest release.yml run has not finished — re-run before filing',
+    };
+  }
+  return {
+    ...base,
+    verdict: run.conclusion === 'success' ? 'healthy' : 'unhealthy',
+    ...fieldsOf(run),
+    reason:
+      run.conclusion === 'success'
+        ? 'the release.yml run at the tag peeled commit is success'
+        : `the release.yml run at the tag peeled commit ended ${run.conclusion}`,
+  };
+}
+
+export interface StampedTaggedInput {
+  readonly lastTag: string | undefined;
+  readonly reason: string | undefined;
+}
+
+/** Row 3. Only release-due's own answer reaches here; its refusal is the orchestrator's. */
+export function stampedTaggedVerdict(input: StampedTaggedInput): RowVerdict {
+  const base = { row: 'stamped-version-tagged' as const };
+  if (input.reason === 'awaiting_tag') {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      reason: `release-due says the tree is awaiting its tag: a green release commit untagged is unhealthy whatever release-tag.yml returned`,
+    };
+  }
+  if (input.lastTag === undefined) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: 'release-due answered without a last tag — re-run before filing',
+    };
+  }
+  return {
+    ...base,
+    verdict: 'healthy',
+    reason: `release-due answered: the tree is stamped and ${input.lastTag} is its tag, not awaiting one`,
+  };
+}
+
+const BAD_RUN: ReadonlySet<string> = new Set([
+  'failure',
+  'cancelled',
+  'timed_out',
+  'startup_failure',
+]);
+
+export interface TagRunsInput {
+  readonly runs: readonly RunRow[];
+}
+
+/** Row 4. A failure, a cancel or a timeout is unhealthy; `skipped` is a non-release commit. */
+export function tagRunsVerdict(input: TagRunsInput): RowVerdict {
+  const base = { row: 'tag-runs-ended-well' as const };
+  const bad = input.runs.find((run) => run.conclusion !== null && BAD_RUN.has(run.conclusion));
+  if (bad !== undefined) {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      ...fieldsOf(bad),
+      reason: `a release-tag.yml run ended ${bad.conclusion}`,
+    };
+  }
+  const running = input.runs.find((run) => run.conclusion === null);
+  if (running !== undefined) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: `a release-tag.yml run is still ${running.status ?? 'running'} — re-run before filing`,
+      conclusion: null,
+      status: running.status,
+    };
+  }
+  return {
+    ...base,
+    verdict: 'healthy',
+    reason: `${input.runs.length} recent release-tag.yml run(s), none failure, cancelled, timed_out or startup_failure`,
+  };
+}
+
+export interface NpmTreeInput {
+  readonly audit: AuditDoc;
+}
+
+/** Row 5. The audit's own refusal is this row's unhealthy, not the script's; every field is re-read. */
+export function npmTreeVerdict(input: NpmTreeInput): RowVerdict {
+  const base = { row: 'npm-serves-tree' as const };
+  const audit = input.audit;
+  if (!audit.ok) {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      reason: `registry-audit refused (${audit.findings.join(', ') || 'no readable findings'}) — npm may not serve what the tree says`,
+    };
+  }
+  if (audit.states.some((state) => state.tagged === undefined)) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason:
+        'git declined to say whether the stamped version is tagged — no verdict, re-run before filing',
+    };
+  }
+  for (const state of audit.states) {
+    if (state.kind !== 'ok') {
+      return { ...base, verdict: 'unhealthy', reason: `${state.name} is ${state.kind} on npm` };
+    }
+    if (state.latest !== state.version) {
+      return {
+        ...base,
+        verdict: 'unhealthy',
+        reason: `npm's latest for ${state.name} is ${state.latest ?? 'none'}, not this tree's ${state.version ?? 'unknown version'} (X_REGISTRY_LATEST_DRIFT: the set is split)`,
+      };
+    }
+    if (state.tagged === false) {
+      return {
+        ...base,
+        verdict: 'unhealthy',
+        reason: `${state.name} is published and attested, but v${state.version ?? '?'} is not tagged on origin, so release-tag.yml never ran`,
+      };
+    }
+  }
+  return {
+    ...base,
+    verdict: 'healthy',
+    reason: `npm serves all ${audit.states.length} publishable workspace(s) at this tree's versions, attested and tagged`,
+  };
+}
+
+/** Today's 06:17 UTC audit instant — when registry-audit.yml re-fires or comments — from `nowMs`. */
+export const todayAuditMs = (nowMs: number): number => {
+  const now = new Date(nowMs);
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 6, 17);
+};
+
+export interface AlarmsInput {
+  readonly issues: readonly AlarmIssue[];
+  readonly nowMs: number;
+}
+
+/** Row 6. Empty is healthy; otherwise unhealthy, each issue named latched or re-firing. */
+export function alarmsVerdict(input: AlarmsInput): RowVerdict {
+  const base = { row: 'automation-alarms' as const };
+  if (input.issues.length === 0) {
+    return { ...base, verdict: 'healthy', reason: 'no open registry-drift issue' };
+  }
+  const auditAt = todayAuditMs(input.nowMs);
+  const issues = input.issues.map((issue) => {
+    const updatedAt = Date.parse(issue.updatedAt ?? '');
+    return { ...issue, latched: Number.isFinite(updatedAt) && updatedAt < auditAt };
+  });
+  return {
+    ...base,
+    verdict: 'unhealthy',
+    reason: `${issues.length} open registry-drift alarm(s): ${issues
+      .map(
+        (one) =>
+          `#${one.number}${one.latched ? " latched, newest comment predates today's 06:17 UTC audit" : " re-firing with today's audit"}`,
+      )
+      .join(', ')}`,
+    latched: issues.every((one) => one.latched),
+    issues,
+  };
+}
+
+const WEEK_MS = 7 * 24 * 3_600_000;
+
+export interface DependabotInput {
+  readonly prs: readonly DependabotPr[];
+  readonly nowMs: number;
+}
+
+/** Row 7. Healthy only while every open Dependabot PR is younger than 7 days. */
+export function dependabotVerdict(input: DependabotInput): RowVerdict {
+  const base = { row: 'dependabot-not-stuck' as const };
+  if (input.prs.length === 0) {
+    return { ...base, verdict: 'healthy', reason: 'no open Dependabot PR', prs: input.prs };
+  }
+  if (input.prs.some((pr) => !Number.isFinite(Date.parse(pr.createdAt ?? '')))) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: 'gh returned a Dependabot PR without a readable createdAt — re-run before filing',
+      prs: input.prs,
+    };
+  }
+  const stuck = input.prs.filter((pr) => {
+    const createdAt = Date.parse(pr.createdAt ?? '');
+    return Number.isFinite(createdAt) && input.nowMs - createdAt > WEEK_MS;
+  });
+  return {
+    ...base,
+    verdict: stuck.length === 0 ? 'healthy' : 'unhealthy',
+    reason:
+      stuck.length === 0
+        ? `${input.prs.length} open Dependabot PR(s), none older than 7 days`
+        : `Dependabot stuck: ${stuck.map((pr) => `#${pr.number} since ${pr.createdAt}`).join(', ')}`,
+    prs: input.prs,
+  };
+}
+
+export interface DemoShippedInput {
+  readonly run: RunRow | undefined;
+}
+
+/** Row 8. Takes row 1's verdict: a skipped deploy under a red main files through that row alone. */
+export function demoShippedVerdict(input: DemoShippedInput, mainGreen: Verdict): RowVerdict {
+  const base = { row: 'demo-shipped' as const };
+  const run = input.run;
+  if (run === undefined) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: 'deploy-social-demo.yml has no run yet — re-run before filing',
+    };
+  }
+  const fields = fieldsOf(run);
+  if (run.conclusion === null) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      ...fields,
+      reason: `the newest demo deploy is still ${run.status ?? 'running'} — re-run before filing`,
+    };
+  }
+  if (run.event === 'workflow_dispatch') {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      ...fields,
+      reason: `an operator started that run on ${run.headBranch ?? 'a ref'} — not a push publish, whatever its conclusion`,
+    };
+  }
+  if (run.conclusion === 'success' && run.event === 'workflow_run') {
+    return {
+      ...base,
+      verdict: 'healthy',
+      ...fields,
+      reason: 'a green push to main shipped the demo',
+    };
+  }
+  if (run.conclusion === 'skipped') {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      ...fields,
+      reason:
+        mainGreen === 'healthy'
+          ? 'the deploy job skipped: ci.yml completed without a green push (deploy-social-demo.yml:65-69) — check for a non-push ci.yml run'
+          : 'the deploy job skipped because main is not green — the main-green row already files that ask',
+    };
+  }
+  return {
+    ...base,
+    verdict: 'unhealthy',
+    ...fields,
+    reason: `the demo deploy ended ${run.conclusion} — name the guard the run log's ::error:: line names: the not-on-main-tip guard (deploy-social-demo.yml:99-115) or the app-gate-verdict guard (deploy-social-demo.yml:127-144)`,
+  };
+}

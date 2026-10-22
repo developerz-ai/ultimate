@@ -7,6 +7,8 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
+// why: the mask is how the rule reads code — a mention in prose or in a string is not a call.
+import { maskLiterals } from '../packages/core/src/source-mask';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
@@ -31,7 +33,9 @@ const DECLARES_BUDGET = [
  * `repoRoot()` is the marker, and it is the right one for the same reason the constant lives beside
  * it: **calling it is what makes a scan whole-repo.** A test that only builds a fixture in memory
  * never reaches for it, so this rule cannot fire on one — and a test that does reach for it is in
- * the class that contends, whether or not today's machine happens to be fast enough.
+ * the class that contends, whether or not today's machine happens to be fast enough. Asked of the
+ * mask, never the raw text: prose that QUOTES the call — a header saying "no repoRoot() here" —
+ * is not a call, and counting one branded a fixture-only test a tree-reader.
  */
 const READS_THE_TREE = 'repoRoot()';
 
@@ -44,9 +48,12 @@ describe('unit · a scripts test that reads the tree declares the repo-scan budg
     let reading = 0;
     for (const path of scriptTests()) {
       const source = await Bun.file(join(repoRoot(), 'scripts', path)).text();
-      if (!source.includes(READS_THE_TREE)) continue;
+      // The mask, not the raw text: a comment or a string quoting `repoRoot()` is not a call, and
+      // counting one reported a fixture-only test as a tree-reader.
+      const code = maskLiterals(source);
+      if (!code.includes(READS_THE_TREE)) continue;
       reading += 1;
-      if (!DECLARES_BUDGET.some((form) => form.test(source))) missing.push(`scripts/${path}`);
+      if (!DECLARES_BUDGET.some((form) => form.test(code))) missing.push(`scripts/${path}`);
     }
     // A glob matching nothing, or a marker no file uses, would pass this rule in silence — which is
     // exactly how the convention rotted in the first place.
@@ -55,6 +62,16 @@ describe('unit · a scripts test that reads the tree declares the repo-scan budg
       missing,
       "these read the real tree on Bun's 5000ms default — add `setDefaultTimeout(REPO_SCAN_TIMEOUT_MS)` after the imports, or pass REPO_SCAN_TIMEOUT_MS as the test's third argument",
     ).toEqual([]);
+  });
+
+  test('a mention in prose or in a string is not a call — the marker is asked of the mask', () => {
+    // health.ts.test.ts's own header says "no repoRoot() here, no real tree", and the rule heard a
+    // call. The mask blanks a comment and a literal's text; a real call survives it.
+    expect(maskLiterals('// no repoRoot() here, no real tree\nexport {};\n')).not.toContain(
+      READS_THE_TREE,
+    );
+    expect(maskLiterals("const s = 'repoRoot()';\n")).not.toContain(READS_THE_TREE);
+    expect(maskLiterals('const root = repoRoot();\n')).toContain(READS_THE_TREE);
   });
 
   test('and the scan really read files, rather than agreeing with an empty list', () => {
