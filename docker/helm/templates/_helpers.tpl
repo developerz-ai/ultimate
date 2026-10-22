@@ -209,7 +209,7 @@ in values.yaml, where the two numbers would drift.
         command:
           - bun
           - -e
-          - "process.kill(1, 'SIGUSR2'); for (;;) { try { process.kill(1, 0); } catch { break; } await Bun.sleep(1000); }"
+          - "process.kill(1, 'SIGUSR2'); for (let n = 1; ; n++) { try { process.kill(1, n % 5 === 0 ? 'SIGUSR2' : 0); } catch { break; } await Bun.sleep(1000); }"
   {{- end }}
   {{- end }}
   resources: {{- toYaml $cfg.resources | nindent 4 }}

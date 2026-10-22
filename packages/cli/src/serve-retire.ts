@@ -37,8 +37,10 @@ const NOTHING: WorkerRetire = Object.freeze({ adopt: () => undefined, disarm: ()
 
 /**
  * Listen for `RETIRE_SIGNAL` NOW, before the boot: Bun's default for an unhandled SIGUSR2 ends the
- * process, so a `preStop` that lands while the pod still boots must meet this listener, which waits
- * for the worker and then retires it. One retire per process; a second signal joins it.
+ * process — except as PID 1 (a container's ENTRYPOINT), where the kernel DROPS a signal with no
+ * listener, so a `preStop` that lands before this line runs is lost. The chart's preStop therefore
+ * re-sends it every 5 s until PID 1 is gone; this listener waits for the worker and then retires it.
+ * One retire per process; a second signal joins it.
  *
  * Exits rather than holds, decided 2026-10-07: the `preStop` has no channel back but PID 1 itself,
  * so "retired" has to be observable as "PID 1 is gone" — and a pod that has stopped claiming serves
