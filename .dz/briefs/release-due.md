@@ -15,13 +15,22 @@ bun run scripts/release-due.ts --json
 | `false` | `nothing_ships` | nothing |
 | `false` | `settling` | nothing — an org member may still release their own work; next checkup decides |
 | `false` | `major_needs_a_maintainer` | nothing, unless no open issue already says a major is pending: then one issue listing `data.breaking`, for a maintainer |
+| `false` | `X_RELEASE_HEAD_NOT_MAIN` (in `findings`) | nothing — HEAD is not the tip of `origin/main`; run `git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main && git checkout main`, then re-run |
 | `true` | — | one ask: **Release `<data.next>`**, listing `data.shipping` |
 
 ## The ask, when due
 
 Title `Release <next>`. Body, verbatim steps for the box that takes it:
 
-1. `bun run scripts/release-due.ts --json` again on fresh `main` — still due, same `next`, or stop.
+1. `bun run scripts/release-due.ts --json` again on fresh `main`. Compare both gates
+   against this run's answer:
+   - `data.next`: still `data.next` from the run that filed the ask, or stop.
+   - `data.headSha`: the same SHA as the ask body quoted — the SHA the run that filed this
+     ask was anchored to. That SHA must still be `origin/main`'s tip
+     (`git rev-parse origin/main`) and the SHA of a green `ci.yml` run on `main`
+     (`gh run list --workflow ci.yml --branch main --event push --json conclusion,headSha`).
+     A different answer means the run is anchored to a box that is no longer current:
+     stop, the run was stale the moment it was re-read.
 2. A Dependabot-only window adds nothing under `## [Unreleased]` in `CHANGELOG.md`: add a
    `### Changed` line naming each bumped runtime dependency and its new range first.
 3. Run the `data.command` it printed (`bun run scripts/release.ts --version <next>`), then
