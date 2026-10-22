@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "1ee81a583f2f70b07ca62f67a9704cfadfaa7aa40cd7512654634b1c3bcd7815",
+  "buildId": "e350efee507a09c51358de3dc10ecad6cb5b46d05819c2afe161ac9b3a9eced9",
   "tiers": {
     "0": [
       "core",
@@ -373,6 +373,11 @@
       "code": "X_ADMIN_UNSCANNED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_AGENT_CONTEXT_EXHAUSTED",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
     },
     {
       "code": "X_AGENT_DEADLINE",

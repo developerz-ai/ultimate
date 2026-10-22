@@ -55,6 +55,9 @@ export const AI_ERROR_RETRY = {
   // A run whose `offerTools()` named an undeclared tool names it again on the next attempt: the
   // fix is the declaration or the app's own rule, never a retry.
   X_AGENT_TOOL_UNDECLARED: 'terminal',
+  // A run whose transcript outgrew the window outgrows it again: the attempt starts from the same
+  // input, takes the same turns and reaches the same size. The fix is `compact` or the model.
+  X_AGENT_CONTEXT_EXHAUSTED: 'terminal',
 } as const satisfies Readonly<Partial<Record<AiErrorCode, ErrorRetry>>>;
 
 // `Partial`, so the table may be a subset — but every key is still checked against the declared set,

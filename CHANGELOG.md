@@ -8,6 +8,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **Auto-compaction on `agent()` — `compact: 'auto' | 'off' | { at, keepTurns, model,
+  maxSummaryTokens }`, default `'auto'`.** Every turn re-sends the whole transcript, so a long tool
+  loop grew until the provider answered a 400 after every earlier turn was paid for. Before each
+  turn, the gateway's estimate of its request (plus the tool definitions) is compared with the model
+  row's `contextWindow` less `maxTokens`; over `at` (0.8) of it, ONE model call — the run's own
+  request up to a cut between turns, plus an instruction, so it reads the provider's cached prefix
+  and keeps the same OpenRouter `x-session-id` — summarises every turn older than the last
+  `keepTurns` (4) into the first user message. The tools, the system prompt (its stable block
+  included) and the kept turns are sent byte for byte; no tool call is separated from its result.
+  The summary call is billed to the run (same ledger, `tokensPerRun`, `costPerRun` checked first,
+  `usage`, `meta.billed`) and is not a turn. A summary that fails leaves the run whole while it fits
+  (and is not attempted again until the request no longer does);
+  a request that still would not fit is the new **`X_AGENT_CONTEXT_EXHAUSTED`** (500, `terminal` for
+  a job), before it is sent — never a truncated transcript. New `onCompact` hook and `agent.compact`
+  span event (`turn`, `outcome`, `reason`, `before`/`after` token estimates, `limit`, `summarised`,
+  `kept`, `usage`, `cost`). The transcript handle stores the compacted messages and a signed
+  `compacted` count, absent when no compaction ran, so `.continue()` resumes from it and a run that
+  never compacted writes the handle it always did; `agentJob()` compacts on the worker alike. A run
+  below the threshold, and every run under `compact: 'off'`, is unchanged. New types
+  `AgentCompactOption`, `AgentCompactRule`, `AgentCompaction`; new class `AgentContextExhaustedError`.
+
 ### Fixed
 
 - **`ok` is no longer a clean bill of health: an attested package whose npm `latest` is another
