@@ -1,6 +1,7 @@
 // `scripts/release-due.ts` against real git repositories built per test: the last tag is the
 // highest one HEAD contains, the window is what git says landed since it, and a tree with no tag
-// is a coded refusal — never "nothing to release".
+// is a coded refusal — never "nothing to release". The bump-PR twin is the one input a test
+// injects, because a real lookup is a network call this suite never makes.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
@@ -11,7 +12,14 @@ import { join } from 'node:path';
 import { FETCH_MAIN } from './lib/base-ref';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
-import { decideAt, lastReleaseTag, parseWindowLog, readWindow, settleHoursOf } from './release-due';
+import {
+  decideAt,
+  lastReleaseTag,
+  openPrTitlesAt,
+  parseWindowLog,
+  readWindow,
+  settleHoursOf,
+} from './release-due';
 
 // Each test spawns a dozen git processes; the CLI test boots the real tree.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -367,5 +375,47 @@ describe('unit · release-due · parsing and flags', () => {
     // The concrete anchor for the consumer: HEAD's SHA at the moment decideAt ran.
     expect(parsed.data?.headSha).toMatch(/^[0-9a-f]{40}$/);
     if (!parsed.data?.due) expect(parsed.data?.reason).toBeDefined();
+  });
+});
+
+describe('unit · release-due · the bump-PR twin', () => {
+  test('a due decision names the open bump PR — the release already in flight', async () => {
+    const { dir, land } = await released();
+    await land({ 'packages/core/src/a.ts': 'export const a = 4;\n' }, 'fix(core): four (#4)', 30);
+    const read = await decideAt(dir, 24, NOW, async () => ['chore: release 1.0.1 (#3)']);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.decision.due).toBe(true);
+    expect(read.decision.next).toBe('1.0.1');
+    expect(read.decision.detail).toContain('; a bump PR already open: chore: release 1.0.1 (#3)');
+  });
+
+  test('an ask title is not a bump PR: the two readers stay disjoint at this seam too', async () => {
+    const { dir, land } = await released();
+    await land({ 'packages/core/src/a.ts': 'export const a = 5;\n' }, 'fix(core): five (#5)', 30);
+    const read = await decideAt(dir, 24, NOW, async () => ['Release 1.0.1']);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.decision.due).toBe(true);
+    expect(read.decision.detail).not.toContain('bump PR');
+  });
+
+  test('a decision that reads no twin never asks the CLI for one', async () => {
+    const { dir, land } = await released();
+    await land({ 'docs/a.md': '# a\n' }, 'docs: a page');
+    const asked: string[] = [];
+    const read = await decideAt(dir, 24, NOW, async (version) => {
+      asked.push(version);
+      return [];
+    });
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.decision.reason).toBe('nothing_ships');
+    expect(asked).toEqual([]);
+  });
+
+  // Absent binary, no auth and a failed call all land here, and all three must read as NO KNOWN
+  // PRs: the twin note is absent and the decision stands, never an invented "none open".
+  test('a lookup that cannot answer is no known PRs, never a twin', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'release-due-pr-'));
+    madeDirs.push(dir);
+    expect(await openPrTitlesAt(dir, '1.0.1')).toEqual([]);
   });
 });

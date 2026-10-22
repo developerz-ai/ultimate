@@ -10,9 +10,10 @@ import { flagString, parseScriptArgs } from './lib/args';
 import { BASE_REF, baseRef, FETCH_MAIN, type GitRunner } from './lib/base-ref';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { gh } from './lib/release-due-gh';
 import { git } from './lib/release-due-git';
-import type { DueDecision, WindowCommit } from './lib/release-due-rule';
-import { DEFAULT_SETTLE_HOURS, releaseDue } from './lib/release-due-rule';
+import type { DueDecision, DueInput, WindowCommit } from './lib/release-due-rule';
+import { askPrArgs, DEFAULT_SETTLE_HOURS, parsePrIssues, releaseDue } from './lib/release-due-rule';
 import { packageFiles, shippingPackage } from './lib/release-due-ships';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
@@ -145,11 +146,27 @@ const baseRefRunner: GitRunner = (command, { cwd }) => {
   return git(args, cwd);
 };
 
-/** Everything the rule needs, read from the checkout at `root`; a finding when it cannot be read. */
+/**
+ * The open bump PRs for `version`, best effort and last. A CLI that errors, times out or is not
+ * installed answers NO KNOWN PRs, never "none open" as a fact — exactly how `scripts/release.ts`
+ * reads its own lookup — so the twin note is simply absent and the decision is otherwise unchanged.
+ */
+export async function openPrTitlesAt(root: string, version: string): Promise<readonly string[]> {
+  const listed = await gh(askPrArgs(version), root).catch(() => undefined);
+  if (listed?.ok !== true) return [];
+  return parsePrIssues(listed.output).map((pr) => pr.title);
+}
+
+/**
+ * Everything the rule needs, read from the checkout at `root`; a finding when it cannot be read.
+ * `listPrTitles` is the bump-PR twin lookup, injected so a test can name open PRs without one.
+ */
 export async function decideAt(
   root: string,
   settleHours: number,
   nowMs: number,
+  listPrTitles: (version: string) => Promise<readonly string[]> = (version) =>
+    openPrTitlesAt(root, version),
 ): Promise<
   { readonly tagged: string; readonly stamped: string; readonly decision: DueDecision } | Finding
 > {
@@ -192,7 +209,7 @@ export async function decideAt(
   const changelog = await Bun.file(`${root}/CHANGELOG.md`)
     .text()
     .catch(() => '');
-  const decision = releaseDue({
+  const facts: DueInput = {
     tagged,
     stamped,
     commits,
@@ -201,7 +218,13 @@ export async function decideAt(
     settleHours,
     ships: (path) => shippingPackage(path, files),
     headSha,
-  });
+  };
+  // The rule computes `next`, so the bump-PR lookup can only follow it. `releaseDue` is pure and
+  // cheap, and only a `due` decision ever reads a twin, so the second pass happens on that path.
+  const first = releaseDue(facts);
+  const next = first.next;
+  const openPrTitles = first.due && next !== undefined ? await listPrTitles(next) : [];
+  const decision = openPrTitles.length === 0 ? first : releaseDue({ ...facts, openPrTitles });
   return { tagged, stamped, decision };
 }
 

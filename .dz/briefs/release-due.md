@@ -65,6 +65,15 @@ is the whole title, no trailing prose). The box fetches candidates with
 the run above — substitute the version before running it — then post-filters them by exact title
 match.
 
+The same rule on the pull-request side: an open `chore: release <next>` PR is that release already
+in flight — merging it is the release (step 5) — so file nothing, cut nothing, and let that PR
+land. The box fetches candidates with
+`gh pr list --state open --search "release <next> in:title" --json number,title`, then
+post-filters them through `RELEASE_SUBJECT` in `scripts/lib/release-subject.ts` against
+`data.next`: `chore: release <next>` and `release: <next>` are the twins, `Release <next>` (the
+ask) and `chore: release <next>-beta` are not. A due run names the one it found in `data.detail`,
+as `; a bump PR already open: <title>`.
+
 ## Evidence: one live run on this checkout
 
 `bun run scripts/release-due.ts --json`, 2026-10-22T01:02:38Z, exit 0. This checkout had tags
