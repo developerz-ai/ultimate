@@ -1427,7 +1427,7 @@ The file an agent opens instead of guessing at forty PNGs. Markdown, written by 
 x pr review [--pr <n>] [--repo owner/name] [--all] [--full] [--json]
 x pr resolve <thread-id> [--json]
 x pr reply <thread-id> --body "…" [--json]
-x ci [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--json]
+x ci [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--workflow <name>] [--event <push|pull_request|workflow_dispatch>] [--json]
 ```
 
 **`gh pr view --comments` does not show inline review threads.** It shows *issue* comments; the actionable findings are anchored to lines and reachable only through GraphQL, and the thread id needed to resolve one exists nowhere else. That is the whole reason `x pr` exists — otherwise every team on Ultimate rediscovers the same query.
@@ -1443,7 +1443,7 @@ It reads `latestOpinionatedReviews`, not `reviews(last: n)`: the most recent rev
 
 **Resolving closes a conversation, not a finding.** Whether the code is fixed is a fact no GitHub mutation observes, and `x pr resolve` says so rather than implying otherwise.
 
-`x ci` exists because *"`gh run view` prints a tree of ticks and one cross, and the error is inside a per-job log that is mostly setup noise."* For a `verify` job the log tail **is** the findings block — this repo's gate already prints `X_*` codes and executable `fix:` lines — so `x ci` reads them back out into `findings[]` in the standard shape. `ok: false` iff a run failed; `ok: true` means *no failed run* — an in-flight or queued run still completes with `ok: true` and is reported through the `running > 0` line and a per-run `headSha`, not as a green verdict. `x pr review` always exits 0, because unresolved threads are the work to do, not a failure of the command that listed them.
+`x ci` exists because *"`gh run view` prints a tree of ticks and one cross, and the error is inside a per-job log that is mostly setup noise."* For a `verify` job the log tail **is** the findings block — this repo's gate already prints `X_*` codes and executable `fix:` lines — so `x ci` reads them back out into `findings[]` in the standard shape. `ok: false` iff a run failed; `ok: true` means *no failed run* — an in-flight or queued run still completes with `ok: true` and is reported through the `running > 0` line and a per-run `headSha`, not as a green verdict. `x pr review` always exits 0, because unresolved threads are the work to do, not a failure of the command that listed them. The two flags narrow the `gh run list` server-side — `--workflow` takes the workflow name or filename (`ci.yml`), `--event` takes `push|pull_request|workflow_dispatch` — so `x ci --workflow ci.yml --event push --branch main` answers *"is main's push CI green"* instead of folding every main-branch workflow into one verdict.
 
 **Neither is a step of `x verify`.** A gate that needs network and a GitHub token goes red for reasons unrelated to the change.
 
