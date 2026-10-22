@@ -55,7 +55,11 @@ export interface PublishState extends AuditTarget {
   readonly publishedBy?: string;
   /** Only for `unreachable`: how the request failed, in words a reader can act on. */
   readonly detail?: string;
-  /** Only for `behind`: whether `v<version>` is on the remote — `undefined` when git could not say. */
+  /**
+   * Whether `v<version>` is on the remote — `undefined` when git could not say. Set on EVERY kind,
+   * not only `behind`: "published and attested" says nothing about whether the release is tagged, so
+   * an `ok` state with `tagged: false` is the one shape the audit would otherwise call healthy.
+   */
   readonly tagged?: boolean;
 }
 
@@ -63,15 +67,38 @@ export interface PublishState extends AuditTarget {
  * Whether a release tag is on `origin`. The seam, injected like `RegistryFetch`, because the fix for
  * a `behind` package depends on it: the daily audit can run after a bump lands and before its tag
  * is pushed, and dispatching the workflow at a ref that does not exist is a fix that cannot run.
+ * Answered for every stamped version, so it is a statement about the release, not about one package.
  */
 export type TagProbe = (tag: string) => Promise<boolean | undefined>;
 
-/** `git ls-remote --exit-code` answers 0 for a match and 2 for none; anything else is no answer. */
+/**
+ * `git ls-remote --exit-code` answers 0 for a match and 2 for none; anything else is no answer.
+ *
+ * Reads `GITHUB_TOKEN` at probe time and forwards it as a basic-auth header scoped to
+ * `https://github.com/` only: a different HTTPS origin must never receive a GitHub credential.
+ * The checkout step in `.github/workflows/registry-audit.yml` deliberately uses
+ * `persist-credentials: false` so the runner's token never reaches `.git/config`, and a
+ * non-authenticated `ls-remote` against a private mirror would otherwise exit 128 (auth
+ * required), which `result.code === 0 ? true : result.code === 2 ? false : undefined`
+ * reads as `undefined` and leaves `tagged` absent on every state. GitHub accepts
+ * `x-access-token:<token>` as the basic-auth pair for read-only `git ls-remote`, so the
+ * only token the probe needs is the one already in its environment.
+ */
 export const remoteTagProbe =
-  (root: string): TagProbe =>
+  (root: string, execute: typeof run = run): TagProbe =>
   async (tag) => {
-    const result = await run(
-      ['git', 'ls-remote', '--exit-code', '--tags', 'origin', `refs/tags/${tag}`],
+    const token = process.env['GITHUB_TOKEN'] ?? '';
+    // why: `Buffer.from(s).toString('base64')` for basic-auth — Bun has no native base64
+    // encoder and a hand-rolled table is a one-bit mistake on a header that fails silently.
+    const auth: readonly string[] =
+      token === ''
+        ? []
+        : [
+            '-c',
+            `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
+          ];
+    const result = await execute(
+      ['git', ...auth, 'ls-remote', '--exit-code', '--tags', 'origin', `refs/tags/${tag}`],
       {
         cwd: root,
       },
@@ -244,19 +271,25 @@ export const findingFor = (state: PublishState): Finding | undefined =>
 export const registryFindings = (states: readonly PublishState[]): readonly Finding[] =>
   states.map(findingFor).filter((finding): finding is Finding => finding !== undefined);
 
-/** Each `behind` state told whether its tag exists — asked once per version, never per package. */
+/**
+ * Every state told whether its stamped version's tag exists. One probe per DISTINCT version: the
+ * workspaces are stamped in lockstep, so 31 packages at one version cost exactly one `git
+ * ls-remote`, and asking per package would put 31 remote reads behind a daily audit.
+ */
 async function withTags(
   states: readonly PublishState[],
   probe: TagProbe,
 ): Promise<readonly PublishState[]> {
   const answers = new Map<string, boolean | undefined>();
   for (const state of states) {
-    if (state.kind === 'behind' && !answers.has(state.version)) {
+    if (!answers.has(state.version)) {
       answers.set(state.version, await probe(`v${state.version}`));
     }
   }
+  // `undefined` (git could not say) stays absent rather than becoming `false`: the two fixes differ,
+  // and an untagged release is a claim, not a thing to assume.
   return states.map((state) => {
-    const tagged = state.kind === 'behind' ? answers.get(state.version) : undefined;
+    const tagged = answers.get(state.version);
     return tagged === undefined ? state : { ...state, tagged };
   });
 }
