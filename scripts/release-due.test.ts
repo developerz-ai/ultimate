@@ -8,6 +8,7 @@ import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { FETCH_MAIN } from './lib/base-ref';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { decideAt, lastReleaseTag, parseWindowLog, readWindow, settleHoursOf } from './release-due';
@@ -39,6 +40,10 @@ const CHANGELOG =
 async function released(options: { readonly tag: boolean } = { tag: true }) {
   const dir = await mkdtemp(join(tmpdir(), 'release-due-'));
   madeDirs.push(dir);
+  // A bare upstream reachable as `origin`, so `baseRef()` resolves and `decideAt` can read
+  // both HEAD and the base SHA from the same fixture. Tracks in `madeDirs` for cleanup.
+  const upstream = await mkdtemp(join(tmpdir(), 'release-due-upstream-'));
+  madeDirs.push(upstream);
   // Through the one bounded, non-interactive git the script uses: no call here can outlive
   // GIT_TIMEOUT_MS or wait on stdin, whatever git or the machine is doing.
   const git = async (argv: readonly string[], hoursAgo = 72): Promise<string> => {
@@ -80,8 +85,19 @@ async function released(options: { readonly tag: boolean } = { tag: true }) {
       ['commit', '--quiet', '-m', subject, ...(author === undefined ? [] : ['--author', author])],
       hoursAgo,
     );
+    // Keep origin/main in lockstep with local main so the head-vs-base check passes for
+    // on-main fixtures. A non-main branch — the side-branch test — suppresses the auto-push.
+    const branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+    if (branch === 'main') {
+      await git(['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+    }
   };
+  // A bare upstream reachable as `origin`, so `baseRef()` returns `BASE_REF` for every fixture.
+  // Init the upstream and the local repo independently: `git remote add` requires a
+  // `.git` directory in cwd, so the local init comes first.
+  await git(['init', '--quiet', '--bare', upstream]);
   await git(['init', '--quiet', '-b', 'main']);
+  await git(['remote', 'add', 'origin', upstream]);
   await land(
     {
       'packages/core/package.json': MANIFEST('1.0.0'),
@@ -91,6 +107,8 @@ async function released(options: { readonly tag: boolean } = { tag: true }) {
     'chore: release 1.0.0 (#1)',
   );
   if (options.tag) await git(['tag', '-a', 'v1.0.0', '-m', 'v1.0.0']);
+  // `land()` already pushed the initial commit (auto-push on main); push the tag too.
+  if (options.tag) await git(['push', '--quiet', 'origin', 'v1.0.0']);
   return { dir, git, land };
 }
 
@@ -201,6 +219,58 @@ describe('unit · release-due · read from a real repository', () => {
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('awaiting_tag');
   });
+
+  // The concrete anchor a `data.headSha` consumer compares against: HEAD's SHA at the moment
+  // `decideAt` ran the head-vs-base check. On main, `releaseDue` is handed the same SHA and
+  // the rule's only job is to carry it through.
+  test('on-main HEAD propagates into read.decision.headSha', async () => {
+    const { dir, git } = await released();
+    const read = await decideAt(dir, 24, NOW);
+    if (!('decision' in read)) return expect.unreachable(read.cause);
+    expect(read.decision.headSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(read.decision.headSha).toBe((await git(['rev-parse', 'HEAD'])).trim());
+  });
+
+  // A side-branch head is HEAD at the tip of `origin/main` neither — naming both SHAs and the
+  // branch in the cause is the contract the `data.headSha` consumer relies on to compare the
+  // answer against the SHA of the latest green `ci.yml` run on `main`.
+  test('a side-branch HEAD refuses with X_RELEASE_HEAD_NOT_MAIN naming both SHAs', async () => {
+    const { dir, git, land } = await released();
+    await git(['checkout', '--quiet', '-b', 'side']);
+    await land({ 'packages/core/src/b.ts': 'export const b = 1;\n' }, 'feat: side');
+    const headSha = (await git(['rev-parse', 'HEAD'])).trim();
+    const baseSha = (await git(['rev-parse', 'origin/main'])).trim();
+    expect(headSha).not.toBe(baseSha);
+    const read = await decideAt(dir, 24, NOW);
+    expect('code' in read).toBe(true);
+    if (!('code' in read)) return;
+    expect(read.code).toBe('X_RELEASE_HEAD_NOT_MAIN');
+    expect(read.cause).toContain(headSha);
+    expect(read.cause).toContain(baseSha);
+    expect(read.cause).toContain('side');
+  });
+
+  // The `fetch` kind of `headNotMain`: `baseRef()` could not establish `origin/main` because
+  // the local tracking ref was deleted AND the fetch returned non-zero, so the script cannot
+  // tell what HEAD is anchored to. The same X_RELEASE_HEAD_NOT_MAIN code as the side-branch
+  // test above keeps one consumer branch enough across both unreachable-origin and side-branch;
+  // the cause and the fix both name FETCH_MAIN, the literal command that fixes both cases.
+  test('an unreachable origin refuses with X_RELEASE_HEAD_NOT_MAIN whose cause and fix name the fetch', async () => {
+    const { dir, git } = await released();
+    // Drop the local tracking ref so `baseRef()` actually attempts FETCH_MAIN; after the
+    // auto-push in `land()`, refs/remotes/origin/main points at HEAD and `baseRef()` would
+    // short-circuit past the fetch if the local ref still existed.
+    await git(['update-ref', '-d', 'refs/remotes/origin/main']);
+    // Repoint `origin` at a missing local path so FETCH_MAIN fails at the resolver the same
+    // way a dead network would, without waiting on a network timeout.
+    await git(['remote', 'set-url', 'origin', '/nonexistent/release-due-fetch']);
+    const read = await decideAt(dir, 24, NOW);
+    expect('code' in read).toBe(true);
+    if (!('code' in read)) return;
+    expect(read.code).toBe('X_RELEASE_HEAD_NOT_MAIN');
+    expect(read.cause).toContain(FETCH_MAIN);
+    expect(read.fix).toContain(FETCH_MAIN);
+  });
 });
 
 describe('unit · release-due · refusals that name their own cause', () => {
@@ -231,6 +301,16 @@ describe('unit · release-due · refusals that name their own cause', () => {
     expect('code' in read && read.code).toBe('X_CORPUS_UNSCANNED');
   });
 });
+
+/** Every refusal `decideAt` can hand back on a real checkout: a tagless shallow clone, a
+ * window the log could not read, or HEAD not at the base ref's tip. One list, so a refusal
+ * code added to `release-due.ts` cannot slip past the closed set this suite pins. */
+const REFUSAL_CODES = [
+  'X_RELEASE_TAG_UNREACHABLE',
+  'X_RELEASE_WINDOW_UNREADABLE',
+  'X_RELEASE_HEAD_NOT_MAIN',
+] as const;
+type RefusalCode = (typeof REFUSAL_CODES)[number];
 
 describe('unit · release-due · parsing and flags', () => {
   test('the window log splits on control characters, so a subject may hold anything', () => {
@@ -267,17 +347,25 @@ describe('unit · release-due · parsing and flags', () => {
     const parsed = JSON.parse(out.output) as {
       ok: boolean;
       script: string;
-      data?: { due: boolean; lastTag: string; reason?: string };
-      findings?: readonly { code: string }[];
+      data?: { due: boolean; lastTag: string; reason?: string; headSha?: string };
+      findings?: readonly { code: RefusalCode }[];
     };
     expect(parsed.script).toBe('release-due');
-    // CI checks out shallow and tagless; there the one legal answer is the coded refusal.
+    // A refusal carries no `data`: every signal a bot branches on is in `findings`. The codes
+    // are a closed set — a tagless shallow checkout (TAG_UNREACHABLE), a hung git log
+    // (WINDOW_UNREADABLE), or HEAD not at origin/main's tip (HEAD_NOT_MAIN) — so a real-tree
+    // run on a side branch keeps the suite green instead of mismatching the prior exact match.
     if (!parsed.ok) {
-      expect(parsed.findings?.map((f) => f.code)).toEqual(['X_RELEASE_TAG_UNREACHABLE']);
+      expect(parsed.data).toBeUndefined();
+      for (const finding of parsed.findings ?? []) {
+        expect(REFUSAL_CODES).toContain(finding.code);
+      }
       return;
     }
     expect(typeof parsed.data?.due).toBe('boolean');
     expect(parsed.data?.lastTag).toMatch(/^v\d+\.\d+\.\d+$/);
+    // The concrete anchor for the consumer: HEAD's SHA at the moment decideAt ran.
+    expect(parsed.data?.headSha).toMatch(/^[0-9a-f]{40}$/);
     if (!parsed.data?.due) expect(parsed.data?.reason).toBeDefined();
   });
 });
