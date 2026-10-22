@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b0132aa6179c443ad101a32e35823c588e952bc56f45c96aae6324eb16af1b20",
+  "buildId": "1ee81a583f2f70b07ca62f67a9704cfadfaa7aa40cd7512654634b1c3bcd7815",
   "tiers": {
     "0": [
       "core",
@@ -3263,6 +3263,11 @@
       "code": "X_RELEASE_FLAG_UNKNOWN",
       "owner": "scripts",
       "at": "scripts/release.ts"
+    },
+    {
+      "code": "X_RELEASE_HEAD_NOT_MAIN",
+      "owner": "scripts",
+      "at": "scripts/release-due.ts"
     },
     {
       "code": "X_RELEASE_TAG_UNREACHABLE",
