@@ -1,10 +1,25 @@
 // The release-due decision over fixtures: each reason it can refuse with, the bump it computes,
-// and what it tells the releaser to write first. Git and the clock never enter this file.
+// and what it tells the releaser to write first. Git and the clock never enter this file. The
+// last describe also pins the brief's decision table (.dz/briefs/release-due.md) to the closed
+// reason list, so the checkup's branch point cannot drift from the rule it branches on.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+// why: Bun exposes no path-join primitive; Bun.file takes one already joined.
+import { join } from 'node:path';
 import type { DueInput, WindowCommit } from './release-due-rule';
-import { bumpOf, DEPENDABOT, openReleaseAsk, releaseDue } from './release-due-rule';
+import {
+  bumpOf,
+  DEPENDABOT,
+  NOT_DUE_REASONS,
+  openReleaseAsk,
+  releaseDue,
+} from './release-due-rule';
 import { RELEASE_SUBJECT } from './release-subject';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
+
+// Names `repoRoot()`, so the repo-scan guard (scripts/repo-scan-timeout.test.ts) holds this file
+// to the repo-scan backstop even though it reads one pinned file, not a tree walk.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 12);
@@ -262,5 +277,30 @@ describe('unit · release-due-rule · the ask dedupe', () => {
     const decision = releaseDue(input({ openIssueTitles: FAILED_PUBLISH }));
     expect(decision.due).toBe(true);
     expect(decision.detail).not.toContain('already open');
+  });
+});
+
+describe('unit · release-due-rule · the brief covers the closed list', () => {
+  // The brief's decision table is the checkup's only branch point on `data.reason`, so its
+  // reason-keyed not-due rows must equal `NOT_DUE_REASONS` exactly: a reason losing its row, or
+  // the table growing a reason the rule never returns, must red here rather than send the bot
+  // off-table in production. The `X_RELEASE_HEAD_NOT_MAIN` row keys a findings code, not a
+  // `NOT_DUE_REASONS` entry — its second cell carries `(in findings)` after the token, so the row
+  // regex below passes it over and the pin holds at four.
+  test('one brief row per reason, and awaiting_tag pins its watch command', async () => {
+    const brief = await Bun.file(join(repoRoot(), '.dz/briefs/release-due.md')).text();
+    const falseRows = brief.split('\n').filter((line) => line.startsWith('| `false` |'));
+    const reasons = falseRows
+      .map((line) => /^\| `false` \| `([^`]+)` \|/.exec(line)?.[1])
+      .filter((reason): reason is string => reason !== undefined);
+    expect([...reasons].sort()).toEqual([...NOT_DUE_REASONS].sort());
+    const awaitingTag = falseRows.find((line) => line.startsWith('| `false` | `awaiting_tag` |'));
+    // The row is the whole instruction for this reason, so the pin is on its payload — the
+    // command to watch and the verdict to file nothing — not merely on the row's existence.
+    // The command is pinned with its backtick delimiters: a bare substring would survive a
+    // changed limit, since `--limit 50` contains `--limit 5`.
+    expect(awaitingTag, 'the awaiting_tag row vanished from the brief').toBeDefined();
+    expect(awaitingTag).toContain('`gh run list --workflow release-tag.yml --limit 5`');
+    expect(awaitingTag).toContain('nothing');
   });
 });
