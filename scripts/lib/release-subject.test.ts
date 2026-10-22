@@ -1,10 +1,19 @@
-// The two release subjects, one per reader: a commit subject `RELEASE_SUBJECT`, an ask title
-// `ASK_SUBJECT`. A release is a whole version in either form, and a subject that only starts like one
-// is not — nor is one that reads as the other's. `askTwin` is that dedupe over open issue rows:
-// exactly one title wins, and the whole {number,title} row comes back.
+// The two release subjects, one per reader: a commit subject — or release PR title —
+// `RELEASE_SUBJECT`, and an ask title `ASK_SUBJECT`. A release is a whole version in either form,
+// and a subject that only starts like one is not, nor one that reads as the other's. `askTwin`
+// and `prTwin` are those dedupes over open rows: exactly one title wins, and the whole
+// {number,title} row comes back.
 
 import { describe, expect, test } from 'bun:test';
-import { ASK_SUBJECT, askTwin, RELEASE_SUBJECT } from './release-subject';
+import {
+  ASK_SUBJECT,
+  askPrArgs,
+  askTwin,
+  openReleaseBump,
+  parsePrIssues,
+  prTwin,
+  RELEASE_SUBJECT,
+} from './release-subject';
 
 describe('unit · release-subject', () => {
   test('both forms this repo has committed releases under match', () => {
@@ -105,5 +114,84 @@ describe('unit · release-subject · askTwin', () => {
 
   test('no open issues, no twin', () => {
     expect(askTwin([], '27.10.1')).toBeUndefined();
+  });
+});
+
+describe('unit · release-subject · the bump-PR twin', () => {
+  test('the query is the release-due query over number,title rows, open PRs only', () => {
+    const args = askPrArgs('27.10.1');
+    expect(args[args.indexOf('--state') + 1]).toBe('open');
+    expect(args[args.indexOf('--search') + 1]).toBe('release 27.10.1 in:title');
+    expect(args[args.indexOf('--json') + 1]).toBe('number,title');
+  });
+
+  test('every release-PR title this repo has used is the twin', () => {
+    for (const title of ['chore: release 27.10.1', 'chore: release 27.10.1 (#770)']) {
+      expect({ title, ...openReleaseBump([title], '27.10.1') }).toEqual({
+        title,
+        open: true,
+        twin: title,
+      });
+    }
+    // What `scripts/release.ts` commits were titled before the conventional-commit prefix.
+    expect(openReleaseBump(['release: 6.0.0'], '6.0.0')).toEqual({
+      open: true,
+      twin: 'release: 6.0.0',
+    });
+  });
+
+  test('a PR that is not a release subject is no twin', () => {
+    for (const title of [
+      'docs: a thing',
+      'chore: release notes wording',
+      'chore: release 27.10',
+      'chore: release 27.10.1-beta (#9)',
+      'fix(core): release 27.10.1',
+    ]) {
+      expect({ title, ...openReleaseBump([title], '27.10.1') }).toEqual({ title, open: false });
+    }
+  });
+
+  // The search is case-insensitive, so it hands back ask titles too. They must not read as twins.
+  test('an ask title is not a bump twin: the two readers stay disjoint', () => {
+    expect(openReleaseBump(['Release 27.10.1'], '27.10.1')).toEqual({ open: false });
+    expect(openReleaseBump(['release 27.10.1'], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('a longer version that starts with the target is not a twin: 27.10.10 ≠ 27.10.1', () => {
+    expect(openReleaseBump(['chore: release 27.10.10'], '27.10.1')).toEqual({ open: false });
+    expect(openReleaseBump(['chore: release 1.0.0'], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('no open PRs is not open', () => {
+    expect(openReleaseBump([], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('rows in, PRs out; a malformed row drops and a string number is not the row promised', () => {
+    expect(parsePrIssues('[{"number":812,"title":"chore: release 1.0.1"}]')).toEqual([
+      { number: 812, title: 'chore: release 1.0.1' },
+    ]);
+    expect(parsePrIssues('[{"number":812,"title":"chore: release 1.0.1"},{"oops":true}]')).toEqual([
+      { number: 812, title: 'chore: release 1.0.1' },
+    ]);
+    // A string number is not the row the CLI promised.
+    expect(parsePrIssues('[{"number":"812","title":"chore: release 1.0.1"}]')).toEqual([]);
+  });
+
+  test('anything but the rows is no PR at all — the lookup is best effort', () => {
+    expect(parsePrIssues('gh: (NotFound) …')).toEqual([]);
+    expect(parsePrIssues('')).toEqual([]);
+    expect(parsePrIssues('{"number":812,"title":"chore: release 1.0.1"}')).toEqual([]);
+    expect(parsePrIssues('[{}]')).toEqual([]);
+  });
+
+  test('prTwin returns the whole row whose title won, and nothing else', () => {
+    expect(prTwin([{ number: 812, title: 'chore: release 27.10.1 (#770)' }], '27.10.1')).toEqual({
+      number: 812,
+      title: 'chore: release 27.10.1 (#770)',
+    });
+    expect(prTwin([{ number: 813, title: 'Release 27.10.1' }], '27.10.1')).toBeUndefined();
+    expect(prTwin([{ number: 814, title: 'chore: release 27.10.10' }], '27.10.1')).toBeUndefined();
+    expect(prTwin([], '27.10.1')).toBeUndefined();
   });
 });
