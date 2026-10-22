@@ -423,11 +423,26 @@ tooling, `bun.lock`, `.github/`, docs, the wiki and both tracked apps ship nothi
 | `major_needs_a_maintainer` | a `BREAKING —` line under `[Unreleased]`, or a `!:` subject: a major's `wiki/Upgrading.md` walkthrough is a maintainer's judgement |
 | `settling` | the oldest shipping commit is younger than `--settle-hours` (default 24); `.data.dueAt` says when. A maintainer usually releases their own work at once — the bot releases what nobody did |
 
-Otherwise `.data.due` is `true` with the bump (`BREAKING —` or `!:` major, `### Added` or a
-`feat:` subject minor, else patch — `### Changed` alone is a patch, as 20.1.2 and 20.2.1 were),
-`.data.next`, the shipping commits, `.data.headSha`, and `.data.command` — `bun run scripts/release.ts --version
-<next>`. `.data.notes` names what `[Unreleased]` owes first: a Dependabot-only window adds nothing
-there, so the releaser writes a `### Changed` line naming each bumped dependency, still a patch.
+Otherwise `.data.due` is `true`, and the bump is still the prose rule (`BREAKING —` or `!:` major, `### Added` or a
+`feat:` subject minor, else patch — `### Changed` alone is a patch, as 20.1.2 and 20.2.1 were).
+
+Every field of `DueDecision` in `scripts/lib/release-due-rule.ts`, one row each:
+
+| `.data` field | Type | Holds |
+|---|---|---|
+| `due` | boolean | a release is due |
+| `reason` | string | why not, one of the four reason rows above, absent when `due` |
+| `detail` | string | the one-sentence answer: window, oldest shipping commit's age, bump |
+| `bump` | string | major/minor/patch, decided by the rules this section keeps in prose |
+| `next` | string | the version the bump produces |
+| `shipping` | array | the shipping commits, sha/subject/author/committedAt/packages each |
+| `inert` | number | window commits that ship nothing |
+| `dueAt` | string | ISO-8601 UTC, when a settling window becomes due |
+| `command` | string | the one command to run next, e.g. `bun run scripts/release.ts --version <next>` |
+| `notes` | array | what `[Unreleased]` owes first — a Dependabot-only window: a `### Changed` line per bumped dependency |
+| `breaking` | array | the verbatim `BREAKING —` lines and `!:` subjects that forced a major, empty on every other decision, and the list the maintainer issue pastes |
+| `headSha` | string | HEAD's SHA when the decision resolved, the anchor an ask body quotes |
+
 No `vX.Y.Z` tag reachable — a shallow or tagless clone — is `X_RELEASE_TAG_UNREACHABLE`. HEAD
 not at `origin/main`'s tip is `X_RELEASE_HEAD_NOT_MAIN`: the script fetches `origin/main` when
 the checkout lacks it, and refuses rather than answer against a base the consumer could not
