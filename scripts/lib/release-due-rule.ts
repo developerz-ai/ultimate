@@ -5,12 +5,18 @@
 import type { Bump } from '../release';
 import { nextVersion } from '../release';
 import { BREAKING_ENTRY } from './changelog-format';
-import { openReleaseAsk, RELEASE_SUBJECT } from './release-subject';
+import { openReleaseAsk, openReleaseBump, RELEASE_SUBJECT } from './release-subject';
 
-export type { OpenAsk } from './release-subject';
-// The dedupe lives beside the `ASK_SUBJECT` it matches on (`release-subject.ts`); re-exported so
-// this file stays the one module the release-due readers import it from.
-export { openReleaseAsk } from './release-subject';
+export type { AskPr, OpenAsk, OpenBump } from './release-subject';
+// Both dedupes live beside the subjects they match on (`release-subject.ts`), one per reader; they
+// are re-exported so this file stays the one module the release-due readers import them from.
+export {
+  askPrArgs,
+  openReleaseAsk,
+  openReleaseBump,
+  parsePrIssues,
+  prTwin,
+} from './release-subject';
 
 /** Why a release is not due. A closed list: the bot and the docs branch on these words. */
 export const NOT_DUE_REASONS = [
@@ -61,6 +67,11 @@ export interface DueInput {
   /** HEAD's SHA at the moment `decideAt` resolved the base ref. Pass-through only: the rule
    * never branches on it, so every existing fixture stays legal. */
   readonly headSha?: string;
+  /** Titles of currently OPEN GitHub pull requests, for the bump-PR twin: merging an open
+   * `chore: release <next>` PR IS the release, so nothing new is filed while one is open. Optional,
+   * and absent whenever the lookup could not answer — no known PRs, never "none open". Only ever
+   * read on a `due` decision. */
+  readonly openPrTitles?: readonly string[];
 }
 
 export interface DueDecision {
@@ -215,13 +226,17 @@ export function releaseDue(input: DueInput): DueDecision {
   }
   const ask = openReleaseAsk(input.openIssueTitles ?? [], next);
   const twinNote = ask.open ? `; an ask already open: ${ask.twin}` : '';
+  // The PR-side twin, read through the same `RELEASE_SUBJECT` a release commit is: an open
+  // `chore: release <next>` PR is that very bump in flight, so its note follows the ask's.
+  const bumpPr = openReleaseBump(input.openPrTitles ?? [], next);
+  const bumpNote = bumpPr.open ? `; a bump PR already open: ${bumpPr.twin}` : '';
   return {
     ...base,
     bump,
     next,
     notes,
     due: true,
-    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, the oldest shipping commit is ${Math.floor((input.nowMs - oldest) / 3_600_000)}h or older: ${bump} to ${next}${twinNote}`,
+    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, the oldest shipping commit is ${Math.floor((input.nowMs - oldest) / 3_600_000)}h or older: ${bump} to ${next}${twinNote}${bumpNote}`,
     command: `bun run scripts/release.ts --version ${next}`,
   };
 }

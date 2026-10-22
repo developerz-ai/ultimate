@@ -41,8 +41,13 @@ Title `Release <next>`. Body, verbatim steps for the box that takes it:
      (`gh run list --workflow ci.yml --branch main --event push --json conclusion,headSha`).
      A different answer means the run is anchored to a box that is no longer current:
      stop, the run was stale the moment it was re-read.
-2. A Dependabot-only window adds nothing under `## [Unreleased]` in `CHANGELOG.md`: add a
-   `### Changed` line naming each bumped runtime dependency and its new range first.
+2. An empty `## [Unreleased]` is written before the bump, never after — `scripts/release.ts`
+   promotes that section verbatim, and `data.notes` is non-empty exactly when it is empty:
+   - A Dependabot-only window: add a `### Changed` line naming each bumped runtime dependency and
+     its new range under `## [Unreleased]`.
+   - Any other window: write the notes `data.notes` calls for, over what `data.shipping` lists,
+     under `## [Unreleased]` before `data.command` runs — so the promoted `## <next>` section holds
+     its notes, never a body of nothing but `### Commits`.
 3. Run the `data.command` it printed (`bun run scripts/release.ts --version <next>`), then
    `bun run verify`.
 4. One PR, `chore: release <next>`, nothing else in the diff. It merges on green like any PR.
@@ -59,6 +64,15 @@ is the whole title, no trailing prose). The box fetches candidates with
 `gh issue list --state open --search "Release <next> in:title"`, where `<next>` is `data.next` from
 the run above — substitute the version before running it — then post-filters them by exact title
 match.
+
+The same rule on the pull-request side: an open `chore: release <next>` PR is that release already
+in flight — merging it is the release (step 5) — so file nothing, cut nothing, and let that PR
+land. The box fetches candidates with
+`gh pr list --state open --search "release <next> in:title" --json number,title`, then
+post-filters them through `RELEASE_SUBJECT` in `scripts/lib/release-subject.ts` against
+`data.next`: `chore: release <next>` and `release: <next>` are the twins, `Release <next>` (the
+ask) and `chore: release <next>-beta` are not. A due run names the one it found in `data.detail`,
+as `; a bump PR already open: <title>`.
 
 ## Evidence: one live run on this checkout
 

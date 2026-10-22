@@ -768,6 +768,47 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   that ends on an open `tool_use`, which the screen refuses by design. A run that parks answers
   through `output` and continues with a user turn instead.
 
+## Auto-compaction (2026-10)
+
+- **Why.** `agent()` had no context management: every turn re-sends the whole transcript, so a long
+  tool loop grew until the provider answered a 400 (or cut a turn at
+  `model_context_window_exceeded`) — after every earlier turn was paid for, with nothing to resume.
+- **Default `'auto'`, not opt-in.** A summary changes what the model sees, and that argued for
+  opt-in; but it only engages above `at` (0.8) of the window, where the alternative is a lost run,
+  and a run below it is byte-identical to `'off'` (requests and signed handle — tested). It is never
+  silent: `onCompact`, the `agent.compact` span event, the handle's `compacted` count.
+- **Before the call, on the estimate.** `promptTokens` is the gateway's `estimateInputTokens` plus the
+  tool definitions it does not count (sent on every turn). The room is `contextWindow` less
+  `maxTokens`, because the completion shares the window. After a 400 there is no request left to fix.
+- **The cache decided the shape.** A provider cache is a prefix match over tools → system → messages,
+  so tools, the system prompt and its stable block are never touched. The summary call is the run's
+  OWN request up to the cut plus one instruction — same tools, system and hint — so it reads the
+  prefix the turn that ended at the cut already wrote, and on OpenRouter the same `x-session-id`
+  routes it to the provider holding that cache. Only the messages change, once.
+- **The cut is between turns.** A turn is an assistant message and the user message answering every
+  `tool_use` in it, so cutting before an assistant message can never separate a call from its result.
+  The summary joins the FIRST user message (after the prompt, verbatim) rather than becoming a new
+  user/assistant pair: the kept turns start with an assistant message, and a synthetic assistant
+  before it would break role alternation. A later compaction drops the earlier summary block — the
+  model was shown it and asked to fold it in.
+- **Billed like a nested call.** Its own `runMeter()` inside the run's: the bill reaches the run
+  through `below()`, priced at the summary model's rates (the run's own usage is re-priced at the run's
+  model, which would misprice a cheaper writer), on the same ledger (`tokensPerRun`), checked against
+  `costPerRun` first. A budget refusal, a deadline or an abort is the run's own stop, thrown as itself.
+- **Not a turn.** `maxTurns` bounds the loop's decisions; `onTurn` is not called for the summary.
+- **Never a truncation.** A failed summary (no text, cut off, refused, unreachable, no shorter) leaves
+  the transcript whole while it fits; over the room it is `X_AGENT_CONTEXT_EXHAUSTED`, registered
+  `terminal` — the same input outgrows the window again on every job attempt.
+- **A failure raises the trigger to the room.** Each attempt is a billed call; one that failed is tried
+  again only when the run cannot go on without it, never once per turn while it still fits.
+- **The handle.** It stores the compacted messages (what was sent) and a signed `compacted` count,
+  ABSENT at zero so a run that never compacted writes the handle it always did; `TRANSCRIPT_VERSION`
+  is unchanged and older handles verify.
+- **Known limits.** On the chat-completions wire an agent with `tools: []` offers only `respond`, which
+  is then forced (`tool_choice`), so its summary call answers no text and the run falls back; and the
+  estimate is ~4 characters a token, which is why `at` defaults below 1. Not per run (`limits()`), not
+  in `describeAgents()`.
+
 ## Evals, retrieval, fix lines
 
 The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved 2026-10-11, when the

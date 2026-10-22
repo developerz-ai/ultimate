@@ -445,6 +445,7 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | `budget.costPerRun` caps the run's **money**: before each turn, what the run cost so far (continuations and nested calls included) plus that turn's worst-case estimate | `costPerCall` bounds one call and nothing bounded their sum; refused pre-flight as `X_AI_BUDGET_EXCEEDED` (scope `costPerRun`), never truncated |
 | one run may **narrow** its declaration, never widen it: `offerTools()` a subset of `tools` (another name is `X_AGENT_TOOL_UNDECLARED`), `model` as a function (resolved through the registry, `X_AI_MODEL_UNKNOWN`), `limits()` lower ceilings (a higher one is `X_AI_REQUEST_INVALID`) | a stored permission rule or model tier needed one declared agent per combination; the declaration stays the blast radius, and the handle binds the run's model and offered subset — [Agents → Per-run picks](https://github.com/developerz-ai/ultimate/wiki/Agents#per-run-picks-offertools-model-limits) |
 | a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
+| a run nearing its model's context window is **compacted** before the turn that would not fit (`compact`, default `'auto'`) | the transcript IS the request, so a long loop grew until the provider answered a 400 after every turn of it was paid for — [below](#auto-compaction) |
 | **no semantic cache** | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second |
 
 ### What a call cost
@@ -454,6 +455,55 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 ### Continuing a run
 
 `agent()` returns an `AgentAction`: the action, plus `.run(input, opts)` → `{ output, transcript, turns, usage }` and `.continue(input, { transcript, user }, opts)`, which appends one user turn to a stored transcript and resumes the loop. The transcript is re-sent byte for byte (the provider's prompt cache reads it back; no tool re-runs); `maxTurns` and `budget.tokensPerRun` are cumulative; the handle is signed, bound to the agent, model, tools and tenant, and screened (`X_AGENT_TRANSCRIPT_INVALID`); a failed call leaves an updated one on the error (`transcriptOf(error)`), which is the one a job stores. Full contract: [Agents → Continuing a run](https://github.com/developerz-ai/ultimate/wiki/Agents#continuing-a-run-run--continue).
+
+### Auto-compaction
+
+```ts
+import { agent, definePrompt, t } from '@ultimat3/ai';
+import { can } from '@ultimat3/policy';
+
+export const researcher = agent({
+  input: t.object({ question: t.string }),
+  output: t.object({ answer: t.string }),
+  prompt: definePrompt<{ question: string }>({
+    id: 'research',
+    version: '1.0.0',
+    template: 'Research: {{question}}',
+  }),
+  vars: ({ input }) => ({ question: input.question }),
+  tools: [],
+  policy: can('kb:ask'),
+  compact: { at: 0.8, keepTurns: 4, maxSummaryTokens: 2_048 }, // 'auto' (default) | 'off' | { …, model }
+  onCompact: ({ turn, outcome, reason, before, after, limit, summarised, kept, cost }) => {
+    console.log(turn, outcome, reason, before, after, limit, summarised, kept, cost?.minor);
+  },
+});
+```
+
+Before each turn, the gateway's estimate of that turn's request is compared with the model row's
+`contextWindow` less `maxTokens`. Over `at` of it, ONE model call summarises every turn older than
+the last `keepTurns`; the summary joins the first user message (after the prompt, verbatim, marked
+`[compacted: …]`), the kept turns follow byte for byte, and the turn is sent.
+
+| Rule | Why |
+|---|---|
+| default **`'auto'`**; `'off'` never compacts and never checks | a summary changes what the model sees, but only above `at` of the window, where the alternative is a run lost to a 400 after every turn was paid for. Below it a run is byte-identical to `'off'` — requests and handle — and it is never silent: `onCompact`, the `agent.compact` span event, the handle's `compacted` |
+| triggered on the **estimate of the next request** — the gateway's prompt estimate plus the tool definitions — over `at` × (`contextWindow` − `maxTokens`), before the call | after a 400 there is no request left to fix; `maxTokens` is reserved because the completion shares the window |
+| the system prompt, its stable block and the tools are **never touched** | a provider cache is a prefix match over tools → system → messages: they are the part every turn and every run shares, so they are still read at the cache rate after a compaction. Only the messages are rewritten, once |
+| the summary call is the run's **own request** up to the cut, plus one instruction — same gateway, tools, system and `promptCache` hint | it reads the prefix the turn that ended at the cut already cached instead of paying for it again; on OpenRouter the same `x-session-id` routes it to the provider holding that cache (`compact.model` trades that read for a cheaper writer) |
+| the cut falls **between turns**: the prompt and the last `keepTurns` (4, at least 1) turns are verbatim | a turn is an assistant message and the user message answering every `tool_use` in it, so no call is ever separated from its result (a 400 on every provider); the model keeps its task as written and the results it just asked for |
+| it summarises what the model was **sent** — tool results already redacted and cut to `maxToolResultChars` | the summary call reads nothing the run's turns did not; a later compaction folds the earlier summary in rather than stacking another |
+| the summary call is **billed to the run**: the same ledger (`tokensPerRun`), `costPerRun` checked before it, `usage`, `onTurn`'s `run`, `meta.billed`; priced at its own model's rates | it is spend like any other; a budget refusal, a deadline or an abort is thrown as itself, never read as a failed compaction |
+| it is **not a turn** — `maxTurns` and `onTurn` count the loop alone | the turn ceiling bounds the loop's decisions, and a summary is not one |
+| a failed summary (no text, cut off at `maxSummaryTokens`, refused, unreachable, no shorter) leaves the run **whole while it fits**; over the room it is **`X_AGENT_CONTEXT_EXHAUSTED`**, before the request is sent, registered `terminal` | never a truncated transcript — a model reasoning over a run it can no longer see answers confidently and wrong; and the same input outgrows the window on every job attempt |
+| after a failed attempt the next waits until the request **no longer fits** | each attempt is a billed call: one that just failed is not bought again on every turn the run can still take whole |
+| the handle stores the **compacted** messages and a signed `compacted` count, absent at zero | `.continue()` resumes from exactly what was sent, a continuation compacts on its own turns, and a run that never compacted writes the handle it always did |
+
+| Limit | Detail |
+|---|---|
+| the estimate | ~4 characters a token, which is why `at` defaults below 1 |
+| `tools: []` on the chat-completions wire | only `respond` is offered, so it is forced, the summary call answers no text and the run falls back to whole |
+| per run | `compact` is the declaration's; `limits()` does not take it, `describeAgents()` does not publish it |
 
 ### Provider prompt caching
 
@@ -971,6 +1021,7 @@ fail-closed `terminal` default.
 | `X_AGENT_TOOL_UNDECLARED` | an `agent()` run's `offerTools()` named a tool its declaration does not list |
 | `X_AGENT_TOOL_LOOP` | an `agent()` made the same tool calls and read the same results `maxRepeatedToolCalls` turns in a row |
 | `X_AGENT_DEADLINE` | an `agent()` outlived its declared `deadlineMs` |
+| `X_AGENT_CONTEXT_EXHAUSTED` | an `agent()`'s next request would not fit its model's context window, and compaction could not bring it under; refused before it is sent |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |
@@ -986,6 +1037,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | Class | Code | Declared in |
 |---|---|---|
+| `AgentContextExhaustedError` | `X_AGENT_CONTEXT_EXHAUSTED` | `src/agent-errors.ts` |
 | `AgentDeadlineError` | `X_AGENT_DEADLINE` | `src/agent-errors.ts` |
 | `AgentMaxTurnsError` | `X_AGENT_MAX_TURNS` | `src/errors.ts` |
 | `AgentToolLoopError` | `X_AGENT_TOOL_LOOP` | `src/agent-errors.ts` |

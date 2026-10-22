@@ -65,6 +65,7 @@ one adds, the other adds.
 | `prompt-cache.ts` | PROVIDER prompt caching: `SystemParts`, `PromptCacheHint`, `PROMPT_CACHE_RULES` (sources in its header) |
 | `prompt-cache-blocks.ts` | the Anthropic wire's marks (chat-completions': `openai-messages.ts`) |
 | `agent-per-run.ts` / `agent-run-limits.ts` | one run's `offerTools()`/`model()`/`limits()`, narrow only; `costPerRun` |
+| `agent-compact-def.ts` / `agent-compact.ts` | `compact`'s declaration and event; the trigger, the cut, the summary call |
 | `agent-continue.ts` / `agent-turn.ts` | `.run()` / `.continue()`, the transcript handle and its screen; one turn's report and refusals |
 | `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
 | `agent-facts.ts` | `describeAgents()` — the agent registry, and the row a manifest WOULD publish (its consumer has to be `cli`, tier 5) |
@@ -245,6 +246,10 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   cursor secret, own label) and bound to agent, model, tool names and `orgId`; screened before
   anything is loaded. `maxTurns`/`tokensPerRun` are cumulative — the remainder is the ceiling,
   NEVER a ledger debit. A failure seals an updated handle onto the error (`transcriptOf`).
+- **`compact` (default `'auto'`) acts BEFORE a turn, never after a 400**: the summary call is the
+  run's own request up to a cut BETWEEN turns (the cached prefix, same session), billed, not a turn;
+  system, tools, kept turns byte-identical; failed → whole, or `X_AGENT_CONTEXT_EXHAUSTED`, never
+  truncated ([why](../../docs/history/ai.md#auto-compaction-2026-10)).
 - **`hive()` is a fan-out action** (`PRIMITIVE_FACTORIES`): `HiveResult` is a SCHEMA from the
   member's `output`; three arms (`ok`/`failed`/`skipped`) and three counters; `members` in SPLIT
   order with `index`; the hive never names an actor; no hive budget code; a member's throw goes
@@ -277,16 +282,10 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 
 ## Invariants — evals, retrieval, fix lines
 
-Full text of each rule: [`docs/history/ai.md`](../../docs/history/ai.md#evals-retrieval-fix-lines).
-
-- **No fix line may name `x ai`** (planned); an eval is selected with `x test eval --filter <name>`.
-- An eval gates on the DROP from its baseline, mean AND per case; every prompt is named by an eval
-  (`X_EVAL_MISSING`); `ULTIMATE_EVAL_RECORD=1` records (`x verify` with it: `X_EVAL_RECORDING`).
-- Retrieval is hybrid, no vector-only path; `chunk()` hard-wraps; `VectorStore.prune` is required.
-- **An unbound store read inside a request whose actor has an `orgId` is `X_VECTOR_UNSCOPED`**
-  (both stores, every read); `scope: UNSCOPED` is the named opt-in, an omitted scope is `UNBOUND`.
-- `postgresVectorStore()` is the only production vector path (the live suite never skips); tenant
-  and policy filters in SQL on every statement and BOTH fusion halves; `scoped()` only TIGHTENS.
+In brief ([full text](../../docs/history/ai.md#evals-retrieval-fix-lines)): no fix line names
+`x ai`; an eval gates on the DROP from its baseline, mean AND per case, and every prompt has one;
+retrieval is hybrid only; an unbound store read under an org actor is `X_VECTOR_UNSCOPED`;
+`postgresVectorStore()` filters tenant and policy in SQL on every statement; `scoped()` TIGHTENS.
 
 ## Commands
 

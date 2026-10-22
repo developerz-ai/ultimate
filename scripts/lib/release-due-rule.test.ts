@@ -12,6 +12,7 @@ import {
   DEPENDABOT,
   NOT_DUE_REASONS,
   openReleaseAsk,
+  openReleaseBump,
   releaseDue,
 } from './release-due-rule';
 import { RELEASE_SUBJECT } from './release-subject';
@@ -302,5 +303,63 @@ describe('unit · release-due-rule · the brief covers the closed list', () => {
     expect(awaitingTag, 'the awaiting_tag row vanished from the brief').toBeDefined();
     expect(awaitingTag).toContain('`gh run list --workflow release-tag.yml --limit 5`');
     expect(awaitingTag).toContain('nothing');
+  });
+});
+
+describe('unit · release-due-rule · the bump-PR twin', () => {
+  test('a true twin — an open `chore: release 27.10.1 (#770)` — reports open', () => {
+    expect(openReleaseBump(['chore: release 27.10.1 (#770)'], '27.10.1')).toEqual({
+      open: true,
+      twin: 'chore: release 27.10.1 (#770)',
+    });
+  });
+
+  test('a PR that is not a release subject is no twin', () => {
+    expect(openReleaseBump(['docs: a thing'], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('an issue-side title is not a bump twin: the two readers stay disjoint', () => {
+    // The disjointness pinned in `release-subject.test.ts`: `Release 27.10.1` is the ask, and the
+    // case-insensitive title search hands that title to this matcher too.
+    expect(openReleaseBump(['Release 27.10.1'], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('a longer version that starts with the target is not a twin', () => {
+    expect(openReleaseBump(['chore: release 27.10.10'], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('no open PRs is not open', () => {
+    expect(openReleaseBump([], '27.10.1')).toEqual({ open: false });
+  });
+
+  test('a due decision names the bump twin in detail, after the ask note', () => {
+    const decision = releaseDue(
+      input({
+        tagged: '27.10.0',
+        stamped: '27.10.0',
+        commits: [commit({ committedAt: at(1) }), commit({ committedAt: at(30) })],
+        openIssueTitles: ['Release 27.10.1'],
+        openPrTitles: ['chore: release 27.10.1 (#812)'],
+      }),
+    );
+    expect(decision.due).toBe(true);
+    expect(decision.detail).toBe(
+      '2 shipping commit(s) since v27.10.0, the oldest shipping commit is 30h or older: patch to 27.10.1; an ask already open: Release 27.10.1; a bump PR already open: chore: release 27.10.1 (#812)',
+    );
+  });
+
+  test('a due decision whose open PRs are not twins carries no bump note', () => {
+    const decision = releaseDue(input({ openPrTitles: ['docs: a thing', 'Release 1.2.4'] }));
+    expect(decision.due).toBe(true);
+    expect(decision.detail).not.toContain('bump PR');
+  });
+
+  // The ask note and the bump note are independent: a PR without its ask, and an ask without its
+  // PR, each name only what is true.
+  test('a bump twin with no ask twin still names itself', () => {
+    const decision = releaseDue(input({ openPrTitles: ['chore: release 1.2.4 (#812)'] }));
+    expect(decision.detail).toBe(
+      '1 shipping commit(s) since v1.2.3, the oldest shipping commit is 48h or older: patch to 1.2.4; a bump PR already open: chore: release 1.2.4 (#812)',
+    );
   });
 });
