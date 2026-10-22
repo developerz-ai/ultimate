@@ -146,4 +146,6 @@ export const TIER_4_ERROR_STATUS = {
   X_MCP_USER_CONFIRMATION_REQUIRED: 428,
   // @ultimat3/ai — an agent run offered a tool its declaration does not list
   X_AGENT_TOOL_UNDECLARED: 500,
+  // @ultimat3/ai — an agent's next request would not fit its model's context window
+  X_AGENT_CONTEXT_EXHAUSTED: 500,
 } satisfies Readonly<Record<string, number>>;

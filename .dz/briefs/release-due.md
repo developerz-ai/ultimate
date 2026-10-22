@@ -41,8 +41,13 @@ Title `Release <next>`. Body, verbatim steps for the box that takes it:
      (`gh run list --workflow ci.yml --branch main --event push --json conclusion,headSha`).
      A different answer means the run is anchored to a box that is no longer current:
      stop, the run was stale the moment it was re-read.
-2. A Dependabot-only window adds nothing under `## [Unreleased]` in `CHANGELOG.md`: add a
-   `### Changed` line naming each bumped runtime dependency and its new range first.
+2. An empty `## [Unreleased]` is written before the bump, never after — `scripts/release.ts`
+   promotes that section verbatim, and `data.notes` is non-empty exactly when it is empty:
+   - A Dependabot-only window: add a `### Changed` line naming each bumped runtime dependency and
+     its new range under `## [Unreleased]`.
+   - Any other window: write the notes `data.notes` calls for, over what `data.shipping` lists,
+     under `## [Unreleased]` before `data.command` runs — so the promoted `## <next>` section holds
+     its notes, never a body of nothing but `### Commits`.
 3. Run the `data.command` it printed (`bun run scripts/release.ts --version <next>`), then
    `bun run verify`.
 4. One PR, `chore: release <next>`, nothing else in the diff. It merges on green like any PR.

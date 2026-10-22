@@ -84,3 +84,35 @@ export class AgentToolUndeclaredError extends UltimateError {
     });
   }
 }
+
+/**
+ * The next request would not fit the model's context window, and compaction could not make it
+ * fit. Refused BEFORE the request is sent: a provider answers an over-long request with a 400 (or
+ * a turn cut off at `model_context_window_exceeded`) after the whole transcript was paid for, and
+ * a transcript cut to fit is a model reasoning over a run it can no longer see.
+ */
+export class AgentContextExhaustedError extends UltimateError {
+  constructor(input: {
+    agent: string;
+    model: string;
+    /** The next request's estimated prompt tokens. */
+    estimate: number;
+    /** The model's `contextWindow` less `maxTokens`. */
+    limit: number;
+    /** Why compaction did not bring it under. */
+    reason: string;
+  }) {
+    super({
+      code: 'X_AGENT_CONTEXT_EXHAUSTED',
+      cause: `agent "${input.agent}"'s next request is estimated at ${input.estimate} prompt tokens, over the ${input.limit} model "${input.model}" has room for (contextWindow less maxTokens), and compaction could not bring it under: ${input.reason}`,
+      fix: 'compact: { at: 0.6, keepTurns: 2 }   # on the agent — compact earlier and keep fewer turns verbatim; or lower maxToolResultChars, or run on a model whose registerModel row has a larger contextWindow',
+      meta: {
+        agent: input.agent,
+        model: input.model,
+        estimate: input.estimate,
+        limit: input.limit,
+        reason: input.reason,
+      },
+    });
+  }
+}

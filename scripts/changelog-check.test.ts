@@ -180,6 +180,34 @@ describe('the rules, each proved against the fixture that breaks it', () => {
     );
   });
 
+  // The shape `promoteUnreleased` writes when `[Unreleased]` is empty: a section whose body is only
+  // the auto-generated `### Commits` block, with no human-written release notes above it. A
+  // released section that opens its body with `### Commits` instead of `### Added`/`### Fixed`/...
+  // is the release shipping with no notes of its own. `[Unreleased]` itself is exempted — the
+  // commit block is the only thing that should ever sit there until notes are written.
+  test('a released section whose body is only `### Commits`', () => {
+    const onlyCommits = GOOD_CHANGELOG.replace('First release.\n', '### Commits');
+    expect(kinds(onlyCommits, GOOD_UPGRADING)).toContain('commits-only');
+  });
+
+  // The shape `promoteUnreleased` actually writes when `[Unreleased]` is empty (`commitBlock`):
+  // `### Commits`, a blank line, then the subject bullets. The bare fixture above is also matched by
+  // an exact-equality read of the body, so this one is what holds the rule to "starts with".
+  test('a released section whose body opens with `### Commits` and its subject bullets', () => {
+    const generated = GOOD_CHANGELOG.replace(
+      'First release.\n',
+      '### Commits\n\n- fix(core): a thing\n',
+    );
+    expect(kinds(generated, GOOD_UPGRADING)).toContain('commits-only');
+  });
+
+  // The stated exemption: under [Unreleased] the commit block is the only thing that should ever
+  // sit there until the notes are written, so it must not read as a shipped section saying nothing.
+  test('the same block under [Unreleased] is exempt', () => {
+    const pending = GOOD_CHANGELOG.replace('Nothing yet.', '### Commits');
+    expect(kinds(pending, GOOD_UPGRADING)).not.toContain('commits-only');
+  });
+
   // 6.0.0 exactly: the migration under [Unreleased] at the moment the tag was pushed.
   test('a BREAKING entry left under [Unreleased] at a tagged commit', () => {
     const stranded = GOOD_CHANGELOG.replace(
@@ -294,12 +322,28 @@ describe('findings', () => {
     }
   });
 
+  // The commits-only branch of the mapping: without it the kind falls through to the count
+  // fall-through, whose code and fix speak of a migration count — an edit that writes no notes.
+  // The `contains` test above stays green on that fall-through: `duplicate` already supplies the
+  // section code there, which is exactly how the hole survived.
+  test('the commits-only finding names the section code and the file the notes go into', () => {
+    const gap = checkChangelog({
+      changelog: GOOD_CHANGELOG.replace('First release.', '### Commits'),
+      upgrading: GOOD_UPGRADING,
+    }).find((one) => one.kind === 'commits-only');
+    expect(gap).toBeDefined();
+    const finding = changelogFinding(gap ?? { kind: 'commits-only', at: '', detail: '' });
+    expect(finding.code).toBe('X_DOC_CHANGELOG_SECTION_INVALID');
+    expect(finding.fix).toContain(CHANGELOG_PATH);
+  });
+
   // `--dry-run` writes nothing, so a fix: whose whole remedy is a --dry-run command hands the
   // reader something that checks the problem and does not solve it. Axiom 4 at the point it is read.
   test('a fix: citing --dry-run also says --dry-run only validates', () => {
     const kinds: readonly ChangelogGapKind[] = [
       'duplicate',
       'empty',
+      'commits-only',
       'unreleased-breaking',
       'count',
       'unknown-section',
@@ -387,5 +431,20 @@ describe('the committed CHANGELOG.md and wiki/Upgrading.md', () => {
     // one. Either way this test reads the real file, so it cannot pass by describing a fixture.
     if (stranded > 0) expect(gaps.map((gap) => gap.kind)).toContain('unreleased-breaking');
     else expect(gaps).toEqual([]);
+  });
+
+  // The body a section opens with is the body the rule reads. `parseChangelog` now exposes it, so a
+  // regression in either the field or the rule shows up here. The first assertion is what the rule
+  // catches; the second pins the surface `body` exposes so a future fix cannot accidentally let a
+  // bare auto-generated block through by reading the field as something other than the trimmed body.
+  test('no released section reads as the auto-generated `### Commits` block alone', async () => {
+    const root = repoRoot();
+    const changelog = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const upgrading = await Bun.file(`${root}/wiki/Upgrading.md`).text();
+    const gaps = checkChangelog({ changelog, upgrading, taggedVersion: await taggedVersion(root) });
+    expect(gaps.map((gap) => gap.kind)).not.toContain('commits-only');
+    expect(parseChangelog(changelog).filter((section) => section.body === '### Commits')).toEqual(
+      [],
+    );
   });
 });

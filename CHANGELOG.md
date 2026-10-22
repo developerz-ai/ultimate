@@ -8,6 +8,33 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.14.0 - 2026-10-22
+
+### Added
+
+- **Auto-compaction on `agent()` — `compact: 'auto' | 'off' | { at, keepTurns, model,
+  maxSummaryTokens }`, default `'auto'`.** Every turn re-sends the whole transcript, so a long tool
+  loop grew until the provider answered a 400 after every earlier turn was paid for. Before each
+  turn, the gateway's estimate of its request (plus the tool definitions) is compared with the model
+  row's `contextWindow` less `maxTokens`; over `at` (0.8) of it, ONE model call — the run's own
+  request up to a cut between turns, plus an instruction, so it reads the provider's cached prefix
+  and keeps the same OpenRouter `x-session-id` — summarises every turn older than the last
+  `keepTurns` (4) into the first user message. The tools, the system prompt (its stable block
+  included) and the kept turns are sent byte for byte; no tool call is separated from its result.
+  The summary call is billed to the run (same ledger, `tokensPerRun`, `costPerRun` checked first,
+  `usage`, `meta.billed`) and is not a turn. A summary that fails leaves the run whole while it fits
+  (and is not attempted again until the request no longer does);
+  a request that still would not fit is the new **`X_AGENT_CONTEXT_EXHAUSTED`** (500, `terminal` for
+  a job), before it is sent — never a truncated transcript. New `onCompact` hook and `agent.compact`
+  span event (`turn`, `outcome`, `reason`, `before`/`after` token estimates, `limit`, `summarised`,
+  `kept`, `usage`, `cost`). The transcript handle stores the compacted messages and a signed
+  `compacted` count, absent when no compaction ran, so `.continue()` resumes from it and a run that
+  never compacted writes the handle it always did; `agentJob()` compacts on the worker alike. A run
+  below the threshold, and every run under `compact: 'off'`, is unchanged. New types
+  `AgentCompactOption`, `AgentCompactRule`, `AgentCompaction`; new class `AgentContextExhaustedError`.
+
 ### Fixed
 
 - **`ok` is no longer a clean bill of health: an attested package whose npm `latest` is another
@@ -19,6 +46,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   tagged, so only a check against `latest` itself reports it. That check is now the finding, it names
   both versions, and its `fix` is `npm dist-tag add <pkg>@<version> latest` — or the bump command,
   when the newer tag is the real release.
+
+### Commits
+
+- feat(ai): auto-compaction on agent() — compact: 'auto' | 'off' | { at, keepTurns, model, maxSummaryTokens } (#841)
+- fix(release-due): write human-window notes before data.command (#839)
+- Health release-run row: read a tag dispatch, not a branch (#820)
+- feat(scripts): report a registry latest that is not the stamped version (#834)
+- docs(health): read the demo row's full state and state each non-success (#836)
+- docs(brief): add the awaiting_tag row to the release-due decision table (#835)
+- docs(briefs): release-due fetches tags and reads refusals past exit 1 (#833)
+- docs(dz): give health.md rows 12 and 19 their filing evidence (#831)
+- fix(release-due): name HEAD's sha and refuse off-main (#832)
+- fix(registry-audit): probe the origin tag for every stamped version (#827)
+- fix(cli): expose `headSha` on every `x ci` run row; document `ok: true` means "no failed run" (#826)
+- fix(scripts): release-due-git refusal test uses an unknown option, not an unknown subcommand (#830)
+- fix(briefs): rename health alarm title so release-due dedupe no longer matches it (#829)
+- fix(release): close the release ask on tag cut, key dedupe to exact semver (#828)
+- feat(release): close the release ask from the bump PR body (#825)
+- fix(release-due): align the success detail with the oldest-shipping-commit settle gate (#822)
+- Give Finding.at one meaning: a path an agent can open (#821)
+- docs(health): gate the tagged-version row on ok:true and data.lastTag (#824)
+- chore(dz): allow the tracker reads the briefs already name (#823)
+- test(release-subject): cover the ask-title shape (#815)
 
 ## 27.13.2 - 2026-10-21
 
