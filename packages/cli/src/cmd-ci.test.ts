@@ -1,14 +1,15 @@
-// `x ci`, and the log reader under it. The fixture is a verbatim excerpt of a real
+// `x ci` end to end over a scripted `gh`. The fixture is a verbatim excerpt of a real
 // `gh run view --log-failed` — tab columns, BOM, ANSI, `##[group]` and all — because the whole
 // claim of this command is that the framework's own findings block survives that transport and
-// comes back out as findings.
+// comes back out as findings. The log reader's own tests: `ci-log.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
 import { REQUIRED_BUN } from './app-root';
-import { findingKey, findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
+import { findingKey } from './ci-log';
 import type { CiRun } from './ci-runs';
 import { isFailed, latestPerWorkflow, RUN_FIELDS } from './ci-runs';
 import { CI_MESSAGE_KEYS, ciCommand, RUN_LOOKBACK, TAIL_LINES } from './cmd-ci';
+import { CI_EVENTS } from './cmd-ci-spec';
 import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
 import { messageKeys } from './messages';
@@ -39,65 +40,6 @@ const LOG = [
     '    fix:   cover the gap with tests beside the source',
   ),
 ].join('\n');
-
-describe('unit · an Actions log line is three things before it is text', () => {
-  test('the two columns, the timestamp, the BOM and the colour all come off', () => {
-    const lines = parseLogLines(LOG);
-    expect(lines[0]?.job).toBe('package (cli)');
-    expect(lines[0]?.step).toBe('test + coverage');
-    expect(lines[0]?.text).toBe('Run bun run scripts/coverage-gate.ts');
-    expect(lines[1]?.text).toBe('bun run scripts/coverage-gate.ts');
-    // `##[endgroup]` carries nothing and is dropped, so it never lands in a tail.
-    expect(lines.some((entry) => entry.text.includes('endgroup'))).toBe(false);
-    expect(jobsInLog(lines)).toEqual(['package (cli)', 'package (testing)']);
-  });
-
-  test('a line with no columns is kept whole and attributed to no job', () => {
-    const lines = parseLogLines('a bare line\n\nanother');
-    expect(lines).toEqual([
-      { job: '', step: '', text: 'a bare line' },
-      { job: '', step: '', text: 'another' },
-    ]);
-  });
-});
-
-describe('unit · the findings block survives the transport', () => {
-  test('code, locator, cause and fix come back as the Finding the gate printed', () => {
-    const found = findingsFrom(parseLogLines(LOG));
-    expect(found).toHaveLength(2);
-    expect(found[0]).toEqual({
-      code: 'X_COVERAGE_UNMEASURED',
-      at: 'packages/cli',
-      cause: 'bun test wrote no lcov report for packages/cli',
-      fix: 'run bun test packages/cli and fix the failure',
-    });
-    expect(found[1]?.code).toBe('X_COVERAGE_BELOW');
-  });
-
-  // Every `x verify` summary, and every fix line quoting a code, starts with `X_`. Reconstructing
-  // a finding from one would hand the reader a cause the gate never wrote.
-  test('a code with no cause and fix under it is not a finding', () => {
-    const prose = parseLogLines(
-      ['X_COVERAGE_BELOW is what this job reports', 'see above', 'X_TEST_FAILED'].join('\n'),
-    );
-    expect(findingsFrom(prose)).toEqual([]);
-  });
-
-  test('a re-run repeating the same block is one finding, not two', () => {
-    expect(findingsFrom(parseLogLines(`${LOG}\n${LOG}`))).toHaveLength(2);
-  });
-
-  test('the tail is the job own last lines, and the whole log when it has none', () => {
-    const lines = parseLogLines(LOG);
-    expect(tailOf(lines, 'package (testing)', 2)).toEqual([
-      '    cause: packages/testing/src/ is at 96.37% lines',
-      '    fix:   cover the gap with tests beside the source',
-    ]);
-    expect(tailOf(lines, 'nobody', 1)).toEqual([
-      '    fix:   cover the gap with tests beside the source',
-    ]);
-  });
-});
 
 const run = (over: Partial<CiRun> = {}): CiRun => ({
   id: 1,
@@ -217,7 +159,11 @@ describe('unit · the x ci surface', () => {
     expect(ciCommand.spec.subcommands).toBeUndefined();
     expect(ciCommand.spec.requiresApp).toBeUndefined();
     const flags = ciCommand.spec.flags?.map((flag) => flag.name) ?? [];
-    for (const flag of ['repo', 'branch', 'run', 'tail', 'full']) expect(flags).toContain(flag);
+    for (const flag of ['repo', 'branch', 'run', 'tail', 'full', 'workflow', 'event'])
+      expect(flags).toContain(flag);
+    // The title is a contract, and the usage line is its reader-facing half: a flag the usage
+    // never names is invisible to `x help` — the shape `cmd-affected.test.ts` holds.
+    for (const flag of flags) expect(ciCommand.spec.usage).toContain(`--${flag}`);
   });
 });
 
@@ -253,6 +199,52 @@ describe('unit · x ci is triage in one command', () => {
       ['gh', 'run', 'view', '32484583944', '--repo', 'developerz-ai/ultimate', '--json', `${RUN_FIELDS},jobs`],
       ['gh', 'run', 'view', '32484583944', '--repo', 'developerz-ai/ultimate', '--log-failed'],
     ]);
+  });
+
+  // Filters ride the same one call, inserted between --branch and --limit; with neither given,
+  // the argv is byte-for-byte the one the default-path test above pins.
+  test('--workflow and --event narrow the run list, and nothing else about it moves', async () => {
+    const { runner, ran } = ghTable(failing);
+    await ciCommand.run(contextFor(['ci', '--workflow', 'ci.yml', '--event', 'push'], runner));
+    expect(ran).toEqual([
+      ['gh', 'repo', 'view', '--json', 'nameWithOwner'],
+      ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+      // biome-ignore format: one call per line reads as the round trips it is.
+      ['gh', 'run', 'list', '--repo', 'developerz-ai/ultimate', '--branch', 'feat/x', '--workflow', 'ci.yml', '--event', 'push', '--limit', String(RUN_LOOKBACK), '--json', RUN_FIELDS],
+      // biome-ignore format: as above.
+      ['gh', 'run', 'view', '32484583944', '--repo', 'developerz-ai/ultimate', '--json', `${RUN_FIELDS},jobs`],
+      ['gh', 'run', 'view', '32484583944', '--repo', 'developerz-ai/ultimate', '--log-failed'],
+    ]);
+  });
+
+  // A typo must name the events that exist — and cost no subprocess, or the refusal is slower
+  // than the question it answers.
+  test('--event outside the closed set refuses, naming the known events', async () => {
+    const { runner, ran } = ghTable(failing);
+    const error = await ciCommand.run(contextFor(['ci', '--event', 'deploy'], runner)).then(
+      () => ({}) as { code?: string; cause?: string; fix?: string },
+      (thrown: unknown) => thrown as { code?: string; cause?: string; fix?: string },
+    );
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toContain('deploy is not a workflow event');
+    for (const known of CI_EVENTS) expect(error.cause).toContain(known);
+    expect(error.fix).toBe('x ci --event push --json');
+    expect(ran).toEqual([]);
+  });
+
+  // The silent alternative reports the whole branch while the reader believed they had asked
+  // about one workflow — a filter beside --run is a refused combination, not a preference.
+  test('--run with a filter refuses instead of silently ignoring the filter', async () => {
+    const { runner, ran } = ghTable(failing);
+    const argv = ['ci', '--run', '32484583944', '--workflow', 'ci.yml'];
+    const error = await ciCommand.run(contextFor(argv, runner)).then(
+      () => ({}) as { code?: string; cause?: string; fix?: string },
+      (thrown: unknown) => thrown as { code?: string; cause?: string; fix?: string },
+    );
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toContain('--workflow on "x ci"');
+    expect(error.fix).toBe('x ci --run <id> --json');
+    expect(ran).toEqual([]);
   });
 
   test('the failed jobs and their steps are named, and the other jobs are counted not listed', async () => {
@@ -300,7 +292,7 @@ describe('unit · x ci is triage in one command', () => {
 
   // A run with no conclusion has not answered yet. `isFailed` is false for it (ci-runs.ts), so
   // `ok: true` is right — but `running: 0` would read as green CI, so the verdict has to carry the
-  // `headSha` to watch. This case dies with the `isRunning` filter at cmd-ci.ts:171.
+  // `headSha` to watch. This case dies with the `isRunning` classification in cmd-ci.ts's report().
   test('a run still going is ok, and counted running with its head sha', async () => {
     const { runner } = ghTable((joined) => {
       if (joined.startsWith('gh repo view')) return REPO;
@@ -347,6 +339,22 @@ describe('unit · x ci is triage in one command', () => {
     );
     expect(error.code).toBe('X_CI_RUN_NOT_FOUND');
     expect(error.fix).toContain('--branch');
+  });
+
+  // A filter that matched nothing is a different situation from a branch never pushed: the cause
+  // must name the filter, or `x ci --workflow ci.typo --branch main` reads as "main never pushed".
+  test('an empty list under --workflow refuses, its cause naming the filter', async () => {
+    const { runner } = ghTable((joined) => (joined.includes('run list') ? '[]' : failing(joined)));
+    const argv = ['ci', '--branch', 'main', '--workflow', 'ci.yml'];
+    const error = await ciCommand.run(contextFor(argv, runner)).then(
+      () => ({}) as { code?: string; cause?: string },
+      (thrown: unknown) => thrown as { code?: string; cause?: string },
+    );
+    expect(error.code).toBe('X_CI_RUN_NOT_FOUND');
+    expect(
+      error.cause?.startsWith('no workflow run on developerz-ai/ultimate for branch "main"'),
+    ).toBe(true);
+    expect(error.cause).toContain('matching --workflow ci.yml');
   });
 });
 
