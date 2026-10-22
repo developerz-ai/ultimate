@@ -7,8 +7,17 @@ one. The decision is a command, never a judgement made here.
 ## Run
 
 ```bash
-bun run scripts/release-due.ts --json
+git fetch --tags origin && bun run scripts/release-due.ts --json
 ```
+
+Fetch tags first — a shallow or tagless clone (CI's is both) holds no reachable `v*` tag, and the
+run refuses rather than guess. A refusal (`ok:false`) still prints the complete JSON envelope,
+then exits 1: `report()` renders the envelope and ends `process.exit(result.ok ? 0 : 1)`
+(`scripts/lib/log.ts:153-155`). So this step must never sit under `set -e` — a refusal would end
+the checkup on the exit code before the envelope is read. Branch on `data.due`; on `ok:false`,
+read the envelope instead — every finding carries its own `fix`, and the second git refusal,
+`X_RELEASE_WINDOW_UNREADABLE` (tag found, window unreadable), names
+`git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json`.
 
 | `data.due` | `data.reason` | What to file |
 |---|---|---|
@@ -49,3 +58,12 @@ is the whole title, no trailing prose). The box fetches candidates with
 `gh issue list --state open --search "Release <next> in:title"`, where `<next>` is `data.next` from
 the run above — substitute the version before running it — then post-filters them by exact title
 match.
+
+## Evidence: one live run on this checkout
+
+`bun run scripts/release-due.ts --json`, 2026-10-22T01:02:38Z, exit 0. This checkout had tags
+fetched, so this is an `ok:true` answer, not a refusal:
+
+```json
+{"ok":true,"script":"release-due","summary":"no release due (settling): the oldest shipping commit is younger than 24h, so its author may still release it: due at 2026-10-22T15:17:08.000Z","findings":[],"data":{"lastTag":"v27.13.2","stamped":"27.13.2","settleHours":24,"shipping":[{"sha":"7ebb9c3a39adb5ebe8e4891a2fa5123791766097","subject":"fix(cli): expose `headSha` on every `x ci` run row; document `ok: true` means \"no failed run\" (#826)","author":"developerz-ai[bot]","committedAt":1792627464,"packages":["cli"]},{"sha":"c56f7d97a130d2f67db08c6e7a03cea23336ad12","subject":"Give Finding.at one meaning: a path an agent can open (#821)","author":"developerz-ai[bot]","committedAt":1792595828,"packages":["cli"]}],"inert":9,"notes":["[Unreleased] in CHANGELOG.md is empty, so the release notes would be the commit subjects alone. Write them under `## [Unreleased]` before bumping."],"breaking":[],"bump":"patch","next":"27.13.3","due":false,"reason":"settling","detail":"the oldest shipping commit is younger than 24h, so its author may still release it: due at 2026-10-22T15:17:08.000Z","dueAt":"2026-10-22T15:17:08.000Z"}}
+```
