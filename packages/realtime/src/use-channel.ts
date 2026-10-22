@@ -8,8 +8,10 @@ import { installedPage } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
 import type { PresenceMember } from './sync-protocol';
 
-/** The membership's state, callable, plus its release (Solid: `onCleanup`). */
+/** The membership's state, callable, plus its refusal and its release (Solid: `onCleanup`). */
 export type ChannelAccessor = (() => ChannelState) & {
+  /** What the node answered when it refused the membership (`failed`); `undefined` otherwise. */
+  error(): unknown;
   release(): void;
   [Symbol.dispose](): void;
 };
@@ -29,6 +31,7 @@ export function useChannel<K extends string>(
   const signal = signalFor('useChannel');
   if (isServerRender()) {
     return Object.assign((): ChannelState => 'joining', {
+      error: (): unknown => undefined,
       release: nothing,
       [Symbol.dispose]: nothing,
     });
@@ -42,11 +45,16 @@ export function useChannel<K extends string>(
     version();
     return membership.state();
   };
+  // Read through the same version, so a component rendering the refusal re-renders with it.
+  const error = (): unknown => {
+    version();
+    return membership.error();
+  };
   const release = (): void => {
     off();
     membership.release();
   };
-  return Object.assign(read, { release, [Symbol.dispose]: release });
+  return Object.assign(read, { error, release, [Symbol.dispose]: release });
 }
 
 /** Who is in a channel's room, as the node's presence set says — one entry per member id. */

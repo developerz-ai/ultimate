@@ -8,6 +8,19 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **`useRecordChanges(types, listener)` — hear THAT records moved, holding none of them.** The only
+  way to react to a channel's `records` was a whole-type `useRecords(type, {})`, which holds the
+  type: none of its rows is evicted while the reader lives, so a header that re-renders a server
+  page on any change kept every record of every watched type for the tab's life. The listener gets
+  one call per store update, the moved keys grouped by type; it holds no row and no type, and it is
+  follow-only (`FOLLOW_ONLY_EXPORTS`), so its island is never held behind the restore. New types
+  `RecordChanges`, `RecordChangesHandle`.
+- **`useChannel(...).error()`** — the node's refusal of a `failed` membership (`X_TOPIC_FORBIDDEN`
+  and the rest), read reactively. A page could see `failed` but not why, so a signed-out session
+  looked like any other failure.
+
 ### Fixed
 
 - **The page socket's redial curve resets on the node's first frame, not on the open.** A proxy or

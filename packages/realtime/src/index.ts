@@ -202,3 +202,8 @@ export {
   useRecord,
   useRecords,
 } from './use-record';
+export {
+  type RecordChanges,
+  type RecordChangesHandle,
+  useRecordChanges,
+} from './use-record-changes';

@@ -18,6 +18,8 @@ export const FOLLOW_ONLY_EXPORTS: readonly string[] = [
   'usePresence',
   'useConnection',
   'hasPageSocket',
+  // Hears THAT records moved and renders none of them, so a restored store contradicts nothing.
+  'useRecordChanges',
   'readPresence',
   'channel',
   'channelRef',
