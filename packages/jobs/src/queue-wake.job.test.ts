@@ -52,18 +52,27 @@ setDefaultTimeout(PGLITE_BOOT_MS);
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
-/**
- * The wall-clock budget for a measured pickup, generous enough for a loaded runner. `SOON_MS` below
- * is the wait actually in hand: the loop a wake interrupts had doubled well past it, so the pickup is
- * provably a consequence of the WAKE and not of the poll. What the two together prove is timing, which
- * costs a function nobody else pays: the mechanism is pinned deterministically elsewhere (a wake calls
- * the pass at once in `outbox-relay.ts:280`, and `idle-cost.test.ts` counts the statements per idle
- * minute). These budgets are how much slack a loaded machine needs, so they are not made tight: a
- * quiet runner measured the pickup at 166ms (2026-10), past 150. 250 is `WAKE_SLOT_MS`, the poll
- * this wake replaced, and still below the 400ms wait in hand — only a wake lands inside it.
- */
+/** Observation window with no wake: still below that arm's 400 ms poll. */
 const SOON_MS = 250;
+/** Completion budget, separate from the latency assertion, for a loaded runner. */
 const BUDGET_MS = 2_000;
+/**
+ * The ceiling those loops idle at, and so the poll's own guarantee — `IDLE_POLL_CEILING_MS` in
+ * `idle-backoff.ts`, which is what bounds a job committed by another process when no notification
+ * ever crosses.
+ */
+const POLL_CEILING_MS = 2_000;
+/**
+ * The bound the two cross-process cases assert, and about half the ceiling: what the wake path has
+ * to beat it by. It is a LOADED number, and the reason this suite has one: the bound used to be
+ * `SOON_MS` (150 ms), which went red on the `job` step — nineteen files over three workers, four
+ * PGlite instances on one box. Four copies of this file at once measured the wake path at 206 ms.
+ * So the promise asserted is the one that survives a loaded runner — the wake HALVES the poll's
+ * worst case — and not a figure an idle machine produced. Both loops idle at POLL_CEILING_MS
+ * first, so only a wake lands inside this bound. The mechanism is also pinned deterministically
+ * by the wake tests and idle-cost.test.ts's statement counts.
+ */
+const WAKE_BOUND_MS = 1_000;
 
 let pg: EmbeddedPg;
 let heard: { channel: string; payload: string }[] = [];
@@ -301,14 +310,15 @@ describe('the loops it wakes', () => {
         return Promise.resolve();
       },
     });
-    await idleWorker(400);
+    // Idling at the ceiling the poll alone guarantees — the wake is what has to beat it.
+    await idleWorker(POLL_CEILING_MS, POLL_CEILING_MS);
 
     const other = postgresJobDriver({ executor: pg.executor });
     const before = performance.now();
     await enqueue(other, handle.name, 'cross-process');
     await until(() => started.length === 1, BUDGET_MS);
-    // The wait in hand was 400 ms or more — only a wake, never the poll, lands inside SOON_MS.
-    expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
+    // The wait in hand was the whole ceiling — only a wake lands inside WAKE_BOUND_MS.
+    expect((started[0] ?? 0) - before).toBeLessThan(WAKE_BOUND_MS);
   });
 
   test('with NO wake the same job waits for the poll — and the poll ceiling still bounds it', async () => {
@@ -330,8 +340,8 @@ describe('the loops it wakes', () => {
     await Bun.sleep(SOON_MS);
     expect(started).toEqual([]);
     await until(() => started.length === 1, 3_000);
-    // The guarantee: never past the ceiling (plus a pass).
-    expect((started[0] ?? 0) - before).toBeLessThan(ceiling + SOON_MS);
+    // The guarantee: never past the ceiling, plus one loaded pass.
+    expect((started[0] ?? 0) - before).toBeLessThan(ceiling + WAKE_BOUND_MS);
     expect(wakeIsLive()).toBe(false);
   });
 
@@ -344,7 +354,7 @@ describe('the loops it wakes', () => {
         return Promise.resolve();
       },
     });
-    await idleWorker(400);
+    await idleWorker(POLL_CEILING_MS, POLL_CEILING_MS);
     const driver = postgresJobDriver({ executor: pg.executor });
     const relayStore = postgresOutboxStore({
       executor: pg.executor,
@@ -354,12 +364,12 @@ describe('the loops it wakes', () => {
       store: relayStore,
       driver,
       intervalMs: FLOOR_MS,
-      idlePollMaxMs: 60_000,
+      idlePollMaxMs: POLL_CEILING_MS,
       drainOnShutdown: false,
     });
     relay.start();
     cleanups.push(() => relay.stop());
-    await until(() => relay.pollDelayMs() >= 400);
+    await until(() => relay.pollDelayMs() >= POLL_CEILING_MS);
 
     // The web pod: its own store, its own transaction, no signal raised in this process.
     let bound = pg.executor;
@@ -380,8 +390,8 @@ describe('the loops it wakes', () => {
       });
     });
     await until(() => started.length === 1, BUDGET_MS);
-    // Only a wake lands inside SOON_MS: the relay's poll sits at 400 ms once it's idle.
-    expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
+    // Only a wake lands inside WAKE_BOUND_MS: the relay's poll sits at POLL_CEILING_MS.
+    expect((started[0] ?? 0) - before).toBeLessThan(WAKE_BOUND_MS);
   });
 
   test('a stopped wake leaves the loops under the no-wake ceiling', async () => {
