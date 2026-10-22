@@ -190,7 +190,7 @@ kept) until it mounts over the restored store.
 | Island | Held | `mount` waits for the restore |
 |---|---|---|
 | takes `useQuery`, `useRecord`, `useRecords`, `useMutation`, `useMutationQueue`, `useOutbox`, or any other name not listed below, anywhere in its own graph | yes — until it mounts, 3 s at most | yes, 1 s at most (`FIRST_PAINT_HOLD_MS`) |
-| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
+| takes only `useChannel`, `usePresence`, `useConnection`, `hasPageSocket`, `useRecordChanges`, `readPresence`, `channel`, `channelRef`, `topic` | **no** — its server markup is on screen from the first byte | no — it mounts as soon as the page runtime is there |
 | takes the barrel with no list of names (`import * as`, `export *`, `import()`) | yes | yes |
 | reaches no realtime | no | no |
 
@@ -273,6 +273,7 @@ however many lists, islands and paths hold it. It shipped in 21.0.0
 | A row that is not an object, or has no key, is dropped and reported (`X_RECORD_REJECTED`) | a keyless row would overwrite another record |
 | A record lives exactly as long as something holds it | the last release drops it, so an infinite scroll is not a leak |
 | A list that must grow with the store is `useRecords(type, { where?, order? })` | a `useQuery` list holds its own answer's keys and `useRecords(type, keys)` the keys it was given, so a record a channel's `records` frame adopts reaches neither. The whole-type form shows every record of the type the store holds — `ready` from its first read, ordered by key unless `order` says otherwise, none evicted while it is held. The channel-records counterpart of a live window (25.0.0, #680) |
+| A reader that only needs to know THAT records moved is `useRecordChanges(types, listener)` | it is called once per store update with the moved keys per type and holds no row and no type, so it pins nothing: re-rendering a server page on a channel's `records` costs no memory. Follow-only, so its island is never held |
 
 **The key comes from the server, on every path.** A browser cannot compute a key without importing
 the app's `entity()` declarations, so it never does.

@@ -99,6 +99,9 @@ describe('useChannel — membership', () => {
     socket.deliver({ ...records(1, 1), channel: 'org-feed.o2' });
     expect(denied()).toBe('failed');
     expect(other()).toBe('live');
+    // The refusal itself, so a page can tell a signed-out session from any other failure.
+    expect(denied.error()).toMatchObject({ code: 'X_TOPIC_FORBIDDEN' });
+    expect(other.error()).toBeUndefined();
   });
 
   test('on a server render it opens nothing', () => {
