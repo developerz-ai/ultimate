@@ -124,8 +124,12 @@ export const config = defineRoute({
    * page's in-flight writes are answered (`catch-up-hold.ts`, `record-landings.ts`), so a read
    * that lands before a write's echo never paints one like too many; and an offline tap reaches
    * the outbox on disk before it paints, so a reload at that instant keeps the write.
+   * raised 162kb → 163kb (#855). measured: 166,122 B (2026-10-22; CI `x build --target static`),
+   * against 165,888. why: the page boot's socket redials at once on `online` and a visible
+   * `visibilitychange` (`LiveClient.wake()`), so a tab back from sleep is live before its armed
+   * backoff runs out, and its curve resets on the node's first frame rather than on the open.
    */
-  budget: { js: '162kb' },
+  budget: { js: '163kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
