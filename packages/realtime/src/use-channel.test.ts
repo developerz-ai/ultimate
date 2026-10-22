@@ -106,7 +106,10 @@ describe('useChannel — membership', () => {
 
   test('on a server render it opens nothing', () => {
     resetPage();
-    expect(useChannel(orgFeed, { orgId: 'o1' })()).toBe('joining');
+    const ssr = useChannel(orgFeed, { orgId: 'o1' });
+    expect(ssr()).toBe('joining');
+    expect(ssr.error()).toBeUndefined();
+    ssr.release();
   });
 
   test('usePresence on a server render is an empty roster and opens nothing', () => {

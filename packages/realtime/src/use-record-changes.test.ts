@@ -47,6 +47,14 @@ describe('useRecordChanges', () => {
     expect(page.store.peek('posts', 'p1')).toBeUndefined();
   });
 
+  test('on a server render it subscribes to nothing, and its release is a no-op', () => {
+    resetPage();
+    const handle = useRecordChanges(['posts'], () => undefined);
+    handle();
+    handle.release();
+    handle[Symbol.dispose]();
+  });
+
   test('released, it hears nothing more; releasing twice is a no-op', () => {
     const { page } = pageHarness();
     const seen: unknown[] = [];

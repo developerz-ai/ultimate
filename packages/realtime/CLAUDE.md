@@ -256,8 +256,6 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `useQuery`'s input is read once, at call time.
 - **`useRecords(type, selection)` holds the TYPE** (`retainType`): `ready` at once, recomputed per
   change to that type, no row of it evicted while held; the last type hold evicts what it spared.
-- **`useRecordChanges(types, listener)` holds NOTHING**: told what moved, never what is. Follow-only
-  (`FOLLOW_ONLY_EXPORTS`), so its island is not held.
 - Every subscription handle is `Disposable`; `[Symbol.dispose]` IS the release. Type claims go in
   `type-pins.ts`.
 - **The outbox**: only `pending` is sendable; `drain()` is one chained pass at a time; `#epoch` is
