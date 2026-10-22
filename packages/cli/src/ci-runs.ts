@@ -121,11 +121,17 @@ export function latestPerWorkflow(runs: readonly CiRun[]): readonly CiRun[] {
   return [...newest.values()];
 }
 
+/**
+ * The branch's runs, newest first. `filters` narrows the ask to one workflow or one event; with
+ * neither given, the argv is byte-for-byte the one `x ci` has always sent — cmd-ci.test.ts pins
+ * it, so a filter may only ever insert its pair between `--branch` and `--limit`.
+ */
 export async function listRuns(
   host: GhHost,
   repo: GhRepo,
   branch: string,
   limit: number,
+  filters?: { readonly workflow?: string | undefined; readonly event?: string | undefined },
 ): Promise<readonly CiRun[]> {
   const rows = await ghJson(
     host,
@@ -136,6 +142,8 @@ export async function listRuns(
       repo.slug,
       '--branch',
       branch,
+      ...(filters?.workflow === undefined ? [] : ['--workflow', filters.workflow]),
+      ...(filters?.event === undefined ? [] : ['--event', filters.event]),
       '--limit',
       String(limit),
       '--json',
