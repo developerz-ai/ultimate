@@ -1,6 +1,8 @@
-// The audit's four answers and its one non-answer, driven by fixtures. The network is injected on
-// purpose: a test that resolves npm reports the registry's mood, not this repo's state — and the
-// measured propagation lag (minutes, PUBLISHING.md) makes "absent" the flakiest possible fixture.
+// The audit's four answers and its one non-answer, driven by fixtures — and the healthy answer now
+// carries a finding of its own when npm's `latest` is not the version this tree stamps. The network
+// is injected on purpose: a test that resolves npm reports the registry's mood, not this repo's
+// state — and the measured propagation lag (minutes, PUBLISHING.md) makes "absent" the flakiest
+// possible fixture.
 
 import { describe, expect, test } from 'bun:test';
 import type { ScriptResult } from './lib/log';
@@ -219,6 +221,40 @@ describe('present at the stamped version, hand-published', () => {
   });
 });
 
+describe('present, attested, and npm serving another version by default', () => {
+  test('an attested version whose latest tag moved is a finding, not a clean ok', async () => {
+    const split = fetcherFor({
+      [packumentUrl('@ultimat3/core')]: {
+        body: packument('@ultimat3/core', { '3.0.0': attested }, '3.1.0'),
+      },
+    });
+    const states = await auditRegistry([target('@ultimat3/core', '3.0.0')], split);
+    // The kind does not move: the stamped version IS there and IS attested. What is wrong is which
+    // one npm hands a consumer, and `ok` raised no finding to say so.
+    expect(only(states).kind).toBe('ok');
+    const findings = registryFindings(states);
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    expect(finding?.code).toBe('X_REGISTRY_LATEST_DRIFT');
+    expect(finding?.cause).toContain('3.0.0');
+    expect(finding?.cause).toContain('3.1.0');
+    expect(finding?.fix).toContain('npm dist-tag add @ultimat3/core@3.0.0 latest');
+  });
+
+  test('a packument carrying no dist-tags is the same split, named `none`', async () => {
+    const untagged = fetcherFor({
+      [packumentUrl('@ultimat3/core')]: {
+        body: JSON.stringify({ name: '@ultimat3/core', versions: { '3.0.0': attested } }),
+      },
+    });
+    const states = await auditRegistry([target('@ultimat3/core')], untagged);
+    expect(only(states).latest).toBe('none');
+    const finding = findingFor(only(states));
+    expect(finding?.code).toBe('X_REGISTRY_LATEST_DRIFT');
+    expect(finding?.cause).toContain('none');
+  });
+});
+
 describe('the request itself', () => {
   test('a scoped name is escaped for the packument path', () => {
     expect(packumentUrl('@ultimat3/core')).toBe('https://registry.npmjs.org/@ultimat3%2fcore');
@@ -332,13 +368,14 @@ describe('tagged is stamped on every state, and asked once per distinct version'
     dependsOn: [],
   });
 
-  /** One audit over five workspaces: ok, unattested, behind, absent and unreachable in one run. */
+  /** One audit over six workspaces: ok, unattested, behind, absent, unreachable and a split. */
   const corpus = [
     workspace('core', '9.0.0'),
     workspace('http', '9.0.0'),
     workspace('schema', '9.0.0'),
     workspace('cache', '8.0.0'),
     workspace('flags', '9.0.0'),
+    workspace('notify', '9.0.0'),
   ];
   const fetcher: RegistryFetch = async (url) => {
     const name = decodeURIComponent(url.slice('https://registry.npmjs.org/'.length));
@@ -348,6 +385,9 @@ describe('tagged is stamped on every state, and asked once per distinct version'
     }
     if (pkg === 'flags') return new Response('{}', { status: 503 });
     if (pkg === 'cache') return new Response('{}', { status: 404 });
+    // Attested at the stamped version, and npm's default tag on another one: the one shape the
+    // other five bodies above cannot produce.
+    if (pkg === 'notify') return new Response(packument(name, { [version]: attested }, '9.2.0'));
     return new Response(packument(name, { [version]: attested }, version));
   };
   const unattestedFetcher: RegistryFetch = async (url) =>
@@ -391,6 +431,18 @@ describe('tagged is stamped on every state, and asked once per distinct version'
     }
     expect(asked).toHaveLength(2);
     expect([...asked].sort()).toEqual(['v8.0.0', 'v9.0.0']);
+  });
+
+  test('one moved default tag is one finding, on the ok state that carries it', async () => {
+    const result = await registryAuditResult(corpus, unattestedFetcher, async () => true);
+    const split = statesOf(result).find((state) => state.name === '@ultimat3/notify');
+    if (split === undefined) expect.unreachable('the corpus holds @ultimat3/notify');
+    // `kind` stays `ok` — the stamped version is there and attested — and the finding is the only
+    // thing that says npm hands a consumer 9.2.0.
+    expect(split.kind).toBe('ok');
+    expect(findingFor(split)?.code).toBe('X_REGISTRY_LATEST_DRIFT');
+    const drift = (result.findings ?? []).filter((one) => one.code === 'X_REGISTRY_LATEST_DRIFT');
+    expect(drift.map((one) => one.at)).toEqual(['@ultimat3/notify']);
   });
 
   test('31 workspaces at one version ask the remote exactly once', async () => {

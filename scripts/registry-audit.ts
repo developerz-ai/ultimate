@@ -13,6 +13,10 @@
 //
 //   bun run scripts/registry-audit.ts [--json]
 
+// why: the LEAF module, never the `@ultimat3/cli` barrel: the barrel links every package in the
+// tree, and this audit is an operator command a daily workflow runs. `quoteArg` screens the values
+// a fix line pastes, which is what `fix-shell-arg` asks for.
+import { quoteArg } from '../packages/cli/src/shell-quote';
 import { parseScriptArgs } from './lib/args';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
@@ -256,14 +260,35 @@ const unreachableFinding = (state: PublishState): Finding => ({
   fix: `curl -sS -o /dev/null -w '%{http_code}\\n' ${packumentUrl(state.name)}   # then re-run: bun run scripts/registry-audit.ts --json`,
 });
 
-const FINDINGS: Readonly<Record<PublishStateKind, ((state: PublishState) => Finding) | undefined>> =
-  {
-    ok: undefined,
-    absent: absentFinding,
-    behind: behindFinding,
-    unattested: unattestedFinding,
-    unreachable: unreachableFinding,
-  };
+/**
+ * The one shape `ok` used to call clean: the stamped version IS there and IS attested, but npm's
+ * default `latest` has moved past it, so `npm install` and `bunx create-ultimate` hand a consumer a
+ * release this tree does not stamp. The other kinds already say so in their own words —
+ * `absent` and `unreachable` carry no `latest` at all, and `behind`'s cause names the newest
+ * version — so a moved tag was reported nowhere. Conditional by nature, so the builder's return
+ * type and the map's value type both carry `| undefined`; `findingFor` already returned
+ * `Finding | undefined`, so nothing downstream changes shape.
+ */
+const latestSplitFinding = (state: PublishState): Finding | undefined =>
+  state.latest === state.version
+    ? undefined
+    : {
+        code: 'X_REGISTRY_LATEST_DRIFT',
+        at: state.name,
+        cause: `${state.name}@${state.version} is on the registry and attested, but npm's default latest tag is ${state.latest ?? 'none'} — so npm install and bunx create-ultimate resolve ${state.latest ?? 'none'}, not the version this tree stamps`,
+        fix: `npm dist-tag add ${quoteArg(state.name)}@${quoteArg(state.version)} latest   # when ${state.latest ?? 'none'} is the real release instead, bump the tree: bun run scripts/release.ts --bump patch`,
+      };
+
+/** One builder per kind; its `undefined` IS the verdict that the shape is clean, not a hole. */
+type FindingBuilder = (state: PublishState) => Finding | undefined;
+
+const FINDINGS: Readonly<Record<PublishStateKind, FindingBuilder | undefined>> = {
+  ok: latestSplitFinding,
+  absent: absentFinding,
+  behind: behindFinding,
+  unattested: unattestedFinding,
+  unreachable: unreachableFinding,
+};
 
 export const findingFor = (state: PublishState): Finding | undefined =>
   FINDINGS[state.kind]?.(state);

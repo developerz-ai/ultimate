@@ -24,7 +24,7 @@ npm at <version>, every one attested` or names each gap with a runnable `fix:`.
 | attested, and by whom | `npm view @ultimat3/core@<version> dist.attestations _npmUser` |
 | the derived publish list, in order | `bun run scripts/release-workflow.ts --json` |
 | the repository is stamped at one version | `bun run scripts/release.ts --check <version> --json` |
-| every package is on npm at that version | `bun run scripts/registry-audit.ts --json` |
+| every package is on npm at that version, and npm's default `latest` is it | `bun run scripts/registry-audit.ts --json` |
 
 **There is no publication hole today, and there have been two.** `@ultimat3/flags` was the first:
 the workflow listed its `-w` flags by hand and omitted it. That list is now **derived** from
@@ -52,7 +52,7 @@ what each answer means.
 | what this tree is stamped at, per workspace | `bun run scripts/list-workspaces.ts --json` — `.data[].version`; one value across every workspace, or the tree is out of lockstep |
 | the whole repository is stamped at one version | `bun run scripts/release.ts --check <version>` — exits 1 and names every finding when it is not |
 | the release workflow names every publishable workspace | `bun run scripts/release-workflow.ts --json` |
-| every one of them is on npm at that version, attested | `bun run scripts/registry-audit.ts --json` — also names a new package owing its one bootstrap publish (step 1 of the bootstrap below) |
+| every one of them is on npm at that version, attested, with npm's default `latest` on it | `bun run scripts/registry-audit.ts --json` — also names a new package owing its one bootstrap publish (step 1 of the bootstrap below), and a package that is on npm at the stamped version while `latest` serves another one (`X_REGISTRY_LATEST_DRIFT`), which is the release `npm install` and `bunx create-ultimate` would resolve |
 | what npm serves, and what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
 | provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` — `GitHub Actions` is the workflow; a person's name is a hand publish with no attestation |
 | the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — the ref **and** its peeled `^{}` line. Not `git tag --list`, which reads the local repository. `git tag -a` only: `--follow-tags` never pushes a lightweight tag |
