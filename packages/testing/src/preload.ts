@@ -62,12 +62,18 @@ if (Bun.env[ISOLATED_ENV] !== '1') {
   onFileBoundary(resetRateLimitStore);
 }
 
+// Isolated runs only (`x test` says so): Bun keeps every finished file alive while a plugin is
+// registered. See `isolated-plugins.ts`.
+//
+// BEFORE the loader install below, and that order is the fix: registering the release first lets it
+// clear the loader's handler at the first file's boundary, where the module graph it retains is
+// released with it. Installed the other way round, the release still fires but the graph the loader
+// already built is what is held, and every finished file stays resident — measured on Bun 1.4.0,
+// 8 files, 1 -> 8 live global objects (this file's own leak fixture).
+releasePluginsAfterIsolatedFile();
+
 // An app's `.tsx` compiles with the app's JSX factory on the first file, never cached classic.
 await installAppJsxLoader();
-
-// Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin
-// is registered. See `isolated-plugins.ts`.
-releasePluginsAfterIsolatedFile();
 
 // Opt-out exists for one case: a test that deliberately exercises a real integration in a job the
 // team runs on purpose. It is an env var, not an API, so it cannot be set from inside a test file.
