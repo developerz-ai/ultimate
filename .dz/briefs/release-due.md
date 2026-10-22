@@ -67,12 +67,13 @@ match.
 
 The same rule on the pull-request side: an open `chore: release <next>` PR is that release already
 in flight — merging it is the release (step 5) — so file nothing, cut nothing, and let that PR
-land. The box fetches candidates with
-`gh pr list --state open --search "release <next> in:title" --json number,title`, then
-post-filters them through `RELEASE_SUBJECT` in `scripts/lib/release-subject.ts` against
-`data.next`: `chore: release <next>` and `release: <next>` are the twins, `Release <next>` (the
-ask) and `chore: release <next>-beta` are not. A due run names the one it found in `data.detail`,
-as `; a bump PR already open: <title>`.
+land. The box asks the callable surface, `bun run scripts/bump-pr.ts --version <next> --json`,
+where `<next>` is `data.next` from the run above — substitute the version before running it —
+then branches on `data.open`: `chore: release <next>` and `release: <next>` are the twins,
+`Release <next>` (the ask) and `chore: release <next>-beta` are not. On `ok:false` the lookup
+could not answer — `gh` failed, timed out or is missing — so read the envelope's `findings` like
+any refusal above and never read it as "none open". A due run names the one it found in
+`data.detail`, as `; a bump PR already open: <title>`.
 
 ## Evidence: one live run on this checkout
 
