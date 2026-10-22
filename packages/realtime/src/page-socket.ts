@@ -66,16 +66,24 @@ export function pageSocket(hook: string): LiveClient {
     host.rehost();
     client.connect();
   };
+  // The network or the tab came back: dial now, not at the end of a backoff armed while it was gone.
+  const wake = (): void => {
+    if (typeof document === 'undefined' || document.visibilityState !== 'hidden') client.wake();
+  };
   const listens = typeof addEventListener === 'function';
   if (listens) {
     addEventListener('pagehide', bye);
     addEventListener('pageshow', restored);
+    addEventListener('online', wake);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', wake);
   }
   teardowns.add(() => {
     offRescope();
     if (listens) {
       removeEventListener('pagehide', bye);
       removeEventListener('pageshow', restored);
+      removeEventListener('online', wake);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', wake);
     }
     client.close();
     host.bye();

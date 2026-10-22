@@ -19,6 +19,14 @@ import type { JsonObject, Row } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
 import { BROWSER_RECONNECT_MAX_MS } from './thundering-herd';
 
+const nodeHello = {
+  type: 'hello',
+  v: PROTOCOL_VERSION,
+  buildId: 'b',
+  sessionId: 's1',
+  actorId: null,
+} as const;
+
 describe('LiveClient reconnect', () => {
   test('a dropped socket arms a timer that actually dials again', () => {
     const { client, timers, sockets } = harness();
@@ -80,9 +88,10 @@ describe('LiveClient reconnect', () => {
     expect(timers.delays).toEqual([500, 1000, 2000]);
 
     timers.fire();
-    sockets[3]?.open(); // this one lands
+    sockets[3]?.open(); // this one lands, and the node answers on it
+    sockets[3]?.deliver(nodeHello);
     sockets[3]?.disconnect();
-    expect(timers.delays.at(-1)).toBe(500); // attempt counter reset on open
+    expect(timers.delays.at(-1)).toBe(500); // attempt counter reset on the node's first frame
   });
 
   test('the whole subscription set is re-established on the automatic reconnect', () => {
