@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "71542e0534af50a903aa35777cdcda89d3a1586af0e9fc64c758ef53286ce33d",
+  "buildId": "b0132aa6179c443ad101a32e35823c588e952bc56f45c96aae6324eb16af1b20",
   "tiers": {
     "0": [
       "core",
@@ -3231,6 +3231,11 @@
     },
     {
       "code": "X_REGISTRY_BOOTSTRAP_OWED",
+      "owner": "scripts",
+      "at": "scripts/registry-audit.ts"
+    },
+    {
+      "code": "X_REGISTRY_LATEST_DRIFT",
       "owner": "scripts",
       "at": "scripts/registry-audit.ts"
     },

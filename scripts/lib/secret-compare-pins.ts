@@ -32,7 +32,7 @@ export interface SecretComparePin {
 }
 
 /**
- * Re-measured 2026-10-06 (plan 101 sweep 11): 54 comparisons in 51 rows across 16 packages.
+ * Re-measured 2026-10-21: 57 comparisons in 54 rows — 16 packages and the gate scripts themselves.
  * `@ultimat3/auth` is ABSENT and that is the point: every comparison of a token, a hash, a nonce
  * or a state there goes through `timingSafeEqual`. `bun run secret-compare --json` re-derives
  * every row in `data.counts`; no number below is a claim the command cannot check.
@@ -354,5 +354,12 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     count: 1,
     reason:
       'A `candidate` DATE’s weekday against the slot’s while walking forward to the next occurrence.',
+  },
+  'scripts/registry-audit.ts: state.latest === state.version': {
+    // why: new 2026-10-21 with X_REGISTRY_LATEST_DRIFT, the finding that first reads
+    // dist-tags.latest: the word this rule holds as an OAuth state is this PublishState record.
+    count: 1,
+    reason:
+      'Two npm semver strings off one PublishState row: the version this tree stamps, against the tag npm serves by default. Neither is a credential, and both are public in the packument.',
   },
 };
