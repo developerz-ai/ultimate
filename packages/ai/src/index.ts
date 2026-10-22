@@ -5,6 +5,7 @@
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export { agent } from './agent';
+export type { AgentCompaction, AgentCompactOption, AgentCompactRule } from './agent-compact-def';
 export type {
   AgentAction,
   AgentContinuation,
@@ -26,6 +27,7 @@ export type {
   AgentVarsArgs,
 } from './agent-def';
 export {
+  AgentContextExhaustedError,
   AgentDeadlineError,
   AgentToolLoopError,
   AgentToolUndeclaredError,

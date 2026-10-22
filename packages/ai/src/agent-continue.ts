@@ -64,6 +64,12 @@ export interface AgentTranscript {
   readonly turns: number;
   /** Usage across the run and every continuation — what `budget.tokensPerRun` counts. */
   readonly usage: TokenUsage;
+  /**
+   * Compactions applied so far, continuations included — present only once there was one, so a
+   * run that never compacted writes exactly the handle it always did. Its first message then holds
+   * the prompt and a `[compacted: …]` summary block (`./agent-compact`).
+   */
+  readonly compacted?: number;
   /** HMAC-SHA256 over the canonical JSON of every field above (`sealTranscript`). */
   readonly sig: string;
 }
@@ -220,7 +226,7 @@ function signatureOf(fields: Omit<AgentTranscript, 'sig'>): string {
 /** A handle for `state`, bound and signed. The one place a transcript is written. */
 export function sealTranscript(
   binding: TranscriptBinding,
-  state: Pick<AgentTranscript, 'messages' | 'turns' | 'usage'>,
+  state: Pick<AgentTranscript, 'messages' | 'turns' | 'usage' | 'compacted'>,
 ): AgentTranscript {
   const fields: Omit<AgentTranscript, 'sig'> = {
     v: TRANSCRIPT_VERSION,
@@ -231,6 +237,7 @@ export function sealTranscript(
     messages: state.messages,
     turns: state.turns,
     usage: state.usage,
+    ...(state.compacted === undefined || state.compacted < 1 ? {} : { compacted: state.compacted }),
   };
   return { ...fields, sig: signatureOf(fields) };
 }
@@ -320,6 +327,13 @@ export function screenTranscript(binding: TranscriptBinding, raw: unknown): Agen
     refuse('its turn count is not a whole number');
   }
   const usage = usageOf(handle['usage']) ?? refuse('its usage is not four token counts');
+  const compacted = handle['compacted'];
+  if (
+    compacted !== undefined &&
+    (typeof compacted !== 'number' || !Number.isInteger(compacted) || compacted < 1)
+  ) {
+    refuse('its compaction count is not a whole number above zero');
+  }
   const messages = Array.isArray(handle['messages']) ? handle['messages'] : refuse('no messages');
   if (messages.length < 1) refuse('it holds no message');
   const declared = new Set(binding.tools);
@@ -362,6 +376,7 @@ export function screenTranscript(binding: TranscriptBinding, raw: unknown): Agen
     messages: screened,
     turns: turns as number,
     usage,
+    ...(compacted === undefined ? {} : { compacted: compacted as number }),
     sig: sig as string,
   };
 }

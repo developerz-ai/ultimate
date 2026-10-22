@@ -141,9 +141,11 @@ export const supportAgent = agent({
 | `temperature`, `seed` | no | not sent | determinism knobs for a verifier or a classifier (`temperature` 0 to 2, `seed` a whole number). **Sent only to a model whose row takes them** — `registerModel({ …, sampling: { temperature: true, seed: true } })`; to any other they are left out, because a reasoning model answers a sampling parameter with a 400, and the `llm.sampling.ignored` span attribute names what was left out. `seed` exists on the chat-completions wire only (the Messages API has none) and is best effort where it exists; `temperature: 0` narrows variation, it does not promise identical answers. Same two keys on `llm()` |
 | `system` | no | — | system text loaded at run time, as `{ stable?, run? }` → [Provider prompt caching](#provider-prompt-caching) |
 | `promptCache` | no | **`'auto'`** | `'auto'` \| `'off'` \| `{ session }` — asks the provider to cache each turn's prefix |
+| `compact` | no | **`'auto'`** | `'auto'` \| `'off'` \| `{ at, keepTurns, model, maxSummaryTokens }` — summarise older turns before a request that would outgrow the context window → [Auto-compaction](#auto-compaction-compact) |
 | `budget` | no | unmetered | `tokensIn`, `costPerCall`, `tokensPerRun`, `costPerRun` |
 | `mcp` | no | not exposed | exposes the agent itself as a tool |
 | `onTurn` | no | — | one call per completed turn, awaited |
+| `onCompact` | no | — | one call per compaction attempt, awaited → [Auto-compaction](#auto-compaction-compact) |
 
 ## Tools are real actions
 
@@ -489,6 +491,38 @@ export async function writeThenFix(ctx: Ctx, problem: string): Promise<{ title: 
 
 **A failed call leaves a handle too.** When `.run()` or `.continue()` throws after a provider answered, the error carries a signed handle — `transcriptOf(error)` — holding the transcript up to the request the failed turn was answering, with `turns` and `usage` counting everything the failed call was billed. **A job stores that handle, not the one it started with.** Continuing from the old handle forgets the failed call's spend: `maxTurns` and `budget.tokensPerRun` then count from the old figures, and only the actor and org ceilings bound the retries. A call aborted before it reported usage is not in the handle (its bill is unknown — `billedOf(error).unsettled`). A plain call keeps nothing and leaves no handle.
 
+## Auto-compaction (`compact`)
+
+`As of 2026-10`. Every turn re-sends the whole transcript, so a long tool loop grows until it no longer fits the model's context window. Before each turn, `agent()` estimates that turn's request — the gateway's prompt estimate plus the tool definitions — against the model row's `contextWindow` less `maxTokens` (the room). Over `at` of the room, ONE model call summarises every turn older than the last `keepTurns`, and the turn is sent compacted:
+
+| Before | After |
+|---|---|
+| tools, system prompt (stable block, per-run block) | **the same bytes** — the provider's cached prefix survives |
+| first user message: the rendered prompt | the prompt verbatim, then one `[compacted: N earlier turns …]` text block holding the summary |
+| turns 1 … N−k | gone — folded into the summary |
+| the last `keepTurns` turns (each an assistant message and the user message answering its tool calls) | **the same bytes** — no tool call is ever separated from its result |
+
+| Option | Default | |
+|---|---|---|
+| `compact` | `'auto'` | `'off'` never compacts and never checks: the loop exactly as before |
+| `at` | `0.8` | fraction of the room (above 0, at most 1) that triggers a compaction |
+| `keepTurns` | `4` | newest turns kept verbatim, at least 1 |
+| `model` | the run's | the model that writes the summary. The run's own reads the cached prefix; another is priced at its own rates |
+| `maxSummaryTokens` | `min(2,048, maxTokens)` | the summary call's completion ceiling |
+
+| Rule | Detail |
+|---|---|
+| decided before the call, never after a 400 | a request the window cannot take is compacted first, or refused |
+| the summary call is the run's own request up to the cut, plus one instruction | same gateway, tools, system and `promptCache` hint: it reads the prefix the turn that ended at the cut already cached, and on OpenRouter carries the same `x-session-id` — for a DeepSeek or Gemini model too, which the host caches implicitly |
+| billed to the run | same ledger (`budget.tokensPerRun`), `costPerRun` checked before it, counted in `usage`, `onTurn`'s `run` and `meta.billed`. A budget refusal, a deadline or an abort is thrown as itself |
+| not a turn | `maxTurns` and `onTurn` count the loop alone |
+| a failed summary — no text, cut off, refused, unreachable, no shorter | the run goes on **whole** while the request still fits; over the room it is `X_AGENT_CONTEXT_EXHAUSTED` (500, `terminal` for a job), before anything is sent. Never a truncated transcript |
+| after a failed attempt | the next one waits until the request no longer fits — each attempt is a billed call |
+| the handle | `.run()`'s `transcript` and `transcriptOf(error)` hold the compacted messages and a signed `compacted` count (absent at zero, so a run that never compacted writes the handle it always did); `.continue()` resumes from it and compacts on its own turns |
+| observed | `onCompact({ turn, outcome, reason, before, after, limit, summarised, kept, compactions, model, usage, cost })` — awaited, a throw fails the run — and an `agent.compact` span event with the same facts |
+
+Limits: the estimate is about four characters a token, which is why `at` defaults below 1; on the chat-completions wire an agent with `tools: []` offers only `respond`, which is then forced, so its summary call answers no text and the run falls back to whole.
+
 ## Per-run picks (`offerTools`, `model`, `limits`)
 
 `As of 2026-10`. A declaration is the agent's **ceiling**; one run may pick **inside** it — from its own input and context (a stored permission rule, a tenant's model tier, a cheaper plan) — and never outside it.
@@ -769,6 +803,7 @@ Similar prompts do not have similar answers once the answer depends on what `loo
 | `X_AGENT_MAX_TURNS` | the loop used every turn calling tools and never answered | tell the template when to stop and answer through the respond tool, then bump its version |
 | `X_AGENT_TOOL_LOOP` | consecutive turns made the same tool calls and read the same results | `maxRepeatedToolCalls: 5` on the agent, only for a tool that really is polled; otherwise tell the template what to do when the result does not change, then bump its version |
 | `X_AGENT_DEADLINE` | the run outlived its declared `deadlineMs` | `deadlineMs: 300_000` on the agent, once a trace shows the run converging; otherwise lower `maxTurns` |
+| `X_AGENT_CONTEXT_EXHAUSTED` | the next request would not fit the model's context window and [compaction](#auto-compaction-compact) could not bring it under. Refused before it is sent | `compact: { at: 0.6, keepTurns: 2 }` on the agent; or lower `maxToolResultChars`, or a model with a larger `contextWindow` |
 | `X_LLM_OUTPUT_INVALID` | every turn's answer failed the `output` schema | describe the shape in the template and bump its version, or widen `output` |
 | `X_LLM_REFUSED` | the provider's classifiers declined; `stopDetails.category` names why | set `model:` to the more capable one the thrown `fix:` names, or edit the template and bump its version |
 | `X_LLM_TRUNCATED` | a turn hit `maxTokens` before finishing — read before the answer, so nothing truncated is ever validated or run. A tool call cut off mid-arguments is this code too, streamed or not | raise `maxTokens:` on the declaration, or drop fields from `output`. A model that reasons spends the same ceiling on reasoning: a measured 28,000-character answer used 12,954 output tokens |
@@ -794,6 +829,7 @@ Full list: [Error codes](Error-Codes).
 - `onTurn` observes and cannot steer. There is no `.stream()` on an agent.
 - Every turn asks the provider to cache its prefix unless `promptCache: 'off'`; what is sent is a row in `PROMPT_CACHE_RULES`, never an `if`.
 - A run that repeats itself is stopped (`X_AGENT_TOOL_LOOP`); a run with a `deadlineMs` is stopped at it (`X_AGENT_DEADLINE`).
+- A run nearing its context window is compacted before the turn that would not fit — tools, system and the last turns byte for byte — or refused (`X_AGENT_CONTEXT_EXHAUSTED`); never truncated.
 - A hive reports in split order with three member arms; an empty split is an error.
 - `idempotencyKey` dedupes the enqueue, never the attempt — every tool an agent may call must be idempotent, and nothing checks it for you.
 
