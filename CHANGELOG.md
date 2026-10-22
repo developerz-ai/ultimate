@@ -8,12 +8,46 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.14.1 - 2026-10-22
+
 ### Fixed
 
 - Helm chart (framework + scaffold): the worker's `preStop` re-sends SIGUSR2 every 5 s until PID 1
   exits. As PID 1 the process has no default signal action, so a retire signal that landed before
   the boot armed its listener was dropped and the pod idled until its grace period (seen in
   production, a pod retired in its first second). A repeat joins the retire in flight.
+- `@ultimat3/realtime`: **the page record store compares columns structurally.** `SyncedLayer.merge`
+  compared each column by identity, and a JSON column (an array or object) is a fresh value on every
+  read â€” so every catch-up, poll and reconnect "changed" every row carrying one: a new row object,
+  every holder notified, every overlay replayed (whole-table flicker after each sync-node roll). An
+  equal re-read is now a no-op that keeps the row object; a moved row keeps each unmoved column's
+  object. The replay's `sameRow` and `changedColumns` share the one `sameJson` (key order ignored, a
+  `Date` by its time), which replaced a `JSON.stringify` comparison that called a reordered `jsonb`
+  object a change.
+- `@ultimat3/realtime`: **`x dev`'s in-process replicator no longer reopens channels on a bulk write
+  to a table a `recordPublisher` claims.** `onBulk` invalidated the channels carrying it, so every
+  `updateWhere` on it sent every seated tab a `replay-gap` and a full catch-up re-read for rows the
+  app's own publish was already sending. `onChange` already skipped such a table; the live-query
+  windows are still invalidated.
+- `@ultimat3/realtime`: **the client heartbeat no longer drops a socket on a late tick.** Silence was
+  measured from the last frame to the tick, so a hidden tab whose timers the browser throttled (a
+  chained timer about once a minute) read its live, answered socket as dead and redialled on every
+  tick. A socket is now dropped only when its last beat went unanswered for two windows.
+
+### Commits
+
+- fix(realtime): structural column equality in the record store; no channel reopen on a published bulk write; no drop on a late beat (#852)
+- feat(scripts): callable bump-pr surface for the release-due twin check (#850)
+- fix(helm): worker preStop re-sends SIGUSR2 (PID 1 drops an early retire) (#849)
+- docs: PUBLISHING.md envelope table names every DueDecision field (#848)
+- docs(dz): give health.md row 15 its filing evidence (#847)
+- docs(.dz): row-7 health asks name the bun.lock cause and lockfile:fix repair (#846)
+- feat(cli): add --workflow and --event filters to x ci (#844)
+- docs(dz): type health.md row 6 and state its staleness reading (#845)
+- fix: dedupe release-due against an open bump PR (#843)
+- docs(health): define the main-is-green verdict for every case (#840)
 
 ## 27.14.0 - 2026-10-22
 

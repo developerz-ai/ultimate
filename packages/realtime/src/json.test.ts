@@ -5,7 +5,7 @@
 // not exporting one, which is the stronger form of the same rule.
 
 import { describe, expect, test } from 'bun:test';
-import { changedColumns, isRow } from './json';
+import { changedColumns, isRow, sameJson } from './json';
 
 describe('changedColumns is what an update patch carries', () => {
   test('answers only what moved, so a patch is not a whole row', () => {
@@ -25,6 +25,32 @@ describe('changedColumns is what an update patch carries', () => {
     expect(changedColumns({ id: 'p1', tags: ['a'] }, { id: 'p1', tags: ['b'] })).toEqual({
       tags: ['b'],
     });
+  });
+});
+
+describe('sameJson is structural equality over the value domain', () => {
+  test('equal values are equal whatever their identity or key order', () => {
+    expect(sameJson([1, { a: [true, null] }], [1, { a: [true, null] }])).toBe(true);
+    expect(sameJson({ a: 1, b: { c: 'x' } }, { b: { c: 'x' }, a: 1 })).toBe(true);
+    expect(sameJson(new Date(5), new Date(5))).toBe(true);
+    expect(sameJson(Number.NaN, Number.NaN)).toBe(true);
+  });
+
+  test('any difference in shape, length, key or leaf is a difference', () => {
+    expect(sameJson([1, 2], [1, 2, 3])).toBe(false);
+    expect(sameJson({ a: 1 }, { a: 1, b: undefined })).toBe(false);
+    expect(sameJson({ a: 1 }, { b: 1 })).toBe(false);
+    expect(sameJson([], {})).toBe(false);
+    expect(sameJson({ a: null }, { a: {} })).toBe(false);
+    expect(sameJson('1', 1)).toBe(false);
+    expect(sameJson(new Date(5), new Date(6))).toBe(false);
+    expect(sameJson(new Date(5), {})).toBe(false);
+  });
+
+  test('a changed column is reported whatever key order the server serialised', () => {
+    expect(
+      changedColumns({ id: 'p1', meta: { a: 1, b: 2 } }, { id: 'p1', meta: { b: 2, a: 1 } }),
+    ).toEqual({});
   });
 });
 

@@ -74,9 +74,24 @@ export function changedColumns(before: JsonObject | null, after: JsonObject): Js
   return out;
 }
 
-function sameJson(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
-  if (a === b) return true;
-  if (a === undefined || b === undefined || a === null || b === null) return false;
-  if (typeof a !== 'object' || typeof b !== 'object') return false;
-  return JSON.stringify(a) === JSON.stringify(b);
+/**
+ * Structural equality over the value domain: arrays by position, plain objects by key whatever
+ * their order (Postgres `jsonb` reorders keys), a `Date` by its time. A JSON column is a fresh
+ * object on every read, so identity said "changed" for every re-read of an unchanged row.
+ */
+export function sameJson(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (a instanceof Date || b instanceof Date) {
+    return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, index) => sameJson(item, b[index]));
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((key) => Object.hasOwn(right, key) && sameJson(left[key], right[key]));
 }

@@ -103,10 +103,10 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
   sequence — or a NEW producer after a known one — stales every window; `refillWindowInLane` replaces it.
 - **A bulk write stales only its entity's readers**: windows + channel topics, `invalidate(entity)`
-  on both from `onBulk`. **A stale window's re-read re-snapshots EVERY subscriber**, before the lsn
+  on both from `onBulk` (channels: not a `recordPublisher` table). **A stale window's re-read re-snapshots EVERY subscriber**, before the lsn
   guard, even on a non-match (`live-replicator-bulk`, `live-fanout` tests).
 - **A WINDOW is per TENANT**: its id is `windowId(queryHash(name, input), tenant)` (`live-tenant.ts`;
-  tenant = the subscriber's `actor.orgId`). This package owns no hash. The read runs `readFor`
+  tenant = the subscriber's `actor.orgId`). The read runs `readFor`
   (`live-definition.ts`): the node's ctx, a service actor carrying ONLY that org — never the
   subscriber. A cursor naming another window is a cold start; `reauthorize` re-seats a
   subscription whose actor changed org (`live-tenancy.test.ts`; `docs/history/realtime.md`).
@@ -278,7 +278,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   (with its cursor) and per topic.
 - **The client beats** (`DEFAULT_HEARTBEAT_MS` 10 s = default ttl / 3, pinned by
   `client-heartbeat.test.ts`; `0` disables): a `hello` plus one subscribe per topic. Two silent
-  windows close with `4000`. **The node names the beat: `hello.heartbeatMs`** — `Heartbeat.follow`
+  windows after an UNANSWERED beat close with `4000`. **The node names the beat: `hello.heartbeatMs`** — `Heartbeat.follow`
   per socket; the engine reaps ports on the longer of its own and the node's.
 - **There is ONE `backoffDelay`, `@ultimat3/core`'s, counted from 1** — `policyDelay()` maps a
   `BackoffPolicy` onto it; `bun run flight-copies` refuses a second curve.
@@ -312,7 +312,7 @@ bun test packages/realtime/src   # from the REPO ROOT
 bun run typecheck
 ```
 
-`bunfig.toml`'s preload installs `@ultimat3/testing`'s matchers; Bun reads it from the cwd.
+`bunfig.toml`'s preload (matchers) is read from the cwd.
 
 Changing a frame shape means a fixture in `sync-protocol.test.ts` (the round-trip test fails
 without one) and bumping `PROTOCOL_VERSION` **when an old frame becomes unreadable in either

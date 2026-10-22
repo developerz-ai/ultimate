@@ -101,7 +101,9 @@ export const config = defineRoute({
    * that lands before a write's echo never paints one like too many; and an offline tap reaches
    * the outbox on disk before it paints, so a reload at that instant keeps the write.
    */
-  budget: { js: '175kb' },
+  // measured: 179711 B (x build --target static) — why: the page store now compares a re-read row by
+  // content (`sameJson`), so a catch-up after a sync roll no longer redraws every row (#852).
+  budget: { js: '176kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

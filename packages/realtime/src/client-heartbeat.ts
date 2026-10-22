@@ -39,6 +39,8 @@ export class Heartbeat {
   readonly #options: HeartbeatOptions;
   #cancel: (() => void) | null = null;
   #lastSeen = 0;
+  /** Whether a frame arrived since this socket last asked (the opening `hello`, then each beat). */
+  #answered = false;
   /** The beat in force on THIS socket: the option's, until the node's `hello` names another. */
   #intervalMs: number;
 
@@ -58,6 +60,7 @@ export class Heartbeat {
     this.#intervalMs = this.#options.intervalMs;
     if (this.#intervalMs <= 0) return;
     this.#lastSeen = now;
+    this.#answered = false;
     this.#arm();
   }
 
@@ -78,6 +81,7 @@ export class Heartbeat {
   /** A frame arrived. Anything counts: the point is that bytes still cross in this direction. */
   saw(now: number): void {
     this.#lastSeen = now;
+    this.#answered = true;
   }
 
   stop(): void {
@@ -98,10 +102,14 @@ export class Heartbeat {
     // Two windows, not one: a beat and the answer to it share the window they were sent in, so a
     // single quiet interval is a slow round trip and not a dead socket. Nothing is re-armed after
     // a silence — `onSilence` drops the socket, and the next `start()` is the next connection's.
-    if (now - this.#lastSeen > this.#intervalMs * 2) {
+    // And only when the last beat went UNANSWERED: a hidden tab's timers are throttled (Chrome runs
+    // a chained timer about once a minute), so a late tick on a socket that answered every beat it
+    // was sent is the page's clock, not the socket — dropping it churned every background tab.
+    if (!this.#answered && now - this.#lastSeen > this.#intervalMs * 2) {
       this.#options.onSilence();
       return;
     }
+    this.#answered = false;
     this.#options.beat();
     this.#arm();
   }

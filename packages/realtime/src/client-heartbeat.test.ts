@@ -210,3 +210,48 @@ describe('the beat the node names (hello.heartbeatMs)', () => {
     expect(timers.pending).toBeNull();
   });
 });
+
+// A hidden tab's timers are throttled (Chrome's intensive throttling runs a chained timer about once
+// a minute), so a tick lands long after it was armed. Silence was measured from the last frame to
+// that late tick: a live socket whose every beat was answered read as two windows dead, and the tab
+// dropped and redialled on every throttled tick. Silence is an UNANSWERED beat, not a late timer.
+describe('a tick the page fired late', () => {
+  const answer = (sockets: ReturnType<typeof beating>['sockets']): void =>
+    sockets[0]?.deliver({
+      type: 'hello',
+      v: PROTOCOL_VERSION,
+      buildId: 'b',
+      sessionId: 's1',
+      actorId: null,
+    });
+
+  test('beats a socket that answered its last beat, however late the tick', () => {
+    const { client, timers, sockets, clock } = beating();
+    client.connect();
+    sockets[0]?.open();
+    answer(sockets); // the node answers the opening hello
+
+    for (let tick = 0; tick < 3; tick += 1) {
+      clock.advance(60_000); // throttled: six windows late
+      timers.fire();
+      expect(sockets[0]?.closes).toEqual([]);
+      answer(sockets); // …and the node answers that beat
+    }
+    expect(client.connected).toBe(true);
+    expect(sockets[0]?.frames().filter((frame) => frame.type === 'hello')).toHaveLength(4);
+  });
+
+  test('still drops a socket that left a late beat unanswered', () => {
+    const { client, timers, sockets, clock } = beating();
+    client.connect();
+    sockets[0]?.open();
+    answer(sockets);
+
+    clock.advance(60_000);
+    timers.fire(); // beats: the last beat was answered
+    clock.advance(60_000);
+    timers.fire(); // nothing since that beat
+
+    expect(sockets[0]?.closes).toEqual([{ code: 4000, reason: 'heartbeat timeout' }]);
+  });
+});
