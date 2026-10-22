@@ -306,6 +306,49 @@ describe('unit · release-due-rule · the brief covers the closed list', () => {
   });
 });
 
+describe('unit · release-due-rule · the doc table tracks DueDecision', () => {
+  // PUBLISHING.md's due-decision envelope table is the maintainer's view of `DueDecision`, so its
+  // rows must equal the interface's fields exactly: a field losing its row, or the table growing
+  // a field the decision never carries, must red here rather than ship a doc that misdescribes
+  // the JSON the bot reads. The fields are parsed from the rule's source, not imported — an
+  // import cannot catch a field the interface lost.
+  test('one envelope row per field, and breaking names the maintainer issue', async () => {
+    const source = await Bun.file(join(repoRoot(), 'scripts/lib/release-due-rule.ts')).text();
+    const start = source.indexOf('export interface DueDecision {');
+    expect(start, 'DueDecision vanished from release-due-rule.ts').toBeGreaterThanOrEqual(0);
+    const interfaceLines = source.slice(start).split('\n');
+    const close = interfaceLines.findIndex((line) => line === '}');
+    expect(close, 'DueDecision never closes').toBeGreaterThan(0);
+    const body = interfaceLines.slice(0, close).join('\n');
+    const fields = [...body.matchAll(/^\s{2}readonly ([a-z][a-zA-Z0-9]*)/gm)]
+      .map((match) => match[1])
+      .filter((field): field is string => field !== undefined);
+    expect(fields.length, 'DueDecision parsed to no fields').toBeGreaterThan(0);
+    expect(new Set(fields).size, 'a duplicate field in DueDecision').toBe(fields.length);
+
+    const doc = await Bun.file(join(repoRoot(), 'PUBLISHING.md')).text();
+    const docLines = doc.split('\n');
+    const table = docLines.findIndex((line) => line.startsWith('| `.data` field |'));
+    expect(table, 'the envelope table vanished from PUBLISHING.md').toBeGreaterThanOrEqual(0);
+    const rowKeys: string[] = [];
+    for (let index = table + 1; index < docLines.length; index += 1) {
+      const line = docLines[index];
+      if (line === undefined || !line.startsWith('|')) break;
+      const key = /^\| `([a-z][a-zA-Z0-9]*)` \|/.exec(line)?.[1];
+      if (key !== undefined) rowKeys.push(key);
+    }
+    expect(rowKeys.length, 'the envelope table parsed to no rows').toBeGreaterThan(0);
+    expect(new Set(rowKeys).size, 'a duplicate row in the envelope table').toBe(rowKeys.length);
+    expect([...fields].sort()).toEqual([...rowKeys].sort());
+    expect([...rowKeys].sort()).toEqual([...fields].sort());
+
+    const breakingRow = docLines.find((line) => line.startsWith('| `breaking` |'));
+    expect(breakingRow, 'the breaking row vanished from the envelope table').toBeDefined();
+    expect(breakingRow).toContain('| array |');
+    expect(breakingRow).toContain('maintainer issue');
+  });
+});
+
 describe('unit · release-due-rule · the bump-PR twin', () => {
   test('a true twin — an open `chore: release 27.10.1 (#770)` — reports open', () => {
     expect(openReleaseBump(['chore: release 27.10.1 (#770)'], '27.10.1')).toEqual({
