@@ -9,13 +9,14 @@ import type { GhRepo } from './gh-target';
 
 /** The fields both `gh run list` and `gh run view` accept, named once so the two agree. */
 export const RUN_FIELDS =
-  'databaseId,status,conclusion,headBranch,displayTitle,workflowName,url,createdAt';
+  'databaseId,status,conclusion,headBranch,displayTitle,workflowName,url,createdAt,headSha';
 
 const RUN_ROW = t.object({
   databaseId: t.number,
   status: t.string,
   conclusion: t.nullable(t.string),
   headBranch: t.string,
+  headSha: t.string,
   displayTitle: t.string,
   workflowName: t.string,
   url: t.string,
@@ -58,6 +59,7 @@ export interface CiRun {
   readonly workflow: string;
   readonly url: string;
   readonly createdAt: string;
+  readonly headSha: string;
 }
 
 /**
@@ -85,6 +87,7 @@ interface RunRow {
   readonly status: string;
   readonly conclusion: string | null;
   readonly headBranch: string;
+  readonly headSha: string;
   readonly displayTitle: string;
   readonly workflowName: string;
   readonly url: string;
@@ -96,6 +99,7 @@ const runOf = (row: RunRow): CiRun => ({
   status: row.status,
   conclusion: row.conclusion,
   branch: row.headBranch,
+  headSha: row.headSha,
   title: row.displayTitle,
   workflow: row.workflowName,
   url: row.url,
