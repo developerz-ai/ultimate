@@ -7,7 +7,8 @@
 //   disjoint, so neither regex may accept the other's text.
 // `openReleaseAsk` / `askTwin` and `openReleaseBump` / `prTwin` — those dedupes themselves, one
 //   matcher per reader over two input shapes: titles (`release-due-rule.ts`) and {number,title}
-//   rows from the CLI (`scripts/release.ts` for the ask, `scripts/release-due.ts` for the bump).
+//   rows from the CLI (`scripts/release.ts` for the ask, `scripts/release-due.ts` and
+//   `scripts/bump-pr.ts` for the bump).
 
 /**
  * `chore: release 27.10.1 (#770)`, the squash-merged release PR, and `release: 6.0.0`, what
@@ -78,8 +79,9 @@ export interface AskPr {
 }
 
 /**
- * The CLI arguments listing the OPEN bump PRs for `version` — the query `.dz/briefs/release-due.md`
- * states, beside `askIssueArgs` in `scripts/release.ts` and over the same `number,title` rows. The
+ * The CLI arguments listing the OPEN bump PRs for `version` — the query `scripts/bump-pr.ts` runs
+ * for its `--version` lookup and `scripts/release-due.ts` reads through `openPrTitlesAt`, beside
+ * `askIssueArgs` in `scripts/release.ts` and over the same `number,title` rows. The
  * search word is lower-case because the title search is case-insensitive and one matcher must see
  * every candidate; `openReleaseBump` below then rejects the issue-side `Release <version>` the
  * search also returns, which is what keeps the two readers disjoint. The binary itself is the
