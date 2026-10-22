@@ -8,7 +8,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The page socket's redial curve resets on the node's first frame, not on the open.** A proxy or
+  an overloaded node that accepts the upgrade and drops it before saying a word reset `#attempt`
+  every time, so the tab redialled every ~0.5 s for as long as that lasted instead of backing off to
+  `BROWSER_RECONNECT_MAX_MS`. Any frame from the node now proves the socket carries.
+- **A tab that comes back online or visible dials at once.** The page socket listens for `online`
+  and a visible `visibilitychange` and cuts a LOCAL backoff short (`LiveClient.wake()`), so a laptop
+  waking from sleep is live again before its armed wait runs out. A node-assigned drain slot is kept,
+  so a deploy's herd stays spread.
 
 ## 27.14.1 - 2026-10-22
 

@@ -62,6 +62,8 @@ export class LiveClient {
   #attempt = 0;
   /** The armed reconnect's canceller, and the flag for "one timer in flight, the first wins". */
   #reconnectTimer: (() => void) | null = null;
+  /** The armed wait is a node's drain slot: `wake()` leaves it alone, or the herd re-clusters. */
+  #armedByNode = false;
   /** Set by `close()`: an explicit teardown must not be undone by the close it just triggered. */
   #closed = false;
   #connected = false;
@@ -157,7 +159,6 @@ export class LiveClient {
       // and the one handler that had none. A replaced socket opening late would otherwise mark the
       // live connection up and replay every subscription onto whatever socket is current.
       if (this.#socket !== socket) return;
-      this.#attempt = 0;
       this.#setStatus({ connected: true, reconnectAt: null });
       // `hello` announces the connection and nothing else. Each cursor rides its own `subscribe`
       // frame below, which is the only place resume is decided — sending it here too shipped every
@@ -174,6 +175,10 @@ export class LiveClient {
       // that is still draining bytes would otherwise fold its patches into the live registrations
       // a second time, over newer state.
       if (this.#socket !== socket) return;
+      // The curve resets on the node's first word, not on the open: a proxy or an overloaded node
+      // that accepts the upgrade and drops it at once would otherwise reset it every time, and the
+      // tab redialled every half second for as long as that lasted.
+      this.#attempt = 0;
       this.#heartbeat.saw(this.#clock.now().getTime());
       applyFrame(decode(data), this.#frameTarget);
     });
@@ -225,6 +230,24 @@ export class LiveClient {
     socket?.close(code, reason);
     // The close this triggers is a dropped socket's, so it returns: going offline is our job now.
     this.#offline();
+  }
+
+  /**
+   * The network or the tab is back (`online`, a tab made visible): dial now instead of sitting out
+   * the armed backoff. Only a local backoff is cut short — a node's drain slot is how a deploy's
+   * herd is spread, so it is kept — and only while a reconnect is actually armed.
+   */
+  wake(): void {
+    if (this.#closed || this.#connected || this.#reconnectTimer === null || this.#armedByNode)
+      return;
+    this.#cancelReconnect();
+    this.#attempt = 0;
+    try {
+      this.connect();
+    } catch (error) {
+      this.#scheduleReconnect(null);
+      this.#onError(error);
+    }
   }
 
   /**
@@ -411,6 +434,7 @@ export class LiveClient {
       // `#attempt` counts reconnects already scheduled, from 0; the wait being armed is the next one.
       serverDelayMs ?? policyDelay(this.#options.backoff ?? browserBackoff, this.#attempt + 1, rng);
     this.#attempt += 1;
+    this.#armedByNode = serverDelayMs !== null;
     this.#setStatus({ reconnectAt: this.#clock.now().getTime() + delay });
     const schedule = this.#options.scheduler ?? timeoutScheduler;
     this.#reconnectTimer = schedule(() => {
