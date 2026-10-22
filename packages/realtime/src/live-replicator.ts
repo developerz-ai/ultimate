@@ -151,8 +151,11 @@ export async function startLiveReplicator(options: LiveReplicatorOptions): Promi
       if (stopped) return;
       const table = tableOf(change.entity);
       registry.invalidate(table);
-      // Channels too, or a tab seated on one held the pre-update rows with nothing to re-read.
-      options.channels?.invalidate(table);
+      // Channels too, or a tab seated on one held the pre-update rows with nothing to re-read —
+      // unless a `recordPublisher` claims the table, as `onChange` asks: the app's own publish is
+      // its channel delivery, bulk writes included, and a replay-gap on every `updateWhere` sent
+      // every seated tab back to a full catch-up read for rows it was already being sent.
+      if (!isPublishedTable(table)) options.channels?.invalidate(table);
     },
   };
 
