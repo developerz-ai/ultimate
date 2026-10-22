@@ -1,11 +1,13 @@
 #!/usr/bin/env bun
-// Answer, read-only, whether a release is due: commits since the last `v*` tag that change a file a
-// published package packs, judged against [Unreleased] and a settle window. So the bot releases
-// only what no maintainer released at once, and never a major on its own judgement.
+// Answer whether a release is due: commits since the last `v*` tag that change a file a
+// published package packs, judged against [Unreleased] and a settle window. Fetches
+// origin/main's tip when this checkout lacks it — so the bot releases only what no
+// maintainer released at once, and never a major on its own judgement.
 //
 //   bun run scripts/release-due.ts [--settle-hours 24] [--json]
 
 import { flagString, parseScriptArgs } from './lib/args';
+import { BASE_REF, baseRef, FETCH_MAIN, type GitRunner } from './lib/base-ref';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { git } from './lib/release-due-git';
@@ -28,6 +30,28 @@ const gitUnreadable = (asked: string, output: string): Finding => ({
   code: 'X_RELEASE_WINDOW_UNREADABLE',
   cause: `${asked} failed, so the commits since the last release are unknown: ${output.slice(0, 300)}`,
   fix: 'git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json',
+  at: 'scripts/release-due.ts',
+});
+
+/**
+ * HEAD is not the tip of the base ref. `fetch` is the cause `baseRef()` returned undefined: the
+ * fetch in `base-ref.ts` failed and the base is therefore unreachable. `mismatch` is the cause
+ * `git rev-parse HEAD` and the base-ref SHA disagreed — HEAD is on a side branch (or
+ * ahead of the base) and the answer a release-due consumer reads would be anchored to neither.
+ * The fix is the same in both: bring the base back and move HEAD to it.
+ */
+const headNotMain = (
+  headSha: string,
+  baseSha: string,
+  headBranch: string,
+  kind: 'fetch' | 'mismatch',
+): Finding => ({
+  code: 'X_RELEASE_HEAD_NOT_MAIN',
+  cause:
+    kind === 'fetch'
+      ? `${BASE_REF} is unreachable from HEAD, so the script cannot tell what HEAD is anchored to: ${FETCH_MAIN} failed`
+      : `HEAD is at ${headSha} on branch ${headBranch}, but ${BASE_REF} is at ${baseSha}: HEAD is not the tip of ${BASE_REF}`,
+  fix: `${FETCH_MAIN} && git checkout main`,
   at: 'scripts/release-due.ts',
 });
 
@@ -113,6 +137,14 @@ export function settleHoursOf(raw: string | undefined): number | Finding {
   };
 }
 
+/** A `baseRef` runner that drops the leading 'git' and delegates to release-due-git's `git` —
+ * same cwd, GIT_TIMEOUT_MS (30 s, well under `run()`'s 120 s), and an env stripped of every
+ * `GIT_*` so an exported `GIT_DIR` cannot redirect the base-ref resolve into another repo. */
+const baseRefRunner: GitRunner = (command, { cwd }) => {
+  const [, ...args] = command;
+  return git(args, cwd);
+};
+
 /** Everything the rule needs, read from the checkout at `root`; a finding when it cannot be read. */
 export async function decideAt(
   root: string,
@@ -140,6 +172,22 @@ export async function decideAt(
   if (typeof tagged !== 'string') return tagged;
   const commits = await readWindow(root, tagged);
   if ('code' in commits) return commits;
+  // The base ref is the concrete anchor a `data.headSha` consumer compares against; if the
+  // fetch in `baseRef()` failed, or HEAD is on a side branch, refuse with the same code so the
+  // script's answer is always anchored to the base ref's tip. Runs after the existing
+  // tag/window refusals so their codes keep their meaning.
+  if ((await baseRef(root, baseRefRunner)) === undefined) return headNotMain('', '', '', 'fetch');
+  const headRes = await git(['rev-parse', '--verify', 'HEAD'], root);
+  if (!headRes.ok) return gitUnreadable('git rev-parse HEAD', headRes.output);
+  const baseRes = await git(['rev-parse', '--verify', BASE_REF], root);
+  if (!baseRes.ok) return gitUnreadable(`git rev-parse ${BASE_REF}`, baseRes.output);
+  const headSha = headRes.output.trim();
+  const baseSha = baseRes.output.trim();
+  if (headSha !== baseSha) {
+    const branchRes = await git(['rev-parse', '--abbrev-ref', 'HEAD'], root);
+    const headBranch = branchRes.ok ? branchRes.output.trim() : '?';
+    return headNotMain(headSha, baseSha, headBranch, 'mismatch');
+  }
   const files = await packageFiles(publishable);
   const changelog = await Bun.file(`${root}/CHANGELOG.md`)
     .text()
@@ -152,6 +200,7 @@ export async function decideAt(
     nowMs,
     settleHours,
     ships: (path) => shippingPackage(path, files),
+    headSha,
   });
   return { tagged, stamped, decision };
 }
@@ -163,6 +212,7 @@ export function dueLines(
   decision: DueDecision,
 ): readonly string[] {
   return [
+    ...(decision.headSha === undefined ? [] : [`  head      ${decision.headSha.slice(0, 12)}`]),
     `  last tag  v${tagged}, the tree stamped at ${stamped}`,
     `  window    ${decision.shipping.length} shipping, ${decision.inert} inert`,
     ...decision.shipping.map(
@@ -186,6 +236,7 @@ if (import.meta.main) {
     report({ ok: false, script: SCRIPT, summary: 'cannot tell', findings: [read] }, args.json);
   }
   const { tagged, stamped, decision } = read;
+  const headSha = decision.headSha;
   report(
     {
       ok: true,
@@ -194,7 +245,7 @@ if (import.meta.main) {
         ? `a release is due: ${decision.detail}`
         : `no release due (${decision.reason}): ${decision.detail}`,
       lines: dueLines(tagged, stamped, decision),
-      data: { lastTag: `v${tagged}`, stamped, settleHours: settle, ...decision },
+      data: { headSha, lastTag: `v${tagged}`, stamped, settleHours: settle, ...decision },
     },
     args.json,
   );

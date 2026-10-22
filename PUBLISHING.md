@@ -24,7 +24,7 @@ npm at <version>, every one attested` or names each gap with a runnable `fix:`.
 | attested, and by whom | `npm view @ultimat3/core@<version> dist.attestations _npmUser` |
 | the derived publish list, in order | `bun run scripts/release-workflow.ts --json` |
 | the repository is stamped at one version | `bun run scripts/release.ts --check <version> --json` |
-| every package is on npm at that version | `bun run scripts/registry-audit.ts --json` |
+| every package is on npm at that version, and npm's default `latest` is it | `bun run scripts/registry-audit.ts --json` |
 
 **There is no publication hole today, and there have been two.** `@ultimat3/flags` was the first:
 the workflow listed its `-w` flags by hand and omitted it. That list is now **derived** from
@@ -52,12 +52,12 @@ what each answer means.
 | what this tree is stamped at, per workspace | `bun run scripts/list-workspaces.ts --json` — `.data[].version`; one value across every workspace, or the tree is out of lockstep |
 | the whole repository is stamped at one version | `bun run scripts/release.ts --check <version>` — exits 1 and names every finding when it is not |
 | the release workflow names every publishable workspace | `bun run scripts/release-workflow.ts --json` |
-| every one of them is on npm at that version, attested | `bun run scripts/registry-audit.ts --json` — also names a new package owing its one bootstrap publish (step 1 of the bootstrap below) |
+| every one of them is on npm at that version, attested, with npm's default `latest` on it | `bun run scripts/registry-audit.ts --json` — also names a new package owing its one bootstrap publish (step 1 of the bootstrap below), and a package that is on npm at the stamped version while `latest` serves another one (`X_REGISTRY_LATEST_DRIFT`), which is the release `npm install` and `bunx create-ultimate` would resolve |
 | what npm serves, and what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
 | provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` — `GitHub Actions` is the workflow; a person's name is a hand publish with no attestation |
 | the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — the ref **and** its peeled `^{}` line. Not `git tag --list`, which reads the local repository. `git tag -a` only: `--follow-tags` never pushes a lightweight tag |
 | the GitHub Release exists — `release-tag.yml` creates it when the release PR merges | `gh release view v<version> --json tagName,isDraft,publishedAt` |
-| a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command` |
+| a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command`, `.data.headSha` |
 | the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 | which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
 
@@ -409,12 +409,12 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
 
 ### When a release is due
 
-`bun run scripts/release-due.ts --json` answers it, read-only, and is the check the maintainer bot
-runs on its daily schedule before it opens a release PR. The window is every commit since the
-highest `v*` tag HEAD contains, release commits excluded. A commit **ships** when it changes a path
-a published tarball packs — each package's `files` field, plus its `package.json` — minus `*.md`,
-tests and fixtures. Root tooling, `bun.lock`, `.github/`, docs, the wiki and both tracked apps ship
-nothing.
+`bun run scripts/release-due.ts --json` answers it, fetching `origin/main`'s tip when the
+checkout lacks it, and is the check the maintainer bot runs on its daily schedule before it
+opens a release PR. The window is every commit since the highest `v*` tag HEAD contains,
+release commits excluded. A commit **ships** when it changes a path a published tarball packs —
+each package's `files` field, plus its `package.json` — minus `*.md`, tests and fixtures. Root
+tooling, `bun.lock`, `.github/`, docs, the wiki and both tracked apps ship nothing.
 
 | `.data.reason` | Not due because |
 |---|---|
@@ -425,10 +425,13 @@ nothing.
 
 Otherwise `.data.due` is `true` with the bump (`BREAKING —` or `!:` major, `### Added` or a
 `feat:` subject minor, else patch — `### Changed` alone is a patch, as 20.1.2 and 20.2.1 were),
-`.data.next`, the shipping commits, and `.data.command` — `bun run scripts/release.ts --version
+`.data.next`, the shipping commits, `.data.headSha`, and `.data.command` — `bun run scripts/release.ts --version
 <next>`. `.data.notes` names what `[Unreleased]` owes first: a Dependabot-only window adds nothing
 there, so the releaser writes a `### Changed` line naming each bumped dependency, still a patch.
-No `vX.Y.Z` tag reachable — a shallow or tagless clone — is `X_RELEASE_TAG_UNREACHABLE`.
+No `vX.Y.Z` tag reachable — a shallow or tagless clone — is `X_RELEASE_TAG_UNREACHABLE`. HEAD
+not at `origin/main`'s tip is `X_RELEASE_HEAD_NOT_MAIN`: the script fetches `origin/main` when
+the checkout lacks it, and refuses rather than answer against a base the consumer could not
+anchor to.
 
 **A publish that failed half way is resumed by re-running it**:
 `gh run rerun <run-id> --failed`. The publish step asks `npm view <pkg>@<version> version` first

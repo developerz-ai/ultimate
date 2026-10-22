@@ -8,7 +8,17 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`ok` is no longer a clean bill of health: an attested package whose npm `latest` is another
+  version reports `X_REGISTRY_LATEST_DRIFT`.** `scripts/registry-audit.ts` read `dist-tags.latest`
+  onto every state and compared it with nothing, so a lockstep set split across two versions — every
+  tarball published and attested, `latest` left on whichever run finished last — audited clean while
+  `npm install` and `bunx create-ultimate` handed a consumer the other release.
+  `X_REGISTRY_VERSION_BEHIND` cannot see it: the stamped version IS on the registry, attested and
+  tagged, so only a check against `latest` itself reports it. That check is now the finding, it names
+  both versions, and its `fix` is `npm dist-tag add <pkg>@<version> latest` — or the bump command,
+  when the newer tag is the real release.
 
 ## 27.13.2 - 2026-10-21
 

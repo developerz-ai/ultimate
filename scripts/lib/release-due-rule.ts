@@ -58,6 +58,9 @@ export interface DueInput {
   /** Titles of currently OPEN GitHub issues, for the release-due dedupe. Optional: a caller with
    * no issue list simply gets no twin. Only ever read on a `due` decision. */
   readonly openIssueTitles?: readonly string[];
+  /** HEAD's SHA at the moment `decideAt` resolved the base ref. Pass-through only: the rule
+   * never branches on it, so every existing fixture stays legal. */
+  readonly headSha?: string;
 }
 
 export interface DueDecision {
@@ -79,6 +82,9 @@ export interface DueDecision {
    * `!:` shipping-commit subjects. Empty on every non-major decision. The release-due bot reads
    * this list instead of re-extracting the entries from `detail` prose on every firing. */
   readonly breaking: readonly string[];
+  /** HEAD's SHA at the moment `decideAt` resolved the base ref. Pass-through only: the rule
+   * never reads it. Undefined for a `releaseDue` unit test, defined for a real decision. */
+  readonly headSha?: string;
 }
 
 /** Conventional `type(scope)!:` — a subject declaring itself breaking. */
@@ -155,6 +161,9 @@ export function releaseDue(input: DueInput): DueDecision {
     inert,
     notes: [] as readonly string[],
     breaking: [] as readonly string[],
+    // Pure pass-through: callers that pass `headSha` (the only caller is `decideAt`) see it on
+    // every returned decision; existing fixtures without `headSha` keep their previous shape.
+    ...(input.headSha === undefined ? {} : { headSha: input.headSha }),
   };
   if (input.stamped !== input.tagged) {
     return {
