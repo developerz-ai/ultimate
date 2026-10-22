@@ -79,18 +79,26 @@ describe('unit · run() deadline', () => {
   const GRANDCHILD =
     'Bun.spawn(["bun","-e","setTimeout(()=>{},60000)"],{stdout:"inherit",stderr:"inherit",stdin:"ignore"});console.log("started");process.exit(0);';
 
-  test('a grandchild holding stdout cannot hold the caller past the deadline', async () => {
-    const started = performance.now();
-    const result = await run(['bun', '-e', GRANDCHILD], { cwd, timeoutMs: 400 });
-    expect(performance.now() - started).toBeLessThan(5_000);
-    expect(result).toMatchObject({ ok: false, code: null, timedOut: true });
-    // What the child DID print is kept: it is the clue to where it stopped.
-    expect(result.output).toContain('started');
-    // The coded line names the program that was killed, verbatim: `run()` echoes
-    // `command.join(' ')`, so the reported command is the one that actually hung.
-    expect(result.output).toContain(`${RUN_TIMEOUT_CODE}: bun -e ${GRANDCHILD}`);
-    expect(result.output).toContain('did not finish within 400 ms');
-  });
+  // Skipped on Windows: there the grandchild holds no handle of the pipe Bun reads, so EOF
+  // arrives with the child's exit and the race never engages — the run answers `ok: true` in
+  // 18ms, which is the platform behaving, not the deadline failing. The deadline itself is
+  // still proven on Windows by the next test's never-exiting child; the orphaned-pipe half is
+  // POSIX-observable only (the CI log for windows-latest: `code: 0, timedOut: false`).
+  test.skipIf(process.platform === 'win32')(
+    'a grandchild holding stdout cannot hold the caller past the deadline',
+    async () => {
+      const started = performance.now();
+      const result = await run(['bun', '-e', GRANDCHILD], { cwd, timeoutMs: 400 });
+      expect(performance.now() - started).toBeLessThan(5_000);
+      expect(result).toMatchObject({ ok: false, code: null, timedOut: true });
+      // What the child DID print is kept: it is the clue to where it stopped.
+      expect(result.output).toContain('started');
+      // The coded line names the program that was killed, verbatim: `run()` echoes
+      // `command.join(' ')`, so the reported command is the one that actually hung.
+      expect(result.output).toContain(`${RUN_TIMEOUT_CODE}: bun -e ${GRANDCHILD}`);
+      expect(result.output).toContain('did not finish within 400 ms');
+    },
+  );
 
   test('a child that never exits is killed at the deadline', async () => {
     const started = performance.now();
