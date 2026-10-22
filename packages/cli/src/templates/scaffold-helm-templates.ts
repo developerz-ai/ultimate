@@ -172,7 +172,9 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
   The worker's retire, opt-in: roles.worker.retireSeconds > 0. The preStop sends PID 1 SIGUSR2 —
   the framework's retire: stop claiming, finish every held job however long it takes, abort
   nothing, then drain and exit 0 — and waits until PID 1 is gone, so the SIGTERM that follows finds
-  nothing left to cut off. bun -e, never kill/sleep: bun is the image's ENTRYPOINT (exec form, so it
+  nothing left to cut off. It re-sends the signal every 5 s while it waits: PID 1 has no default
+  signal action, so a preStop that lands before the boot arms the listener is dropped by the kernel
+  (the pod then idles to its grace); a repeat joins the retire in flight. bun -e, never kill/sleep: bun is the image's ENTRYPOINT (exec form, so it
   IS PID 1). The kubelet counts the preStop against the grace period, so retireSeconds is added to
   it and is the longest a retire may take.
   */}}
@@ -183,7 +185,7 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
         command:
           - bun
           - -e
-          - "process.kill(1, 'SIGUSR2'); for (;;) { try { process.kill(1, 0); } catch { break; } await Bun.sleep(1000); }"
+          - "process.kill(1, 'SIGUSR2'); for (let n = 1; ; n++) { try { process.kill(1, n % 5 === 0 ? 'SIGUSR2' : 0); } catch { break; } await Bun.sleep(1000); }"
   {{- end }}
   {{- end }}
   resources: {{- toYaml $cfg.resources | nindent 4 }}

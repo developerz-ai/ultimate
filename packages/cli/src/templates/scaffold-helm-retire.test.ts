@@ -137,6 +137,8 @@ describe.skipIf(HELM === null)('unit · roles.worker.retireSeconds, in both char
         expect(command?.[0]).toBe('bun');
         expect(command?.join(' ')).toContain(`process.kill(1, '${RETIRE_SIGNAL}')`);
         expect(command?.join(' ')).toContain('process.kill(1, 0)');
+        // Re-sent while it waits: PID 1 drops a signal that lands before the listener is armed.
+        expect(command?.join(' ')).toContain("n % 5 === 0 ? 'SIGUSR2' : 0");
         expect(worker?.spec.template.spec.terminationGracePeriodSeconds).toBe(7200 + 35);
         // The other roles are untouched: the retire is the worker's alone.
         expect(preStopOf(rendered.get('scheduler'))).toBeUndefined();

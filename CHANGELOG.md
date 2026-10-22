@@ -8,7 +8,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- Helm chart (framework + scaffold): the worker's `preStop` re-sends SIGUSR2 every 5 s until PID 1
+  exits. As PID 1 the process has no default signal action, so a retire signal that landed before
+  the boot armed its listener was dropped and the pod idled until its grace period (seen in
+  production, a pod retired in its first second). A repeat joins the retire in flight.
 
 ## 27.14.0 - 2026-10-22
 
