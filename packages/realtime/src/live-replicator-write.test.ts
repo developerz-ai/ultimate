@@ -188,6 +188,41 @@ describe('an entity a record publisher claims', () => {
     expect(JSON.stringify(records[0])).toContain('000000000006');
     expect(delivered).toEqual(['echoed_notes', 'echoed_notes']);
   });
+
+  // The app's own publish answers its bulk write too, so a replay-gap here re-read every seated
+  // tab's catch-up after every `updateWhere` — ~4 extra list reads per run in one app's /runs.
+  test('a bulk write to it reopens no channel, and still stales the live windows', async () => {
+    const { hub, ws } = await seated();
+    const invalidated: (string | undefined)[] = [];
+    const replicator = await startLiveReplicator({
+      registry: {
+        deliver: () => Promise.resolve(0),
+        invalidate: (table?: string) => {
+          invalidated.push(table);
+          return 0;
+        },
+      } as never,
+      channels: hub,
+    });
+    const publisher = recordPublisher({ transport: new InProcessTransport(), entities: [notes] });
+    const db = database({ notes }, { driver: memoryDriver() });
+    await db.notes.insert({ id: '00000000-0000-4000-8000-000000000008', orgId: ORG, label: 'a' });
+    await replicator.settled();
+    const gaps = (): number => ws.frames.filter((frame) => frame['type'] === 'replay-gap').length;
+    const before = gaps();
+
+    await db.notes.updateWhere({ orgId: ORG, label: 'a' }, { label: 'b' });
+    await replicator.settled();
+    expect(gaps()).toBe(before);
+    expect(invalidated).toEqual(['echoed_notes']);
+
+    // Released, the bridge is the table's channel source again, bulk re-reads included.
+    publisher.close();
+    await db.notes.updateWhere({ orgId: ORG, label: 'b' }, { label: 'c' });
+    await replicator.settled();
+    replicator.stop();
+    expect(gaps()).toBe(before + 1);
+  });
 });
 
 // `ChangeEvent.table` is the RELATION, on every producer: the WAL decoder reads it off the

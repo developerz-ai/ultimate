@@ -1445,3 +1445,23 @@ Moved here from `packages/realtime/CLAUDE.md` for room (2026-10-02), verbatim:
 - **A fix handing over `REPLICATION` carries `REPLICATION_GRANT_WARNING`** (cluster-wide grant).
 - **Every `SyncSocket` ceiling is reachable from `createSyncNode`**, forwarded as
   `...(x === undefined ? {} : { x })`.
+
+## 2026-10-22 — equal is structural, a publisher's bulk write is its own, a late tick is not silence
+
+Found by an app (`tesote/bank-integrations`, its `/runs` table flickered whole after every
+sync-node roll). Three rules, each pinned by a failing-first test:
+
+- **The record store compares columns STRUCTURALLY** (`sameJson` in `json.ts`, the one
+  implementation; `SyncedLayer.merge`, `sameRow`, `changedColumns`). A JSON column is a fresh array
+  or object on every read, so identity moved every row on every catch-up, poll and reconnect. An
+  equal re-read keeps the row object and notifies nobody; a moved row keeps each unmoved column's
+  object. Key order is ignored (`jsonb` reorders), a `Date` compares by time.
+  `record-store.test.ts`, `json.test.ts`.
+- **`onBulk` reopens no channel for a table a `recordPublisher` claims** — the same question
+  `onChange` asks. The app's own publish is that table's channel delivery; the `replay-gap` sent
+  every seated tab to a full catch-up read on every `updateWhere`. Windows are still invalidated.
+  `live-replicator-write.test.ts`.
+- **The heartbeat drops a socket only after an UNANSWERED beat** (`Heartbeat.#answered`). A hidden
+  tab's chained timer runs about once a minute; measured from the last frame, every late tick read
+  an answered socket as two windows dead and redialled. `client-heartbeat.test.ts`. Not changed:
+  the engine's port reaper (`REAP_AFTER_BEATS`) still judges a tab's beats on the tab's timers.
