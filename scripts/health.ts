@@ -57,7 +57,10 @@ const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'demo-shipped': 'gh run list --workflow deploy-social-demo.yml --limit 1',
 };
 
-const CI_ARGS = [
+// Exported for the test that pins the prefix: without `bun` first, run() spawns a binary named
+// `run`, which no normal Bun installation has, and the row refuses everywhere.
+export const CI_ARGS = [
+  'bun',
   'run',
   'x',
   '--',
@@ -334,14 +337,25 @@ const judgeStampedTagged = (read: StampedTaggedRead): Judgement => {
 };
 
 const judgeTagRuns = (read: TagRunsRead): Judgement => {
-  if (read.runs === undefined) {
+  // A document that is not a run list, or whose entries name no readable run, is junk — never an
+  // empty list: `healthy` is this row's answer to an empty list, so answering it over a document
+  // that said nothing readable is the silent green this file refuses on.
+  if (!Array.isArray(read.runs)) {
     return unreadable(
       'tag-runs-ended-well',
       ROW_COMMANDS['tag-runs-ended-well'],
-      'gh printed no JSON document',
+      'gh printed no JSON document, or one that is not a run list',
     );
   }
-  return tagRunsVerdict({ runs: narrowRuns(read.runs) });
+  const runs = narrowRuns(read.runs);
+  if (runs.length < read.runs.length) {
+    return unreadable(
+      'tag-runs-ended-well',
+      ROW_COMMANDS['tag-runs-ended-well'],
+      'the run list held an entry with no readable conclusion',
+    );
+  }
+  return tagRunsVerdict({ runs });
 };
 
 const judgeNpmTree = (read: NpmTreeRead): Judgement => {

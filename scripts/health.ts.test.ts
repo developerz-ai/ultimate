@@ -1,10 +1,11 @@
 // The orchestrator over injected readers, its jsonDocument stderr-noise scan, and one real spawn
 // with nothing on PATH — a row the script cannot read must refuse the whole answer. No network, no
-// real checkout: the pure rules these readers feed are pinned beside them, in health-rule.test.ts.
+// real checkout: the pure rules behind the verdicts are pinned here too, one row at a time through
+// the same injected readers, not in a file of their own.
 
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
-import { healthAt, jsonDocument } from './health';
+import { CI_ARGS, healthAt, jsonDocument } from './health';
 import type { RowVerdict } from './lib/health-rule';
 import { ROW_IDS } from './lib/health-rule';
 import type { ScriptResult } from './lib/log';
@@ -34,6 +35,15 @@ describe('unit · health · jsonDocument', () => {
   test('no object line anywhere is undefined — never an invented answer', () => {
     expect(jsonDocument('')).toBeUndefined();
     expect(jsonDocument('fatal: not a git repository\nerror: no runs')).toBeUndefined();
+  });
+});
+
+describe('unit · health · the main-green argv', () => {
+  // The prefix IS the fix: run() spawns argv[0] directly, and `run` is no binary on a normal Bun
+  // installation — dropped, the row refuses everywhere the script runs.
+  test('it runs bun run x, not a binary named run', () => {
+    expect(CI_ARGS[0]).toBe('bun');
+    expect(CI_ARGS[1]).toBe('run');
   });
 });
 
@@ -116,7 +126,15 @@ describe('unit · health · healthAt over injected readers', () => {
     expect(result.ok).toBe(false);
     expect(result.summary).toBe('cannot tell');
     expect(result.data).toBeUndefined();
-    expect(result.findings?.[0]?.code).toBe('X_RELEASE_TAG_UNREACHABLE');
+    // The WHOLE finding, not just its code: cause and fix are the repair instructions the ask
+    // quotes, so dropping or rewriting either must fail here.
+    expect(result.findings).toEqual([
+      {
+        code: 'X_RELEASE_TAG_UNREACHABLE',
+        cause: 'no tag reachable',
+        fix: 'git fetch --tags origin',
+      },
+    ]);
   });
 
   test('a reader that throws — Bun.spawn on a missing binary — is one unreadable row, refusing all', async () => {
@@ -136,12 +154,18 @@ describe('unit · health · healthAt over injected readers', () => {
   });
 
   test('a reader answering junk is unreadable, never a made-up verdict', async () => {
-    const result = await healthAt('.', {
-      ...healthyReaders,
-      'tag-runs-ended-well': async () => ({ runs: undefined }),
-    });
-    expect(result.ok).toBe(false);
-    expect(result.findings?.[0]?.code).toBe('X_HEALTH_ROW_UNREADABLE');
+    // `undefined` is no document at all; `{}` is not a run list; `[{}]` names runs none of which
+    // read. All three must refuse: an empty list is this row's `healthy`, so a junk document that
+    // narrowed to [] would green the tag over nothing.
+    for (const runs of [undefined, {}, [{}]]) {
+      const result = await healthAt('.', {
+        ...healthyReaders,
+        'tag-runs-ended-well': async () => ({ runs }),
+      });
+      expect(result.ok).toBe(false);
+      expect(result.data).toBeUndefined();
+      expect(result.findings?.[0]?.code).toBe('X_HEALTH_ROW_UNREADABLE');
+    }
   });
 
   test('a main-green refusal without X_CI_RUN_NOT_FOUND is unreadable, not silent', async () => {
@@ -163,6 +187,69 @@ describe('unit · health · healthAt over injected readers', () => {
     expect(result.ok).toBe(false);
     expect(result.data).toBeUndefined();
     expect(result.findings?.[0]?.code).toBe('X_HEALTH_ROW_UNREADABLE');
+  });
+
+  test('a release run with no headSha is no verdict, even on success', async () => {
+    // Match-only means the sha: a run that names none cannot be placed at the tag's peeled
+    // commit, so its `success` must read as nothing — never as a published tag.
+    const result = await healthAt('.', {
+      ...healthyReaders,
+      'last-tag-published': async () => ({
+        tagCommit: SHA,
+        runs: [{ conclusion: 'success', event: 'workflow_dispatch' }],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    const rows = verdictOf(result);
+    expect(rows.find((row) => row.row === 'last-tag-published')?.verdict).toBe('unverdicted');
+    expect((result.data as { healthy: boolean }).healthy).toBe(false);
+  });
+
+  test('a release run at another commit than the tag is no verdict, even on success', async () => {
+    const result = await healthAt('.', {
+      ...healthyReaders,
+      'last-tag-published': async () => ({
+        tagCommit: SHA,
+        runs: [{ conclusion: 'success', headSha: 'b'.repeat(40) }],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    const rows = verdictOf(result);
+    expect(rows.find((row) => row.row === 'last-tag-published')?.verdict).toBe('unverdicted');
+  });
+
+  test('a skipped deploy under a red main is no second ask — the deploy row is unverdicted', async () => {
+    const result = await healthAt('.', {
+      ...healthyReaders,
+      'main-green': async () => ({
+        ci: {
+          ok: true,
+          data: { runs: [{ conclusion: 'failure', status: 'completed', headSha: SHA, id: 11 }] },
+        },
+        expectedSha: SHA,
+      }),
+      'demo-shipped': async () => ({
+        runs: [{ conclusion: 'skipped', event: 'workflow_run', status: 'completed' }],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    const rows = verdictOf(result);
+    expect(rows.find((row) => row.row === 'main-green')?.verdict).toBe('unhealthy');
+    expect(rows.find((row) => row.row === 'demo-shipped')?.verdict).toBe('unverdicted');
+    expect((result.data as { healthy: boolean }).healthy).toBe(false);
+  });
+
+  test('a skipped deploy under a green main is unhealthy here — a non-push ci run', async () => {
+    const result = await healthAt('.', {
+      ...healthyReaders,
+      'demo-shipped': async () => ({
+        runs: [{ conclusion: 'skipped', event: 'workflow_run', status: 'completed' }],
+      }),
+    });
+    const rows = verdictOf(result);
+    expect(rows.find((row) => row.row === 'main-green')?.verdict).toBe('healthy');
+    expect(rows.find((row) => row.row === 'demo-shipped')?.verdict).toBe('unhealthy');
+    expect(rows.find((row) => row.row === 'demo-shipped')?.reason).toContain('non-push');
   });
 });
 

@@ -112,7 +112,7 @@ export interface LastTagInput {
   readonly run: RunRow | undefined;
 }
 
-/** Row 2. Match-only: a conclusion is read only off a run at the tag's own peeled commit. */
+/** Row 2. Match-only: a conclusion is read only off a run whose headSha IS the tag's peeled commit. */
 export function lastTagVerdict(input: LastTagInput): RowVerdict {
   const base = { row: 'last-tag-published' as const, expectedSha: input.tagCommit };
   const run = input.run;
@@ -123,7 +123,17 @@ export function lastTagVerdict(input: LastTagInput): RowVerdict {
       reason: 'release.yml has no run yet — no verdict from this row, never unhealthy',
     };
   }
-  if (run.headSha !== undefined && run.headSha !== input.tagCommit) {
+  // The sha is the match, so a run that names none cannot be placed at the tag — its conclusion
+  // reads as nothing: a `success` over an unmatched run would call a tag published on no evidence.
+  if (run.headSha === undefined) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      ...fieldsOf(run),
+      reason: `the newest release.yml run names no headSha, so it cannot be matched to the tag's peeled commit — no verdict, re-run before filing`,
+    };
+  }
+  if (run.headSha !== input.tagCommit) {
     return {
       ...base,
       verdict: 'unverdicted',
@@ -344,7 +354,7 @@ export interface DemoShippedInput {
   readonly run: RunRow | undefined;
 }
 
-/** Row 8. Takes row 1's verdict: a skipped deploy under a red main files through that row alone. */
+/** Row 8. Takes row 1's verdict: a skip under a red main is that row's ask alone, never a second one. */
 export function demoShippedVerdict(input: DemoShippedInput, mainGreen: Verdict): RowVerdict {
   const base = { row: 'demo-shipped' as const };
   const run = input.run;
@@ -381,14 +391,25 @@ export function demoShippedVerdict(input: DemoShippedInput, mainGreen: Verdict):
     };
   }
   if (run.conclusion === 'skipped') {
+    if (mainGreen === 'healthy') {
+      return {
+        ...base,
+        verdict: 'unhealthy',
+        ...fields,
+        reason:
+          'the deploy job skipped: ci.yml completed without a green push (deploy-social-demo.yml:65-69) — check for a non-push ci.yml run',
+      };
+    }
+    // One ask per unhealthy row: with main not green the skip is main's symptom, and the
+    // main-green row already files it — a second unhealthy row here would file the ask twice.
     return {
       ...base,
-      verdict: 'unhealthy',
+      verdict: 'unverdicted',
       ...fields,
       reason:
-        mainGreen === 'healthy'
-          ? 'the deploy job skipped: ci.yml completed without a green push (deploy-social-demo.yml:65-69) — check for a non-push ci.yml run'
-          : 'the deploy job skipped because main is not green — the main-green row already files that ask',
+        mainGreen === 'unhealthy'
+          ? 'the deploy job skipped because main is not green — the main-green row files that ask alone; re-run this row once main is green'
+          : 'the deploy job skipped while the main-green row has no verdict — re-run before filing',
     };
   }
   return {
