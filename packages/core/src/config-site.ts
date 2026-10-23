@@ -45,8 +45,10 @@ export interface SeoRobotsConfig {
   /**
    * Per-crawler groups. Empty (the default): one `User-agent: *` group allowing `/`. Declared, they
    * ARE the file's groups — name `*` among them to give everyone else rules of their own.
+   * Optional in the TYPE only, so a `SeoRobotsConfig` literal written before it existed still
+   * compiles; `defineConfig` always fills it.
    */
-  readonly groups: readonly SeoRobotsGroup[];
+  readonly groups?: readonly SeoRobotsGroup[] | undefined;
 }
 
 /**
@@ -147,7 +149,7 @@ export function siteIssues(config: SiteSections, issues: string[]): void {
     if (issue !== undefined) issues.push(issue);
   }
   issues.push(...robotsPathIssues('seo.robots.disallow', config.seo.robots.disallow));
-  issues.push(...robotsGroupIssues(config.seo.robots.groups));
+  issues.push(...robotsGroupIssues(config.seo.robots.groups ?? []));
   for (const path of config.seo.sitemap.extra as readonly unknown[]) {
     if (typeof path !== 'string') {
       issues.push(`seo.sitemap.extra entry must be a path string, not ${describeValue(path)}`);

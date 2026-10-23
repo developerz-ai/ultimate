@@ -11,8 +11,11 @@ export interface SiteSettings {
   readonly origin: string | null;
   /** `seo.robots.disallow` — the paths a production `robots.txt` keeps crawlers out of. */
   readonly disallow: readonly string[];
-  /** `seo.robots.groups` — per-crawler `User-agent` groups; empty means one `*` group. */
-  readonly robotsGroups: readonly SeoRobotsGroup[];
+  /**
+   * `seo.robots.groups` — per-crawler `User-agent` groups; empty means one `*` group. Optional so
+   * a `SiteSettings` literal written before it existed still compiles.
+   */
+  readonly robotsGroups?: readonly SeoRobotsGroup[] | undefined;
   /** `seo.sitemap` — public `app/` pages to list, where `<lastmod>` comes from, sections, page size. */
   readonly sitemap: SeoSitemapConfig;
 }
@@ -33,7 +36,7 @@ export async function loadSiteSettings(root: string): Promise<SiteSettings> {
   return {
     origin: origin === null ? null : trimSlash(origin),
     disallow: [...config.seo.robots.disallow],
-    robotsGroups: [...config.seo.robots.groups],
+    robotsGroups: [...(config.seo.robots.groups ?? [])],
     sitemap: config.seo.sitemap,
   };
 }

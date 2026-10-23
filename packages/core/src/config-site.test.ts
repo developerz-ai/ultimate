@@ -64,6 +64,16 @@ describe('seo.robots.groups — refusals', () => {
 
   test('a user agent carrying a line break is refused — it would write a directive of its own', () => {
     expect(groupsCause([{ userAgent: 'GPTBot\nDisallow: /' }])).toContain('.userAgent');
+    for (const key of ['allow', 'disallow']) {
+      expect(groupsCause([{ userAgent: '*', [key]: ['/s/\nAllow: /s/public/'] }])).toContain(
+        `seo.robots.groups[0].${key} entry "/s/\\nAllow: /s/public/" must not contain a line break`,
+      );
+    }
+    expect(
+      causeOf(() =>
+        defineConfig({ name: 'app', seo: { robots: { disallow: ['/a\r\nAllow: /'] } } }),
+      ),
+    ).toContain('must not contain a line break');
   });
 
   test('allow and disallow paths must start with /, exactly as seo.robots.disallow', () => {

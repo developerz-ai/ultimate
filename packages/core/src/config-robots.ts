@@ -15,6 +15,9 @@ export function robotsPathIssues(label: string, paths: unknown): readonly string
       issues.push(`${label} entry must be a path string, not ${describeValue(path)}`);
     } else if (!path.startsWith('/')) {
       issues.push(`${label} entry "${path}" must start with /`);
+    } else if (/[\r\n]/.test(path)) {
+      // A line break would write a directive of its own into `robots.txt`.
+      issues.push(`${label} entry ${JSON.stringify(path)} must not contain a line break`);
     }
   }
   return issues;
