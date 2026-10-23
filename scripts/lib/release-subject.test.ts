@@ -1,14 +1,18 @@
-// The two release subjects, one per reader: a commit subject — or release PR title —
-// `RELEASE_SUBJECT`, and an ask title `ASK_SUBJECT`. A release is a whole version in either form,
-// and a subject that only starts like one is not, nor one that reads as the other's. `askTwin`
-// and `prTwin` are those dedupes over open rows: exactly one title wins, and the whole
-// {number,title} row comes back.
+// The release subjects, one per reader: a commit subject — or release PR title —
+// `RELEASE_SUBJECT`, an ask title `ASK_SUBJECT` and the pending-major issue title
+// `MAJOR_ISSUE_SUBJECT`. A release is a whole version in every form, and a subject that only
+// starts like one is not, nor one that reads as another's. `askTwin` and `prTwin` are those
+// dedupes over open rows: exactly one title wins, and the whole {number,title} row comes back.
 
 import { describe, expect, test } from 'bun:test';
 import {
   ASK_SUBJECT,
   askPrArgs,
   askTwin,
+  MAJOR_ISSUE_SUBJECT,
+  majorIssueArgs,
+  majorIssueTitle,
+  openMajorIssue,
   openReleaseBump,
   parsePrIssues,
   prTwin,
@@ -114,6 +118,62 @@ describe('unit · release-subject · askTwin', () => {
 
   test('no open issues, no twin', () => {
     expect(askTwin([], '27.10.1')).toBeUndefined();
+  });
+});
+
+describe('unit · release-subject · the pending-major issue', () => {
+  test('the title the brief files is exactly `Major release pending: <version>`', () => {
+    expect(majorIssueTitle('28.0.0')).toBe('Major release pending: 28.0.0');
+    expect(majorIssueTitle('1.0.0')).toBe('Major release pending: 1.0.0');
+  });
+
+  test('the matcher accepts that title and nothing near it', () => {
+    for (const title of ['Major release pending: 28.0.0', 'Major release pending: 1.0.0 ']) {
+      expect({ title, major: MAJOR_ISSUE_SUBJECT.test(title) }).toEqual({ title, major: true });
+    }
+    for (const title of [
+      // No version at all.
+      'Major release pending',
+      'Major release pending:',
+      // Trailing prose: the version is the whole title.
+      'Major release pending: 28.0.0 (dup)',
+      'Major release pending: 28.0.0 for a maintainer',
+      // Another subject entirely.
+      'Release 28.0.0',
+      'Major release pending 28.0.0',
+      'major release pending: 28.0.0',
+    ]) {
+      expect({ title, major: MAJOR_ISSUE_SUBJECT.test(title) }).toEqual({ title, major: false });
+    }
+  });
+
+  test("the query is the brief's open-issue list, over number,title rows", () => {
+    const args = majorIssueArgs('28.0.0');
+    expect(args[args.indexOf('--state') + 1]).toBe('open');
+    expect(args[args.indexOf('--search') + 1]).toBe('Major release pending: 28.0.0 in:title');
+    expect(args[args.indexOf('--json') + 1]).toBe('number,title');
+  });
+
+  test('the exact title of the target version is the twin', () => {
+    expect(openMajorIssue(['Major release pending: 28.0.0'], '28.0.0')).toEqual({
+      open: true,
+      twin: 'Major release pending: 28.0.0',
+    });
+  });
+
+  test("another version's issue is not a twin, and a longer version is not one either", () => {
+    // `28.0.01` starts with `28.0.0` and is still a different major.
+    expect(openMajorIssue(['Major release pending: 28.0.01'], '28.0.0')).toEqual({ open: false });
+    expect(openMajorIssue(['Major release pending: 29.0.0'], '28.0.0')).toEqual({ open: false });
+    expect(openMajorIssue(['Major release pending: 28.0.0'], '28.0.1')).toEqual({ open: false });
+  });
+
+  test('the ask title is not a pending-major twin: the two subjects stay disjoint', () => {
+    expect(openMajorIssue(['Release 28.0.0'], '28.0.0')).toEqual({ open: false });
+  });
+
+  test('no open issues is not open', () => {
+    expect(openMajorIssue([], '28.0.0')).toEqual({ open: false });
   });
 });
 

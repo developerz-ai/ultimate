@@ -23,7 +23,7 @@ read the envelope instead — every finding carries its own `fix`, and the secon
 |---|---|---|
 | `false` | `nothing_ships` | nothing |
 | `false` | `settling` | nothing — an org member may still release their own work; next checkup decides |
-| `false` | `major_needs_a_maintainer` | nothing, unless no open issue already says a major is pending: then one issue listing `data.breaking`, for a maintainer |
+| `false` | `major_needs_a_maintainer` | nothing, unless no open issue already says a major is pending: then one issue titled `Major release pending: <data.next>`, listing `data.breaking`, for a maintainer. Check with `gh issue list --state open --search "Major release pending: <next> in:title" --json number,title`, where `<next>` is `data.next` |
 | `false` | `awaiting_tag` | nothing — the release PR merged and `release-tag.yml` has not tagged it yet: watch `gh run list --workflow release-tag.yml --limit 5 --json databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt` and file only on a failed run |
 | `false` | `X_RELEASE_HEAD_NOT_MAIN` (in `findings`) | nothing — HEAD is not the tip of `origin/main`; run `git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main && git checkout main`, then re-run |
 | `true` | — | one ask: **Release `<data.next>`**, listing `data.shipping` |
