@@ -5,6 +5,14 @@ maintained so that nobody has to watch it. This brief covers the failures no iss
 Issue intake never admits a bot-authored issue, so the automation's own alarms reach the bot only
 through here.
 
+`.claude/settings.json` (`permissions.allow`) is the source of truth for this allowlist. Every `gh`
+command the eight rows below run is pre-approved: `gh run list`, `gh issue list`, `gh pr list`, and
+rows 1–2's git reads `git rev-parse` and `git describe` beside them. Rows 3 and 5 are NOT
+pre-approved — they run `bun run scripts/release-due.ts` and `bun run scripts/registry-audit.ts`,
+which the allowlist's `bun run x --` entry does not match, so those two rows can prompt. The
+generated-app allowlist (`packages/cli/src/templates/scaffold-claude.ts`) is a different list for a
+different audience and is not this one.
+
 ## Check, in order
 
 | Signal | Command | Healthy |

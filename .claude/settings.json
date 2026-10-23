@@ -14,9 +14,12 @@
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
+      "Bash(git describe:*)",
+      "Bash(git rev-parse:*)",
       "Bash(gh pr view:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
+      "Bash(gh release view:*)",
       "Bash(gh issue list:*)",
       "Bash(gh pr list:*)"
     ]
