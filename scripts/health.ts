@@ -240,7 +240,14 @@ const defaultReaders = (root: string): HealthReaders => ({
     prs: jsonDocument(
       (
         await gh(
-          ['pr', 'list', '--app', 'dependabot', '--json', 'number,createdAt,statusCheckRollup'],
+          [
+            'pr',
+            'list',
+            '--app',
+            'dependabot',
+            '--json',
+            'number,createdAt,updatedAt,url,state,autoMergeRequest,statusCheckRollup',
+          ],
           root,
         )
       ).output,
