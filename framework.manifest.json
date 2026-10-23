@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "dd2fc6b23d81f97541ef238676a70c7e22e3c5c51641001493742ed00695c201",
+  "buildId": "19afbe4059fbb2648b8545f8b4e04c539df27303d6763e8fd34d997f1263a3e9",
   "tiers": {
     "0": [
       "core",
@@ -1868,6 +1868,11 @@
       "code": "X_GUARDS_DOC_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/guards-doc.ts"
+    },
+    {
+      "code": "X_HEALTH_ROW_UNREADABLE",
+      "owner": "scripts",
+      "at": "scripts/health.ts"
     },
     {
       "code": "X_HELPER_COPY",
