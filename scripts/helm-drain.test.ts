@@ -50,10 +50,24 @@ const RENDER_DEADLINE_MS = 30_000;
  * not come back is a worker neither the spawn's own timeout nor this file's 180 s budget can end —
  * gate unit-1 lost its whole first batch that way (#851): 68 of its 69 files passed while this
  * file never returned, batches 2-12 never started, and the step died at its deadline. SIGKILL,
- * because helm's install path traps SIGTERM and keeps running (scaffold-helm-retire.test.ts), and
- * the reads are cancelled with the kill, so a process helm left holding its output cannot hold
- * this caller either.
+ * because helm's install path traps SIGTERM and keeps running (scaffold-helm-retire.test.ts).
+ *
+ * The pipes are read through READERS this function retains, never `new Response(stream).text()`:
+ * a Response body consumer takes the stream's reader lock, so the deadline branch's `cancel()`
+ * would reject against the lock it holds itself and the pending reads would survive the kill — a
+ * child that retains stdout/stderr (a helm descendant past the fork) left both pending, forever.
+ * Cancelling the RETAINED reader stops its own read and releases the lock.
  */
+async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+  const parts: Uint8Array[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(parts));
+}
+
 async function render(
   kubeVersion: string,
   extra: readonly string[] = [],
@@ -77,18 +91,18 @@ async function render(
   const late = new Promise<'late'>((resolve) => {
     timer = setTimeout(() => resolve('late'), RENDER_DEADLINE_MS);
   });
+  const outReader = child.stdout.getReader();
+  const errReader = child.stderr.getReader();
   const settled = await Promise.race([
-    Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]),
+    Promise.all([readAll(outReader), readAll(errReader), child.exited]),
     late,
   ]);
   clearTimeout(timer);
   if (settled === 'late') {
     child.kill('SIGKILL');
-    await Promise.allSettled([child.stdout.cancel(), child.stderr.cancel()]);
+    await Promise.allSettled([outReader.cancel(), errReader.cancel()]);
+    outReader.releaseLock();
+    errReader.releaseLock();
     return expect.unreachable(
       `helm template ${kubeVersion} did not finish within ${RENDER_DEADLINE_MS} ms and was killed`,
     );
