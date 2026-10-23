@@ -1,16 +1,23 @@
-// The orchestrator over injected readers, its jsonDocument stderr-noise scan, and one real spawn
-// with nothing on PATH — a row the script cannot read must refuse the whole answer. No network, no
-// real checkout: the pure rules behind the verdicts are pinned here too, one row at a time through
-// the same injected readers, not in a file of their own.
+// The orchestrator over injected readers, its jsonDocument stderr-noise scan, the release-tag
+// row's run evidence, and one real spawn with nothing on PATH — a row the script cannot read must
+// refuse the whole answer. No network, no real checkout: the pure rules behind the verdicts are
+// pinned here too, one row at a time through the same injected readers. Row 7's activity and
+// checks cases live in `health-dependabot.test.ts`: one row's world is that file's subject.
 
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
-import { CI_ARGS, healthAt, jsonDocument } from './health';
-import type { DependabotPr } from './lib/health-narrow';
-import { narrowPrs } from './lib/health-narrow';
+import {
+  CI_ARGS,
+  healthAt,
+  jsonDocument,
+  ROW_COMMANDS,
+  TAG_RUN_ARGS,
+  TAG_RUN_FIELDS,
+} from './health';
 import type { RowVerdict } from './lib/health-rule';
-import { dependabotVerdict, ROW_IDS } from './lib/health-rule';
+import { ROW_IDS } from './lib/health-rule';
 import type { ScriptResult } from './lib/log';
+import { AWAITING_TAG_COMMAND } from './lib/release-due-rule';
 
 const SHA = 'a'.repeat(40);
 
@@ -262,205 +269,91 @@ describe('unit · health · healthAt over injected readers', () => {
   });
 });
 
-describe('unit · health · Dependabot activity and checks', () => {
-  const nowMs = Date.parse('2026-10-23T12:00:00Z');
-  const weekMs = 7 * 24 * 3_600_000;
-  const green = { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' };
-  const red = { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' };
-  const cases = [
-    { name: 'old creation, recent red update', age: 1, checks: [red], verdict: 'healthy' },
-    { name: 'stale red', age: weekMs + 1, checks: [red], verdict: 'unhealthy' },
-    { name: 'stale green', age: weekMs + 1, checks: [green], verdict: 'healthy' },
-    { name: 'exactly seven days red', age: weekMs, checks: [red], verdict: 'healthy' },
-    {
-      name: 'pending check run',
-      age: weekMs + 1,
-      checks: [{ ...red, status: 'IN_PROGRESS', conclusion: null }],
-      verdict: 'unverdicted',
-    },
-    {
-      name: 'pending status context',
-      age: weekMs + 1,
-      checks: [{ __typename: 'StatusContext', state: 'PENDING' }],
-      verdict: 'unverdicted',
-    },
-    {
-      name: 'successful status context',
-      age: weekMs + 1,
-      checks: [{ __typename: 'StatusContext', state: 'SUCCESS' }],
-      verdict: 'healthy',
-    },
-    {
-      name: 'failed status context',
-      age: weekMs + 1,
-      checks: [{ __typename: 'StatusContext', state: 'ERROR' }],
-      verdict: 'unhealthy',
-    },
-    {
-      name: 'neutral and skipped runs',
-      age: weekMs + 1,
-      checks: [
-        { ...green, conclusion: 'NEUTRAL' },
-        { ...green, conclusion: 'SKIPPED' },
-      ],
-      verdict: 'healthy',
-    },
-    {
-      name: 'unknown mixed with green',
-      age: weekMs + 1,
-      checks: [green, {}],
-      verdict: 'unverdicted',
-    },
-    {
-      name: 'pending mixed with red',
-      age: weekMs + 1,
-      checks: [red, { ...green, status: 'QUEUED' }],
-      verdict: 'unverdicted',
-    },
-    { name: 'no checks', age: weekMs + 1, checks: [], verdict: 'unverdicted' },
-  ] as const;
+describe('unit · health · row 4 asks for the run evidence, not a bare status', () => {
+  // The row's filing quotes the run: its id, url, title, event, branch and creation time. A query
+  // that returned only a status could not say WHICH run failed — so the field list is pinned here
+  // field by field. `RUN` is a release-tag.yml run as gh names it: `databaseId`, `displayTitle`.
+  const URL = 'https://github.com/ultimate/ultimate/actions/runs/4242';
+  const FIELDS = 'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt';
+  const RUN = {
+    databaseId: 4242,
+    status: 'completed',
+    conclusion: 'success',
+    event: 'workflow_dispatch',
+    headBranch: 'main',
+    displayTitle: 'Tag v3.1.0',
+    url: URL,
+    createdAt: '2026-10-23T09:00:00Z',
+  };
+  /** Row 4's verdict over a list of runs, read the way the brief reads it. */
+  const row4 = async (runs: readonly unknown[]): Promise<RowVerdict> => {
+    const rows = verdictOf(
+      await healthAt('.', { ...healthyReaders, 'tag-runs-ended-well': async () => ({ runs }) }),
+    );
+    const row = rows.find((one) => one.row === 'tag-runs-ended-well');
+    if (row === undefined) return expect.unreachable('the tag-runs row is always answered');
+    return row;
+  };
 
-  for (const one of cases) {
-    test(one.name, async () => {
-      const raw = [
-        {
-          number: 802,
-          createdAt: '2020-01-01T00:00:00Z',
-          updatedAt: new Date(nowMs - one.age).toISOString(),
-          statusCheckRollup: one.checks,
-        },
-      ];
-      const prs = narrowPrs(raw);
-      expect(dependabotVerdict({ prs, nowMs }).verdict).toBe(one.verdict);
-      // Translate the fixed inactivity to the reader's real clock, without a boundary race.
-      const readerAge = one.age <= weekMs ? 0 : weekMs * 2;
-      const result = await healthAt('.', {
-        ...healthyReaders,
-        'dependabot-not-stuck': async () => ({
-          prs: [{ ...raw[0], updatedAt: new Date(Date.now() - readerAge).toISOString() }],
-        }),
-      });
-      expect(verdictOf(result).find((row) => row.row === 'dependabot-not-stuck')?.verdict).toBe(
-        one.verdict,
-      );
-    });
-  }
-
-  test('a confirmed stuck PR files even with a separate pending PR on the page', () => {
-    // The bug this pins: the row-wide pending gate used to shadow the page's one confirmed
-    // failure — `unverdicted` never files, so the stuck-PR alarm went silent.
-    const page = narrowPrs([
-      {
-        number: 805,
-        createdAt: '2020-01-01T00:00:00Z',
-        updatedAt: new Date(nowMs - weekMs - 1).toISOString(),
-        statusCheckRollup: [red],
-      },
-      {
-        number: 806,
-        createdAt: '2020-01-01T00:00:00Z',
-        updatedAt: new Date(nowMs).toISOString(),
-        statusCheckRollup: [{ __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null }],
-      },
-    ]);
-    const verdict = dependabotVerdict({ prs: page, nowMs });
-    expect(verdict.verdict).toBe('unhealthy');
-    expect(verdict.reason).toContain('#805');
-    expect(verdict.reason).not.toContain('#806');
-  });
-
-  test('a confirmed stuck PR files even when a separate PR has an unreadable updatedAt', () => {
-    const page = narrowPrs([
-      {
-        number: 807,
-        createdAt: '2020-01-01T00:00:00Z',
-        updatedAt: new Date(nowMs - weekMs - 1).toISOString(),
-        statusCheckRollup: [red],
-      },
-      { number: 808, createdAt: '2020-01-01T00:00:00Z', statusCheckRollup: [green] },
-    ]);
-    const verdict = dependabotVerdict({ prs: page, nowMs });
-    expect(verdict.verdict).toBe('unhealthy');
-    expect(verdict.reason).toContain('#807');
-  });
-
-  test('a page of unresolved evidence with no confirmed failure stays unverdicted', () => {
-    const page = narrowPrs([
-      {
-        number: 809,
-        createdAt: '2020-01-01T00:00:00Z',
-        updatedAt: new Date(nowMs).toISOString(),
-        statusCheckRollup: [{ __typename: 'CheckRun', status: 'QUEUED', conclusion: null }],
-      },
-    ]);
-    expect(dependabotVerdict({ prs: page, nowMs }).verdict).toBe('unverdicted');
-  });
-
-  test('through healthAt, a mixed page files the stuck ask and turns healthy off', async () => {
-    // 14 days: over the threshold under any clock the reader hands the script.
+  test('the row runs and names the whole command, field list and all', async () => {
+    expect(TAG_RUN_FIELDS).toBe(FIELDS);
+    expect(TAG_RUN_ARGS.join(' ')).toBe(
+      `run list --workflow release-tag.yml --limit 5 --json ${FIELDS}`,
+    );
+    // The command in the finding IS the command the reader ran, so a re-run is the same query.
     const result = await healthAt('.', {
       ...healthyReaders,
-      'dependabot-not-stuck': async () => ({
-        prs: [
-          {
-            number: 810,
-            createdAt: '2020-01-01T00:00:00Z',
-            updatedAt: new Date(Date.now() - weekMs * 2).toISOString(),
-            statusCheckRollup: [red],
-          },
-          {
-            number: 811,
-            createdAt: '2020-01-01T00:00:00Z',
-            updatedAt: new Date(Date.now()).toISOString(),
-            statusCheckRollup: [
-              { __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null },
-            ],
-          },
-        ],
-      }),
+      'tag-runs-ended-well': async () => ({ runs: undefined }),
     });
-    expect(result.ok).toBe(true);
-    expect((result.data as { healthy: boolean }).healthy).toBe(false);
-    const row = verdictOf(result).find((one) => one.row === 'dependabot-not-stuck');
-    expect(row?.verdict).toBe('unhealthy');
-    expect(row?.reason).toContain('#810');
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.cause).toContain(
+      `gh run list --workflow release-tag.yml --limit 5 --json ${FIELDS}`,
+    );
   });
 
-  test('unreadable activity never falls back to creation, even for green checks', async () => {
-    for (const updatedAt of [undefined, '', 'invalid']) {
-      for (const statusCheckRollup of [[green], [red]]) {
-        const raw = [
-          {
-            number: 803,
-            createdAt: '2020-01-01T00:00:00Z',
-            updatedAt,
-            statusCheckRollup,
-          },
-        ];
-        expect(dependabotVerdict({ prs: narrowPrs(raw), nowMs }).verdict).toBe('unverdicted');
-        const result = await healthAt('.', {
-          ...healthyReaders,
-          'dependabot-not-stuck': async () => ({ prs: raw }),
-        });
-        expect(verdictOf(result).find((row) => row.row === 'dependabot-not-stuck')?.verdict).toBe(
-          'unverdicted',
-        );
-      }
-    }
+  test('row 4 runs the SAME query the awaiting_tag watch command is, verbatim', () => {
+    // ONE canonical release-tag run query, mirrored verbatim: the health row's own command string
+    // and the argv its reader spawns are both the release-due rule's watch command. Two constants
+    // that merely happen to be equal would drift apart the day either is edited, and the drift
+    // would be invisible — the row would quietly ask for less than the ask quotes.
+    expect(ROW_COMMANDS['tag-runs-ended-well']).toBe(AWAITING_TAG_COMMAND);
+    expect(['gh', ...TAG_RUN_ARGS].join(' ')).toBe(AWAITING_TAG_COMMAND);
+    // And the field list the command carries is the one the rule emits, field for field.
+    expect(AWAITING_TAG_COMMAND).toBe(
+      `gh run list --workflow release-tag.yml --limit 5 --json ${FIELDS}`,
+    );
   });
 
-  test('pure rule uses updatedAt and preserves the strict inactivity boundary', () => {
-    const pr: DependabotPr = {
-      number: 804,
-      createdAt: '2020-01-01T00:00:00Z',
-      updatedAt: new Date(nowMs - weekMs).toISOString(),
-      checks: 'red',
-    };
-    expect(dependabotVerdict({ prs: [pr], nowMs }).verdict).toBe('healthy');
-    const stale = dependabotVerdict({ prs: [pr], nowMs: nowMs + 1 });
-    expect(stale.verdict).toBe('unhealthy');
-    expect(stale.reason).toContain(pr.updatedAt ?? 'missing');
-    expect(stale.reason).not.toContain(pr.createdAt ?? 'missing');
+  test('a completed failure is unhealthy, and the verdict carries that run’s filing evidence', async () => {
+    const row = await row4([{ ...RUN, conclusion: 'failure' }]);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.url).toBe(URL);
+  });
+
+  test('a queued run is unverdicted — a re-run, never a failure filing — with its evidence kept', async () => {
+    // Queued on the `release-tag` concurrency group: the run has no completion verdict yet, so
+    // the row has none either, and the ask is not filed against a run that never ran — whatever
+    // conclusion it carries, a run that has not completed has no verdict to file.
+    const row = await row4([{ ...RUN, status: 'queued', conclusion: 'failure' }]);
+    expect(row.verdict).toBe('unverdicted');
+    expect(row.status).toBe('queued');
+    expect(row.conclusion).toBeNull();
+    expect(row.id).toBe(4242);
+    expect(row.url).toBe(URL);
+    expect(row.title).toBe('Tag v3.1.0');
+    expect(row.event).toBe('workflow_dispatch');
+    expect(row.headBranch).toBe('main');
+    expect(row.createdAt).toBe('2026-10-23T09:00:00Z');
+  });
+
+  test('a queued run beside a completed failure still files the failure', async () => {
+    // The queued run is not the failed run's excuse: the failure that DID complete is the filing.
+    const row = await row4([
+      { ...RUN, status: 'queued', conclusion: 'failure' },
+      { ...RUN, conclusion: 'failure', databaseId: 4243 },
+    ]);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.id).toBe(4243);
   });
 });
 

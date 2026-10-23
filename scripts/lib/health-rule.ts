@@ -320,13 +320,9 @@ export interface DependabotInput {
   readonly prs: readonly DependabotPr[];
   readonly nowMs: number;
 }
-
 /** Row 7. Stuck means failed checks and more than seven days without activity. */
 export function dependabotVerdict(input: DependabotInput): RowVerdict {
   const base = { row: 'dependabot-not-stuck' as const };
-  if (input.prs.length === 0) {
-    return { ...base, verdict: 'healthy', reason: 'no open Dependabot PR', prs: input.prs };
-  }
   // Stuck is computed BEFORE the row-wide unknown gates: a page holding one confirmed stuck PR
   // files it even while a different PR's checks or updatedAt are still unread — `unverdicted` is
   // for pages with no confirmed failure, never a mute on a confirmed one. The finite guard is

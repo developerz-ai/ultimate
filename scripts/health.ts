@@ -15,6 +15,7 @@ import {
   narrowPrs,
   narrowReleaseDue,
   narrowRuns,
+  type RunRow,
 } from './lib/health-narrow';
 import type { RowId, RowVerdict, Verdict } from './lib/health-rule';
 import {
@@ -44,13 +45,37 @@ const unreadable = (row: string, command: string, detail: string): Finding => ({
   at: 'scripts/health.ts',
 });
 
-const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
+/**
+ * The `gh run list --json` fields row 4 asks for: the release-tag workflow's five newest runs with
+ * the fields a filing needs — the run's id, its status and conclusion, the event and branch it ran
+ * on, its title, its URL and when it was created. The same set and order as the release-due
+ * `awaiting_tag` watch command, so one query answers both rows.
+ */
+export const TAG_RUN_FIELDS =
+  'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt';
+
+// Exported for the test that pins the query: the reader's argv, field list and all.
+export const TAG_RUN_ARGS = [
+  'run',
+  'list',
+  '--workflow',
+  'release-tag.yml',
+  '--limit',
+  '5',
+  '--json',
+  TAG_RUN_FIELDS,
+] as const;
+
+// Exported for the test that pins row 4's command against the awaiting_tag watch command the
+// release-due rule emits: the two rows answer from ONE query, and a row's own command string is
+// what its refusal quotes, so a reader can always re-run exactly what the row ran.
+export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'main-green':
     'bun run x -- ci --workflow ci.yml --event push --branch main --json; git rev-parse origin/main',
   'last-tag-published':
     "git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main; git rev-parse <tag>^{commit}; gh run list --workflow release.yml --limit 1",
   'stamped-version-tagged': 'bun run scripts/release-due.ts --json',
-  'tag-runs-ended-well': 'gh run list --workflow release-tag.yml --limit 5',
+  'tag-runs-ended-well': `gh run list --workflow release-tag.yml --limit 5 --json ${TAG_RUN_FIELDS}`,
   'npm-serves-tree': 'bun run scripts/registry-audit.ts --json',
   'automation-alarms': 'gh issue list --state open --label registry-drift',
   'dependabot-not-stuck': 'gh pr list --app dependabot',
@@ -194,23 +219,7 @@ const defaultReaders = (root: string): HealthReaders => ({
     ),
   }),
   'tag-runs-ended-well': async () => ({
-    runs: jsonDocument(
-      (
-        await gh(
-          [
-            'run',
-            'list',
-            '--workflow',
-            'release-tag.yml',
-            '--limit',
-            '5',
-            '--json',
-            'status,conclusion',
-          ],
-          root,
-        )
-      ).output,
-    ),
+    runs: jsonDocument((await gh([...TAG_RUN_ARGS], root)).output),
   }),
   'npm-serves-tree': async () => ({
     audit: jsonDocument(
@@ -345,6 +354,15 @@ const judgeStampedTagged = (read: StampedTaggedRead): Judgement => {
   return stampedTaggedVerdict(data);
 };
 
+/**
+ * A release-tag.yml run that has not completed — queued on the `release-tag` concurrency group, or
+ * still in progress — carries no completion verdict: the row is unverdicted and the run is re-run,
+ * never filed as a failure. `status` is the reading, not `conclusion`: a run whose status is not
+ * `completed` is one thing whatever it concluded, and its evidence (the run's id, url, title,
+ * event, branch and creation time) is what the filing quotes.
+ */
+const isPending = (run: RunRow): boolean => run.status !== undefined && run.status !== 'completed';
+
 const judgeTagRuns = (read: TagRunsRead): Judgement => {
   // A document that is not a run list, or whose entries name no readable run, is junk — never an
   // empty list: `healthy` is this row's answer to an empty list, so answering it over a document
@@ -364,7 +382,16 @@ const judgeTagRuns = (read: TagRunsRead): Judgement => {
       'the run list held an entry with no readable conclusion',
     );
   }
-  return tagRunsVerdict({ runs });
+  // The rule judges a completion verdict, so a run that has not completed is handed to it with
+  // its conclusion blanked: it cannot be a failure, and the rule reads it as a run still going.
+  // Every other run keeps its own conclusion, so a run that DID complete and failed still files.
+  const judged = runs.map((run) => (isPending(run) ? { ...run, conclusion: null } : run));
+  const verdict = tagRunsVerdict({ runs: judged });
+  const pending = judged.find(isPending);
+  // A failed run that DID complete still files — the pending one beside it is not its excuse.
+  if (pending === undefined || verdict.verdict === 'unhealthy') return verdict;
+  // The pending run's own evidence is kept, so the filing can name the run that is waiting.
+  return { ...verdict, ...pending };
 };
 
 const judgeNpmTree = (read: NpmTreeRead): Judgement => {
