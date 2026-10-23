@@ -5,7 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
-import { CI_ARGS, healthAt, jsonDocument } from './health';
+import { CI_ARGS, healthAt } from './health';
+import { jsonDocument } from './lib/health-narrow';
 import type { RowVerdict } from './lib/health-rule';
 import { ROW_IDS } from './lib/health-rule';
 import type { ScriptResult } from './lib/log';
@@ -80,9 +81,16 @@ const healthyReaders: HealthOverrides = {
   'demo-shipped': async () => ({
     runs: [{ conclusion: 'success', event: 'workflow_run', status: 'completed', databaseId: 5 }],
   }),
+  'release-exists': async () => ({
+    tag: 'v3.0.0',
+    lookup: {
+      kind: 'found',
+      release: { tagName: 'v3.0.0', isDraft: false, publishedAt: '2026-01-01T00:00:00Z' },
+    },
+  }),
 };
 describe('unit · health · healthAt over injected readers', () => {
-  test('a readable world answers ok:true with all eight rows in the brief order', async () => {
+  test('a readable world answers ok:true with all nine rows in the brief order', async () => {
     const result = await healthAt('.', healthyReaders);
     expect(result.ok).toBe(true);
     expect(result.script).toBe('health');

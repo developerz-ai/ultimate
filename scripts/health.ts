@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Answer whether the project is healthy: eight rows, one verdict each, read from git, `gh` and the
+// Answer whether the project is healthy: nine rows, one verdict each, read from git, `gh` and the
 // repo's own scripts, and refuse with `cannot tell` and no data when any row's command cannot be
 // read — a checkup that answers over a row it never read is the silent green it exists to refuse.
 //
@@ -8,14 +8,18 @@
 import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import {
+  jsonDocument,
   narrowAudit,
   narrowChildDoc,
   narrowCiDoc,
   narrowIssues,
   narrowPrs,
+  narrowRelease,
   narrowReleaseDue,
   narrowRuns,
 } from './lib/health-narrow';
+import type { ReleaseExistsRead } from './lib/health-release';
+import { releaseExistsVerdict, releaseLookupOf } from './lib/health-release';
 import type { RowId, RowVerdict, Verdict } from './lib/health-rule';
 import {
   alarmsVerdict,
@@ -55,6 +59,8 @@ const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'automation-alarms': 'gh issue list --state open --label registry-drift',
   'dependabot-not-stuck': 'gh pr list --app dependabot',
   'demo-shipped': 'gh run list --workflow deploy-social-demo.yml --limit 1',
+  'release-exists':
+    "git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main; gh release view <tag> --json tagName,isDraft,publishedAt",
 };
 
 // Exported for the test that pins the prefix: without `bun` first, run() spawns a binary named
@@ -82,32 +88,6 @@ const headShaOf = async (root: string): Promise<string | undefined> =>
     (answer) => (answer.ok ? answer.output.trim() : undefined),
     () => undefined,
   );
-
-/**
- * The `--json` document in a child's output: the whole output, else the last line that parses to an
- * object. `run()` joins the child's stderr into its output, and gh writes progress there — a parse
- * over the join would refuse answers that are present. Exit codes are never read: `x ci` and both
- * child scripts print their document whatever they decided.
- */
-export function jsonDocument(output: string): unknown {
-  try {
-    return JSON.parse(output.trim()) as unknown;
-  } catch {
-    // Not one document over the whole output: the document may be one line among stderr noise.
-  }
-  const lines = output.split('\n');
-  for (let at = lines.length - 1; at >= 0; at -= 1) {
-    const line = (lines[at] ?? '').trim();
-    if (!line.startsWith('{') && !line.startsWith('[')) continue;
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (parsed !== null && typeof parsed === 'object') return parsed;
-    } catch {
-      // Not this line either.
-    }
-  }
-  return undefined;
-}
 
 /** What each row's reader answers: the child documents as parsed `unknown`, git as a plain string. */
 export interface MainGreenRead {
@@ -146,6 +126,7 @@ export interface HealthReaders {
   readonly 'automation-alarms': () => Promise<AlarmsRead>;
   readonly 'dependabot-not-stuck': () => Promise<DependabotRead>;
   readonly 'demo-shipped': () => Promise<DemoShippedRead>;
+  readonly 'release-exists': () => Promise<ReleaseExistsRead>;
 }
 
 /** Replaces any single reader, so a test names a world without one subprocess. */
@@ -272,6 +253,20 @@ const defaultReaders = (root: string): HealthReaders => ({
       ).output,
     ),
   }),
+  'release-exists': async () => {
+    // The SAME tag row 2 reads: the last v* tag on origin/main, whatever release-tag.yml cut.
+    const described = await git(
+      ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', 'origin/main'],
+      root,
+    ).catch(() => GIT_BROKEN);
+    const tag = described.ok ? described.output.trim() : '';
+    if (tag === '') return { tag: undefined, lookup: { kind: 'unreadable' } as const };
+    const viewed = await gh(
+      ['release', 'view', tag, '--json', 'tagName,isDraft,publishedAt'],
+      root,
+    );
+    return { tag, lookup: releaseLookupOf({ ok: viewed.ok, output: viewed.output }) };
+  },
 });
 
 type Judgement = RowVerdict | Finding | readonly Finding[];
@@ -406,11 +401,42 @@ const judgeDemoShipped = (read: DemoShippedRead, mainGreen: Verdict): Judgement 
   return demoShippedVerdict({ run: narrowRuns(read.runs)[0] }, mainGreen);
 };
 
+const judgeReleaseExists = (read: ReleaseExistsRead): Judgement => {
+  if (read.tag === undefined) {
+    return unreadable(
+      'release-exists',
+      ROW_COMMANDS['release-exists'],
+      'git could not name the last v* tag on origin/main',
+    );
+  }
+  if (read.lookup.kind === 'missing') {
+    // gh said the Release does not exist: the tag is cut and nothing published it. That is the
+    // half-cut release release-tag.yml leaves when its Release step fails, and it is unhealthy.
+    return releaseExistsVerdict({ tag: read.tag, release: undefined });
+  }
+  if (read.lookup.kind === 'unreadable') {
+    return unreadable(
+      'release-exists',
+      ROW_COMMANDS['release-exists'],
+      'gh could not answer for that tag, and did not say the Release is missing',
+    );
+  }
+  const release = narrowRelease(read.lookup.release);
+  if (release === undefined) {
+    return unreadable(
+      'release-exists',
+      ROW_COMMANDS['release-exists'],
+      'the gh release view document names no readable isDraft',
+    );
+  }
+  return releaseExistsVerdict({ tag: read.tag, release });
+};
+
 /**
  * The whole checkup at `root`: every row read in the brief's order, one subprocess at a time, each
  * judge over what its reader answered. A throw — `Bun.spawn` throws on a missing binary — or an
  * unreadable answer refuses the whole result with findings and no `data`; otherwise every verdict
- * rides in `data.rows`, and `data.healthy` is true only when all eight read `healthy`.
+ * rides in `data.rows`, and `data.healthy` is true only when all nine read `healthy`.
  */
 export const healthAt = async (
   root: string,
@@ -449,6 +475,7 @@ export const healthAt = async (
     judgeDependabot(read, nowMs),
   );
   await judge('demo-shipped', readers['demo-shipped'], (read) => judgeDemoShipped(read, green()));
+  await judge('release-exists', readers['release-exists'], judgeReleaseExists);
 
   if (refusals.length > 0) {
     return { ok: false, script: SCRIPT, summary: 'cannot tell', findings: refusals };
