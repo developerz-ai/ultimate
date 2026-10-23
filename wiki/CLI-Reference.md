@@ -19,7 +19,7 @@ x version              # CLI version
 | Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command. `--verbose` carries each step's captured output on a green run too, in the terminal and under `--json` alike (`steps[].output`); without it a step's output appears only when it fails. `As of 2026-10` |
 | Subcommands | when a command has them, its default is **declared**, never positional: `x actions` is `x actions list` because that command sets `defaultSubcommand: 'list'`. A command with no defensible default declares none and refuses the bare form with `X_CLI_BAD_FLAG` — exactly `db` and `mcp`, pinned by `parse.test.ts`. `--help` is read before the subcommand, so `x db --help` and `x mcp --help` print usage like `x help db`. The parser answered `subcommands[0]` until 1.2.0, which is why `x db` used to run the migration **generator** |
 | Passthrough | a bare `--` sends everything after it to the underlying tool untouched |
-| `--json` shape | `{ ok, command, summary, steps?, findings?, data? }`. Findings are `{ code, cause, fix, docs?, at? }` |
+| `--json` shape | `{ ok, command, summary, steps?, findings?, data? }`. Findings are `{ code, cause, fix, docs?, at?, meta? }` |
 
 ## Command index
 
@@ -668,14 +668,21 @@ $ x verify --json
 {"ok":false,"command":"verify",
  "summary":"1 of 20 steps failed — 3 skipped: e2e, contract-diff, roadmap","steps":[
   {"name":"budgets","ok":false,"durationMs":812,"skipped":false,"findings":[
-    {"code":"X_BUDGET_EXCEEDED","cause":"site/pricing ships 61kb of JS, over the 40kb budget",
-     "fix":"x fix boundary site/pricing/page.tsx",
-     "docs":"https://github.com/developerz-ai/ultimate/wiki/Error-Codes","at":"site/pricing"}]}],
+    {"code":"X_BUDGET_EXCEEDED","cause":"/pricing ships 61.2kb of JS (minified, uncompressed) over a 40kb budget via site/pricing/page.tsx -> islands/post-form-04f75f18.js; charged: /islands/post-form-04f75f18.js 50123 B, inline scripts 855 B",
+     "fix":"edit apps/web/site/pricing/page.tsx — set budget: { js: '62kb' } with // measured: 62682 B (x build --target static) — why: <the function it buys> directly above it; or x routes --json for the chain and move the heavy import behind hydrate: 'interaction'",
+     "docs":"https://github.com/developerz-ai/ultimate/wiki/Error-Codes",
+     "at":"apps/web/site/pricing/page.tsx",
+     "meta":{"jsBytes":62682,"charged":[{"url":"/islands/post-form-04f75f18.js","bytes":50123}],"inlineJsBytes":855}}]}],
  "data":{"failed":["budgets"],"skipped":["e2e","contract-diff","roadmap"],"durationMs":11153}}
 ```
 
-A finding is `code`, `cause`, `fix`, and optionally `docs`, `at` (a file, route or table) and
-`meta` — structured facts behind `cause`, never the only home of one. `X_VERIFY_STEP_TIMEOUT`
+A finding is `code`, `cause`, `fix`, and optionally `docs`, `at` and `meta`. `at` is the
+path an agent opens — a file, or the stuck test file for a timed-out step — and is absent
+when there is no such path. `meta` is structured facts behind `cause`, never the only home of
+one: an unmeasured budget carries its route in `meta.route` (`X_BUDGET_UNMEASURED` — `at` names
+the file that declares it), while `X_BUDGET_EXCEEDED` carries what the bytes were charged as
+(`meta.jsBytes`, `meta.charged`, `meta.inlineJsBytes`) and spells the route in `cause`.
+`X_VERIFY_STEP_TIMEOUT`
 carries `meta.step`, `meta.deadlineMs`, `meta.killed: [{pid, command}]` and
 `meta.inFlight: [{command, files, workers, stuck}]`; `at` is the stuck test file when
 one could be named, and the failed step's `output` is the tail of what the killed run had printed.
@@ -1420,7 +1427,7 @@ The file an agent opens instead of guessing at forty PNGs. Markdown, written by 
 x pr review [--pr <n>] [--repo owner/name] [--all] [--full] [--json]
 x pr resolve <thread-id> [--json]
 x pr reply <thread-id> --body "…" [--json]
-x ci [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--json]
+x ci [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--workflow <name>] [--event <push|pull_request|workflow_dispatch>] [--json]
 ```
 
 **`gh pr view --comments` does not show inline review threads.** It shows *issue* comments; the actionable findings are anchored to lines and reachable only through GraphQL, and the thread id needed to resolve one exists nowhere else. That is the whole reason `x pr` exists — otherwise every team on Ultimate rediscovers the same query.
@@ -1436,7 +1443,7 @@ It reads `latestOpinionatedReviews`, not `reviews(last: n)`: the most recent rev
 
 **Resolving closes a conversation, not a finding.** Whether the code is fixed is a fact no GitHub mutation observes, and `x pr resolve` says so rather than implying otherwise.
 
-`x ci` exists because *"`gh run view` prints a tree of ticks and one cross, and the error is inside a per-job log that is mostly setup noise."* For a `verify` job the log tail **is** the findings block — this repo's gate already prints `X_*` codes and executable `fix:` lines — so `x ci` reads them back out into `findings[]` in the standard shape. `ok: false` iff a run failed; `x pr review` always exits 0, because unresolved threads are the work to do, not a failure of the command that listed them.
+`x ci` exists because *"`gh run view` prints a tree of ticks and one cross, and the error is inside a per-job log that is mostly setup noise."* For a `verify` job the log tail **is** the findings block — this repo's gate already prints `X_*` codes and executable `fix:` lines — so `x ci` reads them back out into `findings[]` in the standard shape. `ok: false` iff a run failed; `ok: true` means *no failed run* — an in-flight or queued run still completes with `ok: true` and is reported through the `running > 0` line and a per-run `headSha`, not as a green verdict. `x pr review` always exits 0, because unresolved threads are the work to do, not a failure of the command that listed them. The two flags narrow the `gh run list` server-side — `--workflow` takes the workflow name or filename (`ci.yml`), `--event` takes `push|pull_request|workflow_dispatch` — so `x ci --workflow ci.yml --event push --branch main` answers *"is main's push CI green"* instead of folding every main-branch workflow into one verdict.
 
 **Neither is a step of `x verify`.** A gate that needs network and a GitHub token goes red for reasons unrelated to the change.
 

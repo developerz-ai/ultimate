@@ -4,7 +4,15 @@
 // Postgres costs seconds. The embedded database's `now()` is frozen with the test clock, so one
 // notification slot lasts until rows are aged out of it — which makes "one per slot" exact.
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  setDefaultTimeout,
+  test,
+} from 'bun:test';
 import { ctxOf } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { JobDriver } from './driver';
@@ -28,11 +36,43 @@ import { postgresSchedulerState } from './scheduler-pg';
 import { jobWorker } from './worker';
 import type { Worker } from './worker-types';
 
+/**
+ * The embedded Postgres is booted, and the whole jobs DDL applied, inside the FIRST `beforeEach` —
+ * so the suite's first test carries the boot on Bun's 5000ms default, which three of these booting
+ * at once in the `job` step's parallel run passed with nothing wrong. The boot's own budget is the
+ * honest ceiling, as `packages/entity/src/sealed-column.test.ts` sets it for the same reason — and
+ * it must sit ABOVE the boot, never under it: bun cancels nothing, so a hook that times out
+ * mid-boot completed later anyway and registered these taps a SECOND time, doubling every payload
+ * the rest of the file read. `test-database.test.ts` budgets the same WASM compile plus initdb
+ * generously; this box measures the boot alone at 32-42s (2026-10).
+ */
+const PGLITE_BOOT_MS = 120_000;
+setDefaultTimeout(PGLITE_BOOT_MS);
+
 const context = () => ctxOf({ role: 'worker', buildId: 'test' });
 /** The floor every loop here polls at, and so the unit a "small bound" is counted in. */
 const FLOOR_MS = 25;
-/** Well under one backed-off wait, well over a round trip on a loaded machine. */
-const SOON_MS = 150;
+/** Observation window with no wake: still below that arm's 400 ms poll. */
+const SOON_MS = 250;
+/** Completion budget, separate from the latency assertion, for a loaded runner. */
+const BUDGET_MS = 2_000;
+/**
+ * The ceiling those loops idle at, and so the poll's own guarantee — `IDLE_POLL_CEILING_MS` in
+ * `idle-backoff.ts`, which is what bounds a job committed by another process when no notification
+ * ever crosses.
+ */
+const POLL_CEILING_MS = 2_000;
+/**
+ * The bound the two cross-process cases assert, and about half the ceiling: what the wake path has
+ * to beat it by. It is a LOADED number, and the reason this suite has one: the bound used to be
+ * `SOON_MS` (150 ms), which went red on the `job` step — nineteen files over three workers, four
+ * PGlite instances on one box. Four copies of this file at once measured the wake path at 206 ms.
+ * So the promise asserted is the one that survives a loaded runner — the wake HALVES the poll's
+ * worst case — and not a figure an idle machine produced. Both loops idle at POLL_CEILING_MS
+ * first, so only a wake lands inside this bound. The mechanism is also pinned deterministically
+ * by the wake tests and idle-cost.test.ts's statement counts.
+ */
+const WAKE_BOUND_MS = 1_000;
 
 let pg: EmbeddedPg;
 let heard: { channel: string; payload: string }[] = [];
@@ -270,14 +310,15 @@ describe('the loops it wakes', () => {
         return Promise.resolve();
       },
     });
-    await idleWorker(400);
+    // Idling at the ceiling the poll alone guarantees — the wake is what has to beat it.
+    await idleWorker(POLL_CEILING_MS, POLL_CEILING_MS);
 
     const other = postgresJobDriver({ executor: pg.executor });
     const before = performance.now();
     await enqueue(other, handle.name, 'cross-process');
-    await until(() => started.length === 1, 2_000);
-    // The wait in hand was 400 ms or more.
-    expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
+    await until(() => started.length === 1, BUDGET_MS);
+    // The wait in hand was the whole ceiling — only a wake lands inside WAKE_BOUND_MS.
+    expect((started[0] ?? 0) - before).toBeLessThan(WAKE_BOUND_MS);
   });
 
   test('with NO wake the same job waits for the poll — and the poll ceiling still bounds it', async () => {
@@ -299,8 +340,8 @@ describe('the loops it wakes', () => {
     await Bun.sleep(SOON_MS);
     expect(started).toEqual([]);
     await until(() => started.length === 1, 3_000);
-    // The guarantee: never past the ceiling (plus a pass).
-    expect((started[0] ?? 0) - before).toBeLessThan(ceiling + SOON_MS);
+    // The guarantee: never past the ceiling, plus one loaded pass.
+    expect((started[0] ?? 0) - before).toBeLessThan(ceiling + WAKE_BOUND_MS);
     expect(wakeIsLive()).toBe(false);
   });
 
@@ -313,7 +354,7 @@ describe('the loops it wakes', () => {
         return Promise.resolve();
       },
     });
-    await idleWorker(400);
+    await idleWorker(POLL_CEILING_MS, POLL_CEILING_MS);
     const driver = postgresJobDriver({ executor: pg.executor });
     const relayStore = postgresOutboxStore({
       executor: pg.executor,
@@ -323,12 +364,12 @@ describe('the loops it wakes', () => {
       store: relayStore,
       driver,
       intervalMs: FLOOR_MS,
-      idlePollMaxMs: 60_000,
+      idlePollMaxMs: POLL_CEILING_MS,
       drainOnShutdown: false,
     });
     relay.start();
     cleanups.push(() => relay.stop());
-    await until(() => relay.pollDelayMs() >= 400);
+    await until(() => relay.pollDelayMs() >= POLL_CEILING_MS);
 
     // The web pod: its own store, its own transaction, no signal raised in this process.
     let bound = pg.executor;
@@ -348,8 +389,9 @@ describe('the loops it wakes', () => {
         stagedAt: Date.now(),
       });
     });
-    await until(() => started.length === 1, 2_000);
-    expect((started[0] ?? 0) - before).toBeLessThan(SOON_MS);
+    await until(() => started.length === 1, BUDGET_MS);
+    // Only a wake lands inside WAKE_BOUND_MS: the relay's poll sits at POLL_CEILING_MS.
+    expect((started[0] ?? 0) - before).toBeLessThan(WAKE_BOUND_MS);
   });
 
   test('a stopped wake leaves the loops under the no-wake ceiling', async () => {

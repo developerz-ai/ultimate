@@ -33,6 +33,68 @@ describe('site and seo — refusals', () => {
   });
 });
 
+describe('seo.robots.groups — refusals', () => {
+  const groupsCause = (groups: unknown): string =>
+    causeOf(() =>
+      defineConfig({ name: 'app', seo: { robots: { groups: groups as readonly never[] } } }),
+    );
+
+  test('a well-formed group list is accepted', () => {
+    const config = defineConfig({
+      name: 'app',
+      seo: {
+        robots: {
+          groups: [
+            { userAgent: '*', allow: ['/'] },
+            { userAgent: ['GPTBot', 'ClaudeBot'], disallow: ['/s/'], crawlDelay: 0 },
+          ],
+        },
+      },
+    });
+    expect(config.seo.robots.groups).toHaveLength(2);
+  });
+
+  test('a missing, empty or blank user agent is refused by its index', () => {
+    expect(groupsCause([{ disallow: ['/s/'] }])).toContain('seo.robots.groups[0].userAgent');
+    expect(groupsCause([{ userAgent: [] }])).toContain('at least one user agent');
+    expect(groupsCause([{ userAgent: '*' }, { userAgent: ['GPTBot', ' '] }])).toContain(
+      'seo.robots.groups[1].userAgent must be a non-empty user-agent string',
+    );
+  });
+
+  test('a user agent carrying a line break is refused — it would write a directive of its own', () => {
+    expect(groupsCause([{ userAgent: 'GPTBot\nDisallow: /' }])).toContain('.userAgent');
+    for (const key of ['allow', 'disallow']) {
+      expect(groupsCause([{ userAgent: '*', [key]: ['/s/\nAllow: /s/public/'] }])).toContain(
+        `seo.robots.groups[0].${key} entry "/s/\\nAllow: /s/public/" must not contain a line break`,
+      );
+    }
+    expect(
+      causeOf(() =>
+        defineConfig({ name: 'app', seo: { robots: { disallow: ['/a\r\nAllow: /'] } } }),
+      ),
+    ).toContain('must not contain a line break');
+  });
+
+  test('allow and disallow paths must start with /, exactly as seo.robots.disallow', () => {
+    expect(groupsCause([{ userAgent: '*', allow: ['s/'] }])).toContain(
+      'seo.robots.groups[0].allow entry "s/" must start with /',
+    );
+    expect(groupsCause([{ userAgent: '*', disallow: [5] }])).toContain(
+      'seo.robots.groups[0].disallow entry must be a path string, not',
+    );
+    expect(groupsCause([{ userAgent: '*', disallow: '/s/' }])).toContain(
+      'seo.robots.groups[0].disallow must be a list of paths',
+    );
+  });
+
+  test('a group that is not an object, a list that is not a list, a bad crawl delay', () => {
+    expect(groupsCause(['GPTBot'])).toContain('seo.robots.groups[0] must be an object');
+    expect(groupsCause({ userAgent: '*' })).toContain('seo.robots.groups must be a list');
+    expect(groupsCause([{ userAgent: '*', crawlDelay: -1 }])).toContain('crawlDelay');
+  });
+});
+
 describe('seo.sitemap — refusals', () => {
   test('an extra that is not a bare path is refused', () => {
     for (const bad of ['verificar', 'https://x.co/verificar', '//x.co/a', '/a?b=1', '/a#top']) {
@@ -146,9 +208,18 @@ describe('site and seo', () => {
     const config = defineConfig({ name: 'app' });
     expect(config.site).toEqual({ origin: null });
     expect(config.seo).toEqual({
-      robots: { disallow: [] },
+      robots: { disallow: [], groups: [] },
       sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
     });
+  });
+
+  test('seo.robots.groups is carried as declared, and an overlay keeps the base disallow', () => {
+    const groups = [{ userAgent: ['GPTBot', 'CCBot'], disallow: ['/s/'] }];
+    const config = defineConfig(
+      { name: 'app', seo: { robots: { disallow: ['/panel'] } } },
+      { seo: { robots: { groups } } },
+    );
+    expect(config.seo.robots).toEqual({ disallow: ['/panel'], groups });
   });
 
   test('an overlay patches one section without dropping the other', () => {

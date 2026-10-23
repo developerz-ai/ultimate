@@ -24,8 +24,13 @@ const refused = (code: string, cause: string): UnmeasuredRoute => ({
   actor: ACTOR,
 });
 
+/** The file `/console` is declared by in this fixture — the locator an agent opens. */
+const CONSOLE_FILE = 'apps/web/app/console/page.tsx';
+
 const only = (entry: UnmeasuredRoute) => {
-  const findings = checkBudgets(manifest, { routes: [] }, [entry]);
+  const findings = checkBudgets(manifest, { routes: [] }, [entry], (url) =>
+    url === '/console' ? CONSOLE_FILE : undefined,
+  );
   expect(findings).toHaveLength(1);
   return findings[0];
 };
@@ -42,6 +47,9 @@ describe('unit · a route the measurement actor could not render', () => {
       expect(finding?.fix).toContain('defineMeasurementActor(() => userActor({');
       expect(finding?.fix).toContain("orgId: '<");
       expect(finding?.fix).toContain("roles: ['<");
+      // `at` is the file to open, never the route URL — and the route is not lost for that.
+      expect(finding?.at).toBe(CONSOLE_FILE);
+      expect(finding?.meta?.['route']).toBe('/console');
     });
   }
 

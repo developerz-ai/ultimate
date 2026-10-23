@@ -26,6 +26,10 @@ import type { Ctx } from '@ultimat3/core';
 import { throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
+import type { Compactor } from './agent-compact';
+import { compactor } from './agent-compact';
+import type { CompactPlan } from './agent-compact-def';
+import { screenCompact } from './agent-compact-def';
 import type { AgentAction, TranscriptBinding } from './agent-continue';
 import {
   claimAgentSession,
@@ -65,6 +69,7 @@ import { ignoredSamplingAttribute, screenSampling } from './sampling';
 import type { LlmToolResult } from './tools';
 import { isOfferedTool, runLlmToolCall, toolLabel } from './tools';
 
+export type { AgentCompaction, AgentCompactOption, AgentCompactRule } from './agent-compact-def';
 export type {
   AgentBudget,
   AgentDef,
@@ -97,6 +102,7 @@ export function agent<
   // This declaration's identity for `.run()` / `.continue()` sessions (`claimAgentSession`).
   const owner = {};
   const sampling = screenSampling(SUBJECT, def);
+  const compact = screenCompact(def.compact, bounds.maxTokens);
   // Projected on FIRST RUN, memoised, for the reason above: `agent()` is evaluated at module
   // scope and a tool's name is stamped by `registerAction` at boot, so naming it here would make
   // the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED`.
@@ -115,7 +121,7 @@ export function agent<
         def,
         respond,
         await resolvePerRun(def, { ...declared, adapted: adapt() }, args),
-        { sampling, owner },
+        { sampling, owner, compact },
         args,
       ),
   });
@@ -149,7 +155,11 @@ async function run<
   respond: Respond,
   /** This run's picks — model, offered tools, ceilings — resolved from the declaration. */
   picked: PerRun,
-  fixed: { readonly sampling: Sampling; readonly owner: object },
+  fixed: {
+    readonly sampling: Sampling;
+    readonly owner: object;
+    readonly compact: CompactPlan | undefined;
+  },
   args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
 ): Promise<InferOutput<TOutput>> {
   const { prompt } = def;
@@ -237,6 +247,36 @@ async function run<
     // deadline, a truncated turn, the caller leaving — is thrown carrying what the run was billed.
     const meter = runMeter();
     const disclosure = { discloseErrors: def.discloseToolErrors !== false };
+    // Worst case: the run so far (continuations and nested calls included) plus this request,
+    // estimated as the gateway's own reservation will be — at the write rate only where a provider
+    // serving the model would mark it. Before every turn, and before a compaction's summary call.
+    const assertCost = (next: GenerateRequest): void => {
+      if (costPerRun === undefined) return;
+      const spent = runTotal(model, prior?.usage, meter.total(), meter.below()).costExact;
+      const marked = gateway.marksPromptCache?.(next.model ?? model) === true;
+      assertRunCost(costPerRun, spent, estimateCost(next, marked));
+    };
+    const compacting: Compactor | undefined =
+      fixed.compact === undefined
+        ? undefined
+        : compactor({
+            agent: name,
+            plan: fixed.compact,
+            base,
+            model,
+            prior: prior?.compacted ?? 0,
+            gateway,
+            deadline,
+            ctx: args.ctx,
+            span,
+            onCompact: def.onCompact?.bind(def),
+            assertCost,
+          });
+    // What the handle's `compacted` carries: a run with `compact: 'off'` keeps what it was handed.
+    const compacted = (): { compacted?: number } => {
+      const count = compacting?.count() ?? prior?.compacted ?? 0;
+      return count > 0 ? { compacted: count } : {};
+    };
     // Where a failure would resume from: the request in flight, and the turns answered so far.
     const at = { messages: [] as readonly AiMessage[], turns: prior?.turns ?? 0 };
     const loop = async (): Promise<InferOutput<TOutput>> => {
@@ -259,15 +299,12 @@ async function run<
         // budget, runs every remaining tool's side effects, and discards the answer.
         throwIfAborted(args.ctx);
         deadline.check();
+        // Before the request exists, never after a 400: a turn the window cannot take is
+        // compacted first, or refused (`X_AGENT_CONTEXT_EXHAUSTED`) without being sent.
+        if (compacting !== undefined) messages = await compacting.fit(messages, turn);
+        at.messages = messages;
         const request: GenerateRequest = { ...base, messages };
-        if (costPerRun !== undefined) {
-          // Worst case: the run so far (continuations and nested calls included) plus this turn,
-          // estimated as the gateway's own reservation will be — at the write rate only where a
-          // provider serving the model would mark the request.
-          const spent = runTotal(model, prior?.usage, meter.total(), meter.below()).costExact;
-          const marked = gateway.marksPromptCache?.(model) === true;
-          assertRunCost(costPerRun, spent, estimateCost(request, marked));
-        }
+        assertCost(request);
         const result = await deadline
           .guard(meter.call(gateway.generate(request)))
           .catch((error: unknown) => {
@@ -360,6 +397,7 @@ async function run<
                 messages: [...messages, assistantTurn(result)],
                 turns: turn,
                 usage: usage.usage,
+                ...compacted(),
               }),
               turns: turn,
               usage,
@@ -398,7 +436,7 @@ async function run<
           // — six truncated continuations billed six times against a ceiling that saw none of them.
           if (session !== undefined && at.messages.length > 0) {
             const { usage } = runTotal(model, prior?.usage, meter.billed());
-            withTranscript(failed, sealTranscript(binding, { ...at, usage }));
+            withTranscript(failed, sealTranscript(binding, { ...at, usage, ...compacted() }));
           }
           throw failed;
         })

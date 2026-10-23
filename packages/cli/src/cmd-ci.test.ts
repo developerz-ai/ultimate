@@ -1,17 +1,19 @@
-// `x ci`, and the log reader under it. The fixture is a verbatim excerpt of a real
+// `x ci` end to end over a scripted `gh`. The fixture is a verbatim excerpt of a real
 // `gh run view --log-failed` — tab columns, BOM, ANSI, `##[group]` and all — because the whole
 // claim of this command is that the framework's own findings block survives that transport and
-// comes back out as findings.
+// comes back out as findings. The log reader's own tests: `ci-log.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
 import { REQUIRED_BUN } from './app-root';
-import { findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
+import { findingKey } from './ci-log';
 import type { CiRun } from './ci-runs';
 import { isFailed, latestPerWorkflow, RUN_FIELDS } from './ci-runs';
 import { CI_MESSAGE_KEYS, ciCommand, RUN_LOOKBACK, TAIL_LINES } from './cmd-ci';
+import { CI_EVENTS } from './cmd-ci-spec';
 import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
 import { messageKeys } from './messages';
+import type { Finding } from './output';
 import { parseArgs } from './parse';
 
 const line = (job: string, stamp: string, text: string, bom = false): string =>
@@ -39,65 +41,6 @@ const LOG = [
   ),
 ].join('\n');
 
-describe('unit · an Actions log line is three things before it is text', () => {
-  test('the two columns, the timestamp, the BOM and the colour all come off', () => {
-    const lines = parseLogLines(LOG);
-    expect(lines[0]?.job).toBe('package (cli)');
-    expect(lines[0]?.step).toBe('test + coverage');
-    expect(lines[0]?.text).toBe('Run bun run scripts/coverage-gate.ts');
-    expect(lines[1]?.text).toBe('bun run scripts/coverage-gate.ts');
-    // `##[endgroup]` carries nothing and is dropped, so it never lands in a tail.
-    expect(lines.some((entry) => entry.text.includes('endgroup'))).toBe(false);
-    expect(jobsInLog(lines)).toEqual(['package (cli)', 'package (testing)']);
-  });
-
-  test('a line with no columns is kept whole and attributed to no job', () => {
-    const lines = parseLogLines('a bare line\n\nanother');
-    expect(lines).toEqual([
-      { job: '', step: '', text: 'a bare line' },
-      { job: '', step: '', text: 'another' },
-    ]);
-  });
-});
-
-describe('unit · the findings block survives the transport', () => {
-  test('code, locator, cause and fix come back as the Finding the gate printed', () => {
-    const found = findingsFrom(parseLogLines(LOG));
-    expect(found).toHaveLength(2);
-    expect(found[0]).toEqual({
-      code: 'X_COVERAGE_UNMEASURED',
-      at: 'packages/cli',
-      cause: 'bun test wrote no lcov report for packages/cli',
-      fix: 'run bun test packages/cli and fix the failure',
-    });
-    expect(found[1]?.code).toBe('X_COVERAGE_BELOW');
-  });
-
-  // Every `x verify` summary, and every fix line quoting a code, starts with `X_`. Reconstructing
-  // a finding from one would hand the reader a cause the gate never wrote.
-  test('a code with no cause and fix under it is not a finding', () => {
-    const prose = parseLogLines(
-      ['X_COVERAGE_BELOW is what this job reports', 'see above', 'X_TEST_FAILED'].join('\n'),
-    );
-    expect(findingsFrom(prose)).toEqual([]);
-  });
-
-  test('a re-run repeating the same block is one finding, not two', () => {
-    expect(findingsFrom(parseLogLines(`${LOG}\n${LOG}`))).toHaveLength(2);
-  });
-
-  test('the tail is the job own last lines, and the whole log when it has none', () => {
-    const lines = parseLogLines(LOG);
-    expect(tailOf(lines, 'package (testing)', 2)).toEqual([
-      '    cause: packages/testing/src/ is at 96.37% lines',
-      '    fix:   cover the gap with tests beside the source',
-    ]);
-    expect(tailOf(lines, 'nobody', 1)).toEqual([
-      '    fix:   cover the gap with tests beside the source',
-    ]);
-  });
-});
-
 const run = (over: Partial<CiRun> = {}): CiRun => ({
   id: 1,
   status: 'completed',
@@ -107,6 +50,7 @@ const run = (over: Partial<CiRun> = {}): CiRun => ({
   workflow: 'ci',
   url: 'https://github.com/o/r/actions/runs/1',
   createdAt: '2026-08-21T10:00:00Z',
+  headSha: '0123456789abcdef0123456789abcdef01234567',
   ...over,
 });
 
@@ -137,6 +81,7 @@ const RUN_ROW = {
   status: 'completed',
   conclusion: 'failure',
   headBranch: 'feat/x',
+  headSha: '0123456789abcdef0123456789abcdef01234567',
   displayTitle: 'a change',
   workflowName: 'ci',
   url: 'https://github.com/o/r/actions/runs/32484583944',
@@ -214,7 +159,11 @@ describe('unit · the x ci surface', () => {
     expect(ciCommand.spec.subcommands).toBeUndefined();
     expect(ciCommand.spec.requiresApp).toBeUndefined();
     const flags = ciCommand.spec.flags?.map((flag) => flag.name) ?? [];
-    for (const flag of ['repo', 'branch', 'run', 'tail', 'full']) expect(flags).toContain(flag);
+    for (const flag of ['repo', 'branch', 'run', 'tail', 'full', 'workflow', 'event'])
+      expect(flags).toContain(flag);
+    // The title is a contract, and the usage line is its reader-facing half: a flag the usage
+    // never names is invisible to `x help` — the shape `cmd-affected.test.ts` holds.
+    for (const flag of flags) expect(ciCommand.spec.usage).toContain(`--${flag}`);
   });
 });
 
@@ -252,12 +201,59 @@ describe('unit · x ci is triage in one command', () => {
     ]);
   });
 
+  // Filters ride the same one call, inserted between --branch and --limit; with neither given,
+  // the argv is byte-for-byte the one the default-path test above pins.
+  test('--workflow and --event narrow the run list, and nothing else about it moves', async () => {
+    const { runner, ran } = ghTable(failing);
+    await ciCommand.run(contextFor(['ci', '--workflow', 'ci.yml', '--event', 'push'], runner));
+    expect(ran).toEqual([
+      ['gh', 'repo', 'view', '--json', 'nameWithOwner'],
+      ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+      // biome-ignore format: one call per line reads as the round trips it is.
+      ['gh', 'run', 'list', '--repo', 'developerz-ai/ultimate', '--branch', 'feat/x', '--workflow', 'ci.yml', '--event', 'push', '--limit', String(RUN_LOOKBACK), '--json', RUN_FIELDS],
+      // biome-ignore format: as above.
+      ['gh', 'run', 'view', '32484583944', '--repo', 'developerz-ai/ultimate', '--json', `${RUN_FIELDS},jobs`],
+      ['gh', 'run', 'view', '32484583944', '--repo', 'developerz-ai/ultimate', '--log-failed'],
+    ]);
+  });
+
+  // A typo must name the events that exist — and cost no subprocess, or the refusal is slower
+  // than the question it answers.
+  test('--event outside the closed set refuses, naming the known events', async () => {
+    const { runner, ran } = ghTable(failing);
+    const error = await ciCommand.run(contextFor(['ci', '--event', 'deploy'], runner)).then(
+      () => ({}) as { code?: string; cause?: string; fix?: string },
+      (thrown: unknown) => thrown as { code?: string; cause?: string; fix?: string },
+    );
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toContain('deploy is not a workflow event');
+    for (const known of CI_EVENTS) expect(error.cause).toContain(known);
+    expect(error.fix).toBe('x ci --event push --json');
+    expect(ran).toEqual([]);
+  });
+
+  // The silent alternative reports the whole branch while the reader believed they had asked
+  // about one workflow — a filter beside --run is a refused combination, not a preference.
+  test('--run with a filter refuses instead of silently ignoring the filter', async () => {
+    const { runner, ran } = ghTable(failing);
+    const argv = ['ci', '--run', '32484583944', '--workflow', 'ci.yml'];
+    const error = await ciCommand.run(contextFor(argv, runner)).then(
+      () => ({}) as { code?: string; cause?: string; fix?: string },
+      (thrown: unknown) => thrown as { code?: string; cause?: string; fix?: string },
+    );
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toContain('--workflow on "x ci"');
+    expect(error.fix).toBe('x ci --run <id> --json');
+    expect(ran).toEqual([]);
+  });
+
   test('the failed jobs and their steps are named, and the other jobs are counted not listed', async () => {
     const { runner } = ghTable(failing);
     const result = await ciCommand.run(contextFor(['ci'], runner));
     const data = result.data as {
       counts: { runs: number; failed: number; running: number; findings: number };
       runs: readonly {
+        headSha: string;
         jobs: readonly { name: string }[];
         failures: readonly {
           job: string;
@@ -267,6 +263,7 @@ describe('unit · x ci is triage in one command', () => {
       }[];
     };
     expect(data.counts).toEqual({ runs: 1, failed: 1, running: 0, findings: 2 });
+    expect(data.runs[0]?.headSha).toBe('0123456789abcdef0123456789abcdef01234567');
     expect(data.runs[0]?.jobs).toHaveLength(3);
     expect(data.runs[0]?.failures.map((failure) => failure.job)).toEqual([
       'package (cli)',
@@ -291,6 +288,27 @@ describe('unit · x ci is triage in one command', () => {
     expect(ran.some((command) => command.includes('view') && command.includes('run'))).toBe(false);
     // Absent, not empty: `jobs: []` on a run nobody opened would claim it has none.
     expect(JSON.parse(JSON.stringify(result.data)).runs[0].jobs).toBeUndefined();
+  });
+
+  // A run with no conclusion has not answered yet. `isFailed` is false for it (ci-runs.ts), so
+  // `ok: true` is right — but `running: 0` would read as green CI, so the verdict has to carry the
+  // `headSha` to watch. This case dies with the `isRunning` classification in cmd-ci.ts's report().
+  test('a run still going is ok, and counted running with its head sha', async () => {
+    const { runner } = ghTable((joined) => {
+      if (joined.startsWith('gh repo view')) return REPO;
+      if (joined.startsWith('git rev-parse')) return 'main\n';
+      if (joined.startsWith('gh run list'))
+        return JSON.stringify([{ ...RUN_ROW, status: 'in_progress', conclusion: null }]);
+      return undefined;
+    });
+    const result = await ciCommand.run(contextFor(['ci'], runner));
+    const data = result.data as {
+      counts: { runs: number; failed: number; running: number };
+      runs: readonly { headSha: string }[];
+    };
+    expect(result.ok).toBe(true);
+    expect([data.counts.runs, data.counts.failed, data.counts.running]).toEqual([1, 0, 1]);
+    expect(data.runs[0]?.headSha).toBe('0123456789abcdef0123456789abcdef01234567');
   });
 
   test('--run names the run, so neither the branch nor the run list is asked for', async () => {
@@ -321,5 +339,110 @@ describe('unit · x ci is triage in one command', () => {
     );
     expect(error.code).toBe('X_CI_RUN_NOT_FOUND');
     expect(error.fix).toContain('--branch');
+  });
+
+  // A filter that matched nothing is a different situation from a branch never pushed: the cause
+  // must name the filter, or `x ci --workflow ci.typo --branch main` reads as "main never pushed".
+  test('an empty list under --workflow refuses, its cause naming the filter', async () => {
+    const { runner } = ghTable((joined) => (joined.includes('run list') ? '[]' : failing(joined)));
+    const argv = ['ci', '--branch', 'main', '--workflow', 'ci.yml'];
+    const error = await ciCommand.run(contextFor(argv, runner)).then(
+      () => ({}) as { code?: string; cause?: string },
+      (thrown: unknown) => thrown as { code?: string; cause?: string },
+    );
+    expect(error.code).toBe('X_CI_RUN_NOT_FOUND');
+    expect(
+      error.cause?.startsWith('no workflow run on developerz-ai/ultimate for branch "main"'),
+    ).toBe(true);
+    expect(error.cause).toContain('matching --workflow ci.yml');
+  });
+});
+
+/**
+ * One code, one cause, and a locator that differs. `ci-log`'s dedupe already keys on `at` and
+ * `meta.step` (`ci-log.ts:114`); `cmd-ci.ts`'s second dedupe — the one that folds findings across
+ * jobs and across runs — used to key on code and cause alone, so it read the second as a copy of
+ * the first and dropped it. The gate printed two problems and `x ci` reported one.
+ */
+describe('unit · x ci dedupes a finding by everything the gate printed about it', () => {
+  /** The two blocks verbatim, as `renderFinding` wrote them in the failing job. */
+  const BLOCK = [
+    line('package (cli)', '1:30.9733457', '  X_COVERAGE_BELOW (packages/cli)'),
+    line('package (cli)', '1:30.9736546', '    cause: lines below the floor'),
+    line('package (cli)', '1:30.9739891', '    fix:   cover the gap with tests beside the source'),
+    line('package (cli)', '1:31.9733457', '  X_COVERAGE_BELOW (packages/testing)'),
+    line('package (cli)', '1:31.9736546', '    cause: lines below the floor'),
+    line('package (cli)', '1:31.9739891', '    fix:   cover the gap with tests beside the source'),
+  ].join('\n');
+
+  const ONE_JOB = {
+    name: 'package (cli)',
+    status: 'completed',
+    conclusion: 'failure',
+    url: 'u/cli',
+    steps: [{ name: 'test + coverage', conclusion: 'failure', number: 2 }],
+  };
+
+  /** The same `gh` answers as `failing`, over a log of this test's own choosing. */
+  const answering = (log: string): Runner =>
+    ghTable((joined) => {
+      if (joined.startsWith('gh repo view')) return REPO;
+      if (joined.startsWith('git rev-parse')) return 'feat/x\n';
+      if (joined.includes('--log-failed')) return log;
+      if (joined.startsWith('gh run list')) return JSON.stringify([RUN_ROW]);
+      if (joined.startsWith('gh run view')) return JSON.stringify({ ...RUN_ROW, jobs: [ONE_JOB] });
+      return undefined;
+    }).runner;
+
+  test('the same code and cause at two paths are two findings, not one copy of the first', async () => {
+    // The command-level round-trip: `findingsFrom` reads both blocks out of one log, and the
+    // across-job dedupe must hand both back. A key of `code cause` alone merges them.
+    const result = await ciCommand.run(contextFor(['ci'], answering(BLOCK)));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.map((finding) => [finding.code, finding.at])).toEqual([
+      ['X_COVERAGE_BELOW', 'packages/cli'],
+      ['X_COVERAGE_BELOW', 'packages/testing'],
+    ]);
+    expect(result.findings).toHaveLength(2);
+  });
+
+  // Same code, same cause, no path — the pair that is indistinguishable unless `meta.step` is in
+  // the key. `X_VERIFY_MERGE_INCOMPLETE` is the shape the gate really writes: a merge gap per
+  // missing step, each with a step name in the head and none in `at`.
+  test('the same code and cause in two gate steps are two findings too', async () => {
+    const steps = [
+      line('verify', '0:10.0000000', '  X_VERIFY_MERGE_INCOMPLETE [step=lint]'),
+      line('verify', '0:10.1000000', '    cause: its result never arrived'),
+      line('verify', '0:10.2000000', '    fix:   gh run rerun <run-id> --failed'),
+      line('verify', '0:11.0000000', '  X_VERIFY_MERGE_INCOMPLETE [step=manifest]'),
+      line('verify', '0:11.1000000', '    cause: its result never arrived'),
+      line('verify', '0:11.2000000', '    fix:   gh run rerun <run-id> --failed'),
+    ].join('\n');
+    const result = await ciCommand.run(contextFor(['ci'], answering(steps)));
+    expect(result.findings?.map((finding) => finding.meta?.['step'])).toEqual(['lint', 'manifest']);
+  });
+
+  // Both halves of the fix, in one assertion: what ci-log keeps apart, the command keeps apart,
+  // and what is genuinely the same block is still folded to one. A key that took every field
+  // would stop folding anything and report a re-run twice.
+  test('a repeated block is still one finding, and the key is the one ci-log used', () => {
+    const pair = (at: string, step: string): Finding => ({
+      code: 'X_VERIFY_STEP_TIMEOUT',
+      cause: 'step "unit" passed its 300000ms deadline',
+      fix: 'bun test packages/cli',
+      at,
+      meta: { step },
+    });
+    const same = pair('packages/cli/src/output.test.ts', 'unit');
+    // The `fix:` line is not in the key: a re-run reprints the whole block, and `x ci` fences it
+    // differently per job, so keying on it would report the re-run twice.
+    expect(findingKey(same)).toBe(findingKey({ ...same, fix: 'a re-run wrote another fix line' }));
+    expect(findingKey(same)).not.toBe(findingKey(pair('packages/cli/src/other.test.ts', 'unit')));
+    expect(findingKey(same)).not.toBe(findingKey(pair('packages/cli/src/output.test.ts', 'live')));
+    // An absent locator is the empty string, not the word "undefined" — and it is the same
+    // absence `findingsFrom` reconstructs for a head the renderer wrote without one.
+    const bare: Finding = { code: 'X_A', cause: 'c', fix: 'f' };
+    expect(findingKey(bare)).toBe('X_A\0c\0\0');
+    expect(findingKey({ ...bare, meta: { step: ['lint'] } })).toBe('X_A\0c\0\0');
   });
 });

@@ -111,4 +111,45 @@ describe('siteSeo — locales', () => {
     expect(seo.robots).toContain('Disallow: /panel\nDisallow: /api');
     expect(seo.robots).toContain(`Sitemap: ${BASE}/sitemap.xml`);
   });
+
+  test('production robots carry seo.robots.groups: /s/ open to everyone, closed to AI crawlers', async () => {
+    const seo = await siteSeo({
+      baseUrl: BASE,
+      environment: 'production',
+      disallow: ['/panel'],
+      robotsGroups: [
+        { userAgent: '*', allow: ['/'] },
+        { userAgent: ['GPTBot', 'CCBot', 'ClaudeBot', 'archive.org_bot'], disallow: ['/s/'] },
+      ],
+      root: ROOT,
+    });
+    expect(seo.robots).toBe(
+      [
+        '# environment: production',
+        'User-agent: *',
+        'Allow: /',
+        'Disallow: /panel',
+        '',
+        'User-agent: GPTBot',
+        'User-agent: CCBot',
+        'User-agent: ClaudeBot',
+        'User-agent: archive.org_bot',
+        'Disallow: /s/',
+        'Disallow: /panel',
+        '',
+        `Sitemap: ${BASE}/sitemap.xml`,
+        '',
+      ].join('\n'),
+    );
+  });
+
+  test('outside production, groups cannot reopen the fail-closed robots either', async () => {
+    const seo = await siteSeo({
+      baseUrl: BASE,
+      environment: 'staging',
+      robotsGroups: [{ userAgent: 'Googlebot', allow: ['/'] }],
+      root: ROOT,
+    });
+    expect(seo.robots).toBe('# environment: staging\nUser-agent: *\nDisallow: /\n');
+  });
 });

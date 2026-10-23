@@ -1,9 +1,9 @@
-// The public origin and the crawler rules out of `app.config.ts` — `site.origin` and
-// `seo.robots.disallow` — and the one resolution of "which origin is this site served on" every
+// The public origin and the crawler rules out of `app.config.ts` — `site.origin`,
+// `seo.robots.disallow` and `seo.robots.groups` — and the one resolution of "which origin is this site served on" every
 // absolute URL a document, a sitemap or a robots file carries is built against. Read off the one
 // loader (`app-config-load.ts`).
 
-import type { Environment, SeoSitemapConfig } from '@ultimat3/core';
+import type { Environment, SeoRobotsGroup, SeoSitemapConfig } from '@ultimat3/core';
 import { loadAppConfig } from './app-config-load';
 
 export interface SiteSettings {
@@ -11,6 +11,11 @@ export interface SiteSettings {
   readonly origin: string | null;
   /** `seo.robots.disallow` — the paths a production `robots.txt` keeps crawlers out of. */
   readonly disallow: readonly string[];
+  /**
+   * `seo.robots.groups` — per-crawler `User-agent` groups; empty means one `*` group. Optional so
+   * a `SiteSettings` literal written before it existed still compiles.
+   */
+  readonly robotsGroups?: readonly SeoRobotsGroup[] | undefined;
   /** `seo.sitemap` — public `app/` pages to list, where `<lastmod>` comes from, sections, page size. */
   readonly sitemap: SeoSitemapConfig;
 }
@@ -18,6 +23,7 @@ export interface SiteSettings {
 export const NO_SITE_SETTINGS: SiteSettings = {
   origin: null,
   disallow: [],
+  robotsGroups: [],
   sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
 };
 
@@ -30,6 +36,7 @@ export async function loadSiteSettings(root: string): Promise<SiteSettings> {
   return {
     origin: origin === null ? null : trimSlash(origin),
     disallow: [...config.seo.robots.disallow],
+    robotsGroups: [...(config.seo.robots.groups ?? [])],
     sitemap: config.seo.sitemap,
   };
 }

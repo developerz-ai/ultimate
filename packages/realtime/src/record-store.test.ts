@@ -54,6 +54,39 @@ describe('RecordStore — synced truth', () => {
     expect(seen).toHaveLength(1);
   });
 
+  // JSON columns arrive as fresh arrays and objects on every read: compared by identity, every
+  // catch-up, poll and reconnect "changed" every row, and every holder re-rendered (an
+  // app's /runs table flickered whole after each sync-node roll).
+  test('a re-read with structurally equal JSON columns keeps the object and notifies nobody', () => {
+    const { store: s, seen } = store();
+    const row = (): Row => ({
+      id: 'r1',
+      instructions: [{ operation: 'balances', from: '2026-09-01' }],
+      usage: { tokens: 12, models: ['a', 'b'] },
+      error: null,
+    });
+    s.adopt('runs', { r1: row() });
+    const first = s.peek('runs', 'r1');
+    s.adopt('runs', { r1: row() });
+    s.merge('runs', 'r1', { usage: { models: ['a', 'b'], tokens: 12 } });
+    expect(s.peek('runs', 'r1')).toBe(first as Row);
+    expect(seen).toHaveLength(1);
+  });
+
+  test('a moved column replaces the row but keeps every unmoved JSON column by identity', () => {
+    const { store: s, seen } = store();
+    s.adopt('runs', { r1: { id: 'r1', instructions: ['a'], usage: { tokens: 1 } } });
+    const first = s.peek('runs', 'r1');
+    s.adopt('runs', { r1: { id: 'r1', instructions: ['a'], usage: { tokens: 2 } } });
+    const next = s.peek('runs', 'r1');
+    expect(next).toEqual({ id: 'r1', instructions: ['a'], usage: { tokens: 2 } });
+    expect(next?.['instructions']).toBe(first?.['instructions']);
+    expect(seen).toHaveLength(2);
+    s.adopt('runs', { r1: { id: 'r1', instructions: ['a', 'b'] } });
+    expect(s.peek('runs', 'r1')?.['instructions']).toEqual(['a', 'b']);
+    expect(seen).toHaveLength(3);
+  });
+
   test('a structurally bad row is X_RECORD_REJECTED and dropped; its neighbours still land', () => {
     const { store: s, reported } = store();
     s.adopt('posts', {
@@ -109,6 +142,20 @@ describe('RecordStore — the optimistic overlay', () => {
         .map((row) => row['id'])
         .sort(),
     ).toEqual(['p1', 'p3']);
+  });
+
+  test('a replay whose twin rebuilds an equal JSON column keeps the row and touches nothing', () => {
+    const { store: s, seen } = store();
+    s.adopt('posts', { p1: { id: 'p1', tags: [] }, p2: { id: 'p2', likes: 1 } });
+    s.push('tag', (tx) => tx['posts']?.update('p1', { tags: ['x'] }), 'server-wins');
+    const twin = s.peek('posts', 'p1');
+    const before = seen.length;
+    // Truth moved under a pending write: the overlay replays, and `tags` is a fresh ['x'] again.
+    s.merge('posts', 'p2', { likes: 2 });
+    expect(s.peek('posts', 'p1')).toBe(twin as Row);
+    expect(seen.slice(before).flatMap((changed) => [...changed])).toEqual([
+      recordKey('posts', 'p2'),
+    ]);
   });
 
   test('a pushed write is visible at once and never touches synced truth', () => {

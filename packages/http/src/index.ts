@@ -105,6 +105,11 @@ export {
 } from './forwarded';
 export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
 export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
+export {
+  BUN_MAX_IDLE_TIMEOUT_S,
+  IDLE_TIMEOUT_MARGIN_S,
+  socketIdleTimeoutSeconds,
+} from './idle-timeout';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
 export { DEFAULT_LOCALE_CONFIG } from './locale';
 export type { RequestAddress } from './locale-prefix';

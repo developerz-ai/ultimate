@@ -9,13 +9,14 @@ import type { GhRepo } from './gh-target';
 
 /** The fields both `gh run list` and `gh run view` accept, named once so the two agree. */
 export const RUN_FIELDS =
-  'databaseId,status,conclusion,headBranch,displayTitle,workflowName,url,createdAt';
+  'databaseId,status,conclusion,headBranch,displayTitle,workflowName,url,createdAt,headSha';
 
 const RUN_ROW = t.object({
   databaseId: t.number,
   status: t.string,
   conclusion: t.nullable(t.string),
   headBranch: t.string,
+  headSha: t.string,
   displayTitle: t.string,
   workflowName: t.string,
   url: t.string,
@@ -58,6 +59,7 @@ export interface CiRun {
   readonly workflow: string;
   readonly url: string;
   readonly createdAt: string;
+  readonly headSha: string;
 }
 
 /**
@@ -85,6 +87,7 @@ interface RunRow {
   readonly status: string;
   readonly conclusion: string | null;
   readonly headBranch: string;
+  readonly headSha: string;
   readonly displayTitle: string;
   readonly workflowName: string;
   readonly url: string;
@@ -96,6 +99,7 @@ const runOf = (row: RunRow): CiRun => ({
   status: row.status,
   conclusion: row.conclusion,
   branch: row.headBranch,
+  headSha: row.headSha,
   title: row.displayTitle,
   workflow: row.workflowName,
   url: row.url,
@@ -117,11 +121,17 @@ export function latestPerWorkflow(runs: readonly CiRun[]): readonly CiRun[] {
   return [...newest.values()];
 }
 
+/**
+ * The branch's runs, newest first. `filters` narrows the ask to one workflow or one event; with
+ * neither given, the argv is byte-for-byte the one `x ci` has always sent — cmd-ci.test.ts pins
+ * it, so a filter may only ever insert its pair between `--branch` and `--limit`.
+ */
 export async function listRuns(
   host: GhHost,
   repo: GhRepo,
   branch: string,
   limit: number,
+  filters?: { readonly workflow?: string | undefined; readonly event?: string | undefined },
 ): Promise<readonly CiRun[]> {
   const rows = await ghJson(
     host,
@@ -132,6 +142,8 @@ export async function listRuns(
       repo.slug,
       '--branch',
       branch,
+      ...(filters?.workflow === undefined ? [] : ['--workflow', filters.workflow]),
+      ...(filters?.event === undefined ? [] : ['--event', filters.event]),
       '--limit',
       String(limit),
       '--json',

@@ -6,11 +6,12 @@
 
 import { UltimateError } from '@ultimat3/core';
 import type { CiLogLine } from './ci-log';
-import { findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
+import { findingKey, findingsFrom, jobsInLog, parseLogLines, tailOf } from './ci-log';
 import type { CiJob, CiRun } from './ci-runs';
 import { failedLog, isFailed, isRunning, latestPerWorkflow, listRuns, viewRun } from './ci-runs';
-import { ciSpec, TAIL_LINES } from './cmd-ci-spec';
+import { CI_EVENTS, ciSpec, TAIL_LINES } from './cmd-ci-spec';
 import type { CliCommand, CommandContext } from './command';
+import { BadFlagError } from './errors';
 import { parseIntFlag } from './flag-number';
 import { commentBlock } from './foreign-text';
 import type { GhRepo } from './gh-target';
@@ -18,6 +19,7 @@ import { currentBranch, resolveRepo } from './gh-target';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
+import { quoteArg } from './shell-quote';
 
 export { TAIL_LINES } from './cmd-ci-spec';
 
@@ -43,10 +45,22 @@ export const RUN_LOOKBACK = 20;
 
 /** No run to triage. The remedy is a branch that has one, or the id of the run in question. */
 export class CiRunNotFoundError extends UltimateError {
-  constructor(input: { branch: string; repo: string }) {
+  constructor(input: {
+    branch: string;
+    repo: string;
+    workflow?: string | undefined;
+    event?: string | undefined;
+  }) {
+    // A filter beside --branch makes an empty list two different situations — a branch never
+    // pushed, or a filter that matched nothing. Naming what was asked keeps the diagnosis right.
+    const given = [
+      input.workflow !== undefined ? `--workflow ${input.workflow}` : undefined,
+      input.event !== undefined ? `--event ${input.event}` : undefined,
+    ].filter((clause) => clause !== undefined);
+    const matching = given.length > 0 ? ` matching ${given.join(' ')}` : '';
     super({
       code: 'X_CI_RUN_NOT_FOUND',
-      cause: `no workflow run on ${input.repo} for branch "${input.branch}"`,
+      cause: `no workflow run on ${input.repo} for branch "${input.branch}"${matching}`,
       fix: `x ci --branch main --repo ${input.repo} --json`,
     });
   }
@@ -55,11 +69,39 @@ export class CiRunNotFoundError extends UltimateError {
 const RUN_FLAG = { name: 'run', command: 'ci', min: 1, example: 'x ci --run 32484583944 --json' };
 const TAIL_FLAG = { name: 'tail', command: 'ci', min: 1, example: 'x ci --tail 80 --json' };
 
+/**
+ * `--event`, read against the spec's own closed set: a typo is a refusal naming the events that
+ * exist, never an empty run list a reader would take for a red branch.
+ */
+function readEvent(raw: string | undefined): (typeof CI_EVENTS)[number] | undefined {
+  if (raw === undefined) return undefined;
+  const known: readonly string[] = CI_EVENTS;
+  if (known.includes(raw)) return raw as (typeof CI_EVENTS)[number];
+  throw new BadFlagError({
+    flag: 'event',
+    command: 'ci',
+    reason: `${quoteArg(raw)} is not a workflow event — one of ${CI_EVENTS.join(', ')}`,
+    fix: 'x ci --event push --json',
+  });
+}
+
 export const ciCommand: CliCommand = {
   spec: ciSpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const repo = await resolveRepo(ctx, 'ci', flagString(ctx.args, 'repo'));
+    // Filters are validated, and crossed with --run, before any subprocess runs: a refusal must
+    // not cost a gh round trip, and a filter beside --run would otherwise be silently ignored.
     const rawRun = flagString(ctx.args, 'run');
+    const workflow = flagString(ctx.args, 'workflow');
+    const event = readEvent(flagString(ctx.args, 'event'));
+    if (rawRun !== undefined && (workflow !== undefined || event !== undefined)) {
+      throw new BadFlagError({
+        flag: workflow !== undefined ? 'workflow' : 'event',
+        command: 'ci',
+        reason: 'filters the run list, and --run names one run already',
+        fix: 'x ci --run <id> --json',
+      });
+    }
+    const repo = await resolveRepo(ctx, 'ci', flagString(ctx.args, 'repo'));
     const rawTail = flagString(ctx.args, 'tail');
     const limit = flagBool(ctx.args, 'full')
       ? Number.POSITIVE_INFINITY
@@ -71,8 +113,11 @@ export const ciCommand: CliCommand = {
       return report(repo, viewed.run.branch, [await inspect(ctx, repo, viewed, limit)]);
     }
     const branch = flagString(ctx.args, 'branch') ?? (await currentBranch(ctx));
-    const runs = latestPerWorkflow(await listRuns(ctx, repo, branch, RUN_LOOKBACK));
-    if (runs.length === 0) throw new CiRunNotFoundError({ branch, repo: repo.slug });
+    const runs = latestPerWorkflow(
+      await listRuns(ctx, repo, branch, RUN_LOOKBACK, { workflow, event }),
+    );
+    if (runs.length === 0)
+      throw new CiRunNotFoundError({ branch, repo: repo.slug, workflow, event });
     const inspected: RunReport[] = [];
     for (const run of runs) {
       // Only a failed run is opened. A green run's jobs are 35 rows saying `success`, and fetching
@@ -128,9 +173,11 @@ async function inspect(
     const pool: readonly CiLogLine[] = own.length > 0 ? own : lines;
     const job = failed.find((candidate) => candidate.name === name);
     for (const finding of findingsFrom(pool)) {
+      // Keep whatever the log carried: a path-style `at` or a non-path step (now on `meta.step`).
+      // Inventing a locator from the CI JOB name would put a non-path in `at` — exactly the seam
+      // this repair closes — so when the log had nothing, the finding reads nothing.
       findings.push({
         ...finding,
-        at: finding.at ?? name,
         // Fenced and tagged: the log is foreign text, and a `fix:` reconstructed from it is the
         // log author's instruction, not this CLI's. `commentBlock` is `x pr review`'s fence.
         fix: commentBlock(`ci-log ${name}`, [finding.fix]).join('\n'),
@@ -152,12 +199,17 @@ async function inspect(
 
 /**
  * The same block can be reached twice — once per job when the log attributes nothing, once per
- * attempt when a run was re-run — and two copies of one finding read as two problems.
+ * attempt when a run was re-run — and two copies of one finding read as two problems. The
+ * inverse is a finding with the same code and cause but a different `at` or `meta.step` (a
+ * `X_COVERAGE_BELOW` routed to two packages, the same gate step failing twice for different
+ * tests): they are NOT the same finding, and the key has to take every locator the gate printed
+ * to tell them apart. `findingKey` is the same formula `ci-log`'s per-log dedupe uses, so a
+ * finding that survives one cannot be silently merged by the other.
  */
 function dedupe(findings: readonly Finding[]): readonly Finding[] {
   const seen = new Set<string>();
   return findings.filter((finding) => {
-    const key = `${finding.code} ${finding.cause}`;
+    const key = findingKey(finding);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -241,6 +293,7 @@ function runJson(entry: RunReport): JsonValue {
     title: entry.run.title,
     url: entry.run.url,
     createdAt: entry.run.createdAt,
+    headSha: entry.run.headSha,
     // Absent rather than empty on a run that was never opened: `jobs: []` on a green run would
     // claim the run has no jobs, which is a different statement from "nobody asked".
     ...(entry.jobs === undefined

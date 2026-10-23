@@ -13,6 +13,8 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { promoteUnreleased, releaseDate } from './lib/release-changelog';
 import { compareReleaseVersions, treeDirtyFindings } from './lib/release-preflight';
+import type { AskIssue } from './lib/release-subject';
+import { askTwin } from './lib/release-subject';
 import {
   performedWriteLine,
   performReleaseWrites,
@@ -146,9 +148,55 @@ export const releaseInvocation = (input: {
  * What a finished bump owes next. No tag: `.github/workflows/release-tag.yml` cuts the annotated
  * tag, the Release and the publish once ci.yml passes on the merged commit, and the hand tag this
  * line used to print was the step that kept going wrong.
+ *
+ * `fixes` is `Fixes #<n>` for a confirmed open ask: the PR body carries it, so the merge that is
+ * the release closes the ask too. Without one the line is byte-identical to its old form — no
+ * close promised that no ask answers.
  */
-export const releaseNextLine = (version: string): string =>
-  `  next      bun install, commit, open the \`chore: release ${version}\` PR; merging it is the release (release-tag.yml)`;
+export const releaseNextLine = (version: string, fixes?: string): string =>
+  fixes === undefined
+    ? `  next      bun install, commit, open the \`chore: release ${version}\` PR; merging it is the release (release-tag.yml)`
+    : `  next      bun install, commit, open the \`chore: release ${version}\` PR with \`${fixes}\` in the body; merging it is the release (release-tag.yml) and closes the ask`;
+
+/** The `gh` arguments (the binary is the caller's) listing the open asks for `version` — the
+ * dedupe query `.dz/briefs/release-due.md` states. `in:title`, so a body mention is not an ask;
+ * `--json number,title`, exactly the rows `parseAskIssues` reads. */
+export const askIssueArgs = (version: string): readonly string[] => [
+  'issue',
+  'list',
+  '--state',
+  'open',
+  '--search',
+  `Release ${version} in:title`,
+  '--json',
+  'number,title',
+];
+
+/**
+ * The `--json number,title` answer, read tolerantly: the lookup only decorates a report that has
+ * to print either way, so anything that is not the rows gh promised — an error line, a truncated
+ * answer, some future gh's new shape — is simply no ask. Malformed rows drop out of an array;
+ * anything else answers empty-handed.
+ */
+export const parseAskIssues = (output: string): readonly AskIssue[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const isAskIssue = (row: unknown): row is AskIssue =>
+    typeof row === 'object' &&
+    row !== null &&
+    typeof (row as { number?: unknown }).number === 'number' &&
+    typeof (row as { title?: unknown }).title === 'string';
+  return parsed.filter(isAskIssue);
+};
+
+/** The one line a failed lookup earns: the close link is unconfirmed, and nothing else moves. */
+export const askLookupFailedLine = (version: string): string =>
+  `  ask       lookup failed — could not confirm whether \`Release ${version}\` is open; \`Fixes #<n>\` belongs in the PR body only if one is`;
 
 /** The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent. */
 const EXACT_PIN = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
@@ -385,6 +433,14 @@ if (import.meta.main) {
     ? { writes: [], findings: [] }
     : await performReleaseWrites(root, version);
 
+  // The ask this release would close — best effort, and last: by here the manifests are written,
+  // so no answer from `gh` (absent binary, failed auth, timeout, garbage) may throw or touch
+  // `ok`. The lookup can only add the `Fixes #<n>` close link to the next line, or one printed
+  // line saying it could not confirm; a release never waits on it being more.
+  const lookup = await run(['gh', ...askIssueArgs(version)], { cwd: root }).catch(() => undefined);
+  const openAsks = lookup?.ok === true ? parseAskIssues(lookup.output) : undefined;
+  const twin = openAsks === undefined ? undefined : askTwin(openAsks, version);
+
   report(
     {
       // Findings, not decoration: `ok: true` unconditionally meant a run that reported real
@@ -412,7 +468,8 @@ if (import.meta.main) {
         log.ok
           ? `  commits   ${subjects.length} since v${current}, appended under ### Commits`
           : `  commits   none listed — this clone has no v${current} tag to bound the range`,
-        releaseNextLine(version),
+        releaseNextLine(version, twin === undefined ? undefined : `Fixes #${twin.number}`),
+        ...(twin === undefined && openAsks === undefined ? [askLookupFailedLine(version)] : []),
       ],
       data: {
         version,
@@ -423,6 +480,7 @@ if (import.meta.main) {
         previousTagFound: log.ok,
         changelogDate: date,
         dryRun,
+        ...(twin === undefined ? {} : { openAsk: { number: twin.number, title: twin.title } }),
         writes: dryRun
           ? RELEASE_WRITES.map((spec) => ({ kind: spec.kind, at: spec.at, command: spec.command }))
           : performed.writes,

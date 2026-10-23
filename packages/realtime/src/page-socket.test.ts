@@ -135,6 +135,39 @@ describe('pageSocket', () => {
     expect(client.connected).toBe(true);
   });
 
+  // A laptop waking from sleep, or a tab brought back, must not sit out a backoff armed while it
+  // was gone: `online` and a visible `visibilitychange` dial at once; a hidden one does not.
+  test('online, and the tab made visible, redial at once; a hidden tab waits', async () => {
+    const { hosts, openHost } = countedHosts();
+    resetPageSocket({ openHost });
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'hidden' });
+    const had = Reflect.get(globalThis, 'document');
+    Reflect.set(globalThis, 'document', doc);
+    try {
+      browserPage(TARGET);
+      const client = pageSocket('useConnection');
+      await microtasks();
+      const sockets = (): FakeSocket[] => hosts[0]?.sockets ?? [];
+      sockets()[0]?.open();
+      sockets()[0]?.close(1006);
+      expect(client.connected).toBe(false);
+
+      doc.dispatchEvent(new Event('visibilitychange'));
+      expect(sockets()).toHaveLength(1); // still hidden: the armed backoff stands
+
+      doc.visibilityState = 'visible';
+      doc.dispatchEvent(new Event('visibilitychange'));
+      expect(sockets()).toHaveLength(2);
+
+      sockets()[1]?.close(1006);
+      dispatchEvent(new Event('online'));
+      expect(sockets()).toHaveLength(3);
+    } finally {
+      resetPageSocket();
+      Reflect.set(globalThis, 'document', had);
+    }
+  });
+
   test('a new principal leaves the old host and dials exactly once on a host of its own', async () => {
     const { hosts, openHost } = countedHosts();
     resetPageSocket({ openHost });

@@ -2,16 +2,16 @@
 // anything that is not explicitly production emits `Disallow: /`, because a
 // branch deploy that gets indexed outranks and cannibalises the real site.
 
-import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from '@ultimat3/core';
+import {
+  DEFAULT_ENVIRONMENT,
+  type Environment,
+  type SeoRobotsGroup,
+  tryResolveEnvironment,
+} from '@ultimat3/core';
 import { absoluteUrl } from './xml';
 
-export interface RobotsGroup {
-  /** One or more user agents this group applies to. */
-  userAgent: string | readonly string[];
-  allow?: readonly string[];
-  disallow?: readonly string[];
-  crawlDelay?: number;
-}
+/** One `User-agent` group — the very shape `app.config.ts`'s `seo.robots.groups` declares. */
+export type RobotsGroup = SeoRobotsGroup;
 
 export interface RobotsConfig {
   baseUrl: string;

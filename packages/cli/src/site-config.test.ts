@@ -33,8 +33,19 @@ describe('loadSiteSettings', () => {
     expect(await loadSiteSettings(join(ROOT, 'app'))).toEqual({
       origin: 'https://notificado.co',
       disallow: ['/panel'],
+      robotsGroups: [],
       sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
     });
+  });
+
+  test('reads seo.robots.groups', async () => {
+    await Bun.write(
+      join(ROOT, 'groups', 'app.config.ts'),
+      "export const config = { name: 'demo', seo: { robots: { groups: [{ userAgent: ['GPTBot'], disallow: ['/s/'] }] } } };\n",
+    );
+    expect((await loadSiteSettings(join(ROOT, 'groups'))).robotsGroups).toEqual([
+      { userAgent: ['GPTBot'], disallow: ['/s/'] },
+    ]);
   });
 
   test('reads seo.sitemap when the config carries it', async () => {

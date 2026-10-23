@@ -3,6 +3,7 @@
 // state — it answers what moved, and the store decides who hears about it.
 
 import type { Row } from '@ultimat3/core/page';
+import { sameJson } from './json';
 import type { RecordKey } from './record-key';
 
 export class SyncedLayer {
@@ -44,7 +45,9 @@ export class SyncedLayer {
   /**
    * One server write. Merged, never replaced: a projection that selected fewer columns must not
    * blank the columns another is rendering, so an omitted (or `undefined`) field is left alone.
-   * Answers the row as it now stands, and whether anything in it changed.
+   * Answers the row as it now stands, and whether anything in it changed. Compared STRUCTURALLY:
+   * a JSON column is a fresh array or object on every read, and by identity every catch-up, poll
+   * and reconnect moved every row. An unmoved column keeps its object, so its readers stay put.
    */
   merge(rk: RecordKey, columns: Row): { readonly row: Row; readonly changed: boolean } {
     // A restored row is a guess from disk: the server's first answer is the whole truth.
@@ -53,7 +56,8 @@ export class SyncedLayer {
     let changed = current === undefined;
     for (const [column, value] of Object.entries(columns)) {
       if (value === undefined) continue;
-      if (current === undefined || current[column] !== value) changed = true;
+      if (current !== undefined && sameJson(current[column], value)) continue;
+      changed = true;
       next[column] = value;
     }
     if (!changed && current !== undefined) return { row: current, changed: false };

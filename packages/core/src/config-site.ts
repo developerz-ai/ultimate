@@ -3,6 +3,7 @@
 // Split from `config.ts` for `config-pwa.ts`' reason: that file sits at its 500-line ceiling.
 
 import { type Input, layered } from './config-merge';
+import { robotsGroupIssues, robotsPathIssues } from './config-robots';
 import {
   SITEMAP_PAGE_SIZE_MAX,
   type SitemapSectionConfig,
@@ -20,9 +21,34 @@ export interface SiteConfig {
   readonly origin: string | null;
 }
 
+/**
+ * One `User-agent` group of a production `robots.txt`. A crawler obeys the ONE group naming it most
+ * specifically and ignores `*` beside it, so a group for `GPTBot` replaces `*`'s rules for GPTBot.
+ */
+export interface SeoRobotsGroup {
+  /** `'GPTBot'`, or several sharing one set of rules: `['GPTBot', 'CCBot']`. Never empty. */
+  readonly userAgent: string | readonly string[];
+  /** Paths this group may fetch, each starting with `/`. */
+  readonly allow?: readonly string[] | undefined;
+  /** Paths this group may not fetch, each starting with `/`. `['/']` keeps it out entirely. */
+  readonly disallow?: readonly string[] | undefined;
+  /** Seconds between requests, for the crawlers that read `Crawl-delay`. */
+  readonly crawlDelay?: number | undefined;
+}
+
 export interface SeoRobotsConfig {
-  /** Paths `robots.txt` disallows in production, e.g. `['/panel', '/api']`. Each starts with `/`. */
+  /**
+   * Paths EVERY crawler is kept out of in production, e.g. `['/panel', '/api']` — added to every
+   * group, and left out of the sitemap. Each starts with `/`.
+   */
   readonly disallow: readonly string[];
+  /**
+   * Per-crawler groups. Empty (the default): one `User-agent: *` group allowing `/`. Declared, they
+   * ARE the file's groups — name `*` among them to give everyone else rules of their own.
+   * Optional in the TYPE only, so a `SeoRobotsConfig` literal written before it existed still
+   * compiles; `defineConfig` always fills it.
+   */
+  readonly groups?: readonly SeoRobotsGroup[] | undefined;
 }
 
 /**
@@ -84,7 +110,7 @@ export function mergeSite(layers: readonly SiteSectionsInput[]): SiteSections {
     ),
     seo: {
       robots: layered<SeoRobotsConfig>(
-        { disallow: [] },
+        { disallow: [], groups: [] },
         layers.map((layer) => layer.seo?.robots),
       ),
       sitemap: layered<SeoSitemapConfig>(
@@ -122,15 +148,8 @@ export function siteIssues(config: SiteSections, issues: string[]): void {
     const issue = originIssue(origin);
     if (issue !== undefined) issues.push(issue);
   }
-  // `unknown` entries: an untyped config reaches here with whatever it listed, and `5.startsWith`
-  // was a native `TypeError` thrown by the validator itself.
-  for (const path of config.seo.robots.disallow as readonly unknown[]) {
-    if (typeof path !== 'string') {
-      issues.push(`seo.robots.disallow entry must be a path string, not ${describeValue(path)}`);
-    } else if (!path.startsWith('/')) {
-      issues.push(`seo.robots.disallow entry "${path}" must start with /`);
-    }
-  }
+  issues.push(...robotsPathIssues('seo.robots.disallow', config.seo.robots.disallow));
+  issues.push(...robotsGroupIssues(config.seo.robots.groups ?? []));
   for (const path of config.seo.sitemap.extra as readonly unknown[]) {
     if (typeof path !== 'string') {
       issues.push(`seo.sitemap.extra entry must be a path string, not ${describeValue(path)}`);

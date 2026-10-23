@@ -5,6 +5,7 @@ import type { ActionMcp, ActionPolicy } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { AgentCompaction, AgentCompactOption } from './agent-compact-def';
 import type { AgentSystem } from './agent-system';
 import type { AgentRunUsage } from './agent-usage';
 import type { LlmBudget } from './llm';
@@ -88,6 +89,14 @@ export interface AgentDef<
    */
   readonly promptCache?: PromptCacheOption<AgentVarsArgs<TInput>>;
   /**
+   * Auto-compaction. Default `'auto'`: before a turn whose request the gateway estimates over
+   * `at` (0.8) of the model's `contextWindow` less `maxTokens`, ONE model call summarises the turns
+   * older than the last `keepTurns` (4) into the first user message; the system prompt, the tools
+   * and the kept turns are sent byte for byte as before. A request that still would not fit is
+   * `X_AGENT_CONTEXT_EXHAUSTED` before it is sent. `'off'` never compacts and never checks.
+   */
+  readonly compact?: AgentCompactOption;
+  /**
    * What the model may call: an `action()` that is `mcp: { expose: true }` — the same predicate an
    * external MCP client is filtered by, so both are offered the same actions — or an
    * `inProcessTool()`, which only this process's agents ever see. Anything else is refused at
@@ -158,6 +167,12 @@ export interface AgentDef<
    * one turn deep by construction; this is per TURN.
    */
   onTurn?(event: AgentTurn): void | Promise<void>;
+  /**
+   * Called once per compaction ATTEMPT, before the turn it was for is sent — `outcome:
+   * 'compacted'` or `'failed'` with the reason. Same contract as `onTurn`: observation only, and a
+   * throw fails the run. Also an `agent.compact` span event.
+   */
+  onCompact?(event: AgentCompaction): void | Promise<void>;
 }
 
 /** One completed model turn, as an observer sees it. Facts only — no transcript, no actor. */

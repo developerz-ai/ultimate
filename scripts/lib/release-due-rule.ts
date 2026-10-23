@@ -5,7 +5,18 @@
 import type { Bump } from '../release';
 import { nextVersion } from '../release';
 import { BREAKING_ENTRY } from './changelog-format';
-import { RELEASE_SUBJECT } from './release-subject';
+import { openReleaseAsk, openReleaseBump, RELEASE_SUBJECT } from './release-subject';
+
+export type { AskPr, OpenAsk, OpenBump } from './release-subject';
+// Both dedupes live beside the subjects they match on (`release-subject.ts`), one per reader; they
+// are re-exported so this file stays the one module the release-due readers import them from.
+export {
+  askPrArgs,
+  openReleaseAsk,
+  openReleaseBump,
+  parsePrIssues,
+  prTwin,
+} from './release-subject';
 
 /** Why a release is not due. A closed list: the bot and the docs branch on these words. */
 export const NOT_DUE_REASONS = [
@@ -50,6 +61,17 @@ export interface DueInput {
   readonly settleHours: number;
   /** The package a path ships in, or undefined — `release-due-ships.ts`. */
   readonly ships: (path: string) => string | undefined;
+  /** Titles of currently OPEN GitHub issues, for the release-due dedupe. Optional: a caller with
+   * no issue list simply gets no twin. Only ever read on a `due` decision. */
+  readonly openIssueTitles?: readonly string[];
+  /** HEAD's SHA at the moment `decideAt` resolved the base ref. Pass-through only: the rule
+   * never branches on it, so every existing fixture stays legal. */
+  readonly headSha?: string;
+  /** Titles of currently OPEN GitHub pull requests, for the bump-PR twin: merging an open
+   * `chore: release <next>` PR IS the release, so nothing new is filed while one is open. Optional,
+   * and absent whenever the lookup could not answer — no known PRs, never "none open". Only ever
+   * read on a `due` decision. */
+  readonly openPrTitles?: readonly string[];
 }
 
 export interface DueDecision {
@@ -71,6 +93,9 @@ export interface DueDecision {
    * `!:` shipping-commit subjects. Empty on every non-major decision. The release-due bot reads
    * this list instead of re-extracting the entries from `detail` prose on every firing. */
   readonly breaking: readonly string[];
+  /** HEAD's SHA at the moment `decideAt` resolved the base ref. Pass-through only: the rule
+   * never reads it. Undefined for a `releaseDue` unit test, defined for a real decision. */
+  readonly headSha?: string;
 }
 
 /** Conventional `type(scope)!:` — a subject declaring itself breaking. */
@@ -147,6 +172,9 @@ export function releaseDue(input: DueInput): DueDecision {
     inert,
     notes: [] as readonly string[],
     breaking: [] as readonly string[],
+    // Pure pass-through: callers that pass `headSha` (the only caller is `decideAt`) see it on
+    // every returned decision; existing fixtures without `headSha` keep their previous shape.
+    ...(input.headSha === undefined ? {} : { headSha: input.headSha }),
   };
   if (input.stamped !== input.tagged) {
     return {
@@ -196,13 +224,19 @@ export function releaseDue(input: DueInput): DueDecision {
       dueAt,
     };
   }
+  const ask = openReleaseAsk(input.openIssueTitles ?? [], next);
+  const twinNote = ask.open ? `; an ask already open: ${ask.twin}` : '';
+  // The PR-side twin, read through the same `RELEASE_SUBJECT` a release commit is: an open
+  // `chore: release <next>` PR is that very bump in flight, so its note follows the ask's.
+  const bumpPr = openReleaseBump(input.openPrTitles ?? [], next);
+  const bumpNote = bumpPr.open ? `; a bump PR already open: ${bumpPr.twin}` : '';
   return {
     ...base,
     bump,
     next,
     notes,
     due: true,
-    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, unreleased for ${input.settleHours}h or more: ${bump} to ${next}`,
+    detail: `${shipping.length} shipping commit(s) since v${input.tagged}, the oldest shipping commit is ${Math.floor((input.nowMs - oldest) / 3_600_000)}h or older: ${bump} to ${next}${twinNote}${bumpNote}`,
     command: `bun run scripts/release.ts --version ${next}`,
   };
 }

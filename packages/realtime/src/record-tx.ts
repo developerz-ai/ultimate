@@ -3,6 +3,7 @@
 // over the OLD row must become `+ 1` over the row the server just sent, never the stale sum.
 
 import type { ConflictPolicy, Row } from '@ultimat3/core/page';
+import { sameJson } from './json';
 
 /** One table as a mutator's `local` half sees it, keyed by record type (the entity's name). */
 export interface LocalTable<R extends Row = Row> {
@@ -45,13 +46,16 @@ export interface ReplayResult {
   readonly failed: readonly string[];
 }
 
-/** Shallow content equality — a replay producing the same columns must not re-render anything. */
+/**
+ * Content equality, column by column and STRUCTURAL within one (`sameJson`) — a replay producing
+ * the same columns must not re-render anything, and a twin's array is a fresh one every replay.
+ */
 export function sameRow(a: Row | null, b: Row | null): boolean {
   if (a === b) return true;
   if (a === null || b === null) return false;
   const keys = Object.keys(a);
   if (keys.length !== Object.keys(b).length) return false;
-  return keys.every((key) => Object.hasOwn(b, key) && a[key] === b[key]);
+  return keys.every((key) => Object.hasOwn(b, key) && sameJson(a[key], b[key]));
 }
 
 export function replayOverlays(

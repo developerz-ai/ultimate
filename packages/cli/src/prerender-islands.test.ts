@@ -189,9 +189,15 @@ describe('x build --target static, with islands', () => {
     expect((await readStaticReport(ROOT))?.unmeasured).toEqual(report.unmeasured);
 
     const { manifest } = await appManifest(ROOT);
-    const findings = checkBudgets(manifest, await readBuildStats(ROOT), report.unmeasured);
+    // The locator is the page file the route declares — the file an agent opens — and the route
+    // itself rides in `meta.route`, so nothing the finding used to say is lost from `--json`.
+    const FLEET = 'apps/web/app/fleet/page.tsx';
+    const findings = checkBudgets(manifest, await readBuildStats(ROOT), report.unmeasured, (url) =>
+      url === '/fleet' ? FLEET : undefined,
+    );
     expect(findings.map((finding) => finding.code)).toEqual(['X_ISLAND_PROPS_INVALID']);
-    expect(findings[0]?.at).toBe('/fleet');
+    expect(findings[0]?.at).toBe(FLEET);
+    expect(findings[0]?.meta?.['route']).toBe('/fleet');
     expect(findings[0]?.cause).toBe(entry?.cause);
     expect(findings[0]?.fix).toBe(entry?.fix);
     // Without the report, the same route is the generic finding it always was: the promotion
@@ -205,8 +211,10 @@ describe('x build --target static, with islands', () => {
     await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
     const outcome = await step?.run({ ...VERIFY_CTX, root: ROOT });
     expect(outcome?.ok).toBe(false);
-    const own = outcome?.findings.filter((finding) => finding.at === '/fleet');
+    // Off the files this build wrote, the step resolves the same declaring page itself.
+    const own = outcome?.findings.filter((finding) => finding.at === FLEET);
     expect(own?.map((finding) => finding.code)).toEqual(['X_ISLAND_PROPS_INVALID']);
+    expect(own?.map((finding) => finding.meta?.['route'])).toEqual(['/fleet']);
   });
 
   test('an island over the route budget trips X_BUDGET_EXCEEDED naming the island file', async () => {

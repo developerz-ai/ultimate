@@ -10,6 +10,183 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Nothing yet.
 
+## 27.16.0 - 2026-10-23
+
+### Added
+
+- **`seo.robots.groups` in `app.config.ts` — per-crawler `robots.txt` rules.** `seo.robots` could
+  only disallow for every crawler, though `buildRobots` already wrote per-`User-agent` groups. Now
+  `groups: [{ userAgent, allow?, disallow?, crawlDelay? }]` reaches the production file (served and
+  static export alike): e.g. `/s/` open to everyone so link previews unfurl, closed to `GPTBot`,
+  `CCBot`, `ClaudeBot`. Validated like `disallow` — a non-empty user agent, paths starting with
+  `/`, no line break in either — and refused as `X_CONFIG_INVALID` by index. New type
+  `SeoRobotsGroup` (`@ultimat3/seo`'s `RobotsGroup` is now that type).
+
+### Fixed
+
+- **Bun's 10 s idle timeout no longer cuts a request `requestTimeoutMs` still allows.**
+  `httpServer().start()` never passed `idleTimeout`, so Bun closed any socket whose handler had
+  written nothing for ~10–12 s — a 25 s long-poll came back a 502 behind a tunnel, every time, under
+  a framework that promised 30 s. The socket's `idleTimeout` is now
+  `socketIdleTimeoutSeconds(requestTimeoutMs)`: `ceil(ms / 1000) + 2` s, and `0` (off) for
+  `requestTimeoutMs: 0` or a deadline past Bun's 255 s ceiling, so the deadline is always what cuts.
+  `x mcp serve --transport http` turns the idle cut off too: a `verify_run` tool call writes nothing
+  for minutes.
+
+### Commits
+
+- fix(http): Bun idleTimeout from requestTimeoutMs; feat(core): seo.robots.groups (#859)
+
+## 27.15.0 - 2026-10-22
+
+### Added
+
+- **`useRecordChanges(types, listener)` — hear THAT records moved, holding none of them.** The only
+  way to react to a channel's `records` was a whole-type `useRecords(type, {})`, which holds the
+  type: none of its rows is evicted while the reader lives, so a header that re-renders a server
+  page on any change kept every record of every watched type for the tab's life. The listener gets
+  one call per store update, the moved keys grouped by type; it holds no row and no type, and it is
+  follow-only (`FOLLOW_ONLY_EXPORTS`), so its island is never held behind the restore. New types
+  `RecordChanges`, `RecordChangesHandle`.
+- **`useChannel(...).error()`** — the node's refusal of a `failed` membership (`X_TOPIC_FORBIDDEN`
+  and the rest), read reactively. A page could see `failed` but not why, so a signed-out session
+  looked like any other failure.
+
+### Fixed
+
+- **The page socket's redial curve resets on the node's first frame, not on the open.** A proxy or
+  an overloaded node that accepts the upgrade and drops it before saying a word reset `#attempt`
+  every time, so the tab redialled every ~0.5 s for as long as that lasted instead of backing off to
+  `BROWSER_RECONNECT_MAX_MS`. Any frame from the node now proves the socket carries.
+- **A tab that comes back online or visible dials at once.** The page socket listens for `online`
+  and a visible `visibilitychange` and cuts a LOCAL backoff short (`LiveClient.wake()`), so a laptop
+  waking from sleep is live again before its armed wait runs out. A node-assigned drain slot is kept,
+  so a deploy's herd stays spread.
+
+### Commits
+
+- feat(realtime): useRecordChanges — hear that records moved, holding none; useChannel().error() (#857)
+- fix(realtime): redial backoff resets on the node's first frame; wake on online/visible (#855)
+- test(release): the gh-spawning tests wait as long as gh's own deadline (#854)
+
+## 27.14.1 - 2026-10-22
+
+### Fixed
+
+- Helm chart (framework + scaffold): the worker's `preStop` re-sends SIGUSR2 every 5 s until PID 1
+  exits. As PID 1 the process has no default signal action, so a retire signal that landed before
+  the boot armed its listener was dropped and the pod idled until its grace period (seen in
+  production, a pod retired in its first second). A repeat joins the retire in flight.
+- `@ultimat3/realtime`: **the page record store compares columns structurally.** `SyncedLayer.merge`
+  compared each column by identity, and a JSON column (an array or object) is a fresh value on every
+  read — so every catch-up, poll and reconnect "changed" every row carrying one: a new row object,
+  every holder notified, every overlay replayed (whole-table flicker after each sync-node roll). An
+  equal re-read is now a no-op that keeps the row object; a moved row keeps each unmoved column's
+  object. The replay's `sameRow` and `changedColumns` share the one `sameJson` (key order ignored, a
+  `Date` by its time), which replaced a `JSON.stringify` comparison that called a reordered `jsonb`
+  object a change.
+- `@ultimat3/realtime`: **`x dev`'s in-process replicator no longer reopens channels on a bulk write
+  to a table a `recordPublisher` claims.** `onBulk` invalidated the channels carrying it, so every
+  `updateWhere` on it sent every seated tab a `replay-gap` and a full catch-up re-read for rows the
+  app's own publish was already sending. `onChange` already skipped such a table; the live-query
+  windows are still invalidated.
+- `@ultimat3/realtime`: **the client heartbeat no longer drops a socket on a late tick.** Silence was
+  measured from the last frame to the tick, so a hidden tab whose timers the browser throttled (a
+  chained timer about once a minute) read its live, answered socket as dead and redialled on every
+  tick. A socket is now dropped only when its last beat went unanswered for two windows.
+
+### Commits
+
+- fix(realtime): structural column equality in the record store; no channel reopen on a published bulk write; no drop on a late beat (#852)
+- feat(scripts): callable bump-pr surface for the release-due twin check (#850)
+- fix(helm): worker preStop re-sends SIGUSR2 (PID 1 drops an early retire) (#849)
+- docs: PUBLISHING.md envelope table names every DueDecision field (#848)
+- docs(dz): give health.md row 15 its filing evidence (#847)
+- docs(.dz): row-7 health asks name the bun.lock cause and lockfile:fix repair (#846)
+- feat(cli): add --workflow and --event filters to x ci (#844)
+- docs(dz): type health.md row 6 and state its staleness reading (#845)
+- fix: dedupe release-due against an open bump PR (#843)
+- docs(health): define the main-is-green verdict for every case (#840)
+
+## 27.14.0 - 2026-10-22
+
+### Added
+
+- **Auto-compaction on `agent()` — `compact: 'auto' | 'off' | { at, keepTurns, model,
+  maxSummaryTokens }`, default `'auto'`.** Every turn re-sends the whole transcript, so a long tool
+  loop grew until the provider answered a 400 after every earlier turn was paid for. Before each
+  turn, the gateway's estimate of its request (plus the tool definitions) is compared with the model
+  row's `contextWindow` less `maxTokens`; over `at` (0.8) of it, ONE model call — the run's own
+  request up to a cut between turns, plus an instruction, so it reads the provider's cached prefix
+  and keeps the same OpenRouter `x-session-id` — summarises every turn older than the last
+  `keepTurns` (4) into the first user message. The tools, the system prompt (its stable block
+  included) and the kept turns are sent byte for byte; no tool call is separated from its result.
+  The summary call is billed to the run (same ledger, `tokensPerRun`, `costPerRun` checked first,
+  `usage`, `meta.billed`) and is not a turn. A summary that fails leaves the run whole while it fits
+  (and is not attempted again until the request no longer does);
+  a request that still would not fit is the new **`X_AGENT_CONTEXT_EXHAUSTED`** (500, `terminal` for
+  a job), before it is sent — never a truncated transcript. New `onCompact` hook and `agent.compact`
+  span event (`turn`, `outcome`, `reason`, `before`/`after` token estimates, `limit`, `summarised`,
+  `kept`, `usage`, `cost`). The transcript handle stores the compacted messages and a signed
+  `compacted` count, absent when no compaction ran, so `.continue()` resumes from it and a run that
+  never compacted writes the handle it always did; `agentJob()` compacts on the worker alike. A run
+  below the threshold, and every run under `compact: 'off'`, is unchanged. New types
+  `AgentCompactOption`, `AgentCompactRule`, `AgentCompaction`; new class `AgentContextExhaustedError`.
+
+### Fixed
+
+- **`ok` is no longer a clean bill of health: an attested package whose npm `latest` is another
+  version reports `X_REGISTRY_LATEST_DRIFT`.** `scripts/registry-audit.ts` read `dist-tags.latest`
+  onto every state and compared it with nothing, so a lockstep set split across two versions — every
+  tarball published and attested, `latest` left on whichever run finished last — audited clean while
+  `npm install` and `bunx create-ultimate` handed a consumer the other release.
+  `X_REGISTRY_VERSION_BEHIND` cannot see it: the stamped version IS on the registry, attested and
+  tagged, so only a check against `latest` itself reports it. That check is now the finding, it names
+  both versions, and its `fix` is `npm dist-tag add <pkg>@<version> latest` — or the bump command,
+  when the newer tag is the real release.
+
+### Commits
+
+- feat(ai): auto-compaction on agent() — compact: 'auto' | 'off' | { at, keepTurns, model, maxSummaryTokens } (#841)
+- fix(release-due): write human-window notes before data.command (#839)
+- Health release-run row: read a tag dispatch, not a branch (#820)
+- feat(scripts): report a registry latest that is not the stamped version (#834)
+- docs(health): read the demo row's full state and state each non-success (#836)
+- docs(brief): add the awaiting_tag row to the release-due decision table (#835)
+- docs(briefs): release-due fetches tags and reads refusals past exit 1 (#833)
+- docs(dz): give health.md rows 12 and 19 their filing evidence (#831)
+- fix(release-due): name HEAD's sha and refuse off-main (#832)
+- fix(registry-audit): probe the origin tag for every stamped version (#827)
+- fix(cli): expose `headSha` on every `x ci` run row; document `ok: true` means "no failed run" (#826)
+- fix(scripts): release-due-git refusal test uses an unknown option, not an unknown subcommand (#830)
+- fix(briefs): rename health alarm title so release-due dedupe no longer matches it (#829)
+- fix(release): close the release ask on tag cut, key dedupe to exact semver (#828)
+- feat(release): close the release ask from the bump PR body (#825)
+- fix(release-due): align the success detail with the oldest-shipping-commit settle gate (#822)
+- Give Finding.at one meaning: a path an agent can open (#821)
+- docs(health): gate the tagged-version row on ok:true and data.lastTag (#824)
+- chore(dz): allow the tracker reads the briefs already name (#823)
+- test(release-subject): cover the ask-title shape (#815)
+
+## 27.13.2 - 2026-10-21
+
+### Fixed
+
+- **`DATABASE_POOL_MAX` caps every served role, not just a process that installed no client.** A
+  served role (`web`, `sync`, `worker`, `scheduler`) boots through `startDb`, which installs its own
+  `postgresClient` — so `defaultClient()`, the only reader of `DATABASE_POOL_MAX`, never ran, and
+  every role pooled at its `POOL_PROFILES` default (web 20, sync 10, worker 8) whatever the operator
+  set. A fleet sized to fit a role's `CONNECTION LIMIT` was refused `53300 too many connections for
+  role` on its first rollout. `startDb` now layers `DATABASE_POOL_MAX` from the env the boot was
+  handed over the role default, for the primary and the standby alike; `poolMaxFromEnv(env)` is
+  exported and takes that env.
+
+### Commits
+
+- fix(cli,db): DATABASE_POOL_MAX caps every served role (#818)
+- test(release-due): pin isDependabotOnly over a real git window + regenerated bun.lock fallback (#814)
+- docs(wiki): stop routing #450 recurrence evidence to a closed issue (#817)
+
 ## 27.13.1 - 2026-10-20
 
 ### Fixed

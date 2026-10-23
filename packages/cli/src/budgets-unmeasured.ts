@@ -39,13 +39,26 @@ const ACTOR_REFUSALS: ReadonlySet<string> = new Set([
   'X_TENANCY_ACTOR_ORG_REQUIRED',
 ]);
 
-function ownCodeFinding(url: string, entry: UnmeasuredRoute): Finding {
+/**
+ * The locator every finding here carries: `at` is the FILE an agent opens, never the route URL —
+ * `output.ts`'s `Finding.at`, and `verify-checks.ts` reads it as the path to open. The URL is a
+ * fact of its own and rides beside it in `meta.route`, so `--json` loses nothing by the move.
+ *
+ * OMITTED, not filled with something, when no file declares the route: a URL is not a path anyone
+ * can open, and `at` that names nothing opens nothing. The cause and the fix both name the URL.
+ */
+const locatorOf = (file: string | undefined, url: string): Pick<Finding, 'at' | 'meta'> => ({
+  ...(file === undefined ? {} : { at: file }),
+  meta: { route: url },
+});
+
+function ownCodeFinding(url: string, file: string | undefined, entry: UnmeasuredRoute): Finding {
   return {
     code: entry.code ?? 'X_BUDGET_UNMEASURED',
     cause: entry.cause ?? entry.reason,
     fix: entry.fix ?? `x build --target static --json   # its "unmeasured" list has ${url}`,
     docs: ERROR_DOCS_URL,
-    at: url,
+    ...locatorOf(file, url),
   };
 }
 
@@ -57,15 +70,20 @@ const refusalOf = (entry: UnmeasuredRoute): string =>
  * A build ran and has no row for `url`. `entry` is the report's account of why, when it has one:
  * an instruction under its own code, an actor edit, or — for a failure that is a fact about the
  * build's environment — the report, with the refusal already in the cause.
+ *
+ * `file` is the file that declares `url`, resolved by the caller (`budgets.ts` asks the loaded
+ * route table); `undefined` when no route file claims it, and the finding then carries no locator
+ * rather than a URL that opens nothing.
  */
 export function builtUnmeasuredFinding(
   url: string,
   declared: string,
   statsFile: string,
   entry: UnmeasuredRoute | undefined,
+  file: string | undefined,
 ): Finding {
   if (entry?.code !== undefined && REPORTED_BY_OWN_CODE.has(entry.code)) {
-    return ownCodeFinding(url, entry);
+    return ownCodeFinding(url, file, entry);
   }
   const base = `${url} declares a ${declared} budget and ${statsFile} has no row for it, so the build ran and could not weigh it`;
   if (entry?.code !== undefined && ACTOR_REFUSALS.has(entry.code)) {
@@ -76,7 +94,7 @@ export function builtUnmeasuredFinding(
       // The paste: one declaration in the one file every build imports.
       fix: "defineMeasurementActor(() => userActor({ id: 'measure', orgId: '<an org your dev seed creates>', roles: ['<the role this page requires>'] }))   # in app.config.ts",
       docs: ERROR_DOCS_URL,
-      at: url,
+      ...locatorOf(file, url),
     };
   }
   return {
@@ -86,6 +104,6 @@ export function builtUnmeasuredFinding(
     // route it could not weigh, and why.
     fix: `x build --target static --json   # its "unmeasured" list says why ${url} could not be weighed`,
     docs: ERROR_DOCS_URL,
-    at: url,
+    ...locatorOf(file, url),
   };
 }
