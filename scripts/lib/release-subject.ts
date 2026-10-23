@@ -1,14 +1,18 @@
-// The two subjects a release is recognised by, one per reader — and the dedupes over them.
+// The subjects a release is recognised by, one per reader — and the dedupes over them.
 // `RELEASE_SUBJECT` — a commit subject, or the title of a release PR: read by `release-due.ts` (a
 //   bump ships nothing new, and an open bump PR for the very next version is the release already
 //   in flight) and by `deploy-proof-due.ts` (a release commit is proved on itself).
-// `ASK_SUBJECT` — a GitHub issue title: `.dz/briefs/release-due.md` files one ask titled
+// `ASK_SUBJECT` — an issue title: `.dz/briefs/release-due.md` files one ask titled
 //   `Release <next>` and never a second while one is open. The two readers are deliberately
 //   disjoint, so neither regex may accept the other's text.
-// `openReleaseAsk` / `askTwin` and `openReleaseBump` / `prTwin` — those dedupes themselves, one
-//   matcher per reader over two input shapes: titles (`release-due-rule.ts`) and {number,title}
-//   rows from the CLI (`scripts/release.ts` for the ask, `scripts/release-due.ts` and
-//   `scripts/bump-pr.ts` for the bump).
+// `MAJOR_ISSUE_SUBJECT` — an issue title too, but a different subject: the pending-major
+//   maintainer issue, `Major release pending: <next>`. It has its own query, because the ask's
+//   `Release <version> in:title` search never returns it, and its own matcher, so the ask and the
+//   maintainer issue stay disjoint subjects.
+// `openReleaseAsk` / `askTwin`, `openMajorIssue` and `openReleaseBump` / `prTwin` — those dedupes
+//   themselves, one matcher per reader over two input shapes: titles (`release-due-rule.ts`) and
+//   {number,title} rows from the CLI (`scripts/release.ts` for the ask, `scripts/release-due.ts`
+//   and `scripts/bump-pr.ts` for the bump).
 
 /**
  * `chore: release 27.10.1 (#770)`, the squash-merged release PR, and `release: 6.0.0`, what
@@ -48,6 +52,67 @@ export function openReleaseAsk(openIssueTitles: readonly string[], targetVersion
   const twin = openIssueTitles.find((title) => {
     if (!ASK_SUBJECT.test(title)) return false;
     return title.slice('Release '.length).trimEnd() === targetVersion;
+  });
+  return twin === undefined ? { open: false } : { open: true, twin };
+}
+
+/**
+ * The title of the pending-major maintainer issue, `Major release pending: 28.0.0` — the issue
+ * `.dz/briefs/release-due.md` files when a breaking change needs a maintainer to judge its
+ * `wiki/Upgrading.md` walkthrough.
+ *
+ * A version-keyed title, so it is stable while the pending major does not move, and a DIFFERENT
+ * subject from the ask (`Release <next>`): the ask asks for a release, this one asks for a
+ * maintainer. Anchored at BOTH ends, like `ASK_SUBJECT`: the version is the whole title, so
+ * trailing prose (`Major release pending: 28.0.0 (duplicate)`) is not this subject.
+ */
+export const MAJOR_ISSUE_SUBJECT = /^Major release pending: \d+\.\d+\.\d+[ \t]*$/;
+
+/** The exact title the pending-major issue carries for `version`. */
+export const majorIssueTitle = (version: string): string => `Major release pending: ${version}`;
+
+/**
+ * The CLI arguments listing the OPEN pending-major issues for `version` — the query
+ * `.dz/briefs/release-due.md` states, and the one `scripts/release-due.ts` runs through
+ * `release-due-gh.ts`. Its own query, not the ask's: the ask's search is `Release <version>
+ * in:title`, which never returns a `Major release pending: <version>` title, so one list could
+ * not serve both subjects. The binary itself is the caller's.
+ */
+export const majorIssueArgs = (version: string): readonly string[] => [
+  'issue',
+  'list',
+  '--state',
+  'open',
+  '--search',
+  `${majorIssueTitle(version)} in:title`,
+  '--json',
+  'number,title',
+];
+
+/** The pending-major dedupe, one type per reader so it is never interchanged with the ask's. */
+export interface OpenMajorIssue {
+  /** Whether any open issue is already the pending-major issue for `targetVersion`. */
+  readonly open: boolean;
+  /** The one open title that is a true twin, when one exists. */
+  readonly twin?: string;
+}
+
+/**
+ * The pending-major dedupe: `.dz/briefs/release-due.md` files exactly one issue titled
+ * `Major release pending: <next>` and never a second while one is open. A twin is an OPEN issue
+ * whose title is exactly that title of exactly that version — another version's issue is a
+ * different major, and `28.0.01` is not `28.0.0`. Pure over the titles the caller hands it.
+ */
+export function openMajorIssue(
+  openIssueTitles: readonly string[],
+  targetVersion: string,
+): OpenMajorIssue {
+  // MAJOR_ISSUE_SUBJECT is anchored at both ends, so a title it accepts is exactly
+  // `Major release pending: <version>`; the version is compared whole, never as a prefix:
+  // `28.0.01` also starts with `28.0.0` and is a different major.
+  const twin = openIssueTitles.find((title) => {
+    if (!MAJOR_ISSUE_SUBJECT.test(title)) return false;
+    return title.slice('Major release pending: '.length).trimEnd() === targetVersion;
   });
   return twin === undefined ? { open: false } : { open: true, twin };
 }
