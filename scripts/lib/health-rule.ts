@@ -363,7 +363,8 @@ const rollupReading = (pr: DependabotPr): CheckReading => {
 /**
  * Row 7. Healthy with no open PR or none older than 7 days; past that the rollup decides — a
  * green 7+ day PR is stuck awaiting merge (merge it or close it), a red or pending one is stuck
- * on CI and the npm-bump ask applies.
+ * on CI and the npm-bump ask applies. Both groups are classified before the row answers: a page
+ * stuck both ways names both in one reason, so neither group's ask is dropped.
  */
 export function dependabotVerdict(input: DependabotInput): RowVerdict {
   const base = { row: 'dependabot-not-stuck' as const };
@@ -390,26 +391,33 @@ export function dependabotVerdict(input: DependabotInput): RowVerdict {
       prs: input.prs,
     };
   }
-  const awaitingMerge = stuck.filter((pr) => rollupReading(pr) === 'green');
+  // Classify EVERY stuck PR before answering: one page can be stuck both ways at once, and an
+  // early return on the first group found drops the other group's ask from the reason it files.
+  const readings = stuck.map((pr) => ({ pr, reading: rollupReading(pr) }));
+  const awaitingMerge = readings.filter((one) => one.reading === 'green');
+  const onCi = readings.filter((one) => one.reading !== 'green');
+  const groups: string[] = [];
   if (awaitingMerge.length > 0) {
-    return {
-      ...base,
-      verdict: 'unhealthy',
-      reason: `Dependabot green and unmerged 7+ days — merge or close: ${awaitingMerge
+    groups.push(
+      `green and unmerged 7+ days — merge or close: ${awaitingMerge
         .map(
-          (pr) =>
+          ({ pr }) =>
             `#${pr.number} since ${pr.createdAt}${pr.autoMerge === true ? ' (auto-merge armed)' : ''}`,
         )
         .join(', ')}`,
-      prs: input.prs,
-    };
+    );
+  }
+  if (onCi.length > 0) {
+    groups.push(
+      `stuck on red or pending checks: ${onCi
+        .map(({ pr }) => `#${pr.number} since ${pr.createdAt}`)
+        .join(', ')} — the npm-bump ask applies`,
+    );
   }
   return {
     ...base,
     verdict: 'unhealthy',
-    reason: `Dependabot stuck on red or pending checks: ${stuck
-      .map((pr) => `#${pr.number} since ${pr.createdAt}`)
-      .join(', ')} — the npm-bump ask applies`,
+    reason: `Dependabot ${groups.join('; ')}`,
     prs: input.prs,
   };
 }

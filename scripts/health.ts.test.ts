@@ -373,6 +373,33 @@ describe('unit · health · row 7 reads the check rollup, not age alone', () => 
     }
   });
 
+  test('a mixed stuck page answers BOTH groups — merge-or-close and the npm-bump ask together', async () => {
+    // The regression: an early return on the first green-stuck PR used to drop the red-stuck
+    // PR and its npm-bump ask from the row's filing instructions entirely.
+    const rows = verdictOf(
+      await healthAt(
+        '.',
+        withPrs([
+          { number: 907, createdAt: daysAgo(9), state: 'OPEN', statusCheckRollup: GREEN_ROLLUP },
+          {
+            number: 908,
+            createdAt: daysAgo(9),
+            state: 'OPEN',
+            statusCheckRollup: [
+              { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' },
+            ],
+          },
+        ]),
+      ),
+    );
+    const row = row7(rows);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.reason).toContain('#907');
+    expect(row.reason).toContain('merge or close');
+    expect(row.reason).toContain('#908');
+    expect(row.reason).toContain('the npm-bump ask applies');
+  });
+
   test('an entry whose state contradicts --state open is no open PR — its createdAt is not an age', async () => {
     const rows = verdictOf(
       await healthAt('.', withPrs([{ number: 905, createdAt: daysAgo(30), state: 'MERGED' }])),
