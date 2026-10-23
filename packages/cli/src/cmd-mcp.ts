@@ -114,6 +114,9 @@ export async function startMcpHttp(host: CliMcpServer, port: number): Promise<Mc
     handle = Bun.serve({
       port,
       hostname: 'localhost',
+      // A tool call (`verify_run`, `tests_run`) runs for minutes and writes nothing until it
+      // answers; Bun's 10 s default cut it. No deadline here, so no idle cut (0 = disabled).
+      idleTimeout: 0,
       fetch: (request: Request, server): Response | Promise<Response> => {
         const url = new URL(request.url);
         if (request.method !== route.method || url.pathname !== route.path) {

@@ -118,8 +118,12 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * raised 648 → 649, measured 649 (2026-10-20, an unknown predicate operator is refused):
  * `entity/src/operator.ts` — the one runtime list `Operator` is derived from and its refusal, read
  * by both drivers' predicate switches and `andWhere`; reached through the entity barrel.
+ * raised 649 → 651, measured 651 (2026-10-22, Bun idle timeout + `seo.robots.groups`):
+ * `http/src/idle-timeout.ts` — the socket `idleTimeout` derived from `requestTimeoutMs`, reached
+ * through `server.ts` on the http barrel — and `core/src/config-robots.ts`, the `seo.robots`
+ * refusals `defineConfig` raises, reached through `config-site.ts` on the core barrel.
  */
-const MIGRATE_CEILING = 649;
+const MIGRATE_CEILING = 651;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -240,8 +244,10 @@ const MIGRATE_CEILING = 649;
  * off the loaded config into the two targets `installRetentionSweep` takes.
  * raised 962 → 963, measured 963 (2026-10-20, an unknown predicate operator is refused): the one
  * module named on `MIGRATE_CEILING` for that change, `entity/src/operator.ts`.
+ * raised 963 → 965, measured 965 (2026-10-22, Bun idle timeout + `seo.robots.groups`): the two
+ * modules named on `MIGRATE_CEILING` for that change.
  */
-const SERVING_ROLE_CEILING = 963;
+const SERVING_ROLE_CEILING = 965;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -349,8 +355,10 @@ const SERVING_ROLE_CEILING = 963;
  * `meta-call.ts` so neither imports the other).
  * raised 1094 → 1095, measured 1095 (2026-10-20, an unknown predicate operator is refused): the one
  * module named on `MIGRATE_CEILING` for that change, `entity/src/operator.ts`.
+ * raised 1095 → 1097, measured 1097 (2026-10-22, Bun idle timeout + `seo.robots.groups`): the
+ * two modules named on `MIGRATE_CEILING` for that change.
  */
-const WEB_ROLE_CEILING = 1095;
+const WEB_ROLE_CEILING = 1097;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

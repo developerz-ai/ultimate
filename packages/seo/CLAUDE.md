@@ -94,7 +94,8 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   errors; AVIF is opt-in (`formats: FORMAT_ORDER`) for an app whose driver encodes it.
   `image-driver.test.ts` runs every default format through `builtinImageDriver`.
 - **`seo.robots.disallow` goes into EVERY group**, and a `*` group is appended when none is
-  declared: a crawler obeys only the group naming it. De-duplicated per group.
+  declared: a crawler obeys only the group naming it. De-duplicated per group. `groups` is
+  `app.config.ts`'s `seo.robots.groups` as is (`RobotsGroup` = core's `SeoRobotsGroup`).
 - **The brand test in `applyTitleTemplate` is a WORD match** (`containsWord`, Unicode letters and
   digits), never `includes`: `Ultimately fast` still gets its brand.
 - **`ogLocaleTag` is `Intl.Locale` language + region** — `zh_TW`, never `zh_Hant_TW`.

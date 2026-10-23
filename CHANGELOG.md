@@ -10,6 +10,65 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Nothing yet.
 
+## 27.16.0 - 2026-10-23
+
+### Added
+
+- **`seo.robots.groups` in `app.config.ts` — per-crawler `robots.txt` rules.** `seo.robots` could
+  only disallow for every crawler, though `buildRobots` already wrote per-`User-agent` groups. Now
+  `groups: [{ userAgent, allow?, disallow?, crawlDelay? }]` reaches the production file (served and
+  static export alike): e.g. `/s/` open to everyone so link previews unfurl, closed to `GPTBot`,
+  `CCBot`, `ClaudeBot`. Validated like `disallow` — a non-empty user agent, paths starting with
+  `/`, no line break in either — and refused as `X_CONFIG_INVALID` by index. New type
+  `SeoRobotsGroup` (`@ultimat3/seo`'s `RobotsGroup` is now that type).
+
+### Fixed
+
+- **Bun's 10 s idle timeout no longer cuts a request `requestTimeoutMs` still allows.**
+  `httpServer().start()` never passed `idleTimeout`, so Bun closed any socket whose handler had
+  written nothing for ~10–12 s — a 25 s long-poll came back a 502 behind a tunnel, every time, under
+  a framework that promised 30 s. The socket's `idleTimeout` is now
+  `socketIdleTimeoutSeconds(requestTimeoutMs)`: `ceil(ms / 1000) + 2` s, and `0` (off) for
+  `requestTimeoutMs: 0` or a deadline past Bun's 255 s ceiling, so the deadline is always what cuts.
+  `x mcp serve --transport http` turns the idle cut off too: a `verify_run` tool call writes nothing
+  for minutes.
+
+### Commits
+
+- fix(http): Bun idleTimeout from requestTimeoutMs; feat(core): seo.robots.groups (#859)
+
+## 27.15.0 - 2026-10-22
+
+### Added
+
+- **`useRecordChanges(types, listener)` — hear THAT records moved, holding none of them.** The only
+  way to react to a channel's `records` was a whole-type `useRecords(type, {})`, which holds the
+  type: none of its rows is evicted while the reader lives, so a header that re-renders a server
+  page on any change kept every record of every watched type for the tab's life. The listener gets
+  one call per store update, the moved keys grouped by type; it holds no row and no type, and it is
+  follow-only (`FOLLOW_ONLY_EXPORTS`), so its island is never held behind the restore. New types
+  `RecordChanges`, `RecordChangesHandle`.
+- **`useChannel(...).error()`** — the node's refusal of a `failed` membership (`X_TOPIC_FORBIDDEN`
+  and the rest), read reactively. A page could see `failed` but not why, so a signed-out session
+  looked like any other failure.
+
+### Fixed
+
+- **The page socket's redial curve resets on the node's first frame, not on the open.** A proxy or
+  an overloaded node that accepts the upgrade and drops it before saying a word reset `#attempt`
+  every time, so the tab redialled every ~0.5 s for as long as that lasted instead of backing off to
+  `BROWSER_RECONNECT_MAX_MS`. Any frame from the node now proves the socket carries.
+- **A tab that comes back online or visible dials at once.** The page socket listens for `online`
+  and a visible `visibilitychange` and cuts a LOCAL backoff short (`LiveClient.wake()`), so a laptop
+  waking from sleep is live again before its armed wait runs out. A node-assigned drain slot is kept,
+  so a deploy's herd stays spread.
+
+### Commits
+
+- feat(realtime): useRecordChanges — hear that records moved, holding none; useChannel().error() (#857)
+- fix(realtime): redial backoff resets on the node's first frame; wake on online/visible (#855)
+- test(release): the gh-spawning tests wait as long as gh's own deadline (#854)
+
 ## 27.14.1 - 2026-10-22
 
 ### Fixed
