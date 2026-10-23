@@ -6,8 +6,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
 import { CI_ARGS, healthAt, jsonDocument } from './health';
+import type { DependabotPr } from './lib/health-narrow';
+import { narrowPrs } from './lib/health-narrow';
 import type { RowVerdict } from './lib/health-rule';
-import { ROW_IDS } from './lib/health-rule';
+import { dependabotVerdict, ROW_IDS } from './lib/health-rule';
 import type { ScriptResult } from './lib/log';
 
 const SHA = 'a'.repeat(40);
@@ -98,7 +100,14 @@ describe('unit · health · healthAt over injected readers', () => {
     const result = await healthAt('.', {
       ...healthyReaders,
       'dependabot-not-stuck': async () => ({
-        prs: [{ number: 801, createdAt: '2020-01-01T00:00:00Z' }],
+        prs: [
+          {
+            number: 801,
+            createdAt: '2020-01-01T00:00:00Z',
+            updatedAt: '2020-01-02T00:00:00Z',
+            statusCheckRollup: [{ __typename: 'StatusContext', state: 'FAILURE' }],
+          },
+        ],
       }),
     });
     expect(result.ok).toBe(true);
@@ -250,6 +259,128 @@ describe('unit · health · healthAt over injected readers', () => {
     expect(rows.find((row) => row.row === 'main-green')?.verdict).toBe('healthy');
     expect(rows.find((row) => row.row === 'demo-shipped')?.verdict).toBe('unhealthy');
     expect(rows.find((row) => row.row === 'demo-shipped')?.reason).toContain('non-push');
+  });
+});
+
+describe('unit · health · Dependabot activity and checks', () => {
+  const nowMs = Date.parse('2026-10-23T12:00:00Z');
+  const weekMs = 7 * 24 * 3_600_000;
+  const green = { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' };
+  const red = { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' };
+  const cases = [
+    { name: 'old creation, recent red update', age: 1, checks: [red], verdict: 'healthy' },
+    { name: 'stale red', age: weekMs + 1, checks: [red], verdict: 'unhealthy' },
+    { name: 'stale green', age: weekMs + 1, checks: [green], verdict: 'healthy' },
+    { name: 'exactly seven days red', age: weekMs, checks: [red], verdict: 'healthy' },
+    {
+      name: 'pending check run',
+      age: weekMs + 1,
+      checks: [{ ...red, status: 'IN_PROGRESS', conclusion: null }],
+      verdict: 'unverdicted',
+    },
+    {
+      name: 'pending status context',
+      age: weekMs + 1,
+      checks: [{ __typename: 'StatusContext', state: 'PENDING' }],
+      verdict: 'unverdicted',
+    },
+    {
+      name: 'successful status context',
+      age: weekMs + 1,
+      checks: [{ __typename: 'StatusContext', state: 'SUCCESS' }],
+      verdict: 'healthy',
+    },
+    {
+      name: 'failed status context',
+      age: weekMs + 1,
+      checks: [{ __typename: 'StatusContext', state: 'ERROR' }],
+      verdict: 'unhealthy',
+    },
+    {
+      name: 'neutral and skipped runs',
+      age: weekMs + 1,
+      checks: [
+        { ...green, conclusion: 'NEUTRAL' },
+        { ...green, conclusion: 'SKIPPED' },
+      ],
+      verdict: 'healthy',
+    },
+    {
+      name: 'unknown mixed with green',
+      age: weekMs + 1,
+      checks: [green, {}],
+      verdict: 'unverdicted',
+    },
+    {
+      name: 'pending mixed with red',
+      age: weekMs + 1,
+      checks: [red, { ...green, status: 'QUEUED' }],
+      verdict: 'unverdicted',
+    },
+    { name: 'no checks', age: weekMs + 1, checks: [], verdict: 'unverdicted' },
+  ] as const;
+
+  for (const one of cases) {
+    test(one.name, async () => {
+      const raw = [
+        {
+          number: 802,
+          createdAt: '2020-01-01T00:00:00Z',
+          updatedAt: new Date(nowMs - one.age).toISOString(),
+          statusCheckRollup: one.checks,
+        },
+      ];
+      const prs = narrowPrs(raw);
+      expect(dependabotVerdict({ prs, nowMs }).verdict).toBe(one.verdict);
+      // Translate the fixed inactivity to the reader's real clock, without a boundary race.
+      const readerAge = one.age <= weekMs ? 0 : weekMs * 2;
+      const result = await healthAt('.', {
+        ...healthyReaders,
+        'dependabot-not-stuck': async () => ({
+          prs: [{ ...raw[0], updatedAt: new Date(Date.now() - readerAge).toISOString() }],
+        }),
+      });
+      expect(verdictOf(result).find((row) => row.row === 'dependabot-not-stuck')?.verdict).toBe(
+        one.verdict,
+      );
+    });
+  }
+
+  test('unreadable activity never falls back to creation, even for green checks', async () => {
+    for (const updatedAt of [undefined, '', 'invalid']) {
+      for (const statusCheckRollup of [[green], [red]]) {
+        const raw = [
+          {
+            number: 803,
+            createdAt: '2020-01-01T00:00:00Z',
+            updatedAt,
+            statusCheckRollup,
+          },
+        ];
+        expect(dependabotVerdict({ prs: narrowPrs(raw), nowMs }).verdict).toBe('unverdicted');
+        const result = await healthAt('.', {
+          ...healthyReaders,
+          'dependabot-not-stuck': async () => ({ prs: raw }),
+        });
+        expect(verdictOf(result).find((row) => row.row === 'dependabot-not-stuck')?.verdict).toBe(
+          'unverdicted',
+        );
+      }
+    }
+  });
+
+  test('pure rule uses updatedAt and preserves the strict inactivity boundary', () => {
+    const pr: DependabotPr = {
+      number: 804,
+      createdAt: '2020-01-01T00:00:00Z',
+      updatedAt: new Date(nowMs - weekMs).toISOString(),
+      checks: 'red',
+    };
+    expect(dependabotVerdict({ prs: [pr], nowMs }).verdict).toBe('healthy');
+    const stale = dependabotVerdict({ prs: [pr], nowMs: nowMs + 1 });
+    expect(stale.verdict).toBe('unhealthy');
+    expect(stale.reason).toContain(pr.updatedAt ?? 'missing');
+    expect(stale.reason).not.toContain(pr.createdAt ?? 'missing');
   });
 });
 

@@ -30,6 +30,8 @@ export interface AlarmIssue {
 export interface DependabotPr {
   readonly number: number;
   readonly createdAt?: string | undefined;
+  readonly updatedAt?: string | undefined;
+  readonly checks?: 'green' | 'red' | 'unknown' | undefined;
 }
 
 // ——— Narrowing: a child's parsed `unknown` into the shapes the rules read. Never throws. ———
@@ -182,12 +184,50 @@ export function narrowIssues(value: unknown): readonly AlarmIssue[] {
   });
 }
 
+// Missing, pending, or unfamiliar evidence cannot establish either a green or a stale failure.
+const narrowChecks = (value: unknown): 'green' | 'red' | 'unknown' => {
+  if (!Array.isArray(value) || value.length === 0) return 'unknown';
+  const checks = value.map((one) => {
+    const check = rec(one);
+    if (check?.['__typename'] === 'StatusContext') {
+      if (check['state'] === 'SUCCESS') return 'green';
+      if (check['state'] === 'FAILURE' || check['state'] === 'ERROR') return 'red';
+    }
+    if (check?.['__typename'] === 'CheckRun' && check['status'] === 'COMPLETED') {
+      const conclusion = str(check['conclusion']);
+      if (conclusion === undefined) return 'unknown';
+      if (['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(conclusion)) return 'green';
+      if (
+        [
+          'FAILURE',
+          'CANCELLED',
+          'TIMED_OUT',
+          'ACTION_REQUIRED',
+          'STARTUP_FAILURE',
+          'STALE',
+        ].includes(conclusion)
+      )
+        return 'red';
+    }
+    return 'unknown';
+  });
+  if (checks.includes('unknown')) return 'unknown';
+  return checks.includes('red') ? 'red' : 'green';
+};
+
 /** Open Dependabot PRs; an entry with no readable number is dropped, never invented. */
 export function narrowPrs(value: unknown): readonly DependabotPr[] {
   return (Array.isArray(value) ? value : []).flatMap((one) => {
     const pr = rec(one);
     const number = num(pr?.['number']);
     if (pr === undefined || number === undefined) return [];
-    return [{ number, createdAt: str(pr['createdAt']) }];
+    return [
+      {
+        number,
+        createdAt: str(pr['createdAt']),
+        updatedAt: str(pr['updatedAt']),
+        checks: narrowChecks(pr['statusCheckRollup']),
+      },
+    ];
   });
 }

@@ -321,31 +321,39 @@ export interface DependabotInput {
   readonly nowMs: number;
 }
 
-/** Row 7. Healthy only while every open Dependabot PR is younger than 7 days. */
+/** Row 7. Stuck means failed checks and more than seven days without activity. */
 export function dependabotVerdict(input: DependabotInput): RowVerdict {
   const base = { row: 'dependabot-not-stuck' as const };
   if (input.prs.length === 0) {
     return { ...base, verdict: 'healthy', reason: 'no open Dependabot PR', prs: input.prs };
   }
-  if (input.prs.some((pr) => !Number.isFinite(Date.parse(pr.createdAt ?? '')))) {
+  if (input.prs.some((pr) => !Number.isFinite(Date.parse(pr.updatedAt ?? '')))) {
     return {
       ...base,
       verdict: 'unverdicted',
-      reason: 'gh returned a Dependabot PR without a readable createdAt — re-run before filing',
+      reason: 'gh returned a Dependabot PR without a readable updatedAt — re-run before filing',
+      prs: input.prs,
+    };
+  }
+  if (input.prs.some((pr) => pr.checks !== 'green' && pr.checks !== 'red')) {
+    return {
+      ...base,
+      verdict: 'unverdicted',
+      reason: 'Dependabot checks are pending or unknown — re-run before filing',
       prs: input.prs,
     };
   }
   const stuck = input.prs.filter((pr) => {
-    const createdAt = Date.parse(pr.createdAt ?? '');
-    return Number.isFinite(createdAt) && input.nowMs - createdAt > WEEK_MS;
+    const updatedAt = Date.parse(pr.updatedAt ?? '');
+    return pr.checks === 'red' && input.nowMs - updatedAt > WEEK_MS;
   });
   return {
     ...base,
     verdict: stuck.length === 0 ? 'healthy' : 'unhealthy',
     reason:
       stuck.length === 0
-        ? `${input.prs.length} open Dependabot PR(s), none older than 7 days`
-        : `Dependabot stuck: ${stuck.map((pr) => `#${pr.number} since ${pr.createdAt}`).join(', ')}`,
+        ? `${input.prs.length} open Dependabot PR(s), all green or active within 7 days`
+        : `Dependabot stuck with failed checks: ${stuck.map((pr) => `#${pr.number} inactive since updatedAt ${pr.updatedAt}`).join(', ')}`,
     prs: input.prs,
   };
 }
