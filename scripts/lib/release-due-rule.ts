@@ -29,6 +29,19 @@ export type NotDueReason = (typeof NOT_DUE_REASONS)[number];
 
 export const DEFAULT_SETTLE_HOURS = 24;
 
+/**
+ * The `gh run list` query the `awaiting_tag` watch command runs: the release-tag workflow's five
+ * newest runs, with the fields a filing needs — the run's id, its status and conclusion, the event
+ * and branch it ran on, its title, its URL and when it was created. The same field set and order
+ * as the health brief's `tag runs ended well` row, so one query answers both: a command that
+ * returned only a status could not say WHICH run failed, or quote its URL in the ask.
+ */
+export const RELEASE_TAG_RUN_FIELDS =
+  'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt';
+
+/** The one command to watch while the merged release waits for its tag. */
+export const AWAITING_TAG_COMMAND = `gh run list --workflow release-tag.yml --limit 5 --json ${RELEASE_TAG_RUN_FIELDS}`;
+
 /** The author git records on a Dependabot squash merge. */
 export const DEPENDABOT = 'dependabot[bot]';
 
@@ -182,7 +195,7 @@ export function releaseDue(input: DueInput): DueDecision {
       due: false,
       reason: 'awaiting_tag',
       detail: `the tree is stamped ${input.stamped} and the last tag is v${input.tagged}: the release PR merged, and release-tag.yml tags it once ci.yml passes on main`,
-      command: 'gh run list --workflow release-tag.yml --limit 5',
+      command: AWAITING_TAG_COMMAND,
     };
   }
   if (shipping.length === 0) {
