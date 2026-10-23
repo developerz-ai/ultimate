@@ -364,7 +364,7 @@ A missing required property is a **type error**, not a Rich Results Test failure
 | Artifact | Derived from | Notes |
 |---|---|---|
 | `sitemap.xml` | all indexable routes + `prerender()` results | one `<url>` per page per locale with `xhtml:link` alternates; `lastmod` and the locales a page is listed in from its `prerender()` entry (`{ params, lastmod: row.updatedAt, locales }`); an index of named sections by `seo.sitemap.sections`, else auto-split at 50k URLs — [SEO](SEO#robotstxt-and-sitemapxml) |
-| `robots.txt` | `seo.robots.disallow` in `app.config.ts` | sitemap reference included; anything but `ULTIMATE_ENV=production` is `Disallow: /` |
+| `robots.txt` | `seo.robots.disallow` and `seo.robots.groups` in `app.config.ts` | sitemap reference included; anything but `ULTIMATE_ENV=production` is `Disallow: /` |
 | `rss.xml` / `atom.xml` / `feed.json` | routes tagged as feed items | one declaration, three formats |
 | `llms.txt` | `site/` route titles + descriptions | machine-readable site summary for agents |
 | `404` / `500` | required routes | missing one is a build error |

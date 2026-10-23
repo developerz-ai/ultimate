@@ -272,7 +272,14 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 ```ts
 site: { origin: 'https://www.example.com' },
 seo: {
-  robots: { disallow: ['/panel', '/api'] },
+  robots: {
+    disallow: ['/panel', '/api'],
+    // Everyone may fetch /s/ (link previews unfurl, Google reads its noindex); AI crawlers may not.
+    groups: [
+      { userAgent: '*', allow: ['/'] },
+      { userAgent: ['GPTBot', 'CCBot', 'ClaudeBot', 'archive.org_bot'], disallow: ['/s/'] },
+    ],
+  },
   sitemap: { extra: ['/verificar', '/estado'], lastmod: 'git' },
 },
 ```
@@ -281,6 +288,7 @@ seo: {
 |---|---|---|---|
 | `site.origin` | `string \| null` | `null` | scheme + host (+ port) only; a path, query or fragment is `X_CONFIG_INVALID`. Canonical, `og:url`, hreflang and the sitemap are absolute against the first of `APP_URL`, `SITE_ORIGIN`, `site.origin`; with none, the request's own origin (served) or `https://localhost` (static build, which warns on stderr when `ULTIMATE_ENV=production`) |
 | `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to **every** production group — a crawler obeys only the group that names it — with a `User-agent: *` group emitted when none is declared. Any other environment still emits `Disallow: /` alone |
+| `seo.robots.groups` | `{ userAgent, allow?, disallow?, crawlDelay? }[]` | `[]` | per-crawler `User-agent` groups of a production `robots.txt`. Empty: one `User-agent: *` group allowing `/`. Declared, they ARE the groups — a crawler obeys only the one naming it most specifically, so name `*` among them for everyone else. `userAgent` a non-empty string or list; `allow`/`disallow` paths start with `/`; `crawlDelay` seconds ≥ 0 — anything else is `X_CONFIG_INVALID`, by index. Shapes `robots.txt` only: the sitemap is filtered by `seo.robots.disallow`. `As of 27.16.0` |
 | `seo.sitemap.extra` | `string[]` | `[]` | public pages outside `site/` to list — a path (`/verificar`) answered by an `app/` route with no `policy`; listed per routed locale with hreflang alternates like a `site/` page. No origin, query or fragment (`X_CONFIG_INVALID`); a path no ungated `app/` route answers is `X_SITEMAP_EXTRA_INVALID` when the sitemap is built. `As of 22.10` |
 | `seo.sitemap.lastmod` | `'none' \| 'git' \| 'mtime' \| 'build'` | `'none'` | each `<lastmod>`: `'git'` the last commit touching the route's source file (its mtime where there is no work tree — a container image), `'mtime'` the file's mtime, `'build'` one timestamp for every URL. Read once per file per process. `As of 22.10` |
 | `seo.sitemap.sections` | `{ name, match }[]` | `[]` | any declared: `/sitemap.xml` is an index of `/sitemaps/<name>-<n>.xml`, pages no section matches under the reserved `pages`. `name` a lower-case slug, unique; `match` a path pattern or a list (`/precios`, `/blog/*`, `/blog/**`), read against the path without its locale prefix. Anything else is `X_CONFIG_INVALID`. [SEO](SEO#sections-an-index-by-configuration). `As of 2026-10` |
@@ -382,7 +390,7 @@ configureHttp({
 |---|---|---|
 | `basePath` | `'/'` | stripped before matching, on a segment boundary — a mount at `/api` owns `/api` and `/api/…`, never `/apix` |
 | `bodyLimitBytes` | `1_048_576` | enforced **while** the body streams, so a `transfer-encoding: chunked` payload is cancelled the instant the running total passes it |
-| `requestTimeoutMs` | `30_000` | `0` disables. At most `2_147_483_647` (the longest a timer holds, ~24.8 days) — more is `X_CONFIG_INVALID`, where it used to arm a 1 ms timer and 504 every request. A caller may only **shorten** it, with `x-request-timeout-ms`; an ask above that ceiling is ignored. The framework's own typed clients send what is LEFT of the current request's budget |
+| `requestTimeoutMs` | `30_000` | `0` disables. Bun's socket `idleTimeout` is derived from it — `ceil(ms / 1000) + 2` s, `0` (off) for no deadline or one past Bun's 255 s — so a handler silent for longer than Bun's own 10 s default is no longer cut (`As of 27.16.0`; it was, whatever this said). At most `2_147_483_647` (the longest a timer holds, ~24.8 days) — more is `X_CONFIG_INVALID`, where it used to arm a 1 ms timer and 504 every request. A caller may only **shorten** it, with `x-request-timeout-ms`; an ask above that ceiling is ignored. The framework's own typed clients send what is LEFT of the current request's budget |
 | `maxInflight` | `1_000` | `0` disables. Past it a request is shed `X_OVERLOADED` **before** any work — no route match, no auth, no body |
 | ~~`drainTimeoutMs`~~ | — | **Deleted in 25.0.0.** A second drain budget for the `web` role alone; `drain.deadlineMs` is the one budget for every role. Passing the key to `configureHttp` or `defineHttpConfig` is `X_CONFIG_INVALID` naming `drain.deadlineMs` |
 | `cors` | `origins: []`, `credentials: true` | `origins: ['*']` with `credentials: true` is `X_CORS_CONFIG_INVALID` at boot — no browser accepts the pair |

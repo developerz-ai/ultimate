@@ -90,13 +90,19 @@ takes the public `site/` routes (no `policy`) and expands a dynamic route throug
 | static export | the scaffolded `apps/web/prerender.ts` writes `siteSeo()`'s files into `.x/static` (`writeSiteSeo`). A dynamic route lists exactly the pages the build emitted |
 | web role (`x dev`, `runRole`) | `GET /robots.txt`, `GET /sitemap.xml` and its parts `GET /sitemaps/:file`, `application/xml`, `public, max-age=3600`, built once per origin and kept for that same hour. Every file shares one answer: a refresh that fails or hangs keeps the previous index **and** its parts. Absolute against `APP_URL`, else `SITE_ORIGIN`, else the request's own origin |
 
+Production `robots.txt` rules come from `app.config.ts`: `seo.robots.disallow` (every crawler, in
+every group) and `seo.robots.groups` (per `User-agent`) —
+[Configuration](Configuration#site-and-seo). A crawler obeys only the group naming it most
+specifically, so a group for `GPTBot` replaces `*`'s rules for it. Any other environment emits
+`Disallow: /` alone, whatever either says.
+
 ### What is left out
 
 | Left out | Decided by |
 |---|---|
 | a page whose `meta` says `robots: { index: false }` | the route's own `meta`, read **once per routed locale**: `noindex` in English only lists the other locales and drops English from their hreflang cluster. Read for a route with no params and no `load` — the only `meta` that resolves without a request |
 | a page of a dynamic route, or of a route with `load` | its `prerender()` entry: `locales: ['es-co']` lists it there only, `locales: []` nowhere. Its `meta` is **not** read — that would be one `load` per page per refresh |
-| a URL `seo.robots.disallow` matches | the rule, read as a crawler reads it (prefix, `*`, trailing `$`). A locale copy it blocks leaves the cluster. `As of 2026-10`: such a URL used to be listed — "submitted URL blocked by robots.txt" |
+| a URL `seo.robots.disallow` matches (a `seo.robots.groups` rule does not — it binds only the crawlers it names) | the rule, read as a crawler reads it (prefix, `*`, trailing `$`). A locale copy it blocks leaves the cluster. `As of 2026-10`: such a URL used to be listed — "submitted URL blocked by robots.txt" |
 | a gated route, an `app/` page not in `extra` | `policy`, `seo.sitemap.extra` |
 
 ### A page's own `lastmod` and locales

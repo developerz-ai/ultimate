@@ -101,12 +101,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   and requires `trustedProxyHops`. `x-forwarded-proto` (HSTS) and Envoy XFCC (`peer-identity.ts`) ride
   it; `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared (appending to
   XFF is no promise of stripping a client-sent cert header), and is never an actor.
-- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` disables), shortenable
-  by `x-request-timeout-ms`, never lengthened. `ctx.signal` is the deadline OR the caller going away
-  (`AbortSignal.any` with `Request.signal`); `expired` is the timer's alone. `Deadline.deadlineAt` is
-  published as core's `ctx.deadlineAt`, which `traceHeaders()` sends onward. Always `deadline.clear()`
-  in the `finally`. An ask above `MAX_TIMER_MS` is ignored. **A handler that outlives its 504 is held
-  in core's in-flight count** (`beginWork()` in `execute`) until it settles (`pipeline-inflight.test.ts`).
+- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's
+  `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never
+  lengthened. `ctx.signal` is the deadline OR the caller going away (`AbortSignal.any` with
+  `Request.signal`); `expired` is the timer's alone. `deadlineAt` is published as core's
+  `ctx.deadlineAt` (`traceHeaders()` sends it on). `deadline.clear()` in the `finally`. **A handler
+  outliving its 504 is held in core's in-flight count** (`beginWork()`, `pipeline-inflight.test.ts`).
 - **`admit` is the second stage and refuses before ANY work**: past `maxInflight` (1000) is
   `X_OVERLOADED` with `retry-after`, counted by core's `inflightCount()`. **A DRAINING process
   serves** with `connection: close`; only `lifecycleState() === 'stopped'` answers `X_DRAINING`

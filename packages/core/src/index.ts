@@ -194,6 +194,7 @@ export type {
   SeoConfig,
   SeoConfigInput,
   SeoRobotsConfig,
+  SeoRobotsGroup,
   SeoSitemapConfig,
   SiteConfig,
   SitemapLastmod,

@@ -367,6 +367,7 @@ describe('defineConfig · a mistyped value is X_CONFIG_INVALID naming its key, n
     ['jobs.queues', { jobs: { queues: null } }],
     ['cache.tiers', { cache: { tiers: null } }],
     ['seo.robots.disallow', { seo: { robots: { disallow: [5] } } }],
+    ['seo.robots.groups', { seo: { robots: { groups: [null] } } }],
     ['seo.robots', { seo: { robots: null } }],
     ['seo.sitemap.extra', { seo: { sitemap: { extra: [null] } } }],
     ['cache', { cache: 'redis' }],

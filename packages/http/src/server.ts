@@ -23,6 +23,7 @@ import { defineHttpConfig, type HttpConfig } from './config';
 import { HttpError, serverNotStarted } from './errors';
 import { disclosesHealthDetail } from './health-disclosure';
 import type { ServerHooks } from './hooks';
+import { socketIdleTimeoutSeconds } from './idle-timeout';
 import type { Middleware } from './middleware';
 import { httpPipeline, type Pipeline } from './pipeline';
 import { type RateLimitStore, rateLimiter } from './rate-limit';
@@ -331,6 +332,8 @@ const buildServer = (options: ServerOptions, releaseStore: () => void): ServerHa
         port: config.port,
         hostname: config.hostname,
         development: config.dev,
+        // Unset, Bun cuts a silent socket at 10 s whatever `requestTimeoutMs` promised.
+        idleTimeout: socketIdleTimeoutSeconds(config.requestTimeoutMs),
         routes: {
           ...nativeRoutes(),
           // Health endpoints answer outside the pipeline on purpose: a draining or

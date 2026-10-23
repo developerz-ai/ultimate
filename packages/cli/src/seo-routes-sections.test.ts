@@ -15,6 +15,7 @@ const HOUR_MS = 3_600_000;
 const SITE: SiteSettings = {
   origin: null,
   disallow: [],
+  robotsGroups: [],
   sitemap: {
     extra: [],
     lastmod: 'none',
