@@ -72,33 +72,60 @@ describe('unit · run()', () => {
 describe('unit · run() deadline', () => {
   const cwd = import.meta.dir;
 
-  // A child that spawns a long-lived grandchild inheriting its stdout, prints, then exits: the
-  // pipe stays open after the child is gone. The POSIX original was `sh -c 'sleep 30 & echo
-  // started'`, which cannot run on windows-latest. One constant, because two tests assert on the
-  // same program and its exact text — `run()` echoes `command.join(' ')` into the timeout line.
-  const GRANDCHILD =
-    'Bun.spawn(["bun","-e","setTimeout(()=>{},60000)"],{stdout:"inherit",stderr:"inherit",stdin:"ignore"});console.log("started");process.exit(0);';
+  // The child both deadline tests below run: it prints `started`, then holds its stdout past the
+  // answer `run()` waits on. One property, one spelling per platform — the platforms differ in
+  // WHO can hold a pipe, never in whether the deadline answers:
+  //
+  // - POSIX: the child spawns a long-lived grandchild inheriting its stdout and exits, so the
+  //   pipe's write end lives on in the orphan and EOF never comes (the original `sh -c 'sleep 30
+  //   & echo started'`).
+  // - Windows: nothing observable can hold it there. Bun passes a child pipe handles it does not
+  //   re-pass to a grandchild — the identical spawn answered `code: 0, timedOut: false` in 18 ms
+  //   on windows-latest — and `start /b`, the scriptable background, points a child's stdio at
+  //   the console instead of the pipe it was given. So the child holds the pipe itself by
+  //   outliving the deadline; the kill seam records the same wall
+  //   (`packages/cli/src/verify-deadline.ts`: Windows keeps no tag to find a re-parented
+  //   grandchild).
+  //
+  // That leaves Windows with two same-deadline killers — `run()`'s own timer, and Bun's spawn
+  // timeout, which kills the holder and so EOFs its pipes — and whichever wins the race decides
+  // the verdict's SHAPE (`timedOut` + no code, or a killed code), measured 1 in 15 flips on a
+  // Linux box, 2026-10. Both answers carry the same facts, so those are what these tests assert
+  // on every platform: answered AT the deadline (never the #780 hang), `ok: false`, what was
+  // printed kept. The coded verdict is asserted where it is deterministic — POSIX, whose orphan
+  // leaves no second killer. Dropping Bun's redundant internal spawn timeout from `run()` (one
+  // line, `scripts/lib/run.ts`) removes the race everywhere and is what lets the Windows branch
+  // grow the POSIX assertions.
+  //
+  // One constant, because both tests assert on the same program and its exact text — `run()`
+  // echoes `command.join(' ')` into the timeout line.
+  const HOLDS_STDOUT =
+    process.platform === 'win32'
+      ? 'console.log("started"); setTimeout(() => {}, 60_000);'
+      : 'Bun.spawn(["bun","-e","setTimeout(()=>{},60000)"],{stdout:"inherit",stderr:"inherit",stdin:"ignore"});console.log("started");process.exit(0);';
 
-  // Skipped on Windows: there the grandchild holds no handle of the pipe Bun reads, so EOF
-  // arrives with the child's exit and the race never engages — the run answers `ok: true` in
-  // 18ms, which is the platform behaving, not the deadline failing. The deadline itself is
-  // still proven on Windows by the next test's never-exiting child; the orphaned-pipe half is
-  // POSIX-observable only (the CI log for windows-latest: `code: 0, timedOut: false`).
-  test.skipIf(process.platform === 'win32')(
-    'a grandchild holding stdout cannot hold the caller past the deadline',
-    async () => {
-      const started = performance.now();
-      const result = await run(['bun', '-e', GRANDCHILD], { cwd, timeoutMs: 400 });
-      expect(performance.now() - started).toBeLessThan(5_000);
+  test('stdout that never reaches EOF cannot hold the caller past the deadline', async () => {
+    const started = performance.now();
+    const result = await run(['bun', '-e', HOLDS_STDOUT], { cwd, timeoutMs: 300 });
+    expect(performance.now() - started).toBeLessThan(5_000);
+    // Answered AT the deadline on both platforms, whichever killer won: the holder hangs for a
+    // minute, so an answer this early is the deadline speaking — never the 18 ms `ok: true` the
+    // old grandchild fixture got on Windows.
+    expect(result.ok).toBe(false);
+    expect(result.durationMs).toBeGreaterThanOrEqual(190);
+    // What the child DID print is kept: it is the clue to where it stopped.
+    expect(result.output).toContain('started');
+    if (process.platform !== 'win32') {
+      // POSIX reaches the deadline one way only — the orphan holds the pipes past the child's
+      // death, so EOF never comes and `run()`'s timer always wins — which makes the coded
+      // verdict deterministic here and not on Windows (see the fixture comment).
       expect(result).toMatchObject({ ok: false, code: null, timedOut: true });
-      // What the child DID print is kept: it is the clue to where it stopped.
-      expect(result.output).toContain('started');
       // The coded line names the program that was killed, verbatim: `run()` echoes
       // `command.join(' ')`, so the reported command is the one that actually hung.
-      expect(result.output).toContain(`${RUN_TIMEOUT_CODE}: bun -e ${GRANDCHILD}`);
-      expect(result.output).toContain('did not finish within 400 ms');
-    },
-  );
+      expect(result.output).toContain(`${RUN_TIMEOUT_CODE}: bun -e ${HOLDS_STDOUT}`);
+      expect(result.output).toContain('did not finish within 300 ms');
+    }
+  });
 
   test('a child that never exits is killed at the deadline', async () => {
     const started = performance.now();
@@ -111,12 +138,36 @@ describe('unit · run() deadline', () => {
   });
 
   // The pipes are released, not only abandoned: a script whose `run()` timed out still exits,
-  // rather than living until the orphan holding its output does.
-  test('the calling process exits after a timeout, not when the orphan does', async () => {
+  // rather than living until whatever holds its output does. The inner run's verdict travels
+  // out as one JSON line, because the probe only proves something if it REACHES the deadline —
+  // the Windows grandchild fixture used to answer `ok: true` in 18 ms and green this without
+  // racing anything.
+  test('the calling process exits after its timeout, not when the holder dies', async () => {
+    const VERDICT = 'inner verdict ';
     const probe = `import { run } from ${JSON.stringify(join(import.meta.dir, 'run.ts'))};
-await run(['bun', '-e', ${JSON.stringify(GRANDCHILD)}], { cwd: ${JSON.stringify(cwd)}, timeoutMs: 200 });`;
+const inner = await run(['bun', '-e', ${JSON.stringify(HOLDS_STDOUT)}], { cwd: ${JSON.stringify(cwd)}, timeoutMs: 200 });
+console.log(${JSON.stringify(VERDICT)} + JSON.stringify({ code: inner.code, durationMs: inner.durationMs, ok: inner.ok, timedOut: inner.timedOut }));`;
     const outer = await run(['bun', '-e', probe], { cwd, timeoutMs: 10_000 });
     expect({ timedOut: outer.timedOut, ok: outer.ok }).toEqual({ timedOut: false, ok: true });
+    const line = outer.output.split('\n').find((one) => one.startsWith(VERDICT));
+    if (line === undefined) return expect.unreachable('the probe never reported the inner verdict');
+    const inner = JSON.parse(line.slice(VERDICT.length)) as {
+      code: number | null;
+      durationMs: number;
+      ok: boolean;
+      timedOut: boolean;
+    };
+    // The inner run reached its deadline on both platforms — the holder hangs for a minute, so
+    // only the deadline ends it — and answered refused, never the old Windows `ok: true`.
+    expect(inner.ok).toBe(false);
+    expect(inner.durationMs).toBeGreaterThanOrEqual(190);
+    expect(inner.durationMs).toBeLessThan(10_000);
+    if (process.platform !== 'win32') {
+      // Deterministic on POSIX only — the orphan holds the pipes past the child's death, so
+      // `run()`'s timer always wins (see the fixture comment for the Windows race).
+      expect(inner.timedOut).toBe(true);
+      expect(inner.code).toBeNull();
+    }
   });
 
   test("stdin is never the caller's: a reader of it sees EOF at once", async () => {
