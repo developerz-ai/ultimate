@@ -1,7 +1,8 @@
 // `scripts/release-due.ts` against real git repositories built per test: the last tag is the
-// highest one HEAD contains, the window is what git says landed since it, and a tree with no tag
-// is a coded refusal — never "nothing to release". The bump-PR twin is the one input a test
-// injects, because a real lookup is a network call this suite never makes.
+// highest one HEAD contains that the stubbed remote also holds, the window is what git says
+// landed since it, and a tree with no tag is a coded refusal — never "nothing to release". The
+// remote tag probe and the bump-PR twin are the two inputs a test injects, because a real answer
+// from either is a remote read or a network call this suite never makes.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
@@ -12,6 +13,7 @@ import { join } from 'node:path';
 import { FETCH_MAIN } from './lib/base-ref';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
+import type { TagProbe } from './registry-audit';
 import {
   decideAt,
   lastReleaseTag,
@@ -120,10 +122,20 @@ async function released(options: { readonly tag: boolean } = { tag: true }) {
   return { dir, git, land };
 }
 
+/**
+ * The default remote each fixture stands in for. Every repository built above has an `origin` only
+ * because this probe says so — a fixture that reached the real remote would report the remote's
+ * tags, not this one's.
+ */
+const probed =
+  (...tags: readonly string[]): TagProbe =>
+  async (tag) =>
+    tags.includes(tag);
+
 describe('unit · release-due · read from a real repository', () => {
   test('no reachable vX.Y.Z tag is X_RELEASE_TAG_UNREACHABLE, not an empty window', async () => {
     const { dir } = await released({ tag: false });
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed());
     expect('code' in read && read.code).toBe('X_RELEASE_TAG_UNREACHABLE');
   });
 
@@ -136,7 +148,7 @@ describe('unit · release-due · read from a real repository', () => {
       72,
       'dependabot[bot] <bot@example.test>',
     );
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('nothing_ships');
     expect(read.decision.inert).toBe(2);
@@ -149,7 +161,7 @@ describe('unit · release-due · read from a real repository', () => {
       'fix(core): a is two | really (#2)',
       30,
     );
-    const settled = await decideAt(dir, 24, NOW);
+    const settled = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in settled)) return expect.unreachable(settled.cause);
     expect(settled.tagged).toBe('1.0.0');
     expect(settled.decision.due).toBe(true);
@@ -157,7 +169,7 @@ describe('unit · release-due · read from a real repository', () => {
     expect(settled.decision.shipping.map((c) => [c.subject, c.packages])).toEqual([
       ['fix(core): a is two | really (#2)', ['core']],
     ]);
-    const fresh = await decideAt(dir, 48, NOW);
+    const fresh = await decideAt(dir, 48, NOW, probed('v1.0.0'));
     if (!('decision' in fresh)) return expect.unreachable(fresh.cause);
     expect(fresh.decision.reason).toBe('settling');
   });
@@ -168,9 +180,9 @@ describe('unit · release-due · read from a real repository', () => {
     await land({ 'packages/core/src/b.ts': 'export const b = 1;\n' }, 'feat: side');
     await git(['tag', '-a', 'v9.0.0', '-m', 'v9.0.0']);
     await git(['checkout', '--quiet', 'main']);
-    expect(await lastReleaseTag(dir)).toBe('1.0.0');
+    expect(await lastReleaseTag(dir, probed('v1.0.0'))).toBe('1.0.0');
     await git(['tag', '-a', 'v1.0.0-rc.1', '-m', 'rc']);
-    expect(await lastReleaseTag(dir)).toBe('1.0.0');
+    expect(await lastReleaseTag(dir, probed('v1.0.0'))).toBe('1.0.0');
   });
 
   // A Dependabot PR that touches versions arrives without a usable `bun.lock` (PUBLISHING.md), so a
@@ -189,7 +201,7 @@ describe('unit · release-due · read from a real repository', () => {
       72,
       'dependabot[bot] <bot@example.test>',
     );
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.bump).toBe('patch');
     expect(read.decision.notes.join('\n')).toContain('### Changed');
@@ -209,7 +221,7 @@ describe('unit · release-due · read from a real repository', () => {
       'dependabot[bot] <bot@example.test>',
     );
     await land({ 'bun.lock': '{}\n' }, 'chore: regenerate bun.lock after the bump');
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in read)) return expect.unreachable(read.cause);
     // The lockfile commit ships nothing, so it is inert rather than a human shipping commit.
     expect(read.decision.shipping.map((c) => c.author)).toEqual(['dependabot[bot]']);
@@ -223,7 +235,7 @@ describe('unit · release-due · read from a real repository', () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 3;\n' }, 'fix(core): three');
     await land({ 'packages/core/package.json': MANIFEST('1.0.1') }, 'chore: release 1.0.1 (#3)');
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('awaiting_tag');
   });
@@ -233,7 +245,7 @@ describe('unit · release-due · read from a real repository', () => {
   // the rule's only job is to carry it through.
   test('on-main HEAD propagates into read.decision.headSha', async () => {
     const { dir, git } = await released();
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.headSha).toMatch(/^[0-9a-f]{40}$/);
     expect(read.decision.headSha).toBe((await git(['rev-parse', 'HEAD'])).trim());
@@ -249,7 +261,7 @@ describe('unit · release-due · read from a real repository', () => {
     const headSha = (await git(['rev-parse', 'HEAD'])).trim();
     const baseSha = (await git(['rev-parse', 'origin/main'])).trim();
     expect(headSha).not.toBe(baseSha);
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     expect('code' in read).toBe(true);
     if (!('code' in read)) return;
     expect(read.code).toBe('X_RELEASE_HEAD_NOT_MAIN');
@@ -272,7 +284,7 @@ describe('unit · release-due · read from a real repository', () => {
     // Repoint `origin` at a missing local path so FETCH_MAIN fails at the resolver the same
     // way a dead network would, without waiting on a network timeout.
     await git(['remote', 'set-url', 'origin', '/nonexistent/release-due-fetch']);
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     expect('code' in read).toBe(true);
     if (!('code' in read)) return;
     expect(read.code).toBe('X_RELEASE_HEAD_NOT_MAIN');
@@ -305,7 +317,7 @@ describe('unit · release-due · refusals that name their own cause', () => {
       },
       'chore: make it private',
     );
-    const read = await decideAt(dir, 24, NOW);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
     expect('code' in read && read.code).toBe('X_CORPUS_UNSCANNED');
   });
 });
@@ -382,7 +394,9 @@ describe('unit · release-due · the bump-PR twin', () => {
   test('a due decision names the open bump PR — the release already in flight', async () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 4;\n' }, 'fix(core): four (#4)', 30);
-    const read = await decideAt(dir, 24, NOW, async () => ['chore: release 1.0.1 (#3)']);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'), async () => [
+      'chore: release 1.0.1 (#3)',
+    ]);
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.due).toBe(true);
     expect(read.decision.next).toBe('1.0.1');
@@ -392,7 +406,7 @@ describe('unit · release-due · the bump-PR twin', () => {
   test('an ask title is not a bump PR: the two readers stay disjoint at this seam too', async () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 5;\n' }, 'fix(core): five (#5)', 30);
-    const read = await decideAt(dir, 24, NOW, async () => ['Release 1.0.1']);
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'), async () => ['Release 1.0.1']);
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.due).toBe(true);
     expect(read.decision.detail).not.toContain('bump PR');
@@ -402,7 +416,7 @@ describe('unit · release-due · the bump-PR twin', () => {
     const { dir, land } = await released();
     await land({ 'docs/a.md': '# a\n' }, 'docs: a page');
     const asked: string[] = [];
-    const read = await decideAt(dir, 24, NOW, async (version) => {
+    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'), async (version) => {
       asked.push(version);
       return [];
     });

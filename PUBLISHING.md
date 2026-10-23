@@ -55,7 +55,8 @@ what each answer means.
 | every one of them is on npm at that version, attested, with npm's default `latest` on it | `bun run scripts/registry-audit.ts --json` — also names a new package owing its one bootstrap publish (step 1 of the bootstrap below), and a package that is on npm at the stamped version while `latest` serves another one (`X_REGISTRY_LATEST_DRIFT`), which is the release `npm install` and `bunx create-ultimate` would resolve |
 | what npm serves, and what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
 | provenance on a release | `npm view @ultimat3/core@<version> dist.attestations _npmUser` — `GitHub Actions` is the workflow; a person's name is a hand publish with no attestation |
-| the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — the ref **and** its peeled `^{}` line. Not `git tag --list`, which reads the local repository. `git tag -a` only: `--follow-tags` never pushes a lightweight tag |
+| the tag is **on the remote** | `bun run scripts/tag-on-origin.ts <version> --json` — `.data.onOrigin`, and `ok: false` when git could not answer, which is not the same as absent |
+| the tag is **annotated**, not lightweight | `git ls-remote --tags origin refs/tags/v<version>^{}` — a line only for an annotated tag; `--follow-tags` never pushes a lightweight one, so `git tag -a` only |
 | the GitHub Release exists — `release-tag.yml` creates it when the release PR merges | `gh release view v<version> --json tagName,isDraft,publishedAt` |
 | a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command`, `.data.headSha` |
 | the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
