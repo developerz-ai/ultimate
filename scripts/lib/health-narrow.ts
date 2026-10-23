@@ -26,10 +26,24 @@ export interface AlarmIssue {
   readonly latched?: boolean;
 }
 
+/** One statusCheckRollup entry: a CheckRun reads by status/conclusion, a StatusContext by state. */
+export interface PrCheck {
+  readonly status?: string | undefined;
+  readonly conclusion?: string | undefined;
+  readonly state?: string | undefined;
+}
+
 /** One open Dependabot PR, as `gh pr list --app dependabot` names it. */
 export interface DependabotPr {
   readonly number: number;
   readonly createdAt?: string | undefined;
+  readonly updatedAt?: string | undefined;
+  readonly url?: string | undefined;
+  readonly state?: string | undefined;
+  /** True while autoMergeRequest is non-null; undefined when the field never answered. */
+  readonly autoMerge?: boolean | undefined;
+  /** The narrowed statusCheckRollup — entries with nothing readable are dropped, never invented. */
+  readonly checks?: readonly PrCheck[] | undefined;
 }
 
 // ——— Narrowing: a child's parsed `unknown` into the shapes the rules read. Never throws. ———
@@ -182,12 +196,37 @@ export function narrowIssues(value: unknown): readonly AlarmIssue[] {
   });
 }
 
+/** A statusCheckRollup's entries; one with no readable status, conclusion or state is dropped. */
+const narrowChecks = (value: unknown): readonly PrCheck[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((one) => {
+    const check = rec(one);
+    if (check === undefined) return [];
+    const status = str(check['status']);
+    const conclusion = str(check['conclusion']);
+    const state = str(check['state']);
+    return status === undefined && conclusion === undefined && state === undefined
+      ? []
+      : [{ status, conclusion, state }];
+  });
+};
+
 /** Open Dependabot PRs; an entry with no readable number is dropped, never invented. */
 export function narrowPrs(value: unknown): readonly DependabotPr[] {
   return (Array.isArray(value) ? value : []).flatMap((one) => {
     const pr = rec(one);
     const number = num(pr?.['number']);
     if (pr === undefined || number === undefined) return [];
-    return [{ number, createdAt: str(pr['createdAt']) }];
+    return [
+      {
+        number,
+        createdAt: str(pr['createdAt']),
+        updatedAt: str(pr['updatedAt']),
+        url: str(pr['url']),
+        state: str(pr['state']),
+        autoMerge: 'autoMergeRequest' in pr ? pr['autoMergeRequest'] !== null : undefined,
+        checks: narrowChecks(pr['statusCheckRollup']),
+      },
+    ];
   });
 }

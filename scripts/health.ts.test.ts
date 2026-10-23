@@ -253,6 +253,141 @@ describe('unit · health · healthAt over injected readers', () => {
   });
 });
 
+describe('unit · health · row 7 reads the check rollup, not age alone', () => {
+  // healthAt reads the real clock: ages are stated relative to now, never a fixed date — a fixed
+  // "young" date goes ancient one day and flips the case it pinned.
+  const daysAgo = (days: number): string =>
+    new Date(Date.now() - days * 24 * 3_600_000).toISOString();
+  const GREEN_ROLLUP = [
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' },
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SKIPPED' },
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'NEUTRAL' },
+    { __typename: 'StatusContext', state: 'SUCCESS' },
+  ];
+  const row7 = (rows: readonly RowVerdict[]): RowVerdict => {
+    const row = rows.find((one) => one.row === 'dependabot-not-stuck');
+    if (row === undefined) return expect.unreachable('the dependabot row is always answered');
+    return row;
+  };
+  const withPrs = (prs: unknown): HealthOverrides => ({
+    ...healthyReaders,
+    'dependabot-not-stuck': async () => ({ prs }),
+  });
+
+  test('no open Dependabot PR is healthy', async () => {
+    const rows = verdictOf(await healthAt('.', withPrs([])));
+    expect(row7(rows).verdict).toBe('healthy');
+  });
+
+  test('open PRs none older than 7 days are healthy', async () => {
+    const rows = verdictOf(
+      await healthAt('.', withPrs([{ number: 900, createdAt: daysAgo(2), state: 'OPEN' }])),
+    );
+    expect(row7(rows).verdict).toBe('healthy');
+  });
+
+  test('a 7+ day PR whose checks read green is unhealthy — merge or close, its url filed', async () => {
+    const url = 'https://github.com/ultimate/ultimate/pull/901';
+    const rows = verdictOf(
+      await healthAt(
+        '.',
+        withPrs([
+          {
+            number: 901,
+            createdAt: daysAgo(9),
+            updatedAt: daysAgo(1),
+            state: 'OPEN',
+            url,
+            autoMergeRequest: null,
+            statusCheckRollup: GREEN_ROLLUP,
+          },
+        ]),
+      ),
+    );
+    const row = row7(rows);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.reason).toContain('merge or close');
+    expect(row.reason).not.toContain('auto-merge');
+    expect(row.prs?.[0]?.url).toBe(url);
+  });
+
+  test('a green-stuck PR with autoMergeRequest set names auto-merge in the reason', async () => {
+    const rows = verdictOf(
+      await healthAt(
+        '.',
+        withPrs([
+          {
+            number: 902,
+            createdAt: daysAgo(9),
+            state: 'OPEN',
+            autoMergeRequest: { enabledAt: daysAgo(3) },
+            statusCheckRollup: GREEN_ROLLUP,
+          },
+        ]),
+      ),
+    );
+    const row = row7(rows);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.reason).toContain('merge or close');
+    expect(row.reason).toContain('auto-merge');
+  });
+
+  test('a 7+ day PR whose checks read red is unhealthy — stuck on CI, never merge-or-close', async () => {
+    const rows = verdictOf(
+      await healthAt(
+        '.',
+        withPrs([
+          {
+            number: 903,
+            createdAt: daysAgo(9),
+            state: 'OPEN',
+            statusCheckRollup: [
+              { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' },
+              { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' },
+              { __typename: 'StatusContext', state: 'ERROR' },
+            ],
+          },
+        ]),
+      ),
+    );
+    const row = row7(rows);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.reason).toContain('stuck');
+    expect(row.reason).not.toContain('merge or close');
+  });
+
+  test('a 7+ day PR whose checks read pending — running, or an empty rollup — is unhealthy on CI', async () => {
+    for (const statusCheckRollup of [
+      [{ __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null }],
+      [],
+    ]) {
+      const rows = verdictOf(
+        await healthAt(
+          '.',
+          withPrs([{ number: 904, createdAt: daysAgo(9), state: 'OPEN', statusCheckRollup }]),
+        ),
+      );
+      const row = row7(rows);
+      expect(row.verdict).toBe('unhealthy');
+      expect(row.reason).not.toContain('merge or close');
+    }
+  });
+
+  test('an entry whose state contradicts --state open is no open PR — its createdAt is not an age', async () => {
+    const rows = verdictOf(
+      await healthAt('.', withPrs([{ number: 905, createdAt: daysAgo(30), state: 'MERGED' }])),
+    );
+    expect(row7(rows).verdict).toBe('healthy');
+  });
+
+  test('an open PR without a readable createdAt is unverdicted, never a filing', async () => {
+    const rows = verdictOf(
+      await healthAt('.', withPrs([{ number: 906, createdAt: 'not-a-date', state: 'OPEN' }])),
+    );
+    expect(row7(rows).verdict).toBe('unverdicted');
+  });
+});
+
 describe('unit · health · the script, spawned', () => {
   // Copied from deploy-proof-due.test.ts:148 — no repoRoot() here, no real tree: the child runs
   // THIS directory with nothing on PATH, so every read throws before any subprocess is waited on.

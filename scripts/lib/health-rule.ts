@@ -3,7 +3,7 @@
 // over live in health-narrow.ts. `unverdicted` always means "no verdict yet — re-run, never
 // unhealthy": an ask filed over an unread world is the false alarm this rule exists to prevent.
 
-import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, RunRow } from './health-narrow';
+import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, PrCheck, RunRow } from './health-narrow';
 
 /** The three ways a row can answer. `unverdicted` is a re-run, never a filing. */
 export type Verdict = 'healthy' | 'unhealthy' | 'unverdicted';
@@ -321,13 +321,59 @@ export interface DependabotInput {
   readonly nowMs: number;
 }
 
-/** Row 7. Healthy only while every open Dependabot PR is younger than 7 days. */
+// Row 7's check reading: red beats green beats pending, and an empty rollup is pending — gh
+// unions CheckRun (status/conclusion) and StatusContext (state) entries in the one list.
+type CheckReading = 'green' | 'red' | 'pending';
+
+const RED_CONCLUSIONS: ReadonlySet<string> = new Set([
+  'FAILURE',
+  'CANCELLED',
+  'TIMED_OUT',
+  'ACTION_REQUIRED',
+  'STARTUP_FAILURE',
+  'STALE',
+]);
+const GREEN_CONCLUSIONS: ReadonlySet<string> = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
+
+const readCheck = (check: PrCheck): CheckReading => {
+  const conclusion = check.conclusion?.toUpperCase();
+  if (conclusion !== undefined && RED_CONCLUSIONS.has(conclusion)) return 'red';
+  const state = check.state?.toUpperCase();
+  if (state === 'FAILURE' || state === 'ERROR') return 'red';
+  if (state === 'SUCCESS') return 'green';
+  if (
+    check.status?.toUpperCase() === 'COMPLETED' &&
+    conclusion !== undefined &&
+    GREEN_CONCLUSIONS.has(conclusion)
+  ) {
+    return 'green';
+  }
+  return 'pending';
+};
+
+/** A PR's whole rollup: any red entry is red, green needs every entry green, else pending. */
+const rollupReading = (pr: DependabotPr): CheckReading => {
+  const checks = pr.checks ?? [];
+  if (checks.length === 0) return 'pending';
+  const readings = checks.map(readCheck);
+  if (readings.includes('red')) return 'red';
+  return readings.every((reading) => reading === 'green') ? 'green' : 'pending';
+};
+
+/**
+ * Row 7. Healthy with no open PR or none older than 7 days; past that the rollup decides — a
+ * green 7+ day PR is stuck awaiting merge (merge it or close it), a red or pending one is stuck
+ * on CI and the npm-bump ask applies.
+ */
 export function dependabotVerdict(input: DependabotInput): RowVerdict {
   const base = { row: 'dependabot-not-stuck' as const };
-  if (input.prs.length === 0) {
+  // `--state open` is the filter that makes "stuck" decidable: an entry gh returns with another
+  // state contradicts it, and a merged or closed PR's createdAt is not an age.
+  const open = input.prs.filter((pr) => pr.state === undefined || pr.state === 'OPEN');
+  if (open.length === 0) {
     return { ...base, verdict: 'healthy', reason: 'no open Dependabot PR', prs: input.prs };
   }
-  if (input.prs.some((pr) => !Number.isFinite(Date.parse(pr.createdAt ?? '')))) {
+  if (open.some((pr) => !Number.isFinite(Date.parse(pr.createdAt ?? '')))) {
     return {
       ...base,
       verdict: 'unverdicted',
@@ -335,17 +381,35 @@ export function dependabotVerdict(input: DependabotInput): RowVerdict {
       prs: input.prs,
     };
   }
-  const stuck = input.prs.filter((pr) => {
-    const createdAt = Date.parse(pr.createdAt ?? '');
-    return Number.isFinite(createdAt) && input.nowMs - createdAt > WEEK_MS;
-  });
+  const stuck = open.filter((pr) => input.nowMs - Date.parse(pr.createdAt ?? '') > WEEK_MS);
+  if (stuck.length === 0) {
+    return {
+      ...base,
+      verdict: 'healthy',
+      reason: `${open.length} open Dependabot PR(s), none older than 7 days`,
+      prs: input.prs,
+    };
+  }
+  const awaitingMerge = stuck.filter((pr) => rollupReading(pr) === 'green');
+  if (awaitingMerge.length > 0) {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      reason: `Dependabot green and unmerged 7+ days — merge or close: ${awaitingMerge
+        .map(
+          (pr) =>
+            `#${pr.number} since ${pr.createdAt}${pr.autoMerge === true ? ' (auto-merge armed)' : ''}`,
+        )
+        .join(', ')}`,
+      prs: input.prs,
+    };
+  }
   return {
     ...base,
-    verdict: stuck.length === 0 ? 'healthy' : 'unhealthy',
-    reason:
-      stuck.length === 0
-        ? `${input.prs.length} open Dependabot PR(s), none older than 7 days`
-        : `Dependabot stuck: ${stuck.map((pr) => `#${pr.number} since ${pr.createdAt}`).join(', ')}`,
+    verdict: 'unhealthy',
+    reason: `Dependabot stuck on red or pending checks: ${stuck
+      .map((pr) => `#${pr.number} since ${pr.createdAt}`)
+      .join(', ')} — the npm-bump ask applies`,
     prs: input.prs,
   };
 }
