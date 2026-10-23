@@ -1,15 +1,16 @@
 # yaml-language-server: $schema=https://developerz.ai/schemas/maintainer.v1.json
 # developerz.ai maintainer policy for developerz-ai/ultimate.
 #
-# Ultimate is feature-complete and AI-maintained: the platform bot looks after it the way a human
-# OSS maintainer would. As of 2026-10, the owner's split:
+# Ultimate is feature-complete and fully AI-maintained: the platform bot looks after it the way a
+# human OSS maintainer would. Owner ruling 2026-10-23, "wurk and ultimate should be full ai
+# maintained", reverses the 2026-10-14 split that left org members' work to its authors:
 #
-#   outside users     their issues are triaged, junk is closed, real bugs are fixed by the fleet,
-#                     and their pull requests are driven to green and merged
+#   everyone          outside users, org members and collaborators alike: issues are triaged, junk
+#                     is closed, real bugs are fixed by the fleet, and pull requests are driven to
+#                     green and merged
 #   Dependabot        driven to green and merged, majors included — CI is the verdict
-#   org members       reviewed, and otherwise left alone: their issues and pull requests are theirs
-#                     (the owner or another org member visits once or twice a year with new ideas,
-#                     ships them and releases them)
+#   breaking changes  the bot's call too (`escalate.ask_before_acting: []`); only the platform's
+#                     hardcoded asks (security, license, CLA) reach a human
 #   releases          cut when due: `scripts/release-due.ts` decides, the bot opens the bump PR,
 #                     merging it IS the release (`.github/workflows/release-tag.yml`)
 #
@@ -32,12 +33,10 @@ tone:
   language: en
 
 triage:
-  # An issue opened by anyone with write, maintain or admin on this repo (an org member or an invited
-  # collaborator) is theirs: no intake ask, no labels, comments or close, no backlog pickup, no stale
-  # sweep. Only an @-mention of the bot wakes it there, and it answers only that mention
-  # (developerz.ai #6372, deployed 2026-10-15). Membership is the same repo-permission read
-  # `pr.auto_merge_scope: not_project` uses; outsiders' issues are handled as before.
-  skip_project_members: true
+  # No `skip_project_members` (schema default false; owner ruling 2026-10-23: "wurk and ultimate
+  # should be full ai maintained"). An issue opened by an org member or an invited collaborator is
+  # triaged, picked up from the backlog and stale-swept like anyone's; the 2026-10-14 rule that left
+  # it to its author is reversed.
   ask_for_repro: true
   required_fields: [steps, expected, actual, version]
   qualify_into: [bug, feature, dupe, question, docs]
@@ -66,25 +65,25 @@ pr:
   # The verdict job; `ci.yml`'s header says why it is the one that answers for the run.
   required_checks: [verify]
   auto_merge: true
-  # WHOSE pull requests the bot merges and babysits: its own, the dependency bots', and outside
-  # contributors' (repo permission read, triage or none). Never one by an author with write, maintain
-  # or admin on this repo — an org member or an invited collaborator alike: reviewed, then left to
-  # its author. An outside PR that changes CI, release or publish automation is declined by the
+  # WHOSE pull requests the bot merges and babysits: every author's (owner ruling 2026-10-23: "wurk
+  # and ultimate should be full ai maintained"; it reverses the 2026-10-14 `not_project` scope that
+  # left members' PRs to their authors). `any`: its own, the dependency bots', outside
+  # contributors', and org members' and collaborators' alike — reviewed, babysat, merged on green.
+  # An OUTSIDE PR that changes CI, release or publish automation is still declined by the
   # `non_goals` line above (security audit, 2026-10-14): with no branch protection and no publish
-  # reviewer, an auto-merged workflow edit would run beside the job holding `id-token: write`. Membership is the author's real
-  # repo permission, never `author_association`, which reports a private org member as CONTRIBUTOR
-  # (developerz.ai #6363, deployed 2026-10-14). An unreadable permission holds the PR, never merges
-  # it. This repo's fleet PRs are authored by the App (`app/developerz-ai`), so they stay in scope.
-  auto_merge_scope: not_project
+  # reviewer, an auto-merged workflow edit would run beside the job holding `id-token: write`.
+  # Whether an author is outside is the platform's read of their real repo permission, never
+  # `author_association` (developerz.ai #6363).
+  auto_merge_scope: any
   require_review: true
   # No `human_merge` lane: the owner's ruling is no human in the loop (2026-10-14). The risk is
   # stated, not hidden (security audit, 2026-10-14): `main` has no branch protection and
-  # `npm-publish` no reviewers, so an auto-merged PR (the bot's own, or a Dependabot action bump to
-  # a compromised SHA) can change what runs in the job holding `id-token: write`. What stands in
-  # for a person: Dependabot's 14-day cooldown (most upstream compromises are caught inside it),
-  # actions pinned by SHA, the release lane's shape pinned by tests the gate runs
+  # `npm-publish` no reviewers, so an auto-merged PR (the bot's own, a member's, or a Dependabot
+  # action bump to a compromised SHA) can change what runs in the job holding `id-token: write`.
+  # What stands in for a person: Dependabot's 14-day cooldown (most upstream compromises are caught
+  # inside it), actions pinned by SHA, the release lane's shape pinned by tests the gate runs
   # (scripts/release-workflow-shape.test.ts, scripts/release-tag-workflow-shape.test.ts), and two
-  # reviewers on every PR. A member who wants a person back adds the paths here.
+  # reviewers on every PR. The 2026-10-23 ruling ("full ai maintained") keeps it that way.
   close_awaiting_author_after_days: 21
 
 review:
@@ -102,13 +101,15 @@ release:
   channels: []
 
 escalate:
-  # An org member looks in once or twice a year (owner, 2026-10-14), so anything held here waits months.
-  # Held: a breaking change only. A major is a migration for every app (wiki/Upgrading.md) and the
-  # semver promise is the framework's; an outside PR that needs one is declined with that reason,
-  # not parked. Not held, deliberately: a first-time contributor's PR (CodeRabbit + this bot's
-  # review + the full gate decide it, as for anyone), a large PR, and a major dependency bump
-  # (CI is the verdict; `bun run verify` covers every package that imports it).
-  ask_before_acting: [breaking_change]
+  # Nothing held (owner ruling 2026-10-23: "wurk and ultimate should be full ai maintained"; it
+  # empties the 2026-10-14 `[breaking_change]`). A breaking change is the bot's call too: a major
+  # is a migration for every app (wiki/Upgrading.md), so the bot weighs that cost itself rather than
+  # parking the PR for a member who looks in once or twice a year. Also not held: a first-time
+  # contributor's PR (CodeRabbit + this bot's review + the full gate decide it, as for anyone), a
+  # large PR, and a major dependency bump (CI is the verdict; `bun run verify` covers every package
+  # that imports it). The platform's hardcoded asks (security, license, CLA) still apply; this list
+  # cannot remove them.
+  ask_before_acting: []
 
 schedules:
   - name: release-due
