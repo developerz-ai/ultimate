@@ -1,8 +1,11 @@
 // `scripts/release-due.ts` against real git repositories built per test: the last tag is the
 // highest one HEAD contains that the stubbed remote also holds, the window is what git says
 // landed since it, and a tree with no tag is a coded refusal — never "nothing to release". The
-// remote tag probe and the bump-PR twin are the two inputs a test injects, because a real answer
-// from either is a remote read or a network call this suite never makes.
+// three seams a test injects are `probe` (whether origin holds a candidate tag), `listPrTitles`
+// (the bump-PR twin lookup) and `listIssueTitles` (the pending-major issue's twin lookup), in
+// that order — a real answer from any of them is a remote read or a network call this suite
+// never makes. The pending-major issue twin lives in `release-due-major.test.ts`: this file
+// reads the window, that one reads the major's open-issue seam.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
@@ -394,9 +397,14 @@ describe('unit · release-due · the bump-PR twin', () => {
   test('a due decision names the open bump PR — the release already in flight', async () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 4;\n' }, 'fix(core): four (#4)', 30);
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'), async () => [
-      'chore: release 1.0.1 (#3)',
-    ]);
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => ['chore: release 1.0.1 (#3)'],
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.due).toBe(true);
     expect(read.decision.next).toBe('1.0.1');
@@ -406,7 +414,14 @@ describe('unit · release-due · the bump-PR twin', () => {
   test('an ask title is not a bump PR: the two readers stay disjoint at this seam too', async () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 5;\n' }, 'fix(core): five (#5)', 30);
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'), async () => ['Release 1.0.1']);
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => ['Release 1.0.1'],
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.due).toBe(true);
     expect(read.decision.detail).not.toContain('bump PR');
@@ -416,10 +431,17 @@ describe('unit · release-due · the bump-PR twin', () => {
     const { dir, land } = await released();
     await land({ 'docs/a.md': '# a\n' }, 'docs: a page');
     const asked: string[] = [];
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'), async (version) => {
-      asked.push(version);
-      return [];
-    });
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async (version) => {
+        asked.push(version);
+        return [];
+      },
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('nothing_ships');
     expect(asked).toEqual([]);

@@ -5,13 +5,23 @@
 import type { Bump } from '../release';
 import { nextVersion } from '../release';
 import { BREAKING_ENTRY } from './changelog-format';
-import { openReleaseAsk, openReleaseBump, RELEASE_SUBJECT } from './release-subject';
+import {
+  majorIssueTitle,
+  openMajorIssue,
+  openReleaseAsk,
+  openReleaseBump,
+  RELEASE_SUBJECT,
+} from './release-subject';
 
-export type { AskPr, OpenAsk, OpenBump } from './release-subject';
-// Both dedupes live beside the subjects they match on (`release-subject.ts`), one per reader; they
+export type { AskPr, OpenAsk, OpenBump, OpenMajorIssue } from './release-subject';
+// The dedupes live beside the subjects they match on (`release-subject.ts`), one per reader; they
 // are re-exported so this file stays the one module the release-due readers import them from.
 export {
   askPrArgs,
+  MAJOR_ISSUE_SUBJECT,
+  majorIssueArgs,
+  majorIssueTitle,
+  openMajorIssue,
   openReleaseAsk,
   openReleaseBump,
   parsePrIssues,
@@ -74,8 +84,16 @@ export interface DueInput {
   readonly settleHours: number;
   /** The package a path ships in, or undefined — `release-due-ships.ts`. */
   readonly ships: (path: string) => string | undefined;
-  /** Titles of currently OPEN GitHub issues, for the release-due dedupe. Optional: a caller with
-   * no issue list simply gets no twin. Only ever read on a `due` decision. */
+  /** Titles of currently OPEN GitHub issues, for the release-due dedupes: the ask's twin on a
+   * `due` decision and the pending-major issue's twin on a `major_needs_a_maintainer` one.
+   * Never read on any other decision.
+   *
+   * ABSENT means the lookup could not answer — a missing binary, a failed call, a timeout, an
+   * unparseable answer — and an empty list means it answered with no open issue. The two are
+   * different facts and the major branch reads them differently: a `due` decision only ever
+   * loses a twin note, but a `major_needs_a_maintainer` one FILES on the absence of a twin,
+   * so there an absent list must not read as "none open" — that is how a `gh` outage becomes a
+   * duplicate maintainer issue. */
   readonly openIssueTitles?: readonly string[];
   /** HEAD's SHA at the moment `decideAt` resolved the base ref. Pass-through only: the rule
    * never branches on it, so every existing fixture stays legal. */
@@ -210,6 +228,22 @@ export function releaseDue(input: DueInput): DueDecision {
   const next = nextVersion(input.stamped, bump);
   const notes = changelogNotes(input.unreleased, shipping);
   if (bump === 'major') {
+    // The pending-major issue is its own subject, with its own dedupe: an open issue titled
+    // exactly `Major release pending: <next>` is the maintainer ask already filed, so the box
+    // files nothing; without one, the box files exactly one, under that exact title.
+    //
+    // An absent list is not that second case: it is the lookup COULD NOT ANSWER, so whether an
+    // issue is open is unknown. The note must not claim a twin and must not name one to file —
+    // the brief's row branches on "no open issue already says a major is pending", and an
+    // unknown is not that. It names the check the releaser owes instead.
+    const majorIssue =
+      input.openIssueTitles === undefined ? undefined : openMajorIssue(input.openIssueTitles, next);
+    const majorNote =
+      majorIssue === undefined
+        ? `; the open-issue lookup could not answer, so whether a pending-major issue is open is unknown: check \`${majorIssueTitle(next)}\` before filing one`
+        : majorIssue.open
+          ? `; a pending-major issue already open: ${majorIssue.twin}`
+          : `; file one issue titled \`${majorIssueTitle(next)}\`, listing the breaking entries, for a maintainer`;
     return {
       ...base,
       bump,
@@ -218,7 +252,7 @@ export function releaseDue(input: DueInput): DueDecision {
       breaking: breakingEntries(input.unreleased, shipping),
       due: false,
       reason: 'major_needs_a_maintainer',
-      detail: `a breaking change is pending (a \`BREAKING —\` line under [Unreleased], or a \`!:\` subject): ${next} needs a maintainer to judge its wiki/Upgrading.md walkthrough`,
+      detail: `a breaking change is pending (a \`BREAKING —\` line under [Unreleased], or a \`!:\` subject): ${next} needs a maintainer to judge its wiki/Upgrading.md walkthrough${majorNote}`,
       command: `bun run scripts/release.ts --version ${next} --dry-run --json`,
     };
   }
