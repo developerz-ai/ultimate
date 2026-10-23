@@ -1,14 +1,23 @@
-// The orchestrator over injected readers, its jsonDocument stderr-noise scan, and one real spawn
-// with nothing on PATH — a row the script cannot read must refuse the whole answer. No network, no
-// real checkout: the pure rules behind the verdicts are pinned here too, one row at a time through
-// the same injected readers, not in a file of their own.
+// The orchestrator over injected readers, its jsonDocument stderr-noise scan, the release-tag
+// row's run evidence, and one real spawn with nothing on PATH — a row the script cannot read must
+// refuse the whole answer. No network, no real checkout: the pure rules behind the verdicts are
+// pinned here too, one row at a time through the same injected readers. Row 7's check rollup lives
+// in `health-dependabot.test.ts`: the row that reads a rollup is not also this file's subject.
 
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
-import { CI_ARGS, healthAt, jsonDocument } from './health';
+import {
+  CI_ARGS,
+  healthAt,
+  jsonDocument,
+  ROW_COMMANDS,
+  TAG_RUN_ARGS,
+  TAG_RUN_FIELDS,
+} from './health';
 import type { RowVerdict } from './lib/health-rule';
 import { ROW_IDS } from './lib/health-rule';
 import type { ScriptResult } from './lib/log';
+import { AWAITING_TAG_COMMAND } from './lib/release-due-rule';
 
 const SHA = 'a'.repeat(40);
 
@@ -253,165 +262,91 @@ describe('unit · health · healthAt over injected readers', () => {
   });
 });
 
-describe('unit · health · row 7 reads the check rollup, not age alone', () => {
-  // healthAt reads the real clock: ages are stated relative to now, never a fixed date — a fixed
-  // "young" date goes ancient one day and flips the case it pinned.
-  const daysAgo = (days: number): string =>
-    new Date(Date.now() - days * 24 * 3_600_000).toISOString();
-  const GREEN_ROLLUP = [
-    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' },
-    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SKIPPED' },
-    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'NEUTRAL' },
-    { __typename: 'StatusContext', state: 'SUCCESS' },
-  ];
-  const row7 = (rows: readonly RowVerdict[]): RowVerdict => {
-    const row = rows.find((one) => one.row === 'dependabot-not-stuck');
-    if (row === undefined) return expect.unreachable('the dependabot row is always answered');
+describe('unit · health · row 4 asks for the run evidence, not a bare status', () => {
+  // The row's filing quotes the run: its id, url, title, event, branch and creation time. A query
+  // that returned only a status could not say WHICH run failed — so the field list is pinned here
+  // field by field. `RUN` is a release-tag.yml run as gh names it: `databaseId`, `displayTitle`.
+  const URL = 'https://github.com/ultimate/ultimate/actions/runs/4242';
+  const FIELDS = 'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt';
+  const RUN = {
+    databaseId: 4242,
+    status: 'completed',
+    conclusion: 'success',
+    event: 'workflow_dispatch',
+    headBranch: 'main',
+    displayTitle: 'Tag v3.1.0',
+    url: URL,
+    createdAt: '2026-10-23T09:00:00Z',
+  };
+  /** Row 4's verdict over a list of runs, read the way the brief reads it. */
+  const row4 = async (runs: readonly unknown[]): Promise<RowVerdict> => {
+    const rows = verdictOf(
+      await healthAt('.', { ...healthyReaders, 'tag-runs-ended-well': async () => ({ runs }) }),
+    );
+    const row = rows.find((one) => one.row === 'tag-runs-ended-well');
+    if (row === undefined) return expect.unreachable('the tag-runs row is always answered');
     return row;
   };
-  const withPrs = (prs: unknown): HealthOverrides => ({
-    ...healthyReaders,
-    'dependabot-not-stuck': async () => ({ prs }),
-  });
 
-  test('no open Dependabot PR is healthy', async () => {
-    const rows = verdictOf(await healthAt('.', withPrs([])));
-    expect(row7(rows).verdict).toBe('healthy');
-  });
-
-  test('open PRs none older than 7 days are healthy', async () => {
-    const rows = verdictOf(
-      await healthAt('.', withPrs([{ number: 900, createdAt: daysAgo(2), state: 'OPEN' }])),
+  test('the row runs and names the whole command, field list and all', async () => {
+    expect(TAG_RUN_FIELDS).toBe(FIELDS);
+    expect(TAG_RUN_ARGS.join(' ')).toBe(
+      `run list --workflow release-tag.yml --limit 5 --json ${FIELDS}`,
     );
-    expect(row7(rows).verdict).toBe('healthy');
+    // The command in the finding IS the command the reader ran, so a re-run is the same query.
+    const result = await healthAt('.', {
+      ...healthyReaders,
+      'tag-runs-ended-well': async () => ({ runs: undefined }),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.cause).toContain(
+      `gh run list --workflow release-tag.yml --limit 5 --json ${FIELDS}`,
+    );
   });
 
-  test('a 7+ day PR whose checks read green is unhealthy — merge or close, its url filed', async () => {
-    const url = 'https://github.com/ultimate/ultimate/pull/901';
-    const rows = verdictOf(
-      await healthAt(
-        '.',
-        withPrs([
-          {
-            number: 901,
-            createdAt: daysAgo(9),
-            updatedAt: daysAgo(1),
-            state: 'OPEN',
-            url,
-            autoMergeRequest: null,
-            statusCheckRollup: GREEN_ROLLUP,
-          },
-        ]),
-      ),
+  test('row 4 runs the SAME query the awaiting_tag watch command is, verbatim', () => {
+    // ONE canonical release-tag run query, mirrored verbatim: the health row's own command string
+    // and the argv its reader spawns are both the release-due rule's watch command. Two constants
+    // that merely happen to be equal would drift apart the day either is edited, and the drift
+    // would be invisible — the row would quietly ask for less than the ask quotes.
+    expect(ROW_COMMANDS['tag-runs-ended-well']).toBe(AWAITING_TAG_COMMAND);
+    expect(['gh', ...TAG_RUN_ARGS].join(' ')).toBe(AWAITING_TAG_COMMAND);
+    // And the field list the command carries is the one the rule emits, field for field.
+    expect(AWAITING_TAG_COMMAND).toBe(
+      `gh run list --workflow release-tag.yml --limit 5 --json ${FIELDS}`,
     );
-    const row = row7(rows);
+  });
+
+  test('a completed failure is unhealthy, and the verdict carries that run’s filing evidence', async () => {
+    const row = await row4([{ ...RUN, conclusion: 'failure' }]);
     expect(row.verdict).toBe('unhealthy');
-    expect(row.reason).toContain('merge or close');
-    expect(row.reason).not.toContain('auto-merge');
-    expect(row.prs?.[0]?.url).toBe(url);
+    expect(row.url).toBe(URL);
   });
 
-  test('a green-stuck PR with autoMergeRequest set names auto-merge in the reason', async () => {
-    const rows = verdictOf(
-      await healthAt(
-        '.',
-        withPrs([
-          {
-            number: 902,
-            createdAt: daysAgo(9),
-            state: 'OPEN',
-            autoMergeRequest: { enabledAt: daysAgo(3) },
-            statusCheckRollup: GREEN_ROLLUP,
-          },
-        ]),
-      ),
-    );
-    const row = row7(rows);
+  test('a queued run is unverdicted — a re-run, never a failure filing — with its evidence kept', async () => {
+    // Queued on the `release-tag` concurrency group: the run has no completion verdict yet, so
+    // the row has none either, and the ask is not filed against a run that never ran — whatever
+    // conclusion it carries, a run that has not completed has no verdict to file.
+    const row = await row4([{ ...RUN, status: 'queued', conclusion: 'failure' }]);
+    expect(row.verdict).toBe('unverdicted');
+    expect(row.status).toBe('queued');
+    expect(row.conclusion).toBeNull();
+    expect(row.id).toBe(4242);
+    expect(row.url).toBe(URL);
+    expect(row.title).toBe('Tag v3.1.0');
+    expect(row.event).toBe('workflow_dispatch');
+    expect(row.headBranch).toBe('main');
+    expect(row.createdAt).toBe('2026-10-23T09:00:00Z');
+  });
+
+  test('a queued run beside a completed failure still files the failure', async () => {
+    // The queued run is not the failed run's excuse: the failure that DID complete is the filing.
+    const row = await row4([
+      { ...RUN, status: 'queued', conclusion: 'failure' },
+      { ...RUN, conclusion: 'failure', databaseId: 4243 },
+    ]);
     expect(row.verdict).toBe('unhealthy');
-    expect(row.reason).toContain('merge or close');
-    expect(row.reason).toContain('auto-merge');
-  });
-
-  test('a 7+ day PR whose checks read red is unhealthy — stuck on CI, never merge-or-close', async () => {
-    const rows = verdictOf(
-      await healthAt(
-        '.',
-        withPrs([
-          {
-            number: 903,
-            createdAt: daysAgo(9),
-            state: 'OPEN',
-            statusCheckRollup: [
-              { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' },
-              { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' },
-              { __typename: 'StatusContext', state: 'ERROR' },
-            ],
-          },
-        ]),
-      ),
-    );
-    const row = row7(rows);
-    expect(row.verdict).toBe('unhealthy');
-    expect(row.reason).toContain('stuck');
-    expect(row.reason).not.toContain('merge or close');
-  });
-
-  test('a 7+ day PR whose checks read pending — running, or an empty rollup — is unhealthy on CI', async () => {
-    for (const statusCheckRollup of [
-      [{ __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null }],
-      [],
-    ]) {
-      const rows = verdictOf(
-        await healthAt(
-          '.',
-          withPrs([{ number: 904, createdAt: daysAgo(9), state: 'OPEN', statusCheckRollup }]),
-        ),
-      );
-      const row = row7(rows);
-      expect(row.verdict).toBe('unhealthy');
-      expect(row.reason).not.toContain('merge or close');
-    }
-  });
-
-  test('a mixed stuck page answers BOTH groups — merge-or-close and the npm-bump ask together', async () => {
-    // The regression: an early return on the first green-stuck PR used to drop the red-stuck
-    // PR and its npm-bump ask from the row's filing instructions entirely.
-    const rows = verdictOf(
-      await healthAt(
-        '.',
-        withPrs([
-          { number: 907, createdAt: daysAgo(9), state: 'OPEN', statusCheckRollup: GREEN_ROLLUP },
-          {
-            number: 908,
-            createdAt: daysAgo(9),
-            state: 'OPEN',
-            statusCheckRollup: [
-              { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE' },
-            ],
-          },
-        ]),
-      ),
-    );
-    const row = row7(rows);
-    expect(row.verdict).toBe('unhealthy');
-    expect(row.reason).toContain('#907');
-    expect(row.reason).toContain('merge or close');
-    expect(row.reason).toContain('#908');
-    expect(row.reason).toContain('the npm-bump ask applies');
-  });
-
-  test('an entry whose state contradicts --state open is no open PR — its createdAt is not an age', async () => {
-    const rows = verdictOf(
-      await healthAt('.', withPrs([{ number: 905, createdAt: daysAgo(30), state: 'MERGED' }])),
-    );
-    expect(row7(rows).verdict).toBe('healthy');
-  });
-
-  test('an open PR without a readable createdAt is unverdicted, never a filing', async () => {
-    const rows = verdictOf(
-      await healthAt('.', withPrs([{ number: 906, createdAt: 'not-a-date', state: 'OPEN' }])),
-    );
-    expect(row7(rows).verdict).toBe('unverdicted');
+    expect(row.id).toBe(4243);
   });
 });
 

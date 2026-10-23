@@ -8,11 +8,13 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { join } from 'node:path';
 import type { DueInput, WindowCommit } from './release-due-rule';
 import {
+  AWAITING_TAG_COMMAND,
   bumpOf,
   DEPENDABOT,
   NOT_DUE_REASONS,
   openReleaseAsk,
   openReleaseBump,
+  RELEASE_TAG_RUN_FIELDS,
   releaseDue,
 } from './release-due-rule';
 import { RELEASE_SUBJECT } from './release-subject';
@@ -150,7 +152,17 @@ describe('unit · release-due-rule · not due', () => {
     const decision = releaseDue(input({ stamped: '1.3.0' }));
     expect(decision.due).toBe(false);
     expect(decision.reason).toBe('awaiting_tag');
-    expect(decision.command).toContain('release-tag.yml');
+    // The watch command names the workflow AND the fields a filing needs: the run's id, its
+    // status and conclusion, its event and branch, its title, its URL and when it was created.
+    // A command without them cannot say which run failed, nor quote its URL in the ask — so the
+    // whole field list is pinned, not merely the workflow's filename.
+    expect(decision.command).toBe(AWAITING_TAG_COMMAND);
+    expect(decision.command).toBe(
+      'gh run list --workflow release-tag.yml --limit 5 --json databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt',
+    );
+    expect(RELEASE_TAG_RUN_FIELDS).toBe(
+      'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt',
+    );
   });
 });
 
@@ -301,7 +313,15 @@ describe('unit · release-due-rule · the brief covers the closed list', () => {
     // The command is pinned with its backtick delimiters: a bare substring would survive a
     // changed limit, since `--limit 50` contains `--limit 5`.
     expect(awaitingTag, 'the awaiting_tag row vanished from the brief').toBeDefined();
-    expect(awaitingTag).toContain('`gh run list --workflow release-tag.yml --limit 5`');
+    // The command is pinned with its backtick delimiters: a bare substring would survive a
+    // changed limit, since `--limit 50` contains `--limit 5`. The whole payload is pinned too —
+    // the `--json` field list is what makes the query return filing evidence (the run's id, its
+    // status and conclusion, its event and branch, its title, its URL and when it was created),
+    // so the brief's row must carry exactly the command the rule emits.
+    expect(awaitingTag).toContain(`\`${AWAITING_TAG_COMMAND}\``);
+    expect(awaitingTag).toContain(
+      '`gh run list --workflow release-tag.yml --limit 5 --json databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt`',
+    );
     expect(awaitingTag).toContain('nothing');
   });
 });
