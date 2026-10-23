@@ -300,8 +300,11 @@ export const registryFindings = (states: readonly PublishState[]): readonly Find
  * Every state told whether its stamped version's tag exists. One probe per DISTINCT version: the
  * workspaces are stamped in lockstep, so 31 packages at one version cost exactly one `git
  * ls-remote`, and asking per package would put 31 remote reads behind a daily audit.
+ *
+ * Exported because it is the one place that turns a `TagProbe`'s answers into state: a caller that
+ * already holds probe answers reuses it rather than asking a second way.
  */
-async function withTags(
+export async function withTags(
   states: readonly PublishState[],
   probe: TagProbe,
 ): Promise<readonly PublishState[]> {

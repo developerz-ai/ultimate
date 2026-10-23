@@ -18,6 +18,8 @@ import { packageFiles, shippingPackage } from './lib/release-due-ships';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/workspaces';
+import type { TagProbe } from './registry-audit';
+import { remoteTagProbe } from './registry-audit';
 import { sectionBody, UNRELEASED_VERSION } from './release-notes';
 
 const SCRIPT = 'release-due';
@@ -31,6 +33,14 @@ const gitUnreadable = (asked: string, output: string): Finding => ({
   code: 'X_RELEASE_WINDOW_UNREADABLE',
   cause: `${asked} failed, so the commits since the last release are unknown: ${output.slice(0, 300)}`,
   fix: 'git fetch --unshallow --tags origin; bun run scripts/release-due.ts --json',
+  at: 'scripts/release-due.ts',
+});
+
+const unreachable = (): Finding => ({
+  code: 'X_RELEASE_TAG_UNREACHABLE',
+  cause:
+    'no vX.Y.Z tag that origin also holds is reachable from HEAD, so there is no last release to count commits from — a shallow or tagless clone, or a remote that could not be asked',
+  fix: 'git fetch --tags origin && bun run scripts/release-due.ts --json',
   at: 'scripts/release-due.ts',
 });
 
@@ -57,15 +67,33 @@ const headNotMain = (
 });
 
 /**
- * The highest stable `v*` tag HEAD contains, without its `v`; undefined when there is none; a
- * finding when git itself could not answer, which is not the same as a tagless clone.
+ * The highest stable `v*` tag HEAD contains that the REMOTE also holds, without its `v`; undefined
+ * when there is none; a finding when git itself could not answer, which is not the same as a
+ * tagless clone.
+ *
+ * A tag the remote cannot confirm is not a release: this answers whether a release is DUE, and a
+ * window counted from a tag the remote never saw would report a maintainer's release as shipping
+ * commits all over again. `probe` is injected like every other seam here — a test that reached
+ * `origin` would report the remote's state, not this checkout's.
+ *
+ * `undefined` from the probe STOPS the scan; it does not step over the candidate. Whether the
+ * higher tag is on origin is then unknown, and every tag below it is a DIFFERENT release whose
+ * window this cannot honestly count — falling through would answer the question from a release
+ * older than the one in doubt, a window stretched across a release the maintainer already shipped.
  */
-export async function lastReleaseTag(root: string): Promise<string | undefined | Finding> {
+export async function lastReleaseTag(
+  root: string,
+  probe: TagProbe = remoteTagProbe(root),
+): Promise<string | undefined | Finding> {
   const tags = await git(['tag', '--merged', 'HEAD', '--list', 'v*', '--sort=-v:refname'], root);
   if (!tags.ok) return gitUnreadable('git tag --merged HEAD', tags.output);
   for (const line of tags.output.split('\n')) {
     const version = STABLE_TAG.exec(line.trim())?.[1];
-    if (version !== undefined) return version;
+    if (version === undefined) continue;
+    const onRemote = await probe(`v${version}`);
+    // git's no-answer, not a denial: refuse rather than fall through to an older release.
+    if (onRemote === undefined) return unreachable();
+    if (onRemote === true) return version;
   }
   return undefined;
 }
@@ -100,14 +128,6 @@ export function parseWindowLog(output: string): readonly WindowCommit[] {
     ];
   });
 }
-
-const unreachable = (): Finding => ({
-  code: 'X_RELEASE_TAG_UNREACHABLE',
-  cause:
-    'no vX.Y.Z tag is reachable from HEAD, so there is no last release to count commits from — a shallow or tagless clone',
-  fix: 'git fetch --tags origin && bun run scripts/release-due.ts --json',
-  at: 'scripts/release-due.ts',
-});
 
 /**
  * The commits since `v<tagged>`, or the refusal when git could not list them. A different code
@@ -159,12 +179,15 @@ export async function openPrTitlesAt(root: string, version: string): Promise<rea
 
 /**
  * Everything the rule needs, read from the checkout at `root`; a finding when it cannot be read.
- * `listPrTitles` is the bump-PR twin lookup, injected so a test can name open PRs without one.
+ * Two seams, in that order: `probe` says whether origin holds a candidate tag (see
+ * `lastReleaseTag`) and `listPrTitles` is the bump-PR twin lookup — both injected so a test names
+ * the answer instead of reaching the remote or the GitHub CLI.
  */
 export async function decideAt(
   root: string,
   settleHours: number,
   nowMs: number,
+  probe: TagProbe = remoteTagProbe(root),
   listPrTitles: (version: string) => Promise<readonly string[]> = (version) =>
     openPrTitlesAt(root, version),
 ): Promise<
@@ -184,7 +207,7 @@ export async function decideAt(
       fix: 'bun run scripts/list-workspaces.ts --json',
     });
   }
-  const tagged = await lastReleaseTag(root);
+  const tagged = await lastReleaseTag(root, probe);
   if (tagged === undefined) return unreachable();
   if (typeof tagged !== 'string') return tagged;
   const commits = await readWindow(root, tagged);

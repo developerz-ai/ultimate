@@ -41,8 +41,38 @@ interface Deployment {
 /** Every role on, so no Deployment is missing from the assertions below. */
 const ALL_ROLES = ['--set', 'roles.sync.enabled=true', '--set', 'roles.replicator.enabled=true'];
 
-function render(kubeVersion: string, extra: readonly string[] = []): Map<string, Deployment> {
-  const result = Bun.spawnSync(
+/** One render's deadline, racing the child and its pipes. A render alone measures ~1-4 s. */
+const RENDER_DEADLINE_MS = 30_000;
+
+/**
+ * One `helm template` render, AWAITED with a deadline that races the child and its pipes. Never
+ * `Bun.spawnSync`: a synchronous wait holds the test worker's only thread, so a render that does
+ * not come back is a worker neither the spawn's own timeout nor this file's 180 s budget can end —
+ * gate unit-1 lost its whole first batch that way (#851): 68 of its 69 files passed while this
+ * file never returned, batches 2-12 never started, and the step died at its deadline. SIGKILL,
+ * because helm's install path traps SIGTERM and keeps running (scaffold-helm-retire.test.ts).
+ *
+ * The pipes are read through READERS this function retains, never `new Response(stream).text()`:
+ * a Response body consumer takes the stream's reader lock, so the deadline branch's `cancel()`
+ * would reject against the lock it holds itself and the pending reads would survive the kill — a
+ * child that retains stdout/stderr (a helm descendant past the fork) left both pending, forever.
+ * Cancelling the RETAINED reader stops its own read and releases the lock.
+ */
+async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+  const parts: Uint8Array[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(parts));
+}
+
+async function render(
+  kubeVersion: string,
+  extra: readonly string[] = [],
+): Promise<Map<string, Deployment>> {
+  const child = Bun.spawn(
     [
       HELM ?? 'helm',
       'template',
@@ -55,13 +85,31 @@ function render(kubeVersion: string, extra: readonly string[] = []): Map<string,
       ...ALL_ROLES,
       ...extra,
     ],
-    // Bounded: `helm template` renders one chart offline in well under a second. SIGKILL, because
-    // helm's install path traps SIGTERM and keeps running (scaffold-helm-retire.test.ts).
-    { stdout: 'pipe', stderr: 'pipe', timeout: 30_000, killSignal: 'SIGKILL' },
+    { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
   );
-  if (result.exitCode !== 0)
-    return expect.unreachable(`helm template: ${result.stderr.toString()}`);
-  const parsed: unknown = Bun.YAML.parse(result.stdout.toString());
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<'late'>((resolve) => {
+    timer = setTimeout(() => resolve('late'), RENDER_DEADLINE_MS);
+  });
+  const outReader = child.stdout.getReader();
+  const errReader = child.stderr.getReader();
+  const settled = await Promise.race([
+    Promise.all([readAll(outReader), readAll(errReader), child.exited]),
+    late,
+  ]);
+  clearTimeout(timer);
+  if (settled === 'late') {
+    child.kill('SIGKILL');
+    await Promise.allSettled([outReader.cancel(), errReader.cancel()]);
+    outReader.releaseLock();
+    errReader.releaseLock();
+    return expect.unreachable(
+      `helm template ${kubeVersion} did not finish within ${RENDER_DEADLINE_MS} ms and was killed`,
+    );
+  }
+  const [stdout, stderr, exitCode] = settled;
+  if (exitCode !== 0) return expect.unreachable(`helm template: ${stderr}`);
+  const parsed: unknown = Bun.YAML.parse(stdout);
   const docs = (Array.isArray(parsed) ? parsed : [parsed]) as Deployment[];
   return new Map(docs.map((doc) => [doc.metadata.name.replace('app-ultimate-', ''), doc]));
 }
@@ -93,8 +141,8 @@ describe('unit · the chart values agree with the framework defaults', () => {
 });
 
 describe.skipIf(HELM === null)('unit · docker/helm rendered', () => {
-  test('every role has a readinessProbe on /readyz, worker and scheduler included', () => {
-    const deployments = render('1.30.0');
+  test('every role has a readinessProbe on /readyz, worker and scheduler included', async () => {
+    const deployments = await render('1.30.0');
     expect([...deployments.keys()].sort()).toEqual([
       'replicator',
       'scheduler',
@@ -108,16 +156,16 @@ describe.skipIf(HELM === null)('unit · docker/helm rendered', () => {
     }
   });
 
-  test('a new pod must stay Ready for minReadySeconds before the rollout counts it', () => {
-    for (const [role, doc] of render('1.30.0', ['--set', 'minReadySeconds=17'])) {
+  test('a new pod must stay Ready for minReadySeconds before the rollout counts it', async () => {
+    for (const [role, doc] of await render('1.30.0', ['--set', 'minReadySeconds=17'])) {
       expect({ role, min: doc.spec.minReadySeconds }).toEqual({ role, min: 17 });
     }
   });
 
-  test('the grace period is derived per role: preStop + readiness grace where routed, + budget + margin', () => {
+  test('the grace period is derived per role: preStop + readiness grace where routed, + budget + margin', async () => {
     // web and sync: 5 preStop (1.30+) + 5 readiness grace + 25 drain + 10 teardown. The roles
     // nothing routes to drain with no grace (`lifecycleForRole`) and render no preStop.
-    expect(graceOf(render('1.30.0'))).toEqual({
+    expect(graceOf(await render('1.30.0'))).toEqual({
       replicator: 35,
       scheduler: 35,
       sync: 45,
@@ -125,16 +173,16 @@ describe.skipIf(HELM === null)('unit · docker/helm rendered', () => {
       worker: 35,
     });
     // Below 1.30 no preStop sleep renders, so none is budgeted.
-    expect(graceOf(render('1.29.0'))).toMatchObject({ web: 40, worker: 35 });
+    expect(graceOf(await render('1.29.0'))).toMatchObject({ web: 40, worker: 35 });
   });
 
-  test('raising the drain budget raises every role’s grace period with it', () => {
-    const raised = graceOf(render('1.30.0', ['--set', 'drain.deadlineSeconds=600']));
+  test('raising the drain budget raises every role’s grace period with it', async () => {
+    const raised = graceOf(await render('1.30.0', ['--set', 'drain.deadlineSeconds=600']));
     expect(raised).toMatchObject({ web: 620, worker: 610, scheduler: 610 });
   });
 
-  test('every rolling role keeps maxUnavailable: 0', () => {
-    for (const [role, doc] of render('1.30.0')) {
+  test('every rolling role keeps maxUnavailable: 0', async () => {
+    for (const [role, doc] of await render('1.30.0')) {
       if (role === 'replicator') continue;
       expect({ role, unavailable: doc.spec.strategy.rollingUpdate?.maxUnavailable }).toEqual({
         role,
