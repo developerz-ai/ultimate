@@ -346,6 +346,86 @@ describe('unit · health · Dependabot activity and checks', () => {
     });
   }
 
+  test('a confirmed stuck PR files even with a separate pending PR on the page', () => {
+    // The bug this pins: the row-wide pending gate used to shadow the page's one confirmed
+    // failure — `unverdicted` never files, so the stuck-PR alarm went silent.
+    const page = narrowPrs([
+      {
+        number: 805,
+        createdAt: '2020-01-01T00:00:00Z',
+        updatedAt: new Date(nowMs - weekMs - 1).toISOString(),
+        statusCheckRollup: [red],
+      },
+      {
+        number: 806,
+        createdAt: '2020-01-01T00:00:00Z',
+        updatedAt: new Date(nowMs).toISOString(),
+        statusCheckRollup: [{ __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null }],
+      },
+    ]);
+    const verdict = dependabotVerdict({ prs: page, nowMs });
+    expect(verdict.verdict).toBe('unhealthy');
+    expect(verdict.reason).toContain('#805');
+    expect(verdict.reason).not.toContain('#806');
+  });
+
+  test('a confirmed stuck PR files even when a separate PR has an unreadable updatedAt', () => {
+    const page = narrowPrs([
+      {
+        number: 807,
+        createdAt: '2020-01-01T00:00:00Z',
+        updatedAt: new Date(nowMs - weekMs - 1).toISOString(),
+        statusCheckRollup: [red],
+      },
+      { number: 808, createdAt: '2020-01-01T00:00:00Z', statusCheckRollup: [green] },
+    ]);
+    const verdict = dependabotVerdict({ prs: page, nowMs });
+    expect(verdict.verdict).toBe('unhealthy');
+    expect(verdict.reason).toContain('#807');
+  });
+
+  test('a page of unresolved evidence with no confirmed failure stays unverdicted', () => {
+    const page = narrowPrs([
+      {
+        number: 809,
+        createdAt: '2020-01-01T00:00:00Z',
+        updatedAt: new Date(nowMs).toISOString(),
+        statusCheckRollup: [{ __typename: 'CheckRun', status: 'QUEUED', conclusion: null }],
+      },
+    ]);
+    expect(dependabotVerdict({ prs: page, nowMs }).verdict).toBe('unverdicted');
+  });
+
+  test('through healthAt, a mixed page files the stuck ask and turns healthy off', async () => {
+    // 14 days: over the threshold under any clock the reader hands the script.
+    const result = await healthAt('.', {
+      ...healthyReaders,
+      'dependabot-not-stuck': async () => ({
+        prs: [
+          {
+            number: 810,
+            createdAt: '2020-01-01T00:00:00Z',
+            updatedAt: new Date(Date.now() - weekMs * 2).toISOString(),
+            statusCheckRollup: [red],
+          },
+          {
+            number: 811,
+            createdAt: '2020-01-01T00:00:00Z',
+            updatedAt: new Date(Date.now()).toISOString(),
+            statusCheckRollup: [
+              { __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null },
+            ],
+          },
+        ],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    expect((result.data as { healthy: boolean }).healthy).toBe(false);
+    const row = verdictOf(result).find((one) => one.row === 'dependabot-not-stuck');
+    expect(row?.verdict).toBe('unhealthy');
+    expect(row?.reason).toContain('#810');
+  });
+
   test('unreadable activity never falls back to creation, even for green checks', async () => {
     for (const updatedAt of [undefined, '', 'invalid']) {
       for (const statusCheckRollup of [[green], [red]]) {

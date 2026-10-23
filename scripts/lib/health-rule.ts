@@ -327,6 +327,22 @@ export function dependabotVerdict(input: DependabotInput): RowVerdict {
   if (input.prs.length === 0) {
     return { ...base, verdict: 'healthy', reason: 'no open Dependabot PR', prs: input.prs };
   }
+  // Stuck is computed BEFORE the row-wide unknown gates: a page holding one confirmed stuck PR
+  // files it even while a different PR's checks or updatedAt are still unread — `unverdicted` is
+  // for pages with no confirmed failure, never a mute on a confirmed one. The finite guard is
+  // load-bearing here: the unreadable-updatedAt gate below has not run yet.
+  const stuck = input.prs.filter((pr) => {
+    const updatedAt = Date.parse(pr.updatedAt ?? '');
+    return pr.checks === 'red' && Number.isFinite(updatedAt) && input.nowMs - updatedAt > WEEK_MS;
+  });
+  if (stuck.length > 0) {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      reason: `Dependabot stuck with failed checks: ${stuck.map((pr) => `#${pr.number} inactive since updatedAt ${pr.updatedAt}`).join(', ')}`,
+      prs: input.prs,
+    };
+  }
   if (input.prs.some((pr) => !Number.isFinite(Date.parse(pr.updatedAt ?? '')))) {
     return {
       ...base,
@@ -343,17 +359,10 @@ export function dependabotVerdict(input: DependabotInput): RowVerdict {
       prs: input.prs,
     };
   }
-  const stuck = input.prs.filter((pr) => {
-    const updatedAt = Date.parse(pr.updatedAt ?? '');
-    return pr.checks === 'red' && input.nowMs - updatedAt > WEEK_MS;
-  });
   return {
     ...base,
-    verdict: stuck.length === 0 ? 'healthy' : 'unhealthy',
-    reason:
-      stuck.length === 0
-        ? `${input.prs.length} open Dependabot PR(s), all green or active within 7 days`
-        : `Dependabot stuck with failed checks: ${stuck.map((pr) => `#${pr.number} inactive since updatedAt ${pr.updatedAt}`).join(', ')}`,
+    verdict: 'healthy',
+    reason: `${input.prs.length} open Dependabot PR(s), all green or active within 7 days`,
     prs: input.prs,
   };
 }
