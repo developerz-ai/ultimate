@@ -2,7 +2,7 @@
 // (`apps/web/prerender.ts` writes it into the artifact) and the running web role (`seo-routes.ts`
 // serves it), so a crawler reads the same two files from a CDN and from a container.
 
-import type { Environment, SeoSitemapConfig } from '@ultimat3/core';
+import type { Environment, SeoRobotsGroup, SeoSitemapConfig } from '@ultimat3/core';
 import { UltimateError } from '@ultimat3/core';
 import { localizedPath, unlocalizedPath } from '@ultimat3/i18n';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
@@ -34,6 +34,11 @@ export interface SiteSeoOptions {
    * `User-agent: *` group; a non-production `robots.txt` still disallows everything.
    */
   readonly disallow?: readonly string[] | undefined;
+  /**
+   * `seo.robots.groups` from `app.config.ts` (`loadSiteSettings`): the production file's per-crawler
+   * groups. They shape `robots.txt` alone — the sitemap is filtered by `disallow`, every crawler's.
+   */
+  readonly robotsGroups?: readonly SeoRobotsGroup[] | undefined;
   /**
    * `seo.sitemap` from `app.config.ts` (`loadSiteSettings`): the public `app/` pages to list beside
    * the `site/` ones, where each `<lastmod>` comes from, and the sections and page size of an
@@ -237,6 +242,7 @@ export async function siteSeo(options: SiteSeoOptions): Promise<SiteSeo> {
     baseUrl: options.baseUrl,
     sitemaps: [SITEMAP_PATH],
     ...(options.disallow === undefined ? {} : { disallow: options.disallow }),
+    ...(options.robotsGroups === undefined ? {} : { groups: options.robotsGroups }),
     ...(options.environment === undefined ? {} : { environment: options.environment }),
   });
   return { robots, sitemaps };

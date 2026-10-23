@@ -8,7 +8,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`seo.robots.groups` in `app.config.ts` — per-crawler `robots.txt` rules.** `seo.robots` could
+  only disallow for every crawler, though `buildRobots` already wrote per-`User-agent` groups. Now
+  `groups: [{ userAgent, allow?, disallow?, crawlDelay? }]` reaches the production file (served and
+  static export alike): e.g. `/s/` open to everyone so link previews unfurl, closed to `GPTBot`,
+  `CCBot`, `ClaudeBot`. Validated like `disallow` — a non-empty user agent (no line break), paths
+  starting with `/` — and refused as `X_CONFIG_INVALID` by index. New type `SeoRobotsGroup`
+  (`@ultimat3/seo`'s `RobotsGroup` is now that type).
+
+### Fixed
+
+- **Bun's 10 s idle timeout no longer cuts a request `requestTimeoutMs` still allows.**
+  `httpServer().start()` never passed `idleTimeout`, so Bun closed any socket whose handler had
+  written nothing for ~10–12 s — a 25 s long-poll came back a 502 behind a tunnel, every time, under
+  a framework that promised 30 s. The socket's `idleTimeout` is now
+  `socketIdleTimeoutSeconds(requestTimeoutMs)`: `ceil(ms / 1000) + 2` s, and `0` (off) for
+  `requestTimeoutMs: 0` or a deadline past Bun's 255 s ceiling, so the deadline is always what cuts.
+  `x mcp serve --transport http` turns the idle cut off too: a `verify_run` tool call writes nothing
+  for minutes.
 
 ## 27.15.0 - 2026-10-22
 
