@@ -254,8 +254,10 @@ const defaultReaders = (root: string): HealthReaders => ({
             'list',
             '--app',
             'dependabot',
+            '--state',
+            'open',
             '--json',
-            'number,createdAt,updatedAt,url,state,autoMergeRequest,statusCheckRollup',
+            'number,createdAt,updatedAt,statusCheckRollup',
           ],
           root,
         )

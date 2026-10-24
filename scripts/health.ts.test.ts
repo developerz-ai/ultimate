@@ -1,8 +1,8 @@
 // The orchestrator over injected readers, its jsonDocument stderr-noise scan, the release-tag
 // row's run evidence, and one real spawn with nothing on PATH — a row the script cannot read must
 // refuse the whole answer. No network, no real checkout: the pure rules behind the verdicts are
-// pinned here too, one row at a time through the same injected readers. Row 7's check rollup lives
-// in `health-dependabot.test.ts`: the row that reads a rollup is not also this file's subject.
+// pinned here too, one row at a time through the same injected readers. Row 7's activity and
+// checks cases live in `health-dependabot.test.ts`: one row's world is that file's subject.
 
 import { describe, expect, test } from 'bun:test';
 import type { HealthOverrides } from './health';
@@ -107,7 +107,14 @@ describe('unit · health · healthAt over injected readers', () => {
     const result = await healthAt('.', {
       ...healthyReaders,
       'dependabot-not-stuck': async () => ({
-        prs: [{ number: 801, createdAt: '2020-01-01T00:00:00Z' }],
+        prs: [
+          {
+            number: 801,
+            createdAt: '2020-01-01T00:00:00Z',
+            updatedAt: '2020-01-02T00:00:00Z',
+            statusCheckRollup: [{ __typename: 'StatusContext', state: 'FAILURE' }],
+          },
+        ],
       }),
     });
     expect(result.ok).toBe(true);
