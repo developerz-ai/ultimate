@@ -252,10 +252,11 @@ describe('the @ultimat3/ui barrel', () => {
   );
 
   /**
-   * The scaffold's island, as an entry this package can build without the JSX plugin: the same
-   * three names `theme-toggle.island.tsx` imports, held so nothing shakes. What is asserted is
-   * the module LIST — which packages are absent, and which of this package's modules are present
-   * — because the bytes of a build without Solid's compiler are not the island's bytes.
+   * The scaffold's island, as a plain entry: the same three names `theme-toggle.island.tsx`
+   * imports, held so nothing shakes, compiled by the island build's own `solidJsxPlugin`. What is
+   * asserted is the module LIST — which packages are absent, and which of this package's modules
+   * are present — because this entry is not the island file, and the dedupe and define an
+   * `x build` adds move bytes a list does not see.
    */
   test('the theme-toggle island retains no server-only package, and only its own modules', async () => {
     const chunk = await chunkOf(
