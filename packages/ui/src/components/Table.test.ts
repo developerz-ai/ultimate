@@ -2,17 +2,14 @@
 // the stylesheet selects on — so the wiring is read off the node tree and the rule off what Sass
 // emits: a pinned cell with a transparent background shows the scrolled cells through it.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes } from '../jsx-probe-fixture';
 import { compileScssFile } from '../sass-probe-fixture';
 import { Table } from './Table';
 
 const SHEET = Bun.fileURLToPath(new URL('./Table.module.scss', import.meta.url));
 
 describe('Table', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   const table = (extra: Record<string, unknown> = {}) =>
     one(byTag(renderNodes(Table, { caption: 'Rows', children: null, ...extra }), 'table'), 'table');
 

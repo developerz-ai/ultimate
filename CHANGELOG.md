@@ -16,7 +16,50 @@ Every package; tier 5 — cli.
   manifest and in `create-ultimate`, and `x` / `x doctor` (`REQUIRED_BUN`) refuse Bun 1.4.0–1.4.2
   with `X_BUN_VERSION`. CI, `release.yml`, the framework image (`oven/bun:1.4.3-slim`) and the image
   `x new` scaffolds (`oven/bun:1.4.3-alpine`, by digest) all run 1.4.3, so the floor names the one
-  patch this release was tested on. `@types/bun` is `1.4.3`.
+  patch this release was tested on. `@types/bun` is `1.4.3`. Why it is a floor and not a pin:
+  1.4.3 changed what Bun's own transform makes of a `.tsx` (Fixed, below), and every framework path
+  that loads one now installs a transform before it does.
+
+Tier 4 — ui.
+
+- **BREAKING — (#2) `@ultimat3/ui/jsx-probe` is gone, and `probe`/`unprobe` with it.** They
+  installed a `globalThis.React` for the classic `React.createElement` Bun compiled a `.tsx` to
+  through 1.4.2. From 1.4.3 Bun never emits that call, and both test preloads install
+  `@ultimat3/render`'s loader, so nothing read the global; the subpath existed only to share its one
+  counter with `@ultimat3/admin`, which no longer has one. The walkers stay internal to ui's tests.
+
+Tier 5 — testing.
+
+- **`@ultimat3/testing/preload` installs the render loader in every test process**, not only where
+  `app.config.ts` sits beside the run. A workspace package's own tests (castlefight.online's
+  `packages/domain`, ai-maxxing's packages) needed a hand-written `import '@ultimat3/render/server'`
+  preload to load a component; that preload can go.
+
+Tier 5 — cli.
+
+- **The framework's `x` image compiles through `scripts/compile-x.ts`** (`Bun.build` with
+  `serverTsxBuildPlugin`), not `bun build --compile`, which takes no plugin.
+
+### Added
+
+- `@ultimat3/render/server`: `serverTsxBuildPlugin` — the server `.tsx` transform as a `Bun.build`
+  plugin, for a bundle that carries server components (a compiled executable, a module-graph
+  measurement). `transformTsx(source, factory?)` takes the specifier its prelude imports `h` from.
+
+### Fixed
+
+- **A `.tsx` no longer fails to link on Bun 1.4.3 (#883).** Bun 1.4.3 honours the tsconfig's
+  `jsxImportSource: "solid-js"` under `jsx: "preserve"` and imports `jsxDEV` (`jsx` in production)
+  from `solid-js/jsx-dev-runtime`; solid-js maps that path to `dist/solid.js`, which exports
+  neither, because Solid's JSX is a compile-time contract and it ships no runtime. Measured: Bun
+  1.3.14 compiles the same file to `React.createElement`, 1.4.3 to an import that is a
+  `SyntaxError: Export named 'jsxDEV' not found` at link time — in every file that merely imports a
+  component. Every graph that loads a `.tsx` now installs one of the framework's transforms first:
+  the framework's own test preload installs the render loader like an app's does, the compiled `x`
+  and the serve-graph measurement use `serverTsxBuildPlugin`, and the browser-barrel and
+  `@ultimat3/ui` byte measurements use the island build's `solidJsxPlugin` — the transform those
+  chunks ship with, where they measured Bun's own until now (`scripts/ui-barrel-bytes.test.ts`,
+  moved from `packages/ui`, since a tier-4 test may not import the cli's plugin).
 
 ## 27.16.1 - 2026-10-24
 

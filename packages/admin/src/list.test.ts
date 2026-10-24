@@ -3,7 +3,7 @@
 // all work), paging is prev/next cursor LINKS with no page number — because there is no offset —
 // and nothing on the page is a control that needs a script to act.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
 import {
   type AdminActor,
@@ -13,14 +13,7 @@ import {
   adminDenied,
 } from './authz';
 import type { AdminField } from './fields';
-import {
-  byComponent,
-  installFactory,
-  one,
-  renderShallowNodes,
-  restoreFactory,
-  shallowNodesOf,
-} from './inert-jsx-fixture';
+import { byComponent, one, renderShallowNodes, shallowNodesOf } from './inert-jsx-fixture';
 import { type ListLocation, listHref } from './list-request';
 import type { AdminPage } from './pagination';
 import type { AdminAction, AdminRow } from './registry';
@@ -38,9 +31,6 @@ registerCatalog('en', {
   'admin.actions.label': 'Actions (probe)',
   'admin.post.field.title': 'Title (probe)',
 });
-
-beforeAll(installFactory);
-afterAll(restoreFactory);
 
 const titleField: AdminField = {
   entity: 'post',

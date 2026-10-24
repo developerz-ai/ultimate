@@ -1,9 +1,9 @@
 // The wiring of the two chart components — what the markup carries — asked of the components;
 // the geometry has its own tests in `bar-chart-view.test.ts` and `sparkline-view.test.ts`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe';
-import { byTag, nodesOf, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import type { ProbeNode } from '../jsx-probe-fixture';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { BarChart } from './BarChart';
 import { Sparkline } from './Sparkline';
 
@@ -25,9 +25,6 @@ const points = [
 ];
 
 describe('BarChart', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('is an image with a name, one data-bar rect per point, each with a title', () => {
     const nodes = renderNodes(BarChart, { label: 'Clicks, last 3 days', points });
     const svg = one(byTag(nodes, 'svg'), 'chart');
@@ -175,9 +172,6 @@ describe('BarChart', () => {
 });
 
 describe('Sparkline', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('is an image with a name, one path, and a dot on the last point with its title', () => {
     const nodes = renderNodes(Sparkline, { label: 'Trend', points });
     expect(one(byTag(nodes, 'svg'), 'spark').props['aria-label']).toBe('Trend');

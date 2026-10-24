@@ -44,6 +44,10 @@ import { rm, rmdir } from 'node:fs/promises';
 // why: same import, same reason — `relative` is what keeps the generated entry's specifier honest
 // when the fixture directory moves, instead of a hand-counted `../`.
 import { dirname, join, relative, resolve } from 'node:path';
+import { solidJsxPlugin } from '../packages/cli/src/solid-loader';
+
+/** `packages/ui/src` — what every claim below is about. */
+const UI_SRC = resolve(import.meta.dir, '..', 'packages', 'ui', 'src');
 
 /**
  * `.tmp/` is gitignored repo-wide, so an interrupted run leaves nothing tracked behind. It has to
@@ -53,11 +57,11 @@ import { dirname, join, relative, resolve } from 'node:path';
  * of this file deleted each other's entries mid-build — reproduced with six, 3 of them red with
  * `File not found ".../packages/ui/.tmp/moneyText-deep.ts"`.
  */
-const FIXTURE_DIR = join(import.meta.dir, '..', '.tmp', `barrel-bytes-${process.pid}`);
+const FIXTURE_DIR = join(UI_SRC, '..', '.tmp', `barrel-bytes-${process.pid}`);
 const TMP_ROOT = dirname(FIXTURE_DIR);
 
 /** `packages/<name>` — the directory a retained module's path is refused or allowed by. */
-const packageDir = (name: string): string => `${resolve(import.meta.dir, '..', '..', name)}/`;
+const packageDir = (name: string): string => `${resolve(UI_SRC, '..', '..', name)}/`;
 
 /**
  * Packages the theme-toggle island's graph must not reach at all. Each was in it on 2026-09-19 and
@@ -92,7 +96,7 @@ const THEME_TOGGLE_UI_MODULES: readonly string[] = [
   'theme/runtime-slot.ts',
   'theme/solid-adapter.ts',
   'theme/theme.ts',
-].map((module) => resolve(import.meta.dir, module));
+].map((module) => resolve(UI_SRC, module));
 
 async function bundle(name: string, source: string, minify: boolean): Promise<string> {
   const entry = join(FIXTURE_DIR, `${name}.ts`);
@@ -103,6 +107,10 @@ async function bundle(name: string, source: string, minify: boolean): Promise<st
     format: 'esm',
     splitting: false,
     minify,
+    // The island build's own JSX transform (`island-bundle.ts`), so a `.tsx` the barrel reaches
+    // compiles as it ships. Without it Bun compiles the `.tsx` itself, which Bun 1.4.3 refuses to
+    // link (`No matching export … for import "jsxDEV"`, issue #883) and no Bun got right.
+    plugins: [solidJsxPlugin],
   });
   const output = built.outputs[0];
   if (!built.success || output === undefined) {
@@ -179,7 +187,7 @@ async function chunkOf(name: string, source: string): Promise<Chunk> {
 }
 
 /** The generated entry's specifier for a module in `src/`, so the fixture depth is never spelled. */
-const specifier = (module: string): string => relative(FIXTURE_DIR, join(import.meta.dir, module));
+const specifier = (module: string): string => relative(FIXTURE_DIR, join(UI_SRC, module));
 
 afterAll(async () => {
   await rm(FIXTURE_DIR, { recursive: true, force: true });
@@ -230,7 +238,7 @@ describe('the @ultimat3/ui barrel', () => {
 
       // Not vacuous: two empty lists are equal, and an extraction that read nothing would satisfy
       // every assertion below. The module under test has to be in both.
-      const own = resolve(import.meta.dir, `${module}.ts`);
+      const own = resolve(UI_SRC, `${module}.ts`);
       expect(barrel.modules).toContain(own);
       expect(deep.modules).toContain(own);
 
@@ -259,14 +267,14 @@ describe('the @ultimat3/ui barrel', () => {
       ].join('\n'),
     );
     // Not vacuous: the island's own modules are in the list.
-    expect(chunk.modules).toContain(resolve(import.meta.dir, 'components/ThemeToggle.tsx'));
-    expect(chunk.modules).toContain(resolve(import.meta.dir, 'theme/provider.tsx'));
+    expect(chunk.modules).toContain(resolve(UI_SRC, 'components/ThemeToggle.tsx'));
+    expect(chunk.modules).toContain(resolve(UI_SRC, 'theme/provider.tsx'));
 
     // The mechanism: the browser build took the mapped file and not the server's. Only the
     // absence is asserted — `ambient.browser.ts` is one unused function, so Bun shakes every
     // statement it has and writes no banner for it, while `ambient.ts` registers at import and
     // would be here, i18n behind it, if the `browser` field had not been read.
-    expect(chunk.modules).not.toContain(resolve(import.meta.dir, 'theme/ambient.ts'));
+    expect(chunk.modules).not.toContain(resolve(UI_SRC, 'theme/ambient.ts'));
 
     // The packages a DOM render has no use for, refused by path.
     for (const name of SERVER_ONLY_PACKAGES) {

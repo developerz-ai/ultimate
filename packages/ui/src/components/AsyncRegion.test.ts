@@ -3,9 +3,9 @@
 // the wrong argument passes every assertion about itself. Probe-based, beside its component, the
 // same shape as `DataTable.test.ts`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { byTag, one, type ProbeNode, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { AsyncRegion } from './AsyncRegion';
 
 const ROWS = ['alpha', 'beta'];
@@ -51,9 +51,6 @@ const placeholders = (nodes: readonly ProbeNode[]): ProbeNode[] =>
   );
 
 describe('AsyncRegion', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the component compiles to a JSX factory this file understands', () => {
     expect(render({ state: { status: 'ready', data: ROWS } }).nodes.length).toBeGreaterThan(0);
   });

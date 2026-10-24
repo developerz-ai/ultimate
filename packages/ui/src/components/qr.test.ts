@@ -1,15 +1,12 @@
 // The wiring of QrCode — what the markup carries; the encoder has its own tests in
 // `qr-encode.test.ts`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes } from '../jsx-probe-fixture';
 import { QrCode } from './QrCode';
 import { encodeQr } from './qr-matrix';
 
 describe('QrCode', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('is an image with a name, a viewBox of size plus the quiet zone, one rect per dark module', () => {
     const nodes = renderNodes(QrCode, {
       value: 'HELLO WORLD',

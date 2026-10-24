@@ -78,7 +78,7 @@ export function topLevelEffects(source: string): readonly TopLevelEffect[] {
  * request context exists and which in a browser can never fire at all — and took `like.island.tsx`
  * over its route's declared 50 kB budget. "Anchor every `register*` call" put `@ultimat3/ui`'s
  * `errors.ts` on the barrel, dragging core's whole error registry (~5.6 kB) into every chunk that
- * imports any `@ultimat3/ui` name, which is the exact regression `packages/ui/src/barrel-bytes.test.ts`
+ * imports any `@ultimat3/ui` name, which is the exact regression `scripts/ui-barrel-bytes.test.ts`
  * exists to catch.
  *
  * The discriminator neither predicate could see: a package's own `errors.ts` registers titles for
@@ -92,7 +92,7 @@ export function topLevelEffects(source: string): readonly TopLevelEffect[] {
  *
  * Measured: anchoring the first three costs **0 B** on all four of `examples/dummy`'s islands,
  * and it makes the retention DETERMINISTIC — the `schema-error-codes.ts` flap that
- * `island-bytes.test.ts` and `barrel-bytes.test.ts` used to tolerate went from 12 flaps in 60 pairs
+ * `island-bytes.test.ts` and `ui-barrel-bytes.test.ts` used to tolerate went from 12 flaps in 60 pairs
  * (1.4.0) and 28 in 60 (1.3.14) to **0 in 60 on 1.4.0, 1.3.14 and 1.4.1-canary alike**. On 1.4.2
  * (2026-10-05, issue #354) it stayed 0 — 192 island pairs, 288 barrel pairs, under contention — and
  * both tests' flap branches are deleted: either now fails outright if the module moves.

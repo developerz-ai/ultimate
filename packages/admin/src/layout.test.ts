@@ -3,7 +3,7 @@
 // are on, a theme that arrives as data attributes plus custom properties — never a colour — and
 // no control that needs a script, because an admin screen never hydrates.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
 import { iconMenu } from '@ultimat3/ui/icons/menu';
 import type { AdminApp } from './admin';
@@ -11,10 +11,8 @@ import {
   byComponent,
   byTag,
   type InertNode,
-  installFactory,
   one,
   renderShallowNodes,
-  restoreFactory,
   shallowNodesOf,
   withAttr,
 } from './inert-jsx-fixture';
@@ -40,9 +38,7 @@ registerCatalog('en', {
   'ui.close': 'Close (probe)',
 });
 
-beforeAll(installFactory);
 afterAll(() => {
-  restoreFactory();
   // The probes above overwrite framework keys (`admin.actor.anonymous`); a later file reads those.
   resetCatalogs();
 });

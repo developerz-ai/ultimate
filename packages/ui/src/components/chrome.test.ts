@@ -6,7 +6,7 @@
 // catalog behind every string asserted below — is registered by the barrel, and this file reaches
 // components by their module paths (issue #490).
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { FakeElement } from '../fake-dom-fixture';
 import { UI_KEYS } from '../i18n-keys';
@@ -16,11 +16,9 @@ import {
   fire,
   one,
   type ProbeNode,
-  probe,
   renderNodes,
-  unprobe,
   withAttr,
-} from '../jsx-probe';
+} from '../jsx-probe-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext } from '../theme/solid-adapter';
 import { Alert } from './Alert';
@@ -73,9 +71,6 @@ function formRuntime(): { flush(): void; restore(): void } {
 }
 
 describe('the page chrome', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the components under test compile to a JSX factory this file understands', () => {
     expect(renderNodes(AppShell, { children: 'body' }).length).toBeGreaterThan(0);
   });

@@ -95,12 +95,13 @@ COPY . .
 #
 # `JSON.stringify` rather than bare interpolation: the define's value is parsed as a JS expression,
 # so `1.2.0` unquoted is arithmetic and not a string.
-RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/package.json").version)')" \
- && bun build --compile --minify --sourcemap \
-      --define ULTIMATE_FRAMEWORK_VERSION="$VERSION_DEFINE" \
-      --external @babel/preset-typescript \
-      --outfile /out/app \
-      ./packages/cli/src/bin.ts \
+#
+# `scripts/compile-x.ts` and not `bun build --compile`: the CLI's graph reaches every admin screen
+# and `@ultimat3/ui` component, and a `.tsx` compiled by Bun's own transform imports `jsxDEV` from
+# `solid-js/jsx-dev-runtime`, which exports no such name — Bun 1.4.3 refuses the compile (issue
+# #883). Only `Bun.build` takes the plugin that compiles them to the server factory, and the CLI
+# takes no plugin. The script passes the same define, the same externals and `--minify`.
+RUN bun run scripts/compile-x.ts --outfile /out/app \
  && chmod +x /out/app
 
 # ---------- runtime: distroless, non-root, no shell ----------

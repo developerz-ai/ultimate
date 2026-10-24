@@ -3,10 +3,10 @@
 // runtime that actually re-runs effects can show it. The browser build is loaded by file, because
 // the `solid-js` specifier resolves to the server build under `bun test`, where no effect runs.
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import type { FormIssue } from '../form/form-issue';
 import { useForm } from '../form/use-form';
-import { attachRef, byTag, one, probe, renderNodes, unprobe } from '../jsx-probe';
+import { attachRef, byTag, one, renderNodes } from '../jsx-probe-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import { Form } from './Form';
 
@@ -23,10 +23,8 @@ describe('Form focus under a real Solid runtime', () => {
   let solid: Solid;
 
   beforeAll(async () => {
-    probe();
     solid = await browserSolid();
   });
-  afterAll(unprobe);
   afterEach(clearSolidRuntime);
 
   test('a failed submit focuses once; touching and editing afterwards never pull focus back', async () => {

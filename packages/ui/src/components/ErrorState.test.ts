@@ -5,11 +5,11 @@
 // catalog behind every string asserted below — is registered by the barrel, and this file reaches
 // components by their module paths (issue #490).
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, probe, renderNodes, unprobe } from '../jsx-probe';
+import { byTag, renderNodes } from '../jsx-probe-fixture';
 import { ErrorState, errorParts } from './ErrorState';
 
 /**
@@ -163,9 +163,6 @@ describe('an error whose fields throw when read', () => {
  * component wrote the string itself.
  */
 describe('<ErrorState> resolves its own chrome through the catalog', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   const text = (nodes: readonly { props: Record<string, unknown> }[]): string =>
     JSON.stringify(nodes.map((node) => node.props['children']));
 

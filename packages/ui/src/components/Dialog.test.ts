@@ -2,14 +2,11 @@
 // drag-select STARTED inside the panel and released over the backdrop fires a click there too, and
 // closed the dialog under a user who was only selecting text. Both halves must land on the backdrop.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { attachRef, byTag, fire, one, probe, renderNodes, unprobe } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { attachRef, byTag, fire, one, renderNodes } from '../jsx-probe-fixture';
 import { Dialog } from './Dialog';
 
 describe('Dialog backdrop dismiss', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   const setup = () => {
     let closed = 0;
     const nodes = renderNodes(Dialog, {

@@ -1,9 +1,9 @@
 // The wiring of DonutChart — what the markup carries. The arc maths has its own tests in
 // `donut-chart-view.test.ts`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe';
-import { byTag, nodesOf, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import type { ProbeNode } from '../jsx-probe-fixture';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { DonutChart } from './DonutChart';
 
 const text = (node: ProbeNode | undefined): string =>
@@ -19,9 +19,6 @@ const segments = [
   { label: 'Watch', value: 0 },
 ];
 const base = { label: 'Sessions by device', segments, keyLabel: 'Device', valueLabel: 'Sessions' };
-
-beforeAll(probe);
-afterAll(unprobe);
 
 describe('DonutChart', () => {
   test('a named figure holding one svg image, one drawn segment per non-zero part', () => {

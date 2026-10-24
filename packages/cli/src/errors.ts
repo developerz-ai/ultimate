@@ -336,6 +336,20 @@ export class FrameworkScriptBuildFailedError extends UltimateError {
 }
 
 /**
+ * A single-file executable would not compile (`compile-executable.ts`). The same code as every
+ * other bundle the framework builds; the cause carries the bundler's own log, which names the file.
+ */
+export class ExecutableCompileFailedError extends UltimateError {
+  constructor(input: { entry: string; outfile: string; logs: string }) {
+    super({
+      code: 'X_BUILD_FAILED',
+      cause: `${input.entry} would not compile to the executable ${input.outfile}: ${input.logs}`,
+      fix: 'bun run scripts/compile-x.ts --outfile <path>   # the same compile, its log in full',
+    });
+  }
+}
+
+/**
  * A static build over an app whose modules did not all import. The route registry is filled BY the
  * import, so a page whose module threw is not skipped but absent — and an export without it, with
  * `x build` green, is a deploy that deletes a page. The `manifest` step owns load findings
