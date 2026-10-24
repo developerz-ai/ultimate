@@ -85,6 +85,7 @@ import { checkRoadmap } from './roadmap';
 import { sealCallFindings } from './seal-calls';
 import { setupCommandFindings } from './setup-commands';
 import { bareErrorFindings } from './test-bare-error';
+import { testDiscoveryFindings } from './test-discovery';
 import { testFixFindings } from './test-fix-citations';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
@@ -290,6 +291,7 @@ export const errorContract: HostCheck = async (root) => [
  * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
  * | `readmeFenceFindings` | a fenced `ts`/`tsx` example in a package README typechecks | `tsc`, on a ratchet |
  * | `testTypecheckFindings` | this repo's TEST sources typecheck — every package config excludes them, so `tsc -b` reads none of the 966 | `tsc -p tsconfig.tests.json`, on a ratchet |
+ * | `testDiscoveryFindings` | a test file the gate's discovery never yields, or one outside the one convention — *.spec.*, *_spec.* and *.test.{js,jsx} are invisible to the glob, while any __tests__/ path IS yielded by it and run by the gate, so it is refused for the convention it breaks; a colliding basename names no test file at all | `TEST_GLOB` in packages/cli/src/test-select.ts, and the ignore policy in packages/cli/src/test-ignores.ts |
  * | `generatorCountFindings` | a documented `N files` for `x new` / `x g resource` is what the generator still emits — five had gone stale and were corrected by hand | `planNewApp()` / `generate()`, the planners `--dry-run` calls |
  * | `releaseFactFindings` | the package COUNT ten pages restate is the count on disk; `SECURITY.md` claimed 28 two majors late | `listWorkspaces()` |
  * | `setupCommandFindings` | a page stating what a scaffolded app's `bun run setup` runs, or how many steps it is, describes the script `x new` writes — `x db seed` was in the script and in no CI path, and four pages hand-copy the list | `binSetup()` in `templates/scaffold-bin.ts` |
@@ -323,6 +325,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await gateStepFindings(root)),
   ...(await versionStampFindings(root)),
   ...(await readmeFenceFindings(root)),
+  ...(await testDiscoveryFindings(root)),
   ...(await testTypecheckFindings(root)),
   ...(await generatorCountFindings(root)),
   ...(await releaseFactFindings(root)),
