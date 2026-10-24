@@ -42,6 +42,60 @@ describe('a source header in the 1–4 line contract', () => {
   });
 });
 
+describe('an inline block header', () => {
+  test('a one-line block header passes', () => {
+    expect(readSourceHeader('x.ts', '/* One responsibility. */\nexport const a = 1;\n')).toEqual({
+      path: 'x.ts',
+      lines: ['One responsibility.'],
+    });
+  });
+
+  test('a one-line JSDoc header passes', () => {
+    expect(readSourceHeader('x.ts', '/** One responsibility. */\nexport const a = 1;\n')).toEqual({
+      path: 'x.ts',
+      lines: ['One responsibility.'],
+    });
+  });
+
+  test('code after the closing delimiter is not prose', () => {
+    expect(
+      readSourceHeader('x.ts', '/* One responsibility. */ export const a = 1;\n').lines,
+    ).toEqual(['One responsibility.']);
+  });
+
+  test('prose on the opening delimiter line counts', () => {
+    const source = ['/* One responsibility,', ' * carried on.', ' */', 'export const a = 1;'].join(
+      '\n',
+    );
+    expect(readSourceHeader('x.ts', source).lines).toEqual(['One responsibility,', 'carried on.']);
+  });
+
+  test('prose before the closing delimiter counts', () => {
+    const source = [
+      '/*',
+      ' * One responsibility,',
+      ' * stated here. */',
+      'export const a = 1;',
+    ].join('\n');
+    expect(readSourceHeader('x.ts', source).lines).toEqual(['One responsibility,', 'stated here.']);
+  });
+
+  test('delimiter-line prose counts toward the four-line contract', () => {
+    const source = ['/* One.', ' * Two.', ' * Three.', ' * Four.', ' * Five.', ' */'].join('\n');
+    expect(readSourceHeader('x.ts', source).problem).toBe('too-long');
+  });
+
+  test('a bare one-line delimiter is still empty', () => {
+    expect(readSourceHeader('x.ts', '/* */\nexport const a = 1;\n').problem).toBe('empty');
+    expect(readSourceHeader('x.ts', '/***/\nexport const a = 1;\n').problem).toBe('empty');
+  });
+
+  test('a blank line still ends the first paragraph', () => {
+    const source = ['/*', ' * One responsibility.', ' *', ' * Why: longer.', ' */'].join('\n');
+    expect(readSourceHeader('x.ts', source).lines).toEqual(['One responsibility.']);
+  });
+});
+
 describe('the repository tree', () => {
   test('is at or under its per-file pin', async () => {
     const findings = await sourceHeaderFindings(repoRoot());

@@ -24,11 +24,15 @@ export interface SourceHeader {
   readonly problem?: SourceHeaderProblem;
 }
 
+/** A block-comment line's prose: the leading `*` bullet and the surrounding whitespace stripped. */
+const prose = (line: string): string => line.replace(/^\s*\*\s?/, '').trim();
+
 /**
  * The leading header: a line-comment block or a block-comment block, after an optional shebang.
  *
- * The first PARAGRAPH is what the contract judges. Later paragraphs are the why, and a block
- * header's delimiters are never prose.
+ * The first PARAGRAPH is what the contract judges. Later paragraphs are the why. A block header's
+ * delimiters are never prose, the text between them always is — on the delimiter lines included,
+ * so a one-line block header keeps its line and delimiter-line prose counts toward the four.
  */
 export function readSourceHeader(path: string, source: string): SourceHeader {
   const lines = source.split(/\r?\n/);
@@ -37,12 +41,25 @@ export function readSourceHeader(path: string, source: string): SourceHeader {
   const first = lines[at]?.trimStart() ?? '';
   if (first.startsWith('/*')) {
     const end = lines.findIndex((line, index) => index >= at && line.includes('*/'));
-    const body = lines.slice(at + 1, end === -1 ? lines.length : end);
+    const stop = end === -1 ? lines.length : end;
+    // The prose is everything between the delimiters, the delimiter lines included: a one-line
+    // block header is one line of prose, and text before a closing delimiter is prose wherever
+    // it sits. A bare delimiter line is not a blank prose line, so it neither starts nor ends a
+    // paragraph — only a blank line between two delimiters does.
     const paragraph: string[] = [];
-    for (const line of body) {
-      const text = line.replace(/^\s*\*\s?/, '').trim();
-      if (text === '') break;
-      paragraph.push(text);
+    const open = first.slice(2);
+    const openText = prose(end === at ? open.slice(0, open.indexOf('*/')) : open);
+    if (openText !== '') paragraph.push(openText);
+    let ended = false;
+    for (let index = at + 1; index < stop && !ended; index += 1) {
+      const text = prose(lines[index] ?? '');
+      if (text === '') ended = true;
+      else paragraph.push(text);
+    }
+    if (end > at && !ended) {
+      const close = lines[end] ?? '';
+      const closeText = prose(close.slice(0, close.indexOf('*/')));
+      if (closeText !== '') paragraph.push(closeText);
     }
     if (paragraph.length === 0) return { path, lines: [], problem: 'empty' };
     return paragraph.length > 4
