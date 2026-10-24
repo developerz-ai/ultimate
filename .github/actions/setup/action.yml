@@ -115,7 +115,7 @@ runs:
         #   - wall time: the full local gate 415 s on 12 cores; CI's is on the sweep 3 PR.
         # The rule stands for the next move: run the gate on the candidate and write its numbers
         # here, beside the pin, in the diff that moves it.
-        bun-version: '1.4.2'
+        bun-version: '1.4.3'
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         # `~` is the runner's home on every OS (actions/cache expands it), and Bun's default

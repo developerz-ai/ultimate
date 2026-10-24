@@ -8,7 +8,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+Every package; tier 5 — cli.
+
+- **BREAKING — (#1) Bun 1.4.3 is the floor.** `engines.bun` is `>=1.4.3` in every `@ultimat3/*`
+  manifest and in `create-ultimate`, and `x` / `x doctor` (`REQUIRED_BUN`) refuse Bun 1.4.0–1.4.2
+  with `X_BUN_VERSION`. CI, `release.yml`, the framework image (`oven/bun:1.4.3-slim`) and the image
+  `x new` scaffolds (`oven/bun:1.4.3-alpine`, by digest) all run 1.4.3, so the floor names the one
+  patch this release was tested on. `@types/bun` is `1.4.3`.
 
 ## 27.16.1 - 2026-10-24
 
