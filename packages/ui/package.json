@@ -24,7 +24,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./icons/*": "./src/icons/glyphs/*.ts",
-    "./jsx-probe": "./src/jsx-probe.ts",
     "./tokens": "./src/tokens/_index.scss",
     "./theme.scss": "./src/tokens/theme.scss",
     "./reset.scss": "./src/tokens/reset.scss",
@@ -40,7 +39,7 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

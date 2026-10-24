@@ -11,6 +11,7 @@ import { closeE2eBrowsersAtRunEnd } from '../packages/testing/src/cdp-browser-le
 import { installDeterminism } from '../packages/testing/src/determinism';
 import { registerFrameworkFixtures } from '../packages/testing/src/framework-fixtures';
 import '../packages/testing/src/matchers';
+import { installRenderLoader } from '../packages/render/src/module-loader';
 import { releasePluginsAfterIsolatedFile } from '../packages/testing/src/isolated-plugins';
 import { installPerTestReset } from '../packages/testing/src/per-test-reset';
 import { installRegistryLeakGuard } from '../packages/testing/src/registry-leak-guard';
@@ -39,6 +40,13 @@ installRegistryLeakGuard();
 // Isolated runs only (`x test` says so): Bun 1.4.0 keeps every finished file alive while a plugin
 // is registered. See `isolated-plugins.ts`.
 releasePluginsAfterIsolatedFile();
+
+// Every `.tsx` compiles to the server factory from the first file on, AFTER the release above for
+// the reason `@ultimat3/testing/preload` gives. Bun's own compile is wrong on every Bun, and from
+// 1.4.3 it is a link-time `SyntaxError: Export named 'jsxDEV' not found` in every file that imports
+// a component (issue #883). The same loader an app's preload installs, so a framework suite runs
+// its components the way an app does; a suite whose subject is a process WITHOUT it spawns one.
+installRenderLoader();
 
 // The per-TEST half, the same one an app's preload installs: the jobs event bus STORES what it is
 // handed, so an answer one test published would resume the next test's waiting run.

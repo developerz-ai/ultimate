@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Twenty-six majors have shipped, and this page walks all twenty-six** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Twenty-six majors have shipped, and this page walks all twenty-six; a twenty-seventh (28.0.0) is in flight** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 27.x → 28.0.0 | **2** so far, and **unreleased** — **Bun 1.4.3 as the floor**; `@ultimat3/ui/jsx-probe` and its `probe`/`unprobe` removed | the `27.x → 28.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 26.x → 27.0.0 | **2** — `AsyncContext.exit` required; **`/_storage` and `/media` refuse a key outside every `org/<id>/` prefix unless `defineStorage({ shared })` lists its prefix**, and `Storage.isShared` required | the `27.0.0` section, in order |
 | 25.x → 26.0.0 | **6** — an OAuth login that verifies the id token's signature against the provider's published key set by default; Apple out of the OAuth built-ins; `ServerHandle.describe()` deleted; no `api/**/route.ts` file kind; `recover: 'agent'` deleted and scraping at tier 4; one CLI verb per command (`list`, `show`, `delete`) | the `26.0.0` section, in order |
 | 24.x → 25.0.0 | **40** — Bun 1.4.2 as the floor; a closed `app.config.ts` that refuses an undeclared key and every deleted one by name, the locales in `defineCatalogs()`; `assertEnvExample`, `resolveSpeculation` and `normalizeAuditRecord` removed, `AuditRecord.name` / `.primitive` required, every value imported from the package that declares it; one spelling per factory, never `create<Thing>`; one `Page` (`entity`'s `Page` and `storage`'s `ListPage` removed), `http.drainTimeoutMs` and `http.buildIdHeader` removed, a `bearerMount` catch-all; one MCP projection (`toolFrom`), one page shape (`nextCursor`, `hasMore`), a per-action rate limit that is the action's own, a redaction-keeping `IdempotencyStore`, `SQL_*` statements off the barrels, the NATS job driver stub deleted, required `WebhookLedger.isDisabled` and `ChangeEvent.write`; one MCP block in core with `McpExposure` and its `name` removed, `contentHash` removed, a scopes map that names every tool, a required `DigestAppend.appender`; **no model chosen for an app — it registers its own and names one**; a widened `Menu` `aria-controls`, a private `FakeElement.listeners`, offline scrapes that state their robots reason, `nearest` removed, a `--cdp-url` capture that fails closed, a page that may not import a repo, ai's `contentHash` renamed `promptHash`, one meaning per value name, every job ack counted; a per-queue `jobs.concurrency`, the framework's own secrets in `.env.example`, an e2e app that inherits no `DATABASE_URL`; a two-argument `resolveGrants`, `WORKER_QUEUES` as the exact set, a `jobWorker` default of 8 slots, and `ChangeEvent.table` | the `25.0.0` section, in order |
@@ -72,6 +73,40 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 27.x → 28.0.0, entry by entry — **unreleased**
+
+**Two entries so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by
+package, lowest tier first. No legacy path, no codemod, no shim. **Entry 1 is the whole upgrade for
+almost every app**: Bun 1.4.3 everywhere your app runs — laptop, CI, image. A later slice appends
+its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)`
+after the dash.
+
+Why 1.4.3 is a floor: it changed what Bun's own transform makes of a `.tsx`. Under the scaffold's
+`jsx: "preserve"` + `jsxImportSource: "solid-js"`, 1.4.2 compiled `<div/>` to
+`React.createElement` and 1.4.3 to `import { jsxDEV } from "solid-js/jsx-dev-runtime"`, which
+solid-js does not export — a link-time `SyntaxError: Export named 'jsxDEV' not found` in any file
+that imports a component, before a line of it runs (issue #883). Every framework path installs its
+own transform first; a path your app built itself must too (step 4).
+
+### The upgrade, top to bottom
+
+| # | Do | What you see until you do | Entries |
+|---|---|---|---|
+| 1 | install Bun 1.4.3 (`bun upgrade`, or `curl -fsSL https://bun.sh/install \| bash -s bun-v1.4.3`) and pin it where your app pins Bun: `.bun-version`, `packageManager`, `engines.bun` (`>=1.4.3`), CI's `setup-bun` `bun-version`, every `oven/bun:` base image (`1.4.3-alpine` / `1.4.3-slim`, by digest) | `X_BUN_VERSION` from `x` and `x doctor` on 1.4.0–1.4.2 | 1 |
+| 2 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
+| 3 | delete a hand-written test preload whose only job was `import '@ultimat3/render'` / `'@ultimat3/render/server'` — `@ultimat3/testing/preload` now installs the render loader in every test process, an app root or a package below it | nothing — it is redundant, and harmless while it stays | — |
+| 4 | `grep -rnE "Bun\.build\(\|bun build" apps packages scripts` — a bundle YOUR app builds that reaches a `.tsx` (a server `--compile`, a byte measurement) adds `plugins: [serverTsxBuildPlugin]` from `@ultimat3/render/server` (server code) or builds it as an island (`x build`); the CLI's `bun build` takes no plugin, so use `Bun.build` | `No matching export in "…/solid-js/dist/solid.js" for import "jsxDEV"` | 1 |
+| 5 | `x verify` | green, or a finding whose `fix:` is the edit | — |
+
+### Entry by entry
+
+Every package (1). Tier 4 — `@ultimat3/ui` (2).
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `engines.bun` `>=1.4.3`, `REQUIRED_BUN`, the scaffold's images | you run any Bun below 1.4.3 anywhere: `x` and `x doctor` refuse it with `X_BUN_VERSION`. Steps 1 and 4 |
+| 2 | `@ultimat3/ui/jsx-probe`, `probe`, `unprobe` | you imported them. They set a `globalThis.React` nothing reads from Bun 1.4.3 on; delete the import and the `beforeAll(probe)` / `afterAll(unprobe)` calls |
 
 ## 26.x → 27.0.0, entry by entry
 

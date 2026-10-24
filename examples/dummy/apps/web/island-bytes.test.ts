@@ -48,7 +48,7 @@ const REPO_ROOT = join(APP_ROOT, '..', '..');
  * Read off core's own export rather than spelled here, so a title edited there cannot leave this
  * predicate quietly answering `false` for every build.
  *
- * `packages/ui/src/barrel-bytes.test.ts` cannot use this predicate: `@ultimat3/ui` reaches
+ * `scripts/ui-barrel-bytes.test.ts` cannot use this predicate: `@ultimat3/ui` reaches
  * `@ultimat3/schema` through `money`, whose `SCHEMA_ERROR_CODES` carries these titles verbatim, so
  * a ui chunk holds them either way. These islands reach schema too (`realtime` → `query` →
  * `schema`), but nothing an island calls touches schema's error path, so only core's anchored copy

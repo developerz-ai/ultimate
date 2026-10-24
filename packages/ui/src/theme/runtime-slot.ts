@@ -4,7 +4,7 @@
 // `runtimeMissingError`, so it imports `../errors`, which `package.json` declares side-effectful
 // (`registerErrorCodes()` runs at import) and no bundler may therefore shake. An island that only
 // REGISTERS the runtime paid @ultimat3/core's whole error registry for it — 5,719 B against 72 B,
-// measured in `barrel-bytes.test.ts`, which is the build error behind this file existing.
+// measured in `scripts/ui-barrel-bytes.test.ts`, which is the build error behind this file existing.
 
 import type { SolidRuntime } from './solid-adapter';
 

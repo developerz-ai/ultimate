@@ -1,16 +1,11 @@
 // TEST-ONLY. Calls an admin `.tsx` view as the plain function it is and walks what came back, so
 // a test can assert on the tree a screen produced rather than on a value it also constructed.
 //
-// Which JSX factory a `.tsx` in this package compiled to is NOT ours to choose: `@ultimat3/render`
-// installs a process-global `Bun.plugin` `onLoad` for `/\.tsx$/` at import (`routes.ts` imports it,
-// so any sibling suite can win the race) and `bun test` is one process. Both factories build the
-// same shape — a `type`, a `props`, children under `props.children` — so this walker recognises
-// both and the run's file order stops deciding. Recognising neither is what falls through to
-// `String(value)` and asserts against `"[object Object]"`.
-
-// The subpath, never the barrel: this is a test harness and the design system's `index.ts` is its
-// semver'd contract (`packages/ui/CLAUDE.md`). It is imported for `globalThis.React`'s ONE counter.
-import { probe, unprobe } from '@ultimat3/ui/jsx-probe';
+// Every `.tsx` a test loads compiles to `@ultimat3/render`'s server factory — the test preload
+// installs its loader before the first file (issue #883). A tree a test builds by hand with `h()`
+// below has the same shape — a `type`, a `props`, children under `props.children` — so this walker
+// reads both. Recognising neither is what falls through to `String(value)` and asserts against
+// `"[object Object]"`.
 
 /** `@ultimat3/render`'s node brand, read off the GLOBAL symbol registry rather than imported. */
 const RENDER_NODE: symbol = Symbol.for('ultimate.render.jsx');
@@ -28,9 +23,8 @@ export function isInertNode(value: unknown): value is InertNode {
 }
 
 /**
- * Build a node by hand, the shape the installed factory builds. NOT the installed factory — that is
- * `@ultimat3/ui`'s, so there is one owner of `globalThis.React` (see `installFactory` below). This
- * is what a test uses to construct a tree it did not render.
+ * Build a node by hand, the shape the render factory builds — what a test uses to construct a tree
+ * it did not render.
  */
 export function h(
   type: string | InertComponent,
@@ -40,27 +34,6 @@ export function h(
   const base = { ...(props ?? {}) };
   if (children.length > 0) base['children'] = children.length === 1 ? children[0] : children;
   return { inert: true, type, props: base } as unknown as InertNode;
-}
-
-/**
- * Install the classic-factory global, through `@ultimat3/ui`'s ONE counter over `globalThis.React`.
- *
- * This package kept its own `depth`/`saved` pair until 2026-08-22, and two counters over one
- * property restore in the wrong order: admin installs (saving the real binding), ui installs
- * (saving ADMIN's factory), admin restores (its counter hits 0 → the real binding is back), ui
- * restores (its counter hits 0 → admin's factory goes back over it). `bun test` is one process and
- * `packages/ui` and `packages/admin` are one run, so the interleave is reachable, and the global
- * was left holding a harness the run had already torn down. `admin` is tier 5 and `ui` is tier 4,
- * so importing down is the fix; the two factories build the same `{ inert, type, props }` shape,
- * which is what `isInertNode` recognises.
- */
-export function installFactory(): void {
-  probe();
-}
-
-/** Undo the matching `installFactory()`. Unbalanced calls are inert. */
-export function restoreFactory(): void {
-  unprobe();
 }
 
 /**

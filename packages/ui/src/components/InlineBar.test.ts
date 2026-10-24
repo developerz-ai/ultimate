@@ -3,14 +3,11 @@
 // second, unlabelled value — and it must be drawn from the same share rule `Meter` uses.
 
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { InlineBar } from './InlineBar';
 
 describe('InlineBar', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   const bar = (props: Record<string, unknown>) =>
     renderNodes(InlineBar, { value: 30, max: 120, text: '30', ...props });
 

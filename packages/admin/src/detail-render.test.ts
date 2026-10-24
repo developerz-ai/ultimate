@@ -2,7 +2,7 @@
 // or build a link by concatenation. `operationLabel` has its own file (`detail.test.ts`); this one
 // drives the component.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AuditEntry } from './audit';
 import {
@@ -16,11 +16,9 @@ import type { AdminField } from './fields';
 import {
   byComponent,
   byTag,
-  installFactory,
   nodesOf,
   one,
   renderHtml,
-  restoreFactory,
   shallowNodesOf,
   withAttr,
 } from './inert-jsx-fixture';
@@ -50,9 +48,6 @@ registerCatalog('en', {
   'admin.post.field.title': 'Title (probe)',
   'admin.post.field.secret': 'Secret (probe)',
 });
-
-beforeAll(installFactory);
-afterAll(restoreFactory);
 
 const field = (over: Partial<AdminField>): AdminField => ({
   entity: 'post',

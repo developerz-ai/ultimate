@@ -36,7 +36,7 @@ export const MANIFEST_FILE = 'x.manifest.json';
  * declared supported would hang on graceful shutdown the moment its database went away. The full
  * measurement is in `.github/actions/setup/action.yml`; read it before lowering this.
  */
-export const REQUIRED_BUN = '1.4.2';
+export const REQUIRED_BUN = '1.4.3';
 
 export interface AppRoot {
   readonly dir: string;

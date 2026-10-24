@@ -7,7 +7,7 @@
 // focus that a disabled control refuses). `document` is installed only around the keyboard
 // dispatch: a DOM present during a render is what `solid()` reads as "client", and it throws.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { FakeElement, installFakeDom, keydown } from '../fake-dom-fixture';
 import {
   attachRef,
@@ -15,11 +15,9 @@ import {
   fire,
   one,
   type ProbeNode,
-  probe,
   renderNodes,
-  unprobe,
   withAttr,
-} from '../jsx-probe';
+} from '../jsx-probe-fixture';
 import { MENU_ITEM_SELECTOR } from '../roving';
 import { Button } from './Button';
 import { Checkbox } from './Checkbox';
@@ -53,9 +51,6 @@ const tabindexes = (nodes: readonly ProbeNode[], role: string): unknown[] =>
   withAttr(nodes, 'role', role).map((node) => node.props['tabindex']);
 
 describe('component keyboard and form wiring', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the components under test compile to a JSX factory this file understands', () => {
     expect(renderNodes(Table, { caption: 'Rows', children: null }).length).toBeGreaterThan(0);
   });

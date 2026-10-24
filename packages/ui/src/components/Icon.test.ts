@@ -3,10 +3,10 @@
 // element — a `rect` that forgot `ry`, or a `line` that read `x1` twice, renders a plausible wrong
 // icon that no allowlist test can see.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
 import { iconChevronDown } from '../icons/glyphs/chevron-down';
-import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Icon } from './Icon';
 import type { IconGlyph } from './icon-glyph';
 
@@ -22,9 +22,6 @@ const EVERY_SHAPE: IconGlyph = [
 ];
 
 describe('Icon', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the component compiles to a JSX factory this file understands', () => {
     expect(renderNodes(Icon, { glyph: iconChevronDown }).length).toBeGreaterThan(0);
   });

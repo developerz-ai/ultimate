@@ -57,7 +57,9 @@ It sat on `packages/render/src/index.ts` until 9.0.0, which is what the `.` / `.
 
 ## Why a runtime transform instead of `tsconfig`
 
-`tsconfig.json` sets `jsx: "preserve"` with `jsxImportSource: "solid-js"`. Bun reads `preserve` as "no automatic runtime" and falls back to the **classic** `React.createElement` factory, ignoring `jsxImportSource` — so every `.tsx` in the repo compiled to a reference to a global `React` that does not exist, and any component call threw `ReferenceError`. That was invisible because nothing ever called one.
+`tsconfig.json` sets `jsx: "preserve"` with `jsxImportSource: "solid-js"`, and Bun's own compile of that is wrong on every Bun. Through 1.4.2 Bun read `preserve` as "no automatic runtime" and fell back to the **classic** `React.createElement` factory, ignoring `jsxImportSource` — so every `.tsx` in the repo compiled to a reference to a global `React` that does not exist, and any component call threw `ReferenceError`. That was invisible because nothing ever called one. From 1.4.3 Bun honours `jsxImportSource` and imports `jsxDEV` (`jsx` in production) from `solid-js/jsx-dev-runtime`, which solid-js maps to a module exporting no such name: a link-time `SyntaxError` in every graph that merely imports a component (issue #883, measured on 1.3.14 and 1.4.3). Solid ships no runtime factory because its JSX is a compile-time contract.
+
+So every graph that loads a `.tsx` installs a transform, and there are exactly three: the runtime loader (`installRenderLoader`, which both test preloads install before the first file), `serverTsxBuildPlugin` for a `Bun.build` of server code (the compiled `x`, module-graph measurements), and the island build's `solidJsxPlugin` for a browser graph.
 
 Both halves of the config stay as they are, and each now means one thing:
 

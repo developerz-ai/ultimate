@@ -89,3 +89,4 @@ export {
 } from './render-stream';
 // ---- the Sass compile cache: where it lives, and how often this process ran Sass instead --------
 export { sassCompilations, setSassCacheDir } from './sass-cache';
+export { serverTsxBuildPlugin } from './tsx-build-plugin';

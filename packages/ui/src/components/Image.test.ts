@@ -2,16 +2,13 @@
 // component asks them and whether the answers reach the element — the loading hints, the reserved
 // box it may never omit, and the AVIF/WebP `<source>`s in front of the fallback.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes } from '../jsx-probe-fixture';
 import { Image } from './Image';
 
 const BOX = { width: 620, height: 320 } as const;
 
 describe('Image', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('an image with no reserved box is refused — neither size nor ratio shifts the layout', () => {
     expect(() => renderNodes(Image, { src: '/a.png', alt: 'A' })).toThrow(
       expect.objectContaining({ code: 'X_UI_INVALID_VALUE' }),

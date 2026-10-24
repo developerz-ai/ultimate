@@ -1,9 +1,9 @@
 // The wiring of Gauge — what the markup carries. The dial's maths has its own tests in
 // `gauge-view.test.ts`, and the share rule is `meter-view.ts`'s.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe';
-import { byTag, nodesOf, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import type { ProbeNode } from '../jsx-probe-fixture';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Gauge } from './Gauge';
 
 const text = (node: ProbeNode | undefined): string =>
@@ -11,9 +11,6 @@ const text = (node: ProbeNode | undefined): string =>
     .flat()
     .filter((c) => typeof c === 'string')
     .join('');
-
-beforeAll(probe);
-afterAll(unprobe);
 
 describe('Gauge', () => {
   test('a meter with its range, its value and the readout as value text', () => {

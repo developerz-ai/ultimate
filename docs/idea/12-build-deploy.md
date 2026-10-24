@@ -28,7 +28,7 @@ Two source kinds need a compiler before an Ultimate app runs at all, and both ar
 
 | Source | Compiled to | Why a loader, not `tsconfig` |
 |---|---|---|
-| `*.tsx` | `h(…)` calls into render's server JSX factory ([`packages/render/src/jsx.ts`](../../packages/render/src/jsx.ts)) | `jsx: 'preserve'` makes Bun fall back to the **classic** `React.createElement` factory and ignore `jsxImportSource` entirely. `jsxImportSource: 'solid-js'` stays, because that is where the JSX *type* namespace lives — the runtime factory is the framework's |
+| `*.tsx` | `h(…)` calls into render's server JSX factory ([`packages/render/src/jsx.ts`](../../packages/render/src/jsx.ts)) | Bun's own compile of a `.tsx` is wrong on every Bun: through 1.4.2 `jsx: 'preserve'` fell back to the **classic** `React.createElement`, and from 1.4.3 it imports `jsxDEV` from `solid-js/jsx-dev-runtime`, which exports no such name — a link-time `SyntaxError` (issue #883). `jsxImportSource: 'solid-js'` stays, because that is where the JSX *type* namespace lives — the runtime factory is the framework's |
 | `*.module.scss` | CSS plus the scoped class map the `import styles from …` already assumes ([`packages/render/src/css-modules.ts`](../../packages/render/src/css-modules.ts)) | Bun has no SCSS loader; without one, `styles` is the *path string* and every `styles.foo` is `undefined` |
 
 Class names are content-addressed (`hero_92a494d7`), so two checkouts at different paths compile to byte-identical CSS. A stylesheet that does not compile is `X_PRERENDER_FAILED` naming the file — never a silently unstyled page.

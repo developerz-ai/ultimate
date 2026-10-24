@@ -5,10 +5,10 @@
 // content. Each half is asserted here: the wiring off the node tree, the fallback off the CSS.
 
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, one, type ProbeNode, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { compileScssFile } from '../sass-probe-fixture';
 import { AppShell } from './AppShell';
 
@@ -32,9 +32,6 @@ const textOf = (node: ProbeNode | undefined): string => {
 };
 
 describe('AppShell, the sidebar collapses into a panel below md', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the nav is a popover, and the menu button targets it by its id', () => {
     const nodes = shell();
     const nav = one(byTag(nodes, 'nav'), '<nav>');

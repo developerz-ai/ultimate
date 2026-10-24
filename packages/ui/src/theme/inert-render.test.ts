@@ -5,7 +5,7 @@
  * calls each component as a plain function. Reactivity that is impossible is not reactivity lost.
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { configureLocales, type Locale, localeConfig } from '@ultimat3/i18n';
 import { configureTime, type TimeZone, timeConfig } from '@ultimat3/time';
 import { AppShell } from '../components/AppShell';
@@ -42,11 +42,11 @@ import './ambient';
 import { UiProvider } from './provider';
 import { clearSolidRuntime } from './runtime-slot';
 
-// --- the inert factory ---------------------------------------------------------------------
-// A local copy of `@ultimat3/render`'s `h` + `renderToHtml`, ~30 lines of it. This package may
-// not import `@ultimat3/render` (its `.tsx` compiles to that factory, which is exactly why the
-// import would be circular), and the fidelity this test needs is small: a component is a function
-// of props, a thunk is called, and nothing reactive exists.
+// --- the inert renderer --------------------------------------------------------------------
+// A local copy of `@ultimat3/render`'s `renderToHtml`, ~20 lines of it. This package may not
+// import `@ultimat3/render`, and the fidelity this test needs is small: a component is a function
+// of props, a thunk is called, and nothing reactive exists. The components themselves compile to
+// render's `h` — the test preload installs its loader before the first file (issue #883).
 
 interface JsxLike {
   readonly type: string | ((props: Record<string, unknown>) => unknown);
@@ -57,6 +57,7 @@ interface InertNode extends JsxLike {
   readonly inert: true;
 }
 
+/** A node built by hand, the shape render's `h` builds: what a test renders a component through. */
 function h(
   type: string | ((props: Record<string, unknown>) => unknown),
   props: Record<string, unknown> | null,
@@ -70,13 +71,8 @@ function h(
 /**
  * `@ultimat3/render`'s node brand, read off the GLOBAL symbol registry rather than by importing
  * the package this one may not depend on — which is exactly why the symbol is registered there.
- *
- * Which factory these components compile to is NOT this file's to choose: `render/src/index.ts`
- * installs a process-global `Bun.plugin` `onLoad` for `/\.tsx$/` at import, and `bun test` is one
- * process, so any other file in the run that imports `@ultimat3/render` first wins. Both factories
- * build the same shape — a `type` and a `props` with children in `props.children` — so this walker
- * understands both and the run's file order stops deciding the result. Recognising neither is what
- * used to fall through to `String(value)` and assert against `"[object Object]"`.
+ * Recognising neither shape is what used to fall through to `String(value)` and assert against
+ * `"[object Object]"`.
  */
 const RENDER_NODE: symbol = Symbol.for('ultimate.render.jsx');
 
@@ -107,29 +103,16 @@ function render(value: unknown): string {
   return String(value);
 }
 
-// Bun falls back to the CLASSIC React factory for a `.tsx` under `jsx: 'preserve'` — the same
-// fallback `@ultimat3/render`'s module loader exists to replace. In an app the loader points it at
-// `h`; here this one line does, so the components under test compile to the factory above.
-const withFactory = { React: { createElement: h } };
-
 // --- the tests -----------------------------------------------------------------------------
 
 describe('the inert server path', () => {
   const locales = localeConfig();
   const time = timeConfig();
 
-  beforeAll(() => {
-    Object.assign(globalThis, withFactory);
-  });
-
   afterEach(() => {
     clearSolidRuntime();
     configureLocales(locales);
     configureTime(time);
-  });
-
-  afterAll(() => {
-    Reflect.deleteProperty(globalThis, 'React');
   });
 
   // The premise, made an assertion. Every test below reads the string a component rendered to, and

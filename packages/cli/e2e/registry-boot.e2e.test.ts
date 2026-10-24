@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { VERSION_DEFINE } from '@ultimat3/core';
-import { externalArgs } from '../src/compile-externals';
+import { compileExecutable } from '../src/compile-executable';
 
 const dir = mkdtempSync(join(tmpdir(), 'ultimate-cli-boot-e2e-'));
 const REGISTRY = join(import.meta.dir, '..', 'src', 'registry.ts');
@@ -28,33 +28,16 @@ afterAll(() => {
 async function compileAndRun(
   name: string,
   source: string,
-  define?: string,
+  define?: Readonly<Record<string, string>>,
 ): Promise<{ readonly code: number; readonly stdout: string; readonly stderr: string }> {
   const entry = join(dir, `${name}.ts`);
   const out = join(dir, name);
   await Bun.write(entry, source);
-  const build = Bun.spawn(
-    [
-      'bun',
-      'build',
-      '--compile',
-      ...(define === undefined ? [] : ['--define', define]),
-      // The same allowlist `binaryArgs` splices in, from the same constant — this probe imports
-      // `registry.ts`, whose graph reaches `cmd-dev` → `island-bundle` → `@babel/core`, so a copy
-      // that drifted from the shipped command would make this suite green over a red `x build`.
-      ...externalArgs(),
-      entry,
-      '--outfile',
-      out,
-    ],
-    { cwd: dir, stdout: 'pipe', stderr: 'pipe' },
-  );
-  // The compiler's own diagnostic, or a failed compile reports `1 !== 0` and nothing actionable.
-  const [buildErr, buildCode] = await Promise.all([
-    new Response(build.stderr).text(),
-    build.exited,
-  ]);
-  expect(buildCode, buildErr).toBe(0);
+  // The compile `docker/Dockerfile` ships `x` with (`scripts/compile-x.ts`), from the same
+  // function: this probe imports `registry.ts`, whose graph reaches `cmd-dev` → `island-bundle` →
+  // `@babel/core` and every admin `.tsx`, so a copy that drifted from the shipped compile would
+  // make this suite green over a red image. A refused compile throws with the bundler's own log.
+  await compileExecutable({ entry, outfile: out, ...(define === undefined ? {} : { define }) });
   const run = Bun.spawn([out], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
   const [stdout, stderr, code] = await Promise.all([
     new Response(run.stdout).text(),
@@ -86,13 +69,11 @@ test('a compiled binary evaluates the registry without reading the CLI manifest'
 }, 60_000);
 
 test('`x --version` inside a binary answers from the define the build passed', async () => {
-  // `x build --target binary` passes exactly this flag (`binaryArgs`). Without the fallback the
+  // `x build --target binary` passes the same define (`binaryArgs`). Without the fallback the
   // registry booted and then `--version` threw X_INVARIANT for a version the build already knew.
-  const result = await compileAndRun(
-    'defined',
-    PROBE,
-    `${VERSION_DEFINE}=${JSON.stringify(DEFINED)}`,
-  );
+  const result = await compileAndRun('defined', PROBE, {
+    [VERSION_DEFINE]: JSON.stringify(DEFINED),
+  });
   expect(result.code).toBe(0);
   expect(result.stdout).toContain(`VERSION ${DEFINED}`);
   expect(result.stdout).not.toContain('UNAVAILABLE');

@@ -7,7 +7,7 @@
 // catalog behind every string asserted below — is registered by the barrel, and this file reaches
 // components by their module paths (issue #490).
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
@@ -17,11 +17,9 @@ import {
   isProbeNode,
   one,
   type ProbeNode,
-  probe,
   renderNodes,
-  unprobe,
   withAttr,
-} from '../jsx-probe';
+} from '../jsx-probe-fixture';
 import { DataTable, type DataTableProps } from './DataTable';
 import type { SortState } from './sort-state';
 
@@ -67,9 +65,6 @@ const table = (extra: Record<string, unknown> = {}): ReturnType<typeof renderNod
   });
 
 describe('DataTable', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the component compiles to a JSX factory this file understands', () => {
     expect(table().length).toBeGreaterThan(0);
   });
@@ -344,9 +339,6 @@ describe('DataTable', () => {
  * 2^53 - 1 elements and the render dies with a bare `RangeError`, uncoded, out of a component.
  */
 describe('DataTable, the branch is decided inside the returned markup', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   // A component body runs ONCE in an island. A branch taken there (an early `return <ErrorState>`)
   // is the branch for the island's life: a table that first failed never showed its rows after the
   // query recovered. The same root in every state is what leaves the decision to the markup, where
@@ -376,9 +368,6 @@ describe('DataTable, the branch is decided inside the returned markup', () => {
 });
 
 describe('DataTable, a placeholder count that is not a count', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   for (const skeletonRows of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
     test(`skeletonRows: ${String(skeletonRows)} is refused, never a busy empty table`, () => {
       expect(() => table({ rows: [], loading: true, skeletonRows })).toThrow(/X_INVARIANT/);

@@ -2,16 +2,13 @@
 // href-less ancestor is still an ancestor — two `aria-current="page"` elements in one `<nav>` make
 // a screen reader announce the current page twice, on the wrong node first.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Breadcrumb } from './Breadcrumb';
 
 const trail = (items: readonly Record<string, unknown>[]): Record<string, unknown> => ({ items });
 
 describe('Breadcrumb', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the component compiles to a JSX factory this file understands', () => {
     expect(renderNodes(Breadcrumb, trail([{ label: 'Home', href: '/' }])).length).toBeGreaterThan(
       0,

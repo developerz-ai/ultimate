@@ -1,9 +1,9 @@
 // The wiring of LineChart and AreaChart — what the markup carries — asked of the components; the
 // geometry has its own tests in `line-chart-view.test.ts` and `chart-ticks-view.test.ts`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe';
-import { byTag, nodesOf, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import type { ProbeNode } from '../jsx-probe-fixture';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { AreaChart, LineChart } from './LineChart';
 
 const keys = ['mon', 'tue', 'wed'];
@@ -18,9 +18,6 @@ const text = (node: ProbeNode | undefined): string =>
     .flat()
     .filter((c) => typeof c === 'string' || typeof c === 'number')
     .join('');
-
-beforeAll(probe);
-afterAll(unprobe);
 
 describe('LineChart', () => {
   test('a figure named by its caption, holding one svg image with the same name', () => {
