@@ -3,7 +3,7 @@
 // over live in health-narrow.ts. `unverdicted` always means "no verdict yet — re-run, never
 // unhealthy": an ask filed over an unread world is the false alarm this rule exists to prevent.
 
-import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, PrCheck, RunRow } from './health-narrow';
+import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, RunRow } from './health-narrow';
 
 /** The three ways a row can answer. `unverdicted` is a re-run, never a filing. */
 export type Verdict = 'healthy' | 'unhealthy' | 'unverdicted';
@@ -325,104 +325,45 @@ export interface DependabotInput {
   readonly prs: readonly DependabotPr[];
   readonly nowMs: number;
 }
-
-// Row 7's check reading: red beats green beats pending, and an empty rollup is pending — gh
-// unions CheckRun (status/conclusion) and StatusContext (state) entries in the one list.
-type CheckReading = 'green' | 'red' | 'pending';
-
-const RED_CONCLUSIONS: ReadonlySet<string> = new Set([
-  'FAILURE',
-  'CANCELLED',
-  'TIMED_OUT',
-  'ACTION_REQUIRED',
-  'STARTUP_FAILURE',
-  'STALE',
-]);
-const GREEN_CONCLUSIONS: ReadonlySet<string> = new Set(['SUCCESS', 'SKIPPED', 'NEUTRAL']);
-
-const readCheck = (check: PrCheck): CheckReading => {
-  const conclusion = check.conclusion?.toUpperCase();
-  if (conclusion !== undefined && RED_CONCLUSIONS.has(conclusion)) return 'red';
-  const state = check.state?.toUpperCase();
-  if (state === 'FAILURE' || state === 'ERROR') return 'red';
-  if (state === 'SUCCESS') return 'green';
-  if (
-    check.status?.toUpperCase() === 'COMPLETED' &&
-    conclusion !== undefined &&
-    GREEN_CONCLUSIONS.has(conclusion)
-  ) {
-    return 'green';
-  }
-  return 'pending';
-};
-
-/** A PR's whole rollup: any red entry is red, green needs every entry green, else pending. */
-const rollupReading = (pr: DependabotPr): CheckReading => {
-  const checks = pr.checks ?? [];
-  if (checks.length === 0) return 'pending';
-  const readings = checks.map(readCheck);
-  if (readings.includes('red')) return 'red';
-  return readings.every((reading) => reading === 'green') ? 'green' : 'pending';
-};
-
-/**
- * Row 7. Healthy with no open PR or none older than 7 days; past that the rollup decides — a
- * green 7+ day PR is stuck awaiting merge (merge it or close it), a red or pending one is stuck
- * on CI and the npm-bump ask applies. Both groups are classified before the row answers: a page
- * stuck both ways names both in one reason, so neither group's ask is dropped.
- */
+/** Row 7. Stuck means failed checks and more than seven days without activity. */
 export function dependabotVerdict(input: DependabotInput): RowVerdict {
   const base = { row: 'dependabot-not-stuck' as const };
-  // `--state open` is the filter that makes "stuck" decidable: an entry gh returns with another
-  // state contradicts it, and a merged or closed PR's createdAt is not an age.
-  const open = input.prs.filter((pr) => pr.state === undefined || pr.state === 'OPEN');
-  if (open.length === 0) {
-    return { ...base, verdict: 'healthy', reason: 'no open Dependabot PR', prs: input.prs };
+  // Stuck is computed BEFORE the row-wide unknown gates: a page holding one confirmed stuck PR
+  // files it even while a different PR's checks or updatedAt are still unread — `unverdicted` is
+  // for pages with no confirmed failure, never a mute on a confirmed one. The finite guard is
+  // load-bearing here: the unreadable-updatedAt gate below has not run yet.
+  const stuck = input.prs.filter((pr) => {
+    const updatedAt = Date.parse(pr.updatedAt ?? '');
+    return pr.checks === 'red' && Number.isFinite(updatedAt) && input.nowMs - updatedAt > WEEK_MS;
+  });
+  if (stuck.length > 0) {
+    return {
+      ...base,
+      verdict: 'unhealthy',
+      reason: `Dependabot stuck with failed checks: ${stuck.map((pr) => `#${pr.number} inactive since updatedAt ${pr.updatedAt}`).join(', ')}`,
+      prs: input.prs,
+    };
   }
-  if (open.some((pr) => !Number.isFinite(Date.parse(pr.createdAt ?? '')))) {
+  if (input.prs.some((pr) => !Number.isFinite(Date.parse(pr.updatedAt ?? '')))) {
     return {
       ...base,
       verdict: 'unverdicted',
-      reason: 'gh returned a Dependabot PR without a readable createdAt — re-run before filing',
+      reason: 'gh returned a Dependabot PR without a readable updatedAt — re-run before filing',
       prs: input.prs,
     };
   }
-  const stuck = open.filter((pr) => input.nowMs - Date.parse(pr.createdAt ?? '') > WEEK_MS);
-  if (stuck.length === 0) {
+  if (input.prs.some((pr) => pr.checks !== 'green' && pr.checks !== 'red')) {
     return {
       ...base,
-      verdict: 'healthy',
-      reason: `${open.length} open Dependabot PR(s), none older than 7 days`,
+      verdict: 'unverdicted',
+      reason: 'Dependabot checks are pending or unknown — re-run before filing',
       prs: input.prs,
     };
-  }
-  // Classify EVERY stuck PR before answering: one page can be stuck both ways at once, and an
-  // early return on the first group found drops the other group's ask from the reason it files.
-  const readings = stuck.map((pr) => ({ pr, reading: rollupReading(pr) }));
-  const awaitingMerge = readings.filter((one) => one.reading === 'green');
-  const onCi = readings.filter((one) => one.reading !== 'green');
-  const groups: string[] = [];
-  if (awaitingMerge.length > 0) {
-    groups.push(
-      `green and unmerged 7+ days — merge or close: ${awaitingMerge
-        .map(
-          ({ pr }) =>
-            `#${pr.number} since ${pr.createdAt}${pr.autoMerge === true ? ' (auto-merge armed)' : ''}`,
-        )
-        .join(', ')}`,
-    );
-  }
-  if (onCi.length > 0) {
-    groups.push(
-      `stuck on red or pending checks: ${onCi
-        .map(({ pr }) => `#${pr.number} since ${pr.createdAt}`)
-        .join(', ')} — the npm-bump ask applies`,
-    );
   }
   return {
     ...base,
-    verdict: 'unhealthy',
-    reason: `Dependabot ${groups.join('; ')}`,
+    verdict: 'healthy',
+    reason: `${input.prs.length} open Dependabot PR(s), all green or active within 7 days`,
     prs: input.prs,
   };
 }

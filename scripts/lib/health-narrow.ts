@@ -52,24 +52,12 @@ export interface AlarmIssue {
   readonly latched?: boolean;
 }
 
-/** One statusCheckRollup entry: a CheckRun reads by status/conclusion, a StatusContext by state. */
-export interface PrCheck {
-  readonly status?: string | undefined;
-  readonly conclusion?: string | undefined;
-  readonly state?: string | undefined;
-}
-
 /** One open Dependabot PR, as `gh pr list --app dependabot` names it. */
 export interface DependabotPr {
   readonly number: number;
   readonly createdAt?: string | undefined;
   readonly updatedAt?: string | undefined;
-  readonly url?: string | undefined;
-  readonly state?: string | undefined;
-  /** True while autoMergeRequest is non-null; undefined when the field never answered. */
-  readonly autoMerge?: boolean | undefined;
-  /** The narrowed statusCheckRollup — entries with nothing readable are dropped, never invented. */
-  readonly checks?: readonly PrCheck[] | undefined;
+  readonly checks?: 'green' | 'red' | 'unknown' | undefined;
 }
 
 // ——— Narrowing: a child's parsed `unknown` into the shapes the rules read. Never throws. ———
@@ -246,19 +234,35 @@ export function narrowIssues(value: unknown): readonly AlarmIssue[] {
   });
 }
 
-/** A statusCheckRollup's entries; one with no readable status, conclusion or state is dropped. */
-const narrowChecks = (value: unknown): readonly PrCheck[] | undefined => {
-  if (!Array.isArray(value)) return undefined;
-  return value.flatMap((one) => {
+// Missing, pending, or unfamiliar evidence cannot establish either a green or a stale failure.
+const narrowChecks = (value: unknown): 'green' | 'red' | 'unknown' => {
+  if (!Array.isArray(value) || value.length === 0) return 'unknown';
+  const checks = value.map((one) => {
     const check = rec(one);
-    if (check === undefined) return [];
-    const status = str(check['status']);
-    const conclusion = str(check['conclusion']);
-    const state = str(check['state']);
-    return status === undefined && conclusion === undefined && state === undefined
-      ? []
-      : [{ status, conclusion, state }];
+    if (check?.['__typename'] === 'StatusContext') {
+      if (check['state'] === 'SUCCESS') return 'green';
+      if (check['state'] === 'FAILURE' || check['state'] === 'ERROR') return 'red';
+    }
+    if (check?.['__typename'] === 'CheckRun' && check['status'] === 'COMPLETED') {
+      const conclusion = str(check['conclusion']);
+      if (conclusion === undefined) return 'unknown';
+      if (['SUCCESS', 'NEUTRAL', 'SKIPPED'].includes(conclusion)) return 'green';
+      if (
+        [
+          'FAILURE',
+          'CANCELLED',
+          'TIMED_OUT',
+          'ACTION_REQUIRED',
+          'STARTUP_FAILURE',
+          'STALE',
+        ].includes(conclusion)
+      )
+        return 'red';
+    }
+    return 'unknown';
   });
+  if (checks.includes('unknown')) return 'unknown';
+  return checks.includes('red') ? 'red' : 'green';
 };
 
 /** Open Dependabot PRs; an entry with no readable number is dropped, never invented. */
@@ -272,9 +276,6 @@ export function narrowPrs(value: unknown): readonly DependabotPr[] {
         number,
         createdAt: str(pr['createdAt']),
         updatedAt: str(pr['updatedAt']),
-        url: str(pr['url']),
-        state: str(pr['state']),
-        autoMerge: 'autoMergeRequest' in pr ? pr['autoMergeRequest'] !== null : undefined,
         checks: narrowChecks(pr['statusCheckRollup']),
       },
     ];

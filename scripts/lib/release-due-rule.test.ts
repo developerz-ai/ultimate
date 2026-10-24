@@ -1,25 +1,26 @@
 // The release-due decision over fixtures: each reason it can refuse with, the bump it computes,
-// and what it tells the releaser to write first. Git and the clock never enter this file. The
-// last describe also pins the brief's decision table (.dz/briefs/release-due.md) to the closed
-// reason list, so the checkup's branch point cannot drift from the rule it branches on.
+// and what it tells the releaser to write first. Git and the clock never enter this file. The doc
+// pins over the rule — the brief's decision table and PUBLISHING.md's envelope table — live in
+// `release-due-doc.test.ts`: this file computes a decision, that one describes one.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
-// why: Bun exposes no path-join primitive; Bun.file takes one already joined.
-import { join } from 'node:path';
 import type { DueInput, WindowCommit } from './release-due-rule';
 import {
+  AWAITING_TAG_COMMAND,
   bumpOf,
   DEPENDABOT,
-  NOT_DUE_REASONS,
+  majorIssueTitle,
+  openMajorIssue,
   openReleaseAsk,
   openReleaseBump,
+  RELEASE_TAG_RUN_FIELDS,
   releaseDue,
 } from './release-due-rule';
 import { RELEASE_SUBJECT } from './release-subject';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
+import { REPO_SCAN_TIMEOUT_MS } from './run';
 
-// Names `repoRoot()`, so the repo-scan guard (scripts/repo-scan-timeout.test.ts) holds this file
-// to the repo-scan backstop even though it reads one pinned file, not a tree walk.
+// The repo-scan guard (scripts/repo-scan-timeout.test.ts) holds this file to the repo-scan
+// backstop even though it reads no tree at all.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const HOUR = 3_600_000;
@@ -150,7 +151,17 @@ describe('unit · release-due-rule · not due', () => {
     const decision = releaseDue(input({ stamped: '1.3.0' }));
     expect(decision.due).toBe(false);
     expect(decision.reason).toBe('awaiting_tag');
-    expect(decision.command).toContain('release-tag.yml');
+    // The watch command names the workflow AND the fields a filing needs: the run's id, its
+    // status and conclusion, its event and branch, its title, its URL and when it was created.
+    // A command without them cannot say which run failed, nor quote its URL in the ask — so the
+    // whole field list is pinned, not merely the workflow's filename.
+    expect(decision.command).toBe(AWAITING_TAG_COMMAND);
+    expect(decision.command).toBe(
+      'gh run list --workflow release-tag.yml --limit 5 --json databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt',
+    );
+    expect(RELEASE_TAG_RUN_FIELDS).toBe(
+      'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt',
+    );
   });
 });
 
@@ -281,71 +292,67 @@ describe('unit · release-due-rule · the ask dedupe', () => {
   });
 });
 
-describe('unit · release-due-rule · the brief covers the closed list', () => {
-  // The brief's decision table is the checkup's only branch point on `data.reason`, so its
-  // reason-keyed not-due rows must equal `NOT_DUE_REASONS` exactly: a reason losing its row, or
-  // the table growing a reason the rule never returns, must red here rather than send the bot
-  // off-table in production. The `X_RELEASE_HEAD_NOT_MAIN` row keys a findings code, not a
-  // `NOT_DUE_REASONS` entry — its second cell carries `(in findings)` after the token, so the row
-  // regex below passes it over and the pin holds at four.
-  test('one brief row per reason, and awaiting_tag pins its watch command', async () => {
-    const brief = await Bun.file(join(repoRoot(), '.dz/briefs/release-due.md')).text();
-    const falseRows = brief.split('\n').filter((line) => line.startsWith('| `false` |'));
-    const reasons = falseRows
-      .map((line) => /^\| `false` \| `([^`]+)` \|/.exec(line)?.[1])
-      .filter((reason): reason is string => reason !== undefined);
-    expect([...reasons].sort()).toEqual([...NOT_DUE_REASONS].sort());
-    const awaitingTag = falseRows.find((line) => line.startsWith('| `false` | `awaiting_tag` |'));
-    // The row is the whole instruction for this reason, so the pin is on its payload — the
-    // command to watch and the verdict to file nothing — not merely on the row's existence.
-    // The command is pinned with its backtick delimiters: a bare substring would survive a
-    // changed limit, since `--limit 50` contains `--limit 5`.
-    expect(awaitingTag, 'the awaiting_tag row vanished from the brief').toBeDefined();
-    expect(awaitingTag).toContain('`gh run list --workflow release-tag.yml --limit 5`');
-    expect(awaitingTag).toContain('nothing');
+describe('unit · release-due-rule · the pending-major issue', () => {
+  const MAJOR = '### Changed\n\n- **BREAKING — (#1) a thing goes.** detail';
+
+  test('a true twin — an open issue titled exactly `Major release pending: 2.0.0` — reports open', () => {
+    expect(openMajorIssue(['Major release pending: 2.0.0'], '2.0.0')).toEqual({
+      open: true,
+      twin: 'Major release pending: 2.0.0',
+    });
   });
-});
 
-describe('unit · release-due-rule · the doc table tracks DueDecision', () => {
-  // PUBLISHING.md's due-decision envelope table is the maintainer's view of `DueDecision`, so its
-  // rows must equal the interface's fields exactly: a field losing its row, or the table growing
-  // a field the decision never carries, must red here rather than ship a doc that misdescribes
-  // the JSON the bot reads. The fields are parsed from the rule's source, not imported — an
-  // import cannot catch a field the interface lost.
-  test('one envelope row per field, and breaking names the maintainer issue', async () => {
-    const source = await Bun.file(join(repoRoot(), 'scripts/lib/release-due-rule.ts')).text();
-    const start = source.indexOf('export interface DueDecision {');
-    expect(start, 'DueDecision vanished from release-due-rule.ts').toBeGreaterThanOrEqual(0);
-    const interfaceLines = source.slice(start).split('\n');
-    const close = interfaceLines.findIndex((line) => line === '}');
-    expect(close, 'DueDecision never closes').toBeGreaterThan(0);
-    const body = interfaceLines.slice(0, close).join('\n');
-    const fields = [...body.matchAll(/^\s{2}readonly ([a-z][a-zA-Z0-9]*)/gm)]
-      .map((match) => match[1])
-      .filter((field): field is string => field !== undefined);
-    expect(fields.length, 'DueDecision parsed to no fields').toBeGreaterThan(0);
-    expect(new Set(fields).size, 'a duplicate field in DueDecision').toBe(fields.length);
+  test('the major decision names the pending-major issue already open', () => {
+    const decision = releaseDue(
+      input({ unreleased: MAJOR, openIssueTitles: ['Major release pending: 2.0.0'] }),
+    );
+    expect(decision.reason).toBe('major_needs_a_maintainer');
+    expect(decision.due).toBe(false);
+    expect(decision.next).toBe('2.0.0');
+    expect(decision.detail).toContain(
+      '; a pending-major issue already open: Major release pending: 2.0.0',
+    );
+  });
 
-    const doc = await Bun.file(join(repoRoot(), 'PUBLISHING.md')).text();
-    const docLines = doc.split('\n');
-    const table = docLines.findIndex((line) => line.startsWith('| `.data` field |'));
-    expect(table, 'the envelope table vanished from PUBLISHING.md').toBeGreaterThanOrEqual(0);
-    const rowKeys: string[] = [];
-    for (let index = table + 1; index < docLines.length; index += 1) {
-      const line = docLines[index];
-      if (line === undefined || !line.startsWith('|')) break;
-      const key = /^\| `([a-z][a-zA-Z0-9]*)` \|/.exec(line)?.[1];
-      if (key !== undefined) rowKeys.push(key);
-    }
-    expect(rowKeys.length, 'the envelope table parsed to no rows').toBeGreaterThan(0);
-    expect(new Set(rowKeys).size, 'a duplicate row in the envelope table').toBe(rowKeys.length);
-    expect([...fields].sort()).toEqual([...rowKeys].sort());
-    expect([...rowKeys].sort()).toEqual([...fields].sort());
+  // An EMPTY list is the lookup ANSWERING with no open issue — the only case in which the box
+  // may file one. An absent list is a different fact entirely (see the unanswerable case below).
+  test('with no such issue the decision names the one issue to file, under its exact title', () => {
+    const decision = releaseDue(input({ unreleased: MAJOR, openIssueTitles: [] }));
+    expect(decision.reason).toBe('major_needs_a_maintainer');
+    expect(decision.detail).toContain('; file one issue titled `Major release pending: 2.0.0`');
+    expect(decision.detail).not.toContain('already open');
+  });
 
-    const breakingRow = docLines.find((line) => line.startsWith('| `breaking` |'));
-    expect(breakingRow, 'the breaking row vanished from the envelope table').toBeDefined();
-    expect(breakingRow).toContain('| array |');
-    expect(breakingRow).toContain('maintainer issue');
+  // The lookup could NOT answer: a missing `gh`, a failed call, a timeout. Whether a
+  // pending-major issue is open is then UNKNOWN, and the brief's row branches on "no open issue
+  // already says a major is pending" — an unknown is not that. So the decision names no issue
+  // to file (that is how a `gh` outage becomes a DUPLICATE maintainer issue) and claims no twin.
+  test('an unanswerable lookup names no issue to file and claims no twin', () => {
+    const decision = releaseDue(input({ unreleased: MAJOR }));
+    expect(decision.reason).toBe('major_needs_a_maintainer');
+    expect(decision.detail).not.toContain('file one issue');
+    expect(decision.detail).not.toContain('already open');
+    // It says what it does not know, so the releaser can finish the check by hand.
+    expect(decision.detail).toContain('could not answer');
+  });
+
+  test("another version's issue is no twin, so the decision still asks for the one to file", () => {
+    const decision = releaseDue(
+      input({ unreleased: MAJOR, openIssueTitles: ['Major release pending: 3.0.0'] }),
+    );
+    expect(decision.detail).toContain('; file one issue titled `Major release pending: 2.0.0`');
+    expect(decision.detail).not.toContain('already open');
+  });
+
+  test('the ask title is no twin: the two subjects stay disjoint', () => {
+    const decision = releaseDue(input({ unreleased: MAJOR, openIssueTitles: ['Release 2.0.0'] }));
+    expect(decision.detail).toContain('; file one issue titled `Major release pending: 2.0.0`');
+    expect(decision.detail).not.toContain('already open');
+  });
+
+  test('the title the decision names is the title the payload builds', () => {
+    const decision = releaseDue(input({ unreleased: MAJOR, openIssueTitles: [] }));
+    expect(decision.detail).toContain(majorIssueTitle('2.0.0'));
   });
 });
 
