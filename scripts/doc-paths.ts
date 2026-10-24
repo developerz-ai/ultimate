@@ -8,6 +8,12 @@
 // `packages/ui/src/tokens.ts` that never existed at all. A page naming a file is an instruction to
 // open it, and nothing checked the instruction.
 //
+// NOT ONLY `.md`. `llms.txt` is the machine-readable repo map — the one file an agent reads
+// before it reads anything else — and it names `packages/…`, `scripts/…` and `docs/…` paths in
+// backticks; `scripts/gate-steps.ts` already reads it, for the same reason, and `readMarkdown`
+// reads any glob, so the file set was the only thing keeping it outside a rule that already knew
+// how to judge it.
+//
 // WHAT IS READ. Inline code spans, outside fences. Inside a fence, only a file-header comment —
 // a line that is nothing but `//`, `/*`, `#` or `--` and a path — because that line claims where
 // the block lives; every other fenced line is program text or a transcript of an app's tree.
@@ -37,9 +43,18 @@ import { repoRoot } from './lib/run';
 const SCRIPT = 'doc-paths';
 export const MARKER = '**Historical:**';
 
-/** The published surface: `scripts/doc-commands.ts`' set, minus the tracked apps' own pages. */
+/**
+ * The published surface: `scripts/doc-commands.ts`' set, minus the tracked apps' own pages.
+ *
+ * `llms.txt` is in it because it is a page an agent opens files FROM, not because it is a `.md`:
+ * the machine-readable repo map names repo paths in backticks, and `gate-steps.ts` already reads
+ * the same file for the same reason.
+ */
 export const DOC_GLOBS: readonly string[] = [
   '*.md',
+  // The machine-readable repo map: an agent reads it first and opens what it names, so its paths
+  // are held to the same existence rule as every published page's.
+  'llms.txt',
   'wiki/**/*.md',
   'docs/**/*.md',
   'packages/*/*.md',
@@ -161,7 +176,7 @@ const deadFinding = (gap: DocPathGap): Finding => ({
 const unscannedFinding = (gap: DocPathGap): Finding => ({
   code: 'X_CORPUS_UNSCANNED',
   cause: `no published page matched ${gap.at}, so ${SCRIPT} would report green over pages it never read`,
-  fix: 'bun run doc-paths --json   # then edit DOC_GLOBS in scripts/doc-paths.ts to the paths this repository publishes its pages under',
+  fix: 'bun run doc-paths --json   # then edit DOC_GLOBS in scripts/doc-paths.ts to the paths this repository publishes its pages under (wiki/, docs/, llms.txt)',
   at: 'scripts/doc-paths.ts',
 });
 

@@ -14,6 +14,7 @@ import {
   type DocPathGap,
   docPathFindingFor,
   readPublishedPages,
+  scanDocPaths,
   skipDocPage,
 } from './doc-paths';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
@@ -185,6 +186,19 @@ describe('which pages are published', () => {
     expect(paths).toContain('wiki/Configuration.md');
     expect(paths).toContain('packages/db/CLAUDE.md');
     expect(paths.some((path) => path.startsWith('docs/plans/'))).toBe(false);
+  });
+
+  test('llms.txt is a published page — the machine-readable map names repo paths too', async () => {
+    // The corpus entry is the whole point: without it llms.txt's backticked `packages/…`,
+    // `scripts/…` and `docs/…` paths stop being checked and every other assertion here still
+    // passes. So the page must be IN the corpus, and the scan must have found paths in it.
+    const files = await readPublishedPages(repoRoot());
+    const llms = files.find((file) => file.path === 'llms.txt');
+    expect(llms).toBeDefined();
+    const refs = scanDocPaths(llms as never);
+    expect(refs.length).toBeGreaterThan(0);
+    const prefixes = ['packages/', 'scripts/', 'docs/'];
+    expect(refs.every((ref) => prefixes.some((one) => ref.path.startsWith(one)))).toBe(true);
   });
 });
 
