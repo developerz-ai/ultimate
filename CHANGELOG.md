@@ -8,6 +8,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 28.0.0 - 2026-10-24
+
+Every breaking entry under Changed has a manual edit in the
+[Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) `27.x → 28.0.0` section, in
+the same order.
+
 ### Changed
 
 Every package; tier 5 — cli.
@@ -60,6 +68,12 @@ Tier 5 — cli.
   `@ultimat3/ui` byte measurements use the island build's `solidJsxPlugin` — the transform those
   chunks ship with, where they measured Bun's own until now (`scripts/ui-barrel-bytes.test.ts`,
   moved from `packages/ui`, since a tier-4 test may not import the cli's plugin).
+
+### Commits
+
+- docs(upgrading): 28.0.0 leaves unreleased
+- fix!: Bun 1.4.3 floor; every graph that loads a .tsx installs a framework transform (#883) (#885)
+- Refuse test files the test-discovery glob cannot see (#879)
 
 ## 27.16.1 - 2026-10-24
 
