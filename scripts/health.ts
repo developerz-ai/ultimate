@@ -17,6 +17,19 @@ import {
   narrowRuns,
   type RunRow,
 } from './lib/health-narrow';
+import type {
+  AlarmsRead,
+  DemoShippedRead,
+  DependabotRead,
+  HealthOverrides,
+  HealthReaders,
+  LastTagRead,
+  MainGreenRead,
+  NpmTreeRead,
+  StampedTaggedRead,
+  TagRunsRead,
+} from './lib/health-readers';
+import { defaultReaders, TAG_RUN_FIELDS } from './lib/health-readers';
 import type { RowId, RowVerdict, Verdict } from './lib/health-rule';
 import {
   alarmsVerdict,
@@ -31,9 +44,23 @@ import {
 } from './lib/health-rule';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
-import { gh } from './lib/release-due-gh';
-import { git } from './lib/release-due-git';
-import { repoRoot, run } from './lib/run';
+import { repoRoot } from './lib/run';
+
+// The readers live in scripts/lib/health-readers.ts; these are re-exported so the checkup's public
+// names are still one import away — the script and its tests read them from './health'.
+export type {
+  AlarmsRead,
+  DemoShippedRead,
+  DependabotRead,
+  HealthOverrides,
+  HealthReaders,
+  LastTagRead,
+  MainGreenRead,
+  NpmTreeRead,
+  StampedTaggedRead,
+  TagRunsRead,
+} from './lib/health-readers';
+export { CI_ARGS, jsonDocument, TAG_RUN_ARGS, TAG_RUN_FIELDS } from './lib/health-readers';
 
 const SCRIPT = 'health';
 
@@ -44,27 +71,6 @@ const unreadable = (row: string, command: string, detail: string): Finding => ({
   fix: 'bun run scripts/health.ts --json',
   at: 'scripts/health.ts',
 });
-
-/**
- * The `gh run list --json` fields row 4 asks for: the release-tag workflow's five newest runs with
- * the fields a filing needs — the run's id, its status and conclusion, the event and branch it ran
- * on, its title, its URL and when it was created. The same set and order as the release-due
- * `awaiting_tag` watch command, so one query answers both rows.
- */
-export const TAG_RUN_FIELDS =
-  'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt';
-
-// Exported for the test that pins the query: the reader's argv, field list and all.
-export const TAG_RUN_ARGS = [
-  'run',
-  'list',
-  '--workflow',
-  'release-tag.yml',
-  '--limit',
-  '5',
-  '--json',
-  TAG_RUN_FIELDS,
-] as const;
 
 // Exported for the test that pins row 4's command against the awaiting_tag watch command the
 // release-due rule emits: the two rows answer from ONE query, and a row's own command string is
@@ -81,209 +87,6 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'dependabot-not-stuck': 'gh pr list --app dependabot',
   'demo-shipped': 'gh run list --workflow deploy-social-demo.yml --limit 1',
 };
-
-// Exported for the test that pins the prefix: without `bun` first, run() spawns a binary named
-// `run`, which no normal Bun installation has, and the row refuses everywhere.
-export const CI_ARGS = [
-  'bun',
-  'run',
-  'x',
-  '--',
-  'ci',
-  '--workflow',
-  'ci.yml',
-  '--event',
-  'push',
-  '--branch',
-  'main',
-  '--json',
-] as const;
-
-const GIT_BROKEN = { ok: false as const, output: '' };
-
-/** The origin/main tip, or undefined when git could not say — a read that failed is unreadable. */
-const headShaOf = async (root: string): Promise<string | undefined> =>
-  git(['rev-parse', 'origin/main'], root).then(
-    (answer) => (answer.ok ? answer.output.trim() : undefined),
-    () => undefined,
-  );
-
-/**
- * The `--json` document in a child's output: the whole output, else the last line that parses to an
- * object. `run()` joins the child's stderr into its output, and gh writes progress there — a parse
- * over the join would refuse answers that are present. Exit codes are never read: `x ci` and both
- * child scripts print their document whatever they decided.
- */
-export function jsonDocument(output: string): unknown {
-  try {
-    return JSON.parse(output.trim()) as unknown;
-  } catch {
-    // Not one document over the whole output: the document may be one line among stderr noise.
-  }
-  const lines = output.split('\n');
-  for (let at = lines.length - 1; at >= 0; at -= 1) {
-    const line = (lines[at] ?? '').trim();
-    if (!line.startsWith('{') && !line.startsWith('[')) continue;
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (parsed !== null && typeof parsed === 'object') return parsed;
-    } catch {
-      // Not this line either.
-    }
-  }
-  return undefined;
-}
-
-/** What each row's reader answers: the child documents as parsed `unknown`, git as a plain string. */
-export interface MainGreenRead {
-  readonly ci: unknown;
-  readonly expectedSha: string | undefined;
-}
-export interface LastTagRead {
-  readonly tagCommit: string | undefined;
-  readonly runs: unknown;
-}
-export interface StampedTaggedRead {
-  readonly releaseDue: unknown;
-}
-export interface TagRunsRead {
-  readonly runs: unknown;
-}
-export interface NpmTreeRead {
-  readonly audit: unknown;
-}
-export interface AlarmsRead {
-  readonly issues: unknown;
-}
-export interface DependabotRead {
-  readonly prs: unknown;
-}
-export interface DemoShippedRead {
-  readonly runs: unknown;
-}
-
-export interface HealthReaders {
-  readonly 'main-green': () => Promise<MainGreenRead>;
-  readonly 'last-tag-published': () => Promise<LastTagRead>;
-  readonly 'stamped-version-tagged': () => Promise<StampedTaggedRead>;
-  readonly 'tag-runs-ended-well': () => Promise<TagRunsRead>;
-  readonly 'npm-serves-tree': () => Promise<NpmTreeRead>;
-  readonly 'automation-alarms': () => Promise<AlarmsRead>;
-  readonly 'dependabot-not-stuck': () => Promise<DependabotRead>;
-  readonly 'demo-shipped': () => Promise<DemoShippedRead>;
-}
-
-/** Replaces any single reader, so a test names a world without one subprocess. */
-export type HealthOverrides = {
-  readonly [Key in keyof HealthReaders]?: HealthReaders[Key];
-};
-
-const defaultReaders = (root: string): HealthReaders => ({
-  'main-green': async () => ({
-    ci: jsonDocument((await run([...CI_ARGS], { cwd: root })).output),
-    expectedSha: await headShaOf(root),
-  }),
-  'last-tag-published': async () => {
-    const described = await git(
-      ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*', 'origin/main'],
-      root,
-    ).catch(() => GIT_BROKEN);
-    const tag = described.ok ? described.output.trim() : '';
-    // The tag's PEELED COMMIT — `<tag>^{commit}` — is what names the commit an annotated tag marks;
-    // `gh run list` exposes no ref, so this is the only field a run's headSha can be judged against.
-    const tagCommit =
-      tag === ''
-        ? undefined
-        : await git(['rev-parse', `${tag}^{commit}`], root).then(
-            (answer) => (answer.ok ? answer.output.trim() : undefined),
-            () => undefined,
-          );
-    const runs = await gh(
-      [
-        'run',
-        'list',
-        '--workflow',
-        'release.yml',
-        '--limit',
-        '1',
-        '--json',
-        'conclusion,headBranch,event,headSha,url',
-      ],
-      root,
-    );
-    return { tagCommit, runs: jsonDocument(runs.output) };
-  },
-  'stamped-version-tagged': async () => ({
-    releaseDue: jsonDocument(
-      (await run(['bun', 'run', 'scripts/release-due.ts', '--json'], { cwd: root })).output,
-    ),
-  }),
-  'tag-runs-ended-well': async () => ({
-    runs: jsonDocument((await gh([...TAG_RUN_ARGS], root)).output),
-  }),
-  'npm-serves-tree': async () => ({
-    audit: jsonDocument(
-      (await run(['bun', 'run', 'scripts/registry-audit.ts', '--json'], { cwd: root })).output,
-    ),
-  }),
-  'automation-alarms': async () => ({
-    issues: jsonDocument(
-      (
-        await gh(
-          [
-            'issue',
-            'list',
-            '--state',
-            'open',
-            '--label',
-            'registry-drift',
-            '--json',
-            'number,title,state,createdAt,updatedAt,url',
-          ],
-          root,
-        )
-      ).output,
-    ),
-  }),
-  'dependabot-not-stuck': async () => ({
-    prs: jsonDocument(
-      (
-        await gh(
-          [
-            'pr',
-            'list',
-            '--app',
-            'dependabot',
-            '--state',
-            'open',
-            '--json',
-            'number,createdAt,updatedAt,statusCheckRollup',
-          ],
-          root,
-        )
-      ).output,
-    ),
-  }),
-  'demo-shipped': async () => ({
-    runs: jsonDocument(
-      (
-        await gh(
-          [
-            'run',
-            'list',
-            '--workflow',
-            'deploy-social-demo.yml',
-            '--limit',
-            '1',
-            '--json',
-            'databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt',
-          ],
-          root,
-        )
-      ).output,
-    ),
-  }),
-});
 
 type Judgement = RowVerdict | Finding | readonly Finding[];
 
@@ -358,8 +161,8 @@ const judgeStampedTagged = (read: StampedTaggedRead): Judgement => {
  * A release-tag.yml run that has not completed — queued on the `release-tag` concurrency group, or
  * still in progress — carries no completion verdict: the row is unverdicted and the run is re-run,
  * never filed as a failure. `status` is the reading, not `conclusion`: a run whose status is not
- * `completed` is one thing whatever it concluded, and its evidence (the run's id, url, title,
- * event, branch and creation time) is what the filing quotes.
+ * `completed` is one thing whatever it concluded, and its evidence (the run's id, url, title, the
+ * commit it ran at and its creation time) is what the filing quotes.
  */
 const isPending = (run: RunRow): boolean => run.status !== undefined && run.status !== 'completed';
 
