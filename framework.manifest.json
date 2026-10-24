@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "dba97173dbb32de7a1f5817cb16c4bd60f4147adc8caddb4e9b406b0c8248122",
+  "buildId": "a0a1ac6e9ef56b7c6886a501e270e5174f67c49551bc39d1911a26e14fd40036",
   "tiers": {
     "0": [
       "core",
@@ -1203,6 +1203,21 @@
       "code": "X_DECLARED_KEY_UNREAD",
       "owner": "scripts",
       "at": "scripts/declaration-readers.ts"
+    },
+    {
+      "code": "X_DEPENDENCY_ALLOWLIST_STALE",
+      "owner": "scripts",
+      "at": "scripts/dependency-allowlist.ts"
+    },
+    {
+      "code": "X_DEPENDENCY_NOT_ALLOWLISTED",
+      "owner": "scripts",
+      "at": "scripts/dependency-allowlist.ts"
+    },
+    {
+      "code": "X_DEPENDENCY_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/dependency-allowlist.ts"
     },
     {
       "code": "X_DEPLOY_FAILED",
@@ -4013,6 +4028,26 @@
       "code": "X_SOCKET_UNAUTHENTICATED",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
+    },
+    {
+      "code": "X_SOURCE_HEADER_MISSING",
+      "owner": "scripts",
+      "at": "scripts/source-headers.ts"
+    },
+    {
+      "code": "X_SOURCE_HEADER_OUT_OF_CONTRACT",
+      "owner": "scripts",
+      "at": "scripts/source-headers.ts"
+    },
+    {
+      "code": "X_SOURCE_HEADER_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/source-headers.ts"
+    },
+    {
+      "code": "X_SOURCE_HEADER_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/source-headers.ts"
     },
     {
       "code": "X_SPAWN_TIMED_OUT",
