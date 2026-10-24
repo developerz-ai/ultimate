@@ -16,7 +16,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   app (2026-10-24). It now filters on the six states it counts and reads the new partial index
   `x_jobs_depth_idx` `(queue, state, run_at)`, created at boot like every queue index: 0.2 ms on
   the same table. A queue holding only `done` or `cancelled` rows is no longer listed by `stats()`
-  (both drivers), and the depth publisher zeroes `queue_depth`, `queue_oldest_ready_seconds` and
+  (all three drivers: Redis drops a queue whose six counts are zero), and the depth publisher zeroes `queue_depth`, `queue_oldest_ready_seconds` and
   `queue_dead_jobs` for a queue that drops out â€” a gauge keeps its last value, so a drained queue
   would otherwise hold the worker HPA scaled out.
 - A due release-due decision now identifies an already-open release ask in `data.detail`; the

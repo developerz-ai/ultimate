@@ -193,7 +193,9 @@ return 1
 /**
  * `SQL_STATS`, one consistent read. `ARGV`: namespace, now. Answers one row per queue:
  * `{ queue, ready, delayed, running, suspended, failed, dead, oldest runAt or -1 }` — due is due
- * whatever state the row was WRITTEN in, the split `SQL_STATS` makes.
+ * whatever state the row was WRITTEN in, the split `SQL_STATS` makes. A queue all six counts leave
+ * at zero is not answered: `SQL_STATS` reads only the states it counts, so a queue holding only
+ * finished jobs is absent there and in the memory driver, and `:queues` never forgets a name.
  */
 export const REDIS_STATS = `
 local P = ARGV[1]
@@ -204,7 +206,7 @@ for _, queue in ipairs(redis.call('SMEMBERS', P .. ':queues')) do
   local oldest = redis.call('ZRANGE', wait, 0, 0, 'WITHSCORES')
   local first = -1
   if oldest[2] and tonumber(oldest[2]) <= now then first = oldest[2] end
-  table.insert(out, {
+  local row = {
     queue,
     redis.call('ZCOUNT', wait, '-inf', now),
     redis.call('ZCOUNT', wait, '(' .. now, '+inf'),
@@ -213,7 +215,8 @@ for _, queue in ipairs(redis.call('SMEMBERS', P .. ':queues')) do
     redis.call('ZCARD', P .. ':failed:' .. queue),
     redis.call('ZCARD', P .. ':dead:' .. queue),
     first,
-  })
+  }
+  if row[2] + row[3] + row[4] + row[5] + row[6] + row[7] > 0 then table.insert(out, row) end
 end
 return out
 `.trim();
