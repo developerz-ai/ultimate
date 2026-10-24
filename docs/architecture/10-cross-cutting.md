@@ -72,7 +72,7 @@ A colour token is space-separated RGB channels, so it is read through `rgb()` an
 
 | Mechanism | Detail |
 |---|---|
-| No raw colour | **a convention, not a rule.** `As of 2026-08` there is no `raw-hex` lint rule and no gate step that refuses a colour literal in a component or `.scss` module. The check that should exist would scan the same file set `errors` and `filesize` already walk |
+| No raw colour | a colour literal in a **stylesheet** fails the gate: in an app, the `raw-colour` guard every scaffolded app ships, run on the `boundaries` step; in the framework, only `packages/ui`'s sheets — `packages/ui/src/tokens/tokens.test.ts`, with `_colors.scss`/`_shadow.scss` exempt (`As of 2026-10`). In a **component** it remains a convention: no Biome `raw-hex` rule and no step reads TS for one |
 | Token existence | `ColorRole` is a union derived from `colorTokens`, so naming a token TypeScript does not know is a compile error **in TS**. A `var(--foo)` in SCSS is not checked against it — SCSS is not typechecked |
 | Contrast | one list, `CONTRAST_PAIRS` (`packages/ui/src/tokens/contrast-pairs.ts`): every foreground/background pairing a shipped component renders, at `AA_TEXT` (4.5:1), `AA_LARGE` (3:1) or `VISIBLE_EDGE` (1.4:1, a 1px edge). The shipped palette is held to it by `packages/ui/src/tokens/contrast.test.ts` (the `unit` step). A brand is held to it when `defineTheme()` runs — at import time, before a declaration renders — for every pair the brand changed either side of, measured on the resolved palette; a miss throws `X_UI_CONTRAST_INSUFFICIENT` |
 | Specificity | generated CSS emits `@media (prefers-color-scheme: dark)` **first**, then `:root[data-theme="dark"]` / `:root[data-theme="light"]` overrides — so an explicit choice always wins in both directions |
@@ -89,7 +89,7 @@ A colour token is space-separated RGB channels, so it is read through `rgb()` an
 | Bug | Why it cannot happen |
 |---|---|
 | White flash before dark theme paints | the attribute is set before body renders, in the same document |
-| One component stays light in dark mode | in TS, `ColorRole` admits no non-token name. In SCSS, nothing stops a literal — this one is a review discipline |
+| One component stays light in dark mode | in TS, `ColorRole` admits no non-token name. In SCSS, the `raw-colour` guard refuses a literal (`packages/ui`'s sheets: `tokens.test.ts`) — the raw colour left to review is the one in component code |
 | A user's explicit "dark" overridden by their OS switching to light | `data-theme` selectors are emitted after, and win over, the media query |
 | Unreadable text after a palette tweak | `contrast.test.ts` measures every pairing against AA and fails the `unit` step |
 | Two sources of truth drifting (CSS vars vs. a TS theme object) | there is one file; both are generated |

@@ -104,15 +104,15 @@ Full anatomy: [`04-error-contract.md`](04-error-contract.md).
 
 ## Cross-cutting concerns
 
-These four are the framework's promise. **Three of the eight rules below are conventions, not
-build failures** — this section said all of them failed the build until 2026-08-23, and
-[`10-cross-cutting.md`](10-cross-cutting.md) has named each hole `As of 2026-08`. Per axiom 3 an
-unenforced convention does not exist; the `Fails on` column now says which is which.
+These four are the framework's promise. **Three of the eight rules below remain conventions, not
+build failures**: an i18n literal outside `t()`, a raw colour in component code (stylesheets are
+held — Theming below), and a money field an app types `number`. Per axiom 3 an unenforced
+convention does not exist; the `Fails on` column says which is which.
 
 | Concern | Rule | Fails on |
 |---|---|---|
 | **i18n** | no hardcoded user-facing strings; everything through `t()` | a key missing from a shipped locale — the gate's `i18n` step. The literal **outside** a `t()` is a convention: no Biome rule and no step reads one |
-| **Theming** | semantic tokens only, both schemes | naming a token `ColorRole` does not hold, in TS. A raw hex in a component or a `.scss` module is a **convention** — there is no `raw-hex` rule |
+| **Theming** | semantic tokens only, both schemes | naming a token `ColorRole` does not hold, in TS. A raw colour in a stylesheet fails the `boundaries` step — the `raw-colour` guard every scaffolded app ships. The framework holds its own sheets to the rules it ships (`scaffold-guards-style.test.ts`: the five text rules; `packages/ui`'s colour rule: `tokens.test.ts`, `_colors.scss`/`_shadow.scss` exempt), `As of 2026-10`. A raw colour in component code is a **convention**: no Biome `raw-hex` rule and no step reads TS |
 | **Timezones** | store UTC; format with an explicit IANA zone | a `@ultimat3/time` formatter call with no `zone`, and a `task()` with no `tz` — both compile errors. A direct `Intl.DateTimeFormat` bypasses the type and nothing refuses one |
 | **Money** | `{ readonly minor: number; readonly currency: string }` — `@ultimat3/schema`'s `MoneyValue`, aliased by `@ultimat3/money` and `@ultimat3/entity` | a float money column (the `money('price')` entity helper), and cross-currency arithmetic (`X_CURRENCY_MISMATCH` at runtime). A money field an app types `number` is a **convention** — the type only bites where a signature already says `Money` |
 
