@@ -8,7 +8,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 1 — seo.
+
+- **`RouteMeta.socialCard?: boolean` — a page that may not be indexed can still carry a social
+  card.** A document whose `meta` says `robots: { index: false }` carries no `og:*`, `article:*` or
+  `twitter:*` tag, declared or derived; a route that declares `socialCard: true` asks for one
+  anyway, and the card is emitted exactly as it is for an indexable document — declared values win,
+  and the derived ones come with it (`og:type`, `og:title`/`og:description` from the page's own
+  title and description, `og:url` from the canonical, `og:locale`, the `twitter:card` default). The
+  opt-in is the route's own declaration, and it applies wherever the route's document is
+  unindexable: a declared `robots.index: false`, or a 4xx/5xx, which `@ultimat3/render` marks
+  `noindex` by construction. What does not change: the robots directives (`noindex,follow` stays
+  `noindex,follow`), every indexable route, and every noindex route that declares no flag. One
+  optional property on `RouteMeta`, no new export, and no other package's runtime or type changes.
+
+  It supersedes the 23.0.0 entry `BREAKING — (#48)` — a `robots: { index: false }` document
+  carries no `og:*`, `article:*` or `twitter:*` tag, and there was no switch — with
+  `socialCard: true`, the switch that entry said did not exist. The 23.0.0 section is left as it
+  shipped.
 
 ## 28.0.0 - 2026-10-24
 

@@ -95,7 +95,8 @@ Every route is `ssr`, `hydrate: 'never'` (unless an app file claimed it — Cust
 is `<Pagination hrefFor>`, a sort header is a link, scope tabs are links, the filter bar is one
 GET form, a form posts at the URL that rendered it and a refused one comes back 422 with what was
 typed. A write that worked is a 303. Every admin document is `noindex, nofollow`, and carries no
-`og:*` or `twitter:*` tag (`@ultimat3/seo` withdraws them from every `noindex` document).
+`og:*` or `twitter:*` tag (`@ultimat3/seo` withdraws them from a `noindex` document unless the
+route declares `socialCard: true`; no admin route declares it).
 
 ### The list an operator works in
 

@@ -45,7 +45,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 | File | Owns |
 |---|---|
-| `meta.ts` | the metadata model, `renderMeta()` → head tags: title template, canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per colour scheme. **`robots: { index: false }` withdraws every `og:*`, `article:*` and `twitter:*` tag** — declared or derived; there is no `social` switch |
+| `meta.ts` | the metadata model, `renderMeta()` → head tags: title template, canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per colour scheme. **`robots: { index: false }` withdraws every `og:*`, `article:*` and `twitter:*` tag** — declared or derived; the one opt-in is `socialCard: true` |
 | `validate.ts` | the build gate — `validateMeta()` (`--json`-shaped) and `assertMeta()` |
 | `ld.ts` | typed JSON-LD builders; required fields are required in the **input type** |
 | `sitemap.ts` | `buildSitemap()` from the route table + each route's `prerender()`, per-locale alternates. One urlset at `/sitemap.xml`; past a cap (`SITEMAP_MAX_URLS` 50,000, `SITEMAP_MAX_BYTES` 50 MB) the index stays `/sitemap.xml` and the parts are `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`). With `sections` it is always an index of `/sitemaps/<name>-<n>.xml` — see below |
@@ -67,6 +67,16 @@ ld.Article({ headline: 'Ship it', author: { name: 'Ada' } });
 
 A missing `datePublished` is a compile error, not a Search Console warning three
 weeks later.
+
+## Social card
+
+A document that may not be indexed carries no `og:*`, `article:*` or `twitter:*` tag — declared or
+derived. One opt-in, declared by the route:
+
+| Rule | |
+|---|---|
+| `socialCard: true` | the card is emitted exactly as for an indexable page — declared values win, the derived ones come with it |
+| the robots directives | never changed by the opt-in — the route stays noindex |
 
 ## Sitemap: pages, sections, caps
 
