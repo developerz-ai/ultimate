@@ -141,11 +141,15 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   `Math.max(...times)`: a spread is one argument per item and the engine's limit is the caller's
   stack depth, not the feed's size. "Now" arrives through `BuildFeedOptions.clock`; nothing in
   `rss.ts` reads a clock of its own.
-- **A document that is not indexed carries no social card.** `renderMeta` emits `og:*`, `article:*`
-  and `twitter:*` only when `meta.robots?.index !== false` — declared or derived, one rule and no
-  `social: false` beside it. The tags were unconditional, so every admin screen, every 4xx/5xx
-  (`defineRoute` marks them `noindex`) and every draft published its title and description to
-  whoever pasted the URL into a chat. `follow: false` alone withdraws nothing. `meta.test.ts`.
+- **A document that is not indexed carries no social card — unless the route asks for one.**
+  `renderMeta` emits `og:*`, `article:*` and `twitter:*` unless `meta.robots?.index === false`, and
+  a route declaring `socialCard: true` gets the card anyway: exactly the card an indexable
+  document gets, declared values winning and the derived ones coming with it. That field is the
+  ONE switch — the robots line is never touched by it, so the route stays noindex, and a route
+  without it keeps today's suppression. The tags were unconditional, so every admin screen, every
+  4xx/5xx (`defineRoute` marks them `noindex`) and every draft published its title and description
+  to whoever pasted the URL into a chat. `follow: false` alone withdraws nothing.
+  `meta-social.test.ts`.
 - Only `site/` routes are SEO-checked — `app/` is behind auth and crawlers never authenticate.
 
 ## Files

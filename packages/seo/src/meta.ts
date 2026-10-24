@@ -74,6 +74,13 @@ export interface RouteMeta {
   description?: string;
   canonical?: string;
   robots?: RobotsDirectives;
+  /**
+   * The social card opt-in for a document that may NOT be indexed. `robots: { index: false }`
+   * withdraws every `og:*`, `article:*` and `twitter:*` tag; a route declaring `socialCard: true`
+   * gets the card anyway — emitted exactly as an indexable document's, declared values winning and
+   * the derived ones coming with it. The robots directives are never touched by this field.
+   */
+  socialCard?: boolean;
   og?: OpenGraph;
   twitter?: TwitterCard;
   /** One entry per locale. `x-default` is added automatically when absent. */
@@ -222,10 +229,12 @@ export function hreflangSet(
 /**
  * The card a link preview is built from: `og:*`, `article:*`, `twitter:*`.
  *
- * Emitted only for a document that may be INDEXED. `robots: { index: false }` withdraws the whole
- * set, declared or derived — one rule, no second switch: a page its author keeps out of a search
- * result is a page behind sign-in, an error, or a draft, and a card for it publishes the title and
- * description the `noindex` was hiding. Every admin document carried one until 2026-10.
+ * Withdrawn from a document that may not be INDEXED: `robots: { index: false }` is a page its
+ * author keeps out of a search result — behind sign-in, an error, or a draft — and a card for it
+ * publishes the title and description the `noindex` was hiding. A route that wants the card anyway
+ * says so ONCE, with `socialCard: true`, and then gets exactly the card an indexable document
+ * gets: declared values win, the derived ones come with it. That field never touches the robots
+ * directives, so the route stays noindex.
  */
 function socialTags(
   meta: RouteMeta,
@@ -233,7 +242,7 @@ function socialTags(
   canonicalHref: string | undefined,
   abs: (value: string) => string,
 ): readonly HeadTag[] {
-  if (meta.robots?.index === false) return [];
+  if (meta.robots?.index === false && meta.socialCard !== true) return [];
   const tags: HeadTag[] = [];
   const og = meta.og ?? {};
   const ogLocale =

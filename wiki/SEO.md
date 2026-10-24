@@ -67,11 +67,41 @@ export const config = defineRoute({
 Fields: `rel`, `href`, `as`, `type`, `crossorigin`, `media`. Two links of one `rel` are two tags:
 a link's `href` is part of its identity when the head is deduped.
 
+## The social card
+
+A document that may not be indexed carries no card — no `og:*`, no `article:*`, no `twitter:*` tag,
+declared or derived — unless the route declares `socialCard: true`. `meta.robots: { index: false }`
+says so, and so does a 4xx or 5xx, which `@ultimat3/render` marks `noindex` by construction. A
+document that may be indexed carries its card whatever the field says. `As of 2026-10`.
+
+`meta.socialCard: true` is the route's own opt-in, and the only one. With it, a noindex document
+carries the card exactly as an indexable one does: declared values win, and the derived ones come
+with it — `og:type`, `og:title` and `og:description` from the page's own title and description,
+`og:url` from the canonical, `og:locale`, and the `twitter:card` default. The robots directives
+never change: `renderMeta()` still answers `<meta name="robots" content="noindex,follow">`, and the
+route stays noindex.
+
+```ts
+import { defineRoute } from '@ultimat3/render';
+
+export const config = defineRoute({
+  render: 'isr',
+  revalidate: { ttl: '5m' },
+  offline: 'network-only',
+  meta: () => ({
+    title: 'Pricing',
+    description: 'What the plan costs.',
+    robots: { index: false },
+    socialCard: true,
+  }),
+});
+```
+
 ## The pieces
 
 | Call | Answers |
 |---|---|
-| `renderMeta()` | the head tags: title (a `$` in a title is kept verbatim), canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per scheme, `links` |
+| `renderMeta()` | the head tags: title (a `$` in a title is kept verbatim), canonical, robots, `og:*`, `twitter:*`, hreflang + `x-default`, `theme-color` per scheme, `links`. A document that may not be indexed carries no `og:*`/`article:*`/`twitter:*` tag unless the route declares `socialCard: true` — [The social card](#the-social-card) |
 | `buildSitemap()` | from the route table and each route's `prerender()`, per-locale alternates; one urlset, an index of named `sections`, or a split past a cap (50,000 URLs, 50 MB) |
 | `buildRobots()` | **fail-closed**: only the literal `production` environment opts into indexing; anything else — staging, a laptop, an unset variable — is `Disallow: /` with no sitemap line. In production `disallow` is added to **every** group, and a `User-agent: *` group is emitted to carry it when none is declared |
 | `buildFeed()` | RSS 2.0, Atom and JSON Feed from one item list. The channel's `author`, `copyright` and `icon` reach Atom as `<author>`, `<rights>` and `<icon>`; an item's `author` is `<author>` in Atom and, in RSS, `<author>` with an email or `<dc:creator>` without one; an item's `image` is an Atom enclosure link and an RSS `<media:content>`. An item date must be ISO-8601 with an offset or `Z`; one that is not is treated as absent (and an offsetless one is logged as `seo.feed.date_offsetless`), never read through the server's zone |

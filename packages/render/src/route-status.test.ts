@@ -115,6 +115,20 @@ describe('a loader answering a status', () => {
     expect(meta.title).toBe('Not found');
   });
 
+  test('a social card opt-in survives the 404 that made the document noindex', async () => {
+    // `socialCard: true` is the route's own declaration that an unindexable document still wants
+    // its card. `noindexOnError` decides `robots.index` and nothing else, so the opt-in must ride
+    // through the status that unindexed the document — and the document stays noindex.
+    const config = defineRoute({
+      ...base,
+      load: () => withStatus(404, { kind: 'missing' }),
+      meta: () => ({ title: 'Not found', robots: { index: false }, socialCard: true }),
+    });
+    const meta = await config.meta(metaContextFor(CTX, await routeDataFor(config, CTX)));
+    expect(meta.robots?.index).toBe(false);
+    expect(meta.socialCard).toBe(true);
+  });
+
   test('function-valued data is noindex on a 404 too — the meta wrapper reads the same seam', async () => {
     const config = defineRoute({
       ...base,
