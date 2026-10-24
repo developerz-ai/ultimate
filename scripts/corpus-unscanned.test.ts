@@ -31,6 +31,7 @@ import { probeDatabaseScan } from './probe-databases';
 import { protoIndexFindings } from './proto-index';
 import { vocabularyFindings } from './render-modes';
 import { secretCompareFindings } from './secret-compare';
+import { sourceHeaderFindings } from './source-headers';
 import { spawnSites } from './spawn-timeout';
 import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
@@ -56,6 +57,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['proto-index', protoIndexFindings],
   ['render-modes', vocabularyFindings],
   ['secret-compare', secretCompareFindings],
+  ['source-headers', sourceHeaderFindings],
   ['spawn-timeout', spawnSites],
   ['test-bare-error', bareErrorFindings],
   ['test-fix-citations', testFixFindings],

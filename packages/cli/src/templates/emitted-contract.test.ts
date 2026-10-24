@@ -86,6 +86,16 @@ describe('unit · every emitted file survives the linter the scaffold configures
     sandboxes.push(root);
     try {
       for (const file of files) await Bun.write(join(dir, file.path), file.contents);
+      // A config of the sandbox's OWN, whenever the files under lint carry none. Biome resolves a
+      // config by walking UP from the directory it runs in, so a sandbox with no `biome.json` of
+      // its own reads the one above it — and the temp root is shared with everything else on the
+      // machine. A stray `/tmp/biome.json` left by another run is not a config Biome can parse,
+      // so the lint failed on the AMBIENT file rather than on the emitted one, and the answer
+      // depended on what else had been in the temp root that day. The scaffold carries its own
+      // config, so this only ever fires for the probe cases below.
+      if (!files.some((file) => file.path === 'biome.json')) {
+        await Bun.write(join(dir, 'biome.json'), '{}\n');
+      }
       const biome = join(REPO_ROOT, 'node_modules', '.bin', 'biome');
       // AWAITED, through the CLI's one subprocess boundary — never `Bun.spawnSync`. A synchronous
       // wait holds the test worker's only thread, so a Biome that does not come back is a worker
@@ -93,7 +103,11 @@ describe('unit · every emitted file survives the linter the scaffold configures
       // eight minutes (run 36992691094, `worker crashed: SIGKILL` under this file's header, after
       // `killed 1 dangling process` and no result line). Awaited, a slow or stuck Biome is one
       // test failing at its own timeout while the worker moves on to the next.
-      const run = await exec([biome, 'check', '.'], { cwd: dir });
+      // `--config-path` names the config to use and DISABLES the upward walk, so the run reads
+      // the sandbox's own config and nothing above it: the sandbox is the whole world the lint
+      // answers about. Without it a sandbox that carries no config still inherits one from the
+      // temp root, and the verdict stops being a fact about the emitted files.
+      const run = await exec([biome, 'check', '--config-path=.', '.'], { cwd: dir });
       return run.ok ? '' : `${run.stdout}${run.stderr}`;
     } finally {
       // The findings are already a string. Left behind, each run kept a whole scaffold under the
