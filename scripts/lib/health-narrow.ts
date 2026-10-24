@@ -2,6 +2,32 @@
 // parsed stdout — never throws: an entry that does not parse is dropped, never invented, and a
 // document that does not parse at all comes back undefined, for scripts/health.ts to refuse on.
 
+/**
+ * The `--json` document in a child's output: the whole output, else the last line that parses to an
+ * object. `run()` joins the child's stderr into its output, and gh writes progress there — a parse
+ * over the join would refuse answers that are present. Exit codes are never read: `x ci` and both
+ * child scripts print their document whatever they decided.
+ */
+export function jsonDocument(output: string): unknown {
+  try {
+    return JSON.parse(output.trim()) as unknown;
+  } catch {
+    // Not one document over the whole output: the document may be one line among stderr noise.
+  }
+  const lines = output.split('\n');
+  for (let at = lines.length - 1; at >= 0; at -= 1) {
+    const line = (lines[at] ?? '').trim();
+    if (!line.startsWith('{') && !line.startsWith('[')) continue;
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (parsed !== null && typeof parsed === 'object') return parsed;
+    } catch {
+      // Not this line either.
+    }
+  }
+  return undefined;
+}
+
 /** One workflow run as `gh run list` / `x ci --json` name it: `conclusion` is null while running. */
 export interface RunRow {
   readonly conclusion: string | null;
@@ -164,6 +190,30 @@ export function narrowReleaseDue(
   const data = rec(value);
   if (data === undefined) return undefined;
   return { lastTag: str(data['lastTag']), reason: str(data['reason']) };
+}
+
+/** One GitHub Release, as `gh release view --json tagName,isDraft,publishedAt` names it. */
+export interface ReleaseDoc {
+  readonly tagName: string;
+  readonly isDraft: boolean;
+  readonly publishedAt: string | undefined;
+}
+
+/**
+ * The `gh release view` document. A document that is not an object, or one whose `isDraft` is not
+ * a boolean, comes back undefined — the row refuses it rather than reading a Release out of it.
+ *
+ * A MISSING Release is not a document at all: gh exits non-zero and prints no JSON, so it never
+ * reaches here. The reader that runs gh carries that distinction to the judge.
+ */
+export function narrowRelease(value: unknown): ReleaseDoc | undefined {
+  const doc = rec(value);
+  if (doc === undefined) return undefined;
+  const isDraft = doc['isDraft'];
+  if (typeof isDraft !== 'boolean') return undefined;
+  const tagName = str(doc['tagName']);
+  if (tagName === undefined) return undefined;
+  return { tagName, isDraft, publishedAt: str(doc['publishedAt']) };
 }
 
 /** Open `registry-drift` issues; an entry with no readable number is dropped, never invented. */

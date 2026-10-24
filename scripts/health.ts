@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Answer whether the project is healthy: eight rows, one verdict each, read from git, `gh` and the
+// Answer whether the project is healthy: nine rows, one verdict each, read from git, `gh` and the
 // repo's own scripts, and refuse with `cannot tell` and no data when any row's command cannot be
 // read — a checkup that answers over a row it never read is the silent green it exists to refuse.
 //
@@ -8,6 +8,7 @@
 import { renderThrowable } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import {
+  jsonDocument,
   narrowAudit,
   narrowChildDoc,
   narrowCiDoc,
@@ -17,6 +18,12 @@ import {
   narrowRuns,
   type RunRow,
 } from './lib/health-narrow';
+import type { ReleaseExistsRead } from './lib/health-release';
+import {
+  judgeReleaseExists,
+  RELEASE_EXISTS_COMMAND,
+  releaseExistsReader,
+} from './lib/health-release';
 import type { RowId, RowVerdict, Verdict } from './lib/health-rule';
 import {
   alarmsVerdict,
@@ -80,6 +87,7 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'automation-alarms': 'gh issue list --state open --label registry-drift',
   'dependabot-not-stuck': 'gh pr list --app dependabot',
   'demo-shipped': 'gh run list --workflow deploy-social-demo.yml --limit 1',
+  'release-exists': RELEASE_EXISTS_COMMAND,
 };
 
 // Exported for the test that pins the prefix: without `bun` first, run() spawns a binary named
@@ -107,32 +115,6 @@ const headShaOf = async (root: string): Promise<string | undefined> =>
     (answer) => (answer.ok ? answer.output.trim() : undefined),
     () => undefined,
   );
-
-/**
- * The `--json` document in a child's output: the whole output, else the last line that parses to an
- * object. `run()` joins the child's stderr into its output, and gh writes progress there — a parse
- * over the join would refuse answers that are present. Exit codes are never read: `x ci` and both
- * child scripts print their document whatever they decided.
- */
-export function jsonDocument(output: string): unknown {
-  try {
-    return JSON.parse(output.trim()) as unknown;
-  } catch {
-    // Not one document over the whole output: the document may be one line among stderr noise.
-  }
-  const lines = output.split('\n');
-  for (let at = lines.length - 1; at >= 0; at -= 1) {
-    const line = (lines[at] ?? '').trim();
-    if (!line.startsWith('{') && !line.startsWith('[')) continue;
-    try {
-      const parsed: unknown = JSON.parse(line);
-      if (parsed !== null && typeof parsed === 'object') return parsed;
-    } catch {
-      // Not this line either.
-    }
-  }
-  return undefined;
-}
 
 /** What each row's reader answers: the child documents as parsed `unknown`, git as a plain string. */
 export interface MainGreenRead {
@@ -171,6 +153,7 @@ export interface HealthReaders {
   readonly 'automation-alarms': () => Promise<AlarmsRead>;
   readonly 'dependabot-not-stuck': () => Promise<DependabotRead>;
   readonly 'demo-shipped': () => Promise<DemoShippedRead>;
+  readonly 'release-exists': () => Promise<ReleaseExistsRead>;
 }
 
 /** Replaces any single reader, so a test names a world without one subprocess. */
@@ -283,6 +266,7 @@ const defaultReaders = (root: string): HealthReaders => ({
       ).output,
     ),
   }),
+  'release-exists': () => releaseExistsReader(root),
 });
 
 type Judgement = RowVerdict | Finding | readonly Finding[];
@@ -439,7 +423,7 @@ const judgeDemoShipped = (read: DemoShippedRead, mainGreen: Verdict): Judgement 
  * The whole checkup at `root`: every row read in the brief's order, one subprocess at a time, each
  * judge over what its reader answered. A throw — `Bun.spawn` throws on a missing binary — or an
  * unreadable answer refuses the whole result with findings and no `data`; otherwise every verdict
- * rides in `data.rows`, and `data.healthy` is true only when all eight read `healthy`.
+ * rides in `data.rows`, and `data.healthy` is true only when all nine read `healthy`.
  */
 export const healthAt = async (
   root: string,
@@ -478,6 +462,7 @@ export const healthAt = async (
     judgeDependabot(read, nowMs),
   );
   await judge('demo-shipped', readers['demo-shipped'], (read) => judgeDemoShipped(read, green()));
+  await judge('release-exists', readers['release-exists'], judgeReleaseExists);
 
   if (refusals.length > 0) {
     return { ok: false, script: SCRIPT, summary: 'cannot tell', findings: refusals };
