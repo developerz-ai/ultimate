@@ -29,6 +29,7 @@ import {
   LIVE_STATES,
   nackState,
   REQUEUEABLE_STATES,
+  STATS_STATES,
 } from './driver';
 import { memoryOperator } from './driver-memory-operator';
 import { signalEnqueued } from './enqueue-signal';
@@ -394,6 +395,9 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       const at = nowMs(clock);
       const byQueue = new Map<string, QueueStats>();
       for (const record of jobs.values()) {
+        // A finished row counts toward no bucket, so it does not list its queue either — the
+        // `where` `SQL_STATS` reads through `x_jobs_depth_idx`.
+        if (!STATS_STATES.has(record.state)) continue;
         const current = byQueue.get(record.queue) ?? {
           queue: record.queue,
           ready: 0,

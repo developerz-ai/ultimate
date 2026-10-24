@@ -36,12 +36,26 @@ export function createQueueDepthPublisher(input: {
   readonly workerId: string;
 }): () => Promise<void> {
   let publishedAt = Number.NEGATIVE_INFINITY;
+  // The queues the last successful round published. A gauge keeps the last value it was given and
+  // `stats()` lists a queue only while it holds a row it counts, so a queue that drained to `done`
+  // would read its final backlog forever — and hold the HPA scaled out — unless it is zeroed on the
+  // round it drops out. Bounded by the queue names, and replaced each round.
+  let published: ReadonlySet<string> = new Set();
   return async (): Promise<void> => {
     const now = nowMs(input.clock);
     if (now - publishedAt < QUEUE_DEPTH_INTERVAL_MS) return;
     publishedAt = now;
     try {
-      for (const stat of await input.driver.stats()) {
+      const stats = await input.driver.stats();
+      const reported = new Set(stats.map((stat) => stat.queue));
+      for (const queue of published) {
+        if (reported.has(queue)) continue;
+        recordQueueDepth(queue, 0);
+        recordQueueOldestReady(queue, 0);
+        recordQueueDeadJobs(queue, 0);
+      }
+      published = reported;
+      for (const stat of stats) {
         recordQueueDepth(stat.queue, stat.ready);
         // Depth alone is not alertable: it cannot tell "10 jobs stuck for an hour" from "10 jobs
         // enqueued a second ago", and `jobs_total{outcome="dead"}` is a rate, so a dead-letter
