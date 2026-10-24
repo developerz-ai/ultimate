@@ -243,7 +243,7 @@ A convention that is not a build error does not exist (axiom 3).
 | Concern | The default | The enforcement |
 |---|---|---|
 | **i18n** | flat catalogs, `Intl` for everything numeric | a missing key in a shipped locale fails the gate; misses render loudly as `⟦key⟧` |
-| **Dark theme** | semantic tokens, OS-following with an explicit override that wins | a raw colour in a stylesheet or component fails `boundaries` — the `raw-colour` guard, not lint: Biome does not read `.scss` |
+| **Dark theme** | semantic tokens, OS-following with an explicit override that wins | a raw colour in a **stylesheet** fails `boundaries` — the `raw-colour` guard every scaffolded app ships, not lint: Biome does not read `.scss`; in component code it is a convention no rule reads. `As of 2026-10` |
 | **Timezones** | store UTC, format with an explicit IANA zone | no formatter has an ambient default; a cron without a `tz` will not compile |
 | **Money** | integer minor units + currency, always attached | cross-currency arithmetic is refused; the exponent comes from the ISO table, never `/100` |
 | **SEO** | typed metadata, JSON-LD, sitemap from the route table | its own gate step; a `site/` route with no description fails the build |
