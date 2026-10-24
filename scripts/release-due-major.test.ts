@@ -6,6 +6,11 @@
 // for the pending-major issue is not also the file that reads the commits since the last tag.
 // The fixture is duplicated rather than shared, the way `release-due-tags.test.ts` does it: a
 // shared module would be a second thing to keep in step with the window it stands in for.
+//
+// The open-issue seam is SUBJECT-AWARE: it is asked for the `ask` on a `due` decision and for
+// the `pending_major` on a `major_needs_a_maintainer` one. So a test that records what it was
+// asked for records the SUBJECT, and the two subjects never mix — the same disjointness
+// `release-subject.test.ts` claims over the matchers, claimed here over the lookup itself.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
@@ -16,7 +21,7 @@ import { join } from 'node:path';
 import { git as gitIn } from './lib/release-due-git';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import type { TagProbe } from './registry-audit';
-import { decideAt, openIssueTitlesAt } from './release-due';
+import { decideAt, type IssueSubject, openIssueTitlesAt } from './release-due';
 
 // Each test spawns a dozen git processes.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
@@ -131,13 +136,17 @@ describe('unit · release-due · the pending-major issue twin', () => {
       },
       'fix(core): two',
     );
+    const asked: IssueSubject[] = [];
     const read = await decideAt(
       dir,
       24,
       NOW,
       probed('v1.0.0'),
       async () => [],
-      async () => ['Major release pending: 2.0.0'],
+      async (subject) => {
+        asked.push(subject);
+        return ['Major release pending: 2.0.0'];
+      },
     );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('major_needs_a_maintainer');
@@ -145,6 +154,8 @@ describe('unit · release-due · the pending-major issue twin', () => {
     expect(read.decision.detail).toContain(
       '; a pending-major issue already open: Major release pending: 2.0.0',
     );
+    // The major path asks for the pending-major issue and for nothing else.
+    expect(asked).toEqual(['pending_major']);
   });
 
   test('with no such issue open the decision names the one issue to file', async () => {
@@ -175,22 +186,25 @@ describe('unit · release-due · the pending-major issue twin', () => {
   test('a decision that is not a major never asks the CLI for the pending-major issue', async () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 6;\n' }, 'fix(core): six', 30);
-    const asked: string[] = [];
+    const asked: IssueSubject[] = [];
     const read = await decideAt(
       dir,
       24,
       NOW,
       probed('v1.0.0'),
       async () => [],
-      async (version) => {
-        asked.push(version);
+      async (subject) => {
+        asked.push(subject);
         return [];
       },
     );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.due).toBe(true);
     expect(read.decision.reason).toBeUndefined();
-    expect(asked).toEqual([]);
+    // A due decision asks for the ASK's twin and for nothing else: the pending-major issue is
+    // a different subject, with its own query, and it is never asked for on this path.
+    expect(asked).not.toContain('pending_major');
+    expect(asked).toEqual(['ask']);
   });
 
   // Absent binary, no auth and a failed call all land here, and all three must read as the

@@ -26,7 +26,7 @@ read the envelope instead — every finding carries its own `fix`, and the secon
 | `false` | `major_needs_a_maintainer` | nothing, unless no open issue already says a major is pending: then one issue titled `Major release pending: <data.next>`, listing `data.breaking`, for a maintainer. Check with `gh issue list --state open --search "Major release pending: <next> in:title" --json number,title`, where `<next>` is `data.next` |
 | `false` | `awaiting_tag` | nothing — the release PR merged and `release-tag.yml` has not tagged it yet: watch `gh run list --workflow release-tag.yml --limit 5 --json databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt` and file only on a failed run |
 | `false` | `X_RELEASE_HEAD_NOT_MAIN` (in `findings`) | nothing — HEAD is not the tip of `origin/main`; run `git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main && git checkout main`, then re-run |
-| `true` | — | one ask: **Release `<data.next>`**, listing `data.shipping` |
+| `true` | — | one ask: **Release `<data.next>`**, listing `data.shipping` — unless `data.detail` names an ask already open |
 
 ## The ask, when due
 
@@ -63,7 +63,8 @@ Never file a second ask while one titled exactly `Release <next>` is open — by
 is the whole title, no trailing prose). The box fetches candidates with
 `gh issue list --state open --search "Release <next> in:title"`, where `<next>` is `data.next` from
 the run above — substitute the version before running it — then post-filters them by exact title
-match.
+match. A due run names the open ask it found in `data.detail`, as
+`; an ask already open: <title>`, and the `data.due` row files nothing when one is named.
 
 The same rule on the pull-request side: an open `chore: release <next>` PR is that release already
 in flight — merging it is the release (step 5) — so file nothing, cut nothing, and let that PR

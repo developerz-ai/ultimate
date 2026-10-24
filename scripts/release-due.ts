@@ -21,6 +21,7 @@ import {
   releaseDue,
 } from './lib/release-due-rule';
 import { packageFiles, shippingPackage } from './lib/release-due-ships';
+import { askIssueArgs } from './lib/release-subject';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 import { listWorkspaces, publishFloorFindings, publishOrder } from './lib/workspaces';
@@ -184,9 +185,15 @@ export async function openPrTitlesAt(root: string, version: string): Promise<rea
 }
 
 /**
- * The open pending-major issues for `version`, best effort and last. Its own query, not the
- * ask's: the ask's search is `Release <version> in:title`, which never returns a
- * `Major release pending: <version>` title, so one list could not serve both subjects.
+ * The two open-issue subjects a release-due decision reads, one per path. They are different
+ * SUBJECTS — the ask asks for a release, the pending-major issue asks for a maintainer — and
+ * each has its own query and its own matcher, so neither search returns the other's titles.
+ */
+export type IssueSubject = 'ask' | 'pending_major';
+
+/**
+ * The open issue titles for one subject, best effort and last, read through the CLI's
+ * `--json number,title` rows.
  *
  * `undefined` when the lookup COULD NOT ANSWER — the CLI missing, failing, timing out, or
  * answering with a body that is not the promised rows — and the titles when it did, an empty
@@ -194,11 +201,11 @@ export async function openPrTitlesAt(root: string, version: string): Promise<rea
  * the rule files exactly one; `undefined` says nobody knows, and the rule must not file one,
  * because a second maintainer issue for the same major is worse than none.
  */
-export async function openIssueTitlesAt(
+async function issueTitlesAt(
   root: string,
-  version: string,
+  args: readonly string[],
 ): Promise<readonly string[] | undefined> {
-  const listed = await gh(majorIssueArgs(version), root).catch(() => undefined);
+  const listed = await gh(args, root).catch(() => undefined);
   if (listed?.ok !== true) return undefined;
   // `parsePrIssues` is tolerant by contract: a body that is not rows at all reads as `[]`, and
   // `[]` reads as "none open". Here the two are different facts, so the shape is probed first
@@ -214,12 +221,50 @@ export async function openIssueTitlesAt(
 }
 
 /**
+ * The open pending-major issues for `version`. Its own query, not the ask's: the ask's search
+ * is `Release <version> in:title`, which never returns a `Major release pending: <version>`
+ * title, so one list could not serve both subjects.
+ */
+export async function openIssueTitlesAt(
+  root: string,
+  version: string,
+): Promise<readonly string[] | undefined> {
+  return issueTitlesAt(root, majorIssueArgs(version));
+}
+
+/**
+ * The open release asks for `version`. Its own query, not the pending-major issue's: that
+ * search is `Major release pending: <version> in:title`, which never returns a
+ * `Release <version>` title, so one list could not serve both subjects.
+ *
+ * `undefined` when the lookup could not answer, and the titles when it did — the same
+ * distinction `openIssueTitlesAt` draws. On the ask path an unanswered lookup only loses the
+ * twin note, which is harmless; the rule reads the absent list as no ask known, never as an
+ * ask that is open.
+ */
+export async function openAskTitlesAt(
+  root: string,
+  version: string,
+): Promise<readonly string[] | undefined> {
+  return issueTitlesAt(root, askIssueArgs(version));
+}
+
+/**
  * Everything the rule needs, read from the checkout at `root`; a finding when it cannot be read.
  * Three seams, in that order: `probe` says whether origin holds a candidate tag (see
  * `lastReleaseTag`), `listPrTitles` is the bump-PR twin lookup and `listIssueTitles` is the
- * pending-major issue's twin lookup — all injected so a test names the answer instead of reaching
- * the remote or the GitHub CLI. `listIssueTitles` answers `undefined` when the lookup could not
- * answer, and that answer reaches the rule unchanged.
+ * open-issue twin lookup — all injected so a test names the answer instead of reaching the
+ * remote or the GitHub CLI.
+ *
+ * `listIssueTitles` is SUBJECT-AWARE: it is asked for the `ask` on a `due` decision and for the
+ * `pending_major` on a `major_needs_a_maintainer` one, because the two are different subjects
+ * with different queries and different matchers. The two decision paths are mutually exclusive
+ * — the major branch returns before the due branch is reached — so one lookup answers whichever
+ * subject the decision is about, and the list it returns reaches the rule's one
+ * `openIssueTitles` field unchanged.
+ *
+ * `listIssueTitles` answers `undefined` when the lookup could not answer, and that answer
+ * reaches the rule unchanged.
  */
 export async function decideAt(
   root: string,
@@ -228,8 +273,11 @@ export async function decideAt(
   probe: TagProbe = remoteTagProbe(root),
   listPrTitles: (version: string) => Promise<readonly string[]> = (version) =>
     openPrTitlesAt(root, version),
-  listIssueTitles: (version: string) => Promise<readonly string[] | undefined> = (version) =>
-    openIssueTitlesAt(root, version),
+  listIssueTitles: (
+    subject: IssueSubject,
+    version: string,
+  ) => Promise<readonly string[] | undefined> = (subject, version) =>
+    subject === 'ask' ? openAskTitlesAt(root, version) : openIssueTitlesAt(root, version),
 ): Promise<
   { readonly tagged: string; readonly stamped: string; readonly decision: DueDecision } | Finding
 > {
@@ -287,19 +335,26 @@ export async function decideAt(
   const first = releaseDue(facts);
   const next = first.next;
   const openPrTitles = first.due && next !== undefined ? await listPrTitles(next) : [];
-  // The pending-major issue's twin lives on the `major_needs_a_maintainer` path, which is not a
-  // `due` decision — the same two-pass shape, one pass for each twin.
+  // The two open-issue twins live on the two decision paths, one per path: the ask's twin on a
+  // `due` decision and the pending-major issue's twin on a `major_needs_a_maintainer` one. The
+  // paths are mutually exclusive, so one lookup answers whichever subject this decision is
+  // about — and the two never share a subject, because their queries and matchers differ.
   //
   // `undefined` here means the lookup could NOT ANSWER, and it stays `undefined` all the way
-  // into the rule: an empty list would read as "none open", which on this path is the one
-  // answer that makes the box file a second maintainer issue for the same major.
+  // into the rule: an empty list would read as "none open", which on the major path is the one
+  // answer that makes the box file a second maintainer issue for the same major. On the ask
+  // path the same absence only costs the twin note, and the rule reads it as no ask known.
   const major = first.reason === 'major_needs_a_maintainer';
-  const openIssueTitles = major && next !== undefined ? await listIssueTitles(next) : undefined;
+  const subject: IssueSubject = major ? 'pending_major' : 'ask';
+  const openIssueTitles =
+    (major || first.due) && next !== undefined ? await listIssueTitles(subject, next) : undefined;
   // The second pass runs whenever a lookup ran at all. `first` was computed with no issue list
-  // and no PR list, so on the major path it cannot know whether a twin is open — the same
-  // reason the PR path re-runs.
+  // and no PR list, so it cannot know whether a twin is open — the same reason the PR path
+  // re-runs. The major path always re-runs: an unanswered lookup there must reach the rule as
+  // `undefined`, and `first` carries no issue list at all, which reads the same way only by
+  // accident.
   const decision =
-    openPrTitles.length === 0 && !major
+    openPrTitles.length === 0 && openIssueTitles === undefined && !major
       ? first
       : releaseDue({
           ...facts,
