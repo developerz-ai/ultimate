@@ -41,13 +41,16 @@ export const DEFAULT_SETTLE_HOURS = 24;
 
 /**
  * The `gh run list` query the `awaiting_tag` watch command runs: the release-tag workflow's five
- * newest runs, with the fields a filing needs — the run's id, its status and conclusion, the event
- * and branch it ran on, its title, its URL and when it was created. The same field set and order
- * as the health brief's `tag runs ended well` row, so one query answers both: a command that
- * returned only a status could not say WHICH run failed, or quote its URL in the ask.
+ * newest runs, with the fields a filing needs — the run's status and conclusion, its id, its
+ * title, the commit it ran at, its URL and when it was created. `event` and `headBranch` are gone:
+ * this workflow runs on ONE trigger — ci.yml's completion on `main`
+ * (`.github/workflows/release-tag.yml:29-32`) — so both carry the same word on every run of it,
+ * while `headSha` names the commit a filing must quote. The same field set and order as the health
+ * brief's `tag runs ended well` row, so one query answers both: a command that returned only a
+ * status could not say WHICH run failed, or quote its URL in the ask.
  */
 export const RELEASE_TAG_RUN_FIELDS =
-  'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt';
+  'status,conclusion,databaseId,displayTitle,headSha,url,createdAt';
 
 /** The one command to watch while the merged release waits for its tag. */
 export const AWAITING_TAG_COMMAND = `gh run list --workflow release-tag.yml --limit 5 --json ${RELEASE_TAG_RUN_FIELDS}`;

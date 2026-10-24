@@ -151,16 +151,16 @@ describe('unit · release-due-rule · not due', () => {
     const decision = releaseDue(input({ stamped: '1.3.0' }));
     expect(decision.due).toBe(false);
     expect(decision.reason).toBe('awaiting_tag');
-    // The watch command names the workflow AND the fields a filing needs: the run's id, its
-    // status and conclusion, its event and branch, its title, its URL and when it was created.
-    // A command without them cannot say which run failed, nor quote its URL in the ask — so the
-    // whole field list is pinned, not merely the workflow's filename.
+    // The watch command names the workflow AND the fields a filing needs: the run's status and
+    // conclusion, its id, its title, the commit it ran at, its URL and when it was created.
+    // A command without them cannot say which run failed, nor name the commit that failed — so
+    // the whole field list is pinned, not merely the workflow's filename.
     expect(decision.command).toBe(AWAITING_TAG_COMMAND);
     expect(decision.command).toBe(
-      'gh run list --workflow release-tag.yml --limit 5 --json databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt',
+      'gh run list --workflow release-tag.yml --limit 5 --json status,conclusion,databaseId,displayTitle,headSha,url,createdAt',
     );
     expect(RELEASE_TAG_RUN_FIELDS).toBe(
-      'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt',
+      'status,conclusion,databaseId,displayTitle,headSha,url,createdAt',
     );
   });
 });

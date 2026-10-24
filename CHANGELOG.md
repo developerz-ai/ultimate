@@ -8,10 +8,51 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 27.16.1 - 2026-10-24
+
 ### Fixed
 
+- **The queue depth read no longer scans finished jobs.** `SQL_STATS` — what every worker runs
+  every 15 s to publish `queue_depth` — had no `where`, so it read every `x_jobs` row the retention
+  window keeps to count a handful: 29 ms mean over 48k rows, 22 of them counted, in one production
+  app (2026-10-24). It now filters on the six states it counts and reads the new partial index
+  `x_jobs_depth_idx` `(queue, state, run_at)`, created at boot like every queue index: 0.2 ms on
+  the same table. A queue holding only `done` or `cancelled` rows is no longer listed by `stats()`
+  (all three drivers: Redis drops a queue whose six counts are zero), and the depth publisher zeroes `queue_depth`, `queue_oldest_ready_seconds` and
+  `queue_dead_jobs` for a queue that drops out — a gauge keeps its last value, so a drained queue
+  would otherwise hold the worker HPA scaled out.
 - A due release-due decision now identifies an already-open release ask in `data.detail`; the
   `; an ask already open: <title>` note is reachable in production, not only through rule fixtures.
+- The health checkup's release-tag query and the release-due `awaiting_tag` watch command now ask
+  for the run's commit (`headSha`) and its filing metadata, so an unhealthy release-tag verdict
+  names the commit that failed.
+
+### Commits
+
+- fix(jobs): read only counted rows in the queue depth read (#881)
+- fix(scripts): accept X_CORPUS_UNSCANNED in the release-due refusal set (#880)
+- docs(testing): make the CLAUDE.md deps paragraph match package.json (#877)
+- fix(health): name the commit a failed release-tag run tagged (#878)
+- docs: name the Ubuntu scaffold-smoke job in CLAUDE.md's CI list (#876)
+- test(cli): sweep --json over every shipped command spec (#875)
+- fix: correct ui floor import list (#874)
+- fix(scripts): read llms.txt in the doc command and doc path corpora (#873)
+- test: cover scripts/verify-parts.ts refusal and newest-attempt selection (#872)
+- docs: correct the no-raw-hex-rule claim to the raw-colour guard split (#871)
+- fix(release-due): name an already-open release ask on a due decision (#870)
+- fix: judge Dependabot health by activity and check status (#866)
+- feat(release-due): give the pending-major guard an executable issue check (#869)
+- fix(dz): widen release-tag run evidence (#867)
+- feat(scripts): health row 7 reads full Dependabot PR state and verdicts on it (#865)
+- docs: repoint llms.txt realtime-capacity references to bench results README (#864)
+- chore(dz): ultimate is fully AI-maintained, members and breaking changes included (#863)
+- docs(dz): bound row 7's gh pr list and rule on a capped page (#862)
+- feat(release-due): answer is v<stamped> tagged on origin via remote probe (#816)
+- scripts/health.ts: typed-data counterpart to release-due for health brief rows (#851)
+- fix(scripts): make run()'s suite run on native Windows (#856)
+- chore(claude): pre-approve gh release view and the git reads the health brief runs (#861)
 
 ## 27.16.0 - 2026-10-23
 

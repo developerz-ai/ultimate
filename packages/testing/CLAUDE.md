@@ -2,13 +2,15 @@
 
 Tier 5. May import tiers 0–4. Imported by every package's tests and by generated apps.
 
-Deps: `core` (tier 0), plus `time`, `jobs`, `mail`, `db`, `entity`, `render` and `http` — imported **dynamically
-inside the fixture factories only** (`render` inside `render-view.ts`, `http` inside `auth-request.ts`), so a test that never destructures `mail` never loads the mail
-package and a `packages/core` test never loads the entity registry. `entity` is a dependency for
-exactly one call: `nPlusOne()`, so the strict fixture reports the error `x dev` reports, with the
-`fix:` the schema's own relations spell. A second N+1 code owned here would be a second answer to
-one condition. The one static `entity` import is `registry-isolation.ts`, which is why that module
-is its own entry point and not part of the barrel.
+Deps (15): `core`; `cache` `db` `i18n` `time`; `entity` `http` `policy`; `action` `jobs`
+`query` `realtime`; `mail` `pwa` `render`. Static in `.`: `cache`
+(`registry-leak-guard.ts:7`), `i18n`, `jobs`, `policy` (`registry-snapshot.ts:29-38`), `db`
+(`reusable-database.ts:20`), `realtime/server` (`fixture-subscribe.ts:13`). Dynamic-only:
+`action`, `http`, `mail`, `pwa`, `query`, `render`, `time` — no `mail` destructure, no mail
+package; a `packages/core` import never loads `@ultimat3/entity`. `entity` exists for exactly
+one call, `nPlusOne()`: the strict fixture reports `x dev`'s error, with the `fix:` the schema's
+own relations spell — a second N+1 code here would be a second answer to one condition. Its one
+static import: `registry-isolation.ts`, own entry point, off the barrel.
 
 | Rule | Detail |
 |---|---|
@@ -37,7 +39,7 @@ is its own entry point and not part of the barrel.
 | One body shape, five registrars | `test` (= `fixtureTest`), `unitTest`, `contractTest`, `liveTest`, `jobTest` all take `FixtureBody` + `{ timeoutMs }`: `unitTest('…', async ({ runJobs }) => …)`. Never `describe(testName('unit', …))` + `test` to get a fixture |
 | `runJobs` says who and what | `{ actor }` is the WORKER's identity (the org stays the job's declared tenant), `{ tenantId }` the enqueuer's row; `executions[n].result` is the body's return. A fresh event bus per fixture |
 | A `runJobs` pass is a real worker's `tick()` | `fixture-jobs.ts` builds an unstarted `jobWorker` per pass, so admission runs: `concurrency` waits and `whenBusy: 'fail'` refuses (`X_JOB_KEY_BUSY`) exactly as in a fleet. Never `executeJob` on a bare `claim()`. The lease and slot renew every 1 ms of TEST time (`RENEW_MS`, `frozen-scheduler.ts` on `onClockMoved`), never on a wall-clock interval: cancel, `clock.advance(1)`, and the body hears `X_JOB_LEASE_LOST` — no hand-built worker |
-| Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so a core test never loads it |
+| Per-test state is `per-test-reset.ts` | the app preload's `beforeEach` resets the jobs event bus — only when `@ultimat3/jobs` is already loaded, so the reset never loads it |
 | An island test is `describeIslandState` | one block per declared state: mounted in `beforeAll` (60 s), disposed in `afterAll`, one build per file. `mountIslandState` + `using` for one test's own mount; an undeclared id is `X_TEST_ISLAND_STATE_UNKNOWN` |
 | An authenticator is tested with `authRequest()` | the hook's own two arguments, real — never `as unknown as Parameters<…>` |
 | `LOG_LEVEL` above `info` filters the TERMINAL | `quiet-logs.ts` pins the logger at `info` while core loads, so a collecting `setLogSink` still sees `warn` under `LOG_LEVEL=error`. It stays the preload's FIRST import |

@@ -172,7 +172,8 @@ describe('SIGTERM stops claiming and lets running jobs finish', () => {
     ]);
     expect(rec.nacks).toHaveLength(0);
     expect(rec.acks).toHaveLength(1);
-    expect(rec.queueAtClose()?.ready).toBe(0);
+    // Nothing back on the queue: its one row is `done`, so `stats()` does not list it at all.
+    expect(rec.queueAtClose()).toBeUndefined();
     expect((await worker.stats()).processed).toBe(1);
   });
 

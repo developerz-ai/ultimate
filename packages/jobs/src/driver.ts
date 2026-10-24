@@ -59,6 +59,21 @@ export const LIVE_STATES: ReadonlySet<JobState> = new Set<JobState>([
 ]);
 
 /**
+ * The states `stats()` counts, one bucket each (`ready` and `delayed` split by `runAt`): the live
+ * four and the two an operator is paged on. `done` and `cancelled` rows count toward nothing, so
+ * neither driver reads them — `SQL_STATS` and `x_jobs_depth_idx` spell the same six, and a queue
+ * holding only finished rows is not listed.
+ */
+export const STATS_STATES: ReadonlySet<JobState> = new Set<JobState>([
+  'ready',
+  'delayed',
+  'running',
+  'suspended',
+  'failed',
+  'dead',
+]);
+
+/**
  * What a row's `lastError` says when the CLAIM buried it: its lease lapsed on the attempt that was
  * its last, so nothing ever settled it and nothing may run it again. Fixed text, written by the
  * claim statement itself — no apostrophe, because it is spliced into SQL as a literal.
