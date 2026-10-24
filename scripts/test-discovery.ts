@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 // Refuse a test file the gate's discovery cannot yield, or one filed outside the one convention —
 // `TEST_GLOB '**/*.test.{ts,tsx}'`, `packages/cli/src/test-select.ts` — each refused shape with its
-// own ground: a basename holding `.spec.` or `_spec.`, or ending `.test.js` or `.test.jsx`, is
-// invisible to that glob, so no gate step runs it; a `__tests__/` path IS yielded by it and run by
-// the gate, so it is refused for the convention it breaks — a test file lives beside its source,
-// never in a `__tests__/` directory; and a colliding basename names no test file at all.
+// own ground: a basename holding `.spec.`, `_spec.` or `_test.` — bun's root `bun test` runs
+// `*_test.*` too — or ending `.test.js` or `.test.jsx`, is invisible to that glob, so no gate step
+// runs it; a `__tests__/` path whose basename the glob DOES match is run by the gate and refused
+// for the convention it breaks — a test file lives beside its source, never in a `__tests__/`
+// directory; and a colliding basename names no test file at all.
 //
 // `bun test` at the root is WIDER than the gate's discovery — it reads `*.test.*`, `*_test.*`,
 // `*.spec.*` and `*_spec.*`, each with a js/jsx/ts/tsx extension — and it is the run a developer
@@ -54,6 +55,7 @@ export function unseenByDiscovery(path: string): boolean {
   return (
     base.includes('.spec.') ||
     base.includes('_spec.') ||
+    base.includes('_test.') ||
     base.endsWith('.test.js') ||
     base.endsWith('.test.jsx') ||
     path.split('/').includes('__tests__')
@@ -61,16 +63,20 @@ export function unseenByDiscovery(path: string): boolean {
 }
 
 /**
- * The same file under the one convention the gate yields: `.spec.`/`_spec.` become `.test.`, a JS
- * extension becomes its TS spelling, and the `__tests__/` segment is dropped so the file sits
- * beside its source. A suggestion, never a performed move — hence the `mv` verb in the fix.
+ * The same file under the one convention the gate yields: `.spec.`/`_spec.`/`_test.` become
+ * `.test.`, a JS extension becomes its TS spelling, and the `__tests__/` segment is dropped so the
+ * file sits beside its source. A suggestion, never a performed move — hence the `mv` verb in the
+ * fix.
  */
 function discoveredName(path: string): string {
   const cut = path.lastIndexOf('/');
   const base = cut === -1 ? path : path.slice(cut + 1);
   const dir = cut === -1 ? [] : path.slice(0, cut).split('/');
   const kept = dir.filter((one) => one !== '__tests__');
-  let name = base.replace('.spec.', '.test.').replace('_spec.', '.test.');
+  let name = base
+    .replace('.spec.', '.test.')
+    .replace('_spec.', '.test.')
+    .replace('_test.', '.test.');
   if (name.endsWith('.test.js')) {
     name = `${name.slice(0, -'.js'.length)}.ts`;
   } else if (name.endsWith('.test.jsx')) {
@@ -109,18 +115,27 @@ export function scanTree(root: string): DiscoveryScan {
 const BUN_TEST_FILE = /(?:[._](?:test|spec))\.(?:jsx?|tsx?)$/;
 
 /**
+ * The gate's own convention — the basenames the gate's TEST_GLOB yields. A `__tests__/` path
+ * carrying one is run by the gate and refused for the convention it breaks; a `__tests__/` path
+ * carrying any other refused shape is invisible to the gate exactly as its bare form is, and that
+ * other ground names it.
+ */
+const GATE_TEST_FILE = /\.test\.tsx?$/;
+
+/**
  * The cause for one refused path: the ground that ACTUALLY applies to ITS shape. The shape is not
  * the file's status — a basename the gate's glob cannot match is invisible to every gate step, a
- * `__tests__/` path is yielded and run by the gate and is refused for the convention it breaks,
- * and a basename that merely collides names no test file at all.
+ * `__tests__/` path whose basename the glob DOES match is yielded and run by the gate and is
+ * refused for the convention it breaks, and a basename that merely collides names no test file at
+ * all.
  */
 const causeOf = (path: string): string => {
   const base = path.slice(path.lastIndexOf('/') + 1);
-  if (path.split('/').includes('__tests__'))
-    return `${path} is a test file the gate's discovery DOES yield — TEST_GLOB '**/*.test.{ts,tsx}' matches '__tests__/*.test.ts' at any depth, and packages/cli/src/test-ignores.ts ignores no '__tests__' — so it is refused for the convention it breaks: a test file lives beside its source, never in a '__tests__/' directory`;
   if (!BUN_TEST_FILE.test(base))
     return `${path} is not a test file at all: the shape check reads the basename, never the extension, so a name that merely collides with the refused convention is named by a rule about test files — neither the gate's discovery nor bun's own root bun test reads it`;
-  return `${path} is a test file the gate's discovery cannot yield: the gate's unit, contract and job steps select suites through discoverTests() — TEST_GLOB '**/*.test.{ts,tsx}' beside the source (packages/cli/src/test-select.ts) — and that glob matches no basename holding '.spec.' or '_spec.', or ending '.test.js' or '.test.jsx', so no gate step runs it while bun's own root bun test does`;
+  if (path.split('/').includes('__tests__') && GATE_TEST_FILE.test(base))
+    return `${path} is a test file the gate's discovery DOES yield — TEST_GLOB '**/*.test.{ts,tsx}' matches '__tests__/*.test.ts' at any depth, and packages/cli/src/test-ignores.ts ignores no '__tests__' — so it is refused for the convention it breaks: a test file lives beside its source, never in a '__tests__/' directory`;
+  return `${path} is a test file the gate's discovery cannot yield: the gate's unit, contract and job steps select suites through discoverTests() — TEST_GLOB '**/*.test.{ts,tsx}' beside the source (packages/cli/src/test-select.ts) — and that glob matches no basename holding '.spec.', '_spec.' or '_test.', or ending '.test.js' or '.test.jsx', so no gate step runs it while bun's own root bun test does`;
 };
 
 const unseenFinding = (path: string): Finding => {

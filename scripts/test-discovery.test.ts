@@ -46,6 +46,10 @@ describe('unit · the discovery guard refuses a test file the gate cannot yield'
     ['b_spec.ts', 'b_spec.ts'],
     ['c.test.js', 'c.test.js'],
     ['d.test.jsx', 'd.test.jsx'],
+    ['f_test.ts', 'f_test.ts'],
+    ['g_test.js', 'g_test.js'],
+    ['h_test.jsx', 'h_test.jsx'],
+    ['i_test.tsx', 'i_test.tsx'],
     ['__tests__/e.test.ts', '__tests__/e.test.ts'],
   ];
 
@@ -71,6 +75,11 @@ describe('unit · the discovery guard refuses a test file the gate cannot yield'
       ['b_spec.ts', 'b.test.ts'],
       ['c.test.js', 'c.test.ts'],
       ['d.test.jsx', 'd.test.tsx'],
+      ['f_test.ts', 'f.test.ts'],
+      ['g_test.js', 'g.test.ts'],
+      ['h_test.jsx', 'h.test.tsx'],
+      ['i_test.tsx', 'i.test.tsx'],
+      ['__tests__/j_test.ts', 'j.test.ts'],
       ['src/__tests__/e.test.ts', 'src/e.test.ts'],
     ];
     for (const [seed, target] of renames) {
@@ -100,6 +109,28 @@ describe('unit · the discovery guard refuses a test file the gate cannot yield'
     );
   });
 
+  test('the cause names the ground that actually applies to the shape', async () => {
+    await seeded(
+      {
+        '__tests__/m.test.ts': '',
+        '__tests__/n_test.ts': '',
+        'o.spec.ts': '',
+        'api.spec.json': '',
+      },
+      (root) => {
+        const byAt = new Map(
+          checkDiscovery(scanTree(root)).map((finding) => [finding.at, finding]),
+        );
+        // A `__tests__/` basename the glob matches: refused for the convention it breaks.
+        expect(byAt.get('__tests__/m.test.ts')?.cause).toContain('DOES yield');
+        // A `__tests__/` basename the glob cannot match: the cannot-yield ground names it.
+        expect(byAt.get('__tests__/n_test.ts')?.cause).toContain('cannot yield');
+        expect(byAt.get('o.spec.ts')?.cause).toContain('cannot yield');
+        expect(byAt.get('api.spec.json')?.cause).toContain('not a test file at all');
+      },
+    );
+  });
+
   test('a walk that read nothing is a blind walk, never a clean tree', async () => {
     await seeded({}, (root) => {
       const scan = scanTree(root);
@@ -120,9 +151,15 @@ describe('unit · the discovery guard refuses a test file the gate cannot yield'
     expect(unseenByDiscovery('deep/nested/b_spec.ts')).toBe(true);
     expect(unseenByDiscovery('c.test.js')).toBe(true);
     expect(unseenByDiscovery('d.test.jsx')).toBe(true);
+    expect(unseenByDiscovery('f_test.ts')).toBe(true);
+    expect(unseenByDiscovery('deep/nested/g_test.js')).toBe(true);
+    expect(unseenByDiscovery('h_test.jsx')).toBe(true);
+    expect(unseenByDiscovery('i_test.tsx')).toBe(true);
     expect(unseenByDiscovery('src/__tests__/e.test.ts')).toBe(true);
     expect(unseenByDiscovery('a.test.ts')).toBe(false);
     expect(unseenByDiscovery('a.test.tsx')).toBe(false);
+    // `_test` without the following dot is no test name: neither discovery reads it.
+    expect(unseenByDiscovery('unit_test_helpers.ts')).toBe(false);
     expect(unseenByDiscovery('plain.ts')).toBe(false);
     expect(unseenByDiscovery('specs/notes.md')).toBe(false);
   });
