@@ -2,8 +2,8 @@
 // that still named the list's id pointed assistive technology at an element not in the document.
 // `Popover` already answers `undefined` while closed; this is the same rule for the same reason.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Menu } from './Menu';
 
 type Control = Readonly<Record<string, unknown>>;
@@ -26,9 +26,6 @@ function render(open: boolean): { control: Control; menuIds: readonly unknown[] 
 }
 
 describe('Menu trigger', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('a closed menu names no list it has not rendered', () => {
     const { control, menuIds } = render(false);
     expect(menuIds).toEqual([]);

@@ -197,6 +197,8 @@ Free runners (`ubuntu-latest`; `windows-latest` for `windows`, free on a public 
 - `gate` — the gate in parts: `x verify --only <steps>` per runner, `unit` sharded. Never a
   verdict, and never a lint/typecheck job beside it.
 - `verify` — the verdict: `x verify merge` over the parts, red for a step no part ran.
+- `scaffold-smoke` — on Ubuntu: a scaffolded app gates twice per shape (`demoapp`, `bareapp`) — the
+  second gate, over the generators' output, catches broken generators.
 - `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
 
 Other workflows, each explained by its own header: `release-tag.yml` (green `ci` on a release

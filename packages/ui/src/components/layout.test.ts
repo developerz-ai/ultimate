@@ -4,8 +4,8 @@
 // stylesheet reads. Under `bun test` a `*.module.scss` import resolves to the file PATH, so a class
 // name proves nothing here — these assert the props that survive that.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Card } from './Card';
 import { Container } from './Container';
 import { Divider } from './Divider';
@@ -18,9 +18,6 @@ const styleOf = (node: { props: Record<string, unknown> }): Record<string, strin
   node.props['style'] as Record<string, string>;
 
 describe('the layout primitives', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('they compile to a JSX factory this file understands', () => {
     expect(renderNodes(Container, { children: 'body' }).length).toBeGreaterThan(0);
   });
@@ -226,9 +223,6 @@ describe('the layout primitives', () => {
  * `X_UI_INVALID_VALUE` for an `X_INVARIANT` and give one value two codes.
  */
 describe('Section: a heading level that is not a level', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   for (const level of [Number.NaN, Number.POSITIVE_INFINITY, 2.5]) {
     test(`level: ${String(level)} is X_UI_INVALID_VALUE, never an invalid element`, () => {
       expect(() => renderNodes(Section, { children: 'b', title: 'T', level })).toThrow(

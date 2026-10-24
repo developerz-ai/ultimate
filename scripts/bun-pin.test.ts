@@ -284,7 +284,7 @@ describe('the Bun series is pinned once, in agreement', () => {
 
   // A series (`1.4.x`) or an exact patch (`1.4.0`); never `latest`, never a bare major. The exact
   // form joined on 2026-09-05: `1.4.x` admitted Bun 1.4.2 the morning it was published, and its
-  // bundler retains more of a re-export barrel than 1.4.0's — `packages/ui/src/barrel-bytes.test.ts`
+  // bundler retains more of a re-export barrel than 1.4.0's — `scripts/ui-barrel-bytes.test.ts`
   // fails on `main` under it with nothing changed. A patch that changes what ships to a browser is
   // a change this repository measures, so the pin may name the patch somebody measured.
   test('the pins are a series or an exact patch, never `latest` — nothing lands unannounced', async () => {

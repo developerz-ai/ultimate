@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/auth",
-  "version": "27.16.0",
+  "version": "28.0.0",
   "description": "Sessions, passwords, OAuth, MFA and api keys — resolved to one Actor",
   "license": "MIT",
   "type": "module",
@@ -25,15 +25,15 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "27.16.0",
-    "@ultimat3/db": "27.16.0",
-    "@ultimat3/schema": "27.16.0"
+    "@ultimat3/core": "28.0.0",
+    "@ultimat3/db": "28.0.0",
+    "@ultimat3/schema": "28.0.0"
   }
 }

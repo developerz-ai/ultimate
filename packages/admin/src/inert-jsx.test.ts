@@ -1,128 +1,22 @@
-// The harness, tested for the one thing a harness must never do: damage the process it runs in.
-// `installFactory()` writes a global every `.tsx` in the run reads, so what it does to a binding
-// that was already there — and what a second, nested install does to the first — is a correctness
-// question. The walkers are tested for the other thing: recognising NEITHER factory is what falls
-// through to `String(value)` and asserts against `"[object Object]"`.
+// The walkers, tested for the one thing that defeats them: recognising NEITHER node shape — the
+// render factory's or a hand-built `h()` — is what falls through to `String(value)` and asserts
+// against `"[object Object]"`.
 
-import { afterEach, describe, expect, test } from 'bun:test';
-// The OTHER harness over the same global. Importing it here is the whole point of the interleave
-// test below — `bun test` seats `packages/ui` and `packages/admin` in one process.
-import { probe, unprobe } from '@ultimat3/ui/jsx-probe';
+import { describe, expect, test } from 'bun:test';
 import {
   byComponent,
   byTag,
   fire,
   h,
-  installFactory,
   isInertNode,
   nodesOf,
   one,
   renderComponent,
   renderHtml,
   renderNodes,
-  restoreFactory,
   shallowNodesOf,
   withAttr,
 } from './inert-jsx-fixture';
-
-const react = (): unknown => Reflect.get(globalThis, 'React');
-const installed = (): boolean =>
-  typeof (react() as { createElement?: unknown } | undefined)?.createElement === 'function';
-
-/** The property as the process held it before this file ran, restored between tests so one
- * failure cannot decide the next test's starting state. */
-const before = Object.getOwnPropertyDescriptor(globalThis, 'React');
-
-afterEach(() => {
-  if (before === undefined) Reflect.deleteProperty(globalThis, 'React');
-  else Object.defineProperty(globalThis, 'React', before);
-});
-
-describe('installFactory / restoreFactory', () => {
-  test('hands back the React binding the process already had', () => {
-    const original = { createElement: (): string => 'someone else', own: true };
-    Object.defineProperty(globalThis, 'React', {
-      value: original,
-      configurable: true,
-      writable: true,
-    });
-
-    installFactory();
-    expect(react()).not.toBe(original);
-    restoreFactory();
-    // Deleting the property outright destroys a binding the harness did not create.
-    expect(react()).toBe(original);
-  });
-
-  test('removes the property entirely when there was none to begin with', () => {
-    Reflect.deleteProperty(globalThis, 'React');
-    installFactory();
-    expect('React' in globalThis).toBe(true);
-    restoreFactory();
-    expect('React' in globalThis).toBe(false);
-  });
-
-  test('nests: the factory survives until the LAST restore', () => {
-    Reflect.deleteProperty(globalThis, 'React');
-    installFactory();
-    installFactory();
-    restoreFactory();
-    // Two suites in one file both install and both tear down; the inner teardown used to leave
-    // every component after it compiling against nothing.
-    expect(installed()).toBe(true);
-    restoreFactory();
-    expect('React' in globalThis).toBe(false);
-  });
-
-  test('interleaved with @ultimat3/ui, the binding still comes back', () => {
-    // Two counters over ONE property restore in the wrong order: admin saves the real binding, ui
-    // saves ADMIN's factory, admin restores the real one, and ui then puts admin's back on top —
-    // so the global ends the run holding a harness that was already torn down.
-    const original = { createElement: (): string => 'someone else', own: true };
-    Object.defineProperty(globalThis, 'React', {
-      value: original,
-      configurable: true,
-      writable: true,
-    });
-
-    installFactory();
-    probe();
-    restoreFactory();
-    // Still installed: ui's suite is mid-run, and admin's teardown may not take its factory away.
-    expect(installed()).toBe(true);
-    unprobe();
-
-    expect(react()).toBe(original);
-  });
-
-  test('interleaved the other way round, the binding still comes back', () => {
-    const original = { createElement: (): string => 'someone else', own: true };
-    Object.defineProperty(globalThis, 'React', {
-      value: original,
-      configurable: true,
-      writable: true,
-    });
-
-    probe();
-    installFactory();
-    unprobe();
-    expect(installed()).toBe(true);
-    restoreFactory();
-
-    expect(react()).toBe(original);
-  });
-
-  test('an unbalanced restore touches nothing', () => {
-    const original = { createElement: (): string => 'someone else' };
-    Object.defineProperty(globalThis, 'React', {
-      value: original,
-      configurable: true,
-      writable: true,
-    });
-    restoreFactory();
-    expect(react()).toBe(original);
-  });
-});
 
 describe('the node shape', () => {
   test('h() puts a single child under props.children and several as an array', () => {

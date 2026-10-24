@@ -2,26 +2,14 @@
 // of the pure modules beneath them (`stat-delta.ts`, `meter-view.ts` have their own tests): what
 // the markup carries, and what a click on the copy control does. `jsx-probe` gives the tree.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import {
-  byTag,
-  fire,
-  one,
-  type ProbeNode,
-  probe,
-  renderNodes,
-  unprobe,
-  withAttr,
-} from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, fire, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { CopyButton } from './CopyButton';
 import { Kbd } from './Kbd';
 import { Meter } from './Meter';
 import { StatTile } from './StatTile';
 
 describe('StatTile', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the figure carries its data-stat hook and the delta chip its trend', () => {
     const nodes = renderNodes(StatTile, {
       label: 'Clicks today',
@@ -44,9 +32,6 @@ describe('StatTile', () => {
 });
 
 describe('Meter', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('decorative by default: hidden from the tree, no role, the fill width is an attribute', () => {
     const svg = one(byTag(renderNodes(Meter, { value: 25, max: 100 }), 'svg'), 'meter');
     expect(svg.props['aria-hidden']).toBe('true');
@@ -82,9 +67,6 @@ describe('Meter', () => {
 });
 
 describe('Kbd', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('is a native <kbd>, so it reads as a key with no script', () => {
     const kbd = one(byTag(renderNodes(Kbd, { children: '⌘K' }), 'kbd'), 'kbd');
     expect(kbd.props['children']).toBe('⌘K');
@@ -92,9 +74,6 @@ describe('Kbd', () => {
 });
 
 describe('CopyButton', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('server-renders a real, labelled button that is not yet in the copied state', () => {
     const button = one(
       byTag(renderNodes(CopyButton, { value: 'https://x.test/abc', label: 'Copy link' }), 'button'),

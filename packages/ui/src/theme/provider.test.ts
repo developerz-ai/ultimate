@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { Locale, Translator } from '@ultimat3/i18n';
 import type { TimeZone } from '@ultimat3/time';
 import { UI_ERROR_CODES } from '../errors';
-import { probe, renderNodes, unprobe } from '../jsx-probe';
+import { renderNodes } from '../jsx-probe-fixture';
 import type { UiContextValue } from './context';
 import { UI_DEFAULT_CURRENCY, UI_DEFAULT_LOCALE, UI_DEFAULT_TIME_ZONE } from './context';
 import { UiProvider } from './provider';
@@ -61,7 +61,6 @@ function harness(withDocument = true): Harness {
   };
 
   setSolidRuntime(runtime);
-  probe();
   const hadDocument = 'document' in globalThis;
   if (withDocument) {
     Object.assign(globalThis, {
@@ -83,7 +82,6 @@ function harness(withDocument = true): Harness {
     },
     restore(): void {
       if (!hadDocument) Reflect.deleteProperty(globalThis, 'document');
-      unprobe();
       clearSolidRuntime();
     },
   };

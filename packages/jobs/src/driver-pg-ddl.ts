@@ -217,6 +217,15 @@ create index if not exists x_jobs_finished_idx
   on x_jobs (updated_at)
   where state in ('done', 'failed', 'dead', 'cancelled');
 
+-- What the queue depth read (SQL_STATS) reads, every 15 seconds from every worker. Partial over
+-- the six states it counts, so the read is a range over the counted rows and never a pass over the
+-- finished ones the retention window keeps. Its predicate is the same list SQL_STATS filters on,
+-- which is what lets the planner prove the index applies. Queue, state and run_at are every column
+-- the read uses, so it can be answered from the index alone.
+create index if not exists x_jobs_depth_idx
+  on x_jobs (queue, state, run_at)
+  where state in ('ready', 'delayed', 'running', 'suspended', 'failed', 'dead');
+
 -- The rows of one run, by run id: the retention sweep asks, per deleted row, whether another row of
 -- the run still stands before it deletes the step records of that run, and its follow-up and its
 -- orphan pass ask again. Without it each question is a scan of the whole queue. Not partial: run_id

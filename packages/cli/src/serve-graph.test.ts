@@ -21,6 +21,9 @@ import { join } from 'node:path';
 import { exec } from './exec';
 
 /** Never a production module: a harness, a generator's text, a browser driver. */
+/** A path, not the package name: a `bun -e` script resolves a bare specifier from no file. */
+const RENDER_SERVER = Bun.fileURLToPath(import.meta.resolve('@ultimat3/render/server'));
+
 const FORBIDDEN = /packages\/testing\/|packages\/cli\/src\/templates\/|\/e2e-|\/cdp-/;
 
 /**
@@ -386,24 +389,30 @@ function evaluatedWith(
 
 describe('the @ultimat3/cli/serve module graph', () => {
   test('carries no test, template, e2e or cdp module, and each role stays under its pin', async () => {
-    // A child `bun build`, never `Bun.build` in this process: the test preload installs plugins
-    // that change what resolves, and the graph under test is the one a plain build sees.
+    // A child build, never `Bun.build` in this process: the test preload installs plugins that
+    // change what resolves, and the graph under test is the one a plain build sees. Plain but for
+    // the server `.tsx` transform, which every graph that loads a component carries: without it Bun
+    // 1.4.3 refuses the build (`No matching export … for import "jsxDEV"`, issue #883). Its
+    // prelude's one edge per `.tsx` is the edge the runtime loader gives that file.
     const dir = mkdtempSync(join(tmpdir(), 'serve-graph-'));
     const meta = join(dir, 'meta.json');
+    const script = [
+      `const { serverTsxBuildPlugin } = await import(${JSON.stringify(RENDER_SERVER)});`,
+      'const built = await Bun.build({',
+      `  entrypoints: [${JSON.stringify(join(import.meta.dir, 'serve-entry.ts'))}],`,
+      "  target: 'bun',",
+      `  outdir: ${JSON.stringify(join(dir, 'out'))},`,
+      '  metafile: true,',
+      '  plugins: [serverTsxBuildPlugin],',
+      '  throw: false,',
+      '});',
+      'if (!built.success) { console.error(built.logs.map(String).join("\\n")); process.exit(1); }',
+      `await Bun.write(${JSON.stringify(meta)}, JSON.stringify(built.metafile));`,
+    ].join('\n');
     // Awaited through the CLI's one subprocess boundary, never `Bun.spawnSync`: a synchronous wait
     // holds the test worker's only thread, so a build that does not come back is a worker the
     // test timeout cannot end.
-    const child = await exec(
-      [
-        process.execPath,
-        'build',
-        join(import.meta.dir, 'serve-entry.ts'),
-        '--target=bun',
-        `--outdir=${join(dir, 'out')}`,
-        `--metafile=${meta}`,
-      ],
-      { cwd: process.cwd() },
-    );
+    const child = await exec([process.execPath, '-e', script], { cwd: process.cwd() });
     expect([child.code, child.stderr.slice(0, 400)]).toEqual([0, '']);
     const { inputs } = (await Bun.file(meta).json()) as {
       inputs: Readonly<Record<string, MetaInput>>;

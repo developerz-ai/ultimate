@@ -2,11 +2,11 @@
 // one that makes declaring either safe — a field named in no group still renders, in a default
 // group drawn last — plus `hintKey` through `t()` and a field that exists on one side only.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
 import { registerCatalog } from '@ultimat3/i18n';
 import { staticAuthz } from './authz';
-import { installFactory, renderHtml, restoreFactory } from './inert-jsx-fixture';
+import { renderHtml } from './inert-jsx-fixture';
 import { DEFAULT_SECTION_KEY } from './resource-layout';
 
 await import('@ultimat3/render/server');
@@ -28,9 +28,7 @@ const notes = entity('admin_layout_notes', {
 
 const db = database({ notes }, { driver: memoryDriver() });
 
-beforeAll(installFactory);
 afterAll(() => {
-  restoreFactory();
   clearRegistry();
 });
 

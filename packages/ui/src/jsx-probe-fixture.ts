@@ -3,10 +3,12 @@
 // than on a string it was serialised into. Complements `theme/inert-render.test.ts`, which asks
 // the other question (does the markup come out at all).
 //
-// Which JSX factory a `.tsx` in this package compiled to is NOT ours to choose: `@ultimat3/render`
-// installs a process-global `Bun.plugin` `onLoad` for `/\.tsx$/` at import, and `bun test` is one
-// process. Both factories build the same shape — a `type`, a `props`, children under
-// `props.children` — so this walker recognises both and the run's file order stops deciding.
+// Every `.tsx` a test loads is compiled by `@ultimat3/render`'s loader, which the test preload
+// installs before the first file: an element is the server factory's node, a `type`, a `props`,
+// children under `props.children`. A tree a test builds by hand is `{ inert: true, type, props }`,
+// the same shape, and this walker reads both. There is no classic-factory global any more: the
+// `globalThis.React` this module installed was what Bun's own compile called through 1.4.2, and
+// from 1.4.3 Bun's own compile never runs a test's `.tsx` at all (issue #883).
 
 const RENDER_NODE: symbol = Symbol.for('ultimate.render.jsx');
 
@@ -18,61 +20,6 @@ export interface ProbeNode {
 export function isProbeNode(value: unknown): value is ProbeNode {
   if (typeof value !== 'object' || value === null) return false;
   return 'inert' in value || RENDER_NODE in value;
-}
-
-function h(
-  type: ProbeNode['type'],
-  props: Record<string, unknown> | null,
-  ...children: readonly unknown[]
-): ProbeNode {
-  const base = { ...(props ?? {}) };
-  if (children.length > 0) base['children'] = children.length === 1 ? children[0] : children;
-  return { inert: true, type, props: base } as unknown as ProbeNode;
-}
-
-/**
- * How many probes are live, and what `globalThis.React` was before the first one. A harness that
- * DELETED the property on the way out destroyed a binding it did not create, and a nested or
- * repeated probe tore the factory out from under the suite still using it — the counter is what
- * makes the last unprobe the only one that restores.
- *
- * There may be exactly ONE such counter in the framework, and it is this one — `globalThis.React`
- * is a single property, so a second module counting its own depth over it restores in the wrong
- * order. `@ultimat3/admin`'s `inert-jsx-fixture.ts` kept a second pair and the two interleaved:
- * admin installs (saving the real binding), ui installs (saving ADMIN's factory), admin restores
- * (both counters at 1 → the real binding is back), ui restores (its counter hits 0 → admin's
- * factory is reinstalled over it). The global ended up holding a harness the run had already torn
- * down.
- * `admin` is tier 5 and `ui` is tier 4, so admin imports these rather than declaring them.
- */
-let depth = 0;
-let saved: PropertyDescriptor | undefined;
-
-/** Install the classic-factory global these `.tsx` files fall back to. Paired with `unprobe()`. */
-export function probe(): void {
-  if (depth === 0) {
-    // The descriptor, not the value: the property may be a getter or non-writable, and `assign`
-    // onto either throws or silently loses. `defineProperty` installs over both.
-    saved = Object.getOwnPropertyDescriptor(globalThis, 'React');
-    Object.defineProperty(globalThis, 'React', {
-      value: { createElement: h },
-      configurable: true,
-      writable: true,
-      enumerable: true,
-    });
-  }
-  depth += 1;
-}
-
-/** Undo the matching `probe()`. Unbalanced calls are inert: nothing this did not install is torn
- * down, because the binding at depth 0 belongs to somebody else. */
-export function unprobe(): void {
-  if (depth === 0) return;
-  depth -= 1;
-  if (depth > 0) return;
-  if (saved === undefined) Reflect.deleteProperty(globalThis, 'React');
-  else Object.defineProperty(globalThis, 'React', saved);
-  saved = undefined;
 }
 
 /**

@@ -76,14 +76,21 @@ describe('every compile site carries the allowlist', () => {
     expect(sites, `add \`...externalArgs()\` to: ${sites.join(', ')}`).toEqual([]);
   });
 
-  test("the framework's own image compiles this package's `bin.ts`, so its Dockerfile carries it", () => {
-    const path = join(REPO_ROOT, 'docker', 'Dockerfile');
-    const text = readFileSync(path, 'utf8');
+  test("the framework's own image compiles this package's `bin.ts` through `compileExecutable`", () => {
+    // The CLI's `bun build --compile` takes no plugin, and `bin.ts`'s graph reaches every admin
+    // `.tsx` (issue #883), so the image compiles through `scripts/compile-x.ts` — and that is a
+    // compile site only if it reaches the one function that passes the allowlist.
+    const dockerfile = readFileSync(join(REPO_ROOT, 'docker', 'Dockerfile'), 'utf8');
     expect(
-      text.includes('--external @babel/preset-typescript'),
-      `docker/Dockerfile compiles packages/cli/src/bin.ts, whose graph reaches @babel/core. ` +
-        `fix: add \`--external @babel/preset-typescript \\\` to the \`bun build --compile\` RUN ` +
-        `line, matching COMPILE_EXTERNALS in packages/cli/src/compile-externals.ts`,
-    ).toBe(true);
+      [
+        dockerfile.includes('bun run scripts/compile-x.ts'),
+        /^\s*(?:RUN|&&)\s+bun build --compile/m.test(dockerfile),
+      ],
+      'docker/Dockerfile must compile `x` with `bun run scripts/compile-x.ts --outfile …`',
+    ).toEqual([true, false]);
+    const script = readFileSync(join(REPO_ROOT, 'scripts', 'compile-x.ts'), 'utf8');
+    expect(script.includes('await compileExecutable(')).toBe(true);
+    const compiler = readFileSync(join(import.meta.dir, 'compile-executable.ts'), 'utf8');
+    expect(compiler.includes('external: [...COMPILE_EXTERNALS]')).toBe(true);
   });
 });

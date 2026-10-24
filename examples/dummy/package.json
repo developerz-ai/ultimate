@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "setup": "bun bin/setup.ts",
@@ -24,13 +24,13 @@
     "manifest": "x manifest --json"
   },
   "devDependencies": {
-    "@ultimat3/cache": "27.16.0",
-    "@ultimat3/entity": "27.16.0",
-    "@ultimat3/testing": "27.16.0",
+    "@ultimat3/cache": "28.0.0",
+    "@ultimat3/entity": "28.0.0",
+    "@ultimat3/testing": "28.0.0",
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@ultimat3/cli": "27.16.0",
-    "@ultimat3/core": "27.16.0"
+    "@ultimat3/cli": "28.0.0",
+    "@ultimat3/core": "28.0.0"
   }
 }

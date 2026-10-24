@@ -4,15 +4,12 @@
 // `javascript:` href refused by `linkTarget` and then emitted anyway by `<Link>` passes every test
 // the helper has.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, fire, one, type ProbeNode, probe, renderNodes, unprobe } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, fire, one, type ProbeNode, renderNodes } from '../jsx-probe-fixture';
 import { Accordion } from './Accordion';
 import { Link, type LinkProps } from './Link';
 
 describe('the content components', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('they compile to a JSX factory this file understands', () => {
     expect(renderNodes(Link, { href: '/', children: 'Home' }).length).toBeGreaterThan(0);
   });

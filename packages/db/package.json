@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/db",
-  "version": "27.16.0",
+  "version": "28.0.0",
   "description": "Postgres access, transactions, migrations and drift detection",
   "license": "MIT",
   "type": "module",
@@ -26,14 +26,14 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "27.16.0"
+    "@ultimat3/core": "28.0.0"
   },
   "peerDependencies": {
     "@electric-sql/pglite": ">=0.5.0"

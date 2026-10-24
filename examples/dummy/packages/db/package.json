@@ -10,7 +10,7 @@
     "./seeds/dev": "./seeds/dev.ts"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ../../tsconfig.json",
@@ -20,9 +20,9 @@
   },
   "dependencies": {
     "@postly/domain": "0.0.1",
-    "@ultimat3/cache": "27.16.0",
-    "@ultimat3/core": "27.16.0",
-    "@ultimat3/db": "27.16.0",
-    "@ultimat3/entity": "27.16.0"
+    "@ultimat3/cache": "28.0.0",
+    "@ultimat3/core": "28.0.0",
+    "@ultimat3/db": "28.0.0",
+    "@ultimat3/entity": "28.0.0"
   }
 }

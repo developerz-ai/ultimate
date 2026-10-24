@@ -7,10 +7,10 @@
 // catalog behind every string asserted below — is registered by the barrel, and this file reaches
 // components by their module paths (issue #490).
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Combobox } from './Combobox';
 import { Dropzone } from './Dropzone';
 import { FileInput } from './FileInput';
@@ -33,9 +33,6 @@ const HUGE = { name: 'c.png', type: 'image/png', size: 5_000 };
 type Selection = FileSelection<FileCandidate>;
 
 describe('the file controls', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('they compile to a JSX factory this file understands', () => {
     expect(renderNodes(FileInput, {}).length).toBeGreaterThan(0);
   });
@@ -292,9 +289,6 @@ describe('the file controls', () => {
  * `debounceMs: 0` is a legitimate "no debounce" and must keep working.
  */
 describe('Combobox: a debounce window that is not a window', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   const options = [{ value: 'Berlin' }];
 
   for (const debounceMs of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {

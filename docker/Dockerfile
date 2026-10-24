@@ -43,9 +43,9 @@
 # The tag names the series for the reader; the digest is what builds. A tag is a pointer its
 # publisher can move, so the same commit could build on a different base tomorrow. Dependabot's
 # docker ecosystem moves the digest together with the tag.
-# The digest is `oven/bun:1.4.2-slim`'s (`docker buildx imagetools inspect`, 2026-10-05), the
+# The digest is `oven/bun:1.4.3-slim`'s (`docker buildx imagetools inspect`, 2026-10-24), the
 # patch CI pins in .github/actions/setup/action.yml; `scripts/bun-pin.test.ts` holds the two equal.
-FROM oven/bun:1.4-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS manifests
+FROM oven/bun:1.4-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS manifests
 WORKDIR /src
 COPY . .
 # `bunfig.toml` survives with the manifests, and it is not a convenience: its `[install]` section is
@@ -55,14 +55,14 @@ RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
  && find . -type d -empty -delete
 
 # ---------- deps: cached on the lockfile and the workspace manifests ----------
-FROM oven/bun:1.4-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS deps
+FROM oven/bun:1.4-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS deps
 WORKDIR /src
 COPY --from=manifests /src ./
 COPY bun.lock ./
 RUN bun install --frozen-lockfile
 
 # ---------- build: one self-contained binary ----------
-FROM oven/bun:1.4-slim@sha256:cb3bbbb08e13a4a2ff400f24c7a2a1d5efa83f6ef8544d52d95a519631e2fc61 AS build
+FROM oven/bun:1.4-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS build
 WORKDIR /src
 # The WHOLE installed tree, not just the root `node_modules`. Bun's default isolated linker — still
 # the default on 1.4, re-checked on that bump — stores every package once under `node_modules/.bun/`
@@ -95,12 +95,13 @@ COPY . .
 #
 # `JSON.stringify` rather than bare interpolation: the define's value is parsed as a JS expression,
 # so `1.2.0` unquoted is arithmetic and not a string.
-RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/package.json").version)')" \
- && bun build --compile --minify --sourcemap \
-      --define ULTIMATE_FRAMEWORK_VERSION="$VERSION_DEFINE" \
-      --external @babel/preset-typescript \
-      --outfile /out/app \
-      ./packages/cli/src/bin.ts \
+#
+# `scripts/compile-x.ts` and not `bun build --compile`: the CLI's graph reaches every admin screen
+# and `@ultimat3/ui` component, and a `.tsx` compiled by Bun's own transform imports `jsxDEV` from
+# `solid-js/jsx-dev-runtime`, which exports no such name — Bun 1.4.3 refuses the compile (issue
+# #883). Only `Bun.build` takes the plugin that compiles them to the server factory, and the CLI
+# takes no plugin. The script passes the same define, the same externals and `--minify`.
+RUN bun run scripts/compile-x.ts --outfile /out/app \
  && chmod +x /out/app
 
 # ---------- runtime: distroless, non-root, no shell ----------

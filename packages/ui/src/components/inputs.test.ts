@@ -3,9 +3,9 @@
 // to `false` when it should be absent, and a control whose current value is text content rather
 // than an attribute.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { FakeElement, installFakeDom } from '../fake-dom-fixture';
-import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Input } from './Input';
 import { Radio } from './Radio';
 import { Textarea } from './Textarea';
@@ -17,9 +17,6 @@ const OPTIONS = [
 ];
 
 describe('the form controls', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('they compile to a JSX factory this file understands', () => {
     expect(renderNodes(Input, {}).length).toBeGreaterThan(0);
   });

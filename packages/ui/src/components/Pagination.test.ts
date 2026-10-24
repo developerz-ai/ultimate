@@ -2,17 +2,14 @@
 // URL, so "next" is an anchor the browser follows on its own — and the test asserts the ELEMENT,
 // because a `<button>` with an `href`-shaped prop would read the same in a snapshot of labels.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, one, probe, renderNodes, unprobe } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes } from '../jsx-probe-fixture';
 import { Pagination, type PaginationProps } from './Pagination';
 
 const hrefFor = (cursor: string, direction: 'next' | 'prev'): string =>
   `/posts?${direction === 'next' ? 'after' : 'before'}=${cursor}`;
 
 describe('Pagination with hrefFor', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the component compiles to a JSX factory this file understands', () => {
     expect(renderNodes(Pagination, { nextCursor: 'c', hrefFor }).length).toBeGreaterThan(0);
   });

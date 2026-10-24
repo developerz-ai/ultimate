@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext, SolidRuntime } from '../theme/solid-adapter';
 import type { Theme, ThemeEnv } from '../theme/theme';
@@ -40,7 +40,6 @@ function runtime(): Runtime {
     onCleanup: (fn: () => void): void => void cleanups.push(fn),
   };
   setSolidRuntime(rt);
-  probe();
   return {
     flush: () => {
       for (const effect of effects) effect();
@@ -49,7 +48,6 @@ function runtime(): Runtime {
       for (const fn of cleanups.splice(0)) fn();
     },
     restore: () => {
-      unprobe();
       clearSolidRuntime();
     },
   };

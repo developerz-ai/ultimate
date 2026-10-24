@@ -2,10 +2,10 @@
 // from the request, and an active filter no control writes rides the form hidden — submitting
 // the bar must narrow the list an operator is looking at, never silently widen it.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
-import { byComponent, byTag, installFactory, nodesOf, restoreFactory } from './inert-jsx-fixture';
+import { byComponent, byTag, nodesOf } from './inert-jsx-fixture';
 import type { AdminListRequest } from './list-scope';
 import type { AdminResource } from './resource';
 import type { WidgetContext } from './widget-value';
@@ -22,9 +22,6 @@ registerCatalog('en', {
   'admin.filter.to': '{field} to(probe)',
   'label.qty': 'Qty',
 });
-
-beforeAll(installFactory);
-afterAll(restoreFactory);
 
 const field = (over: Partial<AdminField> & Pick<AdminField, 'name'>): AdminField => ({
   entity: 'order',

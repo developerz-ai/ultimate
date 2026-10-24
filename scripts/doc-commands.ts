@@ -6,6 +6,12 @@
 // or X_CLI_BAD_FLAG from. Same resolver as the source rule (`@ultimat3/cli`'s `citationFault`),
 // pointed at a second file set — a second resolver is the drift this repo forbids by name.
 //
+// NOT ONLY `.md`. `llms.txt` is the machine-readable repo map — the one file an agent reads
+// before it reads anything else — and it hands its reader `x` invocations to run;
+// `scripts/gate-steps.ts` already reads it, for the same reason, and `readMarkdown` reads any
+// glob, so the file set was the only thing keeping it outside a rule that already knew how to
+// judge it.
+//
 // Runs on `x verify`'s `manifest` step: does a committed file still describe this tree?
 //
 //   bun run scripts/doc-commands.ts [--json]
@@ -30,9 +36,16 @@ import { repoRoot } from './lib/run';
  * unchecked — which is how the README's `x g` kind list stayed four kinds short of the registry.
  * The same set `scripts/version-stamps.ts` already reads, for the same reason: an agent does not
  * know which directory a page lives in before it runs what the page told it to.
+ *
+ * `llms.txt` is in it because it is a page an agent runs commands FROM, not because it is a
+ * `.md`: the machine-readable repo map hands its reader invocations, and `gate-steps.ts` already
+ * reads the same file for the same reason.
  */
 export const DOC_GLOBS: readonly string[] = [
   '*.md',
+  // The machine-readable repo map: an agent reads it first and runs what it says, so its `x`
+  // invocations are held to the same registry as every published page's.
+  'llms.txt',
   'wiki/**/*.md',
   'docs/**/*.md',
   'packages/*/*.md',
@@ -170,7 +183,7 @@ export function checkDocCommands(input: DocCommandInput): readonly DocCommandGap
         kind: 'vacuous',
         at: DOC_GLOBS.join(', '),
         subject: '',
-        detail: 'no markdown file matched',
+        detail: 'no documentation file matched',
       },
     ];
   }
@@ -241,7 +254,7 @@ const allowanceFinding = (gap: DocCommandGap): Finding => ({
 const vacuousFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_UNSCANNED',
   cause: `${gap.detail} for ${gap.at}, so this rule reported green over a documentation surface it never read`,
-  fix: `restore the documentation under wiki/ and docs/, or change DOC_GLOBS in scripts/doc-commands.ts to the paths this repo actually publishes`,
+  fix: `restore the documentation under wiki/, docs/ and llms.txt, or change DOC_GLOBS in scripts/doc-commands.ts to the paths this repo actually publishes`,
   at: gap.at,
 });
 

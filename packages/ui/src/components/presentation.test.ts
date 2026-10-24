@@ -7,10 +7,10 @@
 // catalog behind every string asserted below — is registered by the barrel, and this file reaches
 // components by their module paths (issue #490).
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Avatar, initialsOf } from './Avatar';
 import { Badge } from './Badge';
 import { Skeleton } from './Skeleton';
@@ -32,9 +32,6 @@ const styleOf = (node: { props: Record<string, unknown> }): Record<string, strin
   node.props['style'] as Record<string, string>;
 
 describe('the presentational primitives', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('they compile to a JSX factory this file understands', () => {
     expect(renderNodes(Badge, { children: 'New' }).length).toBeGreaterThan(0);
   });
@@ -212,9 +209,6 @@ describe('the presentational primitives', () => {
  * anywhere said so. `?? 1` cannot screen it: `NaN` is not nullish.
  */
 describe('Skeleton, a line count that is not a count', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   for (const lines of [Number.NaN, Number.POSITIVE_INFINITY, 2.5, -1]) {
     test(`lines: ${String(lines)} is refused, never a placeholder that holds no box`, () => {
       expect(() => renderNodes(Skeleton, { lines })).toThrow(/X_INVARIANT/);

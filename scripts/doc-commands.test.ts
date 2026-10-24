@@ -258,4 +258,16 @@ describe('against this repo', () => {
   test('the scanner reads the pages it is pointed at', () => {
     expect(scanDocCitations(page('`x db migrate`')).length).toBe(1);
   });
+
+  test('llms.txt is read — the machine-readable map hands a reader commands too', async () => {
+    // The corpus entry is the whole point: without it llms.txt's `x` invocations stop being
+    // checked and every other assertion here still passes. So the page must be IN the corpus, and
+    // its citations must be the ones the scanner returns for it.
+    const files = await readDocPages(repoRoot());
+    const llms = files.find((file) => file.path === 'llms.txt');
+    expect(llms).toBeDefined();
+    const citations = [...scanDocCitations(llms as never)];
+    expect(citations.length).toBeGreaterThan(0);
+    expect(citations.every((one) => one.path === 'llms.txt')).toBe(true);
+  }, 20_000);
 });

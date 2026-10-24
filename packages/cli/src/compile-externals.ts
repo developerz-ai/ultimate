@@ -1,6 +1,7 @@
-// The specifiers every `bun build --compile` in this repo must refuse to resolve. One list, because
-// the flag is repeated at each compile site — `binaryArgs`, `docker/Dockerfile`, the boot e2e — and
-// three copies of a resolver allowlist is three chances for one of them to be the stale one.
+// The specifiers every `--compile` in this repo must refuse to resolve. One list, because there are
+// two compile sites — `binaryArgs` (the CLI's flag) and `compile-executable.ts` (`docker/Dockerfile`
+// and the boot e2e, through `Bun.build`) — and two copies of a resolver allowlist is two chances
+// for one of them to be the stale one.
 
 /**
  * `@babel/preset-typescript` is reached from `@babel/core`'s `.cts`-config loader and from nowhere

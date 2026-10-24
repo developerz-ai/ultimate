@@ -198,6 +198,12 @@ returning id
  * `delayed`, a delayed dead-letter as `dead` AND `delayed`. The memory driver's `if/else if` chain
  * has always been exclusive, so `x jobs` reported one depth under `x dev` and a larger one in
  * production — off the same rows.
+ *
+ * The `where` is the six states a bucket counts (`STATS_STATES`), spelled as `x_jobs_depth_idx`'s
+ * predicate so the planner reads that index and never a `done` row: every worker runs this every
+ * 15 s, and unfiltered it scanned a fortnight of finished jobs to count a handful (prod,
+ * 2026-10-24: 29 ms mean over 48k rows, 22 counted). A queue holding only `done` or `cancelled`
+ * rows is therefore not listed, and the depth publisher zeroes a queue that drops out.
  */
 export const SQL_STATS = `
 select queue,
@@ -210,6 +216,7 @@ select queue,
        coalesce(max(extract(epoch from now() - run_at)) filter
          (where state in ('ready', 'delayed') and run_at <= now()), 0) * 1000   as oldest_ready_ms
   from x_jobs
+ where state in ('ready', 'delayed', 'running', 'suspended', 'failed', 'dead')
  group by queue
  order by queue collate "C"
 `.trim();

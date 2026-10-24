@@ -6,11 +6,11 @@
 // catalog behind every string asserted below — is registered by the barrel, and this file reaches
 // components by their module paths (issue #490).
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import type { Locale } from '@ultimat3/i18n';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { LocaleSwitcher, localeLabel } from './LocaleSwitcher';
 
 /**
@@ -24,9 +24,6 @@ import { LocaleSwitcher, localeLabel } from './LocaleSwitcher';
 const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
 
 describe('LocaleSwitcher', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('option labels are endonyms — each language named in its own language', () => {
     expect(localeLabel('de' as Locale)).toBe('Deutsch');
     expect(localeLabel('fr' as Locale)).toBe('français');

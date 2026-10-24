@@ -21,32 +21,32 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@electric-sql/pglite": "^0.5.8",
-    "@types/bun": "1.4.2",
-    "@ultimat3/testing": "27.16.0",
+    "@types/bun": "1.4.3",
+    "@ultimat3/testing": "28.0.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "@ultimat3/action": "27.16.0",
-    "@ultimat3/admin": "27.16.0",
-    "@ultimat3/auth": "27.16.0",
-    "@ultimat3/cache": "27.16.0",
-    "@ultimat3/cli": "27.16.0",
-    "@ultimat3/core": "27.16.0",
-    "@ultimat3/db": "27.16.0",
-    "@ultimat3/entity": "27.16.0",
-    "@ultimat3/http": "27.16.0",
-    "@ultimat3/i18n": "27.16.0",
-    "@ultimat3/jobs": "27.16.0",
-    "@ultimat3/mcp": "27.16.0",
-    "@ultimat3/policy": "27.16.0",
-    "@ultimat3/pwa": "27.16.0",
-    "@ultimat3/query": "27.16.0",
-    "@ultimat3/realtime": "27.16.0",
-    "@ultimat3/render": "27.16.0",
-    "@ultimat3/ui": "27.16.0",
+    "@ultimat3/action": "28.0.0",
+    "@ultimat3/admin": "28.0.0",
+    "@ultimat3/auth": "28.0.0",
+    "@ultimat3/cache": "28.0.0",
+    "@ultimat3/cli": "28.0.0",
+    "@ultimat3/core": "28.0.0",
+    "@ultimat3/db": "28.0.0",
+    "@ultimat3/entity": "28.0.0",
+    "@ultimat3/http": "28.0.0",
+    "@ultimat3/i18n": "28.0.0",
+    "@ultimat3/jobs": "28.0.0",
+    "@ultimat3/mcp": "28.0.0",
+    "@ultimat3/policy": "28.0.0",
+    "@ultimat3/pwa": "28.0.0",
+    "@ultimat3/query": "28.0.0",
+    "@ultimat3/realtime": "28.0.0",
+    "@ultimat3/render": "28.0.0",
+    "@ultimat3/ui": "28.0.0",
     "solid-js": "1.9.15"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   }
 }

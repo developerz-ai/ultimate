@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { FakeElement, type InstalledDom, installFakeDom, keydown } from '../fake-dom-fixture';
-import { attachRef, byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { attachRef, byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext, SolidRuntime } from '../theme/solid-adapter';
 import { Dialog } from './Dialog';
@@ -43,7 +43,6 @@ function runtime(): Runtime {
     onCleanup: (fn: () => void): void => void cleanups.push(fn),
   };
   setSolidRuntime(rt);
-  probe();
   return {
     // Re-runnable, the way Solid re-runs an effect when a dependency changes — an effect that is
     // only ever run once cannot be caught doing its work twice.
@@ -54,7 +53,6 @@ function runtime(): Runtime {
       for (const fn of cleanups.splice(0)) fn();
     },
     restore: () => {
-      unprobe();
       clearSolidRuntime();
     },
   };
