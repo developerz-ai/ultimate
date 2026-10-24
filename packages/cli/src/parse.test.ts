@@ -75,12 +75,40 @@ describe('unit · parseArgs', () => {
     expect(refusing.sort()).toEqual(['auth', 'db', 'mcp', 'pr']);
   });
 
+  // `--json` is axiom 4: every command and every error answers in machine-readable form, so
+  // the flag is a GLOBAL one (parse.ts's `GLOBAL_FLAGS`) and every spec accepts it. This used to
+  // sample THREE argv over a five-spec fixture, which proved nothing about what ships: a
+  // registry that stopped FINDING `--json` for one command — a `findFlag` regression that no
+  // longer resolves the global — passed, because the fixture's own specs were never asked.
+  // The sweep is over the REAL registry, and it asserts BOTH readings of the same fact: the
+  // `json` boolean and the flag map entry, because `args.json` and `flagBool(args, 'json')` are
+  // one fact read two ways. A command that lost the flag is named in the failure.
+  //
+  // Two classes this sweep does NOT catch, so they are not claimed here: a spec whose own
+  // `flags` declared `json` could never shadow the global (`findFlag` spreads `GLOBAL_FLAGS`
+  // FIRST and takes the first match), and a `defaults()` that seeded `json: false` is
+  // overwritten by the flag loop, which sets `json` to what argv asked for.
+  //
+  // `auth`, `db`, `mcp` and `pr` declare subcommands and NO default, so the parser refuses
+  // their bare form by design (`MissingSubcommandError`) — the refusal is a shipped decision, not
+  // a defect, and the test supplies one of the command's OWN declared subcommands. The condition
+  // is derived from the spec, never from a second list of names, so a new command with that
+  // shape is swept without a second edit.
   test('accepts --json on every command and exposes it as a boolean', () => {
-    // `db` carries its subcommand: it declares no default, so the bare form is refused — and that
-    // refusal is still rendered as JSON, by `wantsJson` on raw argv in `dispatch`.
-    for (const argv of [['verify'], ['db', 'migrate'], ['g']]) {
-      expect(parseArgs([...argv, '--json'], SPECS).json).toBe(true);
+    for (const spec of SPECS_SHIPPED) {
+      const refusesBareForm =
+        (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined;
+      const argv = [
+        spec.name,
+        ...(refusesBareForm ? [spec.subcommands?.[0] as string] : []),
+        '--json',
+      ];
+      const args = parseArgs(argv, SPECS_SHIPPED);
+      // The tuple, so a failure NAMES the command that lost the flag.
+      expect([spec.name, args.json]).toEqual([spec.name, true]);
+      expect([spec.name, args.flags.get('json')]).toEqual([spec.name, true]);
     }
+    // And the flag is off when it was not asked for, and the short form is the same flag.
     expect(parseArgs(['verify'], SPECS).json).toBe(false);
     expect(parseArgs(['verify', '-j'], SPECS).json).toBe(true);
   });
