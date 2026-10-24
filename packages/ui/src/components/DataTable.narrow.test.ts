@@ -3,7 +3,7 @@
 
 // Bare, as `index.ts` imports it: the server's `useUi()` reader (issue #490).
 import '../theme/ambient';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
 import {
@@ -12,11 +12,9 @@ import {
   nodesOf,
   one,
   type ProbeNode,
-  probe,
   renderNodes,
-  unprobe,
   withAttr,
-} from '../jsx-probe';
+} from '../jsx-probe-fixture';
 import { DataTable } from './DataTable';
 
 const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
@@ -53,9 +51,6 @@ const table = (extra: Record<string, unknown> = {}): ProbeNode[] =>
  * `display` changes, so every element re-declares its role — that is what these tests hold.
  */
 describe('DataTable, narrow tables collapse to labelled cards', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('every table element re-declares its role, so a display change keeps the table a table', () => {
     const nodes = table();
     expect(one(byTag(nodes, 'table'), '<table>').props['role']).toBe('table');
@@ -106,9 +101,6 @@ describe('DataTable, narrow tables collapse to labelled cards', () => {
 });
 
 describe('DataTable, column priority hides a cell and keeps its value', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   const PRIORITISED = [
     COLUMNS[0],
     { ...COLUMNS[1], priority: 2 },
@@ -181,9 +173,6 @@ describe('DataTable, column priority hides a cell and keeps its value', () => {
 });
 
 describe('DataTable, stickyFirstColumn', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('is handed to the table, and off unless asked for', () => {
     expect(one(byTag(table(), 'table'), '<table>').props['data-sticky-first']).toBeUndefined();
     expect(

@@ -1,17 +1,9 @@
 // The six renderers a computed column names. Each maps a VALUE SHAPE to a cell; a value that is
 // not that shape is an empty cell — never a thrown render, except money, where a float is a bug.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
-import {
-  byComponent,
-  byTag,
-  installFactory,
-  nodesOf,
-  one,
-  renderHtml,
-  restoreFactory,
-} from './inert-jsx-fixture';
+import { byComponent, byTag, nodesOf, one, renderHtml } from './inert-jsx-fixture';
 import { computedRow } from './registry';
 import type { AdminComputedColumn, AdminRenderer } from './resource-list';
 import type { WidgetContext } from './widget-value';
@@ -20,9 +12,6 @@ await import('@ultimat3/render/server');
 const { ComputedCell, TRUNCATE_AT } = await import('./renderers');
 
 registerCatalog('en', { 'admin.value.empty': 'EMPTY(probe)' });
-
-beforeAll(installFactory);
-afterAll(restoreFactory);
 
 const ctx: WidgetContext = { timeZone: 'Europe/Madrid', locale: 'en-GB' };
 

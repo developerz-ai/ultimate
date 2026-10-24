@@ -3,7 +3,7 @@
 // to the input — and the form posted three avatars for one slot.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { attachRef, byTag, fire, one, probe, renderNodes, unprobe } from '../jsx-probe';
+import { attachRef, byTag, fire, one, renderNodes } from '../jsx-probe-fixture';
 import { Dropzone } from './Dropzone';
 import type { FileCandidate, FileSelection } from './file-input-view';
 
@@ -41,12 +41,10 @@ function drop(
 describe('Dropzone multiple', () => {
   const had = 'DataTransfer' in globalThis;
   beforeAll(() => {
-    probe();
     if (!had) Object.assign(globalThis, { DataTransfer: FakeTransfer });
   });
   afterAll(() => {
     if (!had) Reflect.deleteProperty(globalThis, 'DataTransfer');
-    unprobe();
   });
 
   test('a zone without `multiple` accepts one dropped file and refuses the rest by count', () => {

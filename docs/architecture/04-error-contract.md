@@ -4,7 +4,7 @@
 
 **This page said "Biome fails the build on it" until 2026-08-23, and it never did.** `biome.json`
 declares four `style` rules, `noExplicitAny`, two `correctness` rules and `noFloatingPromises` —
-no rule about `Error` at all, and `packages/admin/src/inert-jsx-fixture.ts`, `packages/ui/src/jsx-probe.ts`
+no rule about `Error` at all, and `packages/admin/src/inert-jsx-fixture.ts`, `packages/ui/src/jsx-probe-fixture.ts`
 and `packages/cache/src/redis-fake-fixture.ts` each throw one under a green gate. What is enforced:
 
 | Where | By | Shape |

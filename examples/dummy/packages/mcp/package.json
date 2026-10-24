@@ -10,7 +10,7 @@
     "./confirmations": "./src/confirmations.ts"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ../../tsconfig.json",
@@ -21,10 +21,10 @@
     "@postly/core": "0.0.1",
     "@postly/db": "0.0.1",
     "@postly/domain": "0.0.1",
-    "@ultimat3/action": "27.16.1",
-    "@ultimat3/core": "27.16.1",
-    "@ultimat3/db": "27.16.1",
-    "@ultimat3/mcp": "27.16.1",
-    "@ultimat3/testing": "27.16.1"
+    "@ultimat3/action": "28.0.0",
+    "@ultimat3/core": "28.0.0",
+    "@ultimat3/db": "28.0.0",
+    "@ultimat3/mcp": "28.0.0",
+    "@ultimat3/testing": "28.0.0"
   }
 }

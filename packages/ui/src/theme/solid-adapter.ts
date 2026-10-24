@@ -4,7 +4,7 @@
 //
 // The slot itself is `runtime-slot.ts`, not this file: `runtimeMissingError` below reaches
 // `../errors`, which is side-effectful and unshakeable, so an island that only registers a runtime
-// would pay the error registry for it (`barrel-bytes.test.ts`).
+// would pay the error registry for it (`scripts/ui-barrel-bytes.test.ts`).
 
 import type { JSX } from 'solid-js';
 import { runtimeMissingError } from '../errors';

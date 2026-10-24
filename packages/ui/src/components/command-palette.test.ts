@@ -1,17 +1,8 @@
 // The wiring of the palette — what the markup carries and what a click or a key hands back —
 // asked of the component; the rules have their own tests in `command-palette-view.test.ts`.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import {
-  byTag,
-  fire,
-  one,
-  type ProbeNode,
-  probe,
-  renderNodes,
-  unprobe,
-  withAttr,
-} from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, fire, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { CommandPalette } from './CommandPalette';
 
 const labels = {
@@ -38,9 +29,6 @@ const base = {
 };
 
 describe('CommandPalette', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('is a labelled dialog, closed on the server unless told otherwise', () => {
     const closed = one(byTag(renderNodes(CommandPalette, { ...base, open: false }), 'dialog'), 'd');
     expect(closed.props['aria-label']).toBe('Command palette');

@@ -3,8 +3,8 @@
 // queue's own rules are proven in `toast/toast-state.test.ts`; a correct store handed to the wrong
 // element passes every one of them.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { describe, expect, test } from 'bun:test';
+import { byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { TOAST_MAX_VISIBLE, type ToastHold } from '../toast/toast-state';
 import { INERT_TOAST_ENV, type ToastStore, toastStore } from '../toast/toast-store';
 import { ToastRegion } from './Toast';
@@ -23,9 +23,6 @@ const toaster = (
   renderNodes(Toaster, { store, label: 'Notifications', ...extra });
 
 describe('ToastRegion’s pause seam', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the handlers sit on the <ol>, which is where a bubbling event from a toast arrives', () => {
     const held: ToastHold[] = [];
     const released: ToastHold[] = [];
@@ -57,9 +54,6 @@ describe('ToastRegion’s pause seam', () => {
 });
 
 describe('Toaster', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('renders the visible slice and queues the rest off screen', () => {
     const nodes = toaster(storeWith('one', 'two', 'three', 'four', 'five'));
     const items = byTag(nodes, 'li');

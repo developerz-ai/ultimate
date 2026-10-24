@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/schema",
-  "version": "27.16.1",
+  "version": "28.0.0",
   "description": "Ultimate's validation seam: Standard Schema interface, the t namespace, JSON Schema output",
   "license": "MIT",
   "type": "module",
@@ -26,7 +26,7 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

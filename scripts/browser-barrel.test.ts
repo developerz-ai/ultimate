@@ -97,10 +97,18 @@ interface Chunk {
   readonly file: string;
 }
 
+/**
+ * The JSX transform an island's browser graph is built with (`island-bundle.ts`). A barrel that
+ * reaches a `.tsx` and is built without it is compiled by Bun's own transform, which Bun 1.4.3
+ * refuses to link (`No matching export … for import "jsxDEV"`, issue #883) and no Bun gets right.
+ */
+const SOLID_LOADER = `${repoRoot()}/packages/cli/src/solid-loader.ts`;
+
 /** Built where the workspace map works: cwd is the repo root, and nothing is resolved by hand. */
 const buildScript = (entry: string, out: string): string =>
   [
-    `const built = await Bun.build({ entrypoints: [${JSON.stringify(entry)}], target: 'browser' });`,
+    `const { solidJsxPlugin } = await import(${JSON.stringify(SOLID_LOADER)});`,
+    `const built = await Bun.build({ entrypoints: [${JSON.stringify(entry)}], target: 'browser', plugins: [solidJsxPlugin] });`,
     'if (!built.success) { console.error(built.logs.map(String).join(" | ")); process.exit(1); }',
     'const chunk = built.outputs[0];',
     'if (chunk === undefined) { console.error("no chunk"); process.exit(1); }',
@@ -124,9 +132,19 @@ async function browserChunk(entry: string): Promise<Chunk> {
   return { text: built.text, file: built.file };
 }
 
+/**
+ * The one piece of a browser a Solid island module touches as it evaluates: `delegateEvents`, which
+ * the Solid transform emits at module scope for a component with a delegated handler, registers on
+ * `window.document`. Every browser has both; Bun has neither. Nothing else is stood in for, so a
+ * module-scope `new AsyncLocalStorage()` still throws here exactly as it would in a page.
+ */
+const BROWSER_GLOBALS =
+  'globalThis.window ??= globalThis; globalThis.document ??= { addEventListener() {} };';
+
 /** Whether evaluating the chunk throws, and with what — the shape a module-scope `new` produces. */
 async function evaluationError(chunk: Chunk): Promise<string | undefined> {
-  const result = await run(['bun', 'run', chunk.file], { cwd: repoRoot() });
+  const script = `${BROWSER_GLOBALS}\nawait import(${JSON.stringify(chunk.file)});`;
+  const result = await run(['bun', '-e', script], { cwd: repoRoot() });
   return result.ok ? undefined : result.output;
 }
 

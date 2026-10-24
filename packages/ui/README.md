@@ -521,7 +521,7 @@ name it.** Measured through `buildIslands` — minified, production Solid, `As o
 `import { Button } from '@ultimat3/ui'` and a deep path into `components/Button` produce the
 same chunk to within the bytes of the entry's own name, and so do `useUi` (14 kB) and
 `moneyText` (25 kB). `@ultimat3/ui/button` would be a second way to import one name for zero
-bytes, which is axiom 1 for nothing. `src/barrel-bytes.test.ts` is the build error, and it will
+bytes, which is axiom 1 for nothing. `scripts/ui-barrel-bytes.test.ts` (repo root) is the build error, and it will
 red the day the barrel stops shaking. `@ultimat3/ui/icons/*` is a subpath for the opposite
 reason: 1,767 glyph modules are data, and no bundler splits one module holding all of them.
 

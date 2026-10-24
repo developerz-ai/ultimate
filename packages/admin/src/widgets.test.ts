@@ -26,6 +26,9 @@ const STORED = '2026-08-18';
  * the admin renders. Without the control a green run could mean the TZ never took.
  */
 const PROBE = `
+// A \`bun -e\` child has no test preload: the render loader first, or every \`.tsx\` below is Bun's
+// own compile — a link-time \`Export named 'jsxDEV' not found\` from Bun 1.4.3 (issue #883).
+await import('./packages/render/src/server');
 const { dateTimeView } = await import('./packages/ui/src/components/date-time-view');
 const { formatCalendarDate } = await import('./packages/admin/src/widgets');
 const view = dateTimeView({

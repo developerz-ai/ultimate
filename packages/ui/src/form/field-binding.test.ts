@@ -3,10 +3,10 @@
 // beside their own modules; this is the WIRING, which is the half that has shipped broken here
 // before — a correct helper called with the wrong argument passes every assertion about itself.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { Field, type FieldControl } from '../components/Field';
 import { Form } from '../components/Form';
-import { one, type ProbeNode, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
+import { one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
 import type { FormIssue } from './form-issue';
 import { useForm } from './use-form';
 
@@ -36,9 +36,6 @@ const fieldNodes = (error: string | undefined, into: { control?: FieldControl })
   });
 
 describe('an action’s rejection reaching the control that caused it', () => {
-  beforeAll(probe);
-  afterAll(unprobe);
-
   test('the components under test compile to a JSX factory this file understands', () => {
     expect(fieldNodes(undefined, {}).length).toBeGreaterThan(0);
   });

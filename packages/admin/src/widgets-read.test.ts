@@ -6,19 +6,10 @@
 // ui chose to emit for them: `<Money value={…}>` is this package's contract, `<span class="money">`
 // is ui's and changes without this package changing.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
-import {
-  byComponent,
-  byTag,
-  installFactory,
-  isInertNode,
-  nodesOf,
-  one,
-  renderHtml,
-  restoreFactory,
-} from './inert-jsx-fixture';
+import { byComponent, byTag, isInertNode, nodesOf, one, renderHtml } from './inert-jsx-fixture';
 import type { WidgetContext } from './widget-value';
 
 // `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never
@@ -37,9 +28,6 @@ registerCatalog('en', {
   'admin.invoice.field.total.option.live': 'LIVE(probe)',
   'shop.state.option.live': 'SHOP-LIVE(probe)',
 });
-
-beforeAll(installFactory);
-afterAll(restoreFactory);
 
 const field = (over: Partial<AdminField>): AdminField => ({
   entity: 'invoice',

@@ -9,7 +9,7 @@
     ".": "./app/admin/admin.ts"
   },
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ../../tsconfig.json",
@@ -18,10 +18,10 @@
   "dependencies": {
     "@postly/db": "0.0.1",
     "@postly/web": "0.0.1",
-    "@ultimat3/action": "27.16.1",
-    "@ultimat3/admin": "27.16.1",
-    "@ultimat3/core": "27.16.1",
-    "@ultimat3/policy": "27.16.1",
-    "@ultimat3/schema": "27.16.1"
+    "@ultimat3/action": "28.0.0",
+    "@ultimat3/admin": "28.0.0",
+    "@ultimat3/core": "28.0.0",
+    "@ultimat3/policy": "28.0.0",
+    "@ultimat3/schema": "28.0.0"
   }
 }

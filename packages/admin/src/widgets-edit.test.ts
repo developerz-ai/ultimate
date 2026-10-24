@@ -2,19 +2,10 @@
 // back. `onInput`/`onChange` are called with the event shape the browser would hand them, so the
 // assertion is on the VALUE the admin would save, not on the string that was typed.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { registerCatalog, registeredLocales } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
-import {
-  byComponent,
-  byTag,
-  fire,
-  installFactory,
-  nodesOf,
-  one,
-  restoreFactory,
-  withAttr,
-} from './inert-jsx-fixture';
+import { byComponent, byTag, fire, nodesOf, one, withAttr } from './inert-jsx-fixture';
 import type { WidgetContext } from './widget-value';
 
 // `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never
@@ -27,9 +18,6 @@ registerCatalog('en', { 'admin.invoice.field.total': 'Total (probe)' });
 // A locale the framework's bundled list never named. The locale picker must offer it — and must
 // not offer the five this app did not register, which it would render as `⟦key⟧` for.
 registerCatalog('it', { 'admin.invoice.field.total': 'Totale (probe)' });
-
-beforeAll(installFactory);
-afterAll(restoreFactory);
 
 const field = (over: Partial<AdminField>): AdminField => ({
   entity: 'invoice',

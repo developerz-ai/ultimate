@@ -12,11 +12,15 @@ import type { Surface } from './surfaces';
 import { surfaceUnder } from './surfaces';
 
 /**
- * Why a transform at all: `tsconfig.json` says `jsx: 'preserve'`, which makes Bun fall back to the
- * CLASSIC React factory and ignore `jsxImportSource` entirely — every `.tsx` in an Ultimate app
- * compiles to `React.createElement` against a global that does not exist. `jsxImportSource` stays
- * pointed at `solid-js` because that is where the JSX *type* namespace lives (`class`, not
- * `className`); the *runtime* factory is the framework's, and an app never configures one.
+ * Why a transform at all: Bun's own compile of a `.tsx` under the app's `tsconfig.json` (`jsx:
+ * 'preserve'`, `jsxImportSource: 'solid-js'`) is wrong on every Bun. Through 1.4.2 it fell back to
+ * the CLASSIC React factory — `React.createElement` against a global that does not exist. From
+ * 1.4.3 it honours `jsxImportSource` and imports `jsxDEV` from `solid-js/jsx-dev-runtime`, which
+ * solid-js maps to a module exporting no such name: a link-time `SyntaxError` (issue #883,
+ * measured on 1.3.14 and 1.4.3). Solid ships no runtime factory because its JSX is a COMPILE-time
+ * contract. `jsxImportSource` stays pointed at `solid-js` because that is where the JSX *type*
+ * namespace lives (`class`, not `className`); the *runtime* factory is the framework's, every graph
+ * that loads a `.tsx` installs this transform or the island one, and an app never configures one.
  */
 const JSX_FACTORY = '__xh';
 const JSX_FRAGMENT = '__xFragment';
@@ -57,7 +61,8 @@ export const JSX_FACTORY_SPECIFIER = ((): string => {
 })();
 
 /** No newline: the prelude shares line 1 with the file's own first line, so stack traces still point at it. */
-const JSX_PRELUDE = `import { h as ${JSX_FACTORY}, Fragment as ${JSX_FRAGMENT} } from ${JSON.stringify(JSX_FACTORY_SPECIFIER)};`;
+const jsxPrelude = (factory: string): string =>
+  `import { h as ${JSX_FACTORY}, Fragment as ${JSX_FRAGMENT} } from ${JSON.stringify(factory)};`;
 
 const transpiler = new Bun.Transpiler({
   loader: 'tsx',
@@ -244,11 +249,14 @@ export function stylesheetOrder(a: Stylesheet, b: Stylesheet): number {
 /**
  * `.tsx` source → JS calling the server factory. Exported so the transform is testable as a pure
  * function: the plugin below is the six lines of glue that hand it a file.
+ *
+ * `factory` is the specifier the prelude imports `h` from: the runtime loader's resolved URL by
+ * default, and the PATH that URL names for a bundler (`tsx-build-plugin.ts` says why).
  */
-export function transformTsx(source: string): string {
+export function transformTsx(source: string, factory: string = JSX_FACTORY_SPECIFIER): string {
   // No newline between: the prelude shares line 1 with the file's own first line, so every stack
   // trace and every reported error still points at the line the author wrote.
-  return JSX_PRELUDE + transpiler.transformSync(source);
+  return jsxPrelude(factory) + transpiler.transformSync(source);
 }
 
 /**

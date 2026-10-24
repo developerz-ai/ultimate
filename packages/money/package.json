@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/money",
-  "version": "27.16.1",
+  "version": "28.0.0",
   "description": "Integer minor units with an attached currency: arithmetic, allocation, rounding, Intl formatting",
   "license": "MIT",
   "type": "module",
@@ -28,14 +28,14 @@
     "LICENSE"
   ],
   "engines": {
-    "bun": ">=1.4.2"
+    "bun": ">=1.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "27.16.1",
-    "@ultimat3/schema": "27.16.1"
+    "@ultimat3/core": "28.0.0",
+    "@ultimat3/schema": "28.0.0"
   }
 }

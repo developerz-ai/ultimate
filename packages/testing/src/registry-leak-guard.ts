@@ -5,7 +5,7 @@
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
-import { isAppRoot } from './app-jsx-loader';
+import { isAppRoot } from './app-root';
 import { RegistryLeakError } from './errors';
 import { runBoundaryHooks, runFileBoundary } from './file-boundary';
 import type { ProcessRegistrySnapshot } from './registry-snapshot';
@@ -196,16 +196,12 @@ export function installRegistryLeakGuard(): void {
     name: 'ultimate-registry-leak-guard',
     setup(build) {
       // `.test.ts` only, never `.test.tsx`. A load handler that answered `loader: 'tsx'` would
-      // compile JSX with Bun's CLASSIC React fallback — the very factory `@ultimat3/render`'s own
-      // loader exists to replace — and, because the first matching handler wins and this one is
-      // registered from the preload, it would shadow render's transform for that file. Routing
-      // `.tsx` through `transformTsx` is not the alternative either: it needs `@ultimat3/render`,
-      // and the transform itself is on `@ultimat3/render/server`, whose import installs that global
-      // loader into every test process in the repo. (The `.` barrel does NOT — `installRenderLoader()`
-      // moved to `server.ts:15` in the 9.0.0 split, and this comment claimed otherwise until
-      // 2026-08-23. The `server` half is still the one that would have to be imported.) Zero
-      // `.test.tsx` files exist and the convention is `<file>.test.ts`, so the narrower filter
-      // costs nothing today; a `.test.tsx` added later is unguarded rather than mis-compiled.
+      // compile JSX with Bun's own transform — the one `@ultimat3/render`'s loader exists to
+      // replace, a link-time `jsxDEV` error from Bun 1.4.3 (issue #883) — and, because the first
+      // matching handler wins and this one is registered from the preload, it would shadow
+      // render's transform for that file. Zero `.test.tsx` files exist and the convention is
+      // `<file>.test.ts`, so the narrower filter costs nothing today; a `.test.tsx` added later is
+      // unguarded rather than mis-compiled.
       build.onLoad({ filter: /\.test\.ts$/ }, async (args) => {
         // Before the registry restore: an island disposed here still needs its fake DOM.
         runFileBoundary();

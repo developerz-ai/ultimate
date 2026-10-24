@@ -1,6 +1,6 @@
 // TEST-ONLY. Compiles a stylesheet with the compiler an app's build uses, so a test can read what
 // Sass EMITS — a media query, a `clamp()`, the class list a mixin generates, an `@error` — instead
-// of the source it was written as. Never exported from `index.ts`, like `jsx-probe.ts`.
+// of the source it was written as. Never exported from `index.ts`, like `jsx-probe-fixture.ts`.
 
 /** The two members of Sass's API this file calls; the package itself is not a dependency of `ui`. */
 interface SassApi {
