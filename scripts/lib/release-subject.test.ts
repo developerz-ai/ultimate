@@ -7,6 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   ASK_SUBJECT,
+  askIssueArgs,
   askPrArgs,
   askTwin,
   MAJOR_ISSUE_SUBJECT,
@@ -118,6 +119,21 @@ describe('unit · release-subject · askTwin', () => {
 
   test('no open issues, no twin', () => {
     expect(askTwin([], '27.10.1')).toBeUndefined();
+  });
+});
+
+describe('unit · release-subject · the ask query', () => {
+  test("the query is the brief's open-issue list, over number,title rows", () => {
+    const args = askIssueArgs('27.10.1');
+    expect(args[args.indexOf('--state') + 1]).toBe('open');
+    expect(args[args.indexOf('--search') + 1]).toBe('Release 27.10.1 in:title');
+    expect(args[args.indexOf('--json') + 1]).toBe('number,title');
+  });
+
+  // The two open-issue subjects have their OWN searches: one list could not serve both, because
+  // the pending-major search never returns an ask title and the ask search never returns one.
+  test('the ask query is not the pending-major one: the two subjects stay disjoint', () => {
+    expect(askIssueArgs('28.0.0').includes('Major release pending: 28.0.0 in:title')).toBe(false);
   });
 });
 

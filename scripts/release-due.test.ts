@@ -2,10 +2,18 @@
 // highest one HEAD contains that the stubbed remote also holds, the window is what git says
 // landed since it, and a tree with no tag is a coded refusal — never "nothing to release". The
 // three seams a test injects are `probe` (whether origin holds a candidate tag), `listPrTitles`
-// (the bump-PR twin lookup) and `listIssueTitles` (the pending-major issue's twin lookup), in
-// that order — a real answer from any of them is a remote read or a network call this suite
-// never makes. The pending-major issue twin lives in `release-due-major.test.ts`: this file
-// reads the window, that one reads the major's open-issue seam.
+// (the bump-PR twin lookup) and `listIssueTitles` (the open-issue twin lookup), in that order —
+// a real answer from any of them is a remote read or a network call this suite never makes, so
+// EVERY `decideAt` call in this file injects all three — the guard below pins that.
+// `listIssueTitles` is SUBJECT-AWARE: the `ask` on a `due` decision, the `pending_major` on a
+// `major_needs_a_maintainer` one. Both live beside this file, not here: `release-due-ask.test.ts`
+// owns the ask's twin and `release-due-major.test.ts` the pending-major issue's.
+//
+// This file owns the WINDOW: what ships, whether it has settled, what the bump is, and the
+// refusals that name their own cause. The three subjects a decision reads live beside it —
+// `release-due-pr.test.ts` the bump PR, `release-due-ask.test.ts` the ask, `release-due-major.test.ts`
+// the pending-major issue — and the script's own reading surfaces live in
+// `release-due-flags.test.ts`, which owns the parser, the flag reader and the JSON envelope.
 
 import { afterAll, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp.
@@ -15,18 +23,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FETCH_MAIN } from './lib/base-ref';
 import { git as gitIn } from './lib/release-due-git';
-import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import type { TagProbe } from './registry-audit';
-import {
-  decideAt,
-  lastReleaseTag,
-  openPrTitlesAt,
-  parseWindowLog,
-  readWindow,
-  settleHoursOf,
-} from './release-due';
+import { decideAt, lastReleaseTag, readWindow } from './release-due';
 
-// Each test spawns a dozen git processes; the CLI test boots the real tree.
+// Each test spawns a dozen git processes.
 setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const madeDirs: string[] = [];
@@ -138,7 +139,14 @@ const probed =
 describe('unit · release-due · read from a real repository', () => {
   test('no reachable vX.Y.Z tag is X_RELEASE_TAG_UNREACHABLE, not an empty window', async () => {
     const { dir } = await released({ tag: false });
-    const read = await decideAt(dir, 24, NOW, probed());
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed(),
+      async () => [],
+      async () => [],
+    );
     expect('code' in read && read.code).toBe('X_RELEASE_TAG_UNREACHABLE');
   });
 
@@ -151,7 +159,14 @@ describe('unit · release-due · read from a real repository', () => {
       72,
       'dependabot[bot] <bot@example.test>',
     );
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('nothing_ships');
     expect(read.decision.inert).toBe(2);
@@ -164,7 +179,14 @@ describe('unit · release-due · read from a real repository', () => {
       'fix(core): a is two | really (#2)',
       30,
     );
-    const settled = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const settled = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     if (!('decision' in settled)) return expect.unreachable(settled.cause);
     expect(settled.tagged).toBe('1.0.0');
     expect(settled.decision.due).toBe(true);
@@ -172,7 +194,14 @@ describe('unit · release-due · read from a real repository', () => {
     expect(settled.decision.shipping.map((c) => [c.subject, c.packages])).toEqual([
       ['fix(core): a is two | really (#2)', ['core']],
     ]);
-    const fresh = await decideAt(dir, 48, NOW, probed('v1.0.0'));
+    const fresh = await decideAt(
+      dir,
+      48,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     if (!('decision' in fresh)) return expect.unreachable(fresh.cause);
     expect(fresh.decision.reason).toBe('settling');
   });
@@ -204,7 +233,14 @@ describe('unit · release-due · read from a real repository', () => {
       72,
       'dependabot[bot] <bot@example.test>',
     );
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.bump).toBe('patch');
     expect(read.decision.notes.join('\n')).toContain('### Changed');
@@ -224,7 +260,14 @@ describe('unit · release-due · read from a real repository', () => {
       'dependabot[bot] <bot@example.test>',
     );
     await land({ 'bun.lock': '{}\n' }, 'chore: regenerate bun.lock after the bump');
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     // The lockfile commit ships nothing, so it is inert rather than a human shipping commit.
     expect(read.decision.shipping.map((c) => c.author)).toEqual(['dependabot[bot]']);
@@ -238,7 +281,14 @@ describe('unit · release-due · read from a real repository', () => {
     const { dir, land } = await released();
     await land({ 'packages/core/src/a.ts': 'export const a = 3;\n' }, 'fix(core): three');
     await land({ 'packages/core/package.json': MANIFEST('1.0.1') }, 'chore: release 1.0.1 (#3)');
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.reason).toBe('awaiting_tag');
   });
@@ -248,7 +298,14 @@ describe('unit · release-due · read from a real repository', () => {
   // the rule's only job is to carry it through.
   test('on-main HEAD propagates into read.decision.headSha', async () => {
     const { dir, git } = await released();
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     if (!('decision' in read)) return expect.unreachable(read.cause);
     expect(read.decision.headSha).toMatch(/^[0-9a-f]{40}$/);
     expect(read.decision.headSha).toBe((await git(['rev-parse', 'HEAD'])).trim());
@@ -264,7 +321,14 @@ describe('unit · release-due · read from a real repository', () => {
     const headSha = (await git(['rev-parse', 'HEAD'])).trim();
     const baseSha = (await git(['rev-parse', 'origin/main'])).trim();
     expect(headSha).not.toBe(baseSha);
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     expect('code' in read).toBe(true);
     if (!('code' in read)) return;
     expect(read.code).toBe('X_RELEASE_HEAD_NOT_MAIN');
@@ -287,7 +351,14 @@ describe('unit · release-due · read from a real repository', () => {
     // Repoint `origin` at a missing local path so FETCH_MAIN fails at the resolver the same
     // way a dead network would, without waiting on a network timeout.
     await git(['remote', 'set-url', 'origin', '/nonexistent/release-due-fetch']);
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     expect('code' in read).toBe(true);
     if (!('code' in read)) return;
     expect(read.code).toBe('X_RELEASE_HEAD_NOT_MAIN');
@@ -320,138 +391,55 @@ describe('unit · release-due · refusals that name their own cause', () => {
       },
       'chore: make it private',
     );
-    const read = await decideAt(dir, 24, NOW, probed('v1.0.0'));
+    const read = await decideAt(
+      dir,
+      24,
+      NOW,
+      probed('v1.0.0'),
+      async () => [],
+      async () => [],
+    );
     expect('code' in read && read.code).toBe('X_CORPUS_UNSCANNED');
   });
 });
 
-/** Every refusal `decideAt` can hand back on a real checkout: a tagless shallow clone, a
- * window the log could not read, or HEAD not at the base ref's tip. One list, so a refusal
- * code added to `release-due.ts` cannot slip past the closed set this suite pins. */
-const REFUSAL_CODES = [
-  'X_RELEASE_TAG_UNREACHABLE',
-  'X_RELEASE_WINDOW_UNREADABLE',
-  'X_RELEASE_HEAD_NOT_MAIN',
-] as const;
-type RefusalCode = (typeof REFUSAL_CODES)[number];
-
-describe('unit · release-due · parsing and flags', () => {
-  test('the window log splits on control characters, so a subject may hold anything', () => {
-    const log = '\x1eabc\x1f100\x1fdependabot[bot]\x1fchore: a | b\n\npackages/core/package.json\n';
-    expect(parseWindowLog(log)).toEqual([
-      {
-        sha: 'abc',
-        committedAt: 100,
-        author: 'dependabot[bot]',
-        subject: 'chore: a | b',
-        files: ['packages/core/package.json'],
-      },
-    ]);
-    expect(parseWindowLog('')).toEqual([]);
-  });
-
-  test('--settle-hours takes a number of hours at or above zero, and nothing else', () => {
-    expect(settleHoursOf(undefined)).toBe(24);
-    expect(settleHoursOf('0')).toBe(0);
-    expect(settleHoursOf('1.5')).toBe(1.5);
-    for (const bad of ['-1', 'soon', '', 'Infinity']) {
-      const refused = settleHoursOf(bad);
-      expect({ bad, code: typeof refused === 'number' ? refused : refused.code }).toEqual({
-        bad,
-        code: 'X_CLI_BAD_FLAG',
-      });
-    }
-  });
-
-  test('--json on the real tree is one envelope a bot can branch on', async () => {
-    const out = await run(['bun', 'run', 'scripts/release-due.ts', '--json'], {
-      cwd: repoRoot(),
-    });
-    const parsed = JSON.parse(out.output) as {
-      ok: boolean;
-      script: string;
-      data?: { due: boolean; lastTag: string; reason?: string; headSha?: string };
-      findings?: readonly { code: RefusalCode }[];
-    };
-    expect(parsed.script).toBe('release-due');
-    // A refusal carries no `data`: every signal a bot branches on is in `findings`. The codes
-    // are a closed set — a tagless shallow checkout (TAG_UNREACHABLE), a hung git log
-    // (WINDOW_UNREADABLE), or HEAD not at origin/main's tip (HEAD_NOT_MAIN) — so a real-tree
-    // run on a side branch keeps the suite green instead of mismatching the prior exact match.
-    if (!parsed.ok) {
-      expect(parsed.data).toBeUndefined();
-      for (const finding of parsed.findings ?? []) {
-        expect(REFUSAL_CODES).toContain(finding.code);
-      }
-      return;
-    }
-    expect(typeof parsed.data?.due).toBe('boolean');
-    expect(parsed.data?.lastTag).toMatch(/^v\d+\.\d+\.\d+$/);
-    // The concrete anchor for the consumer: HEAD's SHA at the moment decideAt ran.
-    expect(parsed.data?.headSha).toMatch(/^[0-9a-f]{40}$/);
-    if (!parsed.data?.due) expect(parsed.data?.reason).toBeDefined();
+describe('unit · release-due · this file never reaches the GitHub CLI', () => {
+  const GUARD_MARKER = "describe('unit · release-due · this file never reaches the GitHub CLI'";
+  // The guard behind the header's claim. A `decideAt` call that injects no `listIssueTitles`
+  // seam falls through to the REAL one — the ask lookup — which spawns the `gh` binary on every
+  // due decision. It failed SILENTLY: an unanswered lookup only costs the twin note, so the
+  // tests stayed green while the binary was being spawned. So the property is pinned here.
+  test('every decideAt call in this file injects both lookup seams', async () => {
+    const source = await Bun.file(join(import.meta.dir, 'release-due.test.ts')).text();
+    // Only the source ABOVE this guard: the guard's own text holds the word it looks for.
+    const calls = decideAtCalls(source.slice(0, source.indexOf(GUARD_MARKER)));
+    expect(calls.length).toBeGreaterThan(0);
+    const bare = calls.filter((call) => (call.match(/async/g) ?? []).length < 2);
+    const message = 'a decideAt call without an injected lookup seam spawns the gh binary';
+    expect(bare, message).toEqual([]);
   });
 });
 
-describe('unit · release-due · the bump-PR twin', () => {
-  test('a due decision names the open bump PR — the release already in flight', async () => {
-    const { dir, land } = await released();
-    await land({ 'packages/core/src/a.ts': 'export const a = 4;\n' }, 'fix(core): four (#4)', 30);
-    const read = await decideAt(
-      dir,
-      24,
-      NOW,
-      probed('v1.0.0'),
-      async () => ['chore: release 1.0.1 (#3)'],
-      async () => [],
-    );
-    if (!('decision' in read)) return expect.unreachable(read.cause);
-    expect(read.decision.due).toBe(true);
-    expect(read.decision.next).toBe('1.0.1');
-    expect(read.decision.detail).toContain('; a bump PR already open: chore: release 1.0.1 (#3)');
-  });
-
-  test('an ask title is not a bump PR: the two readers stay disjoint at this seam too', async () => {
-    const { dir, land } = await released();
-    await land({ 'packages/core/src/a.ts': 'export const a = 5;\n' }, 'fix(core): five (#5)', 30);
-    const read = await decideAt(
-      dir,
-      24,
-      NOW,
-      probed('v1.0.0'),
-      async () => ['Release 1.0.1'],
-      async () => [],
-    );
-    if (!('decision' in read)) return expect.unreachable(read.cause);
-    expect(read.decision.due).toBe(true);
-    expect(read.decision.detail).not.toContain('bump PR');
-  });
-
-  test('a decision that reads no twin never asks the CLI for one', async () => {
-    const { dir, land } = await released();
-    await land({ 'docs/a.md': '# a\n' }, 'docs: a page');
-    const asked: string[] = [];
-    const read = await decideAt(
-      dir,
-      24,
-      NOW,
-      probed('v1.0.0'),
-      async (version) => {
-        asked.push(version);
-        return [];
-      },
-      async () => [],
-    );
-    if (!('decision' in read)) return expect.unreachable(read.cause);
-    expect(read.decision.reason).toBe('nothing_ships');
-    expect(asked).toEqual([]);
-  });
-
-  // Absent binary, no auth and a failed call all land here, and all three must read as NO KNOWN
-  // PRs: the twin note is absent and the decision stands, never an invented "none open".
-  test('a lookup that cannot answer is no known PRs, never a twin', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'release-due-pr-'));
-    madeDirs.push(dir);
-    expect(await openPrTitlesAt(dir, '1.0.1')).toEqual([]);
-  });
-});
+/**
+ * Every `decideAt(` call expression in `source`, as the text of the call: a source scan and not a
+ * runtime hook, because only the text of this file says whether a call reaches the binary.
+ */
+function decideAtCalls(source: string): readonly string[] {
+  const OPEN = 'decideAt(';
+  const found: string[] = [];
+  for (let at = source.indexOf(OPEN); at !== -1; ) {
+    let depth = 0;
+    let end = at;
+    for (; end < source.length; end++) {
+      // A paren inside a string does not balance, so the strings are read around.
+      if (source[end] === "'" || source[end] === '"') {
+        const quote = source[end];
+        for (end++; source[end] !== quote; end++) if (source[end] === '\\') end++;
+      } else if (source[end] === '(') depth++;
+      else if (source[end] === ')' && --depth === 0) break;
+    }
+    found.push(source.slice(at, end + 1));
+    at = source.indexOf(OPEN, end);
+  }
+  return found;
+}

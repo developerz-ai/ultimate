@@ -14,7 +14,7 @@ import { report } from './lib/log';
 import { promoteUnreleased, releaseDate } from './lib/release-changelog';
 import { compareReleaseVersions, treeDirtyFindings } from './lib/release-preflight';
 import type { AskIssue } from './lib/release-subject';
-import { askTwin } from './lib/release-subject';
+import { askIssueArgs, askTwin } from './lib/release-subject';
 import {
   performedWriteLine,
   performReleaseWrites,
@@ -30,6 +30,10 @@ import {
   publishOrder,
   workspaceManifests,
 } from './lib/workspaces';
+
+// The ask query lives with the other release subjects (`lib/release-subject.ts`), one definition
+// for one query; re-exported here so this script stays the one module its callers import it from.
+export { askIssueArgs } from './lib/release-subject';
 
 export const BUMPS = ['patch', 'minor', 'major'] as const;
 
@@ -157,20 +161,6 @@ export const releaseNextLine = (version: string, fixes?: string): string =>
   fixes === undefined
     ? `  next      bun install, commit, open the \`chore: release ${version}\` PR; merging it is the release (release-tag.yml)`
     : `  next      bun install, commit, open the \`chore: release ${version}\` PR with \`${fixes}\` in the body; merging it is the release (release-tag.yml) and closes the ask`;
-
-/** The `gh` arguments (the binary is the caller's) listing the open asks for `version` — the
- * dedupe query `.dz/briefs/release-due.md` states. `in:title`, so a body mention is not an ask;
- * `--json number,title`, exactly the rows `parseAskIssues` reads. */
-export const askIssueArgs = (version: string): readonly string[] => [
-  'issue',
-  'list',
-  '--state',
-  'open',
-  '--search',
-  `Release ${version} in:title`,
-  '--json',
-  'number,title',
-];
 
 /**
  * The `--json number,title` answer, read tolerantly: the lookup only decorates a report that has

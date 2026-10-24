@@ -13,6 +13,8 @@
 //   themselves, one matcher per reader over two input shapes: titles (`release-due-rule.ts`) and
 //   {number,title} rows from the CLI (`scripts/release.ts` for the ask, `scripts/release-due.ts`
 //   and `scripts/bump-pr.ts` for the bump).
+// `askIssueArgs`, `majorIssueArgs` and `askPrArgs` — the CLI queries those subjects are read
+//   through, one per subject, defined here so every reader asks the CLI the same question.
 
 /**
  * `chore: release 27.10.1 (#770)`, the squash-merged release PR, and `release: 6.0.0`, what
@@ -117,6 +119,27 @@ export function openMajorIssue(
   return twin === undefined ? { open: false } : { open: true, twin };
 }
 
+/**
+ * The CLI arguments listing the OPEN release asks for `version` — the query
+ * `.dz/briefs/release-due.md` states, and the one `scripts/release.ts` runs to name the issue a
+ * release closes. `in:title`, so a body mention is not an ask; `--json number,title`, exactly the
+ * rows `AskIssue` carries.
+ *
+ * Its own query, not the pending-major issue's: that search is
+ * `Major release pending: <version> in:title`, which never returns a `Release <version>` title,
+ * so one list could not serve both subjects. The binary itself is the caller's.
+ */
+export const askIssueArgs = (version: string): readonly string[] => [
+  'issue',
+  'list',
+  '--state',
+  'open',
+  '--search',
+  `Release ${version} in:title`,
+  '--json',
+  'number,title',
+];
+
 /** One `gh issue list --json number,title` row: what a release names the ask it closes by. */
 export interface AskIssue {
   readonly number: number;
@@ -146,7 +169,7 @@ export interface AskPr {
 /**
  * The CLI arguments listing the OPEN bump PRs for `version` — the query `scripts/bump-pr.ts` runs
  * for its `--version` lookup and `scripts/release-due.ts` reads through `openPrTitlesAt`, beside
- * `askIssueArgs` in `scripts/release.ts` and over the same `number,title` rows. The
+ * `askIssueArgs` and over the same `number,title` rows. The
  * search word is lower-case because the title search is case-insensitive and one matcher must see
  * every candidate; `openReleaseBump` below then rejects the issue-side `Release <version>` the
  * search also returns, which is what keeps the two readers disjoint. The binary itself is the

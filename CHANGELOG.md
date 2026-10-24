@@ -8,7 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- A due release-due decision now identifies an already-open release ask in `data.detail`; the
+  `; an ask already open: <title>` note is reachable in production, not only through rule fixtures.
 
 ## 27.16.0 - 2026-10-23
 
