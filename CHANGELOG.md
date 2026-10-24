@@ -12,6 +12,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 - A due release-due decision now identifies an already-open release ask in `data.detail`; the
   `; an ask already open: <title>` note is reachable in production, not only through rule fixtures.
+- The health checkup's release-tag query and the release-due `awaiting_tag` watch command now ask
+  for the run's commit (`headSha`) and its filing metadata, so an unhealthy release-tag verdict
+  names the commit that failed.
 
 ## 27.16.0 - 2026-10-23
 

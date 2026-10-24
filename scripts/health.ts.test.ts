@@ -270,18 +270,18 @@ describe('unit · health · healthAt over injected readers', () => {
 });
 
 describe('unit · health · row 4 asks for the run evidence, not a bare status', () => {
-  // The row's filing quotes the run: its id, url, title, event, branch and creation time. A query
-  // that returned only a status could not say WHICH run failed — so the field list is pinned here
-  // field by field. `RUN` is a release-tag.yml run as gh names it: `databaseId`, `displayTitle`.
+  // The row's filing quotes the run: its id, url, title, the commit it ran at and its creation
+  // time. A query that returned only a status could not say WHICH run failed — so the field list is
+  // pinned here field by field. `RUN` is a release-tag.yml run as gh names it: `databaseId`,
+  // `displayTitle`.
   const URL = 'https://github.com/ultimate/ultimate/actions/runs/4242';
-  const FIELDS = 'databaseId,status,conclusion,event,headBranch,displayTitle,url,createdAt';
+  const FIELDS = 'status,conclusion,databaseId,displayTitle,headSha,url,createdAt';
   const RUN = {
     databaseId: 4242,
     status: 'completed',
     conclusion: 'success',
-    event: 'workflow_dispatch',
-    headBranch: 'main',
     displayTitle: 'Tag v3.1.0',
+    headSha: SHA,
     url: URL,
     createdAt: '2026-10-23T09:00:00Z',
   };
@@ -293,6 +293,16 @@ describe('unit · health · row 4 asks for the run evidence, not a bare status',
     const row = rows.find((one) => one.row === 'tag-runs-ended-well');
     if (row === undefined) return expect.unreachable('the tag-runs row is always answered');
     return row;
+  };
+
+  /** The filing evidence every ended-badly run's verdict must carry. */
+  const expectFilingEvidence = (row: RowVerdict): void => {
+    expect(row.id).toBe(4242);
+    expect(row.url).toBe(URL);
+    expect(row.title).toBe('Tag v3.1.0');
+    expect(row.createdAt).toBe('2026-10-23T09:00:00Z');
+    expect(row.headSha).toBe(SHA);
+    expect(row.status).toBe('completed');
   };
 
   test('the row runs and names the whole command, field list and all', async () => {
@@ -327,7 +337,22 @@ describe('unit · health · row 4 asks for the run evidence, not a bare status',
   test('a completed failure is unhealthy, and the verdict carries that run’s filing evidence', async () => {
     const row = await row4([{ ...RUN, conclusion: 'failure' }]);
     expect(row.verdict).toBe('unhealthy');
-    expect(row.url).toBe(URL);
+    expect(row.conclusion).toBe('failure');
+    expectFilingEvidence(row);
+  });
+
+  test('a cancelled run is unhealthy, and its verdict carries the same filing evidence', async () => {
+    const row = await row4([{ ...RUN, conclusion: 'cancelled' }]);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.conclusion).toBe('cancelled');
+    expectFilingEvidence(row);
+  });
+
+  test('a timed-out run is unhealthy, and its verdict carries the same filing evidence', async () => {
+    const row = await row4([{ ...RUN, conclusion: 'timed_out' }]);
+    expect(row.verdict).toBe('unhealthy');
+    expect(row.conclusion).toBe('timed_out');
+    expectFilingEvidence(row);
   });
 
   test('a queued run is unverdicted — a re-run, never a failure filing — with its evidence kept', async () => {
@@ -341,8 +366,7 @@ describe('unit · health · row 4 asks for the run evidence, not a bare status',
     expect(row.id).toBe(4242);
     expect(row.url).toBe(URL);
     expect(row.title).toBe('Tag v3.1.0');
-    expect(row.event).toBe('workflow_dispatch');
-    expect(row.headBranch).toBe('main');
+    expect(row.headSha).toBe(SHA);
     expect(row.createdAt).toBe('2026-10-23T09:00:00Z');
   });
 
