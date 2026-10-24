@@ -79,7 +79,7 @@ export const FLOOR_ABOVE = Object.freeze<Record<string, string>>({
   ui:
     'Held LEVEL with `render` so `render -> ui` stays refused (both at 4): the static bundle graph ' +
     'may not reach the design system, which is axiom 6 and what `packages/render/CLAUDE.md` ' +
-    'requires. Its floor is tier 2 (`core`, `schema`, `i18n`, `money`, `time`), and the ' +
+    'requires. Its floor is tier 2 (`core`, `i18n`, `money`, `time`), and the ' +
     '`admin -> ui` exception that used to undo that placement was deleted on 2026-08-19 rather ' +
     'than widened.',
 });
