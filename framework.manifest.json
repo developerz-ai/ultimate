@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "db543a4360861ae973d065e8abc552236942406310ecdbf17dc832a2e63803a6",
+  "buildId": "dba97173dbb32de7a1f5817cb16c4bd60f4147adc8caddb4e9b406b0c8248122",
   "tiers": {
     "0": [
       "core",
@@ -4283,6 +4283,16 @@
       "code": "X_TEST_DB_UNAVAILABLE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_DISCOVERY_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-discovery.ts"
+    },
+    {
+      "code": "X_TEST_DISCOVERY_UNSEEN",
+      "owner": "scripts",
+      "at": "scripts/test-discovery.ts"
     },
     {
       "code": "X_TEST_EVAL_THRESHOLD",

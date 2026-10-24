@@ -189,6 +189,22 @@ describe('unit · the repo gate is the CLI gate', () => {
   });
 
   /**
+   * The seam, not the rules: `scripts/test-discovery.test.ts` owns the rule's own cases. What is
+   * only provable here is that the `manifest` step carries it — a rule with a test and no wiring
+   * is a rule `bun run verify` never runs.
+   */
+  test('a test file the gate never discovers is reported through the manifest step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-discovery-'));
+    try {
+      await Bun.write(join(dir, 'a.spec.ts'), "test('seeded', () => {});\n");
+      const codes = (await frameworkFiles(dir)).map((finding) => finding.code);
+      expect(codes).toContain('X_TEST_DISCOVERY_UNSEEN');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
    * The image contract rides `boundaries` rather than `manifest`: it is a convention this repo makes
    * about its own source, and it costs milliseconds, so it belongs before the suites.
    */
