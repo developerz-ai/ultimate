@@ -18,8 +18,8 @@ on:
     - cron: '17 6 * * *'
   workflow_dispatch:
 
-# Read-only: it resolves npm and may open an issue. It never publishes, and it holds no
-# `id-token`, so it cannot be a path to the registry even if it is compromised.
+# Resolves npm and may open an issue, provisioning its own `registry-drift` label first. It never
+# publishes, and it holds no `id-token`, so it cannot be a path to the registry even if compromised.
 permissions:
   contents: read
   issues: write
@@ -61,6 +61,13 @@ jobs:
         # One open issue at a time: a daily job that files a duplicate every morning trains everyone
         # to ignore it, which is the failure mode this audit exists to correct.
         run: |
+          # `gh issue create --label` refuses a label the repository does not have, so a repo that
+          # never had (or has lost) `registry-drift` gets no alarm at all. Provision it first:
+          # create-first, not view-first, so the daily repeat and any race both resolve green —
+          # a failed create is fatal only when `gh label view` cannot confirm the label exists.
+          if ! err="$(gh label create registry-drift --color d73a4a --description 'npm does not serve what this tree stamps' 2>&1)"; then
+            gh label view registry-drift >/dev/null 2>&1 || { printf '%s\n' "$err" >&2; exit 1; }
+          fi
           existing="$(gh issue list --label registry-drift --state open --limit 1 --json number --jq '.[0].number // empty')"
           summary="$(jq -r '.summary' audit.json)"
           body="$(jq -r '"**" + .summary + "**\n\n" + ([.findings[] | "- `" + .code + "` " + (.at // "") + " — " + .cause + "\n  - fix: `" + .fix + "`"] | join("\n"))' audit.json)"
