@@ -112,7 +112,7 @@ Rules that keep the graph healthy:
 
 - A new package at tier 0 or 1 needs justification in its README — low tiers are load-bearing for everything above.
 - Never raise a package's tier to fix an import. Invert the dependency instead — and a tier raised past the floor now needs its `FLOOR_ABOVE` sentence, which has to say what moving the package back down would **legalise**.
-- A sibling pinned at a version that is not the lockstep one is `X_RELEASE_VERSION_SKEW` on the `package-shape` step. An **undeclared** dependency that resolves through hoisting is not caught by any step `As of 2026-08` — a convention, not a rule, and the check that should exist would compare each package's imports against its own `dependencies`.
+- A sibling pinned at a version that is not the lockstep one is `X_RELEASE_VERSION_SKEW` on the `package-shape` step. An **undeclared** cross-workspace import in shipped source is caught on the same step: `checkWorkspaceDependencies` (`packages/cli/src/workspace-graph.ts`) reports `X_WORKSPACE_DEP_UNDECLARED` — every dependency field counts as the declaration. The remaining blind spot is tests, `As of 2026-10`: a test file's import is not judged, because tests are excluded from the published tarball and resolve through the root manifest's hoisted `devDependencies` — no `packages/*` here declares a `devDependencies` block of its own — so a test-only cross-workspace edge stays a convention.
 - Cycles are not detected as cycles: the tier rule makes most of them unreachable, and `tsc -b` refuses the rest at build time with its own message rather than an `X_*` code.
 
 ## There is no escape hatch
