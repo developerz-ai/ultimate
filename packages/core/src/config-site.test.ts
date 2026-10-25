@@ -26,6 +26,19 @@ describe('site and seo — refusals', () => {
     );
   });
 
+  test('a favicon that is not a site asset SVG path is refused by key', () => {
+    expect(
+      causeOf(() =>
+        defineConfig({ name: 'app', site: { favicon: 'favicon.svg' as 'assets/x.svg' } }),
+      ),
+    ).toContain('site.favicon');
+    expect(
+      causeOf(() =>
+        defineConfig({ name: 'app', site: { favicon: 'assets/icon.png' as 'assets/x.svg' } }),
+      ),
+    ).toContain('site.favicon');
+  });
+
   test('a disallow path that does not start with / is refused', () => {
     expect(
       causeOf(() => defineConfig({ name: 'app', seo: { robots: { disallow: ['panel'] } } })),
@@ -206,11 +219,19 @@ describe('site and seo', () => {
 
   test('defaults: no origin, nothing disallowed', () => {
     const config = defineConfig({ name: 'app' });
-    expect(config.site).toEqual({ origin: null });
+    expect(config.site).toEqual({ origin: null, favicon: undefined });
     expect(config.seo).toEqual({
       robots: { disallow: [], groups: [] },
       sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
     });
+  });
+
+  test('a declared site favicon is carried on config.site', () => {
+    const config = defineConfig({
+      name: 'app',
+      site: { favicon: 'assets/brand/icon.svg' },
+    });
+    expect(config.site.favicon).toBe('assets/brand/icon.svg');
   });
 
   test('seo.robots.groups is carried as declared, and an overlay keeps the base disallow', () => {
