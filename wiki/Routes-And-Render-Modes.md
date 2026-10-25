@@ -306,7 +306,7 @@ bandwidth. `measureDocumentJs` in `packages/cli/src/budgets.ts` is the one reade
 | Check | Source of truth |
 |---|---|
 | Per-route JS bytes | `budget.js` on the route; measured from the real bundle graph |
-| Lighthouse SEO + a11y scores | minimum thresholds in `app.config.ts`, defaults 100 / 95 |
+| Lighthouse SEO + a11y scores | Score thresholds are not implemented or enforced (`As of 2026-10`) |
 | Precache size | total `sw.js` precache set, see [PWA and offline](PWA-And-Offline) |
 | Regression | budgets ratchet — the recorded baseline can tighten, never loosen silently |
 
