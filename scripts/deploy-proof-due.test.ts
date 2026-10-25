@@ -2,7 +2,7 @@
 // upgrade? Pure functions over fixtures — the GitHub API and git are the CLI's, never a test's.
 
 import { describe, expect, test } from 'bun:test';
-import type { DeployProofInput, Predecessor } from './deploy-proof-due';
+import type { DeployProofDecision, DeployProofInput, Predecessor } from './deploy-proof-due';
 import {
   changedFilesCommand,
   decideOrProve,
@@ -143,6 +143,83 @@ describe('unit · deploy-proof-due · a read that throws still proves', () => {
 
   test('a read that answers is decided by the one rule', async () => {
     expect(await decideOrProve(async () => push())).toEqual(deployProofDue(push()));
+  });
+
+  test('a failed skip publication publishes a fresh forced-proof decision once', async () => {
+    const calls: DeployProofDecision[] = [];
+    let reads = 0;
+    const decision = await decideOrProve(
+      async () => {
+        reads += 1;
+        return push();
+      },
+      async (candidate) => {
+        calls.push(candidate);
+        if (calls.length === 1) return Promise.reject(new TypeError('output publication failed'));
+      },
+    );
+    expect(reads).toBe(1);
+    expect(calls).toEqual([deployProofDue(push()), decision]);
+    expect(decision).toEqual({
+      run: true,
+      reason: expect.stringContaining('output publication failed'),
+    });
+    expect(decision.base).toBeUndefined();
+  });
+
+  test('persistent publication failure rejects after exactly two attempts, never skips', async () => {
+    const calls: DeployProofDecision[] = [];
+    const failure = new TypeError('output remains unwritable');
+    await expect(
+      decideOrProve(
+        async () => push(),
+        async (candidate) => {
+          calls.push(candidate);
+          throw failure;
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(calls).toEqual([
+      deployProofDue(push()),
+      { run: true, reason: expect.stringContaining('output remains unwritable') },
+    ]);
+    expect(calls[1]?.base).toBeUndefined();
+  });
+
+  test('the script reports failure when GITHUB_OUTPUT has a regular file as its parent', async () => {
+    const dir = `${Bun.env['TMPDIR'] ?? '/tmp'}/deploy-proof-due-${crypto.randomUUID()}`;
+    const parent = `${dir}/not-a-directory`;
+    try {
+      await Bun.write(parent, 'regular file');
+      const proc = Bun.spawn(
+        [process.execPath, `${import.meta.dir}/deploy-proof-due.ts`, '--json'],
+        {
+          cwd: import.meta.dir,
+          env: {
+            PATH: `${dir}/no-such-bin`,
+            GITHUB_OUTPUT: `${parent}/github-output`,
+            GITHUB_EVENT_NAME: 'workflow_dispatch',
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      );
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      expect(code).not.toBe(0);
+      expect(`${stdout}${stderr}`).toContain('not-a-directory');
+      expect(JSON.parse(stdout)).toMatchObject({
+        ok: false,
+        script: 'deploy-proof-due',
+        summary: expect.stringContaining('publication failed'),
+      });
+      expect(await Bun.file(parent).text()).toBe('regular file');
+    } finally {
+      await run(['rm', '-rf', dir]);
+    }
   });
 
   test('the script, with no git on PATH, still writes run=true to $GITHUB_OUTPUT', async () => {
