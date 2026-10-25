@@ -13,7 +13,7 @@ One choice per layer. No alternatives, no adapters, no `driver:` config for thin
 | Auth | Better Auth, wrapped, with our `policy` layer on top | sessions/OAuth/passkeys are solved; authorization is ours because it must be identical in HTTP, WS, jobs, and MCP |
 | Frontend | SolidJS 2 + our own minimal router | fine-grained reactivity → streaming shells cost ~0 hydration; the router must own render mode + offline strategy, so it can't be a dependency |
 | Styling | **SCSS modules + design tokens**, one brand seam (`defineTheme()`) | build-time only, zero runtime, dark theme is a token flip. `defineTheme()` validates values rather than escaping them — a `;` or a `</style>` is a refusal, not an injection. No Tailwind, no CSS-in-JS |
-| Page structure | `AppShell` / `PageHeader` / `Section` / `Toolbar` from `@ultimat3/ui`, on top of 46 catalogued components | a page an agent assembles from named composites is a page whose skip link, landmarks and heading order are already right |
+| Page structure | `AppShell` / `PageHeader` / `Section` / `Toolbar` from `@ultimat3/ui`, on top of the components in [`packages/ui/CATALOG.md`](../../packages/ui/CATALOG.md) | a page an agent assembles from named composites is a page whose skip link, landmarks and heading order are already right |
 | Jobs | Postgres queue default; redis / nats drivers behind one interface | the outbox needs the same transaction as the write — only possible in-DB |
 | Realtime | 3 tiers: channels → live queries → local-first. Own protocol, Zero-shaped mutators | one mutator shape at every rung; see [`03-realtime.md`](./03-realtime.md) |
 | Transport | NATS (or Redis streams) for fanout; sync nodes stateless | no sticky sessions, so `sync` scales on connection count alone |

@@ -123,7 +123,72 @@ function arrowPairs(line: string): readonly string[] {
   );
 }
 
+/** Only the Edge column in SIDEWAYS_ALLOW's own doc-block declares permissions. */
+function parseSidewaysDocTable(source: string): readonly string[] {
+  for (const block of source.matchAll(/\/\*\*([\s\S]*?)\*\//g)) {
+    const after = source.slice(block.index + block[0].length);
+    if (!/^\s*export const SIDEWAYS_ALLOW\b/.test(after)) continue;
+    const lines = (block[1] ?? '').split('\n').map((line) => line.replace(/^\s*\*\s?/, ''));
+    const header = lines.findIndex((line) => /^\|\s*Edge\s*\|/.test(line));
+    if (header === -1) return [];
+    const pairs: string[] = [];
+    for (const line of lines.slice(header + 1)) {
+      if (!line.startsWith('|')) break;
+      // Rationale cells name forbidden and historical edges, not additional permissions.
+      pairs.push(...arrowPairs(line.split('|')[1] ?? ''));
+    }
+    return pairs;
+  }
+  return [];
+}
+
+const sidewaysDocFixture = (rows: readonly string[]): string => `
+/**
+ * | Edge | Unrelated table |
+ * | \`unrelated -> edge\` | Not a declaration |
+ */
+export const OTHER = {};
+/**
+ * Historical \`admin -> ui\` was removed.
+ * | Edge | Why |
+ * |---|---|
+${rows.map((row) => ` * | ${row} | Forbidden reverse: \`schema -> core\` |`).join('\n')}
+ *
+ * Historical \`cli -> scraping\` was removed too.
+ */
+export const SIDEWAYS_ALLOW = {};
+`;
+
 describe('the declared sideways edges have one source, SIDEWAYS_ALLOW', () => {
+  test('tiers.ts doc-block tabulates exactly the declared edges, regardless of order', async () => {
+    const pairs = parseSidewaysDocTable(await Bun.file(`${import.meta.dir}/lib/tiers.ts`).text());
+    expect(DECLARED.length).toBeGreaterThan(0);
+    expect(pairs.length).toBeGreaterThan(0);
+    // Sort arrays, not sets: a duplicate row must fail just like a missing or extra row.
+    expect([...pairs].sort()).toEqual([...DECLARED].sort());
+  });
+
+  test('doc-table parsing ignores rationale arrows, historical prose and unrelated tables', () => {
+    const pairs = parseSidewaysDocTable(
+      sidewaysDocFixture(['`cli` → `testing`', '`core -> schema`']),
+    );
+    expect([...pairs].sort()).toEqual(['core -> schema', 'cli -> testing'].sort());
+  });
+
+  test.each([
+    ['missing', ['`core -> schema`']],
+    ['extra', ['`core -> schema`', '`cli -> testing`', '`admin -> ui`']],
+    ['duplicate', ['`core -> schema`', '`cli -> testing`', '`core -> schema`']],
+  ] as const)('a %s doc-table row fails equality', (_fault, rows) => {
+    const pairs = parseSidewaysDocTable(sidewaysDocFixture(rows));
+    expect([...pairs].sort()).not.toEqual(['core -> schema', 'cli -> testing'].sort());
+  });
+
+  test('an absent Edge table cannot match the declared edges', () => {
+    expect(parseSidewaysDocTable('export const SIDEWAYS_ALLOW = {};')).toEqual([]);
+    expect([...DECLARED].sort()).not.toEqual([]);
+  });
+
   test('CLAUDE.md lists exactly the declared edges, one bullet each, in order', async () => {
     const text = await Bun.file(CLAUDE_MD).text();
     const start = text.indexOf('Declared sideways edges, one line each');

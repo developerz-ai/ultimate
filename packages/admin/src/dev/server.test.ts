@@ -161,7 +161,7 @@ describe('devShellStyle', () => {
     // The clearing wrapper was re-applied on EVERY call: `stylePromise = stylePromise.catch(…)`
     // published a new promise each time, each one holding the previous, so `/_x` grew the chain
     // by one link per request for the life of the dev server. The memo is the point — `@ultimat3/ui`
-    // is a 46-component barrel — and a memo that answers a different promise every call is a memo
+    // has a barrel-loading cost — and a memo answering a different promise every call is a memo
     // whose identity nothing can rely on. `packages/db/src/pglite.ts`'s `connect()` is the shape:
     // the catch is attached where the promise is CREATED, inside the `??=`.
     expect(devShellStyle()).toBe(devShellStyle());
