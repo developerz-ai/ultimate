@@ -306,6 +306,10 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --only boundaries --json   # then move each declaration in X.ts to X/<name>.ts, one primitive per file',
   X_SLICE_POLICY_INCOMPLETE:
     'x policy list --json   # names the slice policy module; add the export lines the thrown fix spells out to it, then run the generator again',
+  X_CATALOG_SLOT_MISMATCH:
+    'x i18n check --json   # the finding names the locale, the key and the slots that differ',
+  X_CATALOG_UNTRANSLATED:
+    'x i18n check --json   # the finding names the locale and the key still carrying the reference value',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

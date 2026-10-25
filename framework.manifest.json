@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "fa980059c5fa7d3169364015e2f443d7ddb616c498b6b0f833773faba5fbd3b1",
+  "buildId": "dc6055a1857922681270e907717b5066b98612cdf24dbc97a19bbf8207314f8c",
   "tiers": {
     "0": [
       "core",
@@ -790,9 +790,19 @@
       "at": "packages/i18n/src/errors.ts"
     },
     {
+      "code": "X_CATALOG_SLOT_MISMATCH",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_CATALOG_UNREGISTERED",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
+    },
+    {
+      "code": "X_CATALOG_UNTRANSLATED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_CATCH_RENDER_PIN_STALE",

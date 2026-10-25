@@ -234,6 +234,8 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_BACKFILL_SLICE_ENTITY',
   'X_LAYOUT_SIBLING_MODULE',
   'X_SLICE_POLICY_INCOMPLETE',
+  'X_CATALOG_SLOT_MISMATCH',
+  'X_CATALOG_UNTRANSLATED',
 ] as const;
 
 /**
@@ -424,6 +426,8 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_BACKFILL_SLICE_ENTITY: 'the slice holds no entity a generated backfill can sweep',
   X_LAYOUT_SIBLING_MODULE: 'a primitive module beside its directory',
   X_SLICE_POLICY_INCOMPLETE: 'a generator needs an export the slice policy.ts does not declare',
+  X_CATALOG_SLOT_MISMATCH: 'two locales define one key with different interpolation slots',
+  X_CATALOG_UNTRANSLATED: "a locale still carries the reference locale's value",
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws
