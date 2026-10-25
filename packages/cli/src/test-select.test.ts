@@ -159,6 +159,17 @@ describe('unit · sampleFiles', () => {
 });
 
 describe('unit · discoverTests sees every test file the root runner sees', () => {
+  test('scripts guard suites remain in unit discovery', async () => {
+    const root = join(tmpdir(), `ultimate-test-select-${Bun.randomUUIDv7()}`);
+    try {
+      await Bun.write(join(root, 'scripts/guard.test.ts'), 'export {};\n');
+      const paths = (await discoverTests(root, undefined, 'unit')).map((file) => file.path);
+      expect(paths).toContain('scripts/guard.test.ts');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   // Zero `.test.tsx` exist today, which is exactly why the gap was invisible: `TEST_GLOB` was
   // `**/*.test.ts`, so a JSX test would be dropped from the gate's parallel unit/contract/job
   // steps — green over a file that never executed — while `bun run test` ran it and failed.
