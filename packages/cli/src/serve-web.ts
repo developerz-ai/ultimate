@@ -69,6 +69,9 @@ export async function webSurface(
   // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
   const site = await loadSiteSettings(options.root);
   const origin = publicOrigin(options.env, site);
+  // The app's own favicon is NOT resolved here: the document resolves it, per render, from the app
+  // root below — the same link `x dev` serves, so the tab icon does not change between a laptop
+  // and the image.
   // The page's sync target and its scripts — the same call `x dev` makes, so the two cannot differ.
   // Before the service worker, which precaches those scripts.
   const sync = await pageSync(options.root, options.env, buildId, runtime.realtime);
@@ -150,6 +153,8 @@ export async function webSurface(
     }),
     ...appRoutes({
       buildId,
+      // The app root: the document resolves the app's own favicon from it, per render.
+      root: options.root,
       resolveIsland: (file) => islands.resolverFor(file),
       realtimeIslands: () => islands.realtime,
       ...(sync.head === undefined ? {} : { sync: sync.head }),
