@@ -59,7 +59,12 @@ all: one tarball per publishable workspace per release, each attested,
 2026-09-05. Until then this page said the run reaches `waiting` until a named reviewer approves;
 now the gate is the `check` job in `release.yml` — it waits for `ci.yml`'s verdict on the tagged
 commit and runs `scripts/release.ts --check` — plus the environment's `v*` deployment tag rule.
-`publish` cannot start without `check`.
+`publish` cannot start without `check`. The `v*` deployment tag rule itself is a repository setting
+outside this tree, and nothing in this tree reads environment settings back, so it is verified by
+hand with the `gh api` GETs [`PUBLISHING.md`](../../PUBLISHING.md) names — first observed manually
+in the 2026-10 security sweep
+(`docs/plans/2026/10/02/101-deep-dive-gaps-bugs/findings/sweep-3-verify-backend.md:28`).
+`As of 2026-10` it is documented as a hand check, never automated enforcement.
 
 **2.0.0 is the one release with no provenance**: no publisher was attached, so the OIDC exchange had
 nothing to verify against, the workflow could not publish, and 2.0.0 went out by hand —

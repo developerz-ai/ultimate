@@ -27,6 +27,10 @@ name: release
 # package added AFTER a release run is unpublished until a human bootstraps it — and this run will
 # reach it and abort with everything ahead of it already published irreversibly.
 # `bun run scripts/registry-audit.ts` answers whether that is owed, before a release finds out.
+# Neither prerequisite is read back by a step in this file: the `npm-publish` environment's
+# existence and its `v*` deployment tag rule are verified by a person running the `gh api` GETs
+# in PUBLISHING.md, never by automation here. This workflow's token holds contents/actions read
+# (plus `id-token: write` on `publish` alone) — nothing in this file calls those GETs.
 
 on:
   release:
