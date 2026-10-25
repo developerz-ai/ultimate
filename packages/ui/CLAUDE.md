@@ -71,7 +71,7 @@ Tier 4. Imports `@ultimat3/core`, `i18n`, `money`, `time` — **not `schema`**, 
 | `src/theme/ambient-slot.ts` | the module-scope slot holding the reader `useUi()` falls back to on the server — imports nothing, so a browser chunk pays nothing for it |
 | `src/theme/ambient.ts` | the server's reader (`ambientUiContext`: request locale, zone, direction, translator), registered at import; `index.ts` imports it bare, and the `browser` field maps it to `ambient.browser.ts`, which answers the defaults and registers nothing |
 | `src/error-registry.ts` | the `registerErrorCodes()` call, alone, so `errors.ts` is pure and the barrel's re-export of it costs a chunk nothing |
-| `src/components/` | 67 components, `PascalCase.tsx` (component convention overrides the repo's kebab-case) |
+| `src/components/` | See [CATALOG.md](CATALOG.md)'s generated header for the component inventory and total; `PascalCase.tsx` (component convention overrides the repo's kebab-case) |
 | `src/icons/glyphs/` | GENERATED: 1767 per-icon modules, `@ultimat3/ui/icons/<name>` → `icon<Name>` |
 | `src/icons/build-icons.ts` | the generator + the pinned `LUCIDE_VERSION`; `LICENSE.lucide` is upstream's ISC text |
 | `src/theme/brand.ts` | `defineTheme()` — the ONE brand-override seam; there is no SCSS `@use ... with ()` path. Merges a preset under the overrides, measures, emits at every level `theme.scss` does |
