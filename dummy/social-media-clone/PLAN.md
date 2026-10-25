@@ -114,7 +114,7 @@ Verdicts measured against the code, not the docs.
 | 10 | Parallel tests | wired and measured | `x test --workers N` is one `bun test --parallel=N`, and `x verify` runs every test step through it. Measured 2026-08-27: 1296 unit files, 436.7s of file time, 54.5..64.5s wall on 8 workers — near the 54.6s work-bound floor. Still open: scaffolds get `"test": "bun test"` |
 | 11 | `.claude/` + `.mcp.json` scaffolding | MISSING | `x new` writes `AGENTS.md` + `CLAUDE.md` and nothing else. No agents, no commands, no MCP client config — although the app already *has* an MCP server to point at |
 | 12 | `/idea` `/reset` `/feature` | MISSING for apps | four commands exist for framework maintainers; none is scaffolded into an app |
-| 13 | SCSS system | EXISTS, strong | 52 components, ~25 mixins, `defineTheme()`, WCAG-tested token pairs. One live defect: scaffolded `shared/tokens.scss` `@use`s six variables that do not exist |
+| 13 | SCSS system | EXISTS, strong | [Generated UI catalog](../../../packages/ui/CATALOG.md), ~25 mixins, `defineTheme()`, WCAG-tested token pairs. One live defect: scaffolded `shared/tokens.scss` `@use`s six variables that do not exist |
 | 14 | hCaptcha | MISSING | verifier + widget + `captcha: true` on an action. A factory over `action`, so the eight-primitive rule holds |
 | 15 | File uploads | half | signed URLs, magic-byte sniffing and drivers all exist; **nothing mounts `/_storage`**, there is no client `upload()`, and no UI component |
 | 16 | Search | partial | FTS exists only inside `@ultimat3/ai` for RAG; a plain entity gets `LIKE` |

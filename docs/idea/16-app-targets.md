@@ -106,7 +106,7 @@ Two. Not five.
 
 | Package | Tier | Imports | Earns its line because |
 |---|---|---|---|
-| `@ultimat3/tokens` | **1** | `core` | the one thing two view layers must agree on. It cannot stay in `ui`: `ui` is tier 4, and a tier-4 native runtime cannot import sideways, and dragging 41 Solid components onto a phone to reach a colour is the opposite of the point. `core` is its only import, so tier 1 is the lowest its real imports allow — the same rule that placed `db` |
+| `@ultimat3/tokens` | **1** | `core` | the one thing two view layers must agree on. It cannot stay in `ui`: `ui` is tier 4, and a tier-4 native runtime cannot import sideways, and dragging Solid components onto a phone to reach a colour is the opposite of the point. `core` is its only import, so tier 1 is the lowest its real imports allow — the same rule that placed `db` |
 | `@ultimat3/native` | **4** | `core`, `schema`, `tokens`, `i18n`, `money`, `time`, `storage`, `http`, `action` | the device runtime (client wiring, secure-storage session, token→`StyleSheet` bridge, error rendering, update client) **and** the Expo Updates server endpoint. `realtime` is the precedent for one package owning both halves of one protocol |
 
 `@ultimat3/native` sits at tier 4 as the **peer of `render`**, and never imports it. That is the
@@ -314,7 +314,7 @@ can be packaging rather than a second product — before anything spends effort 
 
 | Risk | Honest size |
 |---|---|
-| **A second view layer is a permanent tax** | `@ultimat3/ui` is **46** components ([`packages/ui/CATALOG.md`](../../packages/ui/CATALOG.md), generated and drift-tested). A matching native kit is 46 more, forever, and every future component is two. The design's answer to "give me a Button on both" is **no** — tokens and a runtime, not a kit. That cut is the difference between this shipping and not |
+| **A second view layer is a permanent tax** | Mirroring the `@ultimat3/ui` catalog ([`packages/ui/CATALOG.md`](../../packages/ui/CATALOG.md), generated and drift-tested) means maintaining a native counterpart for every component forever, with duplicated maintenance for every future addition. The design's answer to "give me a Button on both" is **no** — tokens and a runtime, not a kit. That cut is the difference between this shipping and not |
 | **Two screens, one behaviour, no check** | `screens` catches a *missing* file. Nothing catches a mobile screen that quietly does something different. An agent asked to "fix the dashboard" will fix one of them. Unsolved |
 | **React inside a Solid framework** | [`01-stack.md`](./01-stack.md) locks one choice per layer; this is the first second choice. Defensible — no Solid renderer for iOS/Android has adoption — but agents now have to know which target they are in, and `X_VIEW_RUNTIME_MIXED` is the only thing stopping that from being a guess |
 | **Metro is Node** | the first Node dependency in a build path in a Bun-only repo. `x dev --target native` and `x build --target native` shell out to it. A written exception, not a quiet one |

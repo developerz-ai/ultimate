@@ -2,7 +2,7 @@
 // SQL, policy traces, and caught mail. The refusal is a throw at construction, not a 404 at
 // request time: an app that boots with /_x mounted in prod has already lost.
 
-// Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
+// Type-only, so it is erased and the `@ultimat3/ui` barrel stays out of the mount graph — the
 // values arrive through the dynamic `import()` in `devShellStyle()`, same reason as `data.ts`.
 import { DEFAULT_ENVIRONMENT, escapeHtml, tryResolveEnvironment } from '@ultimat3/core';
 import type { ColorRole } from '@ultimat3/ui';
@@ -135,7 +135,7 @@ let stylePromise: Promise<string> | undefined;
  * VALUES are read from `@ultimat3/ui` rather than copied, because the copy that used to live
  * here went stale through a WCAG retune and shipped `line` on `surface-raised` at 1.16:1.
  * Reached by dynamic `import()` for the same reason `data.ts` is: /_x stays out of the
- * production graph, and the 46-component barrel loads only once a panel is actually drawn.
+ * production graph, and the `@ultimat3/ui` barrel loads only once a panel is actually drawn.
  *
  * Exported because the host that mounts /_x is the one that configures the CSP the panels are
  * served under, and the `style-src` hash it needs is of THIS text — a host that hashed its own
@@ -160,7 +160,7 @@ export function devShellStyle(): Promise<string> {
   return stylePromise;
 }
 
-/** The read itself. Dynamic, so the 46-component barrel stays out of the production graph. */
+/** The read itself. Dynamic, so the `@ultimat3/ui` barrel stays out of the production graph. */
 async function loadShellStyle(): Promise<string> {
   const { colorTokens } = await import('@ultimat3/ui');
   const block = (theme: 'light' | 'dark'): string =>
