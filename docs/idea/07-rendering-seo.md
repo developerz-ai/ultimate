@@ -147,11 +147,16 @@ x verify
       site/pricing   js 61kb > 40kb   (chart.js via shared/ui/button.tsx)
 ```
 
-| Check | Source of truth |
-|---|---|
-| Per-route JS bytes | `budget.js` on the route; measured from the real bundle graph |
-| LCP / CLS / TBT | headless Lighthouse against the built output, median of N runs |
-| Lighthouse SEO + a11y scores | minimum thresholds in `app.config.ts`, defaults 100 / 95 |
-| Regression | budgets ratchet — the recorded baseline can tighten, never loosen silently |
+| Check | Status | Source of truth |
+|---|---|---|
+| Per-route JS bytes | enforced | `budget.js` on the route; measured minified, uncompressed JS bytes from the emitted document and its bundle graph |
+| Headless Lighthouse, median of N runs | never-built proposal | no browser-metric enforcement in `x verify` |
+| Lighthouse SEO + a11y minimums of 100 / 95 | never-built proposal | not enforced thresholds or configurable Lighthouse defaults |
+| `budget.lcp` / `budget.cls` / `budget.tbt` | superseded, removed declarations | accepted and ignored before removal; never measured, not former working Lighthouse checks |
+| Budget raises | explicit, measured and justified | when real function costs bytes, raise the declared budget by the measured amount with the number and reason in the same diff (`bun run budget-raises`) |
+
+See [Configuration: budgets](../../wiki/Configuration.md#budgets) for JS measurement and removed
+budget fields, and [Configuration: SEO](../../wiki/Configuration.md#seo) for the absence of a
+`seo.lighthouse` gate — not the absence of SEO configuration.
 
 Failures name the *cause* (the transitive import that added the bytes), because "bundle too big" without a chain is not an instruction.
