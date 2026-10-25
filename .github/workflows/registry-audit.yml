@@ -63,10 +63,12 @@ jobs:
         run: |
           # `gh issue create --label` refuses a label the repository does not have, so a repo that
           # never had (or has lost) `registry-drift` gets no alarm at all. Provision it first:
-          # create-first, not view-first, so the daily repeat and any race both resolve green —
-          # a failed create is fatal only when `gh label view` cannot confirm the label exists.
+          # create-first, not lookup-first, so the daily repeat and any race both resolve green —
+          # a failed create is fatal only when an exact-label lookup cannot confirm it exists.
+          # gh has no `label view` (list/create/delete/edit/clone only), so the lookup is the REST
+          # label endpoint — the same `gh api` existence probe release-tag.yml makes against a tag.
           if ! err="$(gh label create registry-drift --color d73a4a --description 'npm does not serve what this tree stamps' 2>&1)"; then
-            gh label view registry-drift >/dev/null 2>&1 || { printf '%s\n' "$err" >&2; exit 1; }
+            gh api "repos/${GITHUB_REPOSITORY}/labels/registry-drift" >/dev/null 2>&1 || { printf '%s\n' "$err" >&2; exit 1; }
           fi
           existing="$(gh issue list --label registry-drift --state open --limit 1 --json number --jq '.[0].number // empty')"
           summary="$(jq -r '.summary' audit.json)"

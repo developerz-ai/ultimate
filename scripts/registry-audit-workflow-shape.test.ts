@@ -1,8 +1,8 @@
 // The shape of `.github/workflows/registry-audit.yml` that keeps its daily alarm loud and single:
 // the issue step provisions its own `registry-drift` label BEFORE its first `gh issue` call,
-// reads a failed create as already-exists only when `gh label view` confirms, and dies loudly
-// otherwise. Reads the REAL workflow — each assertion is one a quiet edit to it would break with
-// nothing red.
+// reads a failed create as already-exists only when an exact-label `gh api` lookup confirms, and
+// dies loudly otherwise. Reads the REAL workflow — each assertion is one a quiet edit to it would
+// break with nothing red.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { ROW_COMMANDS } from './health';
@@ -100,23 +100,28 @@ describe('unit · the audit stays non-gating, and its failure is what files the 
 });
 
 describe('unit · the issue step provisions the label before its first gh issue call', () => {
-  test('create, then view, then the dedupe — the provisioning is the first gh command', () => {
+  test('create, then confirm, then the dedupe — the provisioning is the first gh command', () => {
     const create = at(`gh label create ${label}`);
     expect(create).toBeGreaterThanOrEqual(0);
     expect(shell.slice(0, create)).not.toContain('gh ');
     expect(at('gh issue')).toBeGreaterThan(create);
-    expect(create).toBeLessThan(at(`gh label view ${label}`));
-    expect(at(`gh label view ${label}`)).toBeLessThan(at(`gh issue list --label ${label}`));
+    const confirm = at(`gh api "repos/\${GITHUB_REPOSITORY}/labels/${label}"`);
+    expect(create).toBeLessThan(confirm);
+    expect(confirm).toBeLessThan(at(`gh issue list --label ${label}`));
   });
 
-  test('a failed create is already-exists only when a view confirms it', () => {
+  test('a failed create is already-exists only when the exact-label lookup confirms it', () => {
     expect(shell).toContain(
       `if ! err="$(gh label create ${label} --color d73a4a` +
         ` --description 'npm does not serve what this tree stamps' 2>&1)"; then`,
     );
     expect(shell).toContain(
-      `gh label view ${label} >/dev/null 2>&1 || { printf '%s\\n' "$err" >&2; exit 1; }`,
+      `gh api "repos/\${GITHUB_REPOSITORY}/labels/${label}"` +
+        ` >/dev/null 2>&1 || { printf '%s\\n' "$err" >&2; exit 1; }`,
     );
+    // gh ships no `label view` (list/create/delete/edit/clone only): a fallback to it fails every
+    // daily repeat once the label exists, and the open alarm stops being updated.
+    expect(shell).not.toContain('gh label view');
   });
 
   test('nothing on the provisioning path swallows a failure — no `|| true` in the step', () => {
