@@ -1,13 +1,16 @@
 // The workspace dependency graph, in the two forms that must agree: the edges every manifest
 // DECLARES, the edges every shipped source file actually IMPORTS, and the gate rule that the
-// second is a subset of the first. An edge that lives only in a tsconfig `paths` entry resolves
-// for `tsc` and is invisible to bun, to `--filter` ordering and to any change-detection tool.
+// second is covered by the first, with no unused framework sibling declarations. A tsconfig-only
+// edge resolves for `tsc` but is invisible to bun, `--filter` ordering and change-detection tools.
 
 import { join } from 'node:path';
 import { ERROR_DOCS_URL, maskLiterals } from '@ultimat3/core';
+import { CATALOG_PACKAGES } from './error-catalog';
 import { scanAllImports } from './import-scan';
 import type { Finding } from './output';
-import { eachSourceFile, isGenerated, isTest, isVendored } from './source-files';
+import { FIXTURE_SUFFIX } from './publish-closure';
+import { quoteArg } from './shell-quote';
+import { eachSourceFile, isGenerated, isTest, isVendored, SOURCE_GLOBS } from './source-files';
 
 export interface WorkspaceNode {
   /** package.json "name". */
@@ -176,7 +179,7 @@ export const undeclaredWorkspaceDepFinding = (
   cause: `${at} imports ${to.name}, which ${from.dir}/package.json does not declare`,
   // The exact line to paste, at the version the target really carries: a `workspace:*` range would
   // resolve and then fail `checkLockstep`, which compares a sibling pin against the version.
-  fix: `add "${to.name}": "${to.version ?? '0.0.0'}" to "dependencies" in ${from.dir}/package.json`,
+  fix: `add "${to.name}": "${to.version ?? '0.0.0'}" to "${at.endsWith(FIXTURE_SUFFIX) ? 'devDependencies' : 'dependencies'}" in ${from.dir}/package.json`,
   docs: ERROR_DOCS_URL,
   at: `${from.dir}/package.json`,
 });
@@ -186,10 +189,9 @@ export const undeclaredWorkspaceDepFinding = (
  * declared none of it — the imports resolved through the root tsconfig's `paths`, so the edges
  * existed only inside `tsc` and every tool that asks what a change affects answered short.
  *
- * Shipped source only. A test file is excluded from the tarball by every package here
- * (`TEST_EXCLUSION`) and resolves its imports through the ROOT manifest's hoisted devDependencies,
- * which is why no `packages/*` in this repo carries a `devDependencies` block of its own —
- * judging test imports would demand 29 of them to describe a resolution that already works.
+ * Tests resolve through the root's hoisted devDependencies and are excluded here. Fixtures still
+ * need forward declarations, but their imports justify only development dependencies: they are
+ * excluded from tarballs and must not keep unused shipped dependency fields alive.
  *
  * One finding per (workspace, dependency) pair, never one per import site: the fix is one line in
  * one manifest, and repeating it per file is noise an author has to deduplicate by hand.
@@ -202,6 +204,8 @@ export async function checkWorkspaceDependencies(root: string): Promise<readonly
   // Deepest directory first: a nested workspace's files are its own, never its parent's.
   const owners = [...graph].sort((left, right) => right.dir.length - left.dir.length);
   const reported = new Set<string>();
+  const used = new Set<string>();
+  const fixtureUsed = new Set<string>();
   for await (const path of eachSourceFile(root)) {
     if (isTest(path) || isGenerated(path)) continue;
     const owner = owners.find((node) => path.startsWith(`${node.dir}/`));
@@ -209,11 +213,54 @@ export async function checkWorkspaceDependencies(root: string): Promise<readonly
     for (const name of importedPackages(await Bun.file(join(root, path)).text(), path)) {
       const target = byName.get(name);
       if (target === undefined || target.name === owner.name) continue;
-      if (owner.dependencies.includes(target.name)) continue;
       const pair = `${owner.dir} ${target.name}`;
+      // Fixtures still owe forward declarations, but never justify a shipped dependency.
+      (path.endsWith(FIXTURE_SUFFIX) ? fixtureUsed : used).add(pair);
+      if (owner.dependencies.includes(target.name)) continue;
       if (reported.has(pair)) continue;
       reported.add(pair);
       findings.push(undeclaredWorkspaceDepFinding(owner, target, path));
+    }
+  }
+  for (const owner of graph) {
+    // Only infer absence where the source contract scans. Match directory prefixes rather than
+    // observed files so a covered workspace with no source still owes removal of unused siblings.
+    const covered = SOURCE_GLOBS.some((pattern) => {
+      const directories = pattern.split('/').slice(0, -1);
+      return directories.some((_, index) =>
+        new Bun.Glob(directories.slice(0, index + 1).join('/')).match(owner.dir),
+      );
+    });
+    if (!covered || isVendored(owner.dir)) continue;
+    const unused = owner.dependencies.filter(
+      (name) =>
+        name.startsWith('@ultimat3/') &&
+        !used.has(`${owner.dir} ${name}`) &&
+        !(owner.name === '@ultimat3/cli' && CATALOG_PACKAGES.some((root) => root === name)),
+    );
+    if (unused.length === 0) continue;
+    const path = `${owner.dir}/package.json`;
+    const manifest = await readManifest(join(root, path));
+    for (const name of unused) {
+      const fields = DEPENDENCY_FIELDS.filter(
+        (field) =>
+          Object.hasOwn(asRecord(manifest?.[field]) ?? {}, name) &&
+          !(field === 'devDependencies' && fixtureUsed.has(`${owner.dir} ${name}`)),
+      );
+      if (fields.length === 0) continue;
+      // A package-wide remove would also delete a valid fixture-only development declaration.
+      const script =
+        'const [path, name, fields] = Bun.argv.slice(-3); ' +
+        'const manifest = await Bun.file(path).json(); ' +
+        'for (const field of JSON.parse(fields)) delete manifest[field]?.[name]; ' +
+        'await Bun.write(path, JSON.stringify(manifest, null, 2) + "\\n");';
+      findings.push({
+        code: 'X_PACKAGE_SHAPE',
+        cause: `${path} declares ${name} in ${fields.join(', ')}, but no eligible source in ${owner.dir} imports it`,
+        fix: `bun -e ${quoteArg(script)} -- ${quoteArg(path)} ${quoteArg(name)} ${quoteArg(JSON.stringify(fields))}`,
+        docs: ERROR_DOCS_URL,
+        at: path,
+      });
     }
   }
   return findings;

@@ -149,7 +149,7 @@ describe('unit · the Sass compile cache', () => {
 
 describe('unit · the Sass compile cache · assets', () => {
   test('a hit carries the partials it read, and an entry with assets asks whether they still hold', () => {
-    const cache = join(tmpdir(), `x-sass-assets-${process.pid}`);
+    const cache = join(dir, 'assets');
     setSassCacheDir(cache);
     try {
       const output: SassOutput = {
