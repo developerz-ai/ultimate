@@ -139,6 +139,10 @@ const CATALOG = {
   'cli.i18n.dynamic': '{count} dynamic t() call(s) the extractor cannot verify:',
   'cli.i18n.gaps': '{missing} missing key(s) across {locales} locale(s)',
   'cli.i18n.ok': '{locales} locale(s), {keys} key(s) used — no gaps',
+  // The summary a locale-parity finding needs: `cli.i18n.gaps` counts MISSING KEYS, so it cannot
+  // say "this locale's slots drifted and this string was never translated".
+  'cli.i18n.parity':
+    '{count} locale-parity finding(s) across {locales} locale(s) — a slot or an untranslated copy against {reference}',
   'cli.i18n.synced': 'synced {locale} from {from} — {added} key(s) added, {total} total',
   'cli.i18n.unused': '{count} key(s) defined in {locale} and never used:',
   'cli.jobs.backfillNoCursor': 'no cursor yet',

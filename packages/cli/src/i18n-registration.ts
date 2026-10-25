@@ -25,6 +25,7 @@ import { loadApp } from './app-load';
 import type { DuplicateProbe } from './duplicate-packages';
 import { duplicateCause, duplicateFinding, findDuplicateInstalls } from './duplicate-packages';
 import { auditApp } from './i18n-audit';
+import { localeParityFindings } from './i18n-locale-parity';
 import type { Finding } from './output';
 import { findingFrom } from './output';
 import { CATALOG_ROOT, catalogPath } from './templates/locales';
@@ -287,6 +288,10 @@ export function missingKeyFindings(report: ExtractReport): readonly Finding[] {
  * Both halves of one question — does every string this app renders resolve? — for a caller that
  * wants the verdict and not the table. `x verify`'s `i18n` step is that caller; `cmd-i18n.ts`
  * composes the same two pieces itself because it also renders per-locale rows.
+ *
+ * The locale parity joins them: a catalog can hold every key source uses and still be wrong in
+ * the two ways only a comparison with the reference locale can see — a slot one side does not
+ * have, and a string nobody translated.
  */
 export async function catalogFindings(root: string): Promise<readonly Finding[]> {
   const { report, catalogs, extraction, ignoreUnused } = await auditApp(root);
@@ -294,5 +299,6 @@ export async function catalogFindings(root: string): Promise<readonly Finding[]>
   return [
     ...missingKeyFindings(withPlaceholdersMissing(report, catalogs)),
     ...registration.findings,
+    ...localeParityFindings(catalogs),
   ];
 }

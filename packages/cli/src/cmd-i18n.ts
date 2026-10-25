@@ -8,7 +8,7 @@
 // would, and `node:path` because Bun exposes no path API to build what either of them takes.
 import { type FileHandle, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { stringField } from '@ultimat3/core';
+import { DEFAULT_LOCALE, stringField } from '@ultimat3/core';
 import type { Catalog } from '@ultimat3/i18n';
 import { auditCatalogs, catalogKeys } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
@@ -26,6 +26,7 @@ import {
   syncCatalog,
 } from './i18n-audit';
 import { syncI18nIndex } from './i18n-index';
+import { localeParityFindings } from './i18n-locale-parity';
 import {
   checkRegistration,
   loudMiss,
@@ -126,8 +127,13 @@ async function runCheck(root: string): Promise<CommandResult> {
   // The runtime question, asked after the file question and never instead of it: a catalog can be
   // complete on disk, used everywhere in source, and reach no registry at all (issue #249).
   const registration = await checkRegistration({ root, catalogs, extraction, ignoreUnused });
+  // The two rules only a comparison with the reference locale can see: a slot one side does not
+  // have, and a string nobody translated. The same call `x verify`'s `i18n` step makes, so the
+  // command and the gate answer about an app with one voice.
+  const parity = localeParityFindings(catalogs);
+  const parityLocales = new Set(parity.map((finding) => finding.meta?.['locale'])).size;
 
-  const findings: Finding[] = [...missingKeyFindings(report), ...registration.findings];
+  const findings: Finding[] = [...missingKeyFindings(report), ...registration.findings, ...parity];
 
   // Whether the LOCALE has a catalog is the wrong question — the framework's own `en` is always
   // registered, so a locale-presence column reads `yes` for an app whose every key is a loud miss.
@@ -165,10 +171,26 @@ async function runCheck(root: string): Promise<CommandResult> {
   const missingTotal =
     report.locales.reduce((sum, audit) => sum + audit.missing.length, 0) +
     registration.unregistered;
-  const ok = report.ok && registration.ok;
-  const summary = ok
-    ? msg('cli.i18n.ok', { locales: report.locales.length, keys: report.used.length })
-    : msg('cli.i18n.gaps', { missing: missingTotal, locales: gapLocales });
+  const ok = report.ok && registration.ok && parity.length === 0;
+  // The summary names the parity findings when there are any: `cli.i18n.gaps` counts MISSING KEYS,
+  // so a locale whose slots drifted and whose string was never translated answered "0 missing
+  // key(s) across 0 locale(s)" — a green-looking line over a red command. The missing count keeps
+  // a line of its own, so neither fact is lost.
+  let summary: string;
+  if (parity.length > 0) {
+    summary = msg('cli.i18n.parity', {
+      count: parity.length,
+      locales: parityLocales,
+      reference: DEFAULT_LOCALE,
+    });
+    if (missingTotal > 0) {
+      lines.push(`  ${msg('cli.i18n.gaps', { missing: missingTotal, locales: gapLocales })}`);
+    }
+  } else {
+    summary = ok
+      ? msg('cli.i18n.ok', { locales: report.locales.length, keys: report.used.length })
+      : msg('cli.i18n.gaps', { missing: missingTotal, locales: gapLocales });
+  }
 
   return {
     ok,
