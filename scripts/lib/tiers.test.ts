@@ -12,7 +12,15 @@ import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { collectSourceFiles, packageEdges } from '../boundaries';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './run';
 import type { FloorViolation } from './tiers';
-import { ALL_PACKAGES, checkFloors, FLOOR_ABOVE, floorFindingFor, floorFor, TIERS } from './tiers';
+import {
+  ALL_PACKAGES,
+  checkFloors,
+  FLOOR_ABOVE,
+  floorFindingFor,
+  floorFor,
+  SIDEWAYS_ALLOW,
+  TIERS,
+} from './tiers';
 
 // Reads the real tree, so it runs on the repo-scan backstop rather than Bun's 5000ms
 // default — see `REPO_SCAN_TIMEOUT_MS`. A backstop, not an assertion: nothing here is meant
@@ -23,6 +31,15 @@ const edgesOf = (
   graph: Record<string, readonly string[]>,
 ): ReadonlyMap<string, ReadonlySet<string>> =>
   new Map(Object.entries(graph).map(([from, to]) => [from, new Set(to)]));
+
+// A permission must have evidence even when its importer is absent from the graph.
+const unusedEdges = (
+  edges: ReadonlyMap<string, ReadonlySet<string>>,
+  allowed: Readonly<Record<string, readonly string[]>>,
+): readonly string[] =>
+  Object.entries(allowed).flatMap(([from, targets]) =>
+    targets.filter((to) => !edges.get(from)?.has(to)).map((to) => `${from} -> ${to}`),
+  );
 
 /**
  * Every package sitting exactly at its floor — one import of the tier directly below it — so a
@@ -35,6 +52,39 @@ const AT_FLOOR: Record<string, readonly string[]> = Object.fromEntries(
     return packages.map((name) => [name, below === undefined ? [] : [below]] as const);
   }),
 );
+
+describe('unused sideways edges', () => {
+  test('reports only the unused target of an importer with multiple permissions', () => {
+    expect(unusedEdges(edgesOf({ cli: ['admin', 'core'] }), { cli: ['admin', 'testing'] })).toEqual(
+      ['cli -> testing'],
+    );
+  });
+
+  test('reports every permission of an absent importer', () => {
+    expect(unusedEdges(edgesOf({ core: ['schema'] }), { cli: ['admin', 'testing'] })).toEqual([
+      'cli -> admin',
+      'cli -> testing',
+    ]);
+  });
+
+  test('accepts exercised matching edges without requiring unrelated imports to be allowed', () => {
+    expect(
+      unusedEdges(edgesOf({ cli: ['admin', 'testing', 'core'] }), {
+        cli: ['admin', 'testing'],
+      }),
+    ).toEqual([]);
+  });
+
+  test.each([
+    ['relative', "import { harness } from '../../testing/src/harness';"],
+    ['type-only', "import type { Harness } from '@ultimat3/testing';"],
+    ['relative type-only', "import type { Harness } from '../../testing/src/harness';"],
+  ])('%s imports in source tests exercise an allowed edge', (_kind, source) => {
+    const edges = packageEdges([{ path: 'packages/cli/src/harness.test.ts', source }]);
+    expect([...(edges.get('cli') ?? [])]).toEqual(['testing']);
+    expect(unusedEdges(edges, { cli: ['testing'] })).toEqual([]);
+  });
+});
 
 describe('floorFor', () => {
   test('is one above the highest tier the package reaches', () => {
@@ -113,12 +163,13 @@ describe('floorFindingFor', () => {
 });
 
 describe('the tier table against the tree it describes', () => {
-  test('every package is at its floor or carries a written reason', async () => {
+  test('every package earns its floor and every allowed edge is exercised', async () => {
     const edges = packageEdges(await collectSourceFiles(repoRoot()));
     // The parser guard every check here needs: an empty graph would make the assertion vacuous, and
     // that is the failure mode this whole rule exists to end.
     expect(edges.size).toBeGreaterThan(20);
     expect(checkFloors(edges, FLOOR_ABOVE)).toEqual([]);
+    expect(unusedEdges(edges, SIDEWAYS_ALLOW)).toEqual([]);
   });
 
   test('FLOOR_ABOVE holds exactly the packages above their floor', () => {
