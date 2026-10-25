@@ -98,21 +98,28 @@ export function deployProofDue(input: DeployProofInput): DeployProofDecision {
 }
 
 /**
- * The rule over inputs that may not arrive. `run()` reports a FAILED command, but Bun.spawn
- * THROWS on a missing binary, and a throw before `$GITHUB_OUTPUT` is written leaves `run` unset —
- * which every proof step reads as a skip. Unknown is never a skip, so a read that throws proves.
+ * Unknown is never a skip, including a throw while publishing the decision. Discard any inherited
+ * verdict and publish a forced proof once; if that publication also fails, reject so CI fails
+ * visibly rather than treating an unset output as a skip. Local callers need no publisher.
  */
 export async function decideOrProve(
   read: () => Promise<DeployProofInput>,
+  publish?: (decision: DeployProofDecision) => Promise<void>,
 ): Promise<DeployProofDecision> {
+  let decision: DeployProofDecision;
   try {
-    return deployProofDue(await read());
+    decision = deployProofDue(await read());
+    await publish?.(decision);
+    return decision;
   } catch (error) {
-    return {
+    decision = {
       run: true,
-      reason: `reading the decision's inputs threw (${renderThrowable(error)}), and unknown runs`,
+      reason: `reading, deciding, or publishing the proof decision threw (${renderThrowable(error)}), and unknown runs`,
     };
   }
+  // Outside the catch: a permanently unwritable output must not become a successful decision.
+  await publish?.(decision);
+  return decision;
 }
 
 const member = (from: unknown, key: string): unknown =>
@@ -214,22 +221,37 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const cwd = repoRoot();
   const event = Bun.env['GITHUB_EVENT_NAME'] ?? 'push';
-  const decision = await decideOrProve(async () => {
-    const subject = await run(['git', 'log', '-1', '--format=%s'], { cwd });
-    // Asked only when the answer can matter: a manual run or a release commit proves regardless.
-    const asks = event === 'push' && !(subject.ok && RELEASE_SUBJECT.test(subject.output));
-    const predecessor = asks ? await readPredecessor(cwd) : undefined;
-    const changed =
-      predecessor?.conclusion === 'success'
-        ? await changedSince(predecessor.headSha, cwd)
-        : undefined;
-    return { event, subject: subject.ok ? subject.output : '', predecessor, changed };
-  });
-  const output = Bun.env['GITHUB_OUTPUT'];
-  if (output !== undefined && output !== '') {
-    // Appended, never replaced: the runner may already hold other outputs of this step there.
-    const prior = (await Bun.file(output).exists()) ? await Bun.file(output).text() : '';
-    await Bun.write(output, `${prior}run=${String(decision.run)}\n`);
+  let decision: DeployProofDecision;
+  try {
+    decision = await decideOrProve(
+      async () => {
+        const subject = await run(['git', 'log', '-1', '--format=%s'], { cwd });
+        // Asked only when the answer can matter: a manual run or a release commit proves regardless.
+        const asks = event === 'push' && !(subject.ok && RELEASE_SUBJECT.test(subject.output));
+        const predecessor = asks ? await readPredecessor(cwd) : undefined;
+        const changed =
+          predecessor?.conclusion === 'success'
+            ? await changedSince(predecessor.headSha, cwd)
+            : undefined;
+        return { event, subject: subject.ok ? subject.output : '', predecessor, changed };
+      },
+      async (candidate) => {
+        const output = Bun.env['GITHUB_OUTPUT'];
+        if (output === undefined || output === '') return;
+        // Appended, never replaced: the runner may already hold other outputs of this step there.
+        const prior = (await Bun.file(output).exists()) ? await Bun.file(output).text() : '';
+        await Bun.write(output, `${prior}run=${String(candidate.run)}\n`);
+      },
+    );
+  } catch (error) {
+    report(
+      {
+        ok: false,
+        script: 'deploy-proof-due',
+        summary: `deploy proof decision publication failed: ${renderThrowable(error)}`,
+      },
+      args.json,
+    );
   }
   report(
     {
