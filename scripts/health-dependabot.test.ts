@@ -53,6 +53,15 @@ const healthyReaders: HealthOverrides = {
   'demo-shipped': async () => ({
     runs: [{ conclusion: 'success', event: 'workflow_run', status: 'completed', databaseId: 5 }],
   }),
+  // Row 9 joined health.ts with this merge; without it the default reader spawns real git and gh
+  // here, and an environment where gh refuses turns every healthAt case below into a refusal.
+  'release-exists': async () => ({
+    tag: 'v3.0.0',
+    lookup: {
+      kind: 'found',
+      release: { tagName: 'v3.0.0', isDraft: false, publishedAt: '2026-01-01T00:00:00Z' },
+    },
+  }),
 };
 
 describe('unit · health · Dependabot activity and checks', () => {

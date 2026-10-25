@@ -1,6 +1,7 @@
-// The eight per-row health verdicts, pure: typed inputs in, one RowVerdict out — no subprocess, no
-// Bun.* anywhere, so scripts/health.ts reads and this file judges; the document shapes it judges
-// over live in health-narrow.ts. `unverdicted` always means "no verdict yet — re-run, never
+// Eight of the nine per-row health verdicts, pure: typed inputs in, one RowVerdict out — no
+// subprocess, no Bun.* anywhere, so scripts/health.ts reads and this file judges; row 9's read,
+// judge and command live beside their lookup union in health-release.ts, the document shapes it
+// judges over in health-narrow.ts. `unverdicted` always means "no verdict yet — re-run, never
 // unhealthy": an ask filed over an unread world is the false alarm this rule exists to prevent.
 
 import type { AlarmIssue, AuditDoc, CiDoc, DependabotPr, RunRow } from './health-narrow';
@@ -18,6 +19,7 @@ export const ROW_IDS = [
   'automation-alarms',
   'dependabot-not-stuck',
   'demo-shipped',
+  'release-exists',
 ] as const;
 
 export type RowId = (typeof ROW_IDS)[number];
@@ -40,6 +42,10 @@ export interface RowVerdict {
   readonly latched?: boolean;
   readonly issues?: readonly AlarmIssue[];
   readonly prs?: readonly DependabotPr[];
+  /** Row 9's own fields: the tag its Release names, whether it is a draft, and when it published. */
+  readonly tagName?: string | undefined;
+  readonly isDraft?: boolean | undefined;
+  readonly publishedAt?: string | undefined;
 }
 
 // ——— The rules. ———

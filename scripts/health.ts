@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Answer whether the project is healthy: eight rows, one verdict each, read from git, `gh` and the
+// Answer whether the project is healthy: nine rows, one verdict each, read from git, `gh` and the
 // repo's own scripts, and refuse with `cannot tell` and no data when any row's command cannot be
 // read — a checkup that answers over a row it never read is the silent green it exists to refuse.
 //
@@ -30,6 +30,7 @@ import type {
   TagRunsRead,
 } from './lib/health-readers';
 import { defaultReaders, TAG_RUN_FIELDS } from './lib/health-readers';
+import { judgeReleaseExists, RELEASE_EXISTS_COMMAND } from './lib/health-release';
 import type { RowId, RowVerdict, Verdict } from './lib/health-rule';
 import {
   alarmsVerdict,
@@ -61,6 +62,7 @@ export type {
   TagRunsRead,
 } from './lib/health-readers';
 export { CI_ARGS, jsonDocument, TAG_RUN_ARGS, TAG_RUN_FIELDS } from './lib/health-readers';
+export type { ReleaseExistsRead } from './lib/health-release';
 
 const SCRIPT = 'health';
 
@@ -86,6 +88,7 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'automation-alarms': 'gh issue list --state open --label registry-drift',
   'dependabot-not-stuck': 'gh pr list --app dependabot',
   'demo-shipped': 'gh run list --workflow deploy-social-demo.yml --limit 1',
+  'release-exists': RELEASE_EXISTS_COMMAND,
 };
 
 type Judgement = RowVerdict | Finding | readonly Finding[];
@@ -242,7 +245,7 @@ const judgeDemoShipped = (read: DemoShippedRead, mainGreen: Verdict): Judgement 
  * The whole checkup at `root`: every row read in the brief's order, one subprocess at a time, each
  * judge over what its reader answered. A throw — `Bun.spawn` throws on a missing binary — or an
  * unreadable answer refuses the whole result with findings and no `data`; otherwise every verdict
- * rides in `data.rows`, and `data.healthy` is true only when all eight read `healthy`.
+ * rides in `data.rows`, and `data.healthy` is true only when all nine read `healthy`.
  */
 export const healthAt = async (
   root: string,
@@ -281,6 +284,7 @@ export const healthAt = async (
     judgeDependabot(read, nowMs),
   );
   await judge('demo-shipped', readers['demo-shipped'], (read) => judgeDemoShipped(read, green()));
+  await judge('release-exists', readers['release-exists'], judgeReleaseExists);
 
   if (refusals.length > 0) {
     return { ok: false, script: SCRIPT, summary: 'cannot tell', findings: refusals };
