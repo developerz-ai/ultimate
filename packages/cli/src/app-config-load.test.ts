@@ -51,7 +51,7 @@ export const config = {
   ai: { mcp: { expose: false } },
   drain: { readinessGraceMs: 7000 },
   health: { readiness: 'process' },
-  site: { origin: 'https://every.example' },
+  site: { origin: 'https://every.example', favicon: 'assets/brand/icon.svg' },
   seo: { robots: { disallow: ['/panel'] }, sitemap: { extra: ['/about'], lastmod: 'build', sections: [{ name: 'blog', match: '/blog/**' }], pageSize: 1000 } },
   navigation: { client: ['app'], speculation: { prefetch: 'conservative', exclude: ['/x/*'] } },
   islands: { sharedChunks: true },
@@ -94,6 +94,7 @@ describe('loadAppConfig', () => {
     expect(config?.drain.readinessGraceMs).toBe(7000);
     expect(config?.health.readiness).toBe('process');
     expect(config?.site.origin).toBe('https://every.example');
+    expect(config?.site.favicon).toBe('assets/brand/icon.svg');
     expect(config?.seo.robots.disallow).toEqual(['/panel']);
     expect(config?.seo.sitemap).toEqual({
       extra: ['/about'],
@@ -131,6 +132,7 @@ describe('loadAppConfig', () => {
     expect(typeof config?.drain.readinessGraceMs).toBe('number');
     expect(config?.health.readiness).toBe('dependencies');
     expect(config?.site.origin).toBeNull();
+    expect(config?.site.favicon).toBeUndefined();
     expect(config?.seo.robots.disallow).toEqual([]);
     expect(config?.seo.sitemap).toEqual({
       extra: [],

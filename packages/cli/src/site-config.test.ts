@@ -1,4 +1,5 @@
-// The public origin every absolute URL is built against, and the two `app.config.ts` keys behind it.
+// The public origin every absolute URL is built against, the app's declared favicon, and the
+// `app.config.ts` keys behind them.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
@@ -20,6 +21,7 @@ describe('loadSiteSettings — refusals', () => {
       'export const config = { name: "demo" };\n',
     );
     expect(await loadSiteSettings(join(ROOT, 'bare'))).toEqual(NO_SITE_SETTINGS);
+    expect((await loadSiteSettings(join(ROOT, 'bare'))).favicon).toBeUndefined();
   });
 });
 
@@ -46,6 +48,22 @@ describe('loadSiteSettings', () => {
     expect((await loadSiteSettings(join(ROOT, 'groups'))).robotsGroups).toEqual([
       { userAgent: ['GPTBot'], disallow: ['/s/'] },
     ]);
+  });
+
+  test('reads site.favicon — the declared SVG asset path every boot resolves once', async () => {
+    await Bun.write(
+      join(ROOT, 'favicon', 'app.config.ts'),
+      "export const config = { name: 'demo', site: { origin: null, favicon: 'assets/brand/icon.svg' } };\n",
+    );
+    expect((await loadSiteSettings(join(ROOT, 'favicon'))).favicon).toBe('assets/brand/icon.svg');
+  });
+
+  test('an app that declares no favicon reports none — never a placeholder path', async () => {
+    await Bun.write(
+      join(ROOT, 'no-favicon', 'app.config.ts'),
+      "export const config = { name: 'demo', site: { origin: 'https://notificado.co' } };\n",
+    );
+    expect((await loadSiteSettings(join(ROOT, 'no-favicon'))).favicon).toBeUndefined();
   });
 
   test('reads seo.sitemap when the config carries it', async () => {

@@ -153,10 +153,25 @@ $ x verify
 | 5 | contract, live, job tests | any failure; a flake **is** a failure | needs cloned databases — first genuinely expensive step |
 | 6 | **migration drift** | schema ≠ migrations ≠ catalog, or an irreversible migration without a marker | after tests, because tests are what would have exercised the new column |
 | 7 | **contract diff** | a breaking change to a published action/query without a version bump | needs the manifest the previous steps validated |
-| 8 | budgets | per-route JS bytes, LCP/CLS, Lighthouse thresholds, precache size | requires a full build — the most expensive step |
+| 8 | budgets | declared per-route `budget.js` exceeded or unmeasured; missing global `:root` style definitions; async `Page` without `load`; browser-only live reads without island execution | reads existing static-build stats/report and app registries; does not build |
 | 9 | SEO + i18n | missing title/description, duplicate meta, broken internal link, missing i18n key | needs the built route table and the extracted key set |
 | 10 | manifest freshness | `x.manifest.json` / `openapi.json` differ from what the code produces | last, because earlier steps may legitimately regenerate it |
-| 11 | e2e | render modes, streaming, hydration, SW install, offline fallback, skew reload | needs the built output from step 8 |
+| 11 | e2e | render modes, streaming, hydration, SW install, offline fallback, skew reload | needs built output prepared separately, not produced by step 8 |
+
+Step 8 applies to apps with `app.config.ts`. It compares each declared `budget.js` with
+`jsBytes` in `.x/build-stats.json`: minified, uncompressed JavaScript bytes. Missing measurements
+fail for declared budgets, including an absent stats file or one written under stale measurement
+rules. Routes explicitly marked `weighable: false` in `.x/static-report.json` are exempt and
+printed as notes, not silently dropped. Source: `packages/cli/src/verify-checks.ts:226-275` and
+`packages/cli/src/budgets.ts:176-224`.
+
+The riders use the app's registries and source graphs: the global-style check requires `:root`
+custom-property definitions in the CSS for each document surface, not a CSS-size limit
+(`packages/cli/src/document-styles.ts:22-53`). The async-page check flags an async `Page` only
+when `load` is undefined (`packages/cli/src/async-pages.ts:24-31`). The live-read check flags
+browser-only realtime reads in route-relative import graphs when no island imports the module;
+with `hydrate: 'never'`, it flags every such read. This is not complete browser-graph analysis
+(`packages/cli/src/live-routes.ts:170-199`).
 
 Ordering principle: **cheapest and most informative first**, and never run a check whose result would be meaningless because an earlier one failed. Steps 1–4 complete in seconds, which is what makes the local loop usable.
 

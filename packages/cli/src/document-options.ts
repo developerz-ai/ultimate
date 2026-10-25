@@ -75,4 +75,14 @@ export interface DocumentOptions {
    * carries none, because the router prefetches by its own rules.
    */
   readonly speculationHead?: string;
+  /**
+   * `<link rel="icon" type="image/svg+xml" href="…">` — the app's own favicon, resolved once at
+   * boot by `runtime-render.ts`'s `appFaviconHead` into the content-hashed site-asset URL
+   * `/assets/*` serves.
+   *
+   * Document-level for `pwaHead`'s reason: it is the same one link on every page of the app, and
+   * it is decided by `app.config.ts`, which the boot read and the renderer cannot. Absent when the
+   * app declares no favicon — the browser's own `/favicon.ico` request is then the only one.
+   */
+  readonly faviconHead?: string;
 }

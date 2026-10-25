@@ -60,6 +60,7 @@ what each answer means.
 | the GitHub Release exists — `release-tag.yml` creates it when the release PR merges | `gh release view v<version> --json tagName,isDraft,publishedAt` |
 | a release is due — shipping commits nobody released | `bun run scripts/release-due.ts --json` — `.data.due`, `.data.reason`, `.data.command`, `.data.headSha` |
 | the OIDC trusted publisher is attached, `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
+| the `npm-publish` environment's `v*` tag rule and empty reviewer list | `gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'`, then `gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies` — expect `[]`, `custom_branch_policies: true`, and one entry `{"name":"v*","type":"tag"}` — a person with an admin token; the one boundary fact here no automation reads |
 | which majors have shipped, and what each one breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md), one section per major |
 
 ## Lockstep versioning — the rule
@@ -213,6 +214,13 @@ next package added after a release run: `bun run scripts/release-workflow.ts --j
 run will reach, and `npm view <pkg> version` on a name it lists is how you find the one that is not
 there yet.
 
+**The accounting, exactly:** steps 1, 3 and 4 are read back by automation — step 1 by
+`bun run scripts/registry-audit.ts --json`, steps 3 and 4 by
+`bun run scripts/trust-publishers.ts --check --json`. The `npm-publish` environment's existence and
+its `v*` tag rule are **not** read back by anything here: they are repository settings outside this
+tree, checked by a person running the two `gh api` GETs in the table above — a hand check, never
+automated enforcement, and no page here may describe them otherwise.
+
 ### 1. Bootstrap a never-published package by hand — do this first
 
 **`As of 2026-08-19` nothing is owed here**: `@ultimat3/scraping` was bootstrapped and all 30 are on
@@ -283,6 +291,20 @@ with the referenced name"* — and an environment created that way carries **no 
 `release.yml`'s `environment: npm-publish` does not fail on a missing environment; it silently
 creates an empty one and runs unprotected, looking gated in the YAML while being gated by nothing.
 This is the step most likely to be assumed done.
+
+**Checking it held is a hand step — the one step nothing in this tree reads back.** Environment
+settings are repository settings outside this tree; nothing here reads them. A person with an
+admin token runs:
+
+```sh
+gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'
+gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies
+```
+
+Expect `[]` and `{"custom_branch_policies": true}` from the first, and exactly one entry
+`{"name":"v*","type":"tag"}` from the second — the same two commands the
+[Facts, as commands](#facts-as-commands) table carries, `As of 2026-10` a hand check and never
+automated enforcement.
 
 ### 3. Restrict that environment to release tags
 

@@ -51,6 +51,7 @@ describe('an unknown key is refused by its full path', () => {
       { navigation: { speculation: { eagerness: 'moderate' } } },
     ],
     ['seo.sitemap.extras', { seo: { sitemap: { extras: ['/a'] } } }],
+    ['site.favicons', { site: { favicons: 'assets/icon.svg' } }],
   ] as const)('%s', (path, said) => {
     const error = refusalOf({ name: 'myapp', ...said });
     expect(error.code).toBe('X_CONFIG_INVALID');
@@ -111,6 +112,14 @@ describe('what stays open', () => {
       notify: { inboxReadRetentionMs: 1000 },
     });
     expect(config.realtime.urlEnv).toBe('NATS_URL');
+  });
+
+  test('site.favicon is accepted', () => {
+    const config = defineConfig({
+      name: 'myapp',
+      site: { favicon: 'assets/brand/icon.svg' },
+    });
+    expect(config.site.favicon).toBe('assets/brand/icon.svg');
   });
 
   test('every optional pwa member, with locale-keyed text, is accepted', () => {
