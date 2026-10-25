@@ -197,6 +197,7 @@ export type {
   SeoRobotsGroup,
   SeoSitemapConfig,
   SiteConfig,
+  SiteFavicon,
   SitemapLastmod,
   SiteSections,
   SiteSectionsInput,

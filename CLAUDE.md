@@ -14,12 +14,12 @@ tracked apps — the reference app (`examples/dummy`) and the deployed demo
 (`dummy/social-media-clone`), each gated on its own `expectedRed` table. CLI binary `x`, npm scope
 `@ultimat3`, imports `@ultimat3/<pkg>`.
 
-**Status:** released. 30 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 31 in all —
-versioned and published in lockstep: one version, one commit, one tag, 31 tarballs. Semver applies:
-the eight primitive shapes, the `x` CLI surface and the tier table are as stable as the `X_*` codes.
+**Status:** released — every `@ultimat3/*` package plus `create-ultimate`, versioned and published
+in lockstep. Semver applies: the eight primitive shapes, the `x` CLI surface and the tier table are
+as stable as the `X_*` codes.
 
-**This page states no version number, deliberately.** Every fact below is a command:
-**run the right-hand column — never quote the left.** What each answer means:
+**This page states no version number, deliberately.** Every fact below is a command — run the
+right-hand column. What each answer means:
 [`PUBLISHING.md`](PUBLISHING.md#facts-as-commands); history:
 [`publishing-and-provenance.md`](docs/history/publishing-and-provenance.md).
 
@@ -34,10 +34,12 @@ the eight primitive shapes, the `x` CLI surface and the tier table are as stable
 | the tag is **annotated** and on the remote | `git ls-remote --tags origin 'refs/tags/v<version>*'` — `git tag -a` only |
 | the GitHub Release exists | `gh release view v<version> --json tagName,isDraft,publishedAt` |
 | the OIDC trusted publisher is attached | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` |
+| the `v*` tag rule and no reviewers on `npm-publish` | `gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'` · `gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies` — by hand, an admin token |
 | which majors shipped, and what each breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md) |
 
-**The `npm-publish` environment has no required reviewers** (owner's decision, 2026-09-05): the
-gate is `release.yml`'s `check` job plus the `v*` deployment tag rule.
+**The `npm-publish` environment has no required reviewers**: the gate is `release.yml`'s `check`
+job plus the `v*` deployment tag rule — a repository setting nothing in this tree reads back
+today, verified by a person with the command above.
 
 ## Design axioms (override any instinct that conflicts)
 
@@ -197,13 +199,13 @@ Free runners (`ubuntu-latest`; `windows-latest` for `windows`, free on a public 
 - `gate` — the gate in parts: `x verify --only <steps>` per runner, `unit` sharded. Never a
   verdict, and never a lint/typecheck job beside it.
 - `verify` — the verdict: `x verify merge` over the parts, red for a step no part ran.
-- `scaffold-smoke` — on Ubuntu: a scaffolded app gates twice per shape (`demoapp`, `bareapp`) — the
-  second gate, over the generators' output, catches broken generators.
+- `scaffold-smoke` — a scaffolded app gates twice per shape (`demoapp`, `bareapp`); the second
+  gate catches broken generators.
 - `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
 
-Other workflows, each explained by its own header: `release-tag.yml` (green `ci` on a release
-commit at an untagged version → annotated tag, Release, `release.yml` dispatched: merging the
-release PR is the release), `release.yml` (that dispatch or a **published** Release → npm via OIDC
+Other workflows: `release-tag.yml` (green `ci` on a release commit at an untagged version →
+annotated tag, Release, `release.yml` dispatched), `release.yml` (that dispatch or a **published**
+Release → npm via OIDC
 trusted publishing, after `check`), `registry-audit.yml` (daily; a `registry-drift` issue on
 disagreement), `deploy-social-demo.yml` (green `ci` on `main` → the demo image),
 `wiki.yml` (push to `main` → the GitHub wiki).

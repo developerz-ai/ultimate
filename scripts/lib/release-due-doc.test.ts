@@ -78,7 +78,7 @@ describe('unit · release-due-doc · the envelope table tracks DueDecision', () 
     const start = source.indexOf('export interface DueDecision {');
     expect(start, 'DueDecision vanished from release-due-rule.ts').toBeGreaterThanOrEqual(0);
     const interfaceLines = source.slice(start).split('\n');
-    const close = interfaceLines.findIndex((line) => line === '}');
+    const close = interfaceLines.indexOf('}');
     expect(close, 'DueDecision never closes').toBeGreaterThan(0);
     const body = interfaceLines.slice(0, close).join('\n');
     const fields = [...body.matchAll(/^\s{2}readonly ([a-z][a-zA-Z0-9]*)/gm)]

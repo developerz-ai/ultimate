@@ -195,6 +195,8 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const theme = themeBoot(await loadThemeMode(options.root));
   // The brand the served process carries, so an exported page and a served one paint alike.
   const brand = await loadThemeBrand(options.root);
+  // The app's own favicon is resolved by the DOCUMENT, per render, from the app root below — the
+  // link the served surfaces emit, so an exported document and a served one carry the same icon.
   // The client router, for the surfaces that opted in: written BEFORE any document names it, for
   // the register's reason below — `measureDocumentJs` weighs it off disk, and it is charged to
   // the route (the interactivity the app asked for), so it must be there to be weighed.
@@ -266,6 +268,9 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // Started on the first route that needs weighing, and released however the loop ends.
   const database = measureDatabase(options.root);
   const documentOptions = {
+    // The app root: the document resolves the app's own favicon from it, per render. `writeSiteAssets`
+    // above copied the icon into the artifact under the same hashed URL this resolves.
+    root: options.root,
     resolveIsland: (file: string) => islands.resolverFor(file),
     realtimeIslands: () => islands.realtime,
     themeHead: theme.head,

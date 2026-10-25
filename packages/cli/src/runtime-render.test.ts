@@ -1,6 +1,8 @@
 // The page half of `x dev`: a registered `route` primitive has to answer, in its declared mode,
 // with the headers that mode earns. Driven through `@ultimat3/http`'s real pipeline (`fetch()`,
-// no socket) so the authz stage is the same one production runs.
+// no socket) so the authz stage is the same one production runs. The document-level HEADS — the
+// install head, the theme boot and the app's favicon — are a second job and live in
+// `runtime-render-heads.test.ts`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { drain, RENDER_MODES, resetLifecycle } from '@ultimat3/core';
@@ -13,6 +15,7 @@ import {
   h,
   registerRoute,
   SURFACE_SPECS,
+  setAssetResolver,
   withStatus,
 } from '@ultimat3/render';
 import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
@@ -20,6 +23,7 @@ import { appRoutes } from './runtime-render';
 import { styleBundle } from './style-bundle';
 
 const BUILD_ID = 'build-under-test';
+type Data = { url: string; params: Record<string, string> };
 
 interface RouteFixture {
   readonly file: string;
@@ -32,19 +36,16 @@ interface RouteFixture {
 function register(fixture: RouteFixture): void {
   // Generic, matching the `defineRoute<…>` below: `RegisterRouteInput` defaults `TData` to
   // `RouteData`, and a `meta` written against `{ url, params }` cannot be handed a bare record.
-  const input: RegisterRouteInput<{ url: string; params: Record<string, string> }> = {
+  const input: RegisterRouteInput<Data> = {
     file: fixture.file,
     suspenseBoundaries: fixture.render === 'stream' ? 1 : 0,
     ...(fixture.component === undefined ? {} : { component: fixture.component }),
-    config: defineRoute<{ url: string; params: Record<string, string> }>({
+    config: defineRoute<Data>({
       render: fixture.render,
       offline: 'network-only',
       hydrate: 'never',
       budget: { js: '0kb' },
-      meta: (data) => ({
-        title: `title of ${fixture.file}`,
-        description: `rendered ${data.url}`,
-      }),
+      meta: (data) => ({ title: `title of ${fixture.file}`, description: `rendered ${data.url}` }),
       ...(fixture.policy === undefined ? {} : { policy: fixture.policy }),
       ...(fixture.revalidate === undefined ? {} : { revalidate: fixture.revalidate }),
     }),
@@ -52,13 +53,9 @@ function register(fixture: RouteFixture): void {
   registerRoute(input);
 }
 
-const serve = (pwaHead?: string, themeHead?: string): ReturnType<typeof httpServer> =>
+const serve = (): ReturnType<typeof httpServer> =>
   httpServer({
-    routes: appRoutes({
-      buildId: BUILD_ID,
-      ...(pwaHead === undefined ? {} : { pwaHead }),
-      ...(themeHead === undefined ? {} : { themeHead }),
-    }),
+    routes: appRoutes({ buildId: BUILD_ID }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
   });
@@ -76,6 +73,7 @@ beforeEach(() => {
 afterEach(() => {
   clearRoutes();
   clearStylesheets();
+  setAssetResolver(undefined);
   resetLifecycle();
 });
 
@@ -83,7 +81,6 @@ describe('unit · x dev renders the app routes, whatever ran before', () => {
   test('an earlier test leaves the lifecycle draining', () => {
     void drain('test-leak');
   });
-
   test('the next render still answers 200, not 503 X_DRAINING', async () => {
     register({ file: 'app/leak/page.tsx', render: 'ssr' });
     expect((await get('/leak')).status).toBe(200);
@@ -93,15 +90,14 @@ describe('unit · x dev renders the app routes, whatever ran before', () => {
 describe('unit · x dev renders the app routes', () => {
   test('a loader that answers withStatus(404) is a 404 with the route’s own page, in every mode', async () => {
     // Measured in ai-maxxing 2026-09-07: `/fleet/nope` rendered the app's "Not found" page inside
-    // its own shell and answered 200, because the only route to a 404 was a throw — which renders
-    // the framework's error page instead. The status rides on the data; this file mints it.
+    // its own shell and answered 200, because the only route to a 404 was a throw.
     for (const render of ['ssr', 'static', 'stream', 'isr'] as const) {
       clearRoutes();
       const surface = render === 'static' || render === 'isr' ? 'site' : 'app';
-      registerRoute<{ url: string; params: Record<string, string> }>({
+      registerRoute<Data>({
         file: `apps/web/${surface}/${render}/page.tsx`,
         suspenseBoundaries: render === 'stream' ? 1 : 0,
-        config: defineRoute<{ url: string; params: Record<string, string> }>({
+        config: defineRoute<Data>({
           render,
           offline: 'network-only',
           hydrate: 'never',
@@ -116,16 +112,15 @@ describe('unit · x dev renders the app routes', () => {
       expect(await response.text()).toContain(`<title>missing ${render}</title>`);
     }
   });
-
   test('setRedirect() from a load is a real 3xx, with no document rendered (#525)', async () => {
     let rendered = 0;
-    registerRoute<{ url: string; params: Record<string, string> }>({
+    registerRoute<Data>({
       file: 'apps/web/site/r/[token]/page.tsx',
       component: () => {
         rendered += 1;
         return h('p', {}, 'never');
       },
-      config: defineRoute<{ url: string; params: Record<string, string> }>({
+      config: defineRoute<Data>({
         render: 'ssr',
         offline: 'network-only',
         hydrate: 'never',
@@ -143,7 +138,6 @@ describe('unit · x dev renders the app routes', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     expect(rendered).toBe(0);
   });
-
   test("a route's declared cache reaches the response: 'no-store' on a public ssr page (#525)", async () => {
     registerRoute({
       file: 'apps/web/site/verificar/page.tsx',
@@ -159,7 +153,6 @@ describe('unit · x dev renders the app routes', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
   });
-
   test('a static page answers with its own head and content-hashed headers', async () => {
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     const response = await get('/');
@@ -173,7 +166,6 @@ describe('unit · x dev renders the app routes', () => {
     expect(body).toContain('<title>title of apps/web/site/page.tsx</title>');
     expect(body).toContain('<meta name="description" content="rendered http://dev.test/">');
   });
-
   test('every mode gets its own cache posture, from render and not from the CLI', async () => {
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     register({ file: 'apps/web/site/pricing/page.tsx', render: 'isr', revalidate: { ttl: '5m' } });
@@ -189,39 +181,29 @@ describe('unit · x dev renders the app routes', () => {
     expect(await cacheControl('/blog/hello')).toContain('s-maxage=30');
     expect(await cacheControl('/feed')).toBe('private, no-store');
   });
-
   test('two ISR URLs that differ only in their query are two documents, never one', async () => {
     // #171, the half a build error cannot close. `resultFor` keyed the ISR store on
-    // `url.pathname`, so `?page=2` and `?page=3` were ONE entry: the first render was stored under
-    // `/pricing` and every later query string was served that body.
+    // `url.pathname`, so `?page=2` and `?page=3` were ONE entry: the first render was stored
+    // under `/pricing` and every later query string was served that body.
     //
-    // ONE server for both requests, deliberately. `serve()` builds a fresh `IsrController` per
-    // call, so a test that used it twice could never observe a cache hit at all — it would pass
-    // against the leak and against the fix alike. The route's own `meta` renders `data.url`, so
-    // the served document names the URL it was rendered for and a collision is visible from
-    // outside rather than inferred from the store.
+    // ONE server for both requests: `serve()` builds a fresh `IsrController` per call, so a test
+    // that used it twice could never observe a cache hit. The route's `meta` renders `data.url`,
+    // so a collision is visible outside rather than inferred.
     register({ file: 'apps/web/site/pricing/page.tsx', render: 'isr', revalidate: { ttl: '5m' } });
     const server = serve();
     const fetchOnce = async (path: string): Promise<string> =>
       await (await server.fetch(new Request(`http://dev.test${path}`))).text();
 
-    const second = await fetchOnce('/pricing?page=2');
-    const third = await fetchOnce('/pricing?page=3');
-
-    expect(second).toContain('rendered http://dev.test/pricing?page=2');
-    expect(third).toContain('rendered http://dev.test/pricing?page=3');
+    expect(await fetchOnce('/pricing?page=2')).toContain('rendered http://dev.test/pricing?page=2');
+    expect(await fetchOnce('/pricing?page=3')).toContain('rendered http://dev.test/pricing?page=3');
   });
-
   test('two locales are two ISR documents, never one', async () => {
     // The document is rendered with `<html lang>` and every `t()` in the request's own locale, so
     // a key without it served visitor 2 the document negotiated for visitor 1 — for the whole TTL,
     // and `s-maxage` told the CDN to do the same. `examples/dummy` ships en + es and three `isr`
-    // routes, so this was every one of them.
-    //
-    // ONE server for both requests, for the reason the query test above gives: `serve()` builds a
-    // fresh `IsrController` per call, so two servers could never observe a cache hit at all.
-    // A `site/` page's locale is its URL's (`/es/pricing`), so the two visitors now differ by path
-    // AND by `ctx.locale` — the English one asked first, and the Spanish one must not get it.
+    // routes, so this was every one of them. ONE server for both requests, for the reason the
+    // query test above gives: a `site/` page's locale is its URL's, so the two visitors differ
+    // by path AND by `ctx.locale`.
     configureLocales({ supported: ['en', 'es'], fallback: 'en' });
     try {
       register({
@@ -241,13 +223,11 @@ describe('unit · x dev renders the app routes', () => {
       resetLocaleConfig();
     }
   });
-
   test('a dynamic segment reaches meta as a param, matched by the router', async () => {
     register({ file: 'apps/web/site/blog/[slug]/page.tsx', render: 'ssr' });
     const body = await (await get('/blog/hello-world')).text();
     expect(body).toContain('rendered http://dev.test/blog/hello-world');
   });
-
   test('a gated route is gated by the pipeline, not by a CLI check', async () => {
     register({
       file: 'apps/web/app/settings/page.tsx',
@@ -260,11 +240,9 @@ describe('unit · x dev renders the app routes', () => {
       type: expect.stringContaining('X_UNAUTHENTICATED'),
     });
   });
-
   // The reload half of the test above: `app-load.ts` replaces the entry for a saved route module
-  // under a server whose route table was built at boot. The handler read the new entry from the
-  // first save; the pipeline's `meta` was a snapshot, so a policy ADDED by that save gated nothing
-  // until a restart — the new page, served under the old guard.
+  // under a server whose route table was built at boot. The pipeline's `meta` was a snapshot, so
+  // a policy ADDED by that save gated nothing until a restart — the new page, the old guard.
   test('a policy added by a reload is enforced on the next request, on the same server', async () => {
     const file = 'apps/web/app/settings/page.tsx';
     register({ file, render: 'ssr' });
@@ -282,27 +260,23 @@ describe('unit · x dev renders the app routes', () => {
     register({ file, render: 'ssr' });
     expect((await fetch()).status).toBe(200);
   });
-
   test('a streamed page arrives as a stream, chunked and unbuffered', async () => {
     register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
     const response = await get('/feed');
     expect(response.headers.get('x-accel-buffering')).toBe('no');
     expect(await response.text()).toContain('<title>title of apps/web/app/feed/page.tsx</title>');
   });
-
   test('an unregistered path is a 404, not a blank page', async () => {
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     expect((await get('/nope')).status).toBe(404);
   });
-
   test('no registered routes means no page routes — and no crash', () => {
     expect(appRoutes({ buildId: BUILD_ID })).toEqual([]);
   });
-
   // Driven off `RENDER_MODES` and not off a list written here, because the defect it closes was a
   // mode with no renderer at all: `spa` never reached `routeBody`, so every `spa` route in every
-  // app served `<div id="x-root"></div>` — a blank page, 200, correct headers, for the framework's
-  // whole history. A mode that forgets its body is now a red test rather than a shipped blank page.
+  // app served an empty root — a blank page, 200, correct headers, for the framework's whole
+  // history. A mode that forgets its body is now a red test rather than a shipped blank page.
   test('every render mode puts the route component inside the hydration root', async () => {
     for (const mode of RENDER_MODES) {
       clearRoutes();
@@ -318,7 +292,6 @@ describe('unit · x dev renders the app routes', () => {
       expect(body).toContain(`<div id="x-root"><main class="probe">${mode}</main></div>`);
     }
   });
-
   test("a route's component reaches the body, inside the hydration root", async () => {
     register({
       file: 'apps/web/site/page.tsx',
@@ -329,16 +302,12 @@ describe('unit · x dev renders the app routes', () => {
     expect(body).toContain('<div id="x-root"><main class="hero"><h1>http://dev.test/</h1></main>');
     expect(body).not.toContain('<div id="x-root"></div>');
   });
-
   test('a module with no component still serves its shell, never a 404', async () => {
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     expect(await (await get('/')).text()).toContain('<div id="x-root"></div>');
   });
-
   // The document LINKS its surface stylesheet and carries none of it. Both halves matter: the
-  // bytes leaving the document is the fix (156,738 of them, in a `no-store` response, on every
-  // navigation), and the per-surface split is axiom 6 — a `site/` page must not be handed `app/`
-  // CSS, whether inline or by href.
+  // bytes leaving the document is the fix, and the per-surface split is axiom 6.
   test('the surface CSS is linked, not inlined, and a site page never links app CSS', async () => {
     loadStylesheet('/srv/demo/apps/web/site/page.module.scss', '.hero{color:red}');
     loadStylesheet('/srv/demo/apps/web/app/feed/page.module.scss', '.feed{color:blue}');
@@ -350,16 +319,14 @@ describe('unit · x dev renders the app routes', () => {
     expect(body).toContain(`<link rel="stylesheet" href="${site}">`);
     expect(body).not.toContain(String(styleBundle().hrefFor('app')));
     // In `<head>`, which is the whole of "no flash of unstyled content": a `<link>` there is
-    // render-blocking in every browser, exactly as the inline block was. Anywhere else it is not,
-    // and the page paints naked first. Sliced rather than compared with `indexOf`, which answers
-    // `-1` and passes a `toBeLessThan` when the thing it orders was never emitted.
+    // render-blocking in every browser, exactly as the inline block was. Anywhere else the page
+    // paints naked first. Sliced rather than `indexOf`, which answers `-1` and passes a
+    // `toBeLessThan` when the thing it orders was never emitted.
     expect(body).toContain('</head>');
     expect(body.split('</head>')[0] ?? '').toContain('<link rel="stylesheet"');
   });
-
   // `<html lang>` was the literal `'en'` on every document this file emits, while the pipeline's
-  // `locale` stage had negotiated the real one a stage earlier. A screen reader and `hreflang`
-  // both read that attribute, so the constant was wrong for every non-English request.
+  // `locale` stage had negotiated the real one a stage earlier — wrong for every non-English.
   test("`<html lang>` is the request's negotiated locale, never a constant", async () => {
     register({ file: 'apps/web/site/page.tsx', render: 'static' });
     register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
@@ -370,10 +337,9 @@ describe('unit · x dev renders the app routes', () => {
     // No preference is the app's configured fallback, which is where `'en'` legitimately comes from.
     expect(await (await get('/')).text()).toContain('<html lang="en">');
   });
-
   // A `site/` page is prerendered once per locale and a CDN serves `/` as ONE file, so the served
-  // process may not negotiate it either: `/` answered German to a German browser from `x dev` and
-  // the default from the export — the prod bug that made every Spanish-default site English.
+  // process may not negotiate it either — the prod bug that made every Spanish-default site
+  // English.
   test('a site page is its URL`s locale: the default unprefixed, `/<locale>/` otherwise', async () => {
     configureLocales({ supported: ['en', 'de'], fallback: 'en' });
     try {
@@ -394,7 +360,6 @@ describe('unit · x dev renders the app routes', () => {
       resetLocaleConfig();
     }
   });
-
   test('a streamed page flushes the component in its first chunk', async () => {
     register({
       file: 'apps/web/app/feed/page.tsx',
@@ -402,82 +367,5 @@ describe('unit · x dev renders the app routes', () => {
       component: () => h('section', null, 'feed'),
     });
     expect(await (await get('/feed')).text()).toContain('<section>feed</section>');
-  });
-
-  // #362: `pwa.enabled` had no reader, so no document any Ultimate app served ever carried a
-  // manifest link and no browser would offer to install one. The head is a document-level string
-  // rather than a per-route `meta()` member because an installable app is one whose EVERY page
-  // carries it — a visitor lands on whichever page they land on.
-  describe('the install head, on every mode and every page', () => {
-    const PWA_HEAD = '<link rel="manifest" href="/manifest.webmanifest">';
-
-    // Every (surface, mode) pair the framework allows, DERIVED from `SURFACE_SPECS` rather than
-    // listed: a mode added to a surface joins this test on its own, and `documentFrom` is not the
-    // only place a head is assembled.
-    const PAGES = [
-      { surface: 'site', file: 'apps/web/site/page.tsx', url: '/' },
-      { surface: 'app', file: 'apps/web/app/feed/page.tsx', url: '/feed' },
-    ] as const;
-    const CASES = PAGES.flatMap((page) =>
-      SURFACE_SPECS[page.surface].allowedModes.map((render) => ({ ...page, render })),
-    );
-
-    test.each(CASES)('$surface/ in $render carries it', async ({ file, url, render }) => {
-      // `isr` is the one mode whose shape check demands a TTL; every other one takes none.
-      register({ file, render, ...(render === 'isr' ? { revalidate: { ttl: '5m' } } : {}) });
-      const response = await serve(PWA_HEAD).fetch(new Request(`http://dev.test${url}`));
-      expect(await response.text()).toContain(PWA_HEAD);
-    });
-
-    // The `stream` branch builds its head separately from `documentFrom`, so it is the one that
-    // could carry the link and lose the title, or the reverse. Both, in the first flush.
-    test('a streamed page carries it beside its own title, in the first flush', async () => {
-      register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
-      const body = await (await serve(PWA_HEAD).fetch(new Request('http://dev.test/feed'))).text();
-      expect(body).toContain('<title>title of apps/web/app/feed/page.tsx</title>');
-      expect(body).toContain(PWA_HEAD);
-    });
-
-    // The 0kb baseline: an app that is not installable pays nothing, and a `<link>` to a file no
-    // route serves is a 404 in every visitor's console.
-    test('an app that is not installable carries nothing', async () => {
-      register({ file: 'apps/web/site/page.tsx', render: 'static' });
-      expect(await (await get('/')).text()).not.toContain('rel="manifest"');
-    });
-  });
-
-  // The no-flash theme boot rides the same document-level seam, and its ORDER is the point: it
-  // must run before the render-blocking stylesheet paints, or the first frame is the wrong scheme.
-  describe('the theme boot, before the stylesheet, on every mode', () => {
-    const THEME_HEAD =
-      '<script>document.documentElement.setAttribute("data-theme","dark")</script>';
-    const PAGES = [
-      { surface: 'site', file: 'apps/web/site/page.tsx', url: '/' },
-      { surface: 'app', file: 'apps/web/app/feed/page.tsx', url: '/feed' },
-    ] as const;
-    const CASES = PAGES.flatMap((page) =>
-      SURFACE_SPECS[page.surface].allowedModes.map((render) => ({ ...page, render })),
-    );
-
-    test.each(CASES)('$surface/ in $render carries it in <head>', async ({ file, url, render }) => {
-      register({ file, render, ...(render === 'isr' ? { revalidate: { ttl: '5m' } } : {}) });
-      const body = await (
-        await serve(undefined, THEME_HEAD).fetch(new Request(`http://dev.test${url}`))
-      ).text();
-      const head = body.slice(0, body.indexOf('</head>'));
-      expect(head).toContain(THEME_HEAD);
-    });
-
-    test('it precedes the stylesheet link when the surface has one', async () => {
-      loadStylesheet('/srv/demo/apps/web/site/page.module.scss', '.a{color:red}');
-      register({ file: 'apps/web/site/page.tsx', render: 'static' });
-      const body = await (
-        await serve(undefined, THEME_HEAD).fetch(new Request('http://dev.test/'))
-      ).text();
-      const script = body.indexOf(THEME_HEAD);
-      const link = body.indexOf('rel="stylesheet"');
-      expect(script).toBeGreaterThan(-1);
-      expect(link === -1 || script < link).toBe(true);
-    });
   });
 });

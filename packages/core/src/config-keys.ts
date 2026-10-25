@@ -14,6 +14,7 @@ import type {
   PwaShortcut,
   PwaVapidConfig,
 } from './config-pwa';
+import type { SiteConfig } from './config-site';
 import { ConfigInvalidError } from './errors';
 import { isJsonObject } from './json-object';
 import { nearestName } from './nearest-name';
@@ -60,6 +61,7 @@ export const SECTION_KEYS: Readonly<Record<string, readonly string[]>> = Object.
   'pwa.shortcuts[].icons[]': keysOf<PwaImage>()(['src', 'sizes', 'type', 'purpose']),
   'pwa.screenshots[]': keysOf<PwaScreenshot>()(['src', 'sizes', 'type', 'formFactor', 'label']),
   'mail.retainMime': keysOf<MailRetainMimeConfig>()(['maxBytes']),
+  site: keysOf<SiteConfig>()(['origin', 'favicon']),
   navigation: keysOf<NavigationConfig>()(['client', 'speculation']),
   'navigation.speculation': keysOf<SpeculationConfig>()(['prefetch', 'exclude']),
 });
