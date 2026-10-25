@@ -9,6 +9,7 @@
 import '../packages/testing/src/quiet-logs';
 import { closeE2eBrowsersAtRunEnd } from '../packages/testing/src/cdp-browser-lease';
 import { installDeterminism } from '../packages/testing/src/determinism';
+import { onFileBoundary } from '../packages/testing/src/file-boundary';
 import { registerFrameworkFixtures } from '../packages/testing/src/framework-fixtures';
 import '../packages/testing/src/matchers';
 import { installRenderLoader } from '../packages/render/src/module-loader';
@@ -51,6 +52,14 @@ installRenderLoader();
 // The per-TEST half, the same one an app's preload installs: the jobs event bus STORES what it is
 // handed, so an answer one test published would resume the next test's waiting run.
 installPerTestReset();
+
+// The per-FILE half, the same one an app's preload installs: the LIFECYCLE is one process' too, and
+// a drain is terminal. A file that drained the process — or that emitted a real SIGINT at it, as a
+// signal test does — left every later file on the worker answering 503 X_DRAINING for a reason
+// nothing in that file explains. Each file starts from a live lifecycle, as a file run alone would
+// have it.
+const { resetLifecycle } = await import('@ultimat3/core');
+onFileBoundary(resetLifecycle);
 
 // Opt-out is an env var, not an API, so no test file can quietly unseal the network for itself.
 if (Bun.env['ULTIMATE_TEST_ALLOW_NET'] !== '1') sealNetwork();

@@ -54,11 +54,18 @@ installPerTestReset();
 // actor's bucket left it spent for the next file on the worker, so a "the 31st call is a 429" test
 // was red whenever another file calling that action ran first. Each file starts with full buckets,
 // the store back to one process' memory, as a file run alone would have it.
+//
+// And the LIFECYCLE, which is one process' too: a drain is terminal, so a file that drained the
+// process — or that emitted a real SIGINT at it, as a signal test does — left every later file on
+// the worker answering 503 X_DRAINING for a reason nothing in that file explains. Each file starts
+// from a live lifecycle, as a file run alone would have it.
 if (Bun.env[ISOLATED_ENV] !== '1') {
   const { forgetHandedOutActionPaths } = await import('@ultimat3/action');
   onFileBoundary(forgetHandedOutActionPaths);
   const { resetRateLimitStore } = await import('@ultimat3/http');
   onFileBoundary(resetRateLimitStore);
+  const { resetLifecycle } = await import('@ultimat3/core');
+  onFileBoundary(resetLifecycle);
 }
 
 // Isolated runs only (`x test` says so): Bun keeps every finished file alive while a plugin is

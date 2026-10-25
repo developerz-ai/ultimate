@@ -4,7 +4,7 @@
 
 import type { Actor } from '@ultimat3/core';
 import { assert, ctxOf, runWithContext } from '@ultimat3/core';
-import type { IslandDirective, RouteConfig, RouteParams } from '@ultimat3/render';
+import type { AssetPath, IslandDirective, RouteConfig, RouteParams } from '@ultimat3/render';
 
 /** What a component rendered. */
 export interface RenderedView {
@@ -24,6 +24,16 @@ export interface RenderedRoute<TData> extends RenderedView {
   readonly meta: Awaited<ReturnType<RouteConfig<TData>['meta']>>;
   /** The islands this render emitted, in order. Empty on a page that ships no JavaScript. */
   readonly islands: readonly IslandDirective[];
+  /**
+   * The app-wide favicon's URL, when one was declared and the app's site asset table answered:
+   * the content-hashed URL `/assets/*` serves — the same one the document's
+   * `<link rel="icon" type="image/svg+xml">` carries.
+   *
+   * `undefined` when the app declares no favicon, and `undefined` when the URL cannot be
+   * resolved: a unit test that never loaded the app has no site asset table installed, and a
+   * route still renders.
+   */
+  readonly favicon?: string | undefined;
 }
 
 /**
@@ -42,6 +52,16 @@ export interface RouteRequest {
   readonly params?: RouteParams;
   /** Who is asking. `load` and the page run inside a request context holding this actor. */
   readonly actor?: Actor;
+  /**
+   * The app's favicon — the app-wide declaration in `app.config.ts` (`site.favicon`), the one
+   * SVG every document of the app links. It is the APP's fact, not the route's: the route
+   * repeats nothing, and the render resolves it through the app's own site asset table so a
+   * test can see the URL `/assets/*` will serve.
+   *
+   * Optional: an app that declares no favicon, and a test that never loaded the app, both ask
+   * for a route with no favicon to resolve.
+   */
+  readonly favicon?: AssetPath | undefined;
 }
 
 const DEFAULT_URL = 'http://localhost/';
@@ -63,6 +83,29 @@ const visibleText = (html: string): string =>
     .trim();
 
 const viewOf = (html: string): RenderedView => ({ html, text: visibleText(html) });
+
+/**
+ * The favicon's URL through the app's own site asset table — `asset()`'s answer, the same URL
+ * the document's `<link rel="icon">` carries and `/assets/*` serves.
+ *
+ * `undefined` when the app declares no favicon, and `undefined` when the URL cannot be
+ * resolved: a unit test that never loaded the app has no site asset table installed, and
+ * `asset()` refuses by name there. A route render is not a document, so a favicon it cannot
+ * resolve is no reason to fail the render — the app's BOOT is where a declared favicon that is
+ * not on disk is refused (`X_ASSET_MISSING`), and a test asks about a route, not about the
+ * app's icon.
+ */
+const faviconUrl = async (
+  render: typeof import('@ultimat3/render'),
+  favicon: AssetPath | undefined,
+): Promise<string | undefined> => {
+  if (favicon === undefined) return undefined;
+  try {
+    return render.asset(favicon);
+  } catch {
+    return undefined;
+  }
+};
 
 /**
  * Render one component with the props a page would hand it. The props are the component's own
@@ -102,6 +145,9 @@ export async function renderRoute<TData>(
   const url = request.url ?? DEFAULT_URL;
   const ctx = { params: request.params ?? {}, url };
   const islands = render.islandCollector({ file: url, hydrate: config.hydrate });
+  // The app's favicon, resolved through the app's own asset table — and skipped when there is
+  // no table to ask, so a route renders with no favicon setup at all.
+  const favicon = await faviconUrl(render, request.favicon);
 
   const run = async (): Promise<RenderedRoute<TData>> => {
     const data = await render.routeDataFor(config, ctx);
@@ -110,7 +156,7 @@ export async function renderRoute<TData>(
     const html = await renderToHtml(component({ data, params: ctx.params, url, query }), {
       islands,
     });
-    return { ...viewOf(html), data, meta, islands: islands.directives };
+    return { ...viewOf(html), data, meta, islands: islands.directives, favicon };
   };
 
   if (request.actor === undefined) return run();

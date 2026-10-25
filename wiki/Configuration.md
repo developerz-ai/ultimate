@@ -267,10 +267,14 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
 ## `site` and `seo`
 
-`As of 22.3.0`. The public origin every absolute URL is built against, and what a production `robots.txt` keeps crawlers out of.
+`As of 2026-10`. The public origin every absolute URL is built against, the app's own favicon, and what a production `robots.txt` keeps crawlers out of.
 
 ```ts
-site: { origin: 'https://www.example.com' },
+site: {
+  origin: 'https://www.example.com',
+  // The app's SVG favicon, under the app's site assets. Every document carries it.
+  favicon: 'assets/brand/icon.svg',
+},
 seo: {
   robots: {
     disallow: ['/panel', '/api'],
@@ -287,6 +291,7 @@ seo: {
 | field | type | default | notes |
 |---|---|---|---|
 | `site.origin` | `string \| null` | `null` | scheme + host (+ port) only; a path, query or fragment is `X_CONFIG_INVALID`. Canonical, `og:url`, hreflang and the sitemap are absolute against the first of `APP_URL`, `SITE_ORIGIN`, `site.origin`; with none, the request's own origin (served) or `https://localhost` (static build, which warns on stderr when `ULTIMATE_ENV=production`) |
+| `site.favicon` | `string \| undefined` | `undefined` | the app's own SVG favicon, named as a site asset path (`assets/brand/icon.svg`) — the file lives under `apps/web/site/assets/`. Every rendered document carries `<link rel="icon" type="image/svg+xml" href="…">` at the content-hashed URL `/assets/*` serves, never the raw path; the URL is hashed per render, so an edited icon moves the href. A path that is not an `assets/…` SVG, or one with an empty, `.` or `..` segment, is `X_CONFIG_INVALID`; a declared file that is not on disk is `X_ASSET_MISSING`, raised while the page renders. Undeclared: no link, and the browser's own `/favicon.ico` request is the only one. `As of 2026-10` |
 | `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to **every** production group — a crawler obeys only the group that names it — with a `User-agent: *` group emitted when none is declared. Any other environment still emits `Disallow: /` alone |
 | `seo.robots.groups` | `{ userAgent, allow?, disallow?, crawlDelay? }[]` | `[]` | per-crawler `User-agent` groups of a production `robots.txt`. Empty: one `User-agent: *` group allowing `/`. Declared, they ARE the groups — a crawler obeys only the one naming it most specifically, so name `*` among them for everyone else. `userAgent` a non-empty string or list; `allow`/`disallow` paths start with `/`; `crawlDelay` seconds ≥ 0 — anything else is `X_CONFIG_INVALID`, by index. Shapes `robots.txt` only: the sitemap is filtered by `seo.robots.disallow`. `As of 27.16.0` |
 | `seo.sitemap.extra` | `string[]` | `[]` | public pages outside `site/` to list — a path (`/verificar`) answered by an `app/` route with no `policy`; listed per routed locale with hreflang alternates like a `site/` page. No origin, query or fragment (`X_CONFIG_INVALID`); a path no ungated `app/` route answers is `X_SITEMAP_EXTRA_INVALID` when the sitemap is built. `As of 22.10` |
