@@ -4,19 +4,17 @@ social-media-clone — a real social network on Ultimate, and the framework's st
 A router, not an encyclopedia. Facts live in `x.manifest.json`; this file holds what you cannot
 infer from the code.
 
-`x verify` here is **blocking on the framework repo's CI**, through the ratchet in
-`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `budgets` alone, and every
-other step must stay green. That table is the executable copy — read it, and
+`x verify` here is **blocking on the framework repo's CI**. The `dummy/social-media-clone`
+entry's `expectedRed` in [`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts) is the
+authoritative pin inventory; read it rather than keeping a second list here. An empty table means
+every step must stay green. Any unpinned failure is a regression, not a reason to add a pin.
 `bun run ../../scripts/reference-app-gate.ts` re-derives the verdict (it builds first, as
-`bun run check` does), rather than trusting the sentence below it.
+`bun run check` does).
 
-| Pinned step | Red today, and the repair |
-|---|---|
-| `budgets` | `X_BUDGET_UNMEASURED` on `/messages/:id` alone: the build's measuring pass renders it with empty params, and its `load` refuses with `X_NOT_A_PARTICIPANT` — correctly. Repaired in the measuring pass (plan 101 slice 11 m), never by catching the denial or dropping the `budget:` |
-
-`examples/dummy` has its own table; neither app's pins excuse the other's red step. Turn a pinned step green and you must
-delete its pin in the same change
-(`bun run ../../scripts/reference-app-gate.ts --unpin dummy/social-media-clone:<step>`). This app is not the reference app — `examples/dummy` decides idiom — but it is deployed
+Pins are per-app: `examples/dummy` has its own table, and neither app's pins excuse the other's
+red step. If an existing pinned step turns green, remove its pin in the same change
+(`bun run ../../scripts/reference-app-gate.ts --unpin dummy/social-media-clone:<step>`).
+This app is not the reference app — `examples/dummy` decides idiom — but it is deployed
 (`.github/workflows/deploy-social-demo.yml`), which is why it is gated.
 
 ## Response rules
