@@ -32,7 +32,7 @@ export const config = defineConfig({
 
 Everything derivable from code is **not** in this file — routes, actions, policies, jobs, tags all live in the generated `x.manifest.json`. Inspect the resolved config with `x config show --json`.
 
-`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `seo`, `budgets`, `mail`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
+`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly these keys `As of 2026-10-06`: `name`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `notify`, `ai`, `drain`, `health`, `site`, `seo`, `navigation`, `islands`, `mail`. That type is the contract, and **every table below names only its members** — a block with no key here (`http`, `budgets`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
 
 **The shape is closed**, `As of 25.0.0`: a key `defineConfig` does not declare — at any depth, in `app.config.ts` or any `config/*.ts` overlay — is refused at boot with `X_CONFIG_INVALID`, naming the full path and the nearest real key (`drian is not an app.config.ts key — did you mean drain?`, fix `rename drian to drain in app.config.ts`). Before 25.0.0 `section()` copied an unknown key through and nothing read it, so a typo or a JS config that skipped the compiler was a switch with no wire. A key an earlier major **deleted** gets its own refusal first, naming the major and the replacement (`REMOVED_CONFIG_KEYS` in [`packages/core/src/config-removed.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-removed.ts)). The known keys are the defaults' own plus `SECTION_KEYS` in [`packages/core/src/config-keys.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-keys.ts) — the members with no default (`pwa.id`, `pwa.shortcuts[]`, `pwa.colors`, `mail.retainMime`, `navigation`), each row checked against its interface by `tsc`. The only positions whose keys an app chooses are `OPEN_CONFIG_PATHS`: the locale-keyed manifest texts (`pwa.description`, a shortcut's `name`/`shortName`/`description`, a screenshot's `src`/`label`). A key written as `undefined` is a layer not saying, and is never refused.
 
@@ -267,32 +267,46 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
 ## `site` and `seo`
 
-`As of 22.3.0`. The public origin every absolute URL is built against, and what a production `robots.txt` keeps crawlers out of.
+`As of 2026-10`. Supported `app.config.ts` blocks: the public origin, production crawler directives and sitemap generation. The types and defaults are `SiteSectionsInput`, `SeoConfigInput` and `mergeSite` in [`packages/core/src/config-site.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config-site.ts); `AppConfigInput` extends `SiteSectionsInput`.
 
 ```ts
-site: { origin: 'https://www.example.com' },
-seo: {
-  robots: {
-    disallow: ['/panel', '/api'],
-    // Everyone may fetch /s/ (link previews unfurl, Google reads its noindex); AI crawlers may not.
-    groups: [
-      { userAgent: '*', allow: ['/'] },
-      { userAgent: ['GPTBot', 'CCBot', 'ClaudeBot', 'archive.org_bot'], disallow: ['/s/'] },
-    ],
+import { defineConfig } from '@ultimat3/core';
+
+export const config = defineConfig({
+  name: 'postly',
+  site: { origin: 'https://www.example.com' },
+  seo: {
+    robots: {
+      disallow: ['/panel', '/api'],
+      // Everyone may fetch /s/ (link previews unfurl, Google reads its noindex); AI crawlers may not.
+      groups: [
+        { userAgent: '*', allow: ['/'] },
+        { userAgent: ['GPTBot', 'CCBot', 'ClaudeBot', 'archive.org_bot'], disallow: ['/s/'] },
+      ],
+    },
+    sitemap: {
+      extra: ['/verificar', '/estado'],
+      lastmod: 'git',
+      sections: [{ name: 'blog', match: '/blog/**' }],
+      pageSize: 50000,
+    },
   },
-  sitemap: { extra: ['/verificar', '/estado'], lastmod: 'git' },
-},
+});
 ```
+
+The example assumes `/verificar` and `/estado` already match registered `app/` routes declaring **no policy**. `extra` lists existing public pages; it does not create routes or bypass authorization. Unknown paths, `site/` pages (already listed) and policy-gated routes are refused with `X_SITEMAP_EXTRA_INVALID` when the sitemap is built.
+
+Only the exact environment `production` emits the configured robots groups and a sitemap directive. Every other environment emits `User-agent: *` and `Disallow: /`, with no sitemap advertised. Global `seo.robots.disallow` rules also filter sitemap URLs; group-only `allow`/`disallow` rules affect `robots.txt` only, not sitemap membership.
 
 | field | type | default | notes |
 |---|---|---|---|
 | `site.origin` | `string \| null` | `null` | scheme + host (+ port) only; a path, query or fragment is `X_CONFIG_INVALID`. Canonical, `og:url`, hreflang and the sitemap are absolute against the first of `APP_URL`, `SITE_ORIGIN`, `site.origin`; with none, the request's own origin (served) or `https://localhost` (static build, which warns on stderr when `ULTIMATE_ENV=production`) |
-| `seo.robots.disallow` | `string[]` | `[]` | each starts with `/`. Added to **every** production group — a crawler obeys only the group that names it — with a `User-agent: *` group emitted when none is declared. Any other environment still emits `Disallow: /` alone |
-| `seo.robots.groups` | `{ userAgent, allow?, disallow?, crawlDelay? }[]` | `[]` | per-crawler `User-agent` groups of a production `robots.txt`. Empty: one `User-agent: *` group allowing `/`. Declared, they ARE the groups — a crawler obeys only the one naming it most specifically, so name `*` among them for everyone else. `userAgent` a non-empty string or list; `allow`/`disallow` paths start with `/`; `crawlDelay` seconds ≥ 0 — anything else is `X_CONFIG_INVALID`, by index. Shapes `robots.txt` only: the sitemap is filtered by `seo.robots.disallow`. `As of 27.16.0` |
+| `seo.robots.disallow` | `string[]` | `[]` | each starts with `/` and contains no line breaks. Added to **every** production group and used to filter the sitemap. A `User-agent: *` group is appended if global rules exist and no declared group names `*`. Other environments block all crawling, as above |
+| `seo.robots.groups` | `{ userAgent, allow?, disallow?, crawlDelay? }[]` | `[]` | per-crawler `User-agent` groups of a production `robots.txt`. Empty: one `User-agent: *` group allowing `/`. Declared, they ARE the groups — a crawler obeys only the one naming it most specifically, so name `*` among them for everyone else. `userAgent` a non-blank string or non-empty list of non-blank strings, with no line breaks; `allow`/`disallow` paths start with `/` and contain no line breaks; `crawlDelay` finite seconds ≥ 0 — anything else is `X_CONFIG_INVALID`, by index. Shapes `robots.txt` only: the sitemap is filtered by `seo.robots.disallow`. `As of 27.16.0` |
 | `seo.sitemap.extra` | `string[]` | `[]` | public pages outside `site/` to list — a path (`/verificar`) answered by an `app/` route with no `policy`; listed per routed locale with hreflang alternates like a `site/` page. No origin, query or fragment (`X_CONFIG_INVALID`); a path no ungated `app/` route answers is `X_SITEMAP_EXTRA_INVALID` when the sitemap is built. `As of 22.10` |
 | `seo.sitemap.lastmod` | `'none' \| 'git' \| 'mtime' \| 'build'` | `'none'` | each `<lastmod>`: `'git'` the last commit touching the route's source file (its mtime where there is no work tree — a container image), `'mtime'` the file's mtime, `'build'` one timestamp for every URL. Read once per file per process. `As of 22.10` |
-| `seo.sitemap.sections` | `{ name, match }[]` | `[]` | any declared: `/sitemap.xml` is an index of `/sitemaps/<name>-<n>.xml`, pages no section matches under the reserved `pages`. `name` a lower-case slug, unique; `match` a path pattern or a list (`/precios`, `/blog/*`, `/blog/**`), read against the path without its locale prefix. Anything else is `X_CONFIG_INVALID`. [SEO](SEO#sections-an-index-by-configuration). `As of 2026-10` |
-| `seo.sitemap.pageSize` | `number` | `50000` | `<url>` entries per sitemap file, 1–50,000 (the sitemaps.org cap). A file past 50 MB splits further whatever this says. `As of 2026-10` |
+| `seo.sitemap.sections` | `{ name, match }[]` | `[]` | any declared: `/sitemap.xml` is an index of `/sitemaps/<name>-<n>.xml`, pages no section matches under the reserved `pages`. `name` a unique lower-case slug (a-z, 0-9, single hyphens, at most 64 characters), never reserved `pages`; `match` a path pattern or non-empty list (`/precios`, `/blog/*`, `/blog/**`), without origin, query or fragment. `*` occupies a whole segment; `**` is allowed only as the final segment. Matched without the locale prefix; first matching section wins. Anything else is `X_CONFIG_INVALID`. [SEO](SEO#sections-an-index-by-configuration). `As of 2026-10` |
+| `seo.sitemap.pageSize` | `number` | `50000` | `<url>` entries per sitemap file, a whole number from 1–50,000 (the sitemaps.org cap); invalid values are `X_CONFIG_INVALID`. A file past 50 MB splits further whatever this says. `As of 2026-10` |
 
 ## `pwa`
 
@@ -414,16 +428,11 @@ configureHttp({
 
 An **embedder** that builds its own server — `httpServer({ routes, config: defineHttpConfig({ … }) })` — passes the whole `HttpConfigInput`, boot-owned keys included, and owns every consequence: that is the one path on which `X_RATE_LIMIT_SCOPE_UNSET` and `X_TRUST_PROXY_UNSET` are reachable.
 
-## `seo`
+## SEO settings versus Lighthouse thresholds
 
-**Not an `app.config.ts` block.** There is no `seo` key on `AppConfigInput`. `@ultimat3/seo`'s builders take their options at the call site, from the route that renders them:
+**`site` and `seo` are supported `app.config.ts` blocks.** See the [site and seo reference](#site-and-seo) above for the origin, robots groups and sitemap options, and [SEO](SEO) for generated SEO behavior.
 
-| Call | Options | Notes |
-|---|---|---|
-| `buildRobots(config)` | `baseUrl`, `environment?`, `groups?`, `disallow?`, `sitemaps?`, `extra?` | **fail-closed**: only the exact string `production` opts a deploy into indexing, so staging, a laptop, a typo and an unset `ULTIMATE_ENV` all emit `Disallow: /` — a branch deploy that gets indexed outranks and cannibalises the real site. `environment` omitted resolves from `ULTIMATE_ENV`, and an unreadable one falls back to core's default rather than 500ing a `robots.txt` |
-| `buildSitemap(routes, options)` | `baseUrl`, `locales?`, `localizePath?`, `defaultLocale?`, `maxUrls?`, `maxBytes?`, `lastmod?`, `sections?`, `disallow?`, `now?` | splits past `SITEMAP_MAX_URLS` (50,000) or `SITEMAP_MAX_BYTES` (50 MB) into the index `/sitemap.xml` and parts `/sitemaps/<n>.xml` (`SITEMAP_PARTS_DIR`), which the web role serves from `GET /sitemaps/:file`; with `sections`, always an index of `/sitemaps/<name>-<n>.xml`. `maxUrls` must be a positive integer — `0` never advances the chunk cursor and used to allocate empty slices until the box ran out of memory |
-
-`baseUrl` is the argument every one of them takes, so the canonical origin stays an env key the app reads (`APP_URL`) and never a config field. There is no `seo.lighthouse` gate and no `seo.ogImage` renderer `As of 2026-08-22`.
+**Lighthouse thresholds are not shipped**, `As of 2026-10`: there is no `seo.lighthouse` configuration or Lighthouse threshold gate. The supported robots and sitemap settings do not configure performance scoring. For the shipped per-route JavaScript byte budget, see [budgets](#budgets).
 
 ## `budgets`
 
