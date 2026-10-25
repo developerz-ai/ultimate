@@ -92,6 +92,10 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
   // `site.origin` and `seo.robots.disallow`: the absolute URLs every document and the sitemap carry.
   const site = await loadSiteSettings(input.root);
   const origin = publicOrigin(input.env, site);
+  // The app's own favicon is NOT resolved here: the document resolves it, per render, from the
+  // app root below. The route table is built once and the watcher rebuilds only the manifest and
+  // the islands, so a head minted at boot would name the icon's bytes as they were and go stale
+  // on the first save.
   // The same call `serve.ts` makes, so the two boots cannot serve different sync targets.
   const sync = await pageSync(input.root, input.env, input.buildId, input.realtime);
   // The client router, when a surface opted in (`navigation.client`) — the same call in both boots.
@@ -186,6 +190,8 @@ export async function devRouteTable(input: DevRouteTableInput): Promise<DevRoute
     }),
     ...appRoutes({
       buildId: input.buildId,
+      // The app root: the document resolves the app's own favicon from it, per render.
+      root: input.root,
       ...(input.isr === undefined ? {} : { isr: input.isr }),
       resolveIsland: (file) => input.islands().resolverFor(file),
       realtimeIslands: () => input.islands().realtime,

@@ -60,7 +60,9 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Configuration: mail: { retainMime: { maxBytes: 262_144 } },': 1,
   "Configuration: navigation: { client: ['app'], speculation: { prefetch: 'moderate', exclude: [] } },": 1,
   'Configuration: pwa: {': 1,
-  "Configuration: site: { origin: 'https://www.example.com' },": 1,
+  // why: re-keyed, not raised — the site.favicon doc widened this fence past one line; same
+  // site, same count, and the fragment still cannot stand alone, like the `pwa: {` one above.
+  'Configuration: site: {': 1,
   'Contributing: throw new UltimateError({': 1,
   'Entities-And-Migrations: // One `select … where "id" in ($1, $2, $3, …)`, not one statement per post.': 1,
   'Entities-And-Migrations: // One statement for all of `ids`, not one `select count(*)` per post.': 1,

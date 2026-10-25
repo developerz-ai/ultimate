@@ -72,7 +72,13 @@ Honestly counted, this is: a web framework, a job/workflow engine, a sync engine
 | **`site/` cannot import `app/`** | transitive check, build error, prints the offending chain — the `<Button>` that grew a charting dep cannot reach marketing |
 | **The starter landing page lives in `site/`** | every new app and every maintainer smoke test exercises the static path on day one. Static regressions break the template *visibly*, for everyone |
 | Independent static deploy | `x build --target static` ships without the app image, so the static path has its own lifecycle and cannot be an afterthought of an app deploy ([`12-build-deploy.md`](./12-build-deploy.md)) |
-| Budgets in `x verify` | Lighthouse + per-route bytes on `site/` routes, ratcheting |
+| Budgets in `x verify` | measured per-route JS-byte enforcement against `budget.js`; explicit raises require the measured amount and justification, not an automatic baseline ratchet ([rendering budgets](./07-rendering-seo.md#budgets-in-x-verify)) |
+
+Headless Lighthouse with median runs and SEO/a11y minimums of 100/95 was a **never-built
+proposal**, not a static-rot guardrail. The superseded `budget.lcp`, `budget.cls` and `budget.tbt`
+declarations were **removed without ever being measured**: accepting those fields never enforced
+performance metrics. The [rendering budgets section](./07-rendering-seo.md#budgets-in-x-verify)
+separates those declarations from the unbuilt Lighthouse proposal.
 
 Residual risk: guardrails prevent silent decay, not deliberate neglect. If `site/` features stop being added while `app/` grows, the framework is still drifting — worth watching as a maintainer-attention metric, not just a CI metric.
 

@@ -6,7 +6,7 @@
 import { actionPathStyle } from '@ultimat3/action';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Actor, Ctx } from '@ultimat3/core';
-import { CLIENT_SCOPE_HEADER, singleFlight } from '@ultimat3/core';
+import { CLIENT_SCOPE_HEADER, escapeHtml, singleFlight } from '@ultimat3/core';
 import type {
   RouteMeta as HttpRouteMeta,
   RedirectIntent,
@@ -44,6 +44,7 @@ import {
   staticHeaders,
   streamResult,
 } from '@ultimat3/render/server';
+import { loadAppConfig } from './app-config-load';
 import type { DocumentOptions } from './document-options';
 import { routeQuery } from './isr-query-guard';
 import {
@@ -56,13 +57,28 @@ import { bootScript, collectorFor } from './route-islands';
 import { addressedUrl } from './runtime-address';
 import { attachedIsr } from './runtime-isr';
 import { isrOutcome } from './runtime-isr-outcome';
+import { siteAssetTable } from './site-assets';
 import type { StaticResult } from './static-document';
 import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
 import { styleBundle } from './style-bundle';
 
 export type { DocumentOptions, IslandResolver } from './document-options';
 
-export interface DevRenderOptions extends DocumentOptions {
+/**
+ * The app-wide favicon head, from `site.favicon`: the content-hashed URL `asset('assets/….svg')`
+ * returns and `/assets/*` serves, never the raw path. Per render, never frozen at boot.
+ */
+export async function appFaviconHead(root: string): Promise<string | undefined> {
+  const favicon = (await loadAppConfig(root))?.site.favicon;
+  if (favicon === undefined) return undefined;
+  const url = siteAssetTable(root).resolve(favicon).url;
+  return `<link rel="icon" type="image/svg+xml" href="${escapeHtml(url)}">`;
+}
+
+/** `DocumentOptions`, plus the app root the app's own favicon is resolved against per render. */
+export type RenderOptions = DocumentOptions & { readonly root?: string };
+
+export interface DevRenderOptions extends RenderOptions {
   readonly buildId: string;
   /**
    * The boot's own controller, attached and released by it (`runtime-isr.ts`). Omitted, one is
@@ -76,33 +92,30 @@ export interface DevRenderOptions extends DocumentOptions {
    */
   readonly memoStatic?: boolean;
 }
-
 /** What a route's `meta(data)` is given. `url` is a string because that is what `ld.*` embeds. */
 export interface DevRouteData extends Record<string, unknown> {
   readonly url: string;
   readonly params: RouteParams;
 }
-
 /**
  * `<html lang>` is the request's own locale, never a constant: the `locale` stage negotiated it
  * one stage before this handler and published it on the context, so a hardcoded `'en'` shipped
- * every document mislabelled — wrong for a screen reader, wrong for `hreflang`, wrong for a CDN
- * keying on `content-language`. Outside a request (`x build`'s prerender) it is the app's own
- * configured fallback, which is the only defensible answer there.
+ * every document mislabelled — wrong for a screen reader, wrong for `hreflang`. Outside a request
+ * (`x build`'s prerender) it is the app's own configured fallback.
  */
 const lang = (): string => currentLocale();
 
 /**
  * `scope` is present only on a PRIVATE document (a gated `ssr` page, every `stream`): the page's
  * client scope (`@ultimat3/auth`'s `clientScopeOf`), which core's `pageClient()` reads to fence its
- * one store per principal. A shareable document (`static`, `isr`, ungated `ssr`) carries NO scope
- * tag — absent means "not rendered for anyone", a different answer from `''`, the anonymous page.
+ * one store per principal. A shareable document carries NO scope tag — absent means "not rendered
+ * for anyone", a different answer from `''`, the anonymous page.
  */
 const headFor = async (
   entry: RouteEntry,
   ctx: DevRouteData,
   data: RouteData,
-  options: DocumentOptions,
+  options: RenderOptions,
   scope?: string,
 ): Promise<string> => {
   const meta = metaContextFor(ctx, data);
@@ -132,7 +145,7 @@ const headFor = async (
           ...router,
           // The page boot rides the scope tag: its whole job — restoring a principal's persisted
           // records and replaying its queued writes — is per principal, and a shareable document
-          // (no scope tag) has neither. Cheaper than walking the page's islands, and exact.
+          // (no scope tag) has neither.
           ...(scope === undefined
             ? []
             : [clientScopeTag(scope), ...clientPersistTags(options.persisted?.() ?? [])]),
@@ -142,6 +155,9 @@ const headFor = async (
     (options.themeHead ?? '') +
     // One mechanism per document: the router prefetches for itself, the browser for the rest.
     (router.length === 0 ? (options.speculationHead ?? '') : '') +
+    // The app's own favicon: one link, every document, the URL the table resolves NOW.
+    ((options.root === undefined ? options.faviconHead : await appFaviconHead(options.root)) ??
+      '') +
     // Per locale: each links its own locale's manifest (`PwaArtifacts.headFor`).
     (typeof options.pwaHead === 'function' ? options.pwaHead(meta.locale) : (options.pwaHead ?? ''))
   );
@@ -149,19 +165,17 @@ const headFor = async (
 
 /**
  * `<link rel="stylesheet">` for the surface's own stylesheets, or nothing at all when the surface
- * imports none. Inlined until 2026-09-06: every `app/` document of ai-maxxing then carried the same
- * 156,738-byte `<style>` (92% of it) under `no-store`, re-paid on every navigation.
+ * imports none.
  *
  * In `<head>`, which is what keeps this a swap and not a regression: a `<link rel="stylesheet">`
- * there is render-blocking in every browser, exactly as the inline block was, so there is no
- * window in which the document paints unstyled. Moving it to the body, or deferring it, is what
- * would introduce a flash — never do that here.
+ * there is render-blocking in every browser, exactly as the inline block was, so there is no window
+ * in which the document paints unstyled. Moving it to the body, or deferring it, would introduce a
+ * flash — never do that here.
  *
  * Read through `styleBundle()` rather than passed in through `DocumentOptions`: the registry it
  * derives from is process-global (importing the app IS what fills it), so a caller that forgot to
- * thread a resolver would serve a document with no CSS at all — and `appRoutes` is on this
- * package's public surface, called as `appRoutes({ buildId })` by both tracked apps' contract
- * tests. One reader, and it is the same one `styleRoutes` serves from.
+ * thread a resolver would serve a document with no CSS at all. One reader, and it is the same one
+ * `styleRoutes` serves from.
  */
 const styleTag = (entry: RouteEntry): string => {
   const href = styleBundle().hrefFor(entry.surface);
@@ -175,8 +189,7 @@ const stylesFor = (entry: RouteEntry, options: DocumentOptions): string =>
 /**
  * The route's rendered body, inside the hydration root. Every mode goes through here — an empty
  * root is what a module exporting no component renders, and nothing else: `spa` was the one mode
- * that never reached this function, which is why every `spa` route ever declared served
- * `<div id="x-root"></div>` and painted nothing.
+ * that never reached this function, so every `spa` route ever declared served an empty root.
  */
 export async function routeBody(
   entry: RouteEntry,
@@ -204,28 +217,27 @@ export async function routeBody(
 }
 
 /**
- * Head + body for one route render. Exported because the build's prerenderer must emit the same
- * document `x dev` serves — two document builders is how a page that works in dev ships broken.
+ * Head + body for one route render — the document `x dev` serves, which the build's prerenderer
+ * must emit too.
  */
 export async function routeDocument(
   entry: RouteEntry,
   ctx: DevRouteData,
-  options: DocumentOptions = {},
+  options: RenderOptions = {},
 ): Promise<string> {
   return documentFrom(entry, ctx, await routeDataFor(entry.config, ctx), options);
 }
 
 /**
  * The document a request by `actor` is SERVED: `routeDocument` plus the scope the response would
- * carry, which is what earns the page boot. The build weighs an app/ page through this, because a
- * budget is a promise about what that page's browser downloads — and an unscoped render of a
- * scoped page weighed a runtime chunk it never fetches and no boot it always does (#505).
+ * carry, which is what earns the page boot. The build weighs an app/ page through this — a budget
+ * is a promise about what that page's browser downloads (#505).
  */
 export async function servedDocument(
   entry: RouteEntry,
   ctx: DevRouteData,
   actor: Actor,
-  options: DocumentOptions & { readonly buildId: string },
+  options: RenderOptions & { readonly buildId: string },
 ): Promise<string> {
   const data = await routeDataFor(entry.config, ctx);
   return documentFrom(entry, ctx, data, options, documentScope(entry, options.buildId, actor));
@@ -233,9 +245,8 @@ export async function servedDocument(
 
 /**
  * Whether, and as whom, a mode's response is scoped — ONE decision for the request path and for
- * `servedDocument`. A stream is always `private, no-store`; an ssr page carries the scope exactly
- * when the headers `renderSsr` sends are private (an ungated page is `public, s-maxage`, and a CDN
- * may hand it to anyone); a static or isr document is shareable by construction.
+ * `servedDocument`. A stream is always `private, no-store`; an ssr page carries the scope when the
+ * headers `renderSsr` sends are private; a static or isr document is shareable.
  */
 function documentScope(entry: RouteEntry, buildId: string, actor: Actor): string | undefined {
   switch (entry.config.render) {
@@ -257,14 +268,14 @@ function documentScope(entry: RouteEntry, buildId: string, actor: Actor): string
  * a `<title>` describe content the body does not contain.
  *
  * The hydration runtime is appended after the body and only after it: what strategies a page needs
- * is a fact about the islands the walk just recorded, so emitting it earlier would either guess or
- * ship the whole runtime to a page with no island — the 0kb baseline, spent on nothing.
+ * is a fact about the islands the walk just recorded, so emitting it earlier would guess or ship
+ * the whole runtime to a page with no island.
  */
 async function documentFrom(
   entry: RouteEntry,
   ctx: DevRouteData,
   data: RouteData,
-  options: DocumentOptions,
+  options: RenderOptions,
   scope?: string,
 ): Promise<string> {
   const islands = collectorFor(entry, options, scope);
@@ -298,11 +309,10 @@ async function resultFor(
       return { status, headers: staticHeaders(contentHash(body), options.buildId), body };
     }
     case 'stream': {
-      // The shell IS the component: nothing can yet mark a subtree as a hole. Solid's `Suspense`
-      // is not the missing piece and never will be here — it calls `getContextId()`, which throws
-      // outside a Solid renderer, and this package's JSX factory is inert by design. A hole marker
-      // has to be the framework's own. Until it exists the first flush carries the whole body —
-      // correct output, no streaming benefit.
+      // The shell IS the component: nothing can yet mark a subtree as a hole, and Solid's
+      // `Suspense` cannot be the missing piece — it calls `getContextId()`, which throws outside a
+      // Solid renderer. Until a hole marker of the framework's own exists, the first flush carries
+      // the whole body — correct output, no streaming benefit.
       // A stream is always `private, no-store` (`streamResult`), so it always carries the scope.
       const scope = documentScope(entry, options.buildId, ctx.actor);
       const islands = collectorFor(entry, options, scope);
@@ -316,7 +326,7 @@ async function resultFor(
             head: `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry, options)}</head><body>`,
             // The runtime rides the first flush, with the shell it boots. A later chunk would leave
             // the window between flush one and the close with inert islands and no listeners on
-            // them — which is exactly the first-click-lost failure `interaction` replay exists for.
+            // them — the first-click-lost failure `interaction` replay exists for.
             shell: `${shell}${bootScript(entry, islands, options, scope)}${hydrateRuntime(islands.directives)}`,
             holes: [],
           },
@@ -345,8 +355,7 @@ async function resultFor(
 
 /**
  * A private document's scope, as a RESPONSE header too: the service worker partitions its offline
- * pages by principal and never parses HTML, so the meta alone cannot reach it. Exactly the
- * documents that carry the scope tag carry this — a shareable one carries neither.
+ * pages by principal and never parses HTML, so the meta alone cannot reach it.
  */
 const withScope = (result: RenderResult, scope: string | undefined): RenderResult =>
   scope === undefined
@@ -355,16 +364,14 @@ const withScope = (result: RenderResult, scope: string | undefined): RenderResul
 
 /**
  * A loader's redirect. No declared `cache` means `private, no-store`: the loader decided it for
- * THIS request (it recorded an open, it checked a token), and the mode's default would offer that
- * decision to a CDN, which would then answer every later request without running the loader. A
- * declared one is the pipeline's to apply, off `meta.cache`, exactly as for any handler.
+ * THIS request, and the mode's default would offer that decision to a CDN, which would then answer
+ * every later request without running the loader.
  */
 function loadRedirect(entry: RouteEntry, to: RedirectIntent): Response {
   const response = redirect(to.location, to.status);
   if (entry.config.cache === undefined) response.headers.set('cache-control', 'private, no-store');
   return response;
 }
-
 const responseOf = (result: RenderResult): Response =>
   typeof result.body === 'string'
     ? html(result.body, { status: result.status, headers: result.headers })
@@ -381,8 +388,7 @@ const metaOf = (entry: RouteEntry, head?: NavigationDocumentHead): HttpRouteMeta
   localeSource: entry.surface === 'site' ? 'path' : 'request',
   ...(entry.config.policy === undefined ? {} : { policy: entry.config.policy.permission }),
   // Projected so the router screens its ages at mount (`assertRouteCache`) and the `cache-headers`
-  // stage applies it to a response that wrote none — a loader's redirect. The rendered document
-  // carries its own header, from `ssrHeaders`, which the stage reviews rather than replaces.
+  // stage applies it to a response that wrote none — a loader's redirect.
   ...(entry.config.cache === undefined
     ? {}
     : { cache: entry.config.cache === 'no-store' ? NO_STORE : entry.config.cache }),
@@ -397,13 +403,9 @@ const metaOf = (entry: RouteEntry, head?: NavigationDocumentHead): HttpRouteMeta
  * handler renders AND the `meta` the pipeline enforces — is read back from the table on every
  * request. `x dev` re-registers a route module when its source changes (`app-load.ts`), and a
  * handler closing over the entry it was built from kept serving the first component after every
- * save — the table had moved and this closure had not. `meta` was the same defect one stage
- * earlier: a snapshot taken here, so a `policy` added in a save was not enforced until a restart
- * while the page behind it was already the new one — the pipeline's `auth` and `authz` stages read
- * `route.meta` per request, and this getter is what makes that read the table's. The path cannot
- * move under a reload (the table derives it from the file, and the file is the reload's key), so
- * the entry captured here is only the fallback for a table cleared under a running server, which
- * only a test does — and then guard and page fall back together.
+ * save. `meta` was the same defect one stage earlier, and this getter is what makes that read the
+ * table's: the pipeline's `auth` and `authz` stages read `route.meta` per request. The path cannot
+ * move under a reload, so the captured entry is only the fallback for a cleared table.
  */
 export function appRoutes(options: DevRenderOptions): readonly Route[] {
   const isr = options.isr ?? attachedIsr({ buildId: options.buildId }).isr;

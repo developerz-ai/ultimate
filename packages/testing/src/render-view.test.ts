@@ -1,9 +1,9 @@
 // `renderView` / `renderRoute`: the markup and the visible text a test asserts on, and — for a
 // route — that `load`, `meta` and the page are one resolution under one actor.
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 import { tryUseContext, userActor } from '@ultimat3/core';
-import { defineRoute, h, island } from '@ultimat3/render';
+import { defineRoute, h, island, setAssetResolver } from '@ultimat3/render';
 import { renderRoute, renderView } from './render-view';
 
 interface GreetingProps {
@@ -145,5 +145,42 @@ describe('renderRoute', () => {
     const refused = await renderRoute({ config }).catch((error: unknown) => error);
     expect((refused as { code?: string }).code).toBe('X_INVARIANT');
     expect((refused as { cause?: string }).cause).toContain('exports no page component');
+  });
+});
+
+describe('renderRoute · the app-wide favicon', () => {
+  // The site asset table is process-global, like every other registry this run touches: a
+  // resolver left installed would answer the NEXT file's `asset()` with this one's table.
+  afterEach(() => setAssetResolver(undefined));
+
+  const config = defineRoute({
+    render: 'ssr',
+    offline: 'runtime',
+    meta: () => ({ title: 'favicon' }),
+  });
+  const Page = (): unknown => h('main', null, h('h1', null, 'favicon'));
+
+  test('with no site asset table installed the route still renders, and carries no favicon', async () => {
+    const view = await renderRoute({ config, Page }, { favicon: 'assets/brand/icon.svg' });
+    // The route rendered: the refusal a resolver-free render would raise is not here.
+    expect(view.html).toContain('<h1>favicon</h1>');
+    expect(view.favicon).toBeUndefined();
+  });
+
+  test('with a table installed the favicon resolves to the URL the asset surface serves', async () => {
+    setAssetResolver((path) => {
+      if (path === 'assets/brand/icon.svg') return '/assets/brand/icon.0123abcd.svg';
+      return `/${path}`;
+    });
+    const view = await renderRoute({ config, Page }, { favicon: 'assets/brand/icon.svg' });
+    expect(view.favicon).toBe('/assets/brand/icon.0123abcd.svg');
+    // The route rendered beside it: the favicon is the app's, never the page's.
+    expect(view.html).toContain('<h1>favicon</h1>');
+  });
+
+  test('an app that declares no favicon resolves nothing and asks for nothing', async () => {
+    const view = await renderRoute({ config, Page });
+    expect(view.favicon).toBeUndefined();
+    expect(view.html).toContain('<h1>favicon</h1>');
   });
 });

@@ -1,9 +1,9 @@
-// The public origin and the crawler rules out of `app.config.ts` — `site.origin`,
-// `seo.robots.disallow` and `seo.robots.groups` — and the one resolution of "which origin is this site served on" every
+// The public origin, the app's favicon and the crawler rules out of `app.config.ts` — `site.origin`,
+// `site.favicon`, `seo.robots.disallow` and `seo.robots.groups` — and the one resolution of "which origin is this site served on" every
 // absolute URL a document, a sitemap or a robots file carries is built against. Read off the one
 // loader (`app-config-load.ts`).
 
-import type { Environment, SeoRobotsGroup, SeoSitemapConfig } from '@ultimat3/core';
+import type { Environment, SeoRobotsGroup, SeoSitemapConfig, SiteFavicon } from '@ultimat3/core';
 import { loadAppConfig } from './app-config-load';
 
 export interface SiteSettings {
@@ -18,6 +18,14 @@ export interface SiteSettings {
   readonly robotsGroups?: readonly SeoRobotsGroup[] | undefined;
   /** `seo.sitemap` — public `app/` pages to list, where `<lastmod>` comes from, sections, page size. */
   readonly sitemap: SeoSitemapConfig;
+  /**
+   * `site.favicon` — the app's SVG favicon, named as a site asset path (`assets/brand/icon.svg`).
+   * `undefined` when the app declares none. The boot resolves it ONCE, through the site asset
+   * table (`siteAssetTable(root).resolve(path).url` — the table `/assets/*` serves and `asset()`
+   * answers from), into the content-hashed URL every document carries. Optional so a
+   * `SiteSettings` literal written before it existed still compiles.
+   */
+  readonly favicon?: SiteFavicon | undefined;
 }
 
 export const NO_SITE_SETTINGS: SiteSettings = {
@@ -25,6 +33,7 @@ export const NO_SITE_SETTINGS: SiteSettings = {
   disallow: [],
   robotsGroups: [],
   sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
+  favicon: undefined,
 };
 
 const trimSlash = (origin: string): string => origin.replace(/\/+$/, '');
@@ -32,12 +41,13 @@ const trimSlash = (origin: string): string => origin.replace(/\/+$/, '');
 export async function loadSiteSettings(root: string): Promise<SiteSettings> {
   const config = await loadAppConfig(root);
   if (config === undefined) return NO_SITE_SETTINGS;
-  const { origin } = config.site;
+  const { origin, favicon } = config.site;
   return {
     origin: origin === null ? null : trimSlash(origin),
     disallow: [...config.seo.robots.disallow],
     robotsGroups: [...(config.seo.robots.groups ?? [])],
     sitemap: config.seo.sitemap,
+    favicon,
   };
 }
 

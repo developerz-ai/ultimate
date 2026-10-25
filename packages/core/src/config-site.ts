@@ -11,6 +11,8 @@ import {
 } from './config-sitemap';
 import { describeValue } from './error-render';
 
+export type SiteFavicon = `assets/${string}.svg`;
+
 export interface SiteConfig {
   /**
    * `https://www.example.com` — canonical, `og:url`, hreflang and the sitemap are absolute against
@@ -19,6 +21,11 @@ export interface SiteConfig {
    * host or a preview domain.
    */
   readonly origin: string | null;
+  /**
+   * The app-level SVG favicon, named as a site asset path (`assets/brand/icon.svg`). The renderer
+   * resolves it once at boot into the content-hashed URL every document carries.
+   */
+  readonly favicon?: SiteFavicon | undefined;
 }
 
 /**
@@ -105,7 +112,7 @@ export interface SiteSectionsInput {
 export function mergeSite(layers: readonly SiteSectionsInput[]): SiteSections {
   return {
     site: layered<SiteConfig>(
-      { origin: null },
+      { origin: null, favicon: undefined },
       layers.map((layer) => layer.site),
     ),
     seo: {
@@ -141,11 +148,31 @@ function originIssue(origin: string): string | undefined {
   return undefined;
 }
 
+/** A favicon names one SVG under the app's site assets, never an arbitrary URL or path. */
+function faviconIssue(favicon: string): string | undefined {
+  if (!favicon.startsWith('assets/')) {
+    return `site.favicon "${favicon}" must be a site asset path starting with assets/`;
+  }
+  if (!favicon.endsWith('.svg')) {
+    return `site.favicon "${favicon}" must name an SVG asset`;
+  }
+  const segments = favicon.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    return `site.favicon "${favicon}" has an empty, "." or ".." segment`;
+  }
+  return undefined;
+}
+
 /** Appends every refusal the two sections earn to `issues`, `config.ts`' one list. */
 export function siteIssues(config: SiteSections, issues: string[]): void {
   const origin = config.site.origin;
   if (origin !== null) {
     const issue = originIssue(origin);
+    if (issue !== undefined) issues.push(issue);
+  }
+  const favicon = config.site.favicon;
+  if (favicon !== undefined) {
+    const issue = faviconIssue(favicon);
     if (issue !== undefined) issues.push(issue);
   }
   issues.push(...robotsPathIssues('seo.robots.disallow', config.seo.robots.disallow));
