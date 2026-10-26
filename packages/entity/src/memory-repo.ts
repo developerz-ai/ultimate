@@ -21,6 +21,7 @@ import { invariantViolated, notFound } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { compareByKind, matchesPredicate } from './memory-match';
 import { uniqueClash, uniqueViolation } from './memory-unique';
+import { judgeUpdate, mergedRow } from './memory-update';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { FindManyArgs, MemoryRepo, RepoOptions, Transactor, Tx } from './repo';
 import { sealedFields } from './sealed';
@@ -74,14 +75,6 @@ const afterCursor = <Row>(
  * migration and tests use it everywhere. Postgres is the production driver and implements
  * this same interface.
  */
-/**
- * The patch with every `undefined` property dropped — `bindValues` skips them in Postgres, so a
- * patch built from optional input (`{ body: input.body }`) leaves the column alone in both drivers
- * rather than erasing it. `null` is the value that clears a column.
- */
-const defined = (patch: object): object =>
-  Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
-
 export const memoryRepo = <Row>(
   entity: EntityCore<Row>,
   seed: readonly Row[] = [],
@@ -180,6 +173,16 @@ export const memoryRepo = <Row>(
     if (moved !== undefined && from !== undefined) rows.delete(from);
     rows.set(key, row);
     return row;
+  };
+
+  /**
+   * The stored rows a filtered write does NOT touch — the ones its results may not collide with.
+   * Every stored row counts, not only the visible ones: the unique index in Postgres covers the
+   * rows of another tenant and the soft-deleted ones too.
+   */
+  const untouched = (matched: readonly Row[]): Row[] => {
+    const keys = new Set(matched.map((row) => storeKey(row)));
+    return [...rows.values()].filter((row) => !keys.has(storeKey(row)));
   };
 
   // The same guard the read path applies: on a tenant-scoped entity an id alone is not enough
@@ -310,12 +313,7 @@ export const memoryRepo = <Row>(
 
     async update(id, patch, options) {
       const current = addressed(id, options, 'update');
-      return write(
-        Object.assign({}, current, defined(patch)),
-        options,
-        'update',
-        storeKey(current),
-      );
+      return write(mergedRow(entity, current, patch), options, 'update', storeKey(current));
     },
 
     async delete(id, options) {
@@ -379,8 +377,14 @@ export const memoryRepo = <Row>(
       if (hasJsOnlyInvariant(entity.$invariants) && found.length > MAX_ASSERTED_ROWS) {
         throw assertedRowsTooMany(entity.$name, 'updateWhere', found.length);
       }
-      for (const row of found)
-        write(Object.assign({}, row, defined(patch)), options, 'updateWhere', storeKey(row));
+      // The WHOLE batch is judged before any row of it lands — the same statement Postgres sends,
+      // which refuses as one. A row this batch refuses used to leave the rows before it stored:
+      // the write was a loop, and the loop stopped half way through. Postgres rolls that
+      // statement back; here nothing was written yet, so nothing has to be undone.
+      const merged = judgeUpdate(entity, found, patch, untouched(found), storeKey);
+      for (const [position, row] of merged.entries()) {
+        write(row, options, 'updateWhere', storeKey(found[position]));
+      }
       return found.length;
     },
 

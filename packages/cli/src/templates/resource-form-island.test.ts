@@ -139,6 +139,10 @@ describe('unit · x g resource emits its form as a client entry', () => {
 });
 
 describe('unit · the form x g resource emits ships a shaken solid-js', () => {
+  // The build is the whole cost of this case: a `Bun.build` with the Solid transform, seconds and
+  // not milliseconds — 3.9 s alone, over 5 s under the gate's three workers, where Bun's 5 s
+  // default fails a test about what the chunk CONTAINS. The file's own budget, as the mounting
+  // cases below declare.
   test('the chunk carries the six the contract names and not the exports nothing calls', async () => {
     using root = await fixtureAppRoot('resource-form-shaken', withStylesheet(emitted()));
     const chunk = (await buildIslands(root.path, { only: ENTRY })).chunks[0];
@@ -147,7 +151,7 @@ describe('unit · the form x g resource emits ships a shaken solid-js', () => {
     // something a namespace registration would fail rather than a string in neither file.
     const solid = Bun.resolveSync('solid-js/package.json', import.meta.dir);
     expect(await Bun.file(join(dirname(solid), 'dist/solid.js')).text()).toContain(NAMESPACE_ONLY);
-  });
+  }, 60_000);
 });
 
 describe('unit · the form x g resource emits actually mounts', () => {

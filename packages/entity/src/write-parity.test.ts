@@ -207,6 +207,39 @@ describe('b — memory keeps the keys Postgres keeps', () => {
     expect(pg).toEqual({ ok: ['z'] });
     expect(memory).toEqual(pg);
   });
+
+  test('two results taking one primary key are refused, and neither row moves', async () => {
+    const [memory, pg] = await both(async (db) => {
+      // Two rows the filter matches, patched onto ONE key: the second takes the first's key.
+      await db.notes.insert({ id: idAt(1), title: 'one', body: 'same' });
+      await db.notes.insert({ id: idAt(2), title: 'two', body: 'same' });
+      const refused = await outcome(() => db.notes.updateWhere({ body: 'same' }, { id: idAt(3) }));
+      const kept = (await db.notes.all()).map((row) => [row.id, row.title, row.body]);
+      return [refused, ...kept.sort()];
+    });
+    expect(pg).toEqual({
+      ok: [{ code: 'X_DB_UNIQUE_VIOLATION' }, [idAt(1), 'one', 'same'], [idAt(2), 'two', 'same']],
+    });
+    expect(memory).toEqual(pg);
+  });
+
+  test('two results taking one unique value are refused, and neither row moves', async () => {
+    const [memory, pg] = await both(async (db) => {
+      // The same shape on the unique INDEX: `iso` is unique, `name` is not, and `createdAt` is
+      // stamped by each driver — so the columns the patch named are the ones compared.
+      await db.countries.insert({ id: idAt(1), iso: 'AA', name: 'Same' });
+      await db.countries.insert({ id: idAt(2), iso: 'BB', name: 'Same' });
+      const refused = await outcome(() =>
+        db.countries.updateWhere({ name: 'Same' }, { iso: 'ZZ' }),
+      );
+      const kept = (await db.countries.all()).map((row) => [row.id, row.iso, row.name]);
+      return [refused, ...kept.sort()];
+    });
+    expect(pg).toEqual({
+      ok: [{ code: 'X_DB_UNIQUE_VIOLATION' }, [idAt(1), 'AA', 'Same'], [idAt(2), 'BB', 'Same']],
+    });
+    expect(memory).toEqual(pg);
+  });
 });
 
 describe('c — a transition on an entity keyed by another column', () => {
