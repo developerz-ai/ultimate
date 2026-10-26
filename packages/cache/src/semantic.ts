@@ -54,6 +54,17 @@ export interface SemanticCacheOptions {
   readonly clock?: Clock;
 }
 
+/**
+ * Cosine similarity — and the honest answer for a pair that has none: a `NaN` component, or a
+ * dot product and norms that overflow together (`1e200` on both sides), leaves the cosine
+ * UNDEFINED, and this answers `NaN` rather than a `0` that would rank a vector with no direction
+ * above every opposed one (the rule `@ultimat3/ai`'s `cosine` keeps on purpose).
+ *
+ * `NaN` is not a verdict — the CALLER decides what a nonfinite similarity means. `lookup` skips
+ * a record whose similarity is not finite: it is not a candidate, so the entry cannot answer a
+ * question it was never asked. A finite similarity is the floor's business, as any other is — a
+ * finite dot over an overflowing norm is the `0`, and the floor decides it.
+ */
 export function cosineSimilarity(a: Embedding, b: Embedding): number {
   if (a.length !== b.length || a.length === 0) return 0;
   let dot = 0;
@@ -114,6 +125,11 @@ export function memorySemanticCache(options: SemanticCacheOptions = {}): Semanti
       let best: SemanticHit<T> | undefined;
       for (const record of live()) {
         const similarity = cosineSimilarity(embedding, record.embedding);
+        // A similarity that is not a number is not a match. Every comparison against `NaN` is
+        // false, so a broken vector SKIPPED the floor below, became `best`, and the cache
+        // answered a question it was never asked — a worse failure than a miss, because nothing
+        // said so. The floor did not fail to hold; the comparison against it never happened.
+        if (!Number.isFinite(similarity)) continue;
         if (similarity < floor) continue;
         if (best === undefined || similarity > best.similarity) {
           best = { value: record.value as T, similarity, key: record.key };
