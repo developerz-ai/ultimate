@@ -44,7 +44,7 @@
     "@ultimat3/realtime": "28.0.0",
     "@ultimat3/render": "28.0.0",
     "@ultimat3/ui": "28.0.0",
-    "solid-js": "1.9.15"
+    "solid-js": "1.9.17"
   },
   "engines": {
     "bun": ">=1.4.3"
