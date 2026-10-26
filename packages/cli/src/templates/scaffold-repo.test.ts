@@ -222,7 +222,7 @@ describe('unit · the first commands a scaffold tells its author to run exist on
   });
 
   // The scaffold pinned `solid-js` 1.9.14 while this repository ran 1.9.15 and the CLI's own
-  // `babel-preset-solid ^1.9.15` compiles every island against it: a literal in a dependency block
+  // `babel-preset-solid ^1.9.16` compiles every island against it: a literal in a dependency block
   // drifts with no failing check, so it is a constant held to the root manifest here.
   test('the scaffold pins the solid-js this repository itself runs', async () => {
     const scaffolded = JSON.parse(emitted('package.json')) as {
