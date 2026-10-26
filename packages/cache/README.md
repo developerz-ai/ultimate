@@ -430,6 +430,13 @@ is a driver seam for that reason; a Postgres/pgvector-backed implementation does
 yet here (`@ultimat3/ai`'s `postgresVectorStore()` is a separate store, for RAG retrieval, not this
 cache).
 
+A similarity that is not a number is not a match. A pair with no defined cosine — one side
+carrying a `NaN` component, or a dot product and norms that overflow together — makes
+`cosineSimilarity` answer `NaN`: honestly, rather than a `0` that would rank a directionless
+vector above every opposed one. The lookup SKIPS such a record: it misses, rather than answering
+one question with another's entry. Every comparison against `NaN` is false, so a record that
+reached the floor unchecked would have passed it, at any floor — `0` included.
+
 ## Errors
 
 | Code | Cause |

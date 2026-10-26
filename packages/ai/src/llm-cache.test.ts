@@ -253,3 +253,40 @@ describe('the entry key', () => {
     expect(keys[0]).not.toBe(keys[1]);
   });
 });
+
+/**
+ * The consumer of the rule the cache states: a similarity that is not a number is not a match.
+ * The embedder here carries a NaN component, so every similarity the cache computes against a
+ * stored entry is `NaN` — and every comparison against `NaN` is false. The entry therefore
+ * skipped the floor, became the best match, and the SECOND prompt was answered with the FIRST
+ * one's completion: a different question, answered with somebody else's answer, schema-valid and
+ * so accepted by the output check. The schema is not what saves you here — the floor is.
+ */
+describe('a broken embedding never serves another prompt answer', () => {
+  test('two unrelated prompts get two answers, even with a directionless embedding', async () => {
+    const { provider, seen } = stub(ANSWER, { summary: 'the other post', tags: ['other'] });
+    configureAi({
+      gateway: providerGateway({ defaultModel: FIXTURE_MODEL, providers: [provider] }),
+      embedder: {
+        name: 'nan-component',
+        dimension: 3,
+        embed: async (texts) =>
+          texts.map((text) => {
+            const vector = new Float32Array(3);
+            vector[0] = 1;
+            vector[1] = Number.NaN;
+            vector[2] = text.includes(POST_ID) ? 1 : 2;
+            return vector;
+          }),
+      },
+    });
+    const summarize = declare(promptFor(), { cache: { semantic: { threshold: 0.99 } } });
+
+    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
+    const second = await summarize({ postId: OTHER_ID }, { ctx: anonymousCtx() });
+
+    // The provider was reached twice: the second prompt did not read the first prompt's entry.
+    expect(seen.length).toBe(2);
+    expect(second).toEqual({ summary: 'the other post', tags: ['other'] });
+  });
+});

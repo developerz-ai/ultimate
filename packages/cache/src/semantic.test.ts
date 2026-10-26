@@ -43,6 +43,14 @@ describe('cosineSimilarity', () => {
   test('empty arrays are 0', () => {
     expect(cosineSimilarity([], [])).toBe(0);
   });
+
+  test('an overflow on one side alone is a finite 0, not NaN', () => {
+    // [1e200, 1e200] and [1, 0] are orthogonal, so 0 is the TRUE cosine: the squares of one
+    // side overflow to Infinity while the dot product stays finite, and the arithmetic still
+    // lands on the right answer. Only a pair whose dot AND norms overflow has no defined
+    // cosine — that is the NaN the lookup skips.
+    expect(cosineSimilarity([1e200, 1e200], [1, 0])).toBe(0);
+  });
 });
 
 describe('memorySemanticCache defaults', () => {
@@ -279,5 +287,48 @@ describe('the semantic cache refuses a limit that is not a limit', () => {
     await cache.remember('a', [1, 0], 'answer for a');
     expect(await cache.lookup([0, 1])).toBeUndefined();
     expect(await cache.lookup([1, 0])).toMatchObject({ value: 'answer for a' });
+  });
+});
+
+/**
+ * A similarity that is not a number is not a match. `cosineSimilarity` answers `NaN` for a pair
+ * with no defined cosine — a `NaN` component, or a dot product and norms that overflow together
+ * — and every comparison against `NaN` is false. So the record SKIPPED the floor, became `best`,
+ * and the cache answered a question it was never asked: the floor did not fail to hold, the
+ * comparison against it never happened.
+ */
+describe('a similarity that is not a number is not a match', () => {
+  test('a stored vector with a NaN component never matches', async () => {
+    const cache = memorySemanticCache();
+    await cache.remember('broken', [1, Number.NaN], 'the answer to a different question');
+
+    expect(await cache.lookup<string>([1, Number.NaN])).toBeUndefined();
+    // A floor of 0 admits every real similarity there is; it must not admit an undefined one.
+    expect(await cache.lookup<string>([1, Number.NaN], 0)).toBeUndefined();
+  });
+
+  test('finite components whose squares overflow miss too — the cosine is undefined', async () => {
+    const cache = memorySemanticCache();
+    await cache.remember('overflow', [1e200, 1e200], 'the answer to a different question');
+
+    expect(await cache.lookup<string>([1e200, 1e200])).toBeUndefined();
+    expect(await cache.lookup<string>([1e200, 1e200], 0)).toBeUndefined();
+  });
+
+  test('a broken record does not shadow a finite one', async () => {
+    const cache = memorySemanticCache();
+    await cache.remember('broken', [1, Number.NaN], 'broken-value');
+    await cache.remember('good', [1, 0], 'good-value');
+
+    const hit = await cache.lookup<string>([1, 0]);
+
+    expect(hit?.key).toBe('good');
+    expect(hit?.value).toBe('good-value');
+    expect(hit?.similarity).toBeCloseTo(1);
+  });
+
+  test('cosineSimilarity answers NaN for a pair with no defined cosine, never 0', () => {
+    expect(cosineSimilarity([1, Number.NaN], [1, Number.NaN])).toBeNaN();
+    expect(cosineSimilarity([1e200, 1e200], [1e200, 1e200])).toBeNaN();
   });
 });
