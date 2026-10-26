@@ -413,6 +413,10 @@ export const deployCommand: CliCommand = {
               role: step.role,
               base: composeBase(root),
               replicas: step.strategy.replicas,
+              // The reference the deploy was asked for, named here rather than read off
+              // `options.env`: the image the plan reports and the image compose runs must be one
+              // fact, and the roll decides on the id this reference resolves to.
+              image: plan.image,
               runner: ctx.runner,
               options,
             })
