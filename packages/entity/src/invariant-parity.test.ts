@@ -199,8 +199,12 @@ describe('a rule only the app can judge', () => {
 
   test('a refused updateWhere leaves every matched row as it was', async () => {
     const [memory, pg] = await both(async (db) => {
-      await db.ranges.insert({ id: ID, low: 1, high: 5 });
-      await db.ranges.insert({ id: '00000000-0000-7000-8000-0000000000a2', low: 1, high: 20 });
+      // The row the plan's order writes FIRST is the one whose result holds: the lower id takes
+      // `high: 20`, so `low: 9` still satisfies the rule, and the row after it takes `high: 5`,
+      // which does not. A driver that writes row by row therefore stores the first row before the
+      // second refuses — the half-written state this case exists to catch.
+      await db.ranges.insert({ id: ID, low: 1, high: 20 });
+      await db.ranges.insert({ id: '00000000-0000-7000-8000-0000000000a2', low: 1, high: 5 });
       const refused = await outcome(() => db.ranges.updateWhere({ low: 1 }, { low: 9 }));
       return [refused, (await db.ranges.orderBy('high').all()).map((row) => row.low)];
     });

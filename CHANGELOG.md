@@ -29,6 +29,23 @@ Tier 1 — seo.
   `socialCard: true`, the switch that entry said did not exist. The 23.0.0 section is left as it
   shipped.
 
+### Fixed
+
+Tier 2 — entity.
+
+- **A refused filtered update leaves every matched row as it was.** The in-memory driver's
+  `updateWhere` wrote row by row, so a rule only the app can judge (`X_INVARIANT_VIOLATED`)
+  refused the second matched row and left the first one stored — a half-written state the Postgres
+  driver never had: it sends one statement and judges the rows that statement returned in the same
+  transaction (`packages/entity/src/judged-write.ts`), so a refusal there rolls the write back. The
+  memory driver now judges the whole result of the update before it writes any of it — the app's
+  rule and the tenant for every merged row, the primary key and the unique constraints against the
+  rows the filter did not match and against the results the same batch has already judged
+  (`packages/entity/src/memory-update.ts`) — so a refusal leaves every matched row holding the
+  values it held before the call, the answer the Postgres driver gives. What does not change: a
+  filtered update that holds still writes every matched row and answers the count
+  (`packages/entity/src/invariant-parity.test.ts`).
+
 ## 28.0.0 - 2026-10-24
 
 Every breaking entry under Changed has a manual edit in the

@@ -125,8 +125,12 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `http/src/idle-timeout.ts` — the socket `idleTimeout` derived from `requestTimeoutMs`, reached
  * through `server.ts` on the http barrel — and `core/src/config-robots.ts`, the `seo.robots`
  * refusals `defineConfig` raises, reached through `config-site.ts` on the core barrel.
+ * raised 651 → 652, measured 652 (2026-10-26, a filtered update judged as ONE batch):
+ * `entity/src/memory-update.ts` — the merge of a patch into a row and the judgement of a
+ * filtered update's whole result before any of it lands, split out of `memory-repo.ts` so that
+ * file stays under the 500-line ceiling; reached through the entity barrel.
  */
-const MIGRATE_CEILING = 651;
+const MIGRATE_CEILING = 652;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -249,8 +253,11 @@ const MIGRATE_CEILING = 651;
  * module named on `MIGRATE_CEILING` for that change, `entity/src/operator.ts`.
  * raised 963 → 965, measured 965 (2026-10-22, Bun idle timeout + `seo.robots.groups`): the two
  * modules named on `MIGRATE_CEILING` for that change.
+ * raised 965 → 966, measured 966 (2026-10-26, a filtered update judged as ONE batch): the one
+ * module named on `MIGRATE_CEILING` for that change, which every role reaches through the entity
+ * barrel.
  */
-const SERVING_ROLE_CEILING = 965;
+const SERVING_ROLE_CEILING = 966;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -360,8 +367,11 @@ const SERVING_ROLE_CEILING = 965;
  * module named on `MIGRATE_CEILING` for that change, `entity/src/operator.ts`.
  * raised 1095 → 1097, measured 1097 (2026-10-22, Bun idle timeout + `seo.robots.groups`): the
  * two modules named on `MIGRATE_CEILING` for that change.
+ * raised 1097 → 1098, measured 1098 (2026-10-26, a filtered update judged as ONE batch): the one
+ * module named on `MIGRATE_CEILING` for that change — the web role reaches every module the
+ * serving roles do.
  */
-const WEB_ROLE_CEILING = 1097;
+const WEB_ROLE_CEILING = 1098;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];
