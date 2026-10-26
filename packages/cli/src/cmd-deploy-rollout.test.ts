@@ -50,12 +50,15 @@ function appRoot(config: string, compose?: string): string {
 /** Records every spawn; `ps -q worker` answers with the two containers serving now. */
 function recording(failing?: (command: readonly string[]) => number | undefined): {
   ran: string[][];
+  envs: (Readonly<Record<string, string | undefined>> | undefined)[];
   context: (argv: string[], cwd: string) => CommandContext;
 } {
   const ran: string[][] = [];
+  const envs: (Readonly<Record<string, string | undefined>> | undefined)[] = [];
   let workerListings = 0;
-  const runner: CommandContext['runner'] = async (command) => {
+  const runner: CommandContext['runner'] = async (command, options) => {
     ran.push([...command]);
+    envs.push(options.env);
     // The second listing of a failed roll sees the replica the failed `up` created.
     const isWorkerPs = command.includes('ps') && command.at(-1) === 'worker';
     if (isWorkerPs) workerListings += 1;
@@ -73,6 +76,7 @@ function recording(failing?: (command: readonly string[]) => number | undefined)
   };
   return {
     ran,
+    envs,
     context: (argv, cwd) => ({
       args: parseArgs(argv, SPECS),
       cwd,
@@ -128,6 +132,68 @@ describe('unit · a compose deploy starts the new container first where it can',
     expect(byRole.get('web')?.why).toContain('3000');
     expect(byRole.get('migrate')?.strategy).toBeUndefined();
     expect((result.lines ?? []).join('\n')).toContain('--scale worker=4 worker');
+  });
+});
+
+describe('unit · recipe-enabled replicator deployment stays singleton-safe', () => {
+  const enabled = `${COMPOSE}
+  replicator:
+    image: \${IMAGE:-app:latest}
+    environment: [ROLE=replicator, NATS_URL=nats://nats:4222]
+    deploy: { replicas: 1 }
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+`;
+
+  test('initial deployment starts the replicator and upgrade uses stop-first recreation', async () => {
+    const root = appRoot("{ name: 'demo-app' }", enabled);
+    const { ran, envs, context } = recording();
+    // Reuse the app and runner: the second deployment replaces the first deployment's image.
+    for (const image of ['repo/app:1', 'repo/app:2']) {
+      const start = ran.length;
+      const result = await deployCommand.run(context(['deploy', '--image', image], root));
+      expect(result.ok).toBe(true);
+      const commands = ran.slice(start);
+      const replicatorCommands = commands.filter((command) => command.includes('replicator'));
+      expect(replicatorCommands).toHaveLength(1);
+      expect(replicatorCommands[0]?.slice(6)).toEqual(['up', '-d', 'replicator']);
+      expect(replicatorCommands[0]).not.toContain('--scale');
+      expect(replicatorCommands[0]).not.toContain('--no-recreate');
+      const migration = commands.findIndex((command) => command.at(-1) === 'migrate');
+      const replicator = commands.findIndex((command) => command.at(-1) === 'replicator');
+      const backfill = commands.findIndex((command) => command.at(-1) === 'backfill');
+      expect(migration).toBe(0);
+      expect(replicator).toBeGreaterThan(migration);
+      expect(backfill).toBe(replicator + 1);
+      expect(envs[start + replicator]).toEqual({ IMAGE: image });
+      const steps = (result.data as { steps: { role: string; strategy?: string; why?: string }[] })
+        .steps;
+      expect(steps.at(-2)).toMatchObject({ role: 'replicator', strategy: 'stop-first' });
+      expect(steps.at(-2)?.why).toContain('singleton');
+    }
+  });
+
+  test('without a declared replicator no command starts one', async () => {
+    const root = appRoot("{ name: 'demo-app' }", COMPOSE);
+    const { ran, context } = recording();
+    const result = await deployCommand.run(context(['deploy', '--image', 'repo/app:2'], root));
+    expect(result.ok).toBe(true);
+    expect(ran.some((command) => command.includes('replicator'))).toBe(false);
+    expect(ran.at(-1)?.slice(-3)).toEqual(['run', '--rm', 'backfill']);
+  });
+
+  test('a failed replicator prevents backfill and reports the stop-first command', async () => {
+    const root = appRoot("{ name: 'demo-app' }", enabled);
+    const { ran, context } = recording((command) =>
+      command.at(-1) === 'replicator' ? 17 : undefined,
+    );
+    const result = await deployCommand.run(context(['deploy', '--image', 'repo/app:2'], root));
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.cause).toBe('role "replicator" step exited 17');
+    expect(result.findings?.[0]?.fix).toContain('IMAGE=repo/app:2 docker compose');
+    expect(result.findings?.[0]?.fix).toContain('up -d replicator');
+    expect(ran.at(-1)?.slice(-3)).toEqual(['up', '-d', 'replicator']);
+    expect(ran.some((command) => command.at(-1) === 'backfill')).toBe(false);
   });
 });
 

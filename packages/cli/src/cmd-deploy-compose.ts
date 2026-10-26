@@ -84,7 +84,16 @@ export function composeStrategies(text: string | undefined): ReadonlyMap<string,
   }
   const services = isRecord(parsed) ? parsed['services'] : undefined;
   if (!isRecord(services)) return new Map();
-  return new Map(SERVING_ROLES.map((role) => [role, strategyOf(services[role])]));
+  const strategies = new Map<string, ComposeStrategy>(
+    SERVING_ROLES.map((role) => [role, strategyOf(services[role])]),
+  );
+  if (Object.hasOwn(services, 'replicator')) {
+    strategies.set('replicator', {
+      kind: 'stop-first',
+      why: 'the replicator is a singleton: the old process must stop before its replacement starts',
+    });
+  }
+  return strategies;
 }
 
 /** The compose file at `path`, or `undefined` when there is none to read. */

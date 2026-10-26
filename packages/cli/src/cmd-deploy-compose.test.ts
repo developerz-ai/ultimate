@@ -58,9 +58,26 @@ services:
     expect(strategies.get('scheduler')).toEqual({ kind: 'start-first', replicas: 1 });
   });
 
+  test('a declared replicator stays stop-first regardless of ports: it is a singleton', () => {
+    for (const ports of ['', "    ports: ['9090']", "    ports: ['9090:9090']"]) {
+      const strategy = composeStrategies(`
+services:
+  replicator:
+    image: app
+    environment: [ROLE=replicator]
+    deploy: { replicas: 1 }
+${ports}
+`).get('replicator');
+      expect(strategy?.kind).toBe('stop-first');
+      expect(strategy?.kind === 'stop-first' ? strategy.why : '').toContain('singleton');
+    }
+    expect(composeStrategies(COMPOSE).has('replicator')).toBe(false);
+  });
+
   test('an unreadable compose file decides nothing: every role keeps stop-first', () => {
     for (const text of [undefined, 'services: [', 'just a string']) {
       const strategies = composeStrategies(text);
+      expect(strategies.has('replicator')).toBe(false);
       for (const role of ['web', 'sync', 'worker', 'scheduler']) {
         expect(strategies.get(role)?.kind ?? 'stop-first').toBe('stop-first');
       }
