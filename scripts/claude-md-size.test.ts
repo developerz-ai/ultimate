@@ -71,6 +71,32 @@ describe('package files', () => {
   test('no package file at all is unscanned', async () => {
     expect(await codes({ 'CLAUDE.md': 1 })).toEqual(['X_CLAUDE_MD_UNSCANNED packages/']);
   });
+
+  test(
+    'packages/seo/CLAUDE.md — the page #908 appended the socialCard rule to — is within the unpinned 24 KB ceiling',
+    async () => {
+      // The gate's X_CLAUDE_MD_OVERSIZE finding names exactly this: the committed (empty) pin table,
+      // so the default ceiling. Reproduced here by pinning a sibling at its live size, which changes
+      // nothing else — the seo finding is then the same one `bun run scripts/claude-md-size.ts`
+      // reports, by code and by `at`.
+      const root = repoRoot();
+      // The raw condition, so the test cannot pass vacuously off a file the glob never scanned.
+      const seo = Bun.file(join(root, 'packages/seo/CLAUDE.md'));
+      expect(await seo.exists()).toBe(true);
+      expect(seo.size).toBeLessThanOrEqual(PACKAGE_CEILING);
+      const pins = {
+        'packages/admin/CLAUDE.md': Bun.file(join(root, 'packages/admin/CLAUDE.md')).size,
+      };
+      const findings = await claudeMdFindings(root, pins);
+      expect(
+        findings.filter(
+          (finding) =>
+            finding.code === 'X_CLAUDE_MD_OVERSIZE' && finding.at === 'packages/seo/CLAUDE.md',
+        ),
+      ).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });
 
 test('the tree as committed is within every ceiling', async () => {
