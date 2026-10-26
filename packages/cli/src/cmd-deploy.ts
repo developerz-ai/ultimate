@@ -236,7 +236,12 @@ export function planDeploy(
     // header documents `IMAGE=… docker compose …` as the way to run it by hand; this is that line,
     // performed.
     env: { IMAGE: image },
-    steps: DEPLOY_ROLES.map((role) => composeStep(composeBase(root), role, strategies.get(role))),
+    steps: DEPLOY_ROLES.flatMap((role) => {
+      const step = composeStep(composeBase(root), role, strategies.get(role));
+      return role === 'backfill' && strategies.has('replicator')
+        ? [composeStep(composeBase(root), 'replicator', strategies.get('replicator')), step]
+        : [step];
+    }),
   };
 }
 

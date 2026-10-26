@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { isUltimateError } from '@ultimat3/core';
 import { REQUIRED_BUN } from './app-root';
 import { DEPLOY_METHODS, DEPLOY_ROLES, deployCommand, planDeploy, readMethod } from './cmd-deploy';
+import { composeStrategies } from './cmd-deploy-compose';
 import { planNewApp } from './cmd-new';
 import type { CommandContext } from './command';
 import { parseArgs } from './parse';
@@ -46,6 +47,28 @@ describe('unit · the deploy plan', () => {
     // index, so "backfill runs last" held for a deploy that never started the web role.
     const roles = compose().steps.map((step) => step.role);
     expect(roles).toEqual(['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill']);
+  });
+
+  test('a declared replicator is optional, stop-first, and immediately before backfill', () => {
+    const plan = planDeploy(
+      'repo/app:tag',
+      'compose',
+      '/app',
+      composeStrategies('services: { replicator: { environment: [ROLE=replicator] } }'),
+    );
+    expect(DEPLOY_ROLES).toEqual(['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill']);
+    expect(plan.steps.map((step) => step.role)).toEqual([
+      'migrate',
+      'web',
+      'sync',
+      'worker',
+      'scheduler',
+      'replicator',
+      'backfill',
+    ]);
+    const replicator = plan.steps.at(-2);
+    expect(replicator?.strategy).toMatchObject({ kind: 'stop-first' });
+    expect(replicator?.command.slice(-3)).toEqual(['up', '-d', 'replicator']);
   });
 
   test('the two run-once roles take `run --rm`, and every serving role takes `up -d`', () => {
@@ -178,6 +201,26 @@ describe('unit · x deploy actually runs the plan it printed', () => {
     // The plan in `--json` is the plan that ran: same commands, joined.
     const data = result.data as { steps: readonly { role: string; command: string }[] };
     expect(data.steps.map((step) => step.command)).toEqual(ran.map((command) => command.join(' ')));
+  });
+
+  test('optional replicator plans, summaries and dry-run lines agree with execution', async () => {
+    const root = appRoot();
+    mkdirSync(join(root, 'docker'));
+    writeFileSync(
+      join(root, 'docker', 'docker-compose.prod.yml'),
+      'services: { replicator: { environment: [ROLE=replicator], deploy: { replicas: 1 } } }',
+    );
+    const dry = await deployCommand.run(contextFor(['deploy', '--dry-run'], root));
+    const { runner, ran } = recordingRunner();
+    const result = await deployCommand.run(runContext(['deploy'], root, runner));
+    expect(result.ok).toBe(true);
+    expect(result.data).toEqual(dry.data);
+    expect(result.summary).toBe(dry.summary);
+    expect(result.summary).toContain('scheduler,replicator,backfill');
+    const data = result.data as { steps: { role: string; command: string; strategy?: string }[] };
+    expect(data.steps.map((step) => step.command)).toEqual(ran.map((command) => command.join(' ')));
+    expect(data.steps.at(-2)).toMatchObject({ role: 'replicator', strategy: 'stop-first' });
+    expect(dry.lines?.find((line) => line.includes('up -d replicator'))).toContain('IMAGE=');
   });
 
   test('a step that exits non-zero stops the deploy and names the command to rerun', async () => {
