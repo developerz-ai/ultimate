@@ -76,6 +76,14 @@ could not answer — `gh` failed, timed out or is missing — so read the envelo
 any refusal above and never read it as "none open". A due run names the one it found in
 `data.detail`, as `; a bump PR already open: <title>`.
 
+## Rows
+
+- `release-due` — Run the release-due command and read its envelope: handle refusals and HEAD recovery, file nothing for `nothing_ships` or `settling`, and follow the decision table when due.
+- `major-release-pending` — On `major_needs_a_maintainer`, check for an open pending-major issue before filing the maintainer issue for `data.next` with `data.breaking`.
+- `release-tag-run` — On `awaiting_tag`, watch `release-tag.yml` runs and file only on a failed run.
+- `release-ask-open` — When due, check for an open ask titled exactly `Release <next>`; file nothing if one is already open.
+- `bump-pr-open` — For `data.next`, use the callable bump-PR lookup; an open release PR means file nothing and cut nothing, while a lookup refusal requires reading its findings, never treating it as none open.
+
 ## Evidence: one live run on this checkout
 
 `bun run scripts/release-due.ts --json`, 2026-10-22T01:02:38Z, exit 0. This checkout had tags
