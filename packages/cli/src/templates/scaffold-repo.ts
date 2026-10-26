@@ -45,11 +45,11 @@ const TYPESCRIPT_VERSION = '^7.0.2';
 
 /**
  * The Solid runtime every island and `@ultimat3/ui` component renders with, exact for the reason
- * `BIOME_VERSION` is: the CLI compiles islands with `babel-preset-solid ^1.9.15`, and a scaffold
+ * `BIOME_VERSION` is: the CLI compiles islands with `babel-preset-solid ^1.9.16`, and a scaffold
  * that installed an older runtime than the compiler targets drifted as a buried literal (1.9.14
  * beside the repository's 1.9.15). `scaffold-repo.test.ts` holds it equal to the root manifest's.
  */
-const SOLID_VERSION = '1.9.15';
+const SOLID_VERSION = '1.9.17';
 
 // `engines.bun` is `REQUIRED_BUN`, the floor the SHIPPED `x` enforces
 // (`packages/cli/src/app-root.ts`), and not a second literal. It was one: `>=1.3.0`, a whole minor
