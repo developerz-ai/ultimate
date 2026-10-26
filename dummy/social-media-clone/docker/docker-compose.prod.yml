@@ -12,7 +12,8 @@ x-image: &image
   image: ${IMAGE:-social-media-clone:dev}
   env_file: [../.env.production]
   restart: unless-stopped
-  stop_grace_period: 30s # SIGTERM → drain in-flight requests, jobs and sockets
+  # Default 5s readiness grace + 25s drain + 10s margin before Docker SIGKILL.
+  stop_grace_period: 40s
   depends_on:
     db: { condition: service_healthy }
 

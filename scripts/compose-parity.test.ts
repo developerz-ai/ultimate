@@ -21,6 +21,9 @@
 // binds a loopback address. A dev stack ships its credentials in the file, so Docker's short form
 // `'5432:5432'` — which binds 0.0.0.0 and writes DNAT rules a host firewall does not stop — hands
 // an authenticated Postgres to everyone on the café wifi.
+//
+// An eighth rule reserves at least 40s before Docker SIGKILL: the default 5s readiness grace,
+// 25s drain and 10s margin. YAML merges must carry that budget to every app process, not infra.
 
 import { describe, expect, test } from 'bun:test';
 // why: `join` builds the host-separator paths to ROOT and each compose file; Bun ships no path
@@ -98,6 +101,26 @@ const roleServices = (table: Readonly<Record<string, Service>>): readonly string
   Object.entries(table)
     .filter(([name, service]) => name === 'backfill' || roleOf(service) !== undefined)
     .map(([name]) => name);
+
+/** Compose durations use Go-style units; compare elapsed time rather than one spelling of 40s. */
+const hasStopGraceBudget = (value: unknown): boolean => {
+  if (typeof value !== 'string' || !/^(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+$/.test(value))
+    return false;
+  const secondsPerUnit: Readonly<Record<string, number>> = {
+    ns: 1e-9,
+    us: 1e-6,
+    µs: 1e-6,
+    ms: 0.001,
+    s: 1,
+    m: 60,
+    h: 3600,
+  };
+  let seconds = 0;
+  for (const match of value.matchAll(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/g)) {
+    seconds += Number(match[1]) * (secondsPerUnit[match[2] ?? ''] ?? 0);
+  }
+  return Number.isFinite(seconds) && seconds >= 40;
+};
 
 /**
  * `depends_on` is a map of conditions or a bare list, and only the map can express "has exited 0".
@@ -261,6 +284,9 @@ describe('the compose files agree with the deploy plan', () => {
   test('the glob found the framework file, both tracked apps and the scaffold', () => {
     // A glob matching nothing agrees with every rule below it.
     expect(shipped).toContain(COMPOSE_FILE);
+    expect(shipped).toContain(`examples/dummy/${COMPOSE_FILE}`);
+    expect(shipped).toContain(`dummy/social-media-clone/${COMPOSE_FILE}`);
+    expect(files.some(({ at }) => at === `x new → ${COMPOSE_FILE}`)).toBe(true);
     expect(files.length).toBeGreaterThanOrEqual(4);
     expect(DEPLOY_ROLES).toContain('backfill');
   });
@@ -282,6 +308,16 @@ describe('the compose files agree with the deploy plan', () => {
           Array.isArray(backfill['entrypoint']) || typeof backfill['entrypoint'] === 'string',
           `${at}: backfill declares no entrypoint, so the image's ROLE-only entry discards its command and it serves HTTP as web`,
         ).toBe(true);
+      });
+
+      test('every app process has at least 40s to shut down', () => {
+        for (const name of roleServices(table)) {
+          const value = table[name]?.['stop_grace_period'];
+          expect(
+            hasStopGraceBudget(value),
+            `${at}: ${name} has stop_grace_period=${Bun.inspect(value)}; set at least 40s for 5s readiness grace + 25s drain + 10s margin before Docker SIGKILL`,
+          ).toBe(true);
+        }
       });
 
       test('every role but migrate waits for migrate to complete', () => {
@@ -343,6 +379,30 @@ describe('the compose files agree with the deploy plan', () => {
           `${at}: ${wrong.join(', ')} probe /app/x, which only the framework's CLI image carries — the service never becomes healthy and everything gated on it never starts`,
         ).toEqual([]);
       });
+    });
+  }
+});
+
+describe('the stop-grace budget guard rejects regressions', () => {
+  for (const value of [
+    '30s',
+    '39s',
+    undefined,
+    null,
+    40,
+    '',
+    'invalid',
+    '40',
+    '-40s',
+    '40s junk',
+  ]) {
+    test(`rejects ${Bun.inspect(value)}`, () => {
+      expect(hasStopGraceBudget(value)).toBe(false);
+    });
+  }
+  for (const value of ['40s', '41s', '1m', '40000ms', '1m30s']) {
+    test(`accepts ${value}`, () => {
+      expect(hasStopGraceBudget(value)).toBe(true);
     });
   }
 });
