@@ -132,8 +132,7 @@ describe('unit · the Sass compile cache', () => {
     const file = join(dir, 'card.module.scss');
     const partial = join(dir, '_mixins.scss');
     writeFileSync(partial, '@mixin pad { padding: 1px; }');
-    const source =
-      "@use 'mixins';\n:global(html[data-theme='light']) .card { @include mixins.pad; }";
+    const source = "@use 'mixins';\n:global(html[data-theme='light']) .card { @include mixins.pad; }";
     setSassCacheDir(null);
     const uncached = compileStylesheet(file, source);
     setSassCacheDir(join(dir, 'real'));
