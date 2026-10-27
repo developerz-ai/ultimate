@@ -23,8 +23,9 @@ import {
   runs,
   scripted,
 } from './agent-per-run-fixture';
-import { FIXTURE_MODEL } from './model-fixture';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 
+useFixtureModels();
 beforeEach(resetRuns);
 
 describe('offerTools() narrows the catalogue for one run', () => {

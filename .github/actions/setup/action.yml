@@ -116,11 +116,14 @@ runs:
         # The rule stands for the next move: run the gate on the candidate and write its numbers
         # here, beside the pin, in the diff that moves it.
         #
-        # **1.4.4, measured (2026-10-27).** Every site above moved from 1.4.3 with no framework
-        # code change: `bun run verify` 14 of 20 passed, 6 skipped (the app-only steps), 658 s on
-        # 12 cores at load ~10 (a second repository's gate shared the box); `scripts/bun-pin.test.ts`
-        # and `bun run changelog-check` green. `bun install` on 1.4.4 resolves peers pnpm-style
-        # and drops the `@babel/helper-module-transforms` subtree from `bun.lock`.
+        # **1.4.4, measured (2026-10-27).** No shipped runtime code changed. `bun run verify` 14 of
+        # 20 passed, 6 skipped (the app-only steps), 658 s on 12 cores at load ~10 (a second
+        # repository's gate shared the box). What 1.4.4 moved: `--coverage` counts fewer functions
+        # and keeps the uncovered ones (`packages/jobs` 95.46% -> 94.59%, same tests), so `jobs` is
+        # pinned and the `scripts` pin and both apps' floors re-measured; a `file:` folder is
+        # copied, not symlinked, so the scaffold smoke overrides with `link:`; `Bun.SQL` binds an
+        # array parameter itself; peers resolve pnpm-style (`bun.lock` drops the
+        # `@babel/helper-module-transforms` subtree).
         bun-version: '1.4.4'
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

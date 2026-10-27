@@ -20,10 +20,11 @@ import { billedOf } from './billed';
 import { asyncRefusal } from './bounds-fixture';
 import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
-import { FIXTURE_MODEL } from './model-fixture';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import type { GenerateRequest } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 
+useFixtureModels();
 beforeEach(resetRuns);
 
 const usd = (minor: number) => ({ minor, currency: 'USD' });

@@ -15,10 +15,10 @@ setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 describe('computeOverrides', () => {
   test('finds every published @ultimat3/* package under packages/', async () => {
     const overrides = await computeOverrides(repoRoot());
-    expect(overrides['@ultimat3/core']).toBe(`file:${join(repoRoot(), 'packages', 'core')}`);
-    expect(overrides['@ultimat3/cli']).toBe(`file:${join(repoRoot(), 'packages', 'cli')}`);
-    // Every value is an absolute file: path a fresh `bun install` can resolve from anywhere.
-    for (const value of Object.values(overrides)) expect(value.startsWith('file:/')).toBe(true);
+    expect(overrides['@ultimat3/core']).toBe(`link:${join(repoRoot(), 'packages', 'core')}`);
+    expect(overrides['@ultimat3/cli']).toBe(`link:${join(repoRoot(), 'packages', 'cli')}`);
+    // Every value is an absolute link: path a fresh `bun install` can resolve from anywhere.
+    for (const value of Object.values(overrides)) expect(value.startsWith('link:/')).toBe(true);
   });
 });
 

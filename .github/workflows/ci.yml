@@ -376,7 +376,7 @@ jobs:
   #   * `@ultimat3/*` isn't published to npm this early in the pipeline (that happens on release,
   #     from a tag — see PUBLISHING.md), so a plain `bun install` in the scaffolded app can't
   #     resolve it from the registry. `scripts/scaffold-smoke-overrides.ts` rewrites those ranges to
-  #     `file:` overrides pointing at this repo's own `packages/*` — the same source a release would
+  #     `link:` overrides pointing at this repo's own `packages/*` — the same source a release would
   #     publish, installed the same way `bun install` installs anything.
   #   * an `[install]` section APPENDED to that app's own `bunfig.toml` pins it to the hoisted
   #     linker, and it is the override's own tax (appended, never written over: `x new` writes that

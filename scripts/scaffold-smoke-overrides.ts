@@ -1,11 +1,19 @@
 // The scaffold smoke job (`.github/workflows/ci.yml`, job `scaffold-smoke`) proves `x new` →
 // `bun install` → `x verify` works end to end, without waiting on an actual npm publish: it
-// rewrites the freshly scaffolded app's `@ultimat3/*` ranges to `file:` overrides pointing at
+// rewrites the freshly scaffolded app's `@ultimat3/*` ranges to `link:` overrides pointing at
 // this repo's own `packages/*`, so `bun install` links the same source a real publish would ship
 // instead of hitting the registry. `overrides` (not `dependencies`) because most of what a
 // generated app needs is transitive — `@ultimat3/mcp` depends on `@ultimat3/schema`, which the
 // app never lists directly — and only `overrides` rewrites a range wherever it appears in the
 // graph, not just at the top level.
+//
+// `link:`, not `file:`, since Bun 1.4.4. Through 1.4.3 a `file:` folder was installed as
+// per-file symlinks, so every nested copy of `@ultimat3/core` resolved to ONE real path and one
+// module instance. 1.4.4 copies the folder instead: `@ultimat3/query` registered its registrar
+// into its own nested core while the app read the top-level one, and `bun run setup` died on
+// `X_REGISTRAR_MISSING` before a step ran. A `link:` is one directory symlink per package, so
+// every `@ultimat3/core` import resolves to `packages/core` — the single instance an npm install
+// of one version gives a real app.
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseScriptArgs } from './lib/args';
@@ -17,7 +25,7 @@ interface Manifest {
   readonly [key: string]: unknown;
 }
 
-/** One `file:` override per published `@ultimat3/*` package found under `repoRoot/packages`. */
+/** One `link:` override per published `@ultimat3/*` package found under `repoRoot/packages`. */
 export async function computeOverrides(repoRoot: string): Promise<Record<string, string>> {
   const overrides: Record<string, string> = {};
   const packagesDir = join(repoRoot, 'packages');
@@ -30,7 +38,7 @@ export async function computeOverrides(repoRoot: string): Promise<Record<string,
     if (!existsSync(manifestPath)) continue;
     const manifest = (await Bun.file(manifestPath).json()) as Manifest;
     if (typeof manifest.name === 'string' && manifest.name.startsWith('@ultimat3/')) {
-      overrides[manifest.name] = `file:${join(packagesDir, dir)}`;
+      overrides[manifest.name] = `link:${join(packagesDir, dir)}`;
     }
   }
   return overrides;
@@ -96,7 +104,7 @@ if (import.meta.main) {
     {
       ok: true,
       script: SCRIPT,
-      summary: `${Object.keys(overrides).length} @ultimat3/* file: overrides written to ${target}`,
+      summary: `${Object.keys(overrides).length} @ultimat3/* link: overrides written to ${target}`,
       data: { target, overrides },
     },
     args.json,
