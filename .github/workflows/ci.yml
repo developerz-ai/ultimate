@@ -371,23 +371,15 @@ jobs:
   # could not compile, but those jobs are gone and waiting on the whole gate would serialise a
   # 20-second job behind a two-minute one to save a runner-minute it usually does not save.
   #
-  # THE TWO CI-ONLY LINES, and neither is doctoring the app under test:
-  #
-  #   * `@ultimat3/*` isn't published to npm this early in the pipeline (that happens on release,
-  #     from a tag — see PUBLISHING.md), so a plain `bun install` in the scaffolded app can't
-  #     resolve it from the registry. `scripts/scaffold-smoke-overrides.ts` rewrites those ranges to
-  #     `link:` overrides pointing at this repo's own `packages/*` — the same source a release would
-  #     publish, installed the same way `bun install` installs anything.
-  #   * an `[install]` section APPENDED to that app's own `bunfig.toml` pins it to the hoisted
-  #     linker, and it is the override's own tax (appended, never written over: `x new` writes that
-  #     file for `[test]`, and replacing it drops the preload that seals the network and freezes the
-  #     clock for the gate's own `unit` step): Bun's
-  #     default isolated linker does not resolve a `file:` dependency's own `@ultimat3/*` imports
-  #     (reproduced: `x db migrate` dies on `Cannot find module '@ultimat3/time'` from
-  #     `node_modules/.bun/@ultimat3+jobs@file.../src/task.ts`), and it races on identical `file:`
-  #     targets shared by many dependents. It is a bunfig rather than the `bun install
-  #     --linker=hoisted` this job used to run itself, because `bun run setup` now performs the install
-  #     and a second `bun install` in the other layout relays out the whole tree.
+  # THE ONE CI-ONLY LINE, and it is not doctoring the app under test: `@ultimat3/*` isn't
+  # published to npm this early in the pipeline (that happens on release, from a tag — see
+  # PUBLISHING.md), so a plain `bun install` in the scaffolded app can't resolve it from the
+  # registry. `scripts/scaffold-smoke-overrides.ts` rewrites those ranges to `file:` overrides
+  # pointing at this repo's own `packages/*` — the same source a release would publish, installed
+  # by the app's own default (isolated) linker. Until Bun 1.4.4 a second line forced the hoisted
+  # linker, because the isolated one did not resolve a `file:` dependency's own `@ultimat3/*`
+  # imports; on 1.4.4 it does, and the hoisted one copies a `file:` folder per dependent — one
+  # `@ultimat3/core` per package, `X_REGISTRAR_MISSING` at `bun run setup`.
   #
   # TWO scaffolds, one runner each since 2026-10-01 — they share no state, and the second waited
   # out the first (44 s then 33 s on main). `scaffold-gate.ts` takes one directory per run by
@@ -428,7 +420,6 @@ jobs:
       - name: point the app's @ultimat3/* ranges at this repo's own packages
         run: |
           bun run scripts/scaffold-smoke-overrides.ts "$RUNNER_TEMP/$APP"
-          printf '\n[install]\nlinker = "hoisted"\n' >> "$RUNNER_TEMP/$APP/bunfig.toml"
       # The same snapshot `reference-app-verify` caches, for the scaffold's own `.x/cache` — AFTER
       # `x new`, which refuses a directory that already exists. Keyed on the version THIS repo
       # locks; the scaffold resolves its own `^` range, so the day npm serves a newer PGlite the
@@ -940,8 +931,8 @@ jobs:
   #     `/healthz` (B18: the launcher now reads the app tree's `package.json` and `tsconfig.json` at
   #     run time and resolves the framework from it — `cmd-build.ts`'s `binaryArgs`).
   #
-  # The scaffold smoke is `scaffold-smoke`'s shape (overrides and the hoisted linker are its two
-  # CI-only lines, and its comment explains both), run once and through the scaffold's OWN
+  # The scaffold smoke is `scaffold-smoke`'s shape (the `file:` overrides are its one
+  # CI-only line, and its comment explains it), run once and through the scaffold's OWN
   # `bun run setup` and `bun run check` — the commands a Windows developer types.
   windows:
     runs-on: windows-latest
@@ -996,7 +987,6 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           bun run scripts/scaffold-smoke-overrides.ts "$env:RUNNER_TEMP/$env:APP"
-          Add-Content -Path "$env:RUNNER_TEMP/$env:APP/bunfig.toml" -Value "`n[install]`nlinker = `"hoisted`""
       - name: bun run setup
         id: app-setup
         if: ${{ !cancelled() && steps.overrides.outcome == 'success' }}

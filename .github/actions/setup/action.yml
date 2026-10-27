@@ -120,8 +120,9 @@ runs:
         # 20 passed, 6 skipped (the app-only steps), 658 s on 12 cores at load ~10 (a second
         # repository's gate shared the box). What 1.4.4 moved: `--coverage` counts fewer functions
         # and keeps the uncovered ones (`packages/jobs` 95.46% -> 94.59%, same tests), so `jobs` is
-        # pinned and the `scripts` pin and both apps' floors re-measured; a `file:` folder is
-        # copied, not symlinked, so the scaffold smoke overrides with `link:`; `Bun.SQL` binds an
+        # pinned and the `scripts` pin and both apps' floors re-measured; the hoisted linker copies
+        # a `file:` folder per dependent, so the scaffold smoke installs with the default isolated
+        # linker; `Bun.SQL` binds an
         # array parameter itself; peers resolve pnpm-style (`bun.lock` drops the
         # `@babel/helper-module-transforms` subtree).
         bun-version: '1.4.4'

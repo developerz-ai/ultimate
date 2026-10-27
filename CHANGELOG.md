@@ -43,9 +43,10 @@ Every package; tier 5 — cli.
   stay, so a function ratio falls with no test or source changed (`packages/jobs` 95.46% →
   94.59%) — `jobs` is pinned, `scripts`' pin and both tracked apps' floors re-measured, each with
   the numbers in its `why`; (b) a `file:` folder dependency is now copied rather than symlinked
-  file by file, so a graph that reaches `@ultimat3/core` through several `file:` packages loads
-  several cores and `x` fails on `X_REGISTRAR_MISSING` — the scaffold smoke now overrides with
-  `link:`; (c) `Bun.SQL` binds a JS array parameter itself, and `array-parameter.live.test.ts`
+  file by file under the hoisted linker, so a graph that reaches `@ultimat3/core` through several
+  `file:` packages loads several cores and `x` fails on `X_REGISTRAR_MISSING` — the scaffold smoke
+  no longer forces the hoisted linker and installs with the default isolated one, which keeps one
+  core; (c) `Bun.SQL` binds a JS array parameter itself, and `array-parameter.live.test.ts`
   asserts that instead of the refusal; (d) two `@ultimat3/ai` suites relied on a fixture module's
   import-time hook, which only reaches the first suite that imports it — each suite registers
   its fixture models itself. 1.4.4 resolves peer dependencies pnpm-style, so `bun.lock` drops the
