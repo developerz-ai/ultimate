@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "dc6055a1857922681270e907717b5066b98612cdf24dbc97a19bbf8207314f8c",
+  "buildId": "0879329a8f3ef3565ecf2283c1a5266da4179c39e6983d02a0066b75e833157e",
   "tiers": {
     "0": [
       "core",
@@ -4898,6 +4898,11 @@
       "code": "X_WIKI_TABLE_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/wiki-tables.ts"
+    },
+    {
+      "code": "X_WORKER_QUEUE_UNKNOWN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_WORKSPACE_DEP_UNDECLARED",

@@ -49,6 +49,7 @@ describe('workerConfigOf, over the one loader', () => {
     expect(await loadWorkerConfig(root)).toEqual({
       queues: ['default', 'mail'],
       exact: false,
+      configured: ['default', 'mail'],
       concurrency: 3,
       visibilityTimeoutMs: 45_000,
     });
@@ -58,6 +59,7 @@ describe('workerConfigOf, over the one loader', () => {
     const none = {
       queues: [],
       exact: false,
+      configured: [],
       concurrency: undefined,
       visibilityTimeoutMs: undefined,
     };
@@ -72,6 +74,7 @@ describe('workerConfigOf, over the one loader', () => {
     ).toEqual({
       queues: ['demo-default'],
       exact: false,
+      configured: ['demo-default'],
       concurrency: 8,
       visibilityTimeoutMs: 30_000,
     });
@@ -126,6 +129,7 @@ describe('startRoles hands the worker its configured queues', () => {
       workerConfig: {
         queues: ['mail'],
         exact: false,
+        configured: ['mail'],
         concurrency: 2,
         visibilityTimeoutMs: undefined,
       },
@@ -154,6 +158,32 @@ function refusal(run: () => unknown): { readonly cause: string; readonly fix: st
   }
   return expect.unreachable('the value was accepted');
 }
+
+/** The `X_WORKER_QUEUE_UNKNOWN` a call threw, or a verdict naming that nothing was refused. */
+function unknownQueue(run: () => unknown): {
+  readonly cause: string;
+  readonly fix: string;
+  readonly meta: unknown;
+} {
+  try {
+    run();
+  } catch (error) {
+    if (isUltimateError(error) && error.code === 'X_WORKER_QUEUE_UNKNOWN') {
+      return { cause: error.cause, fix: error.fix, meta: error.meta };
+    }
+    throw error;
+  }
+  return expect.unreachable('the queues were accepted');
+}
+
+/** A `WORKER_QUEUES` worker over `jobs.queues` = `configured`. */
+const exactConfig = (queues: readonly string[], configured: readonly string[]) => ({
+  queues,
+  exact: true,
+  configured,
+  concurrency: undefined,
+  visibilityTimeoutMs: undefined,
+});
 
 /** Every structured line logged while `run` runs, parsed. */
 function logged(run: () => void): readonly Record<string, unknown>[] {
@@ -215,6 +245,7 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
     expect(config).toEqual({
       queues: ['banks'],
       exact: true,
+      configured: ['bank-default'],
       concurrency: 4,
       visibilityTimeoutMs: 30_000,
     });
@@ -229,6 +260,7 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
       options = workerOptionsFor({
         queues: ['banks'],
         exact: true,
+        configured: [],
         concurrency: undefined,
         visibilityTimeoutMs: undefined,
       });
@@ -246,6 +278,7 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
       workerOptionsFor({
         queues: ['banks'],
         exact: true,
+        configured: [],
         concurrency: undefined,
         visibilityTimeoutMs: undefined,
       });
@@ -253,15 +286,102 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
     expect(lines.some((line) => line['msg'] === 'jobs.worker.queue-unserved')).toBe(false);
   });
 
+  // 2026-10-27, a bank app: `WORKER_QUEUES=banks-*,banks,default` booted a worker that claimed a
+  // queue nothing is enqueued on, logged it at info, and stayed Ready while every run waited.
+  test('an entry no registered job and no jobs.queues entry names refuses the boot', () => {
+    probeJob('unknown-banks-probe', 'banks');
+    probeJob('unknown-default-probe', 'default');
+    const error = unknownQueue(() =>
+      workerOptionsFor(exactConfig(['banks', 'bankz'], ['bank-default'])),
+    );
+    expect(error.cause).toContain('"bankz"');
+    expect(error.cause).toContain('bank-default, banks, default');
+    expect(error.cause).not.toContain('never expanded');
+    expect(error.fix).toStartWith('WORKER_QUEUES=banks on this Deployment');
+    expect(error.meta).toEqual({
+      key: WORKER_QUEUES_ENV,
+      unknown: ['bankz'],
+      known: ['bank-default', 'banks', 'default'],
+    });
+  });
+
+  test('a pattern is a literal name, refused, and its fix is the expansion it meant', () => {
+    probeJob('pattern-ve-probe', 'banks-ve');
+    probeJob('pattern-pa-probe', 'banks-pa');
+    probeJob('pattern-long-probe', 'banks-long-ve');
+    probeJob('pattern-banks-probe', 'banks');
+    probeJob('pattern-default-probe', 'default');
+    const error = unknownQueue(() =>
+      workerOptionsFor(exactConfig(['banks-*', 'banks', 'default'], [])),
+    );
+    expect(error.cause).toContain('"banks-*"');
+    expect(error.cause).toContain('banks-* is a literal queue name');
+    expect(error.fix).toStartWith(
+      'WORKER_QUEUES=banks-long-ve,banks-pa,banks-ve,banks,default on this Deployment',
+    );
+  });
+
+  test('a bare * is refused too: it names no queue', () => {
+    probeJob('star-probe', 'default');
+    const error = unknownQueue(() => workerOptionsFor(exactConfig(['*'], [])));
+    expect(error.cause).toContain('"*"');
+    expect(error.fix).toStartWith('WORKER_QUEUES=default on this Deployment');
+  });
+
+  test('an app with no queue at all gets a placeholder fix, never an empty list', () => {
+    const error = unknownQueue(() => workerOptionsFor(exactConfig(['bankz'], [])));
+    expect(error.cause).toContain('the queues this app knows are none');
+    expect(error.fix).toStartWith('WORKER_QUEUES=<queue>,<queue> on this Deployment');
+  });
+
+  test('every entry the app knows boots, including one only jobs.queues lists', () => {
+    probeJob('known-banks-probe', 'banks');
+    const options = workerOptionsFor(exactConfig(['banks', 'per-call'], ['per-call']));
+    expect(options.queues).toEqual(['banks', 'per-call']);
+  });
+
   test('without it the union stands: a registered queue the config never named is served', () => {
     probeJob('union-probe', 'default');
     const options = workerOptionsFor({
       queues: ['bank-default'],
       exact: false,
+      configured: ['bank-default'],
       concurrency: undefined,
       visibilityTimeoutMs: undefined,
     });
     expect(options.queues).toEqual(['bank-default', 'default']);
+  });
+});
+
+// The refusal reaches the boot: `startRoles` rejects with the code and rolls back what it started,
+// so a container exits and the rolling update stalls on the old pods instead of serving nothing.
+describe('startRoles refuses a worker whose WORKER_QUEUES the app does not know', () => {
+  const ROOT = `${import.meta.dir}/../.worker-unknown-fixture`;
+
+  afterEach(async () => {
+    resetJobs();
+    resetDevRolesState();
+    await rm(ROOT, { recursive: true, force: true });
+  });
+
+  test('the boot rejects with X_WORKER_QUEUE_UNKNOWN', async () => {
+    probeJob('boot-unknown-probe', 'banks');
+    const runtime = { ...fixtureRuntime(ROOT), workerConfig: exactConfig(['banks-*'], []) };
+    const code = await startRoles({
+      roles: ['worker'],
+      port: 0,
+      buildId: 'test',
+      runtime,
+      env: {},
+      routes: [],
+    }).then(
+      async (running) => {
+        await running.stop();
+        return 'booted';
+      },
+      (error: unknown) => (isUltimateError(error) ? error.code : 'uncoded'),
+    );
+    expect(code).toBe('X_WORKER_QUEUE_UNKNOWN');
   });
 });
 
@@ -279,6 +399,7 @@ describe('jobs.concurrency as a table, handed to the worker', () => {
     const options = workerOptionsFor({
       queues: ['banks', 'banks-long'],
       exact: false,
+      configured: ['banks', 'banks-long'],
       concurrency: table,
       visibilityTimeoutMs: undefined,
     });
@@ -292,6 +413,7 @@ describe('jobs.concurrency as a table, handed to the worker', () => {
       workerConfig: {
         queues: ['banks', 'banks-long'],
         exact: true,
+        configured: ['banks', 'banks-long'],
         concurrency: { banks: 4, 'banks-long': 2 },
         visibilityTimeoutMs: undefined,
       },

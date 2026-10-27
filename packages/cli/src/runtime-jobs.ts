@@ -4,7 +4,13 @@
 // the same config (issues #673, #676).
 
 import type { AppConfig, JobsConcurrency } from '@ultimat3/core';
-import { ConfigInvalidError, logger, renderCauseValue, renderFixShellArg } from '@ultimat3/core';
+import {
+  ConfigInvalidError,
+  logger,
+  renderCauseValue,
+  renderFixShellArg,
+  UltimateError,
+} from '@ultimat3/core';
 import { registeredJobs, type WorkerOptions } from '@ultimat3/jobs';
 import type { Env } from './runtime-bindings';
 
@@ -19,6 +25,11 @@ export interface WorkerConfig {
    * queues registered jobs are enqueued on. `false` is the union `workerQueuesFor` explains.
    */
   readonly exact: boolean;
+  /**
+   * `jobs.queues` as the app configured them, kept when `WORKER_QUEUES` replaced `queues`: with
+   * the registered jobs' queues, the set an exact entry must belong to (`refuseUnknownQueues`).
+   */
+  readonly configured: readonly string[];
   readonly concurrency: JobsConcurrency | undefined;
   readonly visibilityTimeoutMs: number | undefined;
 }
@@ -27,6 +38,7 @@ export interface WorkerConfig {
 const NO_WORKER_CONFIG: WorkerConfig = Object.freeze({
   queues: [],
   exact: false,
+  configured: [],
   concurrency: undefined,
   visibilityTimeoutMs: undefined,
 });
@@ -58,6 +70,7 @@ export function workerConfigOf(config: AppConfig | undefined, env: Env = {}): Wo
       : {
           queues: config.jobs.queues,
           exact: false,
+          configured: config.jobs.queues,
           concurrency: config.jobs.concurrency,
           visibilityTimeoutMs: config.jobs.visibilityTimeoutMs,
         };
@@ -97,16 +110,68 @@ function reportUnserved(served: readonly string[], registered: readonly string[]
   });
 }
 
+/**
+ * A `WORKER_QUEUES` entry no registered job and no `jobs.queues` entry names. The worker would
+ * claim a queue nothing is enqueued on and leave the real ones waiting while its pod stays Ready —
+ * a 15-minute outage behind a healthy roll (`banks-*`, never expanded, 2026-10-27). Refused at
+ * boot instead, so the new pods crash and a rolling update stalls on the old ones.
+ */
+export class WorkerQueueUnknownError extends UltimateError {
+  constructor(input: {
+    unknown: readonly string[];
+    known: readonly string[];
+    named: readonly string[];
+  }) {
+    const patterns = input.unknown.filter((queue) => /[*?[\]{}]/.test(queue));
+    // A pattern's fix is its expansion over the known queues: the list the author meant to write.
+    const meant = input.named.flatMap((queue) =>
+      patterns.includes(queue)
+        ? input.known.filter((name) => new Bun.Glob(queue).match(name))
+        : input.unknown.includes(queue)
+          ? []
+          : [queue],
+    );
+    const list = [...new Set(meant)].join(',');
+    const pattern =
+      patterns.length === 0
+        ? ''
+        : ` — WORKER_QUEUES is never expanded, so ${patterns.join(', ')} is a literal queue name`;
+    super({
+      code: 'X_WORKER_QUEUE_UNKNOWN',
+      cause: `${WORKER_QUEUES_ENV} names ${input.unknown.map((queue) => renderCauseValue(queue)).join(', ')}, which no registered job is enqueued on and jobs.queues does not list${pattern}; the queues this app knows are ${input.known.length === 0 ? 'none' : input.known.join(', ')}`,
+      fix: `WORKER_QUEUES=${renderFixShellArg(list === '' ? undefined : list, '<queue>,<queue>')} on this Deployment — or add the queue to jobs.queues in app.config.ts when jobs reach it by enqueue({ queue }) alone`,
+      meta: { key: WORKER_QUEUES_ENV, unknown: input.unknown, known: input.known },
+    });
+  }
+}
+
+/**
+ * An exact worker's entries, held to what the app knows: `jobs.queues` plus every registered
+ * job's queue — the union an unset `WORKER_QUEUES` would serve. Thrown, never logged: an info line
+ * is what let the worker run claiming nothing (2026-10-27).
+ */
+function refuseUnknownQueues(
+  named: readonly string[],
+  configured: readonly string[],
+  registered: readonly string[],
+): void {
+  const known = [...new Set([...configured, ...registered])].sort();
+  const unknown = named.filter((queue) => !known.includes(queue));
+  if (unknown.length > 0) throw new WorkerQueueUnknownError({ unknown, known, named });
+}
+
 type WorkerConfigOptions = Pick<WorkerOptions, 'queues' | 'concurrency' | 'visibilityTimeoutMs'>;
 
 /**
  * The `jobWorker` options the config supplies, read at START so every job the app registered
- * on import is counted. A key the config leaves unset is omitted, never passed as `undefined`, so
- * the worker's own default applies (`exactOptionalPropertyTypes`).
+ * on import is counted — and an exact entry the app does not know is refused there. A key the
+ * config leaves unset is omitted, never passed as `undefined`, so the worker's own default applies
+ * (`exactOptionalPropertyTypes`).
  */
 export function workerOptionsFor(config: WorkerConfig | undefined): WorkerConfigOptions {
   const registered = registeredJobs().map((handle) => handle.queue);
   const exact = config?.exact === true;
+  if (exact) refuseUnknownQueues(config?.queues ?? [], config?.configured ?? [], registered);
   const queues = workerQueuesFor(config?.queues ?? [], registered, exact);
   if (exact) reportUnserved(queues ?? [], registered);
   // Passed as written: `jobWorker` reads a table by own key and runs a queue it does not name at
