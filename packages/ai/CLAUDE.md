@@ -3,11 +3,11 @@
 Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity policy http action
 query jobs realtime`. **Never** `mcp manifest render pwa ui admin testing cli`.
 
-Declared today: `action` (the primitive `llm()` returns), `cache` (semantic cache), `core`,
-`db` (pgvector), `http` (`statusFor`, so a tool result redacts a 5xx cause as a problem document
-does), `jobs` (`agentJob()`), `money`, `policy`, `schema`, `time`.
+Shipped: `action` (`llm()`), `cache`, `core`, `db` (pgvector), `http` (`statusFor`),
+`jobs` (`agentJob()`, a tier 4+ action→job bridge), `money`, `schema`, `time`.
 
-`jobs` is declared for `agentJob()`: the action→job bridge has to live at tier 4+.
+Keep `policy` dev-only: tests and `*-fixture.ts` harnesses import `allow`. The
+`!src/**/*-fixture.ts` exclusion keeps harnesses unpublished; their imports still need a declaration.
 
 `mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`, never
 imported: same contract, same *decision* (`isMcpExposed` from `@ultimat3/core`, never a local

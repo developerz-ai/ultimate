@@ -1,9 +1,11 @@
+// Workspace declarations, source edges, and executable fixes must agree without losing manifest data.
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.
 // why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
+import { $ } from 'bun';
 import { writeNewApp } from './cmd-new';
 import { VERIFY_STEPS } from './cmd-verify';
 import { fixProblem } from './error-contract';
@@ -86,11 +88,7 @@ describe('unit · the workspace graph', () => {
     expect(graph.find((node) => node.name === '@demo/mcp')?.dependencies).toEqual([]);
   });
 
-  /**
-   * The defect this reader refuses to repeat (issue #281, `scripts/lib/workspaces.ts`): one
-   * unparseable manifest in a monorepo threw a `SyntaxError` naming no file and took the whole
-   * caller down. The workspaces beside it are still readable and are still answered.
-   */
+  // One unreadable manifest must not hide its readable siblings.
   test('a manifest that will not parse is skipped, not thrown from', async () => {
     const broken = await mkdtemp(join(tmpdir(), 'ultimate-workspace-graph-broken-'));
     try {
@@ -162,11 +160,7 @@ describe('unit · what a source file imports', () => {
     expect(packageOfSpecifier('@scope/pkg/deep/path')).toBe('@scope/pkg');
   });
 
-  /**
-   * Every `templates/*.ts` in this package emits a whole program as a template literal, so the
-   * generator's own source holds hundreds of imports belonging to the app it writes. Read as this
-   * file's own, `packages/cli` would owe a dependency on every package the scaffold uses.
-   */
+  // Template imports belong to the emitted app, not the generator.
   test('an import inside a template literal belongs to the emitted file, not to this one', () => {
     const source = [
       "import { join } from 'node:path';",
@@ -179,10 +173,7 @@ describe('unit · what a source file imports', () => {
     expect(importedPackages(source)).toEqual([]);
   });
 
-  /**
-   * #493: an import inside a template NESTED in a substitution. The line-by-line mask read the
-   * inner backtick as the outer template's close, so `packages/cli` was billed for `@ultimat3/ui`.
-   */
+  // #493: nested template imports must not be charged to the generator either.
   test('an import inside a nested template belongs to the emitted file too (#493)', () => {
     const source = [
       'export const page = (): string => `',
@@ -256,11 +247,7 @@ describe('unit · every workspace import is declared', () => {
     expect(causes.join('\n')).not.toContain('index.test.ts');
   });
 
-  /**
-   * Deepest directory wins. A monorepo may declare a workspace inside another one, and charging
-   * `apps/web/shared/ui.ts` to `apps/web` would name a manifest whose `dependencies` the resolver
-   * never consults for that file.
-   */
+  // Deepest directory wins: the resolver consults the nested manifest.
   test('a file inside a nested workspace is charged to the nested one', async () => {
     const nested = await mkdtemp(join(tmpdir(), 'ultimate-workspace-graph-nested-'));
     try {
@@ -283,11 +270,7 @@ describe('unit · every workspace import is declared', () => {
     }
   });
 
-  /**
-   * A skip is not a hiding place. The graph steps over a manifest it cannot read so one bad file
-   * does not take the caller down — but a workspace absent from the graph is a workspace no rule
-   * here can see, so the absence itself is reported.
-   */
+  // Skipping an unreadable manifest must produce a finding, not a hiding place.
   test('a manifest the graph could not read is a finding of its own', async () => {
     const broken = await mkdtemp(join(tmpdir(), 'ultimate-workspace-graph-skip-'));
     try {
@@ -314,13 +297,7 @@ describe('unit · every workspace import is declared', () => {
     }
   });
 
-  /**
-   * The scaffold's own manifests, judged by this rule. `x new` wrote `packages/mcp` importing
-   * `apps/web` and `packages/db` importing the example entity out of the same app, and declared
-   * neither — the imports resolved through the root tsconfig's `paths`, so a generated app's
-   * dependency graph existed nowhere bun or CI could read it (issue #239). Both shapes, because
-   * `--no-example` writes a different `packages/db`.
-   */
+  // #239: both scaffold shapes must declare the cross-workspace edges they emit.
   for (const example of [true, false]) {
     test(`x new --${example ? 'example' : 'no-example'} declares every edge it emits`, async () => {
       const app = await mkdtemp(join(tmpdir(), 'ultimate-workspace-graph-scaffold-'));
@@ -352,15 +329,169 @@ describe('unit · every workspace import is declared', () => {
   });
 });
 
-// A rule only exists if the gate runs it. Reaching into the real step list rather than a stub: a
-// check nothing calls is a check that passes forever.
+describe('unit · declared framework siblings are used by shipped source', () => {
+  const runtime = ['dependencies'] as const;
+  const dev = ['devDependencies'] as const;
+  const shipped = ['dependencies', 'peerDependencies', 'optionalDependencies'] as const;
+  const fixture = 'src/helper-fixture.ts';
+  const source = "import '@ultimat3/core';";
+  const typeOnly = "import type { Row } from '@ultimat3/core/types';";
+  const typePosition = "export type Row = import('@ultimat3/core').Row;";
+  const cases = [
+    ['unused', undefined, '', runtime, runtime],
+    ['runtime import', 'src/index.ts', source, runtime, []],
+    ['type-only subpath', 'src/index.ts', typeOnly, runtime, []],
+    ['type-position import', 'src/index.ts', typePosition, runtime, []],
+    ['test-only', 'src/index.test.ts', source, runtime, runtime],
+    ['fixture undeclared', fixture, source, [], []],
+    ['fixture runtime', fixture, source, runtime, runtime],
+    ['fixture dev', fixture, source, dev, []],
+    ['fixture mixed', fixture, source, [...dev, ...shipped], shipped],
+    ['unused dev', undefined, '', dev, dev],
+    ['declaration-only', 'src/index.d.ts', source, runtime, runtime],
+  ] as const;
+  for (const [label, path, source, fields, unusedFields] of cases) {
+    test(`${label} usage has the expected reverse verdict`, async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ultimate-workspace-unused-'));
+      try {
+        await Bun.write(join(root, 'package.json'), ROOT_MANIFEST);
+        const manifest: Record<string, unknown> = {
+          name: '@demo/owner',
+          scripts: { check: 'bun test' },
+          custom: { keep: ['unchanged'] },
+          ...Object.fromEntries(
+            fields.map((field) => [field, { '@ultimat3/core': '1.0.0', external: '2.0.0' }]),
+          ),
+        };
+        const manifestPath = join(root, 'packages/owner/package.json');
+        await Bun.write(manifestPath, JSON.stringify(manifest));
+        await Bun.write(join(root, 'packages/core/package.json'), '{"name":"@ultimat3/core"}');
+        if (path !== undefined) await Bun.write(join(root, 'packages/owner', path), source);
+        const findings = await checkWorkspaceDependencies(root);
+        if (fields.length === 0) {
+          expect(findings).toHaveLength(1);
+          expect(findings[0]?.code).toBe('X_WORKSPACE_DEP_UNDECLARED');
+          expect(findings[0]?.cause).toContain('helper-fixture.ts');
+          expect(findings[0]?.fix).toBe(
+            'add "@ultimat3/core": "0.0.0" to "devDependencies" in packages/owner/package.json',
+          );
+          expect(fixProblem(findings[0]?.fix ?? '')).toBeUndefined();
+          return;
+        }
+        if (unusedFields.length === 0) {
+          expect(findings).toEqual([]);
+          return;
+        }
+        expect(findings).toHaveLength(1);
+        expect(findings[0]?.code).toBe('X_PACKAGE_SHAPE');
+        expect(findings[0]?.at).toBe('packages/owner/package.json');
+        expect(findings[0]?.cause).toContain('@ultimat3/core');
+        expect(findings[0]?.cause).toContain('packages/owner/package.json');
+        for (const field of unusedFields) expect(findings[0]?.cause).toContain(field);
+        const fix = findings[0]?.fix ?? '';
+        expect(fix).toStartWith('bun -e ');
+        expect(fixProblem(fix)).toBeUndefined();
+        if (label === 'unused') {
+          const step = VERIFY_STEPS.find((candidate) => candidate.name === 'package-shape');
+          const result = await step?.run({ root, runner: async () => ({}) as never });
+          expect(result?.ok).toBe(false);
+          expect(result?.findings).toContainEqual(findings[0]);
+        }
+        await $`${{ raw: fix }}`.cwd(root).quiet();
+        const expected = structuredClone(manifest);
+        for (const field of unusedFields) {
+          delete (expected[field] as Record<string, unknown>)['@ultimat3/core'];
+        }
+        expect(await Bun.file(manifestPath).json()).toEqual(expected);
+        const after = await checkWorkspaceDependencies(root);
+        const codes = label === 'fixture runtime' ? ['X_WORKSPACE_DEP_UNDECLARED'] : [];
+        expect(after.map(({ code }) => code)).toEqual(codes);
+        if (label === 'fixture runtime') expect(after[0]?.cause).toContain('helper-fixture.ts');
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test('catalog roots exempt only the CLI; sibling declarations deduplicate across fields', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-workspace-catalog-'));
+    try {
+      await Bun.write(join(root, 'package.json'), ROOT_MANIFEST);
+      const ownerDir = "packages/owner's $HOME; $(echo unsafe)";
+      for (const name of ['cli', 'owner']) {
+        await Bun.write(
+          join(root, name === 'cli' ? 'packages/cli/package.json' : `${ownerDir}/package.json`),
+          JSON.stringify({
+            name: `@ultimat3/${name}`,
+            dependencies: {
+              '@ultimat3/core': '1.0.0',
+              '@demo/local': '1.0.0',
+              'solid-js': '1.0.0',
+            },
+            devDependencies: { '@ultimat3/core': '1.0.0' },
+            peerDependencies: { '@ultimat3/core': '1.0.0' },
+            optionalDependencies: { '@ultimat3/core': '1.0.0' },
+          }),
+        );
+      }
+      await Bun.write(join(root, 'packages/core/package.json'), '{"name":"@ultimat3/core"}');
+      await Bun.write(join(root, 'packages/local/package.json'), '{"name":"@demo/local"}');
+      const findings = await checkWorkspaceDependencies(root);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.at).toBe(`${ownerDir}/package.json`);
+      const ownerPath = join(root, ownerDir, 'package.json');
+      const before = await Bun.file(ownerPath).json();
+      const cliBefore = await Bun.file(join(root, 'packages/cli/package.json')).text();
+      const fix = findings[0]?.fix ?? '';
+      expect(fix).toStartWith('bun -e ');
+      expect(fixProblem(fix)).toBeUndefined();
+      await $`${{ raw: fix }}`.cwd(root).quiet();
+      for (const field of [...dev, ...shipped]) delete before[field]['@ultimat3/core'];
+      expect(await Bun.file(ownerPath).json()).toEqual(before);
+      expect(await Bun.file(join(root, 'packages/cli/package.json')).text()).toBe(cliBefore);
+      expect(await checkWorkspaceDependencies(root)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // Nested apps run this guard from their own root, not through the outer manifest scan.
+  for (const appDir of ['examples/demo', 'dummy/demo']) {
+    test(`${appDir} is excluded outside, but checked from its own root`, async () => {
+      const root = await mkdtemp(join(tmpdir(), 'ultimate-workspace-scope-'));
+      try {
+        const app = join(root, appDir);
+        await Bun.write(
+          join(root, 'package.json'),
+          JSON.stringify({ workspaces: [`${appDir}/packages/*`] }),
+        );
+        await Bun.write(join(app, 'package.json'), ROOT_MANIFEST);
+        await Bun.write(join(app, 'packages/core/package.json'), '{"name":"@ultimat3/core"}');
+        await Bun.write(
+          join(app, 'packages/owner/package.json'),
+          JSON.stringify({ name: '@demo/owner', dependencies: { '@ultimat3/core': '1.0.0' } }),
+        );
+        await Bun.write(join(app, 'packages/owner/src/index.ts'), "import '@ultimat3/core';");
+        expect(await checkWorkspaceDependencies(root)).toEqual([]);
+        expect(await checkWorkspaceDependencies(app)).toEqual([]);
+        await Bun.write(join(app, 'packages/owner/src/index.ts'), 'export const value = 1;');
+        const findings = await checkWorkspaceDependencies(app);
+        expect(findings.map(({ code, at }) => ({ code, at }))).toEqual([
+          { code: 'X_PACKAGE_SHAPE', at: 'packages/owner/package.json' },
+        ]);
+        expect(fixProblem(findings[0]?.fix ?? '')).toBeUndefined();
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+// Use the real gate step: a check nothing calls is a check that passes forever.
 describe('unit · the rule is wired into `x verify`', () => {
   test('the `package-shape` step reports an undeclared workspace import', async () => {
     const step = VERIFY_STEPS.find((candidate) => candidate.name === 'package-shape');
     expect(await step?.applies?.({ root: dir, runner: async () => ({}) as never })).toBe(true);
-
     const result = await step?.run({ root: dir, runner: async () => ({}) as never });
-
     expect(result?.ok).toBe(false);
     expect(result?.findings.map((finding) => finding.code)).toContain('X_WORKSPACE_DEP_UNDECLARED');
   });
