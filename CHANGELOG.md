@@ -52,6 +52,23 @@ Every package; tier 5 — cli.
   its fixture models itself. 1.4.4 resolves peer dependencies pnpm-style, so `bun.lock` drops the
   `@babel/helper-module-transforms` subtree nothing installed.
 
+Tier 5 — cli.
+
+- **BREAKING — (#2) A `WORKER_QUEUES` entry the app does not know refuses the worker's boot.**
+  Each entry must be a queue in `jobs.queues` or the queue a registered `job()` is enqueued on —
+  the union an unset `WORKER_QUEUES` serves. Any other entry (a typo, an unexpanded pattern such as
+  `banks-*`, a bare `*`) is `X_WORKER_QUEUE_UNKNOWN` at worker start: the cause names the entry and
+  every queue the app knows, says a pattern is never expanded, and the `fix:` is the
+  `WORKER_QUEUES=` line to set — a pattern's expansion over the known queues. Before, the worker
+  booted claiming a queue nothing is enqueued on, said so at `info`
+  (`jobs.worker.queue-unregistered`), and stayed Ready: on 2026-10-27 an app's
+  `WORKER_QUEUES=banks-*,banks,default` rolled out healthy and left every run on its real queues
+  waiting ~15 minutes until a revert. Refused, the new pods crash and a rolling update stalls on
+  the old ones. What does not change: unset or blank is still the union; a registered queue an
+  exact worker does not list is still the `jobs.worker.queue-unserved` warning, not a refusal; an
+  empty entry is still `X_CONFIG_INVALID`. A queue that only `enqueue({ queue })` reaches must now
+  be in `jobs.queues` before a worker may name it (`packages/cli/src/runtime-jobs.ts`).
+
 ### Fixed
 
 Tier 2 — entity.

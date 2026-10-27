@@ -6,7 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 28.x → 29.0.0 | **1** so far, and **unreleased** — **Bun 1.4.4 as the floor** | the `28.x → 29.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 28.x → 29.0.0 | **2** so far, and **unreleased** — **Bun 1.4.4 as the floor**; a `WORKER_QUEUES` entry the app does not know refuses the worker's boot | the `28.x → 29.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 27.x → 28.0.0 | **2** — **Bun 1.4.3 as the floor**; `@ultimat3/ui/jsx-probe` and its `probe`/`unprobe` removed | the `28.0.0` section, in order |
 | 26.x → 27.0.0 | **2** — `AsyncContext.exit` required; **`/_storage` and `/media` refuse a key outside every `org/<id>/` prefix unless `defineStorage({ shared })` lists its prefix**, and `Storage.isShared` required | the `27.0.0` section, in order |
 | 25.x → 26.0.0 | **6** — an OAuth login that verifies the id token's signature against the provider's published key set by default; Apple out of the OAuth built-ins; `ServerHandle.describe()` deleted; no `api/**/route.ts` file kind; `recover: 'agent'` deleted and scraping at tier 4; one CLI verb per command (`list`, `show`, `delete`) | the `26.0.0` section, in order |
@@ -77,7 +77,7 @@ Each entry changes a surface the table below covers.
 
 ## 28.x → 29.0.0, entry by entry — **unreleased**
 
-**One entry so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by
+**Two entries so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by
 package, lowest tier first. No legacy path, no codemod, no shim. **Entry 1 is the whole upgrade for
 almost every app**: Bun 1.4.4 everywhere your app runs — laptop, CI, image. A later slice appends
 its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)`
@@ -95,14 +95,16 @@ edits are your app's pins — plus two things 1.4.4 itself moves, which step 3 a
 | 2 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
 | 3 | an app that reaches `@ultimat3/*` through `file:` folder dependencies or overrides (a local checkout of the framework) under `linker = "hoisted"`: drop the forced linker and install with Bun's default isolated one. Under the hoisted linker 1.4.4 copies a `file:` folder per dependent instead of symlinking it, so each `@ultimat3/*` package carries its own `@ultimat3/core` and a primitive registers into the wrong one | `X_REGISTRAR_MISSING` from `x` at boot, `bun run setup`, `x db gen` | — |
 | 4 | `x verify` — if `unit` reports `X_COVERAGE_BELOW_FLOOR` on functions with no test or source changed, 1.4.4's `--coverage` counts fewer functions and keeps the uncovered ones: re-measure and set `x.verify.json`'s `coverage.funcs` to the new figure, the reason in its `why` | green, or a finding whose `fix:` is the edit | — |
+| 5 | **before the deploy,** read every worker Deployment that sets `WORKER_QUEUES`: each entry must be in `jobs.queues` or be a registered job's queue (`x jobs list --json`). Write patterns out (`banks-*` is a literal name, never expanded); add a queue only `enqueue({ queue })` reaches to `jobs.queues` | `X_WORKER_QUEUE_UNKNOWN` at the worker's boot, the new pods crashing and the roll stalled on the old ones | 2 |
 
 ### Entry by entry
 
-Every package (1).
+Every package (1). Tier 5 — `@ultimat3/cli` (2).
 
 | # | Surface | Costs you an edit if |
 |---|---|---|
 | 1 | `engines.bun` `>=1.4.4`, `REQUIRED_BUN`, the scaffold's images | you run any Bun below 1.4.4 anywhere: `x` and `x doctor` refuse it with `X_BUN_VERSION`. Step 1 |
+| 2 | `WORKER_QUEUES` | a worker Deployment names a queue that is neither in `jobs.queues` nor a registered job's queue — a typo, a pattern (`banks-*`, `*`), or a queue only `enqueue({ queue })` reaches. It booted and claimed nothing there; it now refuses with `X_WORKER_QUEUE_UNKNOWN`, whose `fix:` is the `WORKER_QUEUES=` line to set. Step 5 |
 
 ## 27.x → 28.0.0, entry by entry
 

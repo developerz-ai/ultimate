@@ -236,6 +236,7 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SLICE_POLICY_INCOMPLETE',
   'X_CATALOG_SLOT_MISMATCH',
   'X_CATALOG_UNTRANSLATED',
+  'X_WORKER_QUEUE_UNKNOWN',
 ] as const;
 
 /**
@@ -428,6 +429,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SLICE_POLICY_INCOMPLETE: 'a generator needs an export the slice policy.ts does not declare',
   X_CATALOG_SLOT_MISMATCH: 'two locales define one key with different interpolation slots',
   X_CATALOG_UNTRANSLATED: "a locale still carries the reference locale's value",
+  X_WORKER_QUEUE_UNKNOWN: 'WORKER_QUEUES names a queue no job and no jobs.queues entry declares',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

@@ -63,7 +63,11 @@ probe meaningless; leaving them with no probe is how a wedged worker was never r
 **`WORKER_QUEUES` is the exact set a worker claims** (`As of 25.0.0`). Unset — the chart's one
 worker Deployment — it serves `jobs.queues` plus every registered job's queue. Set, it serves those
 comma-separated queues and no other: jobs on an unlisted queue wait for a worker that lists it, and
-the boot warns `jobs.worker.queue-unserved` naming them (`packages/cli/src/runtime-jobs.ts`). The
+the boot warns `jobs.worker.queue-unserved` naming them (`packages/cli/src/runtime-jobs.ts`). An
+entry the app does not know — in neither `jobs.queues` nor a registered job's queue; `banks-*` is a
+literal, never expanded — refuses the boot with `X_WORKER_QUEUE_UNKNOWN` (`As of 29.0.0`), so a bad
+value crashloops the new pods and the rolling update holds on the old ones instead of rolling out a
+Ready worker that claims nothing. The
 chart's `env:` is release-wide, so each further worker Deployment is a release of its own with every
 other role and `migrate` off (`roles.<role>.enabled`, `migrate.enabled`); `x jobs list --json` shows a
 queue nobody claims.
