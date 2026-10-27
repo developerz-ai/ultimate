@@ -43,9 +43,9 @@
 # The tag names the series for the reader; the digest is what builds. A tag is a pointer its
 # publisher can move, so the same commit could build on a different base tomorrow. Dependabot's
 # docker ecosystem moves the digest together with the tag.
-# The digest is `oven/bun:1.4.3-slim`'s (`docker buildx imagetools inspect`, 2026-10-24), the
+# The digest is `oven/bun:1.4.4-slim`'s (`docker buildx imagetools inspect`, 2026-10-27), the
 # patch CI pins in .github/actions/setup/action.yml; `scripts/bun-pin.test.ts` holds the two equal.
-FROM oven/bun:1.4-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS manifests
+FROM oven/bun:1.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS manifests
 WORKDIR /src
 COPY . .
 # `bunfig.toml` survives with the manifests, and it is not a convenience: its `[install]` section is
@@ -55,14 +55,14 @@ RUN find . ! -type d ! -name package.json ! -name bunfig.toml -delete \
  && find . -type d -empty -delete
 
 # ---------- deps: cached on the lockfile and the workspace manifests ----------
-FROM oven/bun:1.4-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS deps
+FROM oven/bun:1.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS deps
 WORKDIR /src
 COPY --from=manifests /src ./
 COPY bun.lock ./
 RUN bun install --frozen-lockfile
 
 # ---------- build: one self-contained binary ----------
-FROM oven/bun:1.4-slim@sha256:14a223fa35747ec728bce300ef85888bc5f7958164d15bbba6a54b22b52a3288 AS build
+FROM oven/bun:1.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS build
 WORKDIR /src
 # The WHOLE installed tree, not just the root `node_modules`. Bun's default isolated linker — still
 # the default on 1.4, re-checked on that bump — stores every package once under `node_modules/.bun/`

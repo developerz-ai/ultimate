@@ -89,12 +89,12 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@electric-sql/pglite": "0.5.10",
-    "@types/bun": "1.4.3",
+    "@types/bun": "1.4.4",
     "lefthook": "2.2.1",
     "solid-js": "1.9.17",
     "typescript": "^7.0.2"
   },
   "engines": {
-    "bun": ">=1.4.3"
+    "bun": ">=1.4.4"
   }
 }

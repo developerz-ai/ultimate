@@ -21,7 +21,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "@electric-sql/pglite": "^0.5.8",
-    "@types/bun": "1.4.3",
+    "@types/bun": "1.4.4",
     "@ultimat3/testing": "28.0.0",
     "typescript": "^7.0.2"
   },
@@ -47,6 +47,6 @@
     "solid-js": "1.9.17"
   },
   "engines": {
-    "bun": ">=1.4.3"
+    "bun": ">=1.4.4"
   }
 }

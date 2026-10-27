@@ -29,6 +29,19 @@ Tier 1 — seo.
   `socialCard: true`, the switch that entry said did not exist. The 23.0.0 section is left as it
   shipped.
 
+### Changed
+
+Every package; tier 5 — cli.
+
+- **BREAKING — (#1) Bun 1.4.4 is the floor.** `engines.bun` is `>=1.4.4` in every `@ultimat3/*`
+  manifest and in `create-ultimate`, and `x` / `x doctor` (`REQUIRED_BUN`) refuse Bun 1.4.0–1.4.3
+  with `X_BUN_VERSION`. CI, `release.yml`, the framework image (`oven/bun:1.4.4-slim`) and the image
+  `x new` scaffolds (`oven/bun:1.4.4-alpine`, by digest) all run 1.4.4, so the floor names the one
+  patch this release was tested on (`scripts/bun-pin.test.ts` holds every site to CI's patch).
+  `@types/bun` is `1.4.4`. No framework code changed for it: the gate is green on 1.4.4 as it
+  stood on 1.4.3. 1.4.4 resolves peer dependencies pnpm-style, so `bun.lock` drops the
+  `@babel/helper-module-transforms` subtree nothing installed.
+
 ### Fixed
 
 Tier 2 — entity.

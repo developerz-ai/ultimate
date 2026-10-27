@@ -32,16 +32,16 @@ const dockerfile = (
 # from the file itself, and without it the frozen install cannot find what the lockfile names.
 # The tag names the series for the reader; the digest is what builds — a tag is a pointer its
 # publisher can move. Dependabot's docker ecosystem moves the digest together with the tag.
-# The digest is \`oven/bun:1.4.3-alpine\`'s, the patch the framework that wrote this file was
+# The digest is \`oven/bun:1.4.4-alpine\`'s, the patch the framework that wrote this file was
 # tested on — the same patch as \`engines.bun\` in package.json.
-FROM oven/bun:1.4-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373 AS manifests
+FROM oven/bun:1.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS manifests
 WORKDIR /app
 COPY . .
 RUN find . ! -type d ! -name package.json ! -name bunfig.toml ! -name '*.tgz' -delete \\
  && find . -type d -empty -delete
 
 # ---------- deps: runtime dependencies only, cached on the lockfile and the manifests ----------
-FROM oven/bun:1.4-alpine@sha256:629e17411f1f129dbec3af78d5af9c9f2a937435c80349437206c6b0b7422373 AS deps
+FROM oven/bun:1.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS deps
 WORKDIR /app
 COPY --from=manifests /app ./
 COPY bun.lock ./
