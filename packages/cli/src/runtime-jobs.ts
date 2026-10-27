@@ -57,7 +57,7 @@ export function workerQueuesFromEnv(env: Env): readonly string[] | undefined {
   if (!names.includes('')) return named;
   throw new ConfigInvalidError({
     cause: `${WORKER_QUEUES_ENV} ${renderCauseValue(raw)} contains an empty queue name — every comma-separated entry must name a queue`,
-    fix: `WORKER_QUEUES=${renderFixShellArg(named.join(','), '<queue>,<queue>')} on this Deployment — or unset WORKER_QUEUES to serve jobs.queues and every registered job's queue`,
+    fix: `WORKER_QUEUES=${renderFixShellArg(named.join(','), '<queue>,<queue>')}   # on this Deployment; or unset WORKER_QUEUES to serve jobs.queues and every registered job's queue`,
     meta: { key: WORKER_QUEUES_ENV },
   });
 }
@@ -132,14 +132,17 @@ export class WorkerQueueUnknownError extends UltimateError {
           : [queue],
     );
     const list = [...new Set(meant)].join(',');
+    // Every name through `renderCauseValue`: an env value can carry a newline, and a cause is one line.
+    const names = (queues: readonly string[]) => queues.map((q) => renderCauseValue(q)).join(', ');
     const pattern =
       patterns.length === 0
         ? ''
-        : ` — WORKER_QUEUES is never expanded, so ${patterns.join(', ')} is a literal queue name`;
+        : ` — WORKER_QUEUES is never expanded, so ${names(patterns)} is a literal queue name`;
     super({
       code: 'X_WORKER_QUEUE_UNKNOWN',
-      cause: `${WORKER_QUEUES_ENV} names ${input.unknown.map((queue) => renderCauseValue(queue)).join(', ')}, which no registered job is enqueued on and jobs.queues does not list${pattern}; the queues this app knows are ${input.known.length === 0 ? 'none' : input.known.join(', ')}`,
-      fix: `WORKER_QUEUES=${renderFixShellArg(list === '' ? undefined : list, '<queue>,<queue>')} on this Deployment — or add the queue to jobs.queues in app.config.ts when jobs reach it by enqueue({ queue }) alone`,
+      cause: `${WORKER_QUEUES_ENV} names ${names(input.unknown)}, which no registered job is enqueued on and jobs.queues does not list${pattern}; the queues this app knows are ${input.known.length === 0 ? 'none' : names(input.known)}`,
+      // The prose after `#`, so the line pasted into a shell sets the variable and runs nothing.
+      fix: `WORKER_QUEUES=${renderFixShellArg(list === '' ? undefined : list, '<queue>,<queue>')}   # on this Deployment; or add the queue to jobs.queues in app.config.ts when jobs reach it by enqueue({ queue }) alone`,
       meta: { key: WORKER_QUEUES_ENV, unknown: input.unknown, known: input.known },
     });
   }
