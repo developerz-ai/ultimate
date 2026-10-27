@@ -2,10 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Twenty-seven majors have shipped, and this page walks all twenty-seven** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Twenty-seven majors have shipped, and this page walks all twenty-seven; a twenty-eighth (29.0.0) is in flight** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 28.x → 29.0.0 | **1** so far, and **unreleased** — **Bun 1.4.4 as the floor** | the `28.x → 29.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
 | 27.x → 28.0.0 | **2** — **Bun 1.4.3 as the floor**; `@ultimat3/ui/jsx-probe` and its `probe`/`unprobe` removed | the `28.0.0` section, in order |
 | 26.x → 27.0.0 | **2** — `AsyncContext.exit` required; **`/_storage` and `/media` refuse a key outside every `org/<id>/` prefix unless `defineStorage({ shared })` lists its prefix**, and `Storage.isShared` required | the `27.0.0` section, in order |
 | 25.x → 26.0.0 | **6** — an OAuth login that verifies the id token's signature against the provider's published key set by default; Apple out of the OAuth built-ins; `ServerHandle.describe()` deleted; no `api/**/route.ts` file kind; `recover: 'agent'` deleted and scraping at tier 4; one CLI verb per command (`list`, `show`, `delete`) | the `26.0.0` section, in order |
@@ -73,6 +74,35 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 28.x → 29.0.0, entry by entry — **unreleased**
+
+**One entry so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by
+package, lowest tier first. No legacy path, no codemod, no shim. **Entry 1 is the whole upgrade for
+almost every app**: Bun 1.4.4 everywhere your app runs — laptop, CI, image. A later slice appends
+its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)`
+after the dash.
+
+Why 1.4.4 is a floor: the floor names the one patch the release was tested on, and every pin site
+moves with CI's (`scripts/bun-pin.test.ts`). Nothing in the framework needed 1.4.4 to compile; the
+edits are your app's pins — plus two things 1.4.4 itself moves, which step 3 and 4 cover.
+
+### The upgrade, top to bottom
+
+| # | Do | What you see until you do | Entries |
+|---|---|---|---|
+| 1 | install Bun 1.4.4 (`bun upgrade`, or `curl -fsSL https://bun.sh/install \| bash -s bun-v1.4.4`) and pin it where your app pins Bun: `.bun-version`, `packageManager`, `engines.bun` (`>=1.4.4`), CI's `setup-bun` `bun-version`, every `oven/bun:` base image (`1.4.4-alpine` / `1.4.4-slim`, by digest) | `X_BUN_VERSION` from `x` and `x doctor` on 1.4.0–1.4.3 | 1 |
+| 2 | pin every `@ultimat3/*` to the one new version, `bun install` | nothing yet — a mixed install is untested | — |
+| 3 | an app that reaches `@ultimat3/*` through `file:` folder dependencies or overrides (a local checkout of the framework) under `linker = "hoisted"`: drop the forced linker and install with Bun's default isolated one. Under the hoisted linker 1.4.4 copies a `file:` folder per dependent instead of symlinking it, so each `@ultimat3/*` package carries its own `@ultimat3/core` and a primitive registers into the wrong one | `X_REGISTRAR_MISSING` from `x` at boot, `bun run setup`, `x db gen` | — |
+| 4 | `x verify` — if `unit` reports `X_COVERAGE_BELOW_FLOOR` on functions with no test or source changed, 1.4.4's `--coverage` counts fewer functions and keeps the uncovered ones: re-measure and set `x.verify.json`'s `coverage.funcs` to the new figure, the reason in its `why` | green, or a finding whose `fix:` is the edit | — |
+
+### Entry by entry
+
+Every package (1).
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `engines.bun` `>=1.4.4`, `REQUIRED_BUN`, the scaffold's images | you run any Bun below 1.4.4 anywhere: `x` and `x doctor` refuse it with `X_BUN_VERSION`. Step 1 |
 
 ## 27.x → 28.0.0, entry by entry
 

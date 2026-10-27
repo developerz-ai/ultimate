@@ -8,7 +8,9 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { transcriptOf } from './agent-continue';
 import { ANSWER, ctx, declare, INPUT, model, READ, ran, resetRan } from './agent-continue-fixture';
 import { billedOf } from './billed';
+import { useFixtureModels } from './model-fixture';
 
+useFixtureModels();
 beforeEach(resetRan);
 
 describe('a failed call leaves a handle that counts what it was billed', () => {

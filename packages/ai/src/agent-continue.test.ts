@@ -24,9 +24,10 @@ import {
   USAGE,
 } from './agent-continue-fixture';
 import { billedOf } from './billed';
-import { FIXTURE_MODEL } from './model-fixture';
+import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
 import { anthropicProvider, costOf } from './provider';
 
+useFixtureModels();
 beforeEach(resetRan);
 
 describe('.run() keeps the transcript', () => {

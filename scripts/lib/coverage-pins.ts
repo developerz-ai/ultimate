@@ -71,13 +71,27 @@ export interface CoveragePin {
  *
  * `scripts` joined the gate on 2026-10-01 as one more unit, measured for the first time.
  *
+ * `jobs` was pinned on 2026-10-27 by the runtime, not by a change: Bun 1.4.4 counts fewer functions
+ * under `--coverage` and the uncovered ones stay, so its function ratio fell under the target.
+ *
  * A new entry here is a regression that someone chose not to fix yet, and it needs the reason
  * written in `why`. Re-measure with `bun run scripts/coverage-gate.ts --all --json`.
  */
 export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
+  jobs: {
+    lines: 98,
+    funcs: 94,
+    why:
+      'Bun 1.4.4, 2026-10-27, no test or source changed: 98.47% / 95.46% on 1.4.3, 98.15% / ' +
+      '94.59% on 1.4.4. 1.4.4 stops counting some functions under --coverage (lcov FNF over ' +
+      'packages/jobs/src falls, FNH falls by the same amount, the uncovered ones stay), so the ' +
+      "ratio drops. What is uncovered is the pg drivers' fixtures (driver-answers-fixture.ts, " +
+      'driver-lifecycle-fixture.ts) that only the live suites reach. Deleted when they are ' +
+      'covered without a live service.',
+  },
   scripts: {
     lines: 83,
-    funcs: 90,
+    funcs: 89,
     why:
       'First measurement, 2026-10-01: 80.35% lines / 88.21% functions over 139 files, a file no ' +
       "test loads counted at 0%. What is uncovered is each script's `import.meta.main` block " +
@@ -86,7 +100,10 @@ export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
       'list-workspaces.ts, the four bench/restart-bench*.ts, lib/guard-preload.ts). Closed by ' +
       "moving each main block's logic into an exported function its test calls; the pin rises " +
       'with every script that does. 2026-10-04: 82.74% / 89.52% after slice 14a. 2026-10-06: ' +
-      '83.81% / 90.55% (CI) after sweep 11b: the guards it tightened each gained fixture tests.',
+      '83.81% / 90.55% (CI) after sweep 11b: the guards it tightened each gained fixture tests. ' +
+      '2026-10-27, Bun 1.4.4: 83.28% / 89.48%, functions 90 -> 89 with no test or source ' +
+      'changed — over the same files lcov counts 202 uncovered functions on both, of 2657 on ' +
+      '1.4.3 and 2397 on 1.4.4.',
   },
 };
 

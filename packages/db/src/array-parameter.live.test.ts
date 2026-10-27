@@ -41,16 +41,16 @@ const run = <R>(text: string, values: readonly unknown[]): Promise<readonly R[]>
   on<R>(text, encodeBoundParameters(values));
 
 describeLive('live · postgres · an array bound as a statement parameter', () => {
-  // The defect itself, as a property rather than as a story: the raw form is what Bun sends and it
-  // must fail, the encoded form is what this module sends and it must not. Asserting only the
-  // second would pass with the encoder deleted on any driver that happened to encode.
-  test('the raw JS array is refused by Postgres, and the encoded one is not', async () => {
-    // `on` and not `run`: the raw array is what Bun sends today, and it must still fail — asserting
-    // only the encoded half would pass with the encoder deleted on any driver that happened to
-    // encode, which is exactly how PGlite hid this for the whole life of the framework.
-    await expect(on('select $1::text[] as a', [['x', 'y']])).rejects.toThrow(
-      /malformed array literal/,
-    );
+  // The defect itself, re-measured on Bun 1.4.4. Through 1.4.3 `Bun.SQL` sent a raw JS array as
+  // its `toString()` and Postgres refused it (`malformed array literal`, #384) — the reason the
+  // encoder exists. 1.4.4 binds an array parameter itself (pooled or `prepare: false`), so the raw
+  // form now parses too. Both halves are asserted: the raw one so a runtime that regresses is read
+  // here rather than in a container, and the encoded one because it is what this module sends —
+  // and the encoder still owns the refusals (a ragged array, an Invalid Date) Bun does not make.
+  test('the raw JS array and the encoded one both parse as the same array on Bun 1.4.4', async () => {
+    // `on` and not `run`: the raw array is what Bun sends with no encoder in front of it.
+    const raw = await on<{ a: readonly string[] }>('select $1::text[] as a', [['x', 'y']]);
+    expect(raw[0]?.a).toEqual(['x', 'y']);
     const rows = await run<{ a: readonly string[] }>('select $1::text[] as a', [['x', 'y']]);
     expect(rows[0]?.a).toEqual(['x', 'y']);
   });

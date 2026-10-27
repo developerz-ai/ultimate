@@ -10,7 +10,7 @@ bun run setup    # bun version check, install, .env.development.local, git hooks
 bun run verify   # the gate: 20 steps, one command, no --only and no --skip. Green = shippable
 ```
 
-Requirements: **Bun >= 1.4.2** (`engines.bun` in `package.json`). Nothing else. No Node, no Docker,
+Requirements: **Bun >= 1.4.4** (`engines.bun` in `package.json`). Nothing else. No Node, no Docker,
 no database — `x dev` runs embedded Postgres (PGlite), in-process events, and S3 to a local
 directory.
 

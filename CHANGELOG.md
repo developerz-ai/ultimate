@@ -29,6 +29,29 @@ Tier 1 — seo.
   `socialCard: true`, the switch that entry said did not exist. The 23.0.0 section is left as it
   shipped.
 
+### Changed
+
+Every package; tier 5 — cli.
+
+- **BREAKING — (#1) Bun 1.4.4 is the floor.** `engines.bun` is `>=1.4.4` in every `@ultimat3/*`
+  manifest and in `create-ultimate`, and `x` / `x doctor` (`REQUIRED_BUN`) refuse Bun 1.4.0–1.4.3
+  with `X_BUN_VERSION`. CI, `release.yml`, the framework image (`oven/bun:1.4.4-slim`) and the image
+  `x new` scaffolds (`oven/bun:1.4.4-alpine`, by digest) all run 1.4.4, so the floor names the one
+  patch this release was tested on (`scripts/bun-pin.test.ts` holds every site to CI's patch).
+  `@types/bun` is `1.4.4`. No shipped runtime code changed for it. What 1.4.4 moved, and what
+  this repository did about each: (a) `--coverage` counts fewer functions while the uncovered ones
+  stay, so a function ratio falls with no test or source changed (`packages/jobs` 95.46% →
+  94.59%) — `jobs` is pinned, `scripts`' pin and both tracked apps' floors re-measured, each with
+  the numbers in its `why`; (b) a `file:` folder dependency is now copied rather than symlinked
+  file by file under the hoisted linker, so a graph that reaches `@ultimat3/core` through several
+  `file:` packages loads several cores and `x` fails on `X_REGISTRAR_MISSING` — the scaffold smoke
+  no longer forces the hoisted linker and installs with the default isolated one, which keeps one
+  core; (c) `Bun.SQL` binds a JS array parameter itself, and `array-parameter.live.test.ts`
+  asserts that instead of the refusal; (d) two `@ultimat3/ai` suites relied on a fixture module's
+  import-time hook, which only reaches the first suite that imports it — each suite registers
+  its fixture models itself. 1.4.4 resolves peer dependencies pnpm-style, so `bun.lock` drops the
+  `@babel/helper-module-transforms` subtree nothing installed.
+
 ### Fixed
 
 Tier 2 — entity.

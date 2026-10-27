@@ -6,6 +6,14 @@
 // generated app needs is transitive — `@ultimat3/mcp` depends on `@ultimat3/schema`, which the
 // app never lists directly — and only `overrides` rewrites a range wherever it appears in the
 // graph, not just at the top level.
+//
+// Installed with Bun's default isolated linker, the one a real app gets. Through Bun 1.4.3 the
+// job forced the hoisted linker, which installed a `file:` folder as per-file symlinks, so every
+// nested `@ultimat3/core` resolved to one real path. 1.4.4 copies the folder instead: each
+// `@ultimat3/*` package carried its own core, `@ultimat3/query` registered into one and `x` read
+// another, and `bun run setup` died on `X_REGISTRAR_MISSING`. The isolated linker keeps one
+// store entry per `file:` target — one core — and `link:` instead bundled extra modules into an
+// island on Windows (`post-form` 82.8 kB against the 64 kB budget, 60.9 kB on Linux).
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseScriptArgs } from './lib/args';

@@ -8,14 +8,16 @@ import type { AgentTurn } from './agent';
 import { agent } from './agent';
 import { echoProvider } from './echo-provider';
 import { providerGateway } from './gateway';
-import { FIXTURE_MODEL, useFixtureModels } from './model-fixture';
+import { FIXTURE_MODEL } from './model-fixture';
 import { definePrompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf } from './provider';
 import { configureAi, resetAiRuntime } from './runtime';
 import type { ProjectableAction } from './tools';
 
-useFixtureModels();
+// The fixture models are registered by each suite (`useFixtureModels()` in the test file), never
+// here: a hook registered while this module loads attaches to the first suite that imports it,
+// and the second suite in the same process ran with whatever the one before it had reset.
 
 export const USAGE: TokenUsage = {
   inputTokens: 1_000,

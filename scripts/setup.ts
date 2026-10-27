@@ -29,7 +29,7 @@ import { liveSuiteLines } from './lib/test-services-hint';
 // 1.4-only API — was tried on 2026-08-27 and refused on a measured Bun 1.3.14 shutdown hang. The
 // evidence lives in `.github/actions/setup/action.yml`; do not re-derive it, and do not lower this
 // constant without reading it.
-const REQUIRED_BUN = [1, 4, 3] as const;
+const REQUIRED_BUN = [1, 4, 4] as const;
 
 const bunTooOld = (version: string): boolean => {
   const parts = version.split('.').map((part) => Number.parseInt(part, 10) || 0);

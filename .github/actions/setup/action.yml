@@ -115,7 +115,17 @@ runs:
         #   - wall time: the full local gate 415 s on 12 cores; CI's is on the sweep 3 PR.
         # The rule stands for the next move: run the gate on the candidate and write its numbers
         # here, beside the pin, in the diff that moves it.
-        bun-version: '1.4.3'
+        #
+        # **1.4.4, measured (2026-10-27).** No shipped runtime code changed. `bun run verify` 14 of
+        # 20 passed, 6 skipped (the app-only steps), 658 s on 12 cores at load ~10 (a second
+        # repository's gate shared the box). What 1.4.4 moved: `--coverage` counts fewer functions
+        # and keeps the uncovered ones (`packages/jobs` 95.46% -> 94.59%, same tests), so `jobs` is
+        # pinned and the `scripts` pin and both apps' floors re-measured; the hoisted linker copies
+        # a `file:` folder per dependent, so the scaffold smoke installs with the default isolated
+        # linker; `Bun.SQL` binds an
+        # array parameter itself; peers resolve pnpm-style (`bun.lock` drops the
+        # `@babel/helper-module-transforms` subtree).
+        bun-version: '1.4.4'
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         # `~` is the runner's home on every OS (actions/cache expands it), and Bun's default

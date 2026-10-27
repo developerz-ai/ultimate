@@ -192,7 +192,7 @@ if (import.meta.main) {
           {
             code: 'X_SCAFFOLD_FIRST_RUN_FAILED',
             cause: `${bin} does not exist, so no command can be run in the scaffolded app`,
-            fix: `cd ${renderFixShellArg(dir, '<the scaffolded app directory>')} && bun install --linker=hoisted`,
+            fix: `cd ${renderFixShellArg(dir, '<the scaffolded app directory>')} && bun install`,
             at: dir,
           },
         ],
