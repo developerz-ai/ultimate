@@ -311,7 +311,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CATALOG_UNTRANSLATED:
     'x i18n check --json   # the finding names the locale and the key still carrying the reference value',
   X_WORKER_QUEUE_UNKNOWN:
-    'x jobs list --json — set WORKER_QUEUES to queues it lists, or add the queue to jobs.queues in app.config.ts',
+    'x jobs list --json   # set WORKER_QUEUES to queues it lists, or add the queue to jobs.queues in app.config.ts',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>
