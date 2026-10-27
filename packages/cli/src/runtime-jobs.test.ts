@@ -334,6 +334,29 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
     expect(error.fix).toStartWith('WORKER_QUEUES=<queue>,<queue> on this Deployment');
   });
 
+  // The production shape that must keep booting (bank-integrations, 2026-10-27): every run is
+  // enqueued onto a per-country queue chosen at enqueue time, so no job declares those queues —
+  // `jobs.worker.queue-unregistered` names them at info — and the app's config lists them, computed.
+  test('per-country queues only a computed jobs.queues lists boot, off the real loader', async () => {
+    probeJob('per-country-banks-probe', 'banks');
+    probeJob('per-country-default-probe', 'default');
+    const countries = ['ve', 'pa', 'ky', 'do', 'test'];
+    const root = await appRoot(
+      `const countries = ${JSON.stringify(countries)};\nexport const config = { name: 'banks', jobs: { queues: [...countries.map((c) => 'banks-' + c), 'banks', 'default'] } };\n`,
+    );
+    const listed = 'banks-ve,banks-pa,banks-ky,banks-do,banks-test,banks,default';
+    const config = workerConfigOf(await loadAppConfig(root), { [WORKER_QUEUES_ENV]: listed });
+    expect(workerOptionsFor(config).queues).toEqual(listed.split(','));
+
+    const pattern = workerConfigOf(await loadAppConfig(root), {
+      [WORKER_QUEUES_ENV]: 'banks-*,banks,default',
+    });
+    const error = unknownQueue(() => workerOptionsFor(pattern));
+    expect(error.fix).toStartWith(
+      'WORKER_QUEUES=banks-do,banks-ky,banks-pa,banks-test,banks-ve,banks,default on this Deployment',
+    );
+  });
+
   test('every entry the app knows boots, including one only jobs.queues lists', () => {
     probeJob('known-banks-probe', 'banks');
     const options = workerOptionsFor(exactConfig(['banks', 'per-call'], ['per-call']));
