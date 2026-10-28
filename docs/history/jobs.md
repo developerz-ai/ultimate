@@ -1314,3 +1314,29 @@ so a replacement worker claims it at once instead of after the visibility timeou
 through for the `X_DRAINING` reason when a fence is present and the attempt has not ended — the
 store's write is fenced on the claim, so the in-memory refusal added nothing there. A signal during
 boot drains too: `holdWhileBooting` installs the handlers before the roles start.
+
+## 2026-10-28 — the process cap, `maxInFlight`
+
+**Why a fourth number.** `concurrency` bounds each queue's pool; `LimitConfig.global` bounds the
+heap but only AFTER a claim, so a worker over it claims rows and sheds them; `job.concurrency` is
+one job across the fleet. None said "this pod runs at most N, whichever queues they come from" — the
+shape a consumer renting a scarce resource per run needs (a fleet of browsers split over ~5 pods,
+each country its own queue). `maxInFlight` is that number, read before the claim.
+
+**Why the count is not `inFlight.size`.** The held-runs set drops a run only after its fleet slot
+DELETE lands; the limiter lease goes back at the top of the run's `finally`, which then kicks a
+pass. A cap read off the held set would see the slot still taken on that kicked pass, claim
+nothing, and back the loop off — a freed slot idle for up to the poll ceiling. The count is its
+own (`worker-process-cap.ts`), returned beside the lease, before the kick.
+
+**Why rotation and a split, not the old order.** A pass asked the queues in the worker's order, each
+for its own free slots; under a cap the first-listed queue with a backlog took every slot that
+freed, for as long as its backlog lasted. The sweep (`worker-claim-sweep.ts`) asks in that order
+rotated to start after the last queue given a job, and splits the room (`ceil(room / queues
+left)`), re-asking only a queue whose SHARE (not its slots) bound it and whose claims all started
+— a shed is not evidence of more work, and re-asking on one would bounce the same capped rows. With
+no cap the share never binds, so an uncapped pass is still one ask per queue.
+
+**The scaler's numbers** are per process and unlabelled (`job_worker_in_flight`,
+`job_worker_capacity`): one worker per pod is what the `worker` role boots, and the scrape's `instance`
+label already separates pods.

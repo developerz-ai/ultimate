@@ -160,6 +160,11 @@ export interface JobsConfig {
    * (`{ banks: 4, 'banks-long': 2 }`, a queue it does not name at `JOBS_CONCURRENCY_DEFAULT`).
    */
   readonly concurrency: JobsConcurrency;
+  /**
+   * Runs one worker process holds at once across every queue it serves (`jobWorker`'s
+   * `maxInFlight`), the per-queue `concurrency` still bounding each under it. Unset: no process cap.
+   */
+  readonly maxInFlight?: number | undefined;
   readonly maxAttempts: number;
   readonly backoff: (typeof JOB_BACKOFFS)[number];
   readonly visibilityTimeoutMs: number;
@@ -283,6 +288,9 @@ function validate(config: AppConfig): void {
   const perKey: readonly (string | undefined)[] = [
     ...config.roles.map((role) => oneOfIssue('roles', role, ROLES)),
     ...jobsConcurrencyIssues(config.jobs.concurrency),
+    config.jobs.maxInFlight === undefined
+      ? undefined
+      : countIssue('jobs.maxInFlight', config.jobs.maxInFlight, 1),
     countIssue('jobs.maxAttempts', config.jobs.maxAttempts, 1),
     countIssue('jobs.visibilityTimeoutMs', config.jobs.visibilityTimeoutMs, 1),
     ...(['doneRetentionMs', 'deadRetentionMs', 'outboxRetentionMs'] as const).map((key) =>

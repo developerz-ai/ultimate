@@ -1,5 +1,5 @@
-// The queues a `worker` serves and the slots each gets: `jobs.queues`, `jobs.concurrency` and
-// `jobs.visibilityTimeoutMs` off the app's own `app.config.ts`, and `WORKER_QUEUES` off the
+// The queues a `worker` serves and the slots each gets: `jobs.queues`, `jobs.concurrency`,
+// `jobs.maxInFlight` and `jobs.visibilityTimeoutMs` off the app's own `app.config.ts`, and `WORKER_QUEUES` off the
 // Deployment's env — the one per-Deployment answer, since every Deployment runs the same image and
 // the same config (issues #673, #676).
 
@@ -31,6 +31,8 @@ export interface WorkerConfig {
    */
   readonly configured: readonly string[];
   readonly concurrency: JobsConcurrency | undefined;
+  /** `jobs.maxInFlight`: runs across every queue this process serves. Unset: no process cap. */
+  readonly maxInFlight?: number | undefined;
   readonly visibilityTimeoutMs: number | undefined;
 }
 
@@ -40,6 +42,7 @@ const NO_WORKER_CONFIG: WorkerConfig = Object.freeze({
   exact: false,
   configured: [],
   concurrency: undefined,
+  maxInFlight: undefined,
   visibilityTimeoutMs: undefined,
 });
 
@@ -72,6 +75,7 @@ export function workerConfigOf(config: AppConfig | undefined, env: Env = {}): Wo
           exact: false,
           configured: config.jobs.queues,
           concurrency: config.jobs.concurrency,
+          maxInFlight: config.jobs.maxInFlight,
           visibilityTimeoutMs: config.jobs.visibilityTimeoutMs,
         };
   return fromEnv === undefined ? base : { ...base, queues: fromEnv, exact: true };
@@ -163,7 +167,10 @@ function refuseUnknownQueues(
   if (unknown.length > 0) throw new WorkerQueueUnknownError({ unknown, known, named });
 }
 
-type WorkerConfigOptions = Pick<WorkerOptions, 'queues' | 'concurrency' | 'visibilityTimeoutMs'>;
+type WorkerConfigOptions = Pick<
+  WorkerOptions,
+  'queues' | 'concurrency' | 'maxInFlight' | 'visibilityTimeoutMs'
+>;
 
 /**
  * The `jobWorker` options the config supplies, read at START so every job the app registered
@@ -183,6 +190,7 @@ export function workerOptionsFor(config: WorkerConfig | undefined): WorkerConfig
   return {
     ...(queues === undefined ? {} : { queues }),
     ...(concurrency === undefined ? {} : { concurrency }),
+    ...(config?.maxInFlight === undefined ? {} : { maxInFlight: config.maxInFlight }),
     ...(config?.visibilityTimeoutMs === undefined
       ? {}
       : { visibilityTimeoutMs: config.visibilityTimeoutMs }),

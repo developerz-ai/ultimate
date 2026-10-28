@@ -76,7 +76,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `finiteCount()` (a count, caller's minimum); `worker-options.ts` is where `jobWorker` reads them.
   **`bun run finite-bounds` is a floor, never proof**: `concurrencyLimiter`'s five numbers are screened
   with min 0 (zero is a HARD STOP). **A row count is `finiteCount` (min 0)**; `retry.attempts` is one with min 1.
-- **`WorkerOptions.concurrency` is read by OWN key** (`worker-slots.test.ts`).
+- **`WorkerOptions.concurrency` is read by OWN key** (`worker-slots.test.ts`); `maxInFlight` BEFORE
+  the claim, its count back with the lease, before the `kick` (history).
 - **`job.concurrency` is enforced by `JobDriver.leases`** (one row per held slot in `x_job_leases`);
   `limits.ts` is the per-process fast path. No lease store + a declared `concurrency` makes `start()`
   throw `X_JOB_CONCURRENCY_UNENFORCEABLE`.
@@ -129,9 +130,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   out before `leader.release()`. Same two-hook rule; an ABANDONED round does not release
   (`jobs.scheduler.drain-abandoned`). `stillLeading()` is asked every round and before every task,
   and answers from memory inside `renewEveryMs`.
-- **`run-once` fires ONE catch-up**: the watermark rides the fire (`ScheduledFire.watermarkMs`,
-  `SQL_SCHEDULER_FIRE` `$4`), never a `markFired` behind it; `skip` fires the true latest missed
-  occurrence (`latestOccurrenceBy`, bisection).
+- **`run-once` fires ONE catch-up**: the watermark rides the fire (`ScheduledFire.watermarkMs`),
+  never a `markFired` behind it; `skip` fires the latest missed occurrence (`latestOccurrenceBy`).
 - **A lease for a run that never STARTED is `abandon()`ed, never `release()`d** — the rate stamp
   goes with it (`worker-admit.ts`). **A failed pass re-arms at the floor** (`worker-loop.ts`
   catch); `timers` is the test seam.
@@ -229,8 +229,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 - **`webhook()`**: ONE event to ONE endpoint, no steps; each attempt but a CANCELLED one recorded
   before the throw; `ledger.isDisabled` gates the socket. **The wire format is core's.** An org
   tenant reads `orgId` OFF THE INPUT; none, or not the run's org: TERMINAL `X_JOB_TENANT_MISMATCH`.
-- A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` subclass on
-  purpose (it stands in for app code).
+- A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` on purpose.
 
 ## Files
 
@@ -283,6 +282,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `worker-run.ts` | one claimed job, wired: heartbeat, slot renewal, run signal, span |
 | `run-signal.ts` | the signal ONE run is cancelled by |
 | `worker-fleet-slots.ts` | the fleet slot an in-flight job holds — take, renew, hand back — and the boot refusal |
+| `worker-process-cap.ts` / `worker-claim-sweep.ts` | `maxInFlight`'s count; the pass's asks, rotated |
 | `purge.ts` | `purge()` — a factory over `job()`: the retention sweep and its target seam |
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
@@ -304,9 +304,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
 | `errors-tenant.ts` | `JobTenantMismatchError` |
 
-Which `-fixture.ts` harness each suite shares, and what each `.job.` suite proves:
-`docs/history/jobs.md`, "Moved 2026-10-01 — test harnesses".
-
-Commands: `bun test packages/jobs` · `bun run --filter @ultimat3/jobs typecheck`.
+Commands: `bun test packages/jobs` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:
+history, "Moved 2026-10-01 — test harnesses".
 
 Why each rule above is shaped the way it is: [`docs/history/jobs.md`](../../docs/history/jobs.md).
