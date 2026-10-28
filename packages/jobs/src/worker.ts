@@ -49,8 +49,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     resolveWorkerTimings(options);
   const limiter = options.limiter ?? concurrencyLimiter({});
   const slots = queues.reduce((total, queue) => total + slotsFor(queue), 0);
-  /** `maxInFlight`: runs across every queue, read before each claim. */
-  const cap = createProcessCap(options.maxInFlight, slots);
+  const cap = createProcessCap(options.maxInFlight, slots); // read before each claim
   const sweep = createClaimSweep();
   const driverLeases = options.driver.leases;
   // `job.concurrency`, held as a row every replica sees. The TTL is the visibility timeout and the
@@ -401,6 +400,7 @@ export function jobWorker(options: WorkerOptions): Worker {
       // and the budget with it, or the next manual stop would inherit a deadline already spent.
       cutoff?.dispose();
       cutoff = undefined;
+      cap.retire(); // out of the process gauges until a `start()` serves again
       drainSignal = new AbortController();
       budget = createDrainBudget();
     }
@@ -442,6 +442,7 @@ export function jobWorker(options: WorkerOptions): Worker {
       // `x jobs show` and the manifest both confirm a guarantee that does not exist.
       assertConcurrencyEnforceable(options.driver);
       state = 'running';
+      cap.revive();
       logger.info('jobs.worker.started', { workerId, queues });
       reportUnregisteredQueues(workerId, queues);
       registration = startWorkerRegistry({

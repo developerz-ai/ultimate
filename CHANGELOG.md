@@ -41,11 +41,13 @@ Tier 0 — core. Tier 3 — jobs. Tier 5 — cli.
   asked (`ceil(room / queues left)`), a queue with less work leaves the rest to the next ones (no
   idle slot while any served queue has ready work), and the queue order is rotated to start after
   the last queue given a job — so each freed slot goes to the next queue in turn and no backlog
-  monopolises the cap. Drain, lease heartbeat and fleet slots are unchanged. Unset is no cap, the
+  monopolises the cap, including while the loop idles at the cap (an idle pass there takes the
+  rotated asks, not the one-statement claim that hands out the oldest row of any queue). Drain, lease heartbeat and fleet slots are unchanged. Unset is no cap, the
   worker as it was. `0`, negative, fractional, `NaN` or `Infinity` is `X_INVARIANT` at `jobWorker()`
   and `X_CONFIG_INVALID` naming `jobs.maxInFlight` at boot. For a scaler: `worker.stats()` gains
   `maxInFlight` (`null` when uncapped), the registry row's `concurrency` is the tighter of the cap
-  and the slot sum, and two new gauges, `job_worker_in_flight` and `job_worker_capacity`.
+  and the slot sum, and two new gauges, `job_worker_in_flight` and `job_worker_capacity`, summed over the live workers
+  in the process.
 
 ### Changed
 

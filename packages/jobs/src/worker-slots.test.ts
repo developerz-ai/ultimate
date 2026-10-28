@@ -117,11 +117,16 @@ describe('a slot refills when its own job settles, not when the batch does', () 
     });
 
     const base = memoryJobDriver();
+    // Opened once the first pass's ask for `emails` has been ANSWERED — the one signal that the
+    // pass is done asking, so an email enqueued after it is the second pass's to claim.
+    const emailsAsked = gate();
     const driver: JobDriver = {
       ...base,
-      claim(options: ClaimOptions) {
+      async claim(options: ClaimOptions) {
         asked.push(...options.queues);
-        return base.claim(options);
+        const claimed = await base.claim(options);
+        if (options.queues.includes('emails')) emailsAsked.open();
+        return claimed;
       },
     };
     const worker = jobWorker({
@@ -135,9 +140,7 @@ describe('a slot refills when its own job settles, not when the batch does', () 
 
     const first = worker.tick();
     await started.passed;
-    // The first pass has finished ASKING (it never waits for its job): an email enqueued while it
-    // was still between queues would be its to claim, and this test is about the second pass.
-    await Bun.sleep(1);
+    await emailsAsked.passed;
     await enqueue(driver, 'emailJob', 'emails');
     const second = await worker.tick();
 

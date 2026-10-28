@@ -1340,3 +1340,13 @@ no cap the share never binds, so an uncapped pass is still one ask per queue.
 **The scaler's numbers** are per process and unlabelled (`job_worker_in_flight`,
 `job_worker_capacity`): one worker per pod is what the `worker` role boots, and the scrape's `instance`
 label already separates pods.
+
+**Review follow-ups, same day.** (1) The rotation did not hold where it matters most: a worker at
+the cap finds nothing, so its loop IDLES, and an idle pass was the one statement over every queue —
+the driver's order, the oldest row of any queue. The sweep now latches `contended` when the cap
+fills and takes the rotated asks on idle passes until one finds no work; a "runs still held" test
+was wrong at `maxInFlight: 1`, where the finish that must pick the next queue leaves none held.
+(2) The gauges were per worker on an unlabelled series, so a second `jobWorker` in one process
+reset the first's numbers; they are the sum over the live workers, and a stopped worker leaves it.
+(3) The refill test now runs the real loop backed off past 800 ms, so only the finish's `kick`
+explains a refill inside 300 ms.
