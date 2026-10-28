@@ -153,7 +153,7 @@ describe('maxInFlight caps the process across every queue', () => {
     await worker.stop();
   });
 
-  test('a run that ends frees exactly one claim, and the pass after it takes it', async () => {
+  test('a run that ends frees exactly one claim, and its finish kicks the pass that takes it', async () => {
     const parked = parkedJobs(['a', 'b', 'c']);
     const driver = memoryJobDriver();
     for (const queue of ['a', 'b', 'c']) await enqueue(driver, queue, 4);
@@ -162,26 +162,73 @@ describe('maxInFlight caps the process across every queue', () => {
       queues: ['a', 'b', 'c'],
       concurrency: 4,
       maxInFlight: 3,
+      pollIntervalMs: 20,
+      idlePollMaxMs: 60_000,
       context,
       drainOnShutdown: false,
     });
 
-    void worker.tick();
+    worker.start();
     await parked.startedAtLeast(3);
-    await settle();
+    // At the cap every pass finds nothing, so the loop backs off. Caught the moment it arms an
+    // 800 ms wait, the refill below cannot be the poll's: only the finish's own `kick` brings the
+    // next pass inside 300 ms.
+    while ((await worker.stats()).pollDelayMs < 800) await Bun.sleep(5);
     expect(parked.running).toHaveLength(3);
 
     const first = parked.running[0] ?? '';
     parked.release(first);
-    await settle();
-    void worker.tick();
-    await parked.startedAtLeast(4);
+    const refilled = await Promise.race([
+      parked.startedAtLeast(4).then(() => true),
+      Bun.sleep(300).then(() => false),
+    ]);
+    expect(refilled).toBe(true);
     await settle();
     expect(parked.running).toHaveLength(3);
     expect(parked.running).not.toContain(first);
 
-    for (const id of [...parked.started]) parked.release(id);
-    await worker.stop();
+    const stopping = worker.stop('test');
+    for (const id of [...parked.running]) parked.release(id);
+    await stopping;
+  });
+
+  test('a busy worker at the cap hands each freed slot on by turn, its loop idling between', async () => {
+    const parked = parkedJobs(['a', 'b', 'c']);
+    const driver = memoryJobDriver();
+    await enqueue(driver, 'a', 20);
+    await enqueue(driver, 'b', 2);
+    await enqueue(driver, 'c', 2);
+    const worker = jobWorker({
+      driver,
+      queues: ['a', 'b', 'c'],
+      concurrency: 8,
+      maxInFlight: 1,
+      pollIntervalMs: 1,
+      idlePollMaxMs: 20,
+      context,
+      drainOnShutdown: false,
+    });
+
+    worker.start();
+    for (let round = 1; round <= 6; round += 1) {
+      await parked.startedAtLeast(round);
+      // Long enough for the loop to go idle at the cap: the next pass is an IDLE one, which once
+      // asked every queue in one statement and took the oldest row — `a`'s, twenty deep.
+      await Bun.sleep(30);
+      expect(parked.running).toHaveLength(1);
+      parked.release(parked.running[0] ?? '');
+    }
+    expect(parked.started.slice(0, 6).map((id) => id.split(':')[0])).toEqual([
+      'a',
+      'b',
+      'c',
+      'a',
+      'b',
+      'c',
+    ]);
+    const stopping = worker.stop('test');
+    for (const id of [...parked.running]) parked.release(id);
+    await stopping;
   });
 
   test('the per-queue slots still bound each queue under a looser cap', async () => {
@@ -315,35 +362,54 @@ describe('maxInFlight caps the process across every queue', () => {
 });
 
 describe('what a scaler reads', () => {
-  const gauge = (name: string): number | undefined =>
-    collectMetrics().metrics.find((metric) => metric.descriptor.name === name)?.points[0]?.value;
+  const gauge = (name: string): number =>
+    collectMetrics().metrics.find((metric) => metric.descriptor.name === name)?.points[0]?.value ??
+    0;
 
-  test('in-flight and capacity are gauges: capacity is the tighter of the cap and the slots', async () => {
+  // Read as a delta over what the process already counts: a worker another test left live in this
+  // process is part of the process, which is the point of an unlabelled gauge.
+  test('two workers in one process SUM: in-flight and capacity (the tighter of cap and slots)', async () => {
     const parked = parkedJobs(['a', 'b']);
     const driver = memoryJobDriver();
     await enqueue(driver, 'a', 3);
-    const worker = jobWorker({
+    await enqueue(driver, 'b', 3);
+    // `beforeEach` zeroed the series, not the workers: a worker stopped here republishes both
+    // sums as the process holds them, which is the baseline.
+    await jobWorker({ driver: memoryJobDriver(), context, drainOnShutdown: false }).stop();
+    const capacity = gauge('job_worker_capacity');
+    const inFlight = gauge('job_worker_in_flight');
+    const capped = jobWorker({
       driver,
-      queues: ['a', 'b'],
+      queues: ['a'],
       concurrency: 4,
       maxInFlight: 2,
       context,
       drainOnShutdown: false,
     });
-    expect(gauge('job_worker_capacity')).toBe(2);
+    const uncapped = jobWorker({
+      driver,
+      queues: ['b'],
+      concurrency: 3,
+      context,
+      drainOnShutdown: false,
+    });
+    // Constructing the second worker must not reset the first's numbers: 2 + 3.
+    expect(gauge('job_worker_capacity') - capacity).toBe(5);
 
-    void worker.tick();
-    await parked.startedAtLeast(2);
+    void capped.tick();
+    void uncapped.tick();
+    await parked.startedAtLeast(5);
     await settle();
-    expect(gauge('job_worker_in_flight')).toBe(2);
+    expect(gauge('job_worker_in_flight') - inFlight).toBe(5);
 
     for (const id of [...parked.started]) parked.release(id);
-    await worker.stop();
-    expect(gauge('job_worker_in_flight')).toBe(0);
-
-    resetJobs();
-    jobWorker({ driver, queues: ['a', 'b'], concurrency: 4, context, drainOnShutdown: false });
-    expect(gauge('job_worker_capacity')).toBe(8);
+    await settle();
+    expect(gauge('job_worker_in_flight') - inFlight).toBe(0);
+    await capped.stop();
+    // A stopped worker leaves the process's capacity; the other's stays.
+    expect(gauge('job_worker_capacity') - capacity).toBe(3);
+    await uncapped.stop();
+    expect(gauge('job_worker_capacity') - capacity).toBe(0);
   });
 });
 
