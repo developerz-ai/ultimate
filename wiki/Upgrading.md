@@ -2,11 +2,11 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Twenty-seven majors have shipped, and this page walks all twenty-seven; a twenty-eighth (29.0.0) is in flight** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Twenty-eight majors have shipped, and this page walks all twenty-eight** — 2.0.0's 33 entries joined it `As of 2026-08`, and `scripts/changelog-check.ts` now refuses a summary row whose section the page does not carry, which is how they were missing for six releases. [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source for the majors it still carries, and `git show v<tag>:CHANGELOG.md` for the ones it has archived; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 28.x → 29.0.0 | **2** so far, and **unreleased** — **Bun 1.4.4 as the floor**; a `WORKER_QUEUES` entry the app does not know refuses the worker's boot | the `28.x → 29.0.0` section below. Its entries sit under `[Unreleased]` in `CHANGELOG.md` until the tag |
+| 28.x → 29.0.0 | **2** — **Bun 1.4.4 as the floor**; a `WORKER_QUEUES` entry the app does not know refuses the worker's boot | the `29.0.0` section, in order |
 | 27.x → 28.0.0 | **2** — **Bun 1.4.3 as the floor**; `@ultimat3/ui/jsx-probe` and its `probe`/`unprobe` removed | the `28.0.0` section, in order |
 | 26.x → 27.0.0 | **2** — `AsyncContext.exit` required; **`/_storage` and `/media` refuse a key outside every `org/<id>/` prefix unless `defineStorage({ shared })` lists its prefix**, and `Storage.isShared` required | the `27.0.0` section, in order |
 | 25.x → 26.0.0 | **6** — an OAuth login that verifies the id token's signature against the provider's published key set by default; Apple out of the OAuth built-ins; `ServerHandle.describe()` deleted; no `api/**/route.ts` file kind; `recover: 'agent'` deleted and scraping at tier 4; one CLI verb per command (`list`, `show`, `delete`) | the `26.0.0` section, in order |
@@ -40,7 +40,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' <(awk '/^## /{u = ($0 == "## [Unreleased]")} !u' CHANGELOG.md)
-# 415 As of 2026-10-24 — every RELEASED section, which is the sum of every row above whose section
+# 417 As of 2026-10-28 — every RELEASED section, which is the sum of every row above whose section
 # the changelog still carries. `[Unreleased]` is cut by the awk deliberately: a bare whole-file
 # grep agrees with this number only while that section is empty, so it moved on every PR that
 # landed a breaking change and moved BACK when the release promoted the section — a count that can
@@ -75,9 +75,9 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
-## 28.x → 29.0.0, entry by entry — **unreleased**
+## 28.x → 29.0.0, entry by entry
 
-**Two entries so far** — `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by
+**Two entries** — `CHANGELOG.md`'s 29.0.0 breaking entries in their order, grouped by
 package, lowest tier first. No legacy path, no codemod, no shim. **Entry 1 is the whole upgrade for
 almost every app**: Bun 1.4.4 everywhere your app runs — laptop, CI, image. A later slice appends
 its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)`
