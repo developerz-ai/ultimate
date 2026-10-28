@@ -1,12 +1,13 @@
 // The claim round's half of a burial: a row the claim settled `dead` (`ClaimOptions.onExhausted`)
 // has no body to end it and no settle to announce it, so the pass that buried it says so — one log
-// line an operator can alert on, and the job's `onSettled`, exactly as a dead letter a worker
-// settled itself would get.
+// line an operator can alert on, its `jobs_total` count, and the job's `onSettled`, exactly as a
+// dead letter a worker settled itself would get.
 
 import type { Ctx } from '@ultimat3/core';
-import { logger, renderThrowable } from '@ultimat3/core';
+import { logger, recordJob, renderThrowable } from '@ultimat3/core';
 import type { JobRecord } from './driver';
 import { getJob } from './job';
+import { JOB_OUTCOME_LABELS } from './metrics';
 import { announceSettled } from './settled';
 
 export interface AnnounceExhaustedOptions {
@@ -38,6 +39,8 @@ export async function announceExhausted(
     const error = record.lastError ?? '';
     const outcome = record.state === 'failed' ? 'dropped' : 'dead-lettered';
     if (outcome === 'dropped') dropped += 1;
+    const label = JOB_OUTCOME_LABELS[outcome];
+    if (label !== null) recordJob(record.queue, label);
     // `error`, not `warn`: nobody recovered from this one, and a job that outlives every worker
     // that takes it is a crash loop somebody has to look at.
     logger.error('jobs.claim.exhausted', {

@@ -56,3 +56,27 @@ export function recordQueueOldestReady(queue: string, oldestReadyMs: number): vo
 export function recordQueueDeadJobs(queue: string, dead: number): void {
   queueDeadJobs.record(dead, { queue });
 }
+
+/**
+ * What an autoscaler sizes a worker fleet with: `ceil((queue_depth + Σ in_flight) / capacity)`
+ * pods. Unlabelled — one series per PROCESS, which is what `maxInFlight` caps and what one worker
+ * pod is; the scrape's own `instance` label tells pods apart, and `sum` across them is the fleet.
+ */
+export const workerInFlight: Gauge = gauge('job_worker_in_flight', {
+  unit: '{job}',
+  description: 'Jobs this worker process is running right now, across every queue it serves',
+});
+
+export const workerCapacity: Gauge = gauge('job_worker_capacity', {
+  unit: '{job}',
+  description:
+    'The most jobs this worker process runs at once: maxInFlight, or the sum of its queue slots when tighter or unset',
+});
+
+export function recordWorkerInFlight(held: number): void {
+  workerInFlight.record(held);
+}
+
+export function recordWorkerCapacity(capacity: number): void {
+  workerCapacity.record(capacity);
+}

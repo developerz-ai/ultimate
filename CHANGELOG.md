@@ -29,6 +29,24 @@ Tier 1 — seo.
   `socialCard: true`, the switch that entry said did not exist. The 23.0.0 section is left as it
   shipped.
 
+Tier 0 — core. Tier 3 — jobs. Tier 5 — cli.
+
+- **`jobWorker({ maxInFlight })` and `jobs.maxInFlight` — one cap on the runs a worker PROCESS holds
+  across every queue (Sidekiq's `concurrency`).** `concurrency` was per-queue pools only, so a
+  worker serving many queues held the SUM of their slots, and an app that needed "at most 10 runs
+  in this pod, whichever queues they come from" had nowhere to say it; `LimitConfig.global` sheds a
+  job already claimed. The cap is read before every claim: a worker at it asks the queue for
+  nothing, a run that ends frees one claim and kicks a pass at once, and the per-queue slots still
+  bound each queue under it. **Fairness:** a pass splits its room over the queues it has not yet
+  asked (`ceil(room / queues left)`), a queue with less work leaves the rest to the next ones (no
+  idle slot while any served queue has ready work), and the queue order is rotated to start after
+  the last queue given a job — so each freed slot goes to the next queue in turn and no backlog
+  monopolises the cap. Drain, lease heartbeat and fleet slots are unchanged. Unset is no cap, the
+  worker as it was. `0`, negative, fractional, `NaN` or `Infinity` is `X_INVARIANT` at `jobWorker()`
+  and `X_CONFIG_INVALID` naming `jobs.maxInFlight` at boot. For a scaler: `worker.stats()` gains
+  `maxInFlight` (`null` when uncapped), the registry row's `concurrency` is the tighter of the cap
+  and the slot sum, and two new gauges, `job_worker_in_flight` and `job_worker_capacity`.
+
 ### Changed
 
 Every package; tier 5 — cli.

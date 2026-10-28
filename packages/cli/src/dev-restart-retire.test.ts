@@ -11,6 +11,7 @@ const statsHolding = (inFlight: number): WorkerStats => ({
   queues: ['default'],
   state: 'running',
   inFlight,
+  maxInFlight: null,
   processed: 0,
   failed: 0,
   suspended: 0,

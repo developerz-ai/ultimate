@@ -338,6 +338,21 @@ describe('jobs retention', () => {
   });
 });
 
+describe('jobs.maxInFlight', () => {
+  test('unset by default — no process cap — and the app’s to set', () => {
+    expect(defineConfig({ name: 'app' }).jobs.maxInFlight).toBeUndefined();
+    expect(defineConfig({ name: 'app', jobs: { maxInFlight: 10 } }).jobs.maxInFlight).toBe(10);
+  });
+
+  test('a cap that is not a whole number of at least 1 is refused at boot, naming the key', () => {
+    for (const cap of [0, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => defineConfig({ name: 'app', jobs: { maxInFlight: cap } }), String(cap)).toThrow(
+        /jobs\.maxInFlight/,
+      );
+    }
+  });
+});
+
 // `pwa.enabled` was a switch with no reader for the whole life of the framework (#362): four
 // generated artifacts hung off it and none was ever produced, so an app could declare itself
 // installable, serve every page, pass the gate and never be installable in any browser. Now that

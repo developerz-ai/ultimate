@@ -135,6 +135,9 @@ describe('a slot refills when its own job settles, not when the batch does', () 
 
     const first = worker.tick();
     await started.passed;
+    // The first pass has finished ASKING (it never waits for its job): an email enqueued while it
+    // was still between queues would be its to claim, and this test is about the second pass.
+    await Bun.sleep(1);
     await enqueue(driver, 'emailJob', 'emails');
     const second = await worker.tick();
 

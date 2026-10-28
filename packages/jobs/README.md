@@ -816,7 +816,7 @@ or `ready` — so a new branch cannot land in one driver and not another. Its le
 
 | Role | Entry | Behaviour |
 |---|---|---|
-| `worker` | `jobWorker({ driver, context, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close. `concurrency` is a number for every queue or a table per queue; a queue it does not name gets core's `JOBS_CONCURRENCY_DEFAULT` (8 — this package's own default was 5 before 25.0.0) |
+| `worker` | `jobWorker({ driver, context, queues, concurrency, maxInFlight })` | per-queue pools under one optional process cap, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close. `concurrency` is a number for every queue or a table per queue; a queue it does not name gets core's `JOBS_CONCURRENCY_DEFAULT` (8 — this package's own default was 5 before 25.0.0). `maxInFlight` caps the runs held across EVERY queue (app config `jobs.maxInFlight`; unset: no cap) — [Limits](#the-process-cap-maxinflight) |
 | `scheduler` | `jobScheduler({ driver, leader, state })` | one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
 
 Both roles register the same **pair** of hooks and bound the `close` half the same way. The
@@ -1046,6 +1046,28 @@ cannot hold the cap, so `jobWorker().start()` **refuses to boot**
 
 Over any cap the claim is handed straight back without burning an attempt — one org's 50k-row
 import cannot starve the fleet.
+
+### The process cap: `maxInFlight`
+
+`jobWorker({ maxInFlight })` — `jobs.maxInFlight` in `app.config.ts` — is the most runs ONE worker
+process holds at once across every queue it serves: Sidekiq's `concurrency`. The per-queue slots
+(`concurrency`) still bound each queue under it. Unset, there is no process cap: the sum of the
+queue slots is the bound, as before.
+
+| Rule | Detail |
+|---|---|
+| read BEFORE the claim | a worker at the cap asks the queue for nothing; no row is claimed only to be shed. `LimitConfig.global` is the other kind: it sheds what was already claimed |
+| a finish frees one claim at once | the run's `finally` returns its count beside its limiter lease, then kicks a pass — no poll wait |
+| no idle slot while a queue has work | a pass splits the room it has over the queues it has not asked yet (`ceil(room / queues left)`); a queue with less work than its share leaves the rest to the queues after it, and a queue that filled its share is asked again while room is left |
+| no queue starves | queues are asked in the worker's order **rotated to start after the last queue given a job**, so on a worker at the cap each freed slot goes to the next queue in turn that has work. Three backlogged queues on `maxInFlight: 1` run `a, b, c, a, b, c` — never `a` until it drains |
+| drain, heartbeat, lease | unchanged: SIGTERM stops claiming, held runs finish under the deadline, the cut-off hands back what is left |
+| refused | `0`, negative, fractional, `NaN`, `Infinity`: `X_INVARIANT` at `jobWorker()`, `X_CONFIG_INVALID` naming `jobs.maxInFlight` at boot |
+
+What a scaler reads, per process: `worker.stats()` → `inFlight` and `maxInFlight` (`null` when
+uncapped); the registry row's `concurrency` is the tighter of the cap and the slot sum; and two
+unlabelled gauges, `job_worker_in_flight` and `job_worker_capacity`. Pods needed is
+`ceil((queue_depth + Σ job_worker_in_flight) / job_worker_capacity)`. A fleet-wide ceiling is a
+different number: `maxInFlight` × replicas, or `job.concurrency` for one job.
 
 ### One run per key
 

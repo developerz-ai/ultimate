@@ -129,8 +129,12 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `entity/src/memory-update.ts` — the merge of a patch into a row and the judgement of a
  * filtered update's whole result before any of it lands, split out of `memory-repo.ts` so that
  * file stays under the 500-line ceiling; reached through the entity barrel.
+ * raised 652 → 654, measured 654 (2026-10-28, `jobWorker({ maxInFlight })`):
+ * `jobs/src/worker-process-cap.ts` (the per-process count, read before each claim) and
+ * `worker-claim-sweep.ts` (which queue a pass asks, rotated) — `worker.ts` is at the 500-line
+ * ceiling; reached through the jobs barrel.
  */
-const MIGRATE_CEILING = 652;
+const MIGRATE_CEILING = 654;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -256,8 +260,10 @@ const MIGRATE_CEILING = 652;
  * raised 965 → 966, measured 966 (2026-10-26, a filtered update judged as ONE batch): the one
  * module named on `MIGRATE_CEILING` for that change, which every role reaches through the entity
  * barrel.
+ * raised 966 → 968, measured 968 (2026-10-28, `jobWorker({ maxInFlight })`): the two modules named
+ * on `MIGRATE_CEILING` for that change.
  */
-const SERVING_ROLE_CEILING = 966;
+const SERVING_ROLE_CEILING = 968;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -370,8 +376,10 @@ const SERVING_ROLE_CEILING = 966;
  * raised 1097 → 1098, measured 1098 (2026-10-26, a filtered update judged as ONE batch): the one
  * module named on `MIGRATE_CEILING` for that change — the web role reaches every module the
  * serving roles do.
+ * raised 1098 → 1100, measured 1100 (2026-10-28, `jobWorker({ maxInFlight })`): the two modules
+ * named on `MIGRATE_CEILING` for that change.
  */
-const WEB_ROLE_CEILING = 1098;
+const WEB_ROLE_CEILING = 1100;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

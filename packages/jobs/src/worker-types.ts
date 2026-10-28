@@ -18,6 +18,13 @@ export interface WorkerOptions {
    * (or no `concurrency` at all) runs at core's `JOBS_CONCURRENCY_DEFAULT`, 8 — 5 before 25.0.0.
    */
   readonly concurrency?: number | Readonly<Record<string, number>>;
+  /**
+   * The most runs this process holds at once, across EVERY queue — Sidekiq's `concurrency`. The
+   * per-queue slots still bound each queue under it. A worker at the cap claims nothing until a
+   * run ends; a freed slot goes to the next queue in turn that has work (`worker-claim-sweep.ts`).
+   * Unset: no process cap, the sum of the queue slots. A whole number ≥ 1, else `X_INVARIANT`.
+   */
+  readonly maxInFlight?: number;
   readonly limiter?: Limiter;
   readonly clock?: Clock;
   readonly events?: EventLookup;
@@ -52,6 +59,8 @@ export interface WorkerStats {
   readonly queues: readonly string[];
   readonly state: 'idle' | 'running' | 'draining' | 'stopped';
   readonly inFlight: number;
+  /** `WorkerOptions.maxInFlight`, `null` when uncapped — what a scaler divides the backlog by. */
+  readonly maxInFlight: number | null;
   readonly processed: number;
   readonly failed: number;
   readonly suspended: number;
