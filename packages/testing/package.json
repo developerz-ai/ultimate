@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/testing",
-  "version": "28.0.0",
+  "version": "29.0.0",
   "description": "Test harness: cloned template DBs per worker, frozen clock, sealed network, 6 test types",
   "license": "MIT",
   "type": "module",
@@ -36,20 +36,20 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "28.0.0",
-    "@ultimat3/cache": "28.0.0",
-    "@ultimat3/core": "28.0.0",
-    "@ultimat3/db": "28.0.0",
-    "@ultimat3/entity": "28.0.0",
-    "@ultimat3/http": "28.0.0",
-    "@ultimat3/i18n": "28.0.0",
-    "@ultimat3/jobs": "28.0.0",
-    "@ultimat3/mail": "28.0.0",
-    "@ultimat3/policy": "28.0.0",
-    "@ultimat3/pwa": "28.0.0",
-    "@ultimat3/query": "28.0.0",
-    "@ultimat3/realtime": "28.0.0",
-    "@ultimat3/render": "28.0.0",
-    "@ultimat3/time": "28.0.0"
+    "@ultimat3/action": "29.0.0",
+    "@ultimat3/cache": "29.0.0",
+    "@ultimat3/core": "29.0.0",
+    "@ultimat3/db": "29.0.0",
+    "@ultimat3/entity": "29.0.0",
+    "@ultimat3/http": "29.0.0",
+    "@ultimat3/i18n": "29.0.0",
+    "@ultimat3/jobs": "29.0.0",
+    "@ultimat3/mail": "29.0.0",
+    "@ultimat3/policy": "29.0.0",
+    "@ultimat3/pwa": "29.0.0",
+    "@ultimat3/query": "29.0.0",
+    "@ultimat3/realtime": "29.0.0",
+    "@ultimat3/render": "29.0.0",
+    "@ultimat3/time": "29.0.0"
   }
 }
