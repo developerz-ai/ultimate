@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 29.0.0 - 2026-10-28
+
 ### Added
 
 Tier 1 — seo.
@@ -105,6 +109,47 @@ Tier 2 — entity.
   values it held before the call, the answer the Postgres driver gives. What does not change: a
   filtered update that holds still writes every matched row and answers the count
   (`packages/entity/src/invariant-parity.test.ts`).
+
+### Commits
+
+- docs(upgrading): 29.0.0 leaves unreleased
+- fix(jobs): maxInFlight review follow-ups — the turn holds while a capped worker idles, process gauges sum (#921)
+- feat(jobs): maxInFlight — one cap on the runs a worker process holds across every queue (#920)
+- fix(cli): WORKER_QUEUES refusal follow-ups — per-country regression test, one-line cause, runnable fix (#919)
+- fix(cli)!: a WORKER_QUEUES entry the app does not know refuses the worker's boot (#918)
+- chore(toolchain)!: Bun 1.4.4 — every pin site, and the floor with them (#917)
+- docs: align tracked Docker READMEs with generated Helm charts (#916)
+- fix: enforce 40-second Compose shutdown grace minimum (#915)
+- fix(entity): a refused updateWhere changes no row (#913)
+- fix: repair the doc-guard regression #908's socialCard merge introduced (#914)
+- chore(deps): Bump the runtime group across 1 directory with 3 updates (#908)
+- fix(cli): deploy configured Compose replicators stop-first (#912)
+- fix(deploy): split start-first replicas by image identity too (#911)
+- fix(cache): a nonfinite cosine never qualifies as a semantic-cache hit (#910)
+- docs: declare existing release-due checkup rows (#909)
+- chore(deps): Bump lefthook from 2.1.17 to 2.2.1 in the dev-tooling group (#907)
+- chore(ci): Bump the actions group across 1 directory with 3 updates (#906)
+- chore(docker): Bump distroless/cc-debian13 in /docker (#905)
+- fix(cli): report unused declared workspace siblings (#904)
+- docs(ui): reference generated catalog for component total (#902)
+- fix: cover deploy proof output failures with fail-safe handling (#903)
+- docs: reconcile robots and sitemap configuration reference (#896)
+- docs: align social demo brief with executable ratchet (#901)
+- fix: provision the registry-drift label before the audit files its issue (#892)
+- test: guard sideways-edge documentation and unused permissions (#897)
+- test(cli): pin scripts suites in unit discovery (#900)
+- docs: remove stale UI inventory totals from design arguments (#898)
+- docs: qualify the undeclared-dependency claim to the test-file gap (#899)
+- test: pin social demo deployment trigger contract (#895)
+- docs: clarify unsupported Lighthouse design promises (#891)
+- feat(render): support app-wide SVG favicon links (#894)
+- docs(publishing): document the v* tag rule as a manual, unenforced check (#893)
+- docs: describe the budgets step's implemented checks (#890)
+- docs: clarify unimplemented Lighthouse route thresholds (#889)
+- feat(cli): fail the i18n gate on slot drift and untranslated copy (#888)
+- feat(health): ask whether the GitHub Release exists (#868)
+- feat(seo): let a noindex route opt into a social card (#887)
+- feat(verify): enforce source headers and a dependency allowlist (#884)
 
 ## 28.0.0 - 2026-10-24
 
