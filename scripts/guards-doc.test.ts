@@ -172,6 +172,27 @@ describe('the listed command is the form that REPORTS', () => {
   });
 });
 
+describe('renderGuardsPage', () => {
+  test('most guards enforce through sibling repository assertions in the unit step', () => {
+    const page = renderGuardsPage([]);
+    expect(page).toContain(
+      'Most guards enforce through sibling `scripts/*.test.ts` repository assertions run by the' +
+        '\n`unit` step',
+    );
+    expect(page).toContain('discovery is in `packages/cli/src/test-select.ts`');
+    expect(page).toContain('suite ownership and execution\nin `packages/cli/src/verify-tests.ts`');
+    expect(page).toContain('inclusion here does not prove gate membership');
+  });
+
+  test('host checks have four named families, separate from unit assertions', () => {
+    const page = renderGuardsPage([]);
+    expect(page).toContain('Separately, `HOST_CHECKS` in `scripts/verify.ts` groups');
+    expect(page).toContain(
+      'host checks into four families: `boundaries`, `errors`, `manifest` and `roadmap`',
+    );
+  });
+});
+
 describe('--check', () => {
   test('a page that matches the headers is clean, and one edit to either side is drift', async () => {
     const root = await repo({ 'package.json': '{"scripts":{}}', 'scripts/g.ts': GUARD });
