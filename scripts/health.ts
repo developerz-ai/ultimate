@@ -81,13 +81,16 @@ export const ROW_COMMANDS: Readonly<Record<RowId, string>> = {
   'main-green':
     'bun run x -- ci --workflow ci.yml --event push --branch main --json; git rev-parse origin/main',
   'last-tag-published':
-    "git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main; git rev-parse <tag>^{commit}; gh run list --workflow release.yml --limit 1",
+    "git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main; git rev-parse <tag>^{commit}; gh run list --workflow release.yml --limit 1 --json conclusion,headBranch,event,headSha,url",
   'stamped-version-tagged': 'bun run scripts/release-due.ts --json',
   'tag-runs-ended-well': `gh run list --workflow release-tag.yml --limit 5 --json ${TAG_RUN_FIELDS}`,
   'npm-serves-tree': 'bun run scripts/registry-audit.ts --json',
-  'automation-alarms': 'gh issue list --state open --label registry-drift',
-  'dependabot-not-stuck': 'gh pr list --app dependabot',
-  'demo-shipped': 'gh run list --workflow deploy-social-demo.yml --limit 1',
+  'automation-alarms':
+    'gh issue list --state open --label registry-drift --json number,title,state,createdAt,updatedAt,url',
+  'dependabot-not-stuck':
+    'gh pr list --app dependabot --limit 5 --state open --json number,createdAt,updatedAt,statusCheckRollup',
+  'demo-shipped':
+    'gh run list --workflow deploy-social-demo.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt',
   'release-exists': RELEASE_EXISTS_COMMAND,
 };
 
