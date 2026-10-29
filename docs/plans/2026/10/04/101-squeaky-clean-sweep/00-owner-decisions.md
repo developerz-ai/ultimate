@@ -51,7 +51,7 @@ is given; otherwise the row's work waits and the slice says so in its PR.
 | O-tool | `.tool()` fate (`action/src/facade.ts:36`, `mcp-tool.ts:54` vs `mcp/src/from-action.ts:112`) | two projections disagree | return mcp's projection / delete `.tool()` | return mcp's projection | 12 |
 | O-loc | locales declared twice (`core/src/config.ts:197-198,240-241` vs `defineCatalogs({ default })`) | read by `cli/src/shot-locale.ts:21`, `pwa-artifacts.ts:111` | keep `defineCatalogs`, delete config keys | delete config keys | 12 |
 | O-plans | completed plan dirs in `docs/plans/` | 169 files, 1.7 MB | keep (history) / delete (git keeps them) | keep; trackers must be `complete`/`superseded` (guard 07 T10) | — |
-| O-13 | reserved codes `X_SW_HAND_EDITED`, `X_SW_UNCACHEABLE`, `X_CACHE_UNTAGGED_QUERY` | `wiki/Error-Codes.md:1083-1091` | build checks / stay reserved | stay reserved | 10 B13 |
+| O-13 | reserved codes `X_SW_HAND_EDITED`, `X_SW_UNCACHEABLE`, `X_CACHE_UNTAGGED_QUERY` | `wiki/Error-Codes.md:1197-1199` | build checks / stay reserved | stay reserved | 10 B13 |
 | O-win | Windows host deploys | axiom 7 vs `x build --target binary --platform bun-windows-x64` | binary-as-service supported (axiom-7 change) / Docker Desktop only (W8 = cross-compile for dev/CI) | Docker Desktop only — axiom 7 stands | 08 W8 docs |
 | O-10a | admin MCP tool names (`admin.action.<name>`) | `admin/src/mcp-tools.ts:199,234` | keep / rename | keep | 10 B14 |
 
@@ -105,7 +105,7 @@ small work (done in sweep 14) · **d** large or breaking work (its own issue). #
 | O-tool | a | **Deleted `.tool()`** rather than the Default: `toolFrom` is the one projection — 25.0.0 (CHANGELOG #10) | `action/src/facade.ts:6-7` |
 | O-loc | a | Config keys deleted (Default) — 25.0.0 | `@ultimat3/i18n/app-catalogs` |
 | O-plans | a | Keep (Default); every tracker `complete`/`superseded`, held by `scripts/plan-status.ts` | `docs/plans/**/status.yml` |
-| O-13 | a | Stay reserved (Default) | `wiki/Error-Codes.md` "Not thrown yet" |
+| O-13 | a | Stay reserved (Default) | `wiki/Error-Codes.md:1197-1199` "Not thrown yet" |
 | O-win | a | Docker Desktop only; axiom 7 stands (Default) | `wiki/Deployment.md` |
 | O-10a | a | Keep `admin.action.<name>` (Default) | `admin/src/mcp-tools.ts:210,247` |
 
