@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 29.1.0 - 2026-10-29
+
 ### Added
 
 Tier 4 — render, ui. Tier 5 — cli.
@@ -52,6 +56,14 @@ Tier 4 — render, ui.
   locks the page's scroll by that name (`html:has(> body > dialog[data-x-modal][open])`). The router
   grows 24,448 → 27,845 B minified (9,028 → 10,094 B gzip) with the entry above, charged to every
   page of an opted-in surface.
+
+### Commits
+
+- feat(render): a route modal opens on the click, then fills; prefetchable modals; no inert-document restyle (#928)
+- docs(plan): repoint B13 and O-13 at the reserved error-code rows (#927)
+- test: pin health brief rows to machine-readable definitions (#925)
+- docs: close plan-101 DX ledger row 4 — realtime's persister ships (#926)
+- fix: clarify both guard enforcement routes in generated docs (#924)
 
 ## 29.0.0 - 2026-10-28
 
