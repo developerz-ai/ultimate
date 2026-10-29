@@ -55,7 +55,7 @@ Coordinator-only in every sub-sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `fra
 | B10 | mcp (4) | request facts → `resolveToken` (`mcp/src/transport-http.ts:85,244`); `onAudit` hook (`mcp/src/audit.ts`); confirm factory `mcpConfirmations` (pending row, approve/reject, `X_MCP_CONFIRMATION_EXPIRED`) | `mcp` unit + `.contract` |
 | B11 | mail (4) | SES driver on B5, `retainMime`, `DeliveryEvent` normalisers (SES + Resend, SNS signature check) | `mail` unit + recorded fixtures |
 | B12 | ai (4) | `claude-opus-5-5` model row with its thinking rule (`ai/src/models.ts:26-32`; check `disableThinkingUpTo` `:63`); document + image `AiContentBlock` variants (`provider.ts:32-40`); `X_AI_CONTENT_UNSUPPORTED` | `ai` unit + `provider-parity.test.ts` |
-| B13 | pwa/cache/render | reserved codes `X_SW_HAND_EDITED`, `X_SW_UNCACHEABLE`, `X_CACHE_UNTAGGED_QUERY` (`wiki/Error-Codes.md:1083-1091`): build each check or keep reserved — owner O-13 | per check |
+| B13 | pwa/cache/render | reserved codes `X_SW_HAND_EDITED`, `X_SW_UNCACHEABLE`, `X_CACHE_UNTAGGED_QUERY` (`wiki/Error-Codes.md:1197-1199`): build each check or keep reserved — owner O-13 | per check |
 
 ## Sweep 10d — tier 5
 
