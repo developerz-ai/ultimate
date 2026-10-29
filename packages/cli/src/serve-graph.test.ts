@@ -262,8 +262,11 @@ const MIGRATE_CEILING = 654;
  * barrel.
  * raised 966 → 968, measured 968 (2026-10-28, `jobWorker({ maxInFlight })`): the two modules named
  * on `MIGRATE_CEILING` for that change.
+ * raised 968 → 969, measured 969 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
+ * `render/src/route-navigation.ts`, the declaration's one reader, which `route.ts` imports and so
+ * every role reaches through the render barrel.
  */
-const SERVING_ROLE_CEILING = 968;
+const SERVING_ROLE_CEILING = 969;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -378,8 +381,10 @@ const SERVING_ROLE_CEILING = 968;
  * serving roles do.
  * raised 1098 → 1100, measured 1100 (2026-10-28, `jobWorker({ maxInFlight })`): the two modules
  * named on `MIGRATE_CEILING` for that change.
+ * raised 1100 → 1101, measured 1101 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
+ * the one module named on `SERVING_ROLE_CEILING` for that change.
  */
-const WEB_ROLE_CEILING = 1100;
+const WEB_ROLE_CEILING = 1101;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

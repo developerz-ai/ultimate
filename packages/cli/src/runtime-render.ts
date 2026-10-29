@@ -120,7 +120,7 @@ const headFor = async (
 ): Promise<string> => {
   const meta = metaContextFor(ctx, data);
   const url = new URL(ctx.url);
-  const router = navigationTagsOf(options.navigation, entry);
+  const router = navigationTagsOf(options.navigation, entry, meta.t);
   return (
     renderHead(
       headFromMeta(

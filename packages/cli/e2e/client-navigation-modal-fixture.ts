@@ -16,6 +16,7 @@ import {
   emitIslandProps,
   HYDRATE_RUNTIME_BODIES,
   hydrateRuntime,
+  modalRouteList,
   renderHead,
 } from '@ultimat3/render';
 import { buildNavigationScript } from '../src/worker-bundle';
@@ -46,11 +47,30 @@ const island = (name: string): { html: string; directive: IslandDirective } => {
   };
 };
 
+/** Every page of the surface, and which are modals — what `modalRoutesOf` reads off the table. */
+const PAGES = [
+  { path: '/runs', modal: false },
+  { path: '/runs/new', modal: true },
+  { path: '/runs/new/advanced', modal: true },
+  { path: '/runs/:id', modal: false },
+  { path: '/runs/:id/revoke', modal: true },
+  { path: '/runs/slow', modal: true },
+  { path: '/runs/peek', modal: true },
+  { path: '/about', modal: false },
+];
+const MODALS = { routes: modalRouteList(PAGES), close: 'Close', loading: 'Loading' };
+
 /** The document shape `runtime-render.ts` emits; `modal` is what a `navigation: 'modal'` route names. */
 const documentOf = (title: string, main: string, islands: readonly string[], modal = false) => {
   const marked = islands.map(island);
   const nav = renderHead(
-    clientNavigationTags({ surface: SURFACE, buildId: BUILD, scriptUrl: script.url, modal }),
+    clientNavigationTags({
+      surface: SURFACE,
+      buildId: BUILD,
+      scriptUrl: script.url,
+      modal,
+      modals: MODALS,
+    }),
   );
   return (
     `<!doctype html><html lang="en"><head><title>${title}</title>${nav}</head><body>` +
@@ -63,11 +83,18 @@ const documentOf = (title: string, main: string, islands: readonly string[], mod
 /** What `/runs` shows: the count is the page's own state, which a refresh after a create moves. */
 export const state = { runs: 0 };
 
+/** `/runs/slow` answers when the test says so: the frame is on screen until then. */
+let released: () => void = () => undefined;
+export const slow = {
+  release: (): void => released(),
+};
+
 const runsPage = (): string =>
   documentOf(
     'Runs',
     `<p id="count">${String(state.runs)} runs</p><a id="new" href="/runs/new">New run</a>` +
-      ' <a id="revoke" href="/runs/7/revoke">Revoke</a> <a id="about" href="/about">About</a>',
+      ' <a id="revoke" href="/runs/7/revoke">Revoke</a> <a id="about" href="/about">About</a>' +
+      ' <a id="slow" href="/runs/slow">Slow</a> <a id="peek" href="/runs/peek">Peek</a>',
     ['list'],
   );
 
@@ -169,6 +196,23 @@ const routes: Route[] = [
     state.runs = Math.max(0, state.runs - 1);
     return redirect('/runs', 303);
   }),
+  // A modal whose answer the test holds back: what the visitor sees before it arrives.
+  route(
+    'GET',
+    '/runs/slow',
+    () =>
+      new Promise<Response>((resolve) => {
+        released = () => resolve(html(documentOf('Slow', '<input id="slow-field">', [], true)));
+      }),
+    NAV,
+  ),
+  // `navigation: { modal: true, prefetch: 'intent' }`: a prefetch runs it.
+  route(
+    'GET',
+    '/runs/peek',
+    () => html(documentOf('Peek', '<p id="peeked">one run at a glance</p>', [], true)),
+    { surface: SURFACE, prefetch: true },
+  ),
   // A page of the surface that is NOT a modal: `#/about` addresses nothing to open.
   route('GET', '/about', () => html(documentOf('About', '<p>about</p>', [])), NAV),
 ];

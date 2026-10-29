@@ -117,15 +117,21 @@ export { closeModal, navigate, openModal, refresh } from './navigation-api';
 /** Client-side navigation over server-rendered documents — `navigation: { client }` surfaces. */
 export type { CachedDocument, NavigationCache, NavigationCacheOptions } from './navigation-cache';
 export { cacheKey, NAVIGATION_CACHE_MAX_ENTRIES, navigationCache } from './navigation-cache';
-export type { Presentation, PresentationFacts } from './navigation-modal-rules';
+export type { ModalRoutes, Presentation, PresentationFacts } from './navigation-modal-rules';
 export {
   addressOf,
+  declaresModal,
   leaveModal,
   modalAddress,
   modalHistory,
   modalLocation,
   NAVIGATION_MODAL_ATTRIBUTE,
+  NAVIGATION_MODAL_BODY_ATTRIBUTE,
+  NAVIGATION_MODAL_CLOSE_ATTRIBUTE,
+  NAVIGATION_MODAL_SKELETON_ATTRIBUTE,
+  NAVIGATION_MODALS_META,
   NAVIGATION_PRESENTATION_META,
+  parseModalRoutes,
   presentation,
 } from './navigation-modal-rules';
 export type {
@@ -160,7 +166,7 @@ export {
   reusable,
 } from './navigation-rules';
 export type { ClientNavigationHead } from './navigation-tags';
-export { clientNavigationTags } from './navigation-tags';
+export { clientNavigationTags, modalRouteList } from './navigation-tags';
 export type {
   MountedRouteInput,
   RegisterRouteInput,
@@ -200,18 +206,23 @@ export type {
   RouteMetaAsyncFn,
   RouteMetaContext,
   RouteMetaFn,
-  RouteNavigationMode,
   RouteParams,
 } from './route';
-export {
-  DEFAULT_ISLAND_HYDRATE,
-  defineRoute,
-  isRouteConfig,
-  ROUTE_NAVIGATION_MODES,
-} from './route';
+export { DEFAULT_ISLAND_HYDRATE, defineRoute, isRouteConfig } from './route';
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
+export type {
+  RouteModalPrefetch,
+  RouteNavigationDeclaration,
+  RouteNavigationMode,
+} from './route-navigation';
+export {
+  isRouteNavigation,
+  navigationModeOf,
+  navigationPrefetches,
+  ROUTE_NAVIGATION_MODES,
+} from './route-navigation';
 export type { CompiledPattern } from './route-pattern';
 export { compilePattern } from './route-pattern';
 export { noStore, routeNoStoreOf, routeStatusOf, withStatus } from './route-status';

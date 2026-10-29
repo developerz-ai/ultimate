@@ -144,7 +144,20 @@ On a surface listed in `app.config.ts`'s `navigation.client` only (elsewhere it 
 |---|---|
 | `'prefetch'` | may also be fetched on hover/focus — a GET that does nothing but render |
 | `'document'` | always a real document load; carries no router |
-| `'modal'` | `As of 26.1.0`. Shown OVER the page a visitor is on, in a native `<dialog>`, addressed by the hash (`/runs#/runs/new`); reload, Back/Forward and a pasted URL reopen it, a stale hash is just the page. A full load of its own URL is still the whole page — the server renders one document for both and names it a modal (`NAVIGATION_PRESENTATION_META`) |
+| `'modal'` | `As of 26.1.0`. Shown OVER the page a visitor is on, in a native `<dialog>`, addressed by the hash (`/runs#/runs/new`); reload, Back/Forward and a pasted URL reopen it, a stale hash is just the page. A full load of its own URL is still the whole page — the server renders one document for both and names it a modal (`NAVIGATION_PRESENTATION_META`). Never prefetched |
+| `{ modal: true, prefetch: 'intent' }` | `As of 29.1.0`. A `'modal'` whose GET only reads (a peek, a detail view): also fetched on hover/focus/touchstart, as `'prefetch'` is. Exactly these two keys and values (`isRouteNavigation`); read it with `navigationModeOf` / `navigationPrefetches`, never by comparing against a string |
+
+**A modal opens on the click** (`As of 29.1.0`). Every document of a surface with a modal route
+names those routes (`<meta name="ultimate-modals">`, `modalRouteList` — most specific first, with
+the pages that outrank one as `!<pattern>`) and the frame's words in its locale (`ui.close`,
+`ui.loading`). A click on a link to one, `openModal(path)` or a hash addressing one opens the
+dialog in the same task: `[data-x-modal-body][aria-busy="true"]` with a skeleton, and a close button
+(`[data-x-modal-close]`, a `type="button"`, never a `<form>`). The answer fills it; closing it first aborts
+the request and pushes nothing; an answer that is no modal takes it down and is handled as before.
+The dialog is opened with `show()` + `showPopover()`, never `showModal()`, whose inert document
+restyles every element beneath (124 ms of RecalcStyle on a 7,011-element page at 4x CPU, against
+2.6 ms) — `aria-modal`, focus containment and Escape are the router's. Numbers and rules:
+[Client Navigation](../../wiki/Client-Navigation.md#opening-on-the-click).
 
 Declared on the route, never on a link: the route is the one place that covers every way of
 reaching a page — a link, a redirect after a POST, a pasted hash.
@@ -581,6 +594,8 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `navigate`‡, `refresh`‡, `openModal`‡, `closeModal`‡, `NavigateToOptions`‡, `NavigationModalPathInvalidError`‡ | navigating from code: the router when the page has one, the browser's own load when not. Import from `/client` in an island |
 | `disposeIslands` (on `/client` only) | dispose the islands mounted under an element: what the router does on a swap, for an island that drops markup holding other islands |
 | `modalAddress`, `modalLocation`, `addressOf`, `presentation`, `modalHistory`, `leaveModal`, `NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE` | route-presented modals (`navigation: 'modal'`): the hash grammar, when an answer is a modal, and what leaving one does to history |
+| `declaresModal`, `parseModalRoutes`, `modalRouteList`, `ModalRoutes`, `NAVIGATION_MODALS_META`, `NAVIGATION_MODAL_BODY_ATTRIBUTE`, `NAVIGATION_MODAL_CLOSE_ATTRIBUTE`, `NAVIGATION_MODAL_SKELETON_ATTRIBUTE` | the modal that opens on the click: the meta naming a surface's modal routes (composed by the server, read by the router) and the frame's attributes, styled by `@ultimat3/ui` |
+| `isRouteNavigation`, `navigationModeOf`, `navigationPrefetches`, `RouteNavigationDeclaration`, `RouteModalPrefetch` | `navigation:` read back: the four spellings, which mode, prefetched or not |
 | `clientPathStyleTags`, `CLIENT_PATH_STYLE_META` | `<meta name="ultimate-path-style">` — the action path style the server serves, for the browser's typed client. No tag for `'resource'`, the default |
 
 ## Notes

@@ -111,3 +111,52 @@ for the mirror-image reason, keeping `render → pwa` refused. Never `cli` (upwa
 | An island's `mount` | may return `() => void`, its disposer — `return render(…)`. The runtime resolves `el.__x` with it and never calls it; `@ultimat3/testing`'s `mountIsland` does, on dispose. |
 | `<head>` binding | `head.ts` stays injection-only (testable with no catalog); `head-seo.ts` is the ONE binding of `HeadRenderers` to `@ultimat3/seo`. A caller writing its own converter is the drift this file prevents. |
 | Client navigation is not a render mode | **Soft navigation over server-rendered documents**, 2026-09-28, asked for by an app owner ("going to another page feels like an old web app"). Two shapes were on the table. A client-rendered mode is the one this package already deleted: `spa` never rendered the component, because a mode that renders in the browser has no server render to show a gated page, a `no-store` page or a crawler — the axiom "every mode renders the route's component" is what refused it, and a router that rendered routes itself would be a fifth mode by another name. So the router renders NOTHING: it fetches the document the route's own mode already renders (its policy, its cache headers, its status), and swaps it in. Zero JS still works, every page is still a URL a crawler and `curl` read, and a route never learns whether it was reached softly. Declared per SURFACE in `app.config.ts` (`navigation.client`), not per route: a route that opts out while its neighbours opt in is a navigation that reloads for no reason the visitor can see, and the surface is already the unit of stylesheets and baselines — the router only swaps within one and does a full load across. Off by default, so `site/` stays 0kb (axiom 6). The router is a real module (`@ultimat3/render/navigation`) built by the CLI like realtime's page boot — not inline, so it costs no CSP hash and is cached across pages. Islands keep ONE bootstrap: the router re-runs the inline hydration runtime, which learned to visit each root once (`el.__v`, +40 B), rather than growing a second mount API. Charged to route budgets like the page boot (ledger #28): opted-in interactivity, not a script every document carries. **The review round, same day:** a router that guesses must never execute what it guessed. Prefetch became opt-in per PAGE (`defineRoute({ navigation })`, the twelfth key — one key, two values, rather than two keys, because `'prefetch'` and `'document'` are two answers to one question) and the promise moved to the SERVER: `@ultimat3/http` answers a router request a route did not opt into before auth or app code (a client regex for `/logout` missed `/cerrar-sesion`; a server rule cannot), and turns every redirect to the router into `204` + `x-ultimate-location`, because `fetch` following a 303 to another surface or a CORS-refusing origin means the target runs and is then asked for again. The router never re-submits a POST — the one fallback that looked safe (`form.submit()` after a network error) is a double charge when the first one landed. Rules are pure functions (`navigation-rules.ts`) so each fallback is a unit test; the swap is proven only in a real Chrome (`packages/cli/e2e/client-navigation-*.e2e.test.ts`), because what a browser does with a document is the whole claim. |
+
+## Router: nothing is sent twice
+
+Moved out of the boundary table `As of 2026-10-29`, verbatim, to make room for the modal rows below.
+
+every router fetch is `cache: 'no-cache'` — the browser's HTTP cache never answers, the router's own is the only reuse layer (#693; `navigation-fetch.test.ts`, `client-navigation-cache.e2e.test.ts`). The router follows no redirect (`redirect: 'manual'`; the server hands it over as `204` + `x-ultimate-location`), never re-submits a POST (a failure is `ultimate:navigation-error`), and hands a 2xx non-page answer to the browser from the bytes it already has. A 4xx/5xx non-page answer (an offline worker's empty 503) is never handed over (it became a `blob:` URL): a POST fails, a GET is loaded by the browser — the ONE deliberate re-send, as there is nothing to show (`responseVerdict`). Its cache never answers with a non-2xx, a hand-over, or a `no-store` page older than 5 s, and is emptied by any POST (when sent AND when it settles), `onClientWrite`, `onRescope` and a `BroadcastChannel` message from another tab.
+
+## The modal that opens on the click
+
+`As of 2026-10-29` (29.1.0). A route modal used to appear only once its document had arrived and
+been swapped in — 376 ms of nothing on a phone profile for a 60 KB peek in the consumer that asked
+(tesote/bank-integrations, a run board opening `/runs/:id/peek`).
+
+**Why a meta and not a link attribute.** Presentation stays the route's declaration (a link
+attribute is a second one two links could disagree on, and a redirect has no link). The server
+already knows every route, so each document of a surface with a modal route carries their patterns
+(`ultimate-modals`). The router opens EARLY on a match and nothing more: the answer's
+`ultimate-presentation` still decides, and an answer that is not a modal takes the frame down. A
+more specific page that is not a modal (`/runs/new/peek` beside `/runs/:id/peek`, on any surface —
+the URL space is shared) ships as `!<pattern>`, ordered by `routeRank`, so the router's first match
+is the route the server will run.
+
+**Why `release()`/`abandon`.** Closing the frame before its answer must abort the request — or the
+late answer would `present` and push an entry for a modal the visitor already closed (that was
+already true of a Back during a slow open before this change). But `dismiss()` is also the router's
+own call on its way to swapping a page; it must never abort the navigation making it. So the
+router `release()`s first, and only a visitor's close (or a reconcile dismissal) with a request
+pending aborts.
+
+**Why not `showModal()`.** Measured with a CDP harness on a 7,011-element page (headless Chrome 150,
+4x CPU throttle, median of 7 cold loads; RecalcStyle from `Performance.getMetrics`):
+
+| Opening | open + forced style/layout | RecalcStyle |
+|---|---|---|
+| `showModal()` + `html:has(dialog:modal)` | 131.3 ms | 124.1 ms |
+| `showModal()`, no `:has()` | 122.3 ms | 116.4 ms |
+| `showModal()` + an attribute on `<html>` | 120.6 ms | 113.5 ms |
+| `inert` on `<main>` + popover | 117.3 ms | 111.1 ms |
+| `show()` + `showPopover()` + `html:has(> body > dialog[data-x-modal][open])` | 9.7 ms | 2.6 ms |
+
+The cost is the inert document — Chrome resolves inertness in style, so every element is restyled —
+not the `:has()` scroll lock and not a root attribute. `inert` on one wrapper is as dear, so there is
+no cheap way to keep the page beneath inert; the router keeps it out of reach instead (the
+backdrop takes every press, `aria-modal`, Tab wrapped inside, Escape where `closedby` is missing).
+Probed in the same Chrome: a dialog opened with `show()` + `showPopover()` and `closedby="any"`
+still fires `cancel` then `close` on Escape and on a backdrop press, `requestClose()` and
+`<form method="dialog">` still close it — so every closing path the router already handled is
+unchanged.
+

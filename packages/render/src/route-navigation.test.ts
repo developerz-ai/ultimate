@@ -1,20 +1,40 @@
-// `defineRoute({ navigation })`: one key, three values, refused when it says anything else — an
-// evidence GET that meant `'document'` and typed something else must fail at module evaluation,
-// not be swapped in by the router.
+// `defineRoute({ navigation })`: one key, three values and one object (a modal that may be
+// prefetched), refused when it says anything else — an evidence GET that meant `'document'` and
+// typed something else must fail at module evaluation, not be swapped in by the router.
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
-import { defineRoute, type RouteNavigationMode } from './route';
+import { defineRoute } from './route';
+import {
+  navigationModeOf,
+  navigationPrefetches,
+  type RouteNavigationDeclaration,
+} from './route-navigation';
 
 const route = (navigation: unknown) =>
   defineRoute({
     render: 'ssr',
     offline: 'network-only',
     meta: () => ({ title: 't', description: 'd' }),
-    navigation: navigation as RouteNavigationMode,
+    navigation: navigation as RouteNavigationDeclaration,
   });
 
 describe('defineRoute navigation', () => {
-  test.each([['doc'], ['soft'], ['dialog'], [true], ['']])('%p is refused by code', (value) => {
+  test.each([
+    ['doc'],
+    ['soft'],
+    ['dialog'],
+    [true],
+    [''],
+    [null],
+    [{}],
+    [{ modal: true }],
+    [{ prefetch: 'intent' }],
+    [{ modal: false, prefetch: 'intent' }],
+    [{ modal: true, prefetch: true }],
+    [{ modal: true, prefetch: 'hover' }],
+    [{ modal: true, prefetch: 'intent', extra: 1 }],
+    [['modal']],
+  ])('%p is refused by code', (value) => {
     try {
       route(value);
     } catch (error) {
@@ -33,5 +53,22 @@ describe('defineRoute navigation', () => {
       'navigation' in
         defineRoute({ render: 'ssr', offline: 'network-only', meta: () => ({ title: 't' }) }),
     ).toBe(false);
+  });
+
+  test("{ modal: true, prefetch: 'intent' } is kept: a modal, and a prefetch the server answers", () => {
+    const declared = route({ modal: true, prefetch: 'intent' }).navigation;
+    expect(declared).toEqual({ modal: true, prefetch: 'intent' });
+    expect(navigationModeOf(declared)).toBe('modal');
+    expect(navigationPrefetches(declared)).toBe(true);
+  });
+
+  test.each([
+    [undefined, undefined, false],
+    ['prefetch', 'prefetch', true],
+    ['document', 'document', false],
+    ['modal', 'modal', false],
+  ] as const)('%p reads as mode %p, prefetched %p', (declared, mode, prefetched) => {
+    expect(navigationModeOf(declared)).toBe(mode);
+    expect(navigationPrefetches(declared)).toBe(prefetched);
   });
 });

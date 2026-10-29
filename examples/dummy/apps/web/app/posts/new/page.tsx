@@ -91,8 +91,14 @@ export const config = defineRoute({
    * router's `<dialog>` and the backdrop fallback for a browser without it, which closes only a
    * press that began AND ended outside the box; the router grew 24,058 → 24,371 B (+313), all of
    * the +313 B over 26,580.
+   * raised 27kb → 30kb (29.1.0). measured: 30,367 B (2026-10-29; `x build --target static`),
+   * against 30,720. why: the client router grew 24,448 → 27,845 B (+3,397) — a route modal
+   * opens on the click as a busy frame its document then fills (`ultimate-modals`, the frame,
+   * aborting on close), opened with `show()` + `showPopover()` instead of `showModal()` and so
+   * keeping focus, Tab and Escape itself; charged to every `app/` document, as the router is.
+   * All of the +3,397 B over main's 26,970 B.
    */
-  budget: { js: '27kb' },
+  budget: { js: '30kb' },
   meta: ({ t }) => ({ title: t('posts.create'), robots: { index: false } }),
 });
 

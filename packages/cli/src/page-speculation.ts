@@ -12,6 +12,8 @@ import type { AppLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import type { RouteDescriptor, RouteEntry } from '@ultimat3/render';
 import {
   describePages,
+  navigationModeOf,
+  navigationPrefetches,
   renderHead,
   routeEntries,
   speculationPattern,
@@ -37,8 +39,9 @@ export async function loadSpeculation(root: string): Promise<SpeculationConfig> 
  *   no policy, no `no-store`. Such a page ran its `load` at build time, for nobody. An `ssr` page
  *   there has no way to declare that its GET records something (`navigation` is refused on a
  *   surface that did not opt in), so it is never a candidate.
- * - On a client-routed surface: only a page that declared `navigation: 'prefetch'` — the app's own
- *   statement that its GET is a pure read, the same one the router's prefetch obeys.
+ * - On a client-routed surface: only a page that declared `navigation: 'prefetch'` (or a modal
+ *   that declared `prefetch: 'intent'`) — the app's own statement that its GET is a pure read,
+ *   the same one the router's prefetch obeys.
  * - Never an `api/` route, a `navigation: 'document'` page, or an `offline: 'network-only'` one.
  */
 export function speculationCandidate(
@@ -47,8 +50,9 @@ export function speculationCandidate(
   client: ReadonlySet<string>,
 ): boolean {
   if (entry.surface !== 'site' && entry.surface !== 'app') return false;
-  if (entry.config.navigation === 'document' || described.offline === 'network-only') return false;
-  if (client.has(entry.surface)) return entry.config.navigation === 'prefetch';
+  const mode = navigationModeOf(entry.config.navigation);
+  if (mode === 'document' || described.offline === 'network-only') return false;
+  if (client.has(entry.surface)) return navigationPrefetches(entry.config.navigation);
   return (described.mode === 'static' || described.mode === 'isr') && !described.personal;
 }
 
