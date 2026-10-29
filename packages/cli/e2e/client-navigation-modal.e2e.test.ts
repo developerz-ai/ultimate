@@ -10,7 +10,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { currentTab, noBrowser, TIMEOUT_MS, useBrowser } from './client-navigation-fixture';
-import { base, count, ran, state } from './client-navigation-modal-fixture';
+import { base, count, ran, slow, state } from './client-navigation-modal-fixture';
 
 const read = (expression: string): Promise<unknown> => currentTab().evaluate(expression);
 const waitFor = (expression: string, what: string): Promise<void> =>
@@ -77,12 +77,82 @@ describe.skipIf(noBrowser)('client navigation · route-presented modals', () => 
           `document.getElementById(${DIALOG}.getAttribute('aria-labelledby'))?.textContent`,
         ),
       ).toBe('New run');
-      expect(await read(`${DIALOG}.matches(':modal')`)).toBe(true);
+      // A top-layer popover, never `showModal()` (whose inert document restyles the whole page):
+      // modal to assistive tech by `aria-modal`, out of reach behind its backdrop.
+      expect(await read(`${DIALOG}.matches(':popover-open')`)).toBe(true);
+      expect(await read(`${DIALOG}.matches(':modal')`)).toBe(false);
+      expect(await read(`${DIALOG}.getAttribute('aria-modal')`)).toBe('true');
       expect(await read(`${DIALOG}.contains(document.activeElement)`)).toBe(true);
       expect(await read('document.title')).toBe('New run');
       // Links and the action-less form resolve against the MODAL's URL, as on its own page.
       expect(await read('document.getElementById("create").action')).toBe(`${base}/runs/new`);
       expect(await read('document.getElementById("step").href')).toBe(`${base}/runs/new?step=2`);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    'the click opens the frame in its own task; the answer fills it when it arrives',
+    async () => {
+      await start();
+      // One evaluate: the click and the read share a task — nothing has been answered yet.
+      const framed = await read(
+        `(() => { document.getElementById("slow").click(); const d = ${DIALOG}; return d && [d.matches(":popover-open"), d.querySelector("[data-x-modal-body]").getAttribute("aria-busy"), d.querySelector("[data-x-modal-close]").getAttribute("aria-label"), location.hash]; })()`,
+      );
+      expect(framed).toEqual([true, 'true', 'Close', '']);
+      // The request reaches the server after the frame is up; it is answered only when released.
+      for (let i = 0; i < 100 && count('GET /runs/slow soft') === 0; i += 1) await Bun.sleep(20);
+      expect(count('GET /runs/slow soft')).toBe(1);
+      slow.release();
+      await opened('Slow');
+      expect(
+        await read(`${DIALOG}.querySelector("[data-x-modal-body]").hasAttribute("aria-busy")`),
+      ).toBe(false);
+      expect(await read('document.activeElement?.id')).toBe('slow-field');
+      expect(await at()).toBe('/runs#/runs/slow');
+      expect(await sameDocument()).toBe(true);
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    'Escape while it loads: the request is abandoned, no entry is left, the late answer shows nothing',
+    async () => {
+      await start();
+      await read('history.length').then((n) => read(`window.__entries = ${String(n)}`));
+      await read('document.getElementById("slow").focus()');
+      await read('document.getElementById("slow").click()');
+      await waitFor(`${DIALOG}?.matches(":popover-open") === true`, 'the frame');
+      for (let i = 0; i < 100 && count('GET /runs/slow soft') === 0; i += 1) await Bun.sleep(20);
+      await pressEscape();
+      await closed();
+      slow.release();
+      // Long enough for an answer the router had not abandoned to be shown.
+      await read('new Promise((r) => setTimeout(r, 300))');
+      expect(await read(DIALOG)).toBeNull();
+      expect(await at()).toBe('/runs');
+      expect(await read('history.length === window.__entries')).toBe(true);
+      expect(await read('document.activeElement?.id')).toBe('slow');
+    },
+    TIMEOUT_MS,
+  );
+
+  test(
+    "{ modal: true, prefetch: 'intent' }: a hover fetches it, the click shows it without asking again",
+    async () => {
+      await start();
+      await read(
+        'document.getElementById("peek").dispatchEvent(new PointerEvent("pointerover", { bubbles: true }))',
+      );
+      for (let i = 0; i < 100 && count('GET /runs/peek prefetch') === 0; i += 1)
+        await Bun.sleep(20);
+      expect(count('GET /runs/peek prefetch')).toBe(1);
+      // Settled into the router's cache before the click asks.
+      await read('new Promise((r) => setTimeout(r, 100))');
+      await read('document.getElementById("peek").click()');
+      await opened('Peek');
+      expect(count('GET /runs/peek soft')).toBe(0);
+      expect(await at()).toBe('/runs#/runs/peek');
     },
     TIMEOUT_MS,
   );

@@ -135,6 +135,13 @@ html:has(dialog:modal) {
   overflow: hidden;
 }
 
+// The router's route-presented modal is a top-layer popover, never `:modal` (`global.scss` says
+// why), so it locks the scroll by its own name. A child combinator from <body>: the one place the
+// router appends it, so the `:has()` is answered without walking the page.
+:where(html:has(> body > dialog[data-x-modal][open])) {
+  overflow: hidden;
+}
+
 // The live region `announce()` (`../a11y.ts`) appends to <body>, hidden from here rather than
 // through `element.style`: a style a script applies at runtime is not among the inline styles the
 // CSP the framework itself sends has hashed, so it logged a `style-src` violation on every page

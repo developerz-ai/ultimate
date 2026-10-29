@@ -103,7 +103,11 @@ export const config = defineRoute({
    */
   // measured: 179711 B (x build --target static) — why: the page store now compares a re-read row by
   // content (`sameJson`), so a catch-up after a sync roll no longer redraws every row (#852).
-  budget: { js: '176kb' },
+  // raised 176kb → 180kb (29.1.0). measured: 183575 B (2026-10-29; x build --target static),
+  // against 184320. why: the client router grew 24,448 → 27,845 B (+3,397) — a route modal opens
+  // on the click as a busy frame its document then fills, opened with show() + showPopover()
+  // instead of showModal(); charged to every app/ document. All of the +3,397 B over main's 180178.
+  budget: { js: '180kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

@@ -128,8 +128,14 @@ export const config = defineRoute({
    * against 165,888. why: the page boot's socket redials at once on `online` and a visible
    * `visibilitychange` (`LiveClient.wake()`), so a tab back from sleep is live before its armed
    * backoff runs out, and its curve resets on the node's first frame rather than on the open.
+   * raised 163kb → 166kb (29.1.0). measured: 169,545 B (2026-10-29; `x build --target static`),
+   * against 169,984. why: the client router grew 24,448 → 27,845 B (+3,397) — a route modal
+   * opens on the click as a busy frame its document then fills (`ultimate-modals`, the frame,
+   * aborting on close), opened with `show()` + `showPopover()` instead of `showModal()` and so
+   * keeping focus, Tab and Escape itself; charged to every `app/` document, as the router is.
+   * All of the +3,397 B over main's 166,148 B.
    */
-  budget: { js: '163kb' },
+  budget: { js: '166kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

@@ -8,7 +8,50 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 4 — render, ui. Tier 5 — cli.
+
+- **A route modal opens on the click, then fills.** Every document of a client-routed surface with a
+  `navigation: 'modal'` route now names those routes (`<meta name="ultimate-modals">`: the
+  patterns, most specific first, a page that outranks one as `!<pattern>`, and the frame's words in
+  the document's locale, `ui.close`/`ui.loading`). A click on a link to one, `openModal(path)`
+  or a hash addressing one opens the dialog in the click's own task — the modal chrome, a close
+  button (`<button type="button" data-x-modal-close aria-label="Close">`, never a `<form>`), and a body
+  `[data-x-modal-body][aria-busy="true"]` holding a skeleton — and the route's document fills it when
+  it arrives. Closing it first (Escape, the button, a press outside, Back) aborts the request and
+  pushes nothing; an answer that is not a modal takes the frame down and is handled exactly as before
+  (a page swaps in, a network failure loads the URL, a stale hash is dropped); a link to another
+  modal from inside keeps the content on screen, busy. The answer's `ultimate-presentation` still
+  decides; a document without the meta behaves as before. `@ultimat3/ui`'s `global.scss` styles the
+  close button and the skeleton under `:where()`. New exports: `NAVIGATION_MODALS_META`,
+  `NAVIGATION_MODAL_BODY_ATTRIBUTE`, `NAVIGATION_MODAL_CLOSE_ATTRIBUTE`,
+  `NAVIGATION_MODAL_SKELETON_ATTRIBUTE`, `declaresModal`, `parseModalRoutes`, `modalRouteList`,
+  `ModalRoutes`; `ClientNavigationHead.modals`. [Client Navigation](https://github.com/developerz-ai/ultimate/wiki/Client-Navigation#opening-on-the-click).
+- **`navigation: { modal: true, prefetch: 'intent' }` — a modal that may be prefetched.** A `'modal'`
+  whose GET only reads (a peek, a detail view) is fetched on hover, focus or touchstart like a
+  `'prefetch'` page, and the click fills the frame from the held answer. The server's navigation gate
+  answers its prefetch as a visit; a plain `'modal'` is still never prefetched (a modal is often a
+  form whose GET may prepare one). Exactly those two keys and values: anything else, `{ modal: true }`
+  alone included, is `X_ROUTE_NAVIGATION_INVALID`. New exports: `RouteNavigationDeclaration`,
+  `RouteModalPrefetch`, `isRouteNavigation`, `navigationModeOf`, `navigationPrefetches` — every
+  reader of the key (`page-navigation.ts`, `page-speculation.ts`) goes through the last two.
+
+### Changed
+
+Tier 4 — render, ui.
+
+- **The router's modal is a top-layer popover, never `showModal()`.** It is opened with `show()` +
+  `showPopover()` (`showModal()` only where popovers are missing): a modal `<dialog>` makes the rest
+  of the document inert, which Chrome resolves in style — every element of the page beneath was
+  restyled. On a 7,011-element page at 4x CPU, opening went from 131.3 ms (124.1 ms RecalcStyle) to
+  9.7 ms (2.6 ms); `inert` on one wrapper costs as much as `showModal()`, so the page beneath is kept
+  out of reach instead: the backdrop takes every press, `aria-modal="true"`, focus moved in and Tab
+  wrapped inside, Escape where `closedby` is missing. Every way of closing it is unchanged. The
+  dialog no longer matches `:modal` — select it by `dialog[data-x-modal]`; `@ultimat3/ui`'s reset
+  locks the page's scroll by that name (`html:has(> body > dialog[data-x-modal][open])`). The router
+  grows 24,448 → 27,845 B minified (9,028 → 10,094 B gzip) with the entry above, charged to every
+  page of an opted-in surface.
 
 ## 29.0.0 - 2026-10-28
 

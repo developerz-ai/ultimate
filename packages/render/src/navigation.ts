@@ -125,7 +125,14 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
   const tabs = tabSync(win, () => cache.clear());
   const forget = tabs.forget;
   const scroll = scrollKeeper(win, () => rendered);
-  const modal = modalController(win, () => rendered, ran, owned);
+  // Closing a frame before its answer arrived abandons the request it waits on.
+  const modal = modalController(
+    win,
+    () => rendered,
+    ran,
+    owned,
+    () => inflight?.abort(),
+  );
 
   const request = (url: string, purpose: 'soft' | 'prefetch', init?: RequestInit) =>
     fetchDocument(win, doc, url, purpose, init);
@@ -187,8 +194,11 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
     inflight?.abort();
     const mine = new AbortController();
     inflight = mine;
+    modal.release();
     win.clearTimeout(intent);
     navigatingTo = withoutFragment(url);
+    // A route the document names a modal opens NOW, in the click's own task; the answer fills it.
+    if (method === 'GET' && navigatingTo !== rendered) modal.loading(url);
     if (options.history !== 'none') scroll.save();
     const progress = win.setTimeout(
       () => doc.documentElement.setAttribute(NAVIGATING_ATTRIBUTE, ''),
@@ -219,6 +229,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
         movesTab: answerMovesTab(facts),
       });
       if (shown === 'degrade') {
+        modal.release();
         modal.clear();
         return;
       }
@@ -266,6 +277,7 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
           backing = true;
           win.history.back();
         }
+        modal.release();
         modal.dismiss();
         let swapped: ReturnType<typeof swapDocument> | undefined;
         await transition(
@@ -317,6 +329,8 @@ export function startNavigation(win: RouterWindow = window): NavigationRouter | 
       if (inflight === mine) {
         inflight = undefined;
         navigatingTo = undefined;
+        // Whatever the answer was, a frame nothing filled goes; an open modal is no longer busy.
+        modal.settle();
         doc.documentElement.removeAttribute(NAVIGATING_ATTRIBUTE);
       }
     }

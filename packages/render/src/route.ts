@@ -29,6 +29,11 @@ import {
 import type { IslandSpec } from './island';
 import { drainDeclaredIslands } from './island';
 import { assertModeShape } from './modes';
+import {
+  isRouteNavigation,
+  ROUTE_NAVIGATION_MODES,
+  type RouteNavigationDeclaration,
+} from './route-navigation';
 import { isErrorStatus, routeStatusOf } from './route-status';
 
 /**
@@ -234,25 +239,6 @@ export type LoadRequirement<TData> = RouteContext extends TData
  */
 export type RouteCache = 'no-store' | Omit<CacheHint, 'tags'>;
 
-/**
- * How the client router treats this page (`navigation: { client }` surfaces only). Absent: swapped
- * in on a click, never fetched before one. `'prefetch'`: may also be fetched on intent — only for a
- * page whose GET does nothing but render. `'document'`: always a real document load, the route run
- * once by the browser — for a GET that records something (an open, a download, a token consumed).
- * `'modal'`: presented OVER the page a visitor came from, addressed by the hash
- * (`/runs#/runs/new`) — a create form, a confirmation; a full load of its own URL is still the
- * whole page. Never fetched before a click. The server enforces all three before `load`
- * (`@ultimat3/http`'s navigation gate) and names a modal in its document
- * (`NAVIGATION_PRESENTATION_META`).
- */
-export type RouteNavigationMode = 'prefetch' | 'document' | 'modal';
-
-export const ROUTE_NAVIGATION_MODES: readonly RouteNavigationMode[] = [
-  'prefetch',
-  'document',
-  'modal',
-];
-
 /** The input shape of `defineRoute` — exactly the contract's twelve keys, nothing else. */
 export interface RouteDefinition<TData = RouteData> {
   readonly render: RenderMode;
@@ -284,8 +270,11 @@ export interface RouteDefinition<TData = RouteData> {
    * Never on `static`: a file on disk has no process to answer a `POST`.
    */
   readonly post?: string;
-  /** See `RouteNavigationMode`. Refused on a surface without client navigation, at boot. */
-  readonly navigation?: RouteNavigationMode;
+  /**
+   * See `RouteNavigationMode` and `RouteModalPrefetch` (`route-navigation.ts`). Refused on a
+   * surface without client navigation, at boot.
+   */
+  readonly navigation?: RouteNavigationDeclaration;
 }
 
 /**
@@ -368,9 +357,9 @@ export function defineRoute<TData = RouteData>(
   }
 
   if (def.post !== undefined) assertPostBinding(def.post, def.render);
-  if (def.navigation !== undefined && !ROUTE_NAVIGATION_MODES.includes(def.navigation)) {
+  if (def.navigation !== undefined && !isRouteNavigation(def.navigation)) {
     throw new RouteNavigationInvalidError(
-      `navigation: ${renderCauseValue(def.navigation)} is not one of ${ROUTE_NAVIGATION_MODES.join(', ')}`,
+      `navigation: ${renderCauseValue(def.navigation)} is not one of ${ROUTE_NAVIGATION_MODES.join(', ')} or { modal: true, prefetch: 'intent' }`,
     );
   }
 

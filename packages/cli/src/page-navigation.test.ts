@@ -17,12 +17,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isUltimateError, userActor } from '@ultimat3/core';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
-import type { RouteNavigationMode } from '@ultimat3/render';
+import type { RouteNavigationDeclaration } from '@ultimat3/render';
 import {
   clearRoutes,
   defineRoute,
   NAVIGATION_META,
+  NAVIGATION_MODALS_META,
   NAVIGATION_PRESENTATION_META,
+  parseModalRoutes,
   registerRoute,
   routeEntries,
 } from '@ultimat3/render';
@@ -31,8 +33,10 @@ import type { NavigationDocumentHead } from './page-navigation';
 import {
   assertRouteNavigation,
   loadNavigation,
+  modalRoutesOf,
   navigationHeadFor,
   pageNavigation,
+  routeNavigationOf,
 } from './page-navigation';
 import { appRoutes } from './runtime-render';
 import { buildNavigationScript, navigationRoutes } from './worker-bundle';
@@ -55,7 +59,11 @@ const loads: string[] = [];
 
 function page(
   file: string,
-  options: { navigation?: RouteNavigationMode; gated?: boolean; render?: 'ssr' | 'stream' } = {},
+  options: {
+    navigation?: RouteNavigationDeclaration;
+    gated?: boolean;
+    render?: 'ssr' | 'stream';
+  } = {},
 ): void {
   registerRoute({
     file,
@@ -78,9 +86,12 @@ function page(
 
 const ALICE = userActor({ id: 'alice@example.com', permissions: ['casos.read'] });
 
-const serverFor = (actor: ReturnType<typeof userActor> | null = null) =>
+const serverFor = (
+  actor: ReturnType<typeof userActor> | null = null,
+  navigation: NavigationDocumentHead = HEAD,
+) =>
   httpServer({
-    routes: appRoutes({ buildId: BUILD_ID, navigation: HEAD }),
+    routes: appRoutes({ buildId: BUILD_ID, navigation }),
     role: 'web',
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
     hooks: { authenticate: () => actor, authorize: () => ({ allowed: true }) },
@@ -163,6 +174,21 @@ describe('unit · the gate over real pages — what a router request may run', (
     expect(loads).toEqual([]);
   });
 
+  test("navigation: { modal: true, prefetch: 'intent' } — a prefetch runs it, and it is still a modal", async () => {
+    page('apps/web/app/runs/[id]/peek/page.tsx', {
+      navigation: { modal: true, prefetch: 'intent' },
+    });
+    loads.length = 0;
+    const guess = await serverFor().fetch(
+      new Request('http://dev.test/runs/7/peek', { headers: router('prefetch') }),
+    );
+    expect(guess.status).toBe(200);
+    expect(loads).toEqual(['/runs/7/peek']);
+    expect(await guess.text()).toContain(
+      `<meta name="${NAVIGATION_PRESENTATION_META}" content="modal">`,
+    );
+  });
+
   test('passes: a soft visit, same principal; an opted-in prefetch', async () => {
     page('apps/web/app/casos/page.tsx');
     page('apps/web/app/plazos/page.tsx', { navigation: 'prefetch' });
@@ -222,6 +248,54 @@ describe('unit · pageNavigation', () => {
       buildId: BUILD_ID,
       scriptUrl: '/_x/navigation/n.js',
     });
+  });
+});
+
+describe('unit · the modal routes a document names', () => {
+  test('every page of the surface names its modal routes and the frame’s words, in its locale', async () => {
+    page('apps/web/app/runs/page.tsx');
+    page('apps/web/app/runs/[id]/peek/page.tsx', { navigation: 'modal' });
+    page('apps/web/app/runs/new/peek/page.tsx');
+    const head = { ...HEAD, modalRoutes: modalRoutesOf(['app'], routeEntries()) };
+    const html = await (
+      await serverFor(null, head).fetch(new Request('http://dev.test/runs'))
+    ).text();
+    const content = new RegExp(`<meta name="${NAVIGATION_MODALS_META}" content="([^"]*)">`).exec(
+      html,
+    )?.[1];
+    const said = parseModalRoutes(content?.replaceAll('&quot;', '"') ?? null);
+    expect(said?.routes).toEqual(['!/runs/new/peek', '/runs/:id/peek']);
+    expect(said?.close).toBe('Close');
+    expect(said?.loading).toBe('Loading…');
+  });
+
+  test('a surface with no modal route names none — its documents do not grow', async () => {
+    page('apps/web/app/runs/page.tsx');
+    page('apps/web/site/peek/page.tsx');
+    const head = { ...HEAD, modalRoutes: modalRoutesOf(['app'], routeEntries()) };
+    expect(head.modalRoutes.get('app')).toEqual([]);
+    const html = await (
+      await serverFor(null, head).fetch(new Request('http://dev.test/runs'))
+    ).text();
+    expect(html).not.toContain(NAVIGATION_MODALS_META);
+  });
+
+  test('a page of another surface still shadows a modal pattern it outranks', () => {
+    page('apps/web/app/runs/[id]/page.tsx', { navigation: 'modal' });
+    page('apps/web/site/runs/pricing/page.tsx');
+    expect(modalRoutesOf(['app'], routeEntries()).get('app')).toEqual([
+      '!/runs/pricing',
+      '/runs/:id',
+    ]);
+  });
+
+  test('the gate meta: prefetch for a prefetched modal, never for a plain one', () => {
+    page('apps/web/app/a/page.tsx', { navigation: 'modal' });
+    page('apps/web/app/b/page.tsx', { navigation: { modal: true, prefetch: 'intent' } });
+    const [a, b] = routeEntries();
+    if (a === undefined || b === undefined) return expect.unreachable('two routes');
+    expect(routeNavigationOf(a, HEAD)?.prefetch).toBe(false);
+    expect(routeNavigationOf(b, HEAD)?.prefetch).toBe(true);
   });
 });
 

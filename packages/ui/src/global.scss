@@ -30,11 +30,17 @@
 // The client router's route-presented modal (`@ultimat3/render`'s `NAVIGATION_MODAL_ATTRIBUTE`, a
 // route declaring `navigation: 'modal'`): a native <dialog> holding the page's `<main>`, styled as
 // `Dialog` is. Global because no component renders it — the router does, and `render` cannot
-// import `ui` (one tier) — so the name is held equal by render's `navigation-modal-style.test.ts`.
-// `:where()`: an app restyles it without out-shouting a selector.
+// import `ui` (one tier) — so the names are held equal by render's `navigation-modal-style.test.ts`.
+// `:where()`: an app restyles it without out-shouting a selector. Opened as a top-layer popover
+// (`show()` + `showPopover()`, never `showModal()`, whose inert document recalculates the style of
+// every element beneath), so it is placed here as `showModal()` would have placed it.
 :where(dialog[data-x-modal]) {
+  position: fixed;
+  inset: 0;
   inline-size: min(100% - #{t.space(8)}, 40rem);
+  block-size: fit-content;
   max-block-size: min(88dvh, 60rem);
+  margin: auto;
   padding: t.space(5);
   border: 1px solid t.role('line');
   border-radius: t.radius(lg);
@@ -48,6 +54,87 @@
 
   &[open] {
     animation: ultimate-modal-in t.duration(base) t.easing(out);
+  }
+}
+
+// The frame's close button (`NAVIGATION_MODAL_CLOSE_ATTRIBUTE`): after the content in the DOM, at
+// the dialog's top corner on screen. Its name is its `aria-label`; the cross is drawn, not written.
+:where([data-x-modal-close]) {
+  position: absolute;
+  inset-block-start: t.space(3);
+  inset-inline-end: t.space(3);
+  inline-size: t.space(8);
+  block-size: t.space(8);
+  padding: 0;
+  border: 0;
+  border-radius: t.radius(md);
+  background: transparent;
+  color: t.role('fg-muted');
+  cursor: pointer;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 25%;
+    inline-size: 50%;
+    block-size: t.rem(2px);
+    border-radius: t.radius(full);
+    background: currentcolor;
+    rotate: 45deg;
+  }
+
+  &::after {
+    rotate: -45deg;
+  }
+
+  &:hover {
+    background: t.role('bg-soft');
+    color: t.role('fg');
+  }
+}
+
+// The modal's own heading clears the close button.
+:where([data-x-modal-body] > :is(h1, h2):first-child) {
+  padding-inline-end: t.space(8);
+}
+
+// The body while the modal's document is on its way (`aria-busy`): a skeleton the size of a short
+// form, built from surface roles as `Skeleton` is, so the dialog does not jump far when it fills.
+:where([data-x-modal-skeleton]) {
+  display: grid;
+  gap: t.space(3);
+  min-block-size: 12rem;
+
+  &::before,
+  &::after {
+    content: '';
+    display: block;
+    border-radius: t.radius(md);
+    background: linear-gradient(
+        90deg,
+        t.role('bg-soft') 25%,
+        t.role('line') 37%,
+        t.role('bg-soft') 63%
+      )
+      0 0 / 200% 100%;
+    animation: ultimate-modal-shimmer calc(#{t.duration(slower)} * 2) linear infinite;
+  }
+
+  &::before {
+    inline-size: 60%;
+    block-size: t.space(6);
+  }
+
+  &::after {
+    block-size: 8rem;
+  }
+}
+
+@keyframes ultimate-modal-shimmer {
+  to {
+    background-position: -200% 0;
   }
 }
 

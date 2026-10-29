@@ -92,14 +92,29 @@ export class FakeElement extends EventTarget {
     this.children = [];
     this.append(...nodes);
   }
-  /** A `<dialog>`: `showModal` opens it; `close` fires `close` on a later task, as a browser does. */
+  /**
+   * A `<dialog>`: `show`/`showModal` open it (`modalCalls` counts the inert-document one); `close`
+   * fires `close` on a later task, as a browser does. A popover: `showPopover`/`hidePopover`.
+   */
   open = false;
+  modalCalls = 0;
+  popoverOpen = false;
+  show(): void {
+    this.open = true;
+  }
   showModal(): void {
+    this.modalCalls += 1;
     this.open = true;
   }
   close(): void {
     this.open = false;
     setTimeout(() => this.dispatchEvent(new Event('close')), 0);
+  }
+  showPopover(): void {
+    this.popoverOpen = true;
+  }
+  hidePopover(): void {
+    this.popoverOpen = false;
   }
   getAttribute(name: string): string | null {
     return this.attrs.get(name) ?? null;

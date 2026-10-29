@@ -117,8 +117,14 @@ export const config = defineRoute({
    * `x build --target static`), against 69,120; main measured 67,945 the same way. why: +699 B
    * settings island — core's `reviveWireDates` in the transport its typed action client sends
    * through, so a read's `Date` reaches a caller as a `Date`.
+   * raised 67.5kb → 71kb (29.1.0). measured: 72,473 B (2026-10-29; `x build --target static`),
+   * against 72,704. why: the client router grew 24,448 → 27,845 B (+3,397) — a route modal
+   * opens on the click as a busy frame its document then fills (`ultimate-modals`, the frame,
+   * aborting on close), opened with `show()` + `showPopover()` instead of `showModal()` and so
+   * keeping focus, Tab and Escape itself; charged to every `app/` document, as the router is.
+   * All of the +3,397 B over main's 69,076 B.
    */
-  budget: { js: '67.5kb' },
+  budget: { js: '71kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

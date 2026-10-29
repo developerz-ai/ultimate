@@ -4,11 +4,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   addressOf,
+  declaresModal,
   leaveModal,
   modalAddress,
   modalHistory,
   modalLocation,
   type PresentationFacts,
+  parseModalRoutes,
   presentation,
 } from './navigation-modal-rules';
 
@@ -116,5 +118,58 @@ describe('history', () => {
     expect(leave({ owned: false })).toBe('replace');
     expect(leave({ landed: 'https://app.test/runs/7' })).toBe('replace');
     expect(leave({ history: 'none' })).toBe('none');
+  });
+});
+
+describe('declaresModal — which click opens the dialog before its document arrives', () => {
+  const ROUTES = ['!/runs/new/peek', '/runs/:id/peek', '/docs/*rest', '/settings/members/invite'];
+  test.each([
+    ['https://app.test/runs/abc/peek', true],
+    ['https://app.test/runs/abc/peek/', true],
+    ['https://app.test/runs/abc/peek?tab=log#x', true],
+    ['https://app.test/settings/members/invite', true],
+    ['https://app.test/docs', true],
+    ['https://app.test/docs/a/b', true],
+    ['https://app.test/runs/m%C3%A9/peek', true],
+  ])('%p presents as a modal', (url, expected) => {
+    expect(declaresModal(url, ROUTES)).toBe(expected);
+  });
+
+  test.each([
+    // A more specific page that is NOT a modal outranks the pattern it shadows.
+    ['https://app.test/runs/new/peek'],
+    ['https://app.test/runs/abc'],
+    ['https://app.test/runs/abc/peek/more'],
+    ['https://app.test/settings/members'],
+    ['https://app.test/runs/%E0%A4%A/peek'],
+    ['not a url'],
+  ])('%p does not', (url) => {
+    expect(declaresModal(url, ROUTES)).toBe(false);
+  });
+
+  test('no routes, no modal', () => {
+    expect(declaresModal('https://app.test/runs/abc/peek', [])).toBe(false);
+  });
+});
+
+describe('parseModalRoutes — the meta read back, never a throw', () => {
+  test('a well-formed meta', () => {
+    expect(
+      parseModalRoutes('{"routes":["/runs/:id/peek"],"close":"Close","loading":"Loading…"}'),
+    ).toEqual({ routes: ['/runs/:id/peek'], close: 'Close', loading: 'Loading…' });
+  });
+
+  test.each([
+    [null],
+    [''],
+    ['{'],
+    ['[]'],
+    ['null'],
+    ['{"routes":"/a","close":"x","loading":"y"}'],
+    ['{"routes":[1],"close":"x","loading":"y"}'],
+    ['{"routes":[],"loading":"y"}'],
+    ['{"routes":[],"close":"x"}'],
+  ])('%p is no meta', (content) => {
+    expect(parseModalRoutes(content)).toBeUndefined();
   });
 });

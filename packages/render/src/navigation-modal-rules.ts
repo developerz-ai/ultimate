@@ -17,6 +17,81 @@ export const NAVIGATION_PRESENTATION_META = 'ultimate-presentation';
 export const NAVIGATION_MODAL_ATTRIBUTE = 'data-x-modal';
 
 /**
+ * `<meta name="ultimate-modals" content='{"routes":[…],"close":"…","loading":"…"}'>` — on every
+ * opted-in document of a surface with a `navigation: 'modal'` route: the patterns of the routes
+ * that present as a modal, so a click opens the dialog BEFORE their document arrives, and the
+ * frame's two words in the document's own locale. Still not the router's decision: the answer's
+ * `NAVIGATION_PRESENTATION_META` is, and an answer that is no modal takes the frame down.
+ */
+export const NAVIGATION_MODALS_META = 'ultimate-modals';
+/** The dialog's content region; `aria-busy="true"` on it while the modal's document is on its way. */
+export const NAVIGATION_MODAL_BODY_ATTRIBUTE = 'data-x-modal-body';
+/** The placeholder inside a busy body: no words, so nothing to translate; hidden from AT. */
+export const NAVIGATION_MODAL_SKELETON_ATTRIBUTE = 'data-x-modal-skeleton';
+/** The frame's close button — a `<form method="dialog">` button, so it closes without the router. */
+export const NAVIGATION_MODAL_CLOSE_ATTRIBUTE = 'data-x-modal-close';
+
+/** What the modals meta says. `routes`: most specific first; a `!` prefix is a page that is not. */
+export interface ModalRoutes {
+  readonly routes: readonly string[];
+  /** The close button's accessible name. */
+  readonly close: string;
+  /** The busy dialog's accessible name until the modal's own heading names it. */
+  readonly loading: string;
+}
+
+/** The meta's content read back, or `undefined` for anything malformed — never a throw. */
+export function parseModalRoutes(content: string | null): ModalRoutes | undefined {
+  if (content === null) return undefined;
+  let said: unknown;
+  try {
+    said = JSON.parse(content);
+  } catch {
+    return undefined;
+  }
+  if (typeof said !== 'object' || said === null) return undefined;
+  const { routes, close, loading } = said as Record<string, unknown>;
+  if (!Array.isArray(routes) || !routes.every((r) => typeof r === 'string')) return undefined;
+  if (typeof close !== 'string' || typeof loading !== 'string') return undefined;
+  return { routes, close, loading };
+}
+
+/** One pattern (`/runs/:id/peek`, `/docs/*rest`) against a pathname's decoded segments. */
+function patternMatches(pattern: string, segments: readonly string[]): boolean {
+  const parts = pattern.split('/').filter((part) => part.length > 0);
+  for (const [i, part] of parts.entries()) {
+    if (part.startsWith('*')) return true;
+    const segment = segments[i];
+    if (segment === undefined) return false;
+    if (!part.startsWith(':') && part !== segment) return false;
+  }
+  return parts.length === segments.length;
+}
+
+/**
+ * Whether `url`'s path is a route the meta names a modal: the FIRST pattern that matches decides,
+ * as the list is most specific first — a more specific page (`!/runs/new`) beats `/runs/:id`.
+ * A path that does not decode is no modal: the router then waits for the answer, as before.
+ */
+export function declaresModal(url: string, routes: readonly string[]): boolean {
+  if (!URL.canParse(url)) return false;
+  let segments: string[];
+  try {
+    segments = new URL(url).pathname
+      .split('/')
+      .filter((segment) => segment.length > 0)
+      .map(decodeURIComponent);
+  } catch {
+    return false;
+  }
+  for (const route of routes) {
+    const not = route.startsWith('!');
+    if (patternMatches(not ? route.slice(1) : route, segments)) return !not;
+  }
+  return false;
+}
+
+/**
  * The modal a hash addresses — `#/runs/new?x=1` → `/runs/new?x=1` — or `null` for every other
  * fragment (`#below`, `#`, `#//host`, one that leaves the origin). NEVER throws: a stale or
  * hand-edited hash degrades to "just the page", it is never an error.

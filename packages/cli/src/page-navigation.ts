@@ -11,10 +11,14 @@ import type { Ctx, NavigationSurface } from '@ultimat3/core';
 import { CLIENT_NAVIGATION_SCOPE_HEADER } from '@ultimat3/core';
 import type { Route, RouteNavigation, UltimateRequest } from '@ultimat3/http';
 import { locationFor, navigationPurpose, relocate } from '@ultimat3/http';
+import type { Translator } from '@ultimat3/i18n';
 import type { ClientNavigationHead, HeadTag, RouteEntry } from '@ultimat3/render';
 import {
   clientNavigationTags,
   documentCarriesScope,
+  modalRouteList,
+  navigationModeOf,
+  navigationPrefetches,
   RouteNavigationInvalidError,
   routeEntries,
 } from '@ultimat3/render';
@@ -36,6 +40,11 @@ export interface NavigationDocumentHead {
   readonly buildId: string;
   /** `app.config.ts`'s `name`: two apps on one origin (web and admin) are two routers. */
   readonly app: string;
+  /**
+   * Per opted-in surface, its modal routes as `modalRouteList` orders them — what lets a click
+   * open the dialog before the answer. Absent or empty: the documents name none.
+   */
+  readonly modalRoutes?: ReadonlyMap<string, readonly string[]>;
 }
 
 export interface PageNavigation {
@@ -71,12 +80,34 @@ export function assertRouteNavigation(
   entries: readonly RouteEntry[] = routeEntries(),
 ): void {
   for (const entry of entries) {
-    const mode = entry.config.navigation;
+    const mode = navigationModeOf(entry.config.navigation);
     if (mode === undefined || surfaces.some((surface) => surface === entry.surface)) continue;
     throw new RouteNavigationInvalidError(
       `${entry.file} declares navigation: '${mode}', and its surface (${entry.surface}) is not in app.config.ts navigation.client`,
     );
   }
+}
+
+/**
+ * Each opted-in surface's modal routes, from the whole table: a page of ANY surface may outrank a
+ * modal pattern on the shared URL space, and the router must not open a frame the server will
+ * answer with that page.
+ */
+export function modalRoutesOf(
+  surfaces: readonly NavigationSurface[],
+  entries: readonly RouteEntry[] = routeEntries(),
+): ReadonlyMap<string, readonly string[]> {
+  return new Map(
+    surfaces.map((surface) => [
+      surface,
+      modalRouteList(
+        entries.map((entry) => ({
+          path: entry.path,
+          modal: entry.surface === surface && navigationModeOf(entry.config.navigation) === 'modal',
+        })),
+      ),
+    ]),
+  );
 }
 
 /**
@@ -109,6 +140,7 @@ export async function pageNavigation(
       scriptUrl: script.url,
       buildId,
       app: declared.app,
+      modalRoutes: modalRoutesOf(declared.surfaces),
     },
   };
 }
@@ -117,13 +149,25 @@ export async function pageNavigation(
 export const surfaceKey = (head: NavigationDocumentHead, surface: string): string =>
   `${head.app}:${surface}`;
 
-/** The head for one document, or `undefined` when its surface did not opt in. */
+/**
+ * The head for one document, or `undefined` when its surface did not opt in. With `t`, and modal
+ * routes on the surface, it names them and the frame's two words in the document's own locale
+ * (the framework catalog's `ui.close` and `ui.loading`, which an app may override).
+ */
 export function navigationHeadFor(
   head: NavigationDocumentHead | undefined,
   surface: string,
+  t?: Translator,
 ): ClientNavigationHead | undefined {
   if (head === undefined || !head.surfaces.has(surface)) return undefined;
-  return { surface: surfaceKey(head, surface), buildId: head.buildId, scriptUrl: head.scriptUrl };
+  const base = {
+    surface: surfaceKey(head, surface),
+    buildId: head.buildId,
+    scriptUrl: head.scriptUrl,
+  };
+  const routes = head.modalRoutes?.get(surface) ?? [];
+  if (t === undefined || routes.length === 0) return base;
+  return { ...base, modals: { routes, close: t('ui.close'), loading: t('ui.loading') } };
 }
 
 /**
@@ -137,15 +181,15 @@ export function navigationHeadFor(
 export function navigationTagsOf(
   head: NavigationDocumentHead | undefined,
   entry: Pick<RouteEntry, 'surface' | 'config'>,
+  t?: Translator,
 ): readonly HeadTag[] {
-  if (entry.config.navigation === 'document') return [];
-  const tags = navigationHeadFor(head, entry.surface);
+  const mode = navigationModeOf(entry.config.navigation);
+  if (mode === 'document') return [];
+  const tags = navigationHeadFor(head, entry.surface, t);
   if (tags === undefined) return [];
   // A modal says so in its own document: the router shows it over the page beneath, never decided
   // from a link — a redirect's target and a pasted `#/…` address are answered alike.
-  return clientNavigationTags(
-    entry.config.navigation === 'modal' ? { ...tags, modal: true } : tags,
-  );
+  return clientNavigationTags(mode === 'modal' ? { ...tags, modal: true } : tags);
 }
 
 /** `{ navigation }` for `metaOf`'s spread, or nothing. */
@@ -167,10 +211,10 @@ export function routeNavigationOf(
   head: NavigationDocumentHead | undefined,
 ): RouteNavigation | undefined {
   if (head === undefined || !head.surfaces.has(entry.surface)) return undefined;
-  if (entry.config.navigation === 'document') return undefined;
+  if (navigationModeOf(entry.config.navigation) === 'document') return undefined;
   return {
     surface: surfaceKey(head, entry.surface),
-    prefetch: entry.config.navigation === 'prefetch',
+    prefetch: navigationPrefetches(entry.config.navigation),
   };
 }
 

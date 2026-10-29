@@ -44,10 +44,15 @@ export const config = defineRoute({ render: 'ssr', …, navigation: 'prefetch' }
 | `'prefetch'` | also fetches it on hover/focus | a prefetch is answered like a visit |
 | `'document'` | always a real document load; the page itself carries **no router** (`As of 22.8.1`): no script, no navigation metas, none of the router's bytes charged to its budget — a `0b` page stays `0b`, and its own links and forms are plain browser navigations | a soft visit gets `204` + `x-ultimate-location`; the browser's own load runs it once |
 | `'modal'` | shown **over** the page the visitor is on, addressed by the hash (`/runs#/runs/new`) — [Modals](#modals-a-page-over-a-page). A full load of its own URL is still the whole page | as absent: a prefetch gets an empty `204` |
+| `{ modal: true, prefetch: 'intent' }` | a `'modal'` that is also fetched on hover/focus/touchstart, as `'prefetch'` is (`As of 29.1.0`) | a prefetch is answered like a visit |
 
 **Use `'document'` for every GET that records something** — a recipient opening a link, a download
-logged as evidence, a one-time token. **Use `'prefetch'` only for a GET that does nothing but
-render.** Declaring any of the three on a surface without client navigation refuses the boot
+logged as evidence, a one-time token. **Use `'prefetch'` — or, for a modal, `{ modal: true,
+prefetch: 'intent' }` — only for a GET that does nothing but render.** A plain `'modal'` stays
+unprefetched: a modal is often a form, and its GET may prepare one (a draft, a token, a reserved
+slot). One spelling per meaning: the object takes exactly those two keys and values, anything else
+is `X_ROUTE_NAVIGATION_INVALID`, and `{ modal: true }` alone is refused — that is `'modal'`.
+Declaring any of them on a surface without client navigation refuses the boot
 (`X_ROUTE_NAVIGATION_INVALID`).
 
 An opted-in document (every page of the surface except a `'document'` one) carries:
@@ -57,9 +62,11 @@ An opted-in document (every page of the surface except a `'document'` one) carri
 | `<meta name="ultimate-navigation" content="<app>:<surface>">` | which router may swap it in. The app's `name` is part of it, so two apps on one origin (web and admin) never swap each other's pages |
 | `<meta name="x-ultimate-build" content="…">` | the skew check |
 | `<script src="/_x/assets/navigation/<hash>.js" defer>` | the router: one classic script, content-addressed, `immutable`, `'self'` under the default CSP. `x dev`, the container and `x build --target static` all serve or write it |
+| `<meta name="ultimate-modals" content='{"routes":[…],"close":"…","loading":"…"}'>` | only on a surface with a `'modal'` route: the modal patterns, most specific first, with `!<pattern>` for a page that outranks one (`/runs/new/peek` over `/runs/:id/peek`), and the frame's two words in the document's locale (`ui.close`, `ui.loading` — override them in the app's catalog). What lets a click open the dialog before the answer ([Modals](#opening-on-the-click)) |
 
-**Budget:** the router is 24,058 B minified (8,836 B gzip) `As of 26.1.0` — 19,966 B before
-route-presented modals and navigating from code (+4,092 B). It is **charged** to
+**Budget:** the router is 27,845 B minified (10,094 B gzip) `As of 29.1.0` — 24,448 B (9,028 B
+gzip) before the modal that opens on the click and its popover opening (+3,397 B), and 19,966 B
+before route-presented modals and navigating from code (+4,092 B, 26.1.0). It is **charged** to
 every route on the surface, like realtime's page boot, because it is interactivity the app opted
 into. Raise a route's `budget.js` by the measured amount (`bun run budget-raises`).
 
@@ -282,7 +289,7 @@ path; the router writes the hash.
 
 | Visit | Result |
 |---|---|
-| a click on a link to a `'modal'` page | its document fetched (one soft GET), its `<main>` shown in a native `<dialog>` over this page; the URL becomes `<this page>#<its path>`, pushed |
+| a click on a link to a `'modal'` page | the dialog opens **on the click**, busy ([below](#opening-on-the-click)); its document fetched (one soft GET), its `<main>` shown in that `<dialog>` over this page; the URL becomes `<this page>#<its path>`, pushed once the content is in |
 | a reload, a pasted or bookmarked `/runs#/runs/new`, Forward onto it | `/runs` renders; the router opens `/runs/new` over it |
 | a hash typed over the page | the same |
 | a hash naming anything else — a page that is not `'modal'`, a 404, a redirect, another principal's page, `#//host` | **just the page**: the hash is dropped in place. Never followed, loaded, or shown as an error |
@@ -301,15 +308,58 @@ load does — same policy, same `load`, same cache headers, no request header th
 answer — and shows its `<main>`. A second shape of one URL would need `Vary`, could not be a
 `static` or `isr` file, and would put two answers under one key in every cache on the way.
 
+### Opening on the click
+
+`As of 29.1.0`. The document of every page on a surface with a `'modal'` route names those routes
+(`ultimate-modals`). A click on a link to one — or `openModal(path)`, or a hash that addresses one —
+opens the dialog **in the click's own task**, before the request is sent:
+
+| Phase | The dialog |
+|---|---|
+| on the click | open, in the top layer, focused: its body `[data-x-modal-body]` is `aria-busy="true"` and holds a skeleton (`[data-x-modal-skeleton]`, `aria-hidden`); the dialog is named "Loading…" (`ui.loading`); the close button is there. Nothing is pushed on history yet |
+| the answer is the modal | its `<main>` replaces the skeleton in the same dialog, `aria-busy` goes, the dialog is named by its heading, focus moves to `[autofocus]` (else the first focusable element) unless the visitor already moved it, and the hash entry is pushed — exactly as before |
+| closed while it loads (Escape, the close button, a press outside, Back) | the request is **aborted**; the dialog goes; no entry was pushed, so nothing is left to pop |
+| the answer is not a modal (a page, a redirect, a load, a failure, a stale hash) | the frame goes, and the answer is handled exactly as it was before this release: a page swaps in, a network failure loads the URL, a stale hash is dropped in place |
+| a link to another modal from inside one | the dialog keeps its content, busy, until the next one replaces it |
+
+The router never decides the presentation from the meta: it only opens early. The ANSWER's
+`ultimate-presentation` still decides, so a document that names no modal routes (or an older
+router) behaves as before: nothing on screen until the answer.
+
+**Prefetch on intent.** With `navigation: { modal: true, prefetch: 'intent' }` a hover, focus or
+touchstart fetches the modal's document, and the click fills the frame from that answer — often in
+the same frame it opened in. An island that opens a modal from code (`openModal`) gets no hover of
+its own; put the modal's link in the row, or let the row's own link carry the intent.
+
+**Why not `showModal()`.** A modal `<dialog>` makes the rest of the document inert, and Chrome
+computes inertness in style: opening one restyles **every element on the page**. The router opens
+its dialog with `show()` + `showPopover()` — the top layer and `::backdrop`, no inert document — and
+does what `showModal()` did by hand: `aria-modal="true"`, focus moved in, Tab kept inside, Escape
+(where `closedby` is not supported) and a press on the backdrop closing it. Measured on a 7,011-element
+page in headless Chrome 150, 4x CPU throttling, median of 7 cold loads:
+
+| Opening | open + forced style/layout | to next frame | RecalcStyle |
+|---|---|---|---|
+| `showModal()` + `html:has(dialog:modal)` (before) | 131.3 ms | 163.9 ms | 124.1 ms |
+| `showModal()`, no `:has()` lock | 122.3 ms | 157.8 ms | 116.4 ms |
+| `inert` on one wrapper + popover | 117.3 ms | 153.3 ms | 111.1 ms |
+| `show()` + `showPopover()` + `html:has(> body > dialog[data-x-modal][open])` (now) | 9.7 ms | 32.8 ms | 2.6 ms |
+
+The cost was the inert document, not the `:has()` lock and not the attribute toggles: `inert` on a
+single wrapper is as expensive as `showModal()`. A browser without popovers still gets `showModal()`.
+The page beneath is out of reach behind the backdrop and for assistive technology (`aria-modal`),
+but it is not `inert`: `:modal` no longer matches the router's dialog — select it by
+`dialog[data-x-modal]` (and `[open]`).
+
 ### Inside the modal
 
 | Concern | Behaviour |
 |---|---|
-| markup | one `<dialog data-x-modal>` opened with `showModal()`: top layer, `::backdrop`, the page beneath inert, focus moved in. Named by its first `h1`/`h2` (`aria-labelledby`), else by the page's title. The tab's title is the modal's while it is open |
+| markup | one `<dialog data-x-modal aria-modal="true">` in the top layer (`show()` + `showPopover()`, [above](#opening-on-the-click)), `::backdrop`, focus moved in and kept in. Its content in `[data-x-modal-body]`, then the frame's close button. Named by its first `h1`/`h2` (`aria-labelledby`), else by the page's title. The tab's title is the modal's while it is open |
 | the page beneath | untouched: its islands stay mounted, its socket and page store live, its scroll where it was |
 | links and forms | resolved against the MODAL's URL, as on its own page: `href="?step=2"` is `/runs/new?step=2`, a form with no `action` posts to `/runs/new` |
 | islands in the modal | booted by the page's hydration runtime; disposed when the modal closes or its content is replaced |
-| styles | the modal page's stylesheets load first. `@ultimat3/ui`'s `global.scss` styles `dialog[data-x-modal]` as its `Dialog` (`surface-raised` over `scrim`), under `:where()` so an app restyles it at zero specificity; its reset locks the body scroll behind any modal `<dialog>` |
+| styles | the modal page's stylesheets load first. `@ultimat3/ui`'s `global.scss` styles `dialog[data-x-modal]` as its `Dialog` (`surface-raised` over `scrim`), its close button and its skeleton, under `:where()` so an app restyles them at zero specificity; its reset locks the page's scroll behind the router's dialog (`html:has(> body > dialog[data-x-modal][open])`) and behind any `:modal` `<dialog>` |
 | one at a time | a link to another `'modal'` page from inside replaces the content of the same dialog and pushes, so Back steps out one level (`#/runs/new` → `#/runs/new/advanced` → Back → `#/runs/new`) |
 
 ### Closing
@@ -323,9 +373,13 @@ answer — and shows its `<main>`. A second shape of one URL would need `Vary`, 
 
 Focus returns to the link or button that opened it; the title returns to the page's.
 
-The router renders **no close button**: it has no catalog to name one in, and a page that is also
-a full page already has its way back. Give the modal page a Cancel link to the page it is opened
-over (or a `<form method="dialog">` button).
+The router renders **one close button** (`As of 29.1.0`): `<button type="button"
+data-x-modal-close aria-label="…">` after the content — never a `<form>`, so a page's own
+`dialog form` selector still finds its form — named by the framework catalog's
+`ui.close` in the document's locale, drawn as a cross by `@ultimat3/ui`. It closes as Escape
+does. It needs the `ultimate-modals` meta for its name, so a document without one gets none. Still
+give the modal page a Cancel link to the page it is opened over: on its own full page that link is
+its way back.
 
 ### Forms inside
 
@@ -396,9 +450,13 @@ The three event names are on `@ultimat3/render/client` too — what an island li
 names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
 `NAVIGATED_EVENT`, `NAVIGATION_ERROR_EVENT`, `NAVIGATION_RELOAD_ATTRIBUTE`,
 `NAVIGATION_NO_PREFETCH_ATTRIBUTE`, `NAVIGATION_PERSIST_ATTRIBUTE`, `NAVIGATING_ATTRIBUTE`,
-`NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE`), with the pure rules the router runs
+`NAVIGATION_PRESENTATION_META`, `NAVIGATION_MODAL_ATTRIBUTE`, `NAVIGATION_MODALS_META`,
+`NAVIGATION_MODAL_BODY_ATTRIBUTE`, `NAVIGATION_MODAL_CLOSE_ATTRIBUTE`,
+`NAVIGATION_MODAL_SKELETON_ATTRIBUTE`), with the pure rules the router runs
 (`linkVerdict`, `formVerdict`, `responseVerdict`, `reusable`, `mayPrefetch`, `modalAddress`,
-`presentation`, `modalHistory`, `leaveModal`). The headers are `@ultimat3/core`'s, imported from there only
+`presentation`, `modalHistory`, `leaveModal`, `declaresModal`, `parseModalRoutes`), the server's
+`modalRouteList`, and the declaration's readers (`isRouteNavigation`, `navigationModeOf`,
+`navigationPrefetches`). The headers are `@ultimat3/core`'s, imported from there only
 (`CLIENT_NAVIGATION_HEADER`, `CLIENT_NAVIGATION_LOCATION_HEADER`, `CLIENT_NAVIGATION_SCOPE_HEADER`,
 `CLIENT_NAVIGATION_SURFACE_HEADER`) — render's `NAVIGATION_*_HEADER` aliases were deleted in 25.0.0. The server half is
 `@ultimat3/http`'s `navigationGate`, `redirectForRouter` and `relocate`.
@@ -408,8 +466,9 @@ names and attributes are exported from `@ultimat3/render` (`NAVIGATE_EVENT`,
 | What | Where |
 |---|---|
 | every client rule, as pure functions | `packages/render/src/navigation-rules.test.ts`, `navigation-cache.test.ts`, `navigation-dom.test.ts`, `route-navigation.test.ts`, `navigation-modal-rules.test.ts` |
-| a `'modal'` page: never prefetched, one document for a soft and a full load, the meta it carries | `packages/cli/src/page-navigation.test.ts` |
-| modals in a real Chrome: open over a live page, Escape/Back/Cancel, reload and pasted hash, stale hash, nesting, a refused and a redirected submit, a confirmation, `openModal`/`closeModal`/`refresh` from code, scripting off | `packages/cli/e2e/client-navigation-modal.e2e.test.ts` |
+| a `'modal'` page: never prefetched, one document for a soft and a full load, the meta it carries; `{ modal: true, prefetch: 'intent' }` prefetched; the `ultimate-modals` meta, its shadows and its words | `packages/cli/src/page-navigation.test.ts`, `packages/render/src/navigation-tags.test.ts` |
+| the frame: open on the click, filled by the answer, aborted on close, taken down by a non-modal answer, opened without `showModal()` | `packages/render/src/navigation-modal-frame.test.ts` |
+| modals in a real Chrome: open over a live page, the frame in the click's own task, Escape while it loads, a prefetched modal, Escape/Back/Cancel, reload and pasted hash, stale hash, nesting, a refused and a redirected submit, a confirmation, `openModal`/`closeModal`/`refresh` from code, scripting off | `packages/cli/e2e/client-navigation-modal.e2e.test.ts` |
 | navigating from code: through the router, the browser's fallbacks, the server, `openModal`'s refusal | `packages/render/src/navigation-api.test.ts` |
 | the server gate and the redirect hand-over, counting handler runs | `packages/http/src/navigation.test.ts` |
 | speculation rules: which pages are candidates, the tag on a router-less document only, the CSP hash of the served bytes | `packages/cli/src/page-speculation.test.ts`, `packages/render/src/speculation-rules.test.ts` |
