@@ -22,15 +22,39 @@ const SIGNAL_IDS = new Map<string, RowId>([
   ['the GitHub Release exists', 'release-exists'],
 ]);
 
+/** A command that assigns: the whole inline span is `name=$(...)`. */
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=\$\((.*)\)$/;
+
+/** A command that reads a variable: `$name`, quoted or not. */
+const REFERENCE = /\$([A-Za-z_][A-Za-z0-9_]*)/g;
+
+/**
+ * Every variable a row's command reads must be assigned by that same row's command before the
+ * read: the strip below erases the assignment's name, so a renamed assignment (`sha=$(...)`
+ * where the command still reads `"$t"`) normalizes to the same command while the shell reads an
+ * unset variable.
+ */
+function assertAssignmentsPairWithReferences(spans: readonly string[]): void {
+  const assigned: string[] = [];
+  for (const span of spans) {
+    for (const match of span.matchAll(REFERENCE)) {
+      const name = match[1] ?? '';
+      expect(assigned, `command reads an unassigned variable: $${name}`).toContain(name);
+    }
+    const assignment = ASSIGNMENT.exec(span);
+    if (assignment !== null) assigned.push(assignment[1] ?? '');
+  }
+}
+
 function normalizedCommand(cell: string): string {
   // Only the leading instruction is executable; the em-dash suffix explains it and can contain
   // other inline spans (for example Dependabot's bound). Never strip arguments from a command.
   const instruction = cell.split(' — ')[0] ?? '';
   expect(instruction).toMatch(/^`[^`]+`(?:(?:, then |; )`[^`]+`)*$/);
-  return [...instruction.matchAll(/`([^`]+)`/g)]
-    .map((match) =>
-      (match[1] ?? '').replace(/^(?:t|sha)=\$\((.*)\)$/, '$1').replaceAll('"$t"', '<tag>'),
-    )
+  const spans = [...instruction.matchAll(/`([^`]+)`/g)].map((match) => match[1] ?? '');
+  assertAssignmentsPairWithReferences(spans);
+  return spans
+    .map((span) => span.replace(/^(?:t|sha)=\$\((.*)\)$/, '$1').replaceAll('"$t"', '<tag>'))
     .join('; ');
 }
 
@@ -119,5 +143,13 @@ describe('unit · health-doc · the brief matches the ordered machine definition
   ])('rejects command drift: %s', (_name, from, to) => {
     const altered = replaceOnce(brief, from, to);
     expect(() => assertBrief(altered)).toThrow();
+  });
+
+  test('rejects a renamed tag assignment whose reference is left behind', () => {
+    const row = brief.split('\n').find((line) => line.startsWith('| the last tag published |'));
+    expect(row).toBeDefined();
+    if (row === undefined) expect.unreachable('mutation row missing');
+    const altered = replaceOnce(brief, row, row.replace('`t=$(', '`sha=$('));
+    expect(() => assertBrief(altered)).toThrow(/unassigned variable: \$t/);
   });
 });
