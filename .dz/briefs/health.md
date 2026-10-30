@@ -54,4 +54,16 @@ verbatim): file that, never a verdict over an unread row. `ok: true` carries `da
 This table stays the definition of each row's healthy condition; the script is its machine reading,
 never a second definition.
 
+## Rows
+
+- `main-green` — row 1: `main` is green
+- `last-tag-published` — row 2: the last tag published
+- `stamped-version-tagged` — row 3: the stamped version is tagged
+- `tag-runs-ended-well` — row 4: tag runs ended well
+- `npm-serves-tree` — row 5: npm serves what the tree says
+- `automation-alarms` — row 6: automation's own alarms
+- `dependabot-not-stuck` — row 7: Dependabot is not stuck
+- `demo-shipped` — row 8: the deployed demo shipped
+- `release-exists` — row 9: the GitHub Release exists
+
 <!-- 8460 characters; checkup cap 10000 -->
