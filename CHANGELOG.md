@@ -15,7 +15,7 @@ Tier 3 — realtime.
 - **`useRecords(type, { throttleMs })` — a busy feed throttled by its reader.** The first change is
   told at once, a burst as ONE notification at the end of the period, the last always lands;
   `release()` drops what is owed. A live board taking ten records a second is told 21 times in 20 s
-  instead of 200 (`scripts/bench/record-store.bench.ts`). Absent or `0`: every change, as before; a
+  instead of 200 (`scripts/bench/record-store-bench.ts`). Absent or `0`: every change, as before; a
   non-finite or fractional value is `X_INVARIANT`. `schedule` injects the timer (tests).
   [Realtime](https://github.com/developerz-ai/ultimate/wiki/Realtime#one-record-per-typekey).
 

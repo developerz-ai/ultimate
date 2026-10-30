@@ -1471,7 +1471,7 @@ sync-node roll). Three rules, each pinned by a failing-first test:
 Measured on bank-integrations' panel (Ultimate 29.1.0), which had worked around all three in app
 code — `throttle.ts` (a board redrawn per record, ten a second, on a phone), `stableRuns` and
 `sameData` (new arrays of the same rows defeating Solid's `===`).
-`bun run scripts/bench/record-store.bench.ts` replays the load; before → after:
+`bun run scripts/bench/record-store-bench.ts` replays the load; before → after:
 
 | Scenario | Notifications | New `data` arrays | Time |
 |---|---|---|---|

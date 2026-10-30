@@ -3,7 +3,7 @@
 // hooks raised (each one a re-run of every effect reading the accessor, i.e. a render), the times
 // an answer's `data` came back as a NEW array (what defeats a memo's `===`), and the wall time.
 //
-//   bun run scripts/bench/record-store.bench.ts [--json]
+//   bun run scripts/bench/record-store-bench.ts [--json]
 //
 // Scenarios: `board` — 300 runs, the board's `useRecords('runs', { order })` and the alerts island's
 // `useRecords('runs', { where: mine })`, 200 frames each moving one run nobody here started.
@@ -83,7 +83,7 @@ interface Setup {
   readonly ticks: number;
 }
 
-async function scenario(name: string, setup: () => Setup) {
+async function scenario(name: string, setup: () => Setup): Promise<ScenarioResult> {
   probes = [];
   pageHarness();
   installRealtime({ signal: counting });
@@ -116,7 +116,27 @@ async function scenario(name: string, setup: () => Setup) {
   return out;
 }
 
-const results = [
+export interface ScenarioResult {
+  readonly name: string;
+  readonly ticks: number;
+  readonly bumps: number;
+  readonly newArrays: number;
+  readonly readers: number;
+  readonly perReader: string;
+  readonly ms: number;
+}
+
+/** Every scenario, in order. The page's `fetch` is put back afterwards. */
+export async function runScenarios(): Promise<readonly ScenarioResult[]> {
+  const realFetch = globalThis.fetch;
+  try {
+    return await allScenarios();
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+const allScenarios = async (): Promise<ScenarioResult[]> => [
   await scenario('board', () => {
     const store = () => pageHarnessStore();
     const s = store();
@@ -257,5 +277,8 @@ function pageHarnessStore() {
   return pageStore('bench');
 }
 
-if (process.argv.includes('--json')) console.log(JSON.stringify(results));
-else console.table(results);
+if (import.meta.main) {
+  const results = await runScenarios();
+  if (process.argv.includes('--json')) console.log(JSON.stringify(results));
+  else console.table(results);
+}

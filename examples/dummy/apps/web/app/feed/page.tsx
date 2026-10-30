@@ -134,8 +134,13 @@ export const config = defineRoute({
    * aborting on close), opened with `show()` + `showPopover()` instead of `showModal()` and so
    * keeping focus, Tab and Escape itself; charged to every `app/` document, as the router is.
    * All of the +3,397 B over main's 166,148 B.
+   * raised 166kb → 166.5kb (29.2.0, realtime read hooks). measured: 170,027 B (2026-10-29;
+   * `x build --target static`), against main's 169,509 the same way. why: +518 B (page boot +237,
+   * island +281) — a read hook answers the same object until what it shows moved (`keptAnswer`),
+   * a `where` reader is told only of keys it shows or keeps, `useRecords`' opt-in `throttleMs`,
+   * and the store's per-type index; on bank-integrations' run page 260 → 80 notifications.
    */
-  budget: { js: '166kb' },
+  budget: { js: '166.5kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
