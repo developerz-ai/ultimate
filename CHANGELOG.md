@@ -8,7 +8,15 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **An optional input property added is additive, not breaking.** The manifest diff read ANY
+  change to an action's, query's or job's input schema as breaking, so adding an optional field to
+  a published action (`trigger?` on a `/v1` start) failed `contract-diff` until the app bumped its
+  major. A change that only adds optional top-level properties to an object schema — every
+  existing property byte-identical, nothing newly required, nothing else changed — now reads
+  `additive`; any other difference, and any addition inside a nested object, stays `breaking`.
+  `packages/manifest/src/diff-input.ts`.
 
 ## 29.3.0 - 2026-10-30
 

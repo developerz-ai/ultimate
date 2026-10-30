@@ -4,6 +4,7 @@
 import { canonicalJson, isMcpExposed } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
+import { diffInput } from './diff-input';
 import { diffRateLimit } from './diff-rate-limit';
 import type { ActionFact, QueryFact } from './schema';
 
@@ -28,9 +29,7 @@ export function diffActions(
       changes.push({ kind: 'breaking', path, detail: 'action removed' });
       continue;
     }
-    if (canonicalJson(action.input) !== canonicalJson(next.input)) {
-      changes.push({ kind: 'breaking', path: `${path}.input`, detail: 'input schema changed' });
-    }
+    changes.push(...diffInput(`${path}.input`, action.input, next.input, 'input schema changed'));
     if (canonicalJson(action.output) !== canonicalJson(next.output)) {
       changes.push({ kind: 'breaking', path: `${path}.output`, detail: 'output schema changed' });
     }
@@ -119,12 +118,8 @@ export function diffQueries(
     }
     // Both sides or neither: a manifest committed before queries published their input carries
     // none, and a side with nothing on it is no evidence of a change (`diff-routes.ts`'s rule).
-    if (
-      query.input !== undefined &&
-      next.input !== undefined &&
-      canonicalJson(query.input) !== canonicalJson(next.input)
-    ) {
-      changes.push({ kind: 'breaking', path: `${path}.input`, detail: 'input schema changed' });
+    if (query.input !== undefined && next.input !== undefined) {
+      changes.push(...diffInput(`${path}.input`, query.input, next.input, 'input schema changed'));
     }
     if (query.policy !== next.policy) {
       changes.push({
