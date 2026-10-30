@@ -6,7 +6,9 @@
 import type { AsyncState, Row } from '@ultimat3/core/page';
 import { pageStore } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
-import { type RecordStore, recordKey } from './record-store';
+import { keptAnswer, throttledNotify } from './record-answer';
+import { type RecordKey, type RecordStore, recordKey } from './record-store';
+import type { Scheduler } from './thundering-herd';
 
 /**
  * A callable `AsyncState`: `pending` until the record first arrives, `ready` from then on —
@@ -43,12 +45,16 @@ export function useRecord<R extends object = Row>(type: string, key: string): Re
     if (store.peek(type, key) !== undefined) seen = true;
     setVersion(version() + 1);
   });
+  let answer: AsyncState<R | undefined> = PENDING;
   const read = (): AsyncState<R | undefined> => {
     version();
     // The store holds JSON rows; the caller names the entity row type it reads them as.
     const row = store.peek(type, key) as R | undefined;
     if (row !== undefined) seen = true;
-    return row === undefined && !seen ? PENDING : { status: 'ready', data: row };
+    if (row === undefined && !seen) return PENDING;
+    // The same row object back is the same answer: nothing reading it runs again.
+    if (answer.status !== 'ready' || answer.data !== row) answer = { status: 'ready', data: row };
+    return answer;
   };
   let held = true;
   const release = (): void => {
@@ -75,6 +81,14 @@ export interface RecordSelection<R extends object = Row> {
   readonly where?: (record: R) => boolean;
   /** Absent: by record key, ascending — creation order for a uuid v7 key. */
   readonly order?: (a: R, b: R) => number;
+  /**
+   * Tell readers at most once per this many ms: the first change at once, a burst as ONE change at
+   * the end of the period, the last always landing. For a projection a busy feed moves many times
+   * a second (a live board on a phone). Absent or `0`: every change, as it lands.
+   */
+  readonly throttleMs?: number;
+  /** The period's timer. Defaults to `setTimeout`; a test injects its own. */
+  readonly schedule?: Scheduler;
 }
 
 /**
@@ -131,16 +145,22 @@ function byKeys<R extends object>(
     for (const key of keys) store.retain(type, key);
   });
   let seen = present().length > 0;
+  let answer: AsyncState<readonly R[]> | null = null;
   const unsubscribe = store.subscribe((changed) => {
-    if (![...changed].some((key) => targets.has(key))) return;
-    if (present().length > 0) seen = true;
-    bump();
+    for (const rk of changed) {
+      if (!targets.has(rk)) continue;
+      if (present().length > 0) seen = true;
+      bump();
+      return;
+    }
   });
   const read = (): AsyncState<readonly R[]> => {
     version();
     const rows = present();
     if (rows.length > 0) seen = true;
-    return !seen ? PENDING : { status: 'ready', data: rows };
+    if (!seen) return PENDING;
+    answer = keptAnswer(answer, 'ready', rows);
+    return answer;
   };
   let held = true;
   const release = (): void => {
@@ -163,15 +183,36 @@ function ofType<R extends object>(
 ): RecordsAccessor<R> {
   const prefix = `${type}:`;
   const { where, order } = selection;
+  const notify = throttledNotify(bump, selection.throttleMs, selection.schedule);
   store.retainType(type);
   // Recomputed once per change to this type, never per read: the same answer back is what tells
   // a fine-grained renderer nothing moved.
   let answer: AsyncState<readonly R[]> | null = null;
   let answered = -1;
+  /** The keys the current answer shows: a change to one of them moves it, whatever `where` says. */
+  let shown: ReadonlySet<RecordKey> = new Set();
+  /**
+   * Whether `rk` can move the answer readers hold: shown in it, or kept by `where` now. A record of
+   * the type the list neither shows nor would show — the fleet's run beside one viewer's — is
+   * nobody's change here, and told to nobody (a stale answer is told regardless: it is re-read).
+   */
+  const moves = (rk: RecordKey): boolean => {
+    if (where === undefined || answer === null || answered !== version() || shown.has(rk)) {
+      return true;
+    }
+    // The store holds JSON rows; the caller names the entity row type it reads them as.
+    const row = store.peek(type, rk.slice(prefix.length)) as R | undefined;
+    try {
+      return row !== undefined && where(row);
+    } catch {
+      // The read raises it to the caller; a listener that threw would silence the page's others.
+      return true;
+    }
+  };
   const unsubscribe = store.subscribe((changed) => {
     for (const rk of changed) {
-      if (!rk.startsWith(prefix)) continue;
-      bump();
+      if (!rk.startsWith(prefix) || !moves(rk)) continue;
+      notify.call();
       return;
     }
   });
@@ -181,11 +222,15 @@ function ofType<R extends object>(
     // The store holds JSON rows; the caller names the entity row type it reads them as.
     const keyed = store.keyed(type) as readonly (readonly [string, R])[];
     const kept = where === undefined ? [...keyed] : keyed.filter(([, row]) => where(row));
-    const rows =
-      order === undefined
-        ? kept.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, row]) => row)
-        : kept.map(([, row]) => row).sort(order);
-    answer = { status: 'ready', data: rows };
+    if (order === undefined) kept.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    else kept.sort(([, a], [, b]) => order(a, b));
+    // Only a `where` asks what is shown: with none, every record of the type moves the answer.
+    if (where !== undefined) shown = new Set(kept.map(([key]) => `${prefix}${key}`));
+    answer = keptAnswer(
+      answer,
+      'ready',
+      kept.map(([, row]) => row),
+    );
     answered = at;
     return answer;
   };
@@ -193,6 +238,7 @@ function ofType<R extends object>(
   const release = (): void => {
     if (!held) return;
     held = false;
+    notify.cancel();
     unsubscribe();
     store.releaseType(type);
   };
