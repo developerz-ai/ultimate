@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 29.3.1 - 2026-10-30
+
 ### Fixed
 
 - **An optional input property added is additive, not breaking.** The manifest diff read ANY
@@ -19,6 +23,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   an open one already took any extra key; any other difference, and any addition inside a nested
   object, stays `breaking`.
   `packages/manifest/src/diff-input.ts`.
+
+### Commits
+
+- fix(manifest): an optional input property added is additive, not breaking (#938)
 
 ## 29.3.0 - 2026-10-30
 
