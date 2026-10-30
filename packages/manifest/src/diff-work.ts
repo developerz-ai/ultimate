@@ -5,6 +5,7 @@
 import { canonicalJson } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
+import { diffInput } from './diff-input';
 import type { JobFact, TaskFact } from './schema';
 
 export function diffJobs(
@@ -23,13 +24,15 @@ export function diffJobs(
       changes.push({ kind: 'breaking', path, detail: 'job removed' });
       continue;
     }
-    if (canonicalJson(job.input) !== canonicalJson(next.input)) {
-      changes.push({
-        kind: 'breaking',
-        path: `${path}.input`,
-        detail: 'input schema changed; in-flight payloads will not parse',
-      });
-    }
+    // An optional property added is additive: every in-flight payload still parses.
+    changes.push(
+      ...diffInput(
+        `${path}.input`,
+        job.input,
+        next.input,
+        'input schema changed; in-flight payloads will not parse',
+      ),
+    );
     // The same failure as a removal, from the worker's side: a fleet subscribed to the old queue
     // keeps running and stops receiving this job, and the rows pile up where nobody drains them.
     changes.push(
