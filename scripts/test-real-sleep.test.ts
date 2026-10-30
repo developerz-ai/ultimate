@@ -77,6 +77,13 @@ describe('scanRealSleeps', () => {
     ).toEqual([]);
   });
 
+  test('a delimiter inside an argument string does not hide the delay (review #931)', () => {
+    expect(scan(`setTimeout(() => log(")"), 50);`, "setInterval(() => log('],'), 20);")).toEqual([
+      { path: PATH, line: 1, call: 'setTimeout(…, 50)' },
+      { path: PATH, line: 2, call: 'setInterval(…, 20)' },
+    ]);
+  });
+
   test('callArguments splits only the top level', () => {
     expect(callArguments('f(a, g(b, c), [d, e])', 1)).toEqual(['a', ' g(b, c)', ' [d, e]']);
     expect(callArguments('f()', 1)).toEqual(['']);

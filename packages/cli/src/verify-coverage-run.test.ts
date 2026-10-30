@@ -171,12 +171,16 @@ describe('runCovered', () => {
     const root = await fixtureApp();
     try {
       const cache = join(root, '.x', 'test-timings.json');
-      // An earlier run says `math` is the slow one: it must start first, though it sorts last.
+      // An earlier run says `loads` is the slow one: it must start first, though it sorts last.
       await Bun.write(
         cache,
         JSON.stringify({
           version: 1,
-          files: { 'apps/web/app/math.test.ts': 9_000, 'gone.test.ts': 1 },
+          files: {
+            'apps/web/site/loads.test.ts': 9_000,
+            'apps/web/app/math.test.ts': 1,
+            'gone.test.ts': 1,
+          },
         }),
       );
       const commands: (readonly string[])[] = [];
@@ -184,7 +188,7 @@ describe('runCovered', () => {
         commands.push(command);
         return exec(command, options);
       };
-      const files = ['apps/web/site/loads.test.ts', 'apps/web/app/math.test.ts'];
+      const files = ['apps/web/app/math.test.ts', 'apps/web/site/loads.test.ts'];
       const run = await runCovered({
         root,
         runner,
@@ -195,8 +199,8 @@ describe('runCovered', () => {
       });
       expect(run.ok).toBe(true);
       expect(commands.map((command) => command.at(-1))).toEqual([
-        'apps/web/app/math.test.ts',
         'apps/web/site/loads.test.ts',
+        'apps/web/app/math.test.ts',
       ]);
       expect(commands[0]).toContain('--reporter=junit');
       // The cache now holds this run's own measurement of both, and keeps what it did not run.
@@ -206,7 +210,7 @@ describe('runCovered', () => {
         'apps/web/site/loads.test.ts',
         'gone.test.ts',
       ]);
-      expect(kept.files['apps/web/app/math.test.ts']).toBeLessThan(9_000);
+      expect(kept.files['apps/web/site/loads.test.ts']).toBeLessThan(9_000);
       expect(run.slowest?.map((slow) => slow.file).sort()).toEqual([...files].sort());
     } finally {
       await rm(root, { recursive: true, force: true });

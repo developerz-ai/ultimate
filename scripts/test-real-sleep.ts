@@ -45,13 +45,21 @@ export interface RealSleepSite {
   readonly call: string;
 }
 
-/** The top-level arguments of the call whose `(` is at `open`; `undefined` when it never closes. */
-export function callArguments(code: string, open: number): readonly string[] | undefined {
+/**
+ * The top-level arguments of the call whose `(` is at `open`; `undefined` when it never closes. A
+ * delimiter inside a string (`inString`) is text, never structure: `log(")")` keeps its delay.
+ */
+export function callArguments(
+  code: string,
+  open: number,
+  inString: (at: number) => boolean = () => false,
+): readonly string[] | undefined {
   const parts: string[] = [];
   let depth = 0;
   let start = open + 1;
   for (let at = open; at < code.length; at += 1) {
     const ch = code[at];
+    if (at > open && inString(at)) continue;
     if (ch === '(' || ch === '[' || ch === '{') depth += 1;
     else if (ch === ')' || ch === ']' || ch === '}') {
       depth -= 1;
@@ -88,7 +96,10 @@ export function scanRealSleeps(path: string, source: string): readonly RealSleep
   for (const match of code.matchAll(CALL)) {
     const at = match.index ?? 0;
     if (insideString(literals, at)) continue;
-    const call = waitOf(match[1] ?? '', callArguments(code, at + match[0].length - 1));
+    const call = waitOf(
+      match[1] ?? '',
+      callArguments(code, at + match[0].length - 1, (pos) => insideString(literals, pos)),
+    );
     if (call === undefined) continue;
     const line = source.slice(0, at).split('\n').length;
     if (REAL_CLOCK.test(lines[line - 1] ?? '') || REAL_CLOCK.test(lines[line - 2] ?? '')) continue;
