@@ -3,7 +3,7 @@
 // closed socket leave, and the members a joiner is told about are the ones on the shared set —
 // which is the KV bucket under NATS and the in-process map under `x dev`.
 
-import { afterAll, describe, expect, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import { frozenClock, logger } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub, type Topic } from './channel';
@@ -288,37 +288,50 @@ describe('the sync node speaks presence', () => {
 });
 
 describe('the node runs the sweep', () => {
-  // Real wall-clock, deliberately: the interval is the thing under test, and a frozen clock would
-  // prove the sweep works while leaving "nothing ever calls it" exactly as true as it was.
+  // The interval is the thing under test, so it is a REAL `setInterval` the node arms — on Bun's
+  // fake timers, which the test moves: a frozen `Date` would prove the sweep works while leaving
+  // "nothing ever calls it" exactly as true as it was; a scheduled timer that only fires when the
+  // clock moves proves the call without waiting 2.4 s of wall time for it.
+  const elapse = async (ms: number): Promise<void> => {
+    jest.advanceTimersByTime(ms);
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('start() schedules it and stop() clears it', async () => {
     const app = harness(3_000);
     const swept = spyOn(app.presence, 'sweepAll');
     await app.node.start();
-    await Bun.sleep(1_200);
+    await elapse(1_200);
 
     expect(swept.mock.calls.length).toBeGreaterThan(0);
     await app.node.stop();
     const after = swept.mock.calls.length;
-    await Bun.sleep(1_200);
+    await elapse(1_200);
 
     // A timer left behind sweeps for a node that has stopped, on a transport that may be closed.
     expect(swept.mock.calls.length).toBe(after);
-  }, 10_000);
+  });
 
   test('drain() clears it too, without waiting for a stop() that may never come', async () => {
     const app = harness(3_000);
     const swept = spyOn(app.presence, 'sweepAll');
     await app.node.start();
-    await Bun.sleep(1_200);
+    await elapse(1_200);
     expect(swept.mock.calls.length).toBeGreaterThan(0);
 
     await app.node.drain({ graceMs: 0 });
     const after = swept.mock.calls.length;
-    await Bun.sleep(1_200);
+    await elapse(1_200);
 
     // A drained node has handed its sockets to the fleet: it is sweeping a room it has left,
     // and it does it through a hub `drain()` already closed.
     expect(swept.mock.calls.length).toBe(after);
     await app.node.stop();
-  }, 10_000);
+  });
 });

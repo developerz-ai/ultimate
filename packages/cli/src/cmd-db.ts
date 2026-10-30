@@ -23,6 +23,7 @@ import type { CliCommand, CommandContext } from './command';
 import { stepFinding } from './db-finding';
 import { generateAppMigration, unrenderedJson, unrenderedLines } from './db-generate';
 import { liveObjectDrift } from './db-object-drift';
+import { layTemplate } from './db-reset-template';
 import {
   afterWrittenMigration,
   refreshSchemaDump,
@@ -249,7 +250,8 @@ async function runMigrate(
 /**
  * Embedded only: `rm -rf` against a database this process does not own is not a reset, it is an
  * outage. The data directory goes before the migrator starts, so the run that follows is a fresh
- * database with an empty ledger rather than a re-apply over a live one.
+ * database rather than a re-apply over a live one — laid down from the migrated template when one
+ * can be had, its ledger already full, else an empty one the migrator fills.
  */
 async function runReset(ctx: CommandContext, root: string): Promise<CommandResult> {
   const services = resolveServices(root, ctx.env);
@@ -272,7 +274,11 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
       embeddedDb: true,
     });
   }
-  await rm(join(services.stateDir, 'pgdata'), { recursive: true, force: true });
+  const dataDir = join(services.stateDir, 'pgdata');
+  await rm(dataDir, { recursive: true, force: true });
+  // From the migrated template when it can be had (`db-reset-template.ts`); the migrate below runs
+  // either way, so a template that could not be laid down costs time, never a different database.
+  await layTemplate(root, dataDir);
   return runMigrate(ctx, root, msg('cli.db.reset.done'));
 }
 

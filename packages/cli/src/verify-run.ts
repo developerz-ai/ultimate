@@ -295,6 +295,9 @@ async function runStep(
         : { warnings: outcome.warnings }),
       ...(outcome.workers === undefined ? {} : { workers: outcome.workers }),
       ...(outcome.widthReason === undefined ? {} : { widthReason: outcome.widthReason }),
+      ...(outcome.slowest === undefined || outcome.slowest.length === 0
+        ? {}
+        : { slowest: outcome.slowest }),
       ...(outcome.shard === undefined ? {} : { shard: outcome.shard }),
       ...(tests === undefined ? {} : { tests }),
     },

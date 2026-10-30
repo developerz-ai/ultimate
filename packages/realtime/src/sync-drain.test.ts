@@ -2,7 +2,7 @@
 // the idle sweep have no callback behind them, so whatever they do instead is the whole release —
 // and dropping the socket from the table is three of `teardown`'s five steps, not five.
 
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, jest, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
@@ -244,30 +244,42 @@ describe('a socket the node evicts is released the way a closed one is', () => {
     expect(drowning.sent.some((frame) => frame.type === 'reconnect')).toBe(false);
   });
 
+  /** `ms` of Bun's fake time, then event-loop turns (`setImmediate` is left real). */
+  const elapse = async (ms: number): Promise<void> => {
+    jest.advanceTimersByTime(ms);
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('the idle sweep releases them too, and it has a caller at all', async () => {
     // Short enough that `start()` arms a sub-second pass; the clock the budget is measured on is
-    // frozen and driven by the test, so only the interval is real.
+    // frozen and driven by the test, and the interval is a real one on Bun's fake timers — it
+    // fires because the test moves them (`elapse`), never because 1.4 s went by.
     const app = harness({ idleTimeoutMs: 4_000 });
     const ws = await app.seat('s1');
+    jest.useFakeTimers();
     await app.node.start();
 
     app.tick(10_000);
-    await Bun.sleep(1_400);
+    await elapse(1_400);
 
     expect(await held(app, 's1')).toEqual(NOTHING);
     expect(ws.closedWith).toBe(CLOSE.idle);
     await app.node.stop();
-  }, 10_000);
+  });
 
   test('a socket inside its idle budget is left alone', async () => {
     const app = harness({ idleTimeoutMs: 4_000 });
     await app.seat('s1');
+    jest.useFakeTimers();
     await app.node.start();
 
     app.tick(1_000);
-    await Bun.sleep(1_400);
+    await elapse(1_400);
 
     expect(app.sockets.count).toBe(1);
     await app.node.stop();
-  }, 10_000);
+  });
 });

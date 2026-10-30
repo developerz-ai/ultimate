@@ -21,6 +21,7 @@ import { testEnvOverrides } from './test-dotenv';
 import { IGNORED_TEST_PATTERNS } from './test-ignores';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
+import { TEST_TIMINGS_FILE } from './test-shards';
 import { machineLease } from './test-slots';
 import type { WorkerPlan } from './test-workers';
 import { availableCpus, SERIAL_TYPES, totalMemory, workerPlan } from './test-workers';
@@ -317,6 +318,8 @@ const coveredUnit = async (
     ...(run.lease === undefined ? {} : { lease: run.lease }),
     ...(ctx.env === undefined ? {} : { env: ctx.env }),
     ...(run.pace === undefined ? {} : { pace: run.pace }),
+    // Orders the slices longest-first and learns this run's per-file durations (`test-timings.ts`).
+    timings: join(ctx.root, TEST_TIMINGS_FILE),
   });
   if (!outcome.ok) return run.shard === undefined ? outcome : { ...outcome, shard: run.shard };
   if (run.shard !== undefined) {
