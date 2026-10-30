@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 29.3.0 - 2026-10-30
+
 ### Added
 
 Tier 4 — jobs.
@@ -33,6 +37,13 @@ Tier 4 — jobs.
   `jobs.lease.lost` (`reason: not-ours`). The refusal aborts the attempt before the row is read,
   and the read is bounded (one renewal interval, at most 5 s): a read that never answers delays
   neither the stop nor the counted loss.
+
+### Commits
+
+- fix(jobs): the read that classifies a refused renewal is bounded — a read that never answers is a counted loss (#936)
+- feat(jobs): draining workers in the registry (x_job_workers.draining_at) + scaler depth; no lease.lost at settle or cancel (#935)
+- docs(dz): declare the health brief's check rows (#934)
+- docs(dz): cut health brief under the checkup size cap (#933)
 
 ## 29.2.0 - 2026-10-30
 
