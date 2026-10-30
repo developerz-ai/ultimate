@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 29.2.0 - 2026-10-30
+
 ### Added
 
 Tier 3 — realtime. Tier 5 — cli.
@@ -54,6 +58,11 @@ Tier 3 — realtime. Tier 5 — cli.
   the migrate still runs, so a template missing anything is completed, never trusted. A template that
   cannot be laid down is removed and the reset proceeds as before. ~1.2 s off every reset — the e2e
   step's app boots through one.
+
+### Commits
+
+- perf(cli): slowest slice first, every test step names its slowest files, x db reset from the migrated template (#931)
+- perf(realtime): read hooks answer the same object until what they show moved; where-readers hear only their keys; useRecords throttleMs; a per-type store index (#930)
 
 ## 29.1.0 - 2026-10-29
 
