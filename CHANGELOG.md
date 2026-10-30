@@ -30,7 +30,9 @@ Tier 4 — jobs.
 - **A cancel is not a lost lease.** A renewal refused because the row was `cancelled` (`x jobs
   cancel`, an app's stop) is `jobs.lease.cancelled` at info and never counted; the attempt is
   aborted exactly as before. A row another worker holds — or one that cannot be read — is still
-  `jobs.lease.lost` (`reason: not-ours`).
+  `jobs.lease.lost` (`reason: not-ours`). The refusal aborts the attempt before the row is read,
+  and the read is bounded (one renewal interval, at most 5 s): a read that never answers delays
+  neither the stop nor the counted loss.
 
 ## 29.2.0 - 2026-10-30
 

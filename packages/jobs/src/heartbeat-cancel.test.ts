@@ -34,7 +34,7 @@ const lostCount = (): number | undefined =>
     .metrics.find((metric) => metric.descriptor.name === 'job_leases_lost_total')
     ?.points.find((point) => point.attributes['queue'] === 'banks')?.value;
 
-function notOurs(row: () => Promise<Partial<JobRecord> | undefined>) {
+function notOurs(row: () => Promise<Partial<JobRecord> | undefined>, intervalMs = 3_600_000) {
   return startLeaseHeartbeat({
     driver: {
       heartbeat: () => Promise.resolve(false),
@@ -42,7 +42,7 @@ function notOurs(row: () => Promise<Partial<JobRecord> | undefined>) {
     },
     claimed,
     visibilityTimeoutMs: 30_000,
-    intervalMs: 3_600_000,
+    intervalMs,
     workerId: 'worker-1',
     clock: frozenClock(0),
   });
@@ -94,6 +94,13 @@ describe('a renewal the row refuses', () => {
     for (let i = 0; i < 10; i += 1) await Promise.resolve();
     expect(heartbeat.signal.aborted).toBe(true);
     expect(heartbeat.lost()).toBe(true);
+  });
+
+  test('a read that never answers is a lost lease once its bound passes, counted', async () => {
+    const heartbeat = notOurs(() => new Promise(() => undefined), 5);
+    await heartbeat.renew();
+    expect(heartbeat.signal.aborted).toBe(true);
+    expect(lostCount()).toBe(1);
   });
 
   test('a row that cannot be read is not assumed cancelled', async () => {
