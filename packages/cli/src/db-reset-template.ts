@@ -1,7 +1,8 @@
 // `x db reset`'s embedded fast path: the emptied data directory is laid down from the migrated
-// TEMPLATE (`test-database.ts`: framework schema + every migration, cached under `.x/test-db` and
-// keyed on everything that went into it) instead of an `initdb` and every migration replayed one by
-// one. The migrate that follows still runs and finds every migration in the ledger — so a template
+// TEMPLATE (`test-database.ts`, cached under `.x/test-db`) instead of an `initdb` and every
+// migration replayed one by one.
+
+// The migrate that follows still runs and finds every migration in the ledger — so a template
 // that is missing something is completed by it, never trusted over it. Measured on
 // bank-integrations (33 migrations, a loaded 12-core box, 3 runs each): `x db reset` 8.7 s → 7.5 s.
 // What is left is the CLI's boot, the migrator's no-op pass and the schema dump's own replay (~3 s,

@@ -10,6 +10,8 @@
 //
 // Shrink it with `bun run scripts/test-real-sleep.ts --unpin <pkg>[,<pkg>]`, which lowers a count
 // to what is measured and refuses to raise one. Raising a count is a hand edit, in a review.
+//
+// why: the ratchet is new — every row is the tree as measured on its first day, not a raise.
 
 /** Where the table lives, so a stale-pin finding can name the file to edit. */
 export const PINS_FILE = 'scripts/lib/test-real-sleep-pins.ts';

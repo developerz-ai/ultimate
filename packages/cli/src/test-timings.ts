@@ -1,8 +1,8 @@
-// The per-file test durations a run learns and the next one spends: read leniently from the local
-// cache (`TEST_TIMINGS_FILE`, Bun's own `--timings` shape), merged and written back atomically, the
-// slowest files of a run named on its step, and work ordered longest-first by them. A cache only
-// ever orders work and names what was slow — never which files run or what a step answers — so a
-// missing, stale or broken one costs seconds, never a verdict.
+// The per-file test durations a run learns and the next one spends: the local cache read leniently,
+// merged and written back atomically, a step's slowest files named, and work ordered longest-first.
+
+// A cache only ever orders work and names what was slow — never which files run or what a step
+// answers — so a missing, stale or broken one costs seconds, never a verdict.
 
 // why: Bun has no mkdir or rename; the cache is written to a temp name and renamed into place.
 import { mkdir, rename, rm } from 'node:fs/promises';
@@ -70,16 +70,17 @@ const unescapeXml = (text: string): string =>
  * Nested suites (a `describe`) carry no `file` and are skipped. A broken report yields `{}`.
  */
 export function junitDurations(xml: string): Timings {
-  const out: Record<string, number> = {};
+  // A Map, not a `Record`: a test file named `constructor` must not read `Object.prototype`.
+  const out = new Map<string, number>();
   for (const match of xml.matchAll(/<testsuite\s[^>]*>/g)) {
     const tag = match[0];
     const file = attribute(tag, 'file');
     const seconds = Number(attribute(tag, 'time'));
     if (file === undefined || file === '' || !finiteMs(seconds)) continue;
     const path = unescapeXml(file);
-    out[path] = Math.round(seconds * 1000) + (out[path] ?? 0);
+    out.set(path, Math.round(seconds * 1000) + (out.get(path) ?? 0));
   }
-  return out;
+  return Object.fromEntries(out);
 }
 
 /** The `n` slowest of `files` by `timings`, slowest first (ties by path); unknown files left out. */
