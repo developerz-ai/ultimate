@@ -45,6 +45,7 @@ class HangsBeforeReady implements PgliteDriver {
 
 const load = async () => ({ PGlite: HangsBeforeReady });
 const within = <T>(work: Promise<T>, late: T): Promise<T> =>
+  // real-clock: a deadline on a boot that may hang — a pass never waits it out.
   Promise.race([work, Bun.sleep(1_000).then(() => late)]);
 
 test('a fresh boot is ready before its snapshot is dumped, so the boot settles and is cached', async () => {

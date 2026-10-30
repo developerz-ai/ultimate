@@ -87,6 +87,7 @@ import { setupCommandFindings } from './setup-commands';
 import { bareErrorFindings } from './test-bare-error';
 import { testDiscoveryFindings } from './test-discovery';
 import { testFixFindings } from './test-fix-citations';
+import { realSleepFindings } from './test-real-sleep';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
 import { versionStampFindings } from './version-stamps';
@@ -269,6 +270,7 @@ export const errorContract: HostCheck = async (root) => [
   ...(await docFixFindings(root)),
   ...(await testFixFindings(root)),
   ...(await bareErrorFindings(root)),
+  ...(await realSleepFindings(root)),
   ...(await throwFindings(root)),
   ...(await fixProseFindings(root)),
 ];

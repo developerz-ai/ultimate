@@ -22,6 +22,13 @@ Tier 5 — cli.
   so the coverage they measure — are unchanged; only the order follows the cache. Measured on a
   1 192-file app at 8 processes: 64.1 s → 56.3 s (the floor is 56.1 s).
 
+- **The repo's tests may not wait for the wall clock** (`scripts/test-real-sleep.ts`, in the
+  `errors` step): `Bun.sleep(n)`, `setTimeout(…, n > 1)` and `setInterval` in a test are
+  `X_TEST_REAL_SLEEP` above a per-package ratchet (340 sites measured, `scripts/lib/test-real-sleep-pins.ts`
+  — the count may fall, never rise); another process's time keeps its wait with `// real-clock: <why>`.
+  The realtime sweep tests moved onto Bun's fake timers (`sync-presence`, `sync-drain`: 7.6 s of
+  `Bun.sleep` → ~0).
+
 ### Changed
 
 Tier 5 — cli.

@@ -35,6 +35,7 @@ import { sourceHeaderFindings } from './source-headers';
 import { spawnSites } from './spawn-timeout';
 import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
+import { realSleepFindings } from './test-real-sleep';
 import { urlPathnameFindings } from './url-pathname';
 import { tierBoundaries } from './verify';
 
@@ -60,6 +61,7 @@ const GUARDS: readonly (readonly [string, (root: string) => Promise<unknown>])[]
   ['source-headers', sourceHeaderFindings],
   ['spawn-timeout', spawnSites],
   ['test-bare-error', bareErrorFindings],
+  ['test-real-sleep', realSleepFindings],
   ['test-fix-citations', testFixFindings],
   ['url-pathname', urlPathnameFindings],
   ['posix-relative', relativeSites],

@@ -101,6 +101,7 @@ async function render(chart: string, extra: readonly string[]): Promise<Map<stri
       child.signalCode === 'SIGKILL'
         ? `killed after its ${HELM_RENDER_MS} ms deadline`
         : (child.signalCode ?? `exit ${code}`);
+    // real-clock: a deadline on a child's pipe, read only on a failure — a pass never waits it out.
     const said = await Promise.race([stderr, Bun.sleep(1_000).then(() => '(stderr still open)')]);
     return expect.unreachable(`helm template ${chart} (${how}): ${said}`);
   }

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "7ee17d2580f774f4fa5bd30576ef8cd327c6dfbd8f320e8c1e406d9432752d3c",
+  "buildId": "394ca11435f9c23fdf45e84d06cc2fbe95096ece2451788c50fa91d5ceead4ba",
   "tiers": {
     "0": [
       "core",
@@ -4518,6 +4518,21 @@
       "code": "X_TEST_POLICY_EXPECTED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_REAL_SLEEP",
+      "owner": "scripts",
+      "at": "scripts/test-real-sleep.ts"
+    },
+    {
+      "code": "X_TEST_REAL_SLEEP_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-real-sleep.ts"
+    },
+    {
+      "code": "X_TEST_REAL_SLEEP_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-real-sleep.ts"
     },
     {
       "code": "X_TEST_REGISTRY_LEAK",
