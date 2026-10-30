@@ -9,6 +9,13 @@
 //
 // It costs nothing measurable: four slice processes took 9.7 s against 12.4 s for `--parallel=4`
 // over the same files, on a loaded 12-core box.
+//
+// ORDER, NOT MEMBERSHIP, FOLLOWS THE CLOCK. Each slice also writes a junit report; its per-file
+// durations go into the run's timings cache (`TEST_TIMINGS_FILE`, `test-timings.ts`) and the NEXT
+// run starts the slices longest-first from it. The slices themselves stay a pure function of the
+// file list — the coverage a slice measures never depends on a cache. Measured on bank-integrations
+// (1 192 files, 102 slices, 8 processes): sorted order 64.1 s, longest-first 56.3 s, the floor
+// 56.1 s — the pool used to start its 50 s slice last.
 
 // why: Bun ships no recursive delete and no path-join primitive; the lcov parts live under `.x/`.
 import { rm } from 'node:fs/promises';
@@ -24,6 +31,14 @@ import { countsOf } from './test-counts';
 import { testEnvOverrides } from './test-dotenv';
 import { failureOf } from './test-shards';
 import { SLOT_HELD_ENV } from './test-slots';
+import {
+  costOf,
+  junitDurations,
+  loadTimings,
+  longestFirst,
+  recordTimings,
+  slowestOf,
+} from './test-timings';
 import type { MachinePace } from './verify-pace';
 import { defaultTimeoutArgs, paceEnv } from './verify-pace';
 import type { StepOutcome } from './verify-step';
@@ -87,6 +102,11 @@ export interface CoveredRunOptions {
   readonly sliceFiles?: number;
   /** The machine's pace (`verify-pace.ts`): each test's default and declared deadline stretch by it. */
   readonly pace?: MachinePace;
+  /**
+   * The timings cache (`TEST_TIMINGS_FILE` under the root): the slices start longest-first from it,
+   * and every file's duration this run measured is written back. Absent: sorted order, nothing kept.
+   */
+  readonly timings?: string;
 }
 
 export interface CoveredRun extends StepOutcome {
@@ -94,12 +114,19 @@ export interface CoveredRun extends StepOutcome {
   readonly coverage: CoverageMap;
 }
 
-/** One slice's argv. An explicit file list, never a re-glob, for `testArgs`' reason. */
+/** The slice's junit report, beside its lcov: one `<testsuite>` per file, with its duration. */
+export const JUNIT_FILE = 'junit.xml';
+
+/**
+ * One slice's argv. An explicit file list, never a re-glob, for `testArgs`' reason. `junit` adds
+ * the report the per-file durations are read from — Bun still prints to the terminal beside it.
+ */
 export const coveredArgs = (
   files: readonly string[],
   dir: string,
   isolate: boolean,
   pace?: MachinePace,
+  junit = false,
 ): readonly string[] => [
   'bun',
   'test',
@@ -108,6 +135,7 @@ export const coveredArgs = (
   '--coverage',
   '--coverage-reporter=lcov',
   `--coverage-dir=${dir}`,
+  ...(junit ? ['--reporter=junit', `--reporter-outfile=${join(dir, JUNIT_FILE)}`] : []),
   ...files,
 ];
 
@@ -125,11 +153,14 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
     ...paceEnv(options.pace),
   };
   const results = new Array<ExecResult>(slices.length);
+  // Longest first by what earlier runs measured; the slices and their indices are unchanged.
+  const known = options.timings === undefined ? {} : await loadTimings(options.timings);
+  const order = longestFirst(slices.map((slice) => costOf(known, slice)));
   let next = 0;
   // Each pool worker names its own numbered test database, as `--parallel`'s workers do.
   const worker = async (slot: number): Promise<void> => {
-    while (next < slices.length) {
-      const index = next;
+    while (next < order.length) {
+      const index = order[next] as number;
       next += 1;
       results[index] = await options.runner(
         coveredArgs(
@@ -137,15 +168,24 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
           join(base, String(index)),
           isolate,
           options.pace,
+          options.timings !== undefined,
         ),
         { cwd: options.root, env: { ...overrides, ULTIMATE_TEST_WORKER: String(slot) } },
       );
     }
   };
   let maps: CoverageMap[];
+  let measured: Record<string, number> = {};
   try {
     await Promise.all(Array.from({ length: width }, (_, slot) => worker(slot)));
     maps = await Promise.all(slices.map((_, index) => readPart(join(base, String(index)))));
+    if (options.timings !== undefined) {
+      const reports = await Promise.all(
+        slices.map((_, index) => readReport(join(base, String(index)))),
+      );
+      measured = Object.assign({}, ...reports.map(junitDurations));
+      await recordTimings(options.timings, measured);
+    }
   } finally {
     lease?.release();
     await rm(base, { recursive: true, force: true });
@@ -183,9 +223,16 @@ export async function runCovered(options: CoveredRunOptions): Promise<CoveredRun
     ...(options.widthReason === undefined ? {} : { widthReason: options.widthReason }),
     tests: countsOf(results),
     ...(first === undefined ? {} : { output }),
+    ...(Object.keys(measured).length === 0 ? {} : { slowest: slowestOf(measured, options.files) }),
     coverage: mergeCoverage(maps),
   };
 }
+
+/** A slice's junit report, or `''` when it wrote none (it died first): no durations, no throw. */
+const readReport = (dir: string): Promise<string> =>
+  Bun.file(join(dir, JUNIT_FILE))
+    .text()
+    .catch(() => '');
 
 /**
  * One slice's lcov as a map, kept to the app's own tree: a slice loads a thousand framework files

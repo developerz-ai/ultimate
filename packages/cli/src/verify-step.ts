@@ -6,7 +6,7 @@ import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { CoverageMap } from './coverage-lcov';
 import type { ExecResult, Runner } from './exec';
 import { execOutput } from './exec';
-import type { Finding, ShardFacts, StepResult } from './output';
+import type { Finding, ShardFacts, SlowFile, StepResult } from './output';
 import type { TestCounts } from './test-counts';
 import type { StepTimeouts } from './verify-deadline';
 import type { MachinePace } from './verify-pace';
@@ -159,6 +159,8 @@ export interface StepOutcome {
   readonly workers?: number;
   /** Why `workers` is what it is — `4 workers (budget 4.0 GB)`. Printed on the step line. */
   readonly widthReason?: string;
+  /** The step's slowest test files, slowest first (`test-timings.ts`): where its time went. */
+  readonly slowest?: readonly SlowFile[];
   /** The CI slice this step ran, under `--shard`: which files, and a hash of the whole list. */
   readonly shard?: ShardFacts;
   /**

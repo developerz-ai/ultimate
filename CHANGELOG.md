@@ -8,7 +8,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 5 — cli.
+
+- **A test step names where its time went.** `x verify`'s test steps and `x test` carry the run's
+  slowest files, slowest first: `data`/`steps[].slowest` (`[{ file, ms }]`, up to 10) in `--json`,
+  and one `slowest: a.test.ts 16.8s · b.test.ts 14.8s · c.test.ts 12.4s` line under the step in the
+  terminal — on a pass too. Read from the run's timings cache (`.x/test-timings.json`).
+- **An app's `unit` step starts its slowest slice first.** Each coverage slice also writes a junit
+  report; its per-file durations go into `.x/test-timings.json` (Bun's own `--timings` shape) and the
+  next run dispatches the slices longest-first (LPT), an unknown slice at the median. The slices — and
+  so the coverage they measure — are unchanged; only the order follows the cache. Measured on a
+  1 192-file app at 8 processes: 64.1 s → 56.3 s (the floor is 56.1 s).
+
+### Changed
+
+Tier 5 — cli.
+
+- **`x db reset` lays the embedded database down from the migrated template** (the one the test
+  harness keeps under `.x/test-db`) before it migrates, instead of an `initdb` and every migration;
+  the migrate still runs, so a template missing anything is completed, never trusted. A template that
+  cannot be laid down is removed and the reset proceeds as before. ~1.2 s off every reset — the e2e
+  step's app boots through one.
 
 ## 29.1.0 - 2026-10-29
 

@@ -290,6 +290,38 @@ describe('unit · renderHuman says how a step was run', () => {
     expect(parallel).not.toContain(msg('cli.verify.serial'));
   });
 
+  test('a test step names its slowest files on a pass: three in the terminal, all in --json', () => {
+    const slowest = [
+      { file: 'apps/web/app/runs/repo.pglite.test.ts', ms: 16_790 },
+      { file: 'apps/web/test/pglite.test.ts', ms: 14_814 },
+      { file: 'apps/web/app/x.test.ts', ms: 1_200 },
+      { file: 'apps/web/app/fast.test.ts', ms: 640 },
+    ];
+    const result: CommandResult = {
+      ok: true,
+      command: 'verify',
+      summary: 'ok',
+      steps: [stepResult({ workers: 8, slowest }), stepResult({ name: 'lint' })],
+    };
+    const human = renderHuman(result);
+    expect(human).toContain(
+      msg('cli.verify.slowest', {
+        files:
+          'apps/web/app/runs/repo.pglite.test.ts 16.8s · apps/web/test/pglite.test.ts 14.8s · apps/web/app/x.test.ts 1.2s',
+      }),
+    );
+    expect(human).not.toContain('fast.test.ts');
+    const payload = JSON.parse(renderJson(result)) as { steps: { slowest?: unknown }[] };
+    expect(payload.steps.map((step) => step.slowest)).toEqual([slowest, undefined]);
+    // Under a second it reads in ms.
+    expect(
+      renderHuman({
+        ...result,
+        steps: [stepResult({ slowest: [{ file: 'a.test.ts', ms: 640 }] })],
+      }),
+    ).toContain('a.test.ts 640ms');
+  });
+
   test('a step that did not run says nothing about workers, and is marked skipped', () => {
     const skipped = renderHuman({
       ok: true,

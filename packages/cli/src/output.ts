@@ -42,6 +42,15 @@ export interface Finding {
   readonly meta?: { readonly [key: string]: JsonValue };
 }
 
+/** One test file of a run and how long Bun took over it (`test-timings.ts` measures it). */
+export interface SlowFile {
+  readonly file: string;
+  readonly ms: number;
+}
+
+/** How many of a step's slowest files the human line names; `--json` carries all it has. */
+export const SLOWEST_SHOWN = 3;
+
 export interface StepResult {
   readonly name: string;
   readonly ok: boolean;
@@ -65,6 +74,11 @@ export interface StepResult {
   readonly workers?: number;
   /** Why the width is what it is — `4 workers (budget 4.0 GB)`. */
   readonly widthReason?: string;
+  /**
+   * A test step's slowest files, slowest first — where its time went, on a pass too: a suite that
+   * grew a 20 s file is a slower gate for everyone, and nothing else said which file it was.
+   */
+  readonly slowest?: readonly SlowFile[];
   /** Under `x verify --shard`: this step's slice of its corpus. */
   readonly shard?: ShardFacts;
   /**
@@ -210,6 +224,10 @@ export function renderUltimateError(error: UltimateErrorShape, indent = ''): str
   return renderFinding(finding, indent);
 }
 
+/** `16.8s`, or `840ms` under a second: a slow file's duration as a reader scans it. */
+const seconds = (ms: number): string =>
+  ms < 1000 ? `${String(Math.round(ms))}ms` : `${(ms / 1000).toFixed(1)}s`;
+
 const mark = (step: StepResult): string => {
   if (step.skipped === true) return '-';
   return step.ok ? '✓' : '✗';
@@ -255,6 +273,13 @@ export function renderHuman(result: CommandResult, verbose = false): string {
     // Escaped like every other line text reaches fd 1 through: a warning names a file path. A
     // green terminal run shows the count, not the list: `filesize`'s band alone is ~150 lines,
     // and a wall of advice on every run is read by nobody. `--json` always carries the list.
+    const slowest = (step.slowest ?? []).slice(0, SLOWEST_SHOWN);
+    if (slowest.length > 0) {
+      const files = slowest
+        .map((slow) => `${singleLine(slow.file)} ${seconds(slow.ms)}`)
+        .join(' · ');
+      out.push(`      ${msg('cli.verify.slowest', { files })}`);
+    }
     const warnings = step.warnings ?? [];
     if (verbose) for (const warning of warnings) out.push(`      ! ${singleLine(warning)}`);
     else if (warnings.length > 0) {
@@ -292,6 +317,9 @@ export function renderJson(result: CommandResult, verbose = false): string {
       : { warnings: [...step.warnings] }),
     ...(step.workers === undefined ? {} : { workers: step.workers }),
     ...(step.widthReason === undefined ? {} : { widthReason: step.widthReason }),
+    ...(step.slowest === undefined || step.slowest.length === 0
+      ? {}
+      : { slowest: step.slowest.map((slow) => ({ file: slow.file, ms: slow.ms })) }),
     ...(step.shard === undefined
       ? {}
       : {

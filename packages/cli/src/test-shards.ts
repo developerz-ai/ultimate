@@ -59,6 +59,7 @@ import { runBatches, testBatches } from './test-batches';
 import { tidyBeforeTestRun } from './test-housekeeping';
 import { testPasses } from './test-passes';
 import type { TestFile } from './test-select';
+import { loadTimings, SLOWEST_KEPT, slowestOf } from './test-timings';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
 import type { TestType } from './verify-tests';
 
@@ -334,6 +335,19 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
   }
   const durationMs = Math.round(performance.now() - started);
   const fileCount = options.files.length;
+  // Where the time went, from the cache every pass's `--update-timings` just rewrote: a file this
+  // selection ran and nothing timed (a `--watch` run, a cache that could not be written) is left out.
+  const timings = await loadTimings(join(options.root, TEST_TIMINGS_FILE));
+  const slowest = slowestOf(
+    timings,
+    options.files.map((file) => file.path),
+    SLOWEST_KEPT,
+  );
+  // Each pass's line names its own slowest, so a mixed run's serial half is not hidden by the rest.
+  const timedSteps = steps.map((step, index) => {
+    const own = slowestOf(timings, passes[index]?.files.map((file) => file.path) ?? []);
+    return own.length === 0 ? step : { ...step, slowest: own };
+  });
   // The width the RUN reached, which is the widest pass: a mixed selection whose serial half ran
   // one at a time did not become a one-worker run, and reporting it as one would misname the
   // reproduce a reader is handed.
@@ -357,6 +371,8 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
     ...(spent.length > 1 ? { passes: spent } : {}),
     // Only when some pass was split, for the same reason: an unbatched run's JSON is unchanged.
     ...(batchCount > spent.length ? { batches: batchCount } : {}),
+    // Absent when nothing was timed, so an untimed run's JSON is byte-identical to before.
+    ...(slowest.length === 0 ? {} : { slowest: slowest.map((slow) => ({ ...slow })) }),
     ok,
     exitCode,
     reproduce: reproduceFor(plan),
@@ -376,7 +392,7 @@ export async function runShards(options: RunShardsOptions): Promise<CommandResul
           failed: steps.filter((step) => !step.ok).length,
           workers,
         }),
-    steps,
+    steps: timedSteps,
     ...(sample === undefined
       ? {}
       : { lines: [msg('cli.test.sampled', { ...sample, type: type ?? 'all' })] }),

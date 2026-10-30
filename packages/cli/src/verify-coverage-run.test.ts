@@ -71,6 +71,12 @@ test('coveredArgs: lcov into the slice’s own directory, the explicit files las
     'b.test.ts',
   ]);
   expect(coveredArgs(['a.test.ts'], '/tmp/c/0', true)).toContain('--isolate');
+  // With a timings cache, a junit report beside the lcov — before the files, where bun reads flags.
+  expect(coveredArgs(['a.test.ts'], '/tmp/c/0', false, undefined, true).slice(-3)).toEqual([
+    '--reporter=junit',
+    `--reporter-outfile=${join('/tmp/c/0', 'junit.xml')}`,
+    'a.test.ts',
+  ]);
 });
 
 /** A two-directory app: `double` is called by one test and only LOADED by the other. */
@@ -156,6 +162,52 @@ describe('runCovered', () => {
       expect(measure.lines).toBeLessThan(100);
       expect(measure.funcsFound).toBe(3);
       expect(measure.funcsHit).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('with a timings cache: slowest slice first, each file timed and kept, the slowest named', async () => {
+    const root = await fixtureApp();
+    try {
+      const cache = join(root, '.x', 'test-timings.json');
+      // An earlier run says `math` is the slow one: it must start first, though it sorts last.
+      await Bun.write(
+        cache,
+        JSON.stringify({
+          version: 1,
+          files: { 'apps/web/app/math.test.ts': 9_000, 'gone.test.ts': 1 },
+        }),
+      );
+      const commands: (readonly string[])[] = [];
+      const runner: Runner = (command, options) => {
+        commands.push(command);
+        return exec(command, options);
+      };
+      const files = ['apps/web/site/loads.test.ts', 'apps/web/app/math.test.ts'];
+      const run = await runCovered({
+        root,
+        runner,
+        files,
+        workers: 1,
+        sliceFiles: 1,
+        timings: cache,
+      });
+      expect(run.ok).toBe(true);
+      expect(commands.map((command) => command.at(-1))).toEqual([
+        'apps/web/app/math.test.ts',
+        'apps/web/site/loads.test.ts',
+      ]);
+      expect(commands[0]).toContain('--reporter=junit');
+      // The cache now holds this run's own measurement of both, and keeps what it did not run.
+      const kept = (await Bun.file(cache).json()) as { files: Record<string, number> };
+      expect(Object.keys(kept.files).sort()).toEqual([
+        'apps/web/app/math.test.ts',
+        'apps/web/site/loads.test.ts',
+        'gone.test.ts',
+      ]);
+      expect(kept.files['apps/web/app/math.test.ts']).toBeLessThan(9_000);
+      expect(run.slowest?.map((slow) => slow.file).sort()).toEqual([...files].sort());
     } finally {
       await rm(root, { recursive: true, force: true });
     }

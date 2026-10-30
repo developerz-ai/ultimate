@@ -13,6 +13,7 @@ import { testEnvOverrides } from './test-dotenv';
 import { tidyBeforeTestRun } from './test-housekeeping';
 import type { TestFile } from './test-select';
 import { failureOf, TEST_TIMINGS_FILE, testArgs } from './test-shards';
+import { loadTimings, slowestOf } from './test-timings';
 import { BATCH_FILES_PER_WORKER, SHARED_BATCH_FILES_PER_WORKER } from './test-workers';
 import type { MachinePace } from './verify-pace';
 import { defaultTimeoutArgs, paceEnv } from './verify-pace';
@@ -101,6 +102,8 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
           ...(options.isolate === true ? { isolate: true } : {}),
         }),
       ];
+  // Where the time went: Bun rewrote the timings cache (`--update-timings`) as the batches ended.
+  const slowest = slowestOf(await loadTimings(join(options.root, TEST_TIMINGS_FILE)), files);
   // The width the run REACHED: a batch the machine pool narrowed ran narrower than planned, and a
   // step line that printed the plan would name a width that never ran.
   const reached = Math.max(1, ...result.widths);
@@ -119,6 +122,7 @@ export async function runParallel(options: ParallelRunOptions): Promise<StepOutc
     // Per batch: each process printed its own summary, and one parse of the joined text would
     // read only the last one.
     tests: countsOf(result.results),
+    ...(slowest.length === 0 ? {} : { slowest }),
     // Only on failure: a green run's summary is already the step table's, and the reader of a red
     // gate needs the assertion diff.
     ...(result.ok ? {} : { output: result.output }),

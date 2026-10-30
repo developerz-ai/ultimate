@@ -332,6 +332,7 @@ const CATALOG = {
   // counts — so the line says how many and `x test <type>` prints the names.
   'cli.verify.allSkipped': 'found {skipped} test(s) and every one skipped itself',
   'cli.verify.warnings': '{count} warning(s) — --verbose or --json lists them',
+  'cli.verify.slowest': 'slowest: {files}',
   'cli.verify.isrQueryUndeclared':
     "{file}: render 'isr' with no revalidate.query — its stored pages are keyed on the whole query string, so any visitor can mint one per request. Declare revalidate: { query: [] } (or the parameters the page varies on)",
   'cli.verify.isrQueryOmitted':

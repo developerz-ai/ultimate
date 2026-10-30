@@ -7,10 +7,16 @@
 // partition of ours for a test to assert. `test-shards.ts`'s header carries what that measured.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun ships no temp-directory primitive and no recursive delete.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(); only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun ships no path-join primitive.
+import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { ExecResult, Runner } from './exec';
 import type { TestFile } from './test-select';
-import { filesIn } from './test-shards';
+import { filesIn, TEST_TIMINGS_FILE } from './test-shards';
 import { SHARED_BATCH_FILES_PER_WORKER as BATCH_FILES_PER_WORKER } from './test-workers';
 import { runParallel } from './verify-test-run';
 
@@ -47,6 +53,44 @@ function testRunner(fails: boolean): {
 }
 
 describe('runParallel', () => {
+  test("the step names its slowest files from the cache Bun's --update-timings rewrote", async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-run-parallel-'));
+    try {
+      const { runner } = testRunner(false);
+      // What `bun test --update-timings` leaves behind, a file outside this selection included.
+      await Bun.write(
+        join(root, TEST_TIMINGS_FILE),
+        JSON.stringify({
+          version: 1,
+          files: { 'f1.test.ts': 4_000, 'f0.test.ts': 20, 'x.test.ts': 9_999 },
+        }),
+      );
+      const outcome = await runParallel({
+        root,
+        runner,
+        files: files(3),
+        workers: 2,
+        type: 'unit',
+      });
+      expect(outcome.slowest).toEqual([
+        { file: 'f1.test.ts', ms: 4_000 },
+        { file: 'f0.test.ts', ms: 20 },
+      ]);
+      // No cache: nothing to name, and no key at all.
+      await rm(join(root, TEST_TIMINGS_FILE));
+      const untimed = await runParallel({
+        root,
+        runner,
+        files: files(3),
+        workers: 2,
+        type: 'unit',
+      });
+      expect('slowest' in untimed).toBe(false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('one run carries every selected file, at the asked width', async () => {
     const { runner, seen } = testRunner(false);
     const outcome = await runParallel({
