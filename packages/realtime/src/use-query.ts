@@ -8,6 +8,7 @@ import type { LiveHandle } from './client-contract';
 import type { JsonValue } from './json';
 import { installedPage, type PageServices } from './page-store';
 import { isServerRender, signalFor } from './reactivity';
+import { keptAnswer } from './record-answer';
 import { type RecordStore, recordKey } from './record-store';
 
 /**
@@ -88,16 +89,17 @@ function liveAccessor<R extends object>(
     if (handle.state() === 'live') seen = true;
     bump();
   });
+  /** The last answer handed out: the same rows back keep its `data` array (`keptAnswer`). */
+  let answer: AsyncState<readonly R[]> | null = null;
   const read = (): AsyncState<readonly R[]> => {
     version();
     const state = handle.state();
     if (state === 'failed') return { status: 'failed', error: handle.error() };
-    if (state === 'live') {
-      seen = true;
-      return { status: 'ready', data: handle.rows() };
-    }
+    if (state === 'live') seen = true;
     // Loading, stale or offline: what was shown stays shown, marked busy — never torn down.
-    return seen ? { status: 'refreshing', data: handle.rows() } : PENDING;
+    else if (!seen) return PENDING;
+    answer = keptAnswer(answer, state === 'live' ? 'ready' : 'refreshing', handle.rows());
+    return answer;
   };
   const release = (): void => {
     off();
@@ -226,14 +228,17 @@ function readAccessor<R extends object>(
   };
 
   load();
+  /**
+   * The last answer handed out: a re-read that answered the same rows (a poll, a refetch, a return
+   * to the tab) hands back its `data` array, so nothing derived from it runs again.
+   */
+  let answer: AsyncState<readonly R[]> | null = null;
   const read = (): AsyncState<readonly R[]> => {
     version();
     if (state.status === 'pending' || state.status === 'failed') return state;
     // Rows are typed by the caller's query; the store holds them as JSON rows.
-    const data = rows() as readonly R[];
-    return state.status === 'refreshing'
-      ? { status: 'refreshing', data }
-      : { status: 'ready', data };
+    answer = keptAnswer(answer, state.status, rows() as readonly R[]);
+    return answer;
   };
   const release = (): void => {
     if (released) return;
