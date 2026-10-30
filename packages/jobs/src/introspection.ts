@@ -139,11 +139,21 @@ export interface WorkerAnnouncement {
   readonly concurrency: number;
   /** Job ids it holds right now — the first `MAX_WORKER_IN_FLIGHT` of them. */
   readonly inFlight: readonly string[];
+  /**
+   * The worker stopped claiming — a retire, a SIGTERM's drain or a `stop()` — and only finishes
+   * what it holds. Absent: serving.
+   */
+  readonly draining?: boolean;
 }
 
 export interface WorkerRecord extends WorkerAnnouncement {
   /** Epoch ms of the announcement that wrote this row. */
   readonly heartbeatAt: number;
+  /**
+   * Epoch ms of the FIRST announcement that said `draining` — kept by every later one. Absent while
+   * the worker serves. What `SQL_SCALER_DEPTH` excludes a worker's held jobs by.
+   */
+  readonly drainingAt?: number;
 }
 
 /**

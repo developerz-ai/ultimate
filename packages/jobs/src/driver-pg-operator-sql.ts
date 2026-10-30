@@ -148,18 +148,21 @@ select name, (extract(epoch from paused_at) * 1000)::bigint as paused_at
 
 /**
  * A worker's heartbeat: the whole row rewritten, expiry pushed out. $1 id, $2 host, $3 queues,
- * $4 slots, $5 in-flight ids, $6 started (ms), $7 ttl (ms).
+ * $4 slots, $5 in-flight ids, $6 started (ms), $7 ttl (ms), $8 draining. `draining_at` is stamped by
+ * the first draining announce and KEPT by the later ones — when the drain began, not the last beat.
  */
 export const SQL_WORKER_ANNOUNCE = `
 insert into x_job_workers
-  (id, host, queues, concurrency, in_flight, started_at, heartbeat_at, expires_at)
+  (id, host, queues, concurrency, in_flight, started_at, heartbeat_at, expires_at, draining_at)
 values
   ($1, $2, $3::jsonb, $4::int, $5::jsonb, to_timestamp($6::bigint / 1000.0), now(),
-   now() + ($7::bigint * interval '1 millisecond'))
+   now() + ($7::bigint * interval '1 millisecond'), case when $8::boolean then now() end)
 on conflict (id) do update
    set host = excluded.host, queues = excluded.queues, concurrency = excluded.concurrency,
        in_flight = excluded.in_flight, heartbeat_at = excluded.heartbeat_at,
-       expires_at = excluded.expires_at
+       expires_at = excluded.expires_at,
+       draining_at = case when $8::boolean
+                          then coalesce(x_job_workers.draining_at, excluded.draining_at) end
 `.trim();
 
 export const SQL_WORKER_FORGET = `
@@ -176,7 +179,8 @@ with lapsed as (
 )
 select id, host, queues, concurrency, in_flight,
        (extract(epoch from started_at)   * 1000)::bigint as started_at,
-       (extract(epoch from heartbeat_at) * 1000)::bigint as heartbeat_at
+       (extract(epoch from heartbeat_at) * 1000)::bigint as heartbeat_at,
+       (extract(epoch from draining_at)  * 1000)::bigint as draining_at
   from x_job_workers
  where expires_at > now()
  order by started_at, id

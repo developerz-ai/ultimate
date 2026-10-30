@@ -332,6 +332,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     if (state === 'stopped') return;
     state = 'draining';
     loop.stop();
+    void registration?.draining(); // the row says so NOW: a scaler stops counting what it holds
     if (shutdown === undefined) return;
     budget.bind(shutdown.deadlineAt);
     if (cutoff !== undefined) return;

@@ -295,6 +295,38 @@ export function operatorSettleScenarios(label: string, harness: OperatorHarness)
     expect(await operator.workers()).toEqual([]);
   });
 
+  test(`${label}: a draining worker's row says so from its first draining announce, and keeps it`, async () => {
+    const driver = await harness.driver();
+    const operator = operatorOf(driver);
+    const announce = (draining?: boolean) =>
+      operator.announceWorker(
+        {
+          id: 'worker-old',
+          host: 'host-old',
+          startedAt: 1_000,
+          queues: ['banks'],
+          concurrency: 10,
+          inFlight: ['job-1'],
+          ...(draining === undefined ? {} : { draining }),
+        },
+        TTL_MS,
+      );
+    await announce();
+    expect((await operator.workers())[0]?.drainingAt).toBeUndefined();
+    await announce(true);
+    const first = (await operator.workers())[0]?.drainingAt;
+    expect(typeof first).toBe('number');
+    // Later beats of a draining worker keep the FIRST stamp: a scaler reads when it began. (The pg
+    // harness ages rows rather than moving a clock, so the stamp is read against the later beat.)
+    await harness.elapse(driver, 1_000);
+    await announce(true);
+    const [later] = await operator.workers();
+    expect((later?.heartbeatAt ?? 0) - (later?.drainingAt ?? 0)).toBeGreaterThanOrEqual(1_000);
+    // A worker that serves again (a manual stop, then start) is no longer draining.
+    await announce(false);
+    expect((await operator.workers())[0]?.drainingAt).toBeUndefined();
+  });
+
   test(`${label}: progress lands on the row, fenced on the claimer`, async () => {
     const driver = await harness.driver();
     const operator = operatorOf(driver);

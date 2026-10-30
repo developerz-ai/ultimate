@@ -273,8 +273,13 @@ export function memoryOperator(state: MemoryQueueState): MemoryOperator {
 
     announceWorker(worker, ttlMs) {
       const at = nowMs(clock);
+      // The first draining announce stamps it; later ones keep it — `SQL_WORKER_ANNOUNCE`'s rule.
+      const drainingAt =
+        worker.draining === true ? (workers.get(worker.id)?.drainingAt ?? at) : undefined;
+      const { draining: _draining, ...announced } = worker;
       workers.set(worker.id, {
-        ...worker,
+        ...announced,
+        ...(drainingAt === undefined ? {} : { drainingAt }),
         queues: [...worker.queues],
         inFlight: worker.inFlight.slice(0, MAX_WORKER_IN_FLIGHT),
         heartbeatAt: at,

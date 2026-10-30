@@ -1069,6 +1069,28 @@ unlabelled gauges, `job_worker_in_flight` and `job_worker_capacity`, each the SU
 `ceil((queue_depth + Σ job_worker_in_flight) / job_worker_capacity)`. A fleet-wide ceiling is a
 different number: `maxInFlight` × replicas, or `job.concurrency` for one job.
 
+**A scaler reading Postgres** (KEDA's `postgresql` trigger) runs the statement below — the
+package's `scaler-depth-fixture.ts`, proved against a real Postgres (`scaler-depth.job.test.ts`)
+and pinned to this block (`scaler-depth-readme.test.ts`); KEDA binds
+nothing, so the queues are inlined as `'{a,b}'::text[]`: running jobs plus due,
+claimable ones — minus the jobs a **draining** worker still holds. A worker that stops claiming (a
+retire, a SIGTERM, `stop()`) announces at once with `draining`, and its registry row keeps
+`draining_at` from that first announce (`workers()` → `drainingAt`). Those jobs are finished by
+the worker holding them; counted, a deploy scaled the new pods up for the old pods' runs for as
+long as the longest of them took. A claimer whose row lapsed is counted again — the queue hands the
+job back. `As of 2026-10-30`.
+
+```sql
+select count(*)::int as depth
+  from x_jobs j
+ where j.queue = any('{banks,banks-long}'::text[])
+   and ((j.state = 'running'
+         and not exists (select 1 from x_job_workers w where w.id = j.claimed_by
+                            and w.draining_at is not null and w.expires_at > now()))
+     or (j.state in ('ready', 'delayed', 'suspended') and j.run_at <= now()
+         and not exists (select 1 from x_job_pauses p where p.kind = 'queue' and p.name = j.queue)))
+```
+
 ### One run per key
 
 A number caps the whole job. `{ key, limit, whenBusy }` caps it **per key** — "at most one run
@@ -1147,6 +1169,8 @@ driven by the frozen clock. Renewal failures are not swallowed:
 |---|---|
 | a renewal failed, the window still has room | `jobs.heartbeat.failed` (warn) |
 | a whole window passed with none landing | `jobs.lease.lost` (error) + `job_leases_lost_total{queue}` |
+| the row refused the renewal and another worker holds it (or it cannot be read) | `jobs.lease.lost` (error, `reason: not-ours`) + the counter |
+| the row refused the renewal because it was **cancelled** (`x jobs cancel`, an app's stop) | `jobs.lease.cancelled` (info), the attempt aborted the same way — never counted |
 
 The second one means the queue is free to hand that job to another worker while this one is
 still running it — at-least-once turning into twice. Alert on any non-zero rate. The window is
@@ -1159,6 +1183,11 @@ already **on the wire**, not only for the next one: a clean completion acks the 
 `jobs.lease.lost` at error plus the counter, a page for a non-event, on every completed job whose
 pool was slow enough. The fleet slot's `jobs.worker.slot-lost` had the same shape and the same
 fix (`renewal-timer.ts`).
+
+Nor for a job being settled (`As of 2026-10-30`): the heartbeat stops when the worker SENDS the
+`ack` / `nack`, not when `executeJob` returns. In between ran the `onSettled` hook and the step
+listing, and a renewal there matched no row — `jobs.lease.lost` for a job that had finished, with
+the hook's `ctx.signal` aborted under it.
 
 ## The operator surface
 
@@ -1177,7 +1206,7 @@ the pg and the memory driver alike. `x jobs`, `/_x` and a dashboard read nothing
 | `promote(id)` | a job waiting on its `runAt` — delayed, or backing off — is due now | — |
 | `pauseQueue(q)` / `resumeQueue(q)` / `pausedQueues()` | a paused queue is claimed by no worker; enqueues still land | effective at every worker's next claim |
 | `pauseTask(t)` / `resumeTask(t)` / `pausedTasks()` | a paused task is not dispatched; on resume its own `catchUp` decides what it missed | — |
-| `workers()` | every live worker: id, host, started, queues, slots, in-flight job ids, last heartbeat | rows expire one visibility timeout after the last heartbeat; `MAX_WORKER_IN_FLIGHT` = 100 ids |
+| `workers()` | every live worker: id, host, started, queues, slots, in-flight job ids, last heartbeat, `drainingAt` once it drains | rows expire one visibility timeout after the last heartbeat; `MAX_WORKER_IN_FLIGHT` = 100 ids |
 | `counters({ job, sinceMs })` / `counterTotals(sinceMs)` | per-job history: `done`, `retried`, `failed`, `dead`, `durationMs` per bucket | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d — 4,176 rows per job name at most |
 | `rollupCounters()` | fold buckets past their tier into the next; the scheduler leader calls it once a minute | idempotent |
 | `recordProgress(id, { workerId, claim }, progress)` | what `run({ progress })` writes | at most one write per `PROGRESS_INTERVAL_MS` (1 s) per run, plus the last before the settle |
