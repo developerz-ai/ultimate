@@ -3,9 +3,9 @@
 // breaking rather than a note in the diff.
 
 import { canonicalJson } from '@ultimat3/core';
-import { diffInput } from './diff-input';
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
+import { diffInput } from './diff-input';
 import type { JobFact, TaskFact } from './schema';
 
 export function diffJobs(

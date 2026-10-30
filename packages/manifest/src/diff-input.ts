@@ -1,8 +1,6 @@
-// An input schema's change, classified (`diffActions`, `diffJobs`): byte-identical is no change; a
-// change that only ADDS optional top-level properties to an object schema is `additive` — every
-// payload the old schema accepted, the new one accepts — and anything else is `breaking`. Read
-// before this file existed as "any difference is breaking", an optional field added to a published
-// action (a caller's new `trigger?`) made a consumer bump its major for a change nobody can trip on.
+// An input schema's change, classified (`diffActions`, `diffQueries`, `diffJobs`): byte-identical
+// is no change; only ADDING optional top-level properties to an object schema is `additive`, since
+// every payload the old schema accepted the new one accepts; anything else is `breaking`.
 //
 // Deliberately shallow: only the top level is compared, so an optional property added INSIDE a
 // nested object still reads as breaking — over-reporting is the safe side of a contract check.
