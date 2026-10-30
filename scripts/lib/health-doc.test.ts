@@ -82,6 +82,77 @@ function assertBrief(brief: string): void {
   expect(ids).toEqual([...ROW_IDS]);
 }
 
+/** A `## Rows` item: a bullet whose leading backticked span is the row id. */
+const ROW_ITEM = /^- `([^`]+)`/;
+
+/** A row id: lowercase letters, digits, hyphens or underscores, at most forty characters. */
+const ROW_ID_SHAPE = /^[a-z0-9_-]{1,40}$/;
+
+interface RowsSection {
+  /** The index of the `## Rows` heading. */
+  readonly start: number;
+  /** The index of the section's last item line. */
+  readonly end: number;
+  /** The section's item lines, in document order. */
+  readonly items: readonly string[];
+}
+
+/**
+ * The brief's `## Rows` section: the heading once, then the item lines under it, up to the next
+ * level-2 heading. Blank lines and the file's trailing marker are not items.
+ */
+function rowsSection(brief: string): RowsSection {
+  const lines = brief.split('\n');
+  const heading = '## Rows';
+  expect(lines.filter((line) => line === heading)).toHaveLength(1);
+  const start = lines.indexOf(heading);
+  expect(start, 'the brief must carry a `## Rows` section').toBeGreaterThanOrEqual(0);
+  const rest = lines.slice(start + 1);
+  const nextHeading = rest.findIndex((line) => line.startsWith('## '));
+  const body = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+  const items: string[] = [];
+  const indexes: number[] = [];
+  for (const [offset, line] of body.entries()) {
+    if (line.trim() === '' || line.startsWith('<!--')) continue;
+    expect(line, `malformed Rows item: ${line}`).toMatch(ROW_ITEM);
+    items.push(line);
+    indexes.push(start + 1 + offset);
+  }
+  const end = indexes[indexes.length - 1] ?? start;
+  return { start, end, items };
+}
+
+/**
+ * The brief's Rows section must name every row the machine reports — once each, in the table's
+ * order, each id shaped like a row id. A brief that names a row the machine never reports (or
+ * drops one it does) is a second definition of the table, which the brief forbids.
+ */
+function assertRowsSection(brief: string): void {
+  const ids = rowsSection(brief).items.map((item) => {
+    const match = ROW_ITEM.exec(item);
+    expect(match, `malformed Rows item: ${item}`).not.toBeNull();
+    if (match === null) expect.unreachable('malformed Rows item');
+    return match[1] ?? '';
+  });
+  for (const id of ids) {
+    expect(id, `row id must be lowercase, digits, hyphens or underscores: ${id}`).toMatch(
+      ROW_ID_SHAPE,
+    );
+  }
+  expect(new Set(ids).size, `duplicate row ids: ${ids.join(', ')}`).toBe(ids.length);
+  expect(ids, 'the Rows section must name every row, once each, in the table order').toEqual([
+    ...ROW_IDS,
+  ]);
+}
+
+/** One of the brief's Rows items by id — the fifth, so dropping it is not the tail's loss. */
+function rowItem(brief: string): string {
+  const item = rowsSection(brief).items.find((line) => line.startsWith('- `npm-serves-tree`'));
+  expect(item, 'the brief must list the npm-serves-tree row').toBeDefined();
+  if (item === undefined) expect.unreachable('the npm-serves-tree row is missing');
+  return item;
+}
+
 let brief: string;
 beforeAll(async () => {
   brief = await Bun.file(join(repoRoot(), '.dz/briefs/health.md')).text();
@@ -151,5 +222,34 @@ describe('unit · health-doc · the brief matches the ordered machine definition
     if (row === undefined) expect.unreachable('mutation row missing');
     const altered = replaceOnce(brief, row, row.replace('`t=$(', '`sha=$('));
     expect(() => assertBrief(altered)).toThrow(/unassigned variable: \$t/);
+  });
+
+  test('the Rows section names every row id, once each, in order', () => {
+    assertRowsSection(brief);
+  });
+
+  test.each([
+    [
+      'a deleted section',
+      (text: string): string => {
+        const section = rowsSection(text);
+        const lines = text.split('\n');
+        return [...lines.slice(0, section.start), ...lines.slice(section.end + 1)].join('\n');
+      },
+    ],
+    ['a dropped item', (text: string): string => replaceOnce(text, rowItem(text), '')],
+    [
+      'a duplicated item',
+      (text: string): string => {
+        const item = rowItem(text);
+        return replaceOnce(text, item, `${item}\n${item}`);
+      },
+    ],
+    ['a retyped id', (text: string): string => replaceOnce(text, '`main-green`', '`main-red`')],
+    ['a malformed id', (text: string): string => replaceOnce(text, '`main-green`', '`Main Green`')],
+  ])('rejects %s', (_name, mutate) => {
+    const altered = mutate(brief);
+    expect(altered, 'the mutation must change the brief').not.toBe(brief);
+    expect(() => assertRowsSection(altered)).toThrow();
   });
 });
