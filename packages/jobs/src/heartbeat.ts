@@ -8,11 +8,18 @@ import { logger, recordLeaseLost, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { LeaseLostError } from './errors';
+import type { JobIntrospection } from './introspection';
 import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
 
 export interface LeaseHeartbeatOptions {
-  /** Only `heartbeat` is used — a lease renews itself and settles nothing. */
-  readonly driver: Pick<JobDriver, 'heartbeat'>;
+  /**
+   * `heartbeat` renews; `introspect.job` is read ONLY when a renewal is refused, to tell a cancel
+   * (the designed stop) from a lease another worker now holds. A lease renews itself and settles
+   * nothing.
+   */
+  readonly driver: Pick<JobDriver, 'heartbeat'> & {
+    readonly introspect?: Pick<JobIntrospection, 'job'> | undefined;
+  };
   readonly claimed: ClaimedJob;
   readonly visibilityTimeoutMs: number;
   readonly intervalMs: number;
@@ -85,6 +92,34 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
   };
 
+  /**
+   * A cancel reached this attempt: `x jobs cancel`, or an app's own stop, wrote `cancelled` on the
+   * running row and this renewal is how the attempt hears it. Stopped exactly like a loss — same
+   * abort, same reason, so the body unwinds as it always has — but said at info and never counted:
+   * `job_leases_lost_total` means "this job may now run twice", and a cancel cannot.
+   */
+  const reportCancelled = (): void => {
+    if (lost || timer.stopped()) return;
+    lost = true;
+    timer.stop();
+    logger.info('jobs.lease.cancelled', {
+      workerId,
+      job: claimed.name,
+      jobId: claimed.id,
+      queue: claimed.queue,
+      attempt: claimed.attempt,
+    });
+    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+  };
+
+  /** The row said "not yours": read it once to say which. Unreadable is never assumed a cancel. */
+  const refused = async (): Promise<void> => {
+    const row = await options.driver.introspect?.job(claimed.id).catch((): undefined => undefined);
+    if (timer.stopped()) return;
+    if (row?.state === 'cancelled') reportCancelled();
+    else reportLost(undefined, 'not-ours');
+  };
+
   const renew = async (): Promise<void> => {
     if (lost || timer.stopped()) return;
     // Expiry is decided BEFORE the driver is asked, because the failure that loses a lease most
@@ -121,7 +156,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       // before that — a hand-rolled one, a test double — resolves `undefined`. Reading that as a
       // lost lease would cancel every job on every renewal. Only an explicit "no" is a no.
       if (held === false) {
-        reportLost(undefined, 'not-ours');
+        await refused();
         return;
       }
       // Asked again AFTER the call, because a renewal that SUCCEEDS late is still late: an

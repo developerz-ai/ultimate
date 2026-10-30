@@ -58,6 +58,30 @@ function unknownJob(claimed: ClaimedJob): JobExecution {
   };
 }
 
+/**
+ * The driver `executeJob` settles through, with the lease's heartbeat stopped the moment a settle
+ * is SENT. `ack` / `nack` move the row out of `running`, and `executeJob` still has work after
+ * them — the `onSettled` hook (an app's settle sink, seconds of its own writes) and the step
+ * listing — before the `finally` below stops the heartbeat. A renewal in that window matched no
+ * row and was reported as a lease lost under a job that had finished: `jobs.lease.lost` at error,
+ * `job_leases_lost_total` counted, and the hook's `ctx.signal` aborted under it. Stopped before the
+ * statement, a renewal already on the wire still lands on `heartbeat.ts`'s stopped flag. A settle
+ * that rejects leaves the lease to lapse — what `execute.ts` already says it wants then.
+ */
+function settlingStops(driver: JobDriver, stop: () => void): JobDriver {
+  return {
+    ...driver,
+    ack: (jobId, by) => {
+      stop();
+      return driver.ack(jobId, by);
+    },
+    nack: (jobId, nackOptions) => {
+      stop();
+      return driver.nack(jobId, nackOptions);
+    },
+  };
+}
+
 /** Run one claimed job under its lease, its slot and its span, and settle it with the driver. */
 export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExecution> {
   const { claimed, driver, fleetSlots, workerId, visibilityTimeoutMs } = options;
@@ -156,7 +180,7 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
       () => {
         started = true;
         return executeJob({
-          driver,
+          driver: settlingStops(driver, heartbeat.stop),
           claimed,
           handle,
           ctx,
