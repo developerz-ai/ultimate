@@ -6,7 +6,7 @@
 import type { Clock } from '@ultimat3/core';
 import { logger, recordLeaseLost, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
-import type { ClaimedJob, JobDriver } from './driver';
+import type { ClaimedJob, JobDriver, JobRecord } from './driver';
 import { LeaseLostError } from './errors';
 import type { JobIntrospection } from './introspection';
 import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
@@ -28,6 +28,9 @@ export interface LeaseHeartbeatOptions {
   /** What every renewal runs on (`renewal-timer.ts`). Default: a real, unrefed interval. */
   readonly schedule?: IntervalScheduler;
 }
+
+/** The longest a refused renewal waits on the row read that names it a cancel or a loss. */
+export const CLASSIFY_READ_MAX_MS = 5_000;
 
 export interface LeaseHeartbeat {
   /** One renewal. The interval drives it; tests drive it instead of the timer. */
@@ -104,14 +107,16 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
    * running attempt — `jobs.lease.cancelled` at info, never counted, since `job_leases_lost_total`
    * means "this job may now run twice" and a cancel cannot. Anything else, an unreadable row
    * included, is `jobs.lease.lost`. Read after the abort, a stalled read delays a log line, never
-   * the stop (a stalled read used to keep the attempt running until the window lapsed).
+   * the stop (a stalled read used to keep the attempt running until the window lapsed) — and only
+   * for one renewal interval (at most `CLASSIFY_READ_MAX_MS`): a read still out then is unreadable,
+   * so a real loss is never left uncounted behind a read that never answers.
    */
   const refused = async (): Promise<void> => {
     if (lost || timer.stopped()) return;
     lost = true;
     timer.stop();
     gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
-    const row = await options.driver.introspect?.job(claimed.id).catch((): undefined => undefined);
+    const row = await boundedRead();
     if (row?.state !== 'cancelled') {
       logLost(undefined, 'not-ours');
       return;
@@ -123,6 +128,21 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       queue: claimed.queue,
       attempt: claimed.attempt,
     });
+  };
+
+  /** `introspect.job`, or `undefined` once it rejects or outlasts its bound. */
+  const boundedRead = async (): Promise<JobRecord | undefined> => {
+    const read = options.driver.introspect?.job(claimed.id);
+    if (read === undefined) return undefined;
+    let bound: ReturnType<typeof setTimeout> | undefined;
+    const outlasted = new Promise<undefined>((resolve) => {
+      bound = setTimeout(resolve, Math.min(options.intervalMs, CLASSIFY_READ_MAX_MS), undefined);
+    });
+    try {
+      return await Promise.race([read.catch((): undefined => undefined), outlasted]);
+    } finally {
+      clearTimeout(bound);
+    }
   };
 
   const renew = async (): Promise<void> => {
