@@ -133,7 +133,7 @@ export class RecordStore implements RecordSink {
       for (const [key, row] of Object.entries(rows)) {
         const rk = recordKey(type, key);
         if (!isRow(row) || key === '') continue;
-        if (this.#synced.restore(rk, row)) this.#touchSynced(rk);
+        if (this.#synced.restore(rk, row, type)) this.#touchSynced(rk);
       }
     });
   }
@@ -141,7 +141,7 @@ export class RecordStore implements RecordSink {
   /** One server write, merged column by column (`SyncedLayer.merge`). */
   merge(type: string, key: string, columns: Row): Row {
     const rk = recordKey(type, key);
-    const { row, changed } = this.#synced.merge(rk, columns);
+    const { row, changed } = this.#synced.merge(rk, columns, type);
     if (changed) {
       this.#touchSynced(rk);
     } else if (this.#overlays.size > 0) {

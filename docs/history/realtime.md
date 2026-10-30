@@ -1496,9 +1496,12 @@ code — `throttle.ts` (a board redrawn per record, ten a second, on a phone), `
   (an optimistic write is visible before `push` returns, and every settle rule leans on that). No
   clock — the scheduler's timer IS the period: a call with no timer armed tells at once and arms
   one; a call inside it is owed; the timer tells what is owed and re-arms, or closes. Validated by
-  `finiteCount` before the type is held.
+  `finiteCount` before the type is held. The period is armed BEFORE readers hear, and a released
+  notifier arms nothing: a reader releasing the hook while it is told left a timer behind (#930).
 - **The synced layer indexes keys by type** (`#byType`): `keyed(type)` and a replay's `ofType` walked
-  every row of every type with `startsWith`.
+  every row of every type with `startsWith`. The type is the one its writer NAMED (`merge`/`restore` take
+  it), never split off the key: `?query:<name>` holds a colon, so `type:key` splits two ways
+  (review on #930).
 - Not changed, because the measurements did not ask for it: the wire (records frames already carry
   only what moved, resume already starts from the last contiguous `seq`, a gap already re-reads
   once and holds frames), and the store's own batching (one notification per frame).

@@ -74,4 +74,42 @@ describe('throttledNotify', () => {
     notifier.call();
     expect(told).toBe(3);
   });
+
+  test('a reader that releases while it is told leaves no timer armed, now or at the period end', () => {
+    const armed = new Set<() => void>();
+    const notifier = throttledNotify(
+      () => notifier.cancel(),
+      100,
+      (fn) => {
+        armed.add(fn);
+        return () => armed.delete(fn);
+      },
+    );
+    notifier.call();
+    expect(armed.size).toBe(0);
+    notifier.call();
+    expect(armed.size).toBe(0);
+  });
+
+  test('a release inside the trailing notification arms no next period', () => {
+    const armed = new Set<() => void>();
+    let released = false;
+    const notifier = throttledNotify(
+      () => {
+        if (released) notifier.cancel();
+      },
+      100,
+      (fn) => {
+        armed.add(fn);
+        return () => armed.delete(fn);
+      },
+    );
+    notifier.call();
+    notifier.call();
+    released = true;
+    const [fire] = [...armed];
+    armed.clear();
+    fire?.();
+    expect(armed.size).toBe(0);
+  });
 });

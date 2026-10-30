@@ -20,6 +20,11 @@ export class SyncedLayer {
    * run page holds the fleet's runs beside one run's events, and each event reader scanned both.
    */
   readonly #byType = new Map<string, Set<RecordKey>>();
+  /**
+   * Each indexed key's type, as its writer NAMED it. Never recovered from the key: a type may hold
+   * a colon (`?query:<name>`, an unnamed live query's rows), so `type:key` splits two ways.
+   */
+  readonly #typeOfKey = new Map<RecordKey, string>();
 
   get(rk: RecordKey): Row | undefined {
     return this.#rows.get(rk);
@@ -58,7 +63,11 @@ export class SyncedLayer {
    * a JSON column is a fresh array or object on every read, and by identity every catch-up, poll
    * and reconnect moved every row. An unmoved column keeps its object, so its readers stay put.
    */
-  merge(rk: RecordKey, columns: Row): { readonly row: Row; readonly changed: boolean } {
+  merge(
+    rk: RecordKey,
+    columns: Row,
+    type: string,
+  ): { readonly row: Row; readonly changed: boolean } {
     // A restored row is a guess from disk: the server's first answer is the whole truth.
     const current = this.#provisional.delete(rk) ? undefined : this.#rows.get(rk);
     const next: Record<string, unknown> = { ...current };
@@ -71,19 +80,20 @@ export class SyncedLayer {
     }
     if (!changed && current !== undefined) return { row: current, changed: false };
     const row = Object.freeze(next);
-    this.#put(rk, row);
+    this.#put(rk, row, type);
     return { row, changed: true };
   }
 
   /** A conflict policy's verdict replacing the server row outright. */
   set(rk: RecordKey, row: Row): void {
-    this.#put(rk, Object.freeze({ ...row }));
+    // Only ever over a row the server already holds: its type was named when it arrived.
+    this.#put(rk, Object.freeze({ ...row }), this.#typeOfKey.get(rk) ?? typeOf(rk));
   }
 
   /** A row from disk, only where the server has not answered. Answers whether it went in. */
-  restore(rk: RecordKey, row: Row): boolean {
+  restore(rk: RecordKey, row: Row, type: string): boolean {
     if (this.#rows.has(rk)) return false;
-    this.#put(rk, Object.freeze({ ...row }));
+    this.#put(rk, Object.freeze({ ...row }), type);
     this.#provisional.add(rk);
     return true;
   }
@@ -92,7 +102,8 @@ export class SyncedLayer {
   remove(rk: RecordKey): boolean {
     this.#provisional.delete(rk);
     // Gone is no longer spared: a row the server sends again later is a new arrival, not this one.
-    const type = typeOf(rk);
+    const type = this.#typeOfKey.get(rk) ?? typeOf(rk);
+    this.#typeOfKey.delete(rk);
     this.#spared.get(type)?.delete(rk);
     const keys = this.#byType.get(type);
     keys?.delete(rk);
@@ -116,7 +127,7 @@ export class SyncedLayer {
       return false;
     }
     this.#holds.delete(rk);
-    const type = typeOf(rk);
+    const type = this.#typeOfKey.get(rk) ?? typeOf(rk);
     if (this.#typeHolds.has(type)) {
       const spared = this.#spared.get(type) ?? new Set<RecordKey>();
       spared.add(rk);
@@ -154,13 +165,14 @@ export class SyncedLayer {
   clear(): void {
     this.#rows.clear();
     this.#byType.clear();
+    this.#typeOfKey.clear();
     this.#provisional.clear();
     this.#spared.clear();
   }
 
-  #put(rk: RecordKey, row: Row): void {
-    if (!this.#rows.has(rk)) {
-      const type = typeOf(rk);
+  #put(rk: RecordKey, row: Row, type: string): void {
+    if (!this.#typeOfKey.has(rk)) {
+      this.#typeOfKey.set(rk, type);
       const keys = this.#byType.get(type);
       if (keys === undefined) this.#byType.set(type, new Set([rk]));
       else keys.add(rk);
@@ -169,5 +181,5 @@ export class SyncedLayer {
   }
 }
 
-/** A record key's type: everything before its first `:` (`recordKey`). */
+/** A key's type when no writer named it (a hold on a row not yet there): before its first `:`. */
 const typeOf = (rk: RecordKey): string => rk.slice(0, rk.indexOf(':'));

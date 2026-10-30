@@ -65,25 +65,32 @@ export function throttledNotify(
   }
   let cancelTimer: (() => void) | null = null;
   let owed = false;
+  /** Released: nothing is armed or told again, whatever a notification's reader did meanwhile. */
+  let closed = false;
+  // The period is armed BEFORE the readers hear: a reader that releases the hook while it is told
+  // cancels this timer, rather than the hook arming one after its own release.
   const open = (): void => {
+    if (closed) return;
     cancelTimer = schedule(() => {
       cancelTimer = null;
-      if (!owed) return;
+      if (!owed || closed) return;
       owed = false;
-      notify();
       open();
+      notify();
     }, ms);
   };
   return {
     call: () => {
+      if (closed) return;
       if (cancelTimer !== null) {
         owed = true;
         return;
       }
-      notify();
       open();
+      notify();
     },
     cancel: () => {
+      closed = true;
       cancelTimer?.();
       cancelTimer = null;
       owed = false;
