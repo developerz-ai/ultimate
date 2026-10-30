@@ -8,7 +8,31 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 3 — realtime.
+
+- **`useRecords(type, { throttleMs })` — a busy feed throttled by its reader.** The first change is
+  told at once, a burst as ONE notification at the end of the period, the last always lands;
+  `release()` drops what is owed. A live board taking ten records a second is told 21 times in 20 s
+  instead of 200 (`scripts/bench/record-store.bench.ts`). Absent or `0`: every change, as before; a
+  non-finite or fractional value is `X_INVARIANT`. `schedule` injects the timer (tests).
+  [Realtime](https://github.com/developerz-ai/ultimate/wiki/Realtime#one-record-per-typekey).
+
+### Changed
+
+Tier 3 — realtime.
+
+- **A read hook answers the SAME object until what it shows moved.** `useQuery` (live and not),
+  `useRecord` and both `useRecords` forms hand back the previous answer — and its `data` array,
+  across a `ready` ⇄ `refreshing` flip — while every row object matches, so a poll or refetch that
+  found the same rows re-runs nothing derived from it (50 → 0 new arrays over 50 identical
+  refetches). Code that relied on a fresh array per read (mutating it) must copy it first.
+- **A whole-type `useRecords` with `where` is told only of a record it shows or `where` keeps.** On
+  a run page the viewer's alerts list heard every fleet run (180 of 200 frames, none its own) — now
+  0; the page's notifications 260 → 80, 23.4 → 9.2 ms.
+- **The record store indexes rows by type**: a whole-type read walks its own type's rows, never
+  every row on the page (5,000 held runs beside 200 events: 184 → 138 ms for 800 reads).
 
 ## 29.1.0 - 2026-10-29
 

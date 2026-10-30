@@ -1465,3 +1465,43 @@ sync-node roll). Three rules, each pinned by a failing-first test:
   tab's chained timer runs about once a minute; measured from the last frame, every late tick read
   an answered socket as two windows dead and redialled. `client-heartbeat.test.ts`. Not changed:
   the engine's port reaper (`REAP_AFTER_BEATS`) still judges a tab's beats on the tab's timers.
+
+## 2026-10-29 — a read hook answers what moved, once, and only to whom it moved
+
+Measured on bank-integrations' panel (Ultimate 29.1.0), which had worked around all three in app
+code — `throttle.ts` (a board redrawn per record, ten a second, on a phone), `stableRuns` and
+`sameData` (new arrays of the same rows defeating Solid's `===`).
+`bun run scripts/bench/record-store.bench.ts` replays the load; before → after:
+
+| Scenario | Notifications | New `data` arrays | Time |
+|---|---|---|---|
+| board: 300 runs, board + alerts readers, 200 frames of others' runs | 400 → 200 (alerts 200 → 0) | 400 → 200 | ≈ same (the board's sort is real work) |
+| run page: 4 event readers + alerts, 180 fleet frames + 20 own events | 260 → 80 (alerts 180 → 0) | 260 → 80 | 23.4 → 9.2 ms |
+| board with `throttleMs: 1000`, 10 frames/s for 20 s | 200 → 21 | 200 → 21 | 29.4 → 7.8 ms |
+| run page, 5,000 fleet runs held, 200 own events × 4 readers | 800 (all real) | 800 | 184 → 138 ms (type index) |
+| `useQuery` refetch answering the same 50 rows, × 50 | 100 (status flips are real) | 50 → 0 | — |
+
+- **The same answer back** (`record-answer.ts`, `keptAnswer`): `useQuery` (live and not),
+  `useRecord` and both `useRecords` forms return the previous answer object — or at least its
+  `data` array, across a `ready` ⇄ `refreshing` flip — while every row object matches. The store
+  already kept an unmoved row's object (`SyncedLayer.merge`, structural); the hooks threw that away
+  by wrapping it in a fresh array per read.
+- **Told only when it moves THIS reader** (`moves` in `use-record.ts`): a whole-type reader with
+  `where` skips a changed key it does not show and `where` does not keep now. A key it shows is
+  always its change (a row leaving the selection). An answer nobody read since the last
+  notification is always told: there is nothing current to compare against. A `where` that throws
+  in the listener counts as a move — the read raises it, and a throwing listener would silence the
+  store's other listeners in `batch`'s `finally`.
+- **`throttleMs` is the reader's**, not the store's: the store's notification stays synchronous
+  (an optimistic write is visible before `push` returns, and every settle rule leans on that). No
+  clock — the scheduler's timer IS the period: a call with no timer armed tells at once and arms
+  one; a call inside it is owed; the timer tells what is owed and re-arms, or closes. Validated by
+  `finiteCount` before the type is held.
+- **The synced layer indexes keys by type** (`#byType`): `keyed(type)` and a replay's `ofType` walked
+  every row of every type with `startsWith`.
+- Not changed, because the measurements did not ask for it: the wire (records frames already carry
+  only what moved, resume already starts from the last contiguous `seq`, a gap already re-reads
+  once and holds frames), and the store's own batching (one notification per frame).
+- Moved here from `packages/realtime/CLAUDE.md` (its size ceiling): **every `socket.send` reads its
+  answer** — a dropped subscribe reply marks it desynced; a dropped roster logs
+  `sync.presence_roster_dropped`; `drain()` returns `DrainedSocket[]` (`notified`).

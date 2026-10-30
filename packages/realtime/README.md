@@ -251,6 +251,7 @@ const pair = useRecords('posts', [postId]);                         // those key
 const runs = useRecords<Run>('runs', {                              // EVERY `runs` record on the page
   where: (run) => run.state !== 'done',
   order: (a, b) => (a.startedAt < b.startedAt ? 1 : -1),
+  throttleMs: 1_000,                                                // optional: at most once a second
 });
 const like = useMutation(LIKE_POST);                                // await like(input); like.pending
 const connection = useConnection();                                 // .offline .online .reconnectAt .updateAvailable
@@ -279,6 +280,8 @@ same type `@ultimat3/ui` renders.
 | A query ref is `{ name, live?, entity? }`, never the query VALUE | importing a `query()` drags its read path into the island (698,801 B measured) |
 | Lists hold keys; rows are the store's | a record updated by any answer or frame re-renders every list showing it, with no refetch |
 | A list that must GROW with the store is `useRecords(type, { where?, order? })` | a `useQuery` list holds its own answer's keys and `useRecords(type, keys)` the keys it was given, so a record a channel's `records` frame adopts reaches neither. The whole-type form is the channel-records counterpart of a live window: `ready` from its first read, every record of the type the store holds (optimistic ones included), default order by key, and none evicted while it is held — a row it alone kept goes when the last reader of the type lets go (#680) |
+| An answer is the SAME object until what it shows moved | `useQuery`, `useRecord` and both `useRecords` forms hand back the previous answer — and its `data` array — while the status and every row object match: a refetch or poll that found the same rows, or a re-read after an unrelated change, re-runs nothing derived from it (Solid's `===`). A whole-type reader with `where` is not even TOLD of a record it neither shows nor would show: on a run page the viewer's alerts list stopped hearing the fleet's runs (180 of 200 frames, 0 its own) |
+| A busy feed is throttled by the reader, `useRecords(type, { throttleMs })` | the first change is told at once, a burst as ONE notification at the end of the period, the last always lands; `release()` drops what is owed. A live board on a phone took ten records a second, each a whole-board redraw: `throttleMs: 1000` tells it 21 times in 20 s instead of 200. Absent or `0`: every change, as before. A non-finite or fractional value is `X_INVARIANT`; `schedule` injects the timer in a test |
 | Knowing THAT records moved is `useRecordChanges(types, listener)` | one call per store update, the moved keys per type, and no hold on any row or type, so a page that re-renders on a channel's `records` pins nothing. `useChannel(...).error()` is the node's refusal of a `failed` membership |
 | Every write is HTTP through core's `clientTransport` | one write path: the action's authz, idempotency and contract; the socket carries none |
 | The answer's records are adopted before the overlay goes | a convergent twin never flickers back to the pre-write value |

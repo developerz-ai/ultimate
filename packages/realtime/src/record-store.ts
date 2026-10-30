@@ -81,8 +81,8 @@ export class RecordStore implements RecordSink {
       seen.add(rk);
       if (row !== null) out.push([rk.slice(prefix.length), row]);
     }
-    for (const [rk, row] of this.#synced.entries()) {
-      if (rk.startsWith(prefix) && !seen.has(rk)) out.push([rk.slice(prefix.length), row]);
+    for (const [rk, row] of this.#synced.ofType(type)) {
+      if (!seen.has(rk)) out.push([rk.slice(prefix.length), row]);
     }
     return out;
   }

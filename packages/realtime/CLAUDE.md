@@ -164,8 +164,6 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `upgrade()`, as Bun does.
 - **A grant expires; a socket does not**: expired grants are re-decided on an interval
   (`hub.onActorChange`, `registry.reauthorize`). No `refresh` = close `1008`; one that raises retries.
-- **Every `socket.send` reads its answer**: a dropped subscribe reply marks it desynced; a dropped
-  roster logs `sync.presence_roster_dropped`; `drain()` returns `DrainedSocket[]` (`notified`).
 - **Inbound frames run in a lane, never the socket**: `subscribe` is `sub:<sid>` or `topic:<name>`,
   everything else unlaned (`frame-lanes.ts`); a lane exists only while work is queued.
 - **A dropped `records` frame is counted AND repaired**: per-node `seq`/`epoch` per channel; a refused
@@ -256,6 +254,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `useQuery`'s input is read once, at call time.
 - **`useRecords(type, selection)` holds the TYPE** (`retainType`): `ready` at once, recomputed per
   change to that type, no row of it evicted while held; the last type hold evicts what it spared.
+- **Read hooks answer the SAME object until what they show moved** (`keptAnswer`); a `where`
+  reader hears only keys it shows or keeps (history, 2026-10-29).
 - Every subscription handle is `Disposable`; `[Symbol.dispose]` IS the release. Type claims go in
   `type-pins.ts`.
 - **The outbox**: only `pending` is sendable; `drain()` is one chained pass at a time; `#epoch` is
@@ -282,9 +282,6 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   per socket; the engine reaps ports on the longer of its own and the node's.
 - **There is ONE `backoffDelay`, `@ultimat3/core`'s, counted from 1** — `policyDelay()` maps a
   `BackoffPolicy` onto it; `bun run flight-copies` refuses a second curve.
-
-## Rules for code here
-
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`monotonic()` for durations).
 
 ## The page boot
@@ -312,7 +309,6 @@ bun test packages/realtime/src   # from the REPO ROOT
 bun run typecheck
 ```
 
-`bunfig.toml`'s preload (matchers) is read from the cwd.
 
 Changing a frame shape means a fixture in `sync-protocol.test.ts` (the round-trip test fails
 without one) and bumping `PROTOCOL_VERSION` **when an old frame becomes unreadable in either
