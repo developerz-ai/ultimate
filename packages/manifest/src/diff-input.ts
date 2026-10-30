@@ -1,6 +1,6 @@
 // An input schema's change, classified (`diffActions`, `diffQueries`, `diffJobs`): byte-identical
 // is no change; only ADDING optional top-level properties to an object schema is `additive`, since
-// every payload the old schema accepted the new one accepts; anything else is `breaking`.
+// every payload the old (closed) schema accepted the new one accepts; anything else is `breaking`.
 //
 // Deliberately shallow: only the top level is compared, so an optional property added INSIDE a
 // nested object still reads as breaking — over-reporting is the safe side of a contract check.
@@ -19,6 +19,9 @@ const names = (value: unknown): readonly string[] =>
 /** True when `after` accepts every payload `before` does, by only adding optional properties. */
 export function onlyAddsOptionalProperties(before: unknown, after: unknown): boolean {
   if (!isObject(before) || !isObject(after)) return false;
+  // Only a CLOSED schema: an open one (`additionalProperties` true or absent) already accepted any
+  // extra key, so a new typed property can refuse a payload it used to take (`{ trigger: 123 }`).
+  if (before['additionalProperties'] !== false) return false;
   const beforeProps = before['properties'];
   const afterProps = after['properties'];
   if (!isObject(beforeProps) || !isObject(afterProps)) return false;

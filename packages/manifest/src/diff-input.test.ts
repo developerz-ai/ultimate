@@ -41,6 +41,22 @@ describe('an input schema change', () => {
     ]);
   });
 
+  test('an open schema (extra keys allowed) never reads additive: a new typed key can refuse old payloads', () => {
+    const open = { ...before, additionalProperties: true };
+    const openAfter = {
+      ...open,
+      properties: { ...open.properties, trigger: { type: 'string' } },
+    };
+    expect(onlyAddsOptionalProperties(open, openAfter)).toBe(false);
+    const { additionalProperties: _drop, ...omitted } = before;
+    expect(
+      onlyAddsOptionalProperties(omitted, {
+        ...omitted,
+        properties: { ...omitted.properties, trigger: { type: 'string' } },
+      }),
+    ).toBe(false);
+  });
+
   test('the same schema is no change; a non-object schema is never additive', () => {
     expect(diffInput('p', before, structuredClone(before), 'x')).toEqual([]);
     expect(onlyAddsOptionalProperties({ type: 'string' }, { type: 'string', minLength: 1 })).toBe(
