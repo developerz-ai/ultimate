@@ -256,6 +256,12 @@ create table if not exists x_job_workers (
   expires_at   timestamptz not null
 );
 
+-- When the worker began draining (a retire, a SIGTERM, a stop) - set by its first draining
+-- announce and kept by every later one, null while it serves. A queue-depth autoscaler leaves the
+-- jobs such a worker still holds out of its count (SQL_SCALER_DEPTH): its replacement cannot take
+-- them. Added by alter because x_job_workers shipped without it.
+alter table x_job_workers add column if not exists draining_at timestamptz;
+
 -- Per-job history, in buckets. A settle adds to the one-minute bucket in the SAME statement that
 -- moves the row, and the scheduler leader folds old buckets into wider ones, so the key count per
 -- job name is fixed whatever the throughput.

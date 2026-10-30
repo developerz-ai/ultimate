@@ -8,7 +8,29 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+Tier 4 — jobs.
+
+- **A draining worker says so in the registry, and a scaler can leave its jobs out.** A worker that
+  stops claiming (a retire on `SIGUSR2`, a SIGTERM's drain, `stop()`) announces at once with
+  `draining`; `x_job_workers.draining_at` (added by `alter`, applied at boot) keeps the first
+  stamp, `workers()` answers `drainingAt`. The README's scaler statement is the queue depth an
+  autoscaler (KEDA's `postgresql` trigger) sizes a fleet by: running jobs on serving workers plus due,
+  claimable ones — never the runs a draining pod finishes itself. Read on the old `count(*) where
+  state = 'running'`, every deploy scaled the new pods up for the old pods' work.
+  [jobs README](packages/jobs/README.md#limits).
+
+### Fixed
+
+- **No `jobs.lease.lost` for a job being settled.** The lease heartbeat stops when the worker sends
+  the `ack` / `nack`, not when `executeJob` returns: a renewal during the `onSettled` hook matched
+  no row and was logged at error, counted in `job_leases_lost_total` and aborted the hook's
+  `ctx.signal`, for a job that had finished.
+- **A cancel is not a lost lease.** A renewal refused because the row was `cancelled` (`x jobs
+  cancel`, an app's stop) is `jobs.lease.cancelled` at info and never counted; the attempt is
+  aborted exactly as before. A row another worker holds — or one that cannot be read — is still
+  `jobs.lease.lost` (`reason: not-ours`).
 
 ## 29.2.0 - 2026-10-30
 

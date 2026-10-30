@@ -251,6 +251,7 @@ export function pgOperator(
         JSON.stringify(worker.inFlight.slice(0, MAX_WORKER_IN_FLIGHT)),
         worker.startedAt,
         finiteOption('the pg worker registry', 'ttlMs', ttlMs),
+        worker.draining === true,
       ]);
     },
     async forgetWorker(workerId) {
@@ -265,6 +266,7 @@ export function pgOperator(
         in_flight: unknown;
         started_at: Count;
         heartbeat_at: Count;
+        draining_at: Count | null;
       }>(SQL_WORKERS, []);
       return rows.map((row) => ({
         id: row.id,
@@ -274,6 +276,7 @@ export function pgOperator(
         concurrency: num(row.concurrency),
         inFlight: stringList(row.in_flight),
         heartbeatAt: num(row.heartbeat_at),
+        ...(row.draining_at === null ? {} : { drainingAt: num(row.draining_at) }),
       }));
     },
 

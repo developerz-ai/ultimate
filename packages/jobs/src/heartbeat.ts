@@ -8,11 +8,18 @@ import { logger, recordLeaseLost, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { LeaseLostError } from './errors';
+import type { JobIntrospection } from './introspection';
 import { type IntervalScheduler, startRenewalTimer } from './renewal-timer';
 
 export interface LeaseHeartbeatOptions {
-  /** Only `heartbeat` is used — a lease renews itself and settles nothing. */
-  readonly driver: Pick<JobDriver, 'heartbeat'>;
+  /**
+   * `heartbeat` renews; `introspect.job` is read ONLY when a renewal is refused, to tell a cancel
+   * (the designed stop) from a lease another worker now holds. A lease renews itself and settles
+   * nothing.
+   */
+  readonly driver: Pick<JobDriver, 'heartbeat'> & {
+    readonly introspect?: Pick<JobIntrospection, 'job'> | undefined;
+  };
   readonly claimed: ClaimedJob;
   readonly visibilityTimeoutMs: number;
   readonly intervalMs: number;
@@ -70,6 +77,13 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     if (lost || timer.stopped()) return;
     lost = true;
     timer.stop();
+    logLost(error, reason);
+    // Cancel LAST, so the loss is logged and counted before the body it unwinds starts throwing.
+    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+  };
+
+  /** `jobs.lease.lost` at error, counted: this job may now run twice. */
+  const logLost = (error?: unknown, reason?: 'expired' | 'not-ours'): void => {
     logger.error('jobs.lease.lost', {
       workerId,
       job: claimed.name,
@@ -81,8 +95,34 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       ...(error === undefined ? {} : { error: renderThrowable(error) }),
     });
     recordLeaseLost(claimed.queue);
-    // Cancel LAST, so the loss is logged and counted before the body it unwinds starts throwing.
+  };
+
+  /**
+   * The row said "not yours" — the driver answered, so ownership is GONE whatever the cause: the
+   * attempt is aborted now, before anything else is awaited. Only then is the row read once, to say
+   * which: a cancel (`x jobs cancel`, an app's own stop) is the designed way a stop reaches a
+   * running attempt — `jobs.lease.cancelled` at info, never counted, since `job_leases_lost_total`
+   * means "this job may now run twice" and a cancel cannot. Anything else, an unreadable row
+   * included, is `jobs.lease.lost`. Read after the abort, a stalled read delays a log line, never
+   * the stop (a stalled read used to keep the attempt running until the window lapsed).
+   */
+  const refused = async (): Promise<void> => {
+    if (lost || timer.stopped()) return;
+    lost = true;
+    timer.stop();
     gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+    const row = await options.driver.introspect?.job(claimed.id).catch((): undefined => undefined);
+    if (row?.state !== 'cancelled') {
+      logLost(undefined, 'not-ours');
+      return;
+    }
+    logger.info('jobs.lease.cancelled', {
+      workerId,
+      job: claimed.name,
+      jobId: claimed.id,
+      queue: claimed.queue,
+      attempt: claimed.attempt,
+    });
   };
 
   const renew = async (): Promise<void> => {
@@ -121,7 +161,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       // before that — a hand-rolled one, a test double — resolves `undefined`. Reading that as a
       // lost lease would cancel every job on every renewal. Only an explicit "no" is a no.
       if (held === false) {
-        reportLost(undefined, 'not-ours');
+        await refused();
         return;
       }
       // Asked again AFTER the call, because a renewal that SUCCEEDS late is still late: an

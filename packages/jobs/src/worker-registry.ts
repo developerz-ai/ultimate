@@ -29,6 +29,13 @@ export interface WorkerRegistryOptions {
 }
 
 export interface WorkerRegistration {
+  /**
+   * The worker stopped claiming and only finishes what it holds: every announce from now on says
+   * `draining`, and one goes out NOW rather than at the next heartbeat (a third of the visibility
+   * window later) — the row is what a queue-depth autoscaler leaves held jobs out by. Idempotent in
+   * effect (the row keeps its first `draining_at`). Never rejects.
+   */
+  draining(): Promise<void>;
   /** Stop announcing and hand the row back. Never rejects. */
   stop(): Promise<void>;
 }
@@ -37,9 +44,13 @@ export interface WorkerRegistration {
 export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegistration {
   const registry = options.driver.introspect;
   // A driver with no introspection has no registry to appear in.
-  if (registry === undefined) return { stop: () => Promise.resolve() };
+  if (registry === undefined) {
+    return { draining: () => Promise.resolve(), stop: () => Promise.resolve() };
+  }
   const startedAt = nowMs(options.clock);
   const host = options.host ?? Bun.env['HOSTNAME'] ?? 'unknown';
+  /** Sticky for this registration: a worker that started again registers afresh. */
+  let draining = false;
 
   /**
    * Every announce still on the wire. `stop()` waits them out before it forgets: the row an
@@ -57,6 +68,7 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
           queues: options.queues,
           concurrency: options.concurrency,
           inFlight: options.inFlight().slice(0, MAX_WORKER_IN_FLIGHT),
+          ...(draining ? { draining: true } : {}),
         },
         options.ttlMs,
       )
@@ -86,6 +98,11 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
   );
 
   return {
+    draining() {
+      draining = true;
+      // Not after `stop()`: the row is being handed back, and an announce landing then relists it.
+      return timer.stopped() ? Promise.resolve() : announce();
+    },
     async stop() {
       timer.stop();
       // `send` never rejects (it logs), so neither does this.
