@@ -77,6 +77,13 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     if (lost || timer.stopped()) return;
     lost = true;
     timer.stop();
+    logLost(error, reason);
+    // Cancel LAST, so the loss is logged and counted before the body it unwinds starts throwing.
+    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+  };
+
+  /** `jobs.lease.lost` at error, counted: this job may now run twice. */
+  const logLost = (error?: unknown, reason?: 'expired' | 'not-ours'): void => {
     logger.error('jobs.lease.lost', {
       workerId,
       job: claimed.name,
@@ -88,20 +95,27 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       ...(error === undefined ? {} : { error: renderThrowable(error) }),
     });
     recordLeaseLost(claimed.queue);
-    // Cancel LAST, so the loss is logged and counted before the body it unwinds starts throwing.
-    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
   };
 
   /**
-   * A cancel reached this attempt: `x jobs cancel`, or an app's own stop, wrote `cancelled` on the
-   * running row and this renewal is how the attempt hears it. Stopped exactly like a loss — same
-   * abort, same reason, so the body unwinds as it always has — but said at info and never counted:
-   * `job_leases_lost_total` means "this job may now run twice", and a cancel cannot.
+   * The row said "not yours" — the driver answered, so ownership is GONE whatever the cause: the
+   * attempt is aborted now, before anything else is awaited. Only then is the row read once, to say
+   * which: a cancel (`x jobs cancel`, an app's own stop) is the designed way a stop reaches a
+   * running attempt — `jobs.lease.cancelled` at info, never counted, since `job_leases_lost_total`
+   * means "this job may now run twice" and a cancel cannot. Anything else, an unreadable row
+   * included, is `jobs.lease.lost`. Read after the abort, a stalled read delays a log line, never
+   * the stop (a stalled read used to keep the attempt running until the window lapsed).
    */
-  const reportCancelled = (): void => {
+  const refused = async (): Promise<void> => {
     if (lost || timer.stopped()) return;
     lost = true;
     timer.stop();
+    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
+    const row = await options.driver.introspect?.job(claimed.id).catch((): undefined => undefined);
+    if (row?.state !== 'cancelled') {
+      logLost(undefined, 'not-ours');
+      return;
+    }
     logger.info('jobs.lease.cancelled', {
       workerId,
       job: claimed.name,
@@ -109,15 +123,6 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       queue: claimed.queue,
       attempt: claimed.attempt,
     });
-    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
-  };
-
-  /** The row said "not yours": read it once to say which. Unreadable is never assumed a cancel. */
-  const refused = async (): Promise<void> => {
-    const row = await options.driver.introspect?.job(claimed.id).catch((): undefined => undefined);
-    if (timer.stopped()) return;
-    if (row?.state === 'cancelled') reportCancelled();
-    else reportLost(undefined, 'not-ours');
   };
 
   const renew = async (): Promise<void> => {

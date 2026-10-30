@@ -97,18 +97,27 @@ async function settleRace(outcome: 'completed' | 'failed'): Promise<{
   const base = memoryJobDriver();
   let settled = false;
   let renewalsAfterSettle = 0;
+  // The settle's reply is HELD after the row moved: the window where a heartbeat stopped only at the
+  // reply (not at the send) would still renew. A renewal fired there must not reach the driver.
+  let rowSettled = (): void => undefined;
+  let replySettle = (): void => undefined;
+  const settleWritten = new Promise<void>((resolve) => {
+    rowSettled = resolve;
+  });
+  const settleMayReply = new Promise<void>((resolve) => {
+    replySettle = resolve;
+  });
+  const held = async <T>(write: Promise<T>): Promise<T> => {
+    const done = await write;
+    settled = true;
+    rowSettled();
+    await settleMayReply;
+    return done;
+  };
   const driver: JobDriver = {
     ...base,
-    ack: async (...args) => {
-      const done = await base.ack(...args);
-      settled = true;
-      return done;
-    },
-    nack: async (...args) => {
-      const done = await base.nack(...args);
-      settled = true;
-      return done;
-    },
+    ack: (...args) => held(base.ack(...args)),
+    nack: (...args) => held(base.nack(...args)),
     heartbeat: (...args) => {
       if (settled) renewalsAfterSettle += 1;
       return base.heartbeat(...args);
@@ -131,8 +140,13 @@ async function settleRace(outcome: 'completed' | 'failed'): Promise<{
     drainOnShutdown: false,
   });
   const tick = worker.tick();
+  await settleWritten;
+  // The row is settled; the settle's reply has not come back. The renewal interval fires now.
+  crank.fire();
+  for (let i = 0; i < 10; i += 1) await Promise.resolve();
+  replySettle();
   await hookEntered;
-  // The row is settled; the hook is still running. The renewal interval fires now.
+  // The settle replied; the hook is still running. The renewal interval fires again.
   crank.fire();
   for (let i = 0; i < 10; i += 1) await Promise.resolve();
   leaveHook();

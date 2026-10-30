@@ -88,6 +88,14 @@ describe('a renewal the row refuses', () => {
     }
   });
 
+  test('a read that never answers does not hold the stop: aborted at the refusal', async () => {
+    const heartbeat = notOurs(() => new Promise(() => undefined));
+    void heartbeat.renew();
+    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    expect(heartbeat.signal.aborted).toBe(true);
+    expect(heartbeat.lost()).toBe(true);
+  });
+
   test('a row that cannot be read is not assumed cancelled', async () => {
     const heartbeat = notOurs(() => Promise.reject(new Error('pool exhausted')));
     await heartbeat.renew();
