@@ -14,18 +14,8 @@ export interface S3FileLike {
   exists(): Promise<boolean>;
   delete(): Promise<void>;
   stream(): ReadableStream<Uint8Array>;
-  /**
-   * `[begin, end)` — END-EXCLUSIVE, as `Blob.slice` is. Bun's `S3File.slice` sends the GET with a
-   * `Range: bytes=begin-(end-1)` header, so only the window crosses the wire.
-   */
-  slice(begin: number, end: number): S3RangeLike;
   stat(): Promise<S3StatLike>;
   presign(options: { method?: string; expiresIn?: number; type?: string }): string;
-}
-
-/** The part of a sliced `S3File` a ranged read uses: its body. */
-export interface S3RangeLike {
-  arrayBuffer(): Promise<ArrayBuffer>;
 }
 
 export interface S3StatLike {

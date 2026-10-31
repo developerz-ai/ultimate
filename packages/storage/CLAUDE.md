@@ -39,7 +39,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | File | Owns |
 |---|---|
 | `driver.ts` | `StorageDriver` contract (9 methods; `registerAs`/`verifySigned`/`retentionOf` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
-| `range.ts` | `get(key, { range })`: the screen and `servedRange` (clamp, 416, ceiling; `errors-range.ts`), one rule for all disks |
+| `range.ts` | `get(key, { range })`: screen + `servedRange` (`errors-range.ts`); s3's one-GET read is `driver-s3-range.ts` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
 | `driver-local-write.ts` | the local WRITE: staged under `.meta/.tmp/`, renamed marker → sidecar → bytes, `X_STORAGE_KEY_CONFLICT` / `X_STORAGE_PUT_FAILED`, the per-key queue |
 | `driver-local-read.ts` | `headObject`: sidecar + pending marker → trusted, re-checked, or untyped |

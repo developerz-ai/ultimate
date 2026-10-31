@@ -208,7 +208,7 @@ page.object.size;  // the WHOLE object's size, for `Content-Range: bytes 0-65535
 | Rule | |
 |---|---|
 | Offsets | `first` and `last` are BOTH inclusive — HTTP's `bytes=first-last`, S3's `Range:` |
-| On the wire | s3: a HEAD, one GET with `Range:` (Bun's `S3File.slice`), and a HEAD after it — Bun sends no `If-Match` and returns no `Content-Range`, so a write between the two (a shrink, a grow, a new etag) is caught and the window re-sized from the fresh HEAD; three changes in a row are `X_STORAGE_READ_FAILED`. local: `Bun.file().slice()` in the key's queue; memory: a slice of its copy |
+| On the wire | s3: ONE signed GET with `Range:` and no HEAD — the bytes, the window and total size (`Content-Range`), the `ETag`, type and date all come from that one response, so a write racing the read (a shrink, a grow, an A → B → A of one length) can never pair one version's bytes with another's description. Asks at most `maxGetBytes`; the provider's 416 is `X_STORAGE_RANGE_UNSATISFIABLE` (its size from a HEAD). local: `Bun.file().slice()` in the key's queue; memory: a slice of its copy |
 | Clamp | a `last` past the end is clamped to `size - 1`, as HTTP clamps it; `read.range` says what was served |
 | Refusal | a `first` at or past the end — an empty object has none — is `X_STORAGE_RANGE_UNSATISFIABLE` (416); its `fix:` is the whole-object range, or the plain `get(key)` for an empty one |
 | Screen | a backwards, negative, fractional or malformed tuple is the caller's defect: core's `X_INVARIANT` |

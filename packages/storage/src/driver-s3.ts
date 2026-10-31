@@ -34,6 +34,7 @@ import {
 import { isAbsentObject } from './driver-s3-absent';
 import { buildClient, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
 import { needsSignedPut, readObjectLock, signedPut } from './driver-s3-lock';
+import { readS3Range } from './driver-s3-range';
 import { regionMismatch } from './driver-s3-region';
 import type { S3FetchLike } from './driver-s3-signed';
 import {
@@ -48,13 +49,11 @@ import {
 } from './errors';
 import { assertObjectLockOptions, type ObjectLock } from './object-lock';
 import { assertSafeKey } from './path';
-import { assertGetOptions, type ByteRange, type GetOptions, servedRange } from './range';
+import { assertGetOptions, type GetOptions } from './range';
 import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 's3';
-/** How many HEAD→GET→HEAD rounds a ranged read gets before a writer that never stops is a refusal. */
-const RANGE_TRIES = 3;
 
 export interface S3DriverOptions {
   readonly bucket: string;
@@ -217,44 +216,6 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     };
   };
 
-  /**
-   * A ranged GET sized by a HEAD, and CHECKED by a second one. Bun's `slice` sends `Range:` with no
-   * `If-Match` and hands back no `Content-Range`, so a write between the two requests would serve
-   * one object's bytes under another's size — a shrink a short slice reported as the range asked.
-   * The bytes count only when their length is the window's and the object after the GET is the
-   * object before it (size and etag); otherwise the fresh HEAD sizes another try. `RANGE_TRIES`
-   * misses in a row is a refusal, never a slice of an object nobody can name.
-   */
-  const rangedRead = async (
-    key: string,
-    range: ByteRange,
-    head: StorageObject,
-  ): Promise<StorageRead> => {
-    let object = head;
-    for (let attempt = 0; attempt < RANGE_TRIES; attempt += 1) {
-      // Clamped against the HEAD's size, so the `Range:` Bun sends (`slice` is end-EXCLUSIVE)
-      // never asks past the end and the provider never answers a 416 this disk did not decide.
-      const served = servedRange(DRIVER_NAME, key, range, object.size, maxGetBytes);
-      const sliced = conn()
-        .file(key)
-        .slice(served[0], served[1] + 1);
-      const bytes = new Uint8Array(await sliced.arrayBuffer().catch(refusedRead(key)));
-      if (!(await present(key))) throw objectNotFound(diskName, key);
-      const after = await statObject(key);
-      const whole = bytes.byteLength === served[1] - served[0] + 1;
-      if (whole && after.size === object.size && after.etag === object.etag) {
-        return { object, bytes, range: served };
-      }
-      object = after;
-    }
-    throw readFailed(
-      DRIVER_NAME,
-      key,
-      `the object changed between the HEAD and the ranged GET on ${RANGE_TRIES} tries running`,
-      `await disk.get(${renderFixLiteral(key, "'<key>'")}, { range: [${range[0]}, ${range[1]}] })   # once its writer has finished`,
-    );
-  };
-
   return {
     name: DRIVER_NAME,
     registerAs(name: string): void {
@@ -305,14 +266,33 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
       const safe = assertSafeKey(key);
       assertGetOptions(DRIVER_NAME, getOptions);
+      const range = getOptions?.range;
+      // ONE signed GET, bytes and description from the same response (`driver-s3-range.ts`).
+      if (range !== undefined) {
+        return readS3Range(options, safe, range, {
+          driver: DRIVER_NAME,
+          maxGetBytes,
+          refused: (key, refusal) => refusedRead(key)(refusal),
+          sizeOf: async (key) => {
+            if (!(await present(key))) throw objectNotFound(diskName, key);
+            return (await statObject(key)).size;
+          },
+          unreadable: (key, why) => {
+            throw readFailed(
+              DRIVER_NAME,
+              key,
+              why,
+              `aws s3api get-object --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(key, "'<key>'")} --range bytes=0-0 /dev/null   # what the provider answers a ranged GET`,
+            );
+          },
+        });
+      }
       const file = conn().file(safe);
       if (!(await present(safe))) throw objectNotFound(diskName, safe);
       // The HEAD comes FIRST, and it is the whole point: a client PUT straight into the bucket is
       // bounded by nothing on this disk, so `arrayBuffer()` on whatever is there was heap growth
       // the uploader chose. Refused on the provider's own size before a byte is read.
       const object = await statObject(safe);
-      const range = getOptions?.range;
-      if (range !== undefined) return rangedRead(safe, range, object);
       if (object.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, object.size, maxGetBytes);
       const bytes = new Uint8Array(await file.arrayBuffer().catch(refusedRead(safe)));
       return { object, bytes };

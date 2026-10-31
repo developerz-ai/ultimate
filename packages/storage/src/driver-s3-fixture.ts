@@ -33,6 +33,10 @@ export interface FakeLock {
 }
 
 /** Credentials the signed path reads; the Bun client is injected and never asks. */
+/** The provider's etag: the one recorded, else one derived from the bytes — a new object, a new etag. */
+export const fakeEtagOf = (entry: FakeObject): string =>
+  entry.etag ?? `"${new Bun.CryptoHasher('md5').update(entry.bytes).digest('hex')}"`;
+
 export const FAKE_ENV = { S3_ACCESS_KEY_ID: 'fake-id', S3_SECRET_ACCESS_KEY: 'fake-secret' };
 
 const xmlError = (code: string, message: string, status: number): Response =>
@@ -79,10 +83,7 @@ export class FakeS3Client implements S3ClientLike {
   readonly fileCalls: string[] = [];
   readonly presignCalls: PresignCall[] = [];
   readonly listCalls: ListCall[] = [];
-  /** Every ranged GET, end-exclusive as Bun's `slice` takes it — a whole-object read records none. */
-  readonly sliceCalls: { readonly key: string; readonly begin: number; readonly end: number }[] =
-    [];
-  /** Runs inside a ranged GET, before its bytes are read: a write racing the HEAD it was sized by. */
+  /** Runs as a ranged GET arrives, before it is answered: a write racing the read. */
   beforeRangeRead: ((key: string) => void) | undefined;
   listResult: S3ListResultLike = { contents: [] };
   /** A provider REFUSAL (403/503/reset) — the failure `delete()` must surface, not swallow. */
@@ -139,6 +140,9 @@ export class FakeS3Client implements S3ClientLike {
       const fields = error as Error & { code?: string; statusCode?: number };
       return xmlError(fields.code ?? 'InternalError', error.message, fields.statusCode ?? 500);
     };
+    if (init.method === 'GET' && parsed.search === '' && init.headers['range'] !== undefined) {
+      return this.rangedGet(key, init.headers['range']);
+    }
     if (init.method === 'PUT') {
       if (this.failWriteWith !== undefined) return asXml(this.failWriteWith);
       const headers = init.headers;
@@ -172,6 +176,38 @@ export class FakeS3Client implements S3ClientLike {
     if (lock?.legalHold === undefined) return none;
     return new Response(`<LegalHold><Status>${lock.legalHold}</Status></LegalHold>`);
   };
+
+  /**
+   * A GET with `Range: bytes=a-b`, answered as S3 answers one: 206 with `Content-Range` (the window,
+   * clamped, and the total size), the object's `ETag` and type — or 416 past the end, 404 absent.
+   */
+  private rangedGet(key: string, header: string): Response {
+    this.beforeRangeRead?.(key);
+    if (this.failReadWith !== undefined) {
+      const fields = this.failReadWith as Error & { code?: string; statusCode?: number };
+      return xmlError(
+        fields.code ?? 'InternalError',
+        this.failReadWith.message,
+        fields.statusCode ?? 500,
+      );
+    }
+    const entry = this.store.get(key);
+    if (entry === undefined) return xmlError('NoSuchKey', 'The specified key does not exist.', 404);
+    const [, from = '0', to = ''] = /^bytes=(\d+)-(\d*)$/.exec(header) ?? [];
+    const size = entry.bytes.byteLength;
+    const start = Number(from);
+    if (start >= size)
+      return xmlError('InvalidRange', 'The requested range is not satisfiable', 416);
+    const end = Math.min(to === '' ? size - 1 : Number(to), size - 1);
+    return new Response(entry.bytes.slice(start, end + 1), {
+      status: 206,
+      headers: {
+        'content-range': `bytes ${start}-${end}/${size}`,
+        'content-type': entry.type ?? 'application/octet-stream',
+        etag: fakeEtagOf(entry),
+      },
+    });
+  }
 
   /** Which key each handed-out `S3FileLike` stands for, so `write(sourceFile)` can read it. */
   private readonly fileKeys = new WeakMap<object, string>();
@@ -222,20 +258,6 @@ export class FakeS3Client implements S3ClientLike {
         if (client.absentDeleteFor === key) throw s3Error('NoSuchKey', 404, key);
         if (client.failDeleteFor === key) throw s3Error('AccessDenied', 403, key);
         store.delete(key);
-      },
-      slice(begin, end) {
-        client.sliceCalls.push({ key, begin, end });
-        return {
-          async arrayBuffer() {
-            if (client.failReadWith !== undefined) throw client.failReadWith;
-            if (client.failBodyWith !== undefined) throw client.failBodyWith;
-            // A writer between the HEAD and this GET — S3 answers what is there NOW, clamped.
-            client.beforeRangeRead?.(key);
-            const entry = store.get(key);
-            if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
-            return new Uint8Array(entry.bytes.slice(begin, end)).buffer;
-          },
-        };
       },
       stream() {
         const entry = store.get(key);

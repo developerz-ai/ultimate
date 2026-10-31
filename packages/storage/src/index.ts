@@ -63,7 +63,6 @@ export type {
   S3FileLike,
   S3ListEntryLike,
   S3ListResultLike,
-  S3RangeLike,
   S3StatLike,
 } from './driver-s3-client';
 export type { S3FetchLike } from './driver-s3-signed';

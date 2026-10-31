@@ -28,8 +28,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   way is breaking), OpenAPI documents the mint and the file, `x routes` lists the read's own GET.
   `packages/query/src/download*.ts`.
 - **`disk.get(key, { range: [first, last] })` on the memory, local and s3 disks** — both offsets
-  inclusive; s3 sends `Range:` and re-HEADs after it (a write between the two re-sizes the window,
-  three in a row are `X_STORAGE_READ_FAILED`), the local disk slices the file. The last byte is clamped, a first
+  inclusive; s3 sends ONE signed GET with `Range:` and takes the window, the size and the etag from
+  that answer's `Content-Range` and `ETag` — no HEAD beside it to race — and the local disk slices
+  the file. The last byte is clamped, a first
   byte at or past the end is `X_STORAGE_RANGE_UNSATISFIABLE` (416), and `maxGetBytes` bounds the
   range rather than the object; `read.range` is the window served. A SEALED object (one AES-GCM
   envelope) is not range-readable — page it as one sealed object per page.

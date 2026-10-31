@@ -34,7 +34,6 @@ const refusing = (error: Error): S3ClientLike => {
     stat: async () => ({ size: 1 }),
     delete: refuse,
     stream: () => new ReadableStream<Uint8Array>(),
-    slice: () => ({ arrayBuffer: refuse }),
     presign: () => 'https://fake.example/signed',
   };
   return { file: () => file, list: refuse };

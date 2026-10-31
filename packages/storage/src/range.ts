@@ -1,7 +1,7 @@
-// Single responsibility: what `get(key, { range })` may ask for and what it is answered with,
-// decided ONCE for every disk — the screen of the tuple, the clamp of its last byte to the object,
-// the refusal of a first byte past the end, and the ceiling, which bounds the BYTES ASKED FOR and
-// not the object. Three drivers each restating it is how a slice comes back one byte off on one.
+// Single responsibility: what `get(key, { range })` may ask for and what it is answered with — the
+// screen of the tuple for every disk, and for memory and local the clamp, the 416 and the ceiling
+// (which bounds the BYTES ASKED FOR, not the object). s3 learns the size from its one GET's answer
+// and applies the same three rules there (`driver-s3-range.ts`), with the same refusals.
 
 import { assert } from '@ultimat3/core';
 import { rangeTooLarge, rangeUnsatisfiable } from './errors-range';

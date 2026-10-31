@@ -14,7 +14,14 @@ import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { memoryStorageDriver } from './driver-memory';
 import { s3Driver } from './driver-s3';
-import { bytesOf, catchError, FakeS3Client, textOf } from './driver-s3-fixture';
+import {
+  bytesOf,
+  catchError,
+  FAKE_ENV,
+  FakeS3Client,
+  fakeEtagOf,
+  textOf,
+} from './driver-s3-fixture';
 import type { ByteRange } from './range';
 
 const KEY = 'org/org-1/log.ndjson';
@@ -23,6 +30,12 @@ const TEXT = '0123456789';
 let root = '';
 let fake: FakeS3Client;
 let disks: readonly (readonly [string, StorageDriver])[] = [];
+
+/** The `Range:` of every signed GET the s3 disk sent. */
+const rangedGets = (): readonly string[] =>
+  fake.signedCalls.flatMap((call) =>
+    call.method === 'GET' && call.headers['range'] !== undefined ? [call.headers['range']] : [],
+  );
 
 const anyCodeOf = (caught: unknown): string =>
   isUltimateError(caught) ? caught.code : `not-a-coded-error: ${String(caught)}`;
@@ -34,7 +47,7 @@ async function seeded(maxGetBytes = 6): Promise<void> {
   disks = [
     ['memory', memoryStorageDriver({ maxGetBytes })],
     ['local', localDriver({ root, signingSecret: 'test-secret', maxGetBytes })],
-    ['s3', s3Driver({ bucket: 'b', client: fake, maxGetBytes })],
+    ['s3', s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: FAKE_ENV, maxGetBytes })],
   ];
   for (const [, disk] of disks) {
     await disk.put(KEY, bytesOf(TEXT), { contentType: 'application/x-ndjson' });
@@ -60,8 +73,8 @@ describe('get(key, { range }) — inclusive first and last byte', () => {
         'application/x-ndjson',
       ]);
     }
-    // Only the window crossed the wire: `slice` is end-EXCLUSIVE, Bun turns it into `Range:`.
-    expect(fake.sliceCalls).toEqual([{ key: KEY, begin: 2, end: 6 }]);
+    // ONE request crossed the wire, and it asked for the window only.
+    expect(rangedGets()).toEqual(['bytes=2-5']);
   });
 
   test('a single byte, and the last byte clamped to the object as HTTP clamps it', async () => {
@@ -79,7 +92,7 @@ describe('get(key, { range }) — inclusive first and last byte', () => {
       const read = await disk.get(KEY);
       expect([name, textOf(read.bytes), read.range]).toEqual([name, TEXT, undefined]);
     }
-    expect(fake.sliceCalls).toEqual([]);
+    expect(rangedGets()).toEqual([]);
   });
 });
 
@@ -106,7 +119,8 @@ describe('the ceiling bounds the RANGE, not the object', () => {
         `await disk.get("${KEY}", { range: [0, 5] })`,
       );
     }
-    expect(fake.sliceCalls).toEqual([]);
+    // s3 learns the size from the answer, so it asks for at most the ceiling, never the range.
+    expect(rangedGets()).toEqual(['bytes=0-5']);
   });
 });
 
@@ -163,7 +177,7 @@ describe('refusals', () => {
   });
 });
 
-describe('s3: an object that changes between the HEAD and the ranged GET', () => {
+describe('s3: the bytes and what they are come from ONE response', () => {
   const s3Of = (): StorageDriver => disks.find(([name]) => name === 's3')?.[1] as StorageDriver;
   const rewrite = (text: string) => {
     let once = true;
@@ -174,31 +188,55 @@ describe('s3: an object that changes between the HEAD and the ranged GET', () =>
     };
   };
 
-  test('shrunk: the served range and the size are the object the bytes came from', async () => {
+  test('no HEAD beside the GET: one request, whose Content-Range and ETag describe the bytes', async () => {
+    fake.fileCalls.length = 0;
+    const read = await s3Of().get(KEY, { range: [2, 5] });
+    expect(fake.fileCalls).toEqual([]);
+    expect(read.object.etag).toBe(fakeEtagOf({ bytes: bytesOf(TEXT) }));
+  });
+
+  test('shrunk before the GET: the served range and the size are the object the bytes came from', async () => {
     rewrite('01234567');
     const read = await s3Of().get(KEY, { range: [7, 9] });
     expect([textOf(read.bytes), read.range, read.object.size]).toEqual(['7', [7, 7], 8]);
   });
 
-  test('grown: the size is re-read, never the stale HEAD', async () => {
+  test('grown before the GET: the size is the answer’s, never a stale HEAD’s', async () => {
     rewrite('0123456789AB');
     const read = await s3Of().get(KEY, { range: [8, 11] });
     expect([textOf(read.bytes), read.range, read.object.size]).toEqual(['89AB', [8, 11], 12]);
   });
 
-  test('shrunk past the first byte asked: the 416 the new object owes', async () => {
+  test('shrunk past the first byte asked: the provider’s 416 is X_STORAGE_RANGE_UNSATISFIABLE', async () => {
     rewrite('0123');
     const caught = await catchError(() => s3Of().get(KEY, { range: [6, 9] }));
     expect(anyCodeOf(caught)).toBe('X_STORAGE_RANGE_UNSATISFIABLE');
+    expect(isUltimateError(caught) && caught.meta).toMatchObject({ size: 4, first: 6 });
   });
 
-  test('a writer that never stops: X_STORAGE_READ_FAILED, never a slice of an unknown object', async () => {
-    let n = 0;
-    fake.beforeRangeRead = (key) => {
-      n += 1;
-      fake.store.set(key, { bytes: bytesOf('x'.repeat(10 + n)), type: 'text/plain' });
-    };
-    const caught = await catchError(() => s3Of().get(KEY, { range: [0, 3] }));
-    expect(anyCodeOf(caught)).toBe('X_STORAGE_READ_FAILED');
+  test('A → B → A of one length: the bytes served carry THEIR etag, never the other version’s', async () => {
+    fake.store.set(KEY, { bytes: bytesOf(TEXT), etag: '"version-a"' });
+    const before = await s3Of().stat(KEY);
+    rewrite('abcdefghij');
+    const read = await s3Of().get(KEY, { range: [0, 3] });
+    expect(textOf(read.bytes)).toBe('abcd');
+    expect(read.object.etag).toBe(fakeEtagOf({ bytes: bytesOf('abcdefghij') }));
+    expect(before?.etag).toBe('"version-a"');
+    expect(read.object.etag).not.toBe(before?.etag);
+  });
+
+  test('a provider refusal is coded: 404 not found, 403 READ_FAILED', async () => {
+    fake.store.delete(KEY);
+    expect(anyCodeOf(await catchError(() => s3Of().get(KEY, { range: [0, 1] })))).toBe(
+      'X_STORAGE_NOT_FOUND',
+    );
+    await s3Of().put(KEY, bytesOf(TEXT));
+    fake.failReadWith = Object.assign(new Error('denied'), {
+      code: 'AccessDenied',
+      statusCode: 403,
+    });
+    expect(anyCodeOf(await catchError(() => s3Of().get(KEY, { range: [0, 1] })))).toBe(
+      'X_STORAGE_READ_FAILED',
+    );
   });
 });

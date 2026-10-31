@@ -143,6 +143,11 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
 
     expect([textOf(window.bytes), window.range, window.object.size]).toEqual(['2345', [2, 5], 10]);
     expect([textOf(tail.bytes), tail.range]).toEqual(['789', [7, 9]]);
+    // The GET's own description, in the same spelling the disk's HEAD gives it.
+    const head = await disk.stat(at('range.txt'));
+    expect(window.object.etag).toBe(head?.etag ?? 'no head');
+    expect(window.object.contentType).toBe(head?.contentType ?? 'no head');
+    expect(window.object.etag).not.toBe('');
     expect(codeOf(await catchError(() => disk.get(at('range.txt'), { range: [10, 11] })))).toBe(
       'X_STORAGE_RANGE_UNSATISFIABLE',
     );
