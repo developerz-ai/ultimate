@@ -8,7 +8,36 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`indexes: [{ on, concurrently: true }]` — an index built without blocking writes.** `x db gen`
+  emits `create index concurrently if not exists` in a migration step that runs OUTSIDE a
+  transaction, marked `-- transaction: false` on its first line: the whole migration when the diff
+  is only index work, else a second file `<id>_concurrently.sql` (own snapshot and hash, `followUp`
+  on `GeneratedMigration` and in `x db gen --json`) applied right after `<id>.sql`. How an index is
+  built, never what it is: not in its name or snapshot, so toggling it generates nothing. On a
+  table the same migration creates, the index stays in that transaction.
+  `packages/db/src/concurrent-plan.ts`, `generate-steps.ts`; `packages/entity/src/index-init.ts`.
+- **`-- transaction: false`: a migration `migrate()` and `rollback()` run statement by statement
+  outside a transaction**, with no `lock_timeout` (a concurrent build's wait for older transactions
+  is a lock wait) and the ledger row written after the last statement. Before each named
+  `create index concurrently`, an INVALID index left by an interrupted build is dropped
+  concurrently, so a failed step is re-run, never repaired by hand. `isNonTransactional()`,
+  `NO_TRANSACTION_MARKER`, `isConcurrentIndexStatement()`, `concurrentIndexTarget()`.
+  `packages/db/src/migration-step.ts`, `concurrent-index.ts`.
+- **`X_MIGRATION_CONCURRENT_IN_TRANSACTION`**: a concurrent index statement in a migration without
+  the marker, refused before `BEGIN` instead of Postgres' `25001` mid-transaction.
+
+### Changed
+
+- **Every index removed from an entity is dropped with `drop index concurrently if exists`**, in
+  the non-transactional step after the rest of the diff (expand → contract): a plain `drop index`
+  took ACCESS EXCLUSIVE on the table. A total unique btree — a shape a UNIQUE constraint may back,
+  where a concurrent drop is `2BP01` — is first unhooked by `alter table … drop constraint if
+  exists` in the same step, after every build in it, in a short transaction of its own under the
+  migration's `lock_timeout`. `down` rebuilds it concurrently. Migrations already generated
+  are untouched; an app regenerating with no entity change gets no diff. `dropRecordedIndex` (never
+  exported) is gone.
 
 ## 29.3.2 - 2026-10-31
 

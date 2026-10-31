@@ -5,7 +5,6 @@
 
 import { appVersion, finiteCount, logger, renderFixShellArg } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
-import { refuseDependentViews } from './dependent-view';
 import { expectedQueryLoop } from './expected-loop';
 import { ledgerAheadOfBuild } from './migrate-rollback';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
@@ -18,10 +17,9 @@ import {
   pendingMigrations,
   readLedger,
 } from './migration-ledger';
+import { applyMigrationStep } from './migration-step';
 import { poolProfileFor } from './pool-profile';
 import { raw, sql } from './sql';
-import { statementsOf } from './statement-split';
-import { withTransaction } from './transaction';
 
 export type { LedgerRow, Migration } from './migration-ledger';
 export {
@@ -176,43 +174,6 @@ async function withAdvisoryLock<T>(
 }
 
 /**
- * A migration's `up` and `down` are **scripts**, and one send is one statement — because the two
- * drivers disagree about anything else. PGlite's `query()` is the extended protocol always and
- * answers `cannot insert multiple commands into a prepared statement`; `Bun.SQL.unsafe` degrades
- * to the simple protocol when no value is bound and applies the same script, which is a fact about
- * bun 1.3.14 and not a contract. `createTable` emits the table *and* every index it carries, and
- * `x dev` runs on the embedded driver, so the refusing side was the common path.
- *
- * No `expectedQueryLoop` of its own: both call sites already run inside the one declared for the
- * migration loop, and nesting here would replace that reason with a narrower one for no gain. An
- * empty script sends nothing at all, which is how a no-op migration reaches its ledger row.
- */
-async function applyScript(tx: DbClient, script: string): Promise<void> {
-  for (const statement of statementsOf(script)) await tx.execute(raw(statement));
-}
-
-/**
- * Bound how long this migration will queue behind a lock it cannot take.
- *
- * `alter table … add column` needs `ACCESS EXCLUSIVE`. A long `SELECT` holding `ACCESS SHARE`
- * makes it wait — and because Postgres' lock queue is FIFO, **every subsequent query on that table
- * queues behind the ALTER**. The `migrate` profile runs `statement_timeout = 0` deliberately, so
- * without this the migrator waits forever and the app is down on one table for as long as the
- * reporting query runs. `lock_timeout` bounds the *wait* alone and never the work, which is why it
- * is the right knob where `statement_timeout` is not.
- *
- * `SET LOCAL`, inside the migration's own transaction: it reverts at COMMIT, so a value chosen for
- * DDL never leaks onto the session the ledger insert or the next migration runs on. A 0 disables
- * it, exactly like `statementTimeoutMs`. The failure it produces is `55P03`, typed as
- * `X_DB_LOCK_TIMEOUT` by `driverError` with the `pg_stat_activity` read as its fix.
- */
-async function setLockTimeout(tx: DbClient, lockTimeoutMs: number): Promise<void> {
-  if (lockTimeoutMs <= 0) return;
-  // `SET LOCAL` takes no parameter placeholder, and the value is a validated integer of ours.
-  await tx.execute(raw(`SET LOCAL lock_timeout = ${Math.round(lockTimeoutMs)}`));
-}
-
-/**
  * `migrate` role's profile whatever role is running, because the statement is a migration whatever
  * process issues it: `x db migrate` from a laptop, `x dev`'s boot and `ROLE=migrate` all take the
  * same `ACCESS EXCLUSIVE` locks against the same tables.
@@ -271,27 +232,23 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
           const done: AppliedMigration[] = [];
           for (const migration of pending) {
             const at = performance.now();
-            await withTransaction(
-              async (tx) => {
-                await setLockTimeout(tx, lockTimeoutMs);
-                // Before the first statement, never after the failure: a view compiled against a
-                // column this script retypes is `0A000` from the server with the view named only in
-                // a DETAIL field nothing prints, surfaced as "cannot reach the database". Costs one
-                // text scan and no round trip on a migration that retypes nothing, which is nearly
-                // all of them (`dependent-view.ts`).
-                await refuseDependentViews(tx, migration.up);
-                await applyScript(tx, migration.up);
+            // Inside a transaction, or — a migration marked `-- transaction: false` — statement by
+            // statement outside one (`migration-step.ts`). Either way the ledger row is written
+            // only after the last statement succeeded, on the lock's own session.
+            await applyMigrationStep(session, {
+              id: migration.id,
+              up: migration.up,
+              script: migration.up,
+              lockTimeoutMs,
+              record: async (client) => {
                 const durationMs = Math.round(performance.now() - at);
-                await tx.execute(sql`
+                await client.execute(sql`
                 insert into ${raw(LEDGER_TABLE)} (id, name, checksum, app_version, duration_ms)
                 values (${migration.id}, ${migration.name}, ${migrationChecksum(migration)},
                         ${appVersion}, ${durationMs})
               `);
               },
-              // The lock's own session: a migration applied on another connection is not covered by
-              // the lock at all, and on `ROLE=migrate` there is no other connection to apply it on.
-              { client: session },
-            );
+            });
             done.push({
               id: migration.id,
               name: migration.name,
@@ -369,17 +326,17 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
                   'and roll back there — its down SQL exists nowhere else',
               );
             }
-            await withTransaction(
-              async (tx) => {
-                await setLockTimeout(tx, lockTimeoutMs);
-                // Both directions: a reversal retypes the same column back, and a view created
-                // since the migration applied blocks it exactly as one created before would.
-                await refuseDependentViews(tx, migration.down);
-                await applyScript(tx, migration.down);
-                await tx.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
+            // The marker on `up` governs `down` too: the reversal of a concurrent build is a
+            // concurrent drop, refused inside a transaction just the same.
+            await applyMigrationStep(session, {
+              id: migration.id,
+              up: migration.up,
+              script: migration.down,
+              lockTimeoutMs,
+              record: async (client) => {
+                await client.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
               },
-              { client: session },
-            );
+            });
             reverted.push(row.id);
           }
           return reverted;

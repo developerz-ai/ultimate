@@ -110,7 +110,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [Timezones and dates](Timezones-And-Dates) | store UTC, format with an explicit IANA zone, frozen clocks in tests |
 | [Money](Money) | `Money = { minor, currency }`, never a float |
 | [Resource management](Resource-Management) | `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins |
-| [Migrations and backfills](Migrations-And-Backfills) | one migration engine and ledger, the destructive-migration rail, `backfill()` as a `job` factory |
+| [Migrations and backfills](Migrations-And-Backfills) | one migration engine and ledger, concurrent index builds and drops outside a transaction, the destructive-migration rail, `backfill()` as a `job` factory |
 | [Testing](Testing) | six test types, cloned databases, sealed network, the coverage floor, silent runs, `x verify` |
 
 ## Reference

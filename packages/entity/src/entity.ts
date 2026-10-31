@@ -13,6 +13,7 @@ import { describeEntity, describeReferences } from './describe';
 import { invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
+import { distinctIndexes } from './index-identity';
 import type { IndexInit } from './index-init';
 import { indexName } from './index-name';
 import type { Invariant, InvariantDef } from './invariants';
@@ -303,6 +304,8 @@ export const entity = <const C extends ColumnMap>(
         // Absent stays absent: `btree` written out would be a field every existing snapshot lacks,
         // and `indexMethodOf` reads the two the same way precisely so nothing regenerates.
         ...(index.using === undefined || index.using === 'btree' ? {} : { using: index.using }),
+        // How it is BUILT, so not part of the name: `true` or absent, like `appendOnly`.
+        ...(index.concurrently === true ? { concurrently: true as const } : {}),
       };
     }),
     // The one index nobody declared and every search needs. Through the SAME `IndexInit` path a
@@ -319,28 +322,8 @@ export const entity = <const C extends ColumnMap>(
           },
         ]),
   ];
-  /**
-   * A foreign key already indexes its column; naming it again in `indexes` is not two indexes.
-   *
-   * On the WHOLE definition and not on the name. With the discriminator above the two rules agree
-   * exactly, so this is not a behaviour change on its own — it is which one FAILS LOUDLY if the
-   * naming is ever weakened again. Matching on the name drops the second index in silence, which
-   * is how two different partial indexes became one for three majors; matching on the definition
-   * keeps both, and two `create index` statements sharing a name is `42P07` on the next migration.
-   */
-  const identity = (index: IndexDef): string =>
-    [
-      index.name,
-      index.columns.join(','),
-      index.unique,
-      index.order ?? '',
-      index.where ?? '',
-      index.using ?? '',
-    ].join('|');
-  const indexes: readonly IndexDef[] = declared.filter(
-    (index, position) =>
-      declared.findIndex((other) => identity(other) === identity(index)) === position,
-  );
+  // A foreign key's own index named again in `indexes` is one index, not two (`index-identity.ts`).
+  const indexes = distinctIndexes(declared);
 
   const sealed = sealedFields({ $name: name, $table: table, $columns: init.columns });
   assertSealedDeclaration({

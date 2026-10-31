@@ -30,6 +30,12 @@ export type {
 export { baseClient, db, isReservable, postgresClient, setDbClient } from './client';
 export type { ColumnDefaultLike } from './column-default';
 export { defaultExpression } from './column-default';
+export {
+  concurrentIndexTarget,
+  isConcurrentIndexStatement,
+  isNonTransactional,
+  NO_TRANSACTION_MARKER,
+} from './concurrent-index';
 export { dbExecutor } from './db-executor';
 export type { DbHealthReport } from './db-health';
 export { checkDb } from './db-health';
@@ -140,6 +146,7 @@ export {
 } from './migrate';
 export {
   migrateConcurrent,
+  migrationConcurrentInTransaction,
   migrationConflict,
   migrationDestructive,
   migrationIrreversible,

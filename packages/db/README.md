@@ -50,6 +50,7 @@ await withTransaction(async (tx) => {
 | `declaredChecks()` / `checkClauses()` / `checkPlan()` / `columnChecks()` / `columnCheckName()` / `columnNamesConstraint()` | `As of 2026-08-25`: **every** CHECK a table declares — a column's own (`enumerated()`'s value set, `tz()`'s IANA whitelist, `locale()`'s tags, money's currency pattern and scale bound) and an invariant's — on ONE list, so `createTable`, `diffTable` and `snapshotOf` agree about what exists. A column's check reached `create table` **inline and anonymous** and nothing else: the snapshot recorded none and the diff had no arm, so a value added to `enumerated()` generated no migration and a regenerated ENUM column came back as bare `text`. The name is `<table>_<column>_check` because that is the name **Postgres itself mints** for the old anonymous form — measured — so the repair lands on the constraint an already-generated database is holding; `checkPlan` emits `drop constraint if exists` before the `add` for exactly that column, because a bare add is `42710` there and a no-op everywhere else |
 | `defaultExpression()` / `ColumnDefaultLike` | `As of 2026-08-25`: a column's `default` as SQL. A DECLARED default (`{ kind: 'value', value }`) wins; `gen_random_uuid()` and `now()` stay as the inference for a description that carries only `hasDefault` |
 | `unrenderedOf()` / `unrenderedComment()` / `UnrenderedDeclaration` | `As of 2026-08-25`: what the generator could **not** write, on `GeneratedMigration.unrendered` and as a `-- UNRENDERED` block at the top of a non-empty `up`. A generator that emits less than the declaration in silence is the defect the whole file exists against, and `x verify`'s `drift` step reads a source hash — it never reads the SQL, so the loss was green. **`unrenderedOf(entities, current)` takes the recorded schema**, required and nullable: a rule declared as an `assert` reaches no SQL by design and is no loss on its own, but one whose CHECK a previous migration RECORDED is dropped by this run and reported by nothing — five in `examples/dummy`, and `@ultimat3/cli`'s `repairFix` then offered `x db gen "drop <name>"` as the repair for the loss that command performs |
+| `isNonTransactional()` / `NO_TRANSACTION_MARKER` / `isConcurrentIndexStatement()` / `concurrentIndexTarget()` | `As of 2026-10-31`: the `-- transaction: false` marker a migration carries to run outside a transaction, and the concurrent index statements that need it → [Indexes built concurrently](#indexes-built-concurrently-and-every-index-drop) |
 | `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructiveMigration()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
 | `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a reader sees the operation and not the prose. Shared by `readOnlyQuery()` and the destructive rail |
 | `introspectSchema()` | live schema → `SchemaDescription`. **App tables only**, `As of 2026-08-24`: a relation an extension owns (`pg_depend`, `deptype = 'e'`) and anything that is not an ordinary or partitioned table are excluded before the fold, and an explicit `exclude` cannot bring them back |
@@ -155,6 +156,38 @@ layer 1 covers only what existed at grant time.
 | recorded | only when declared, so no existing sidecar is rewritten |
 | a method that moved | drop and recreate — Postgres cannot alter one in place |
 | drift | a declared GIN against a live btree is `changed-index`, and the live method is reported by the name the catalog gave it |
+
+## Indexes built concurrently, and every index drop
+
+`As of 2026-10-31`. A plain `create index` holds SHARE on the table for the whole build — every
+insert, update and delete waits — and a plain `drop index` takes ACCESS EXCLUSIVE, so reads wait
+too. `create index concurrently` / `drop index concurrently` take SHARE UPDATE EXCLUSIVE, which
+queues neither, and Postgres refuses both inside a transaction block (`25001`).
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+
+entity('runs', {
+  columns: { id: uuid().primaryKey(), status: text({ max: 20 }), bank: text({ max: 40 }) },
+  indexes: [{ on: ['status'], concurrently: true }],
+});
+```
+
+| | |
+|---|---|
+| declared | `IndexDescriptionLike.concurrently` — `true` or absent. HOW the index is built, never WHAT it is: not in its name, not in the snapshot, and switching it on or off for an existing index generates nothing |
+| emitted | `create index concurrently if not exists "runs_status_idx" on "runs" ("status");`, down `drop index concurrently if exists "runs_status_idx";` |
+| removed index | **always** `drop index concurrently if exists`, whether or not it was built concurrently — down rebuilds it concurrently from the recorded definition. A total unique btree (a shape a UNIQUE constraint may back, where `drop index concurrently` is `2BP01`) is first unhooked by `alter table … drop constraint if exists` in the same step, right before its drop — never in an earlier transaction, whose rollback could not restore it |
+| moved definition | a `concurrently: true` index whose columns, predicate, order or method moved is dropped and rebuilt, both concurrently — between the two the table has neither (name the new shape differently to build it beside the old one) |
+| where it does not apply | an index on a table the same migration creates (empty, invisible until COMMIT), and one over a column a retype or a rebuild already holds ACCESS EXCLUSIVE for: both stay in the transaction |
+| the files | no concurrent work: ONE transactional migration, as before. Concurrent work only: ONE migration marked `-- transaction: false`. Both: TWO — `<id>.sql` (the transaction) and `<id>_concurrently.sql` (outside it), sorting in that order, each with its own snapshot and hash. Expand → contract: inside the step every build precedes every drop and constraint unhook, so a renamed key's replacement exists before the old key goes |
+| the runner | `migrate()` / `rollback()` run a `-- transaction: false` migration one statement at a time: a concurrent statement bare, with **no** `lock_timeout` (a concurrent build waits for every older transaction, and that wait is a lock wait); any other statement in a short transaction of its own under the migration's `lock_timeout`. The ledger row is written after the last statement |
+| an interrupted build | leaves an INVALID index holding the name. Before each named `create index concurrently`, the runner reads `pg_index.indisvalid` through `to_regclass(<name>)` and drops an invalid one concurrently first; every statement is `if [not] exists`, so a failed step is simply re-run |
+| refused | a concurrent statement in a migration WITHOUT the marker: `X_MIGRATION_CONCURRENT_IN_TRANSACTION`, before `BEGIN` |
+| destructive | never — an index holds no row. A column or table drop in the same diff is still marked |
+
+To drop an index on a hot table: delete it from the entity's `indexes`, `x db gen "drop <name>"`,
+commit what it writes, ship. The drop is its own non-transactional migration.
 
 ## Read replicas
 
@@ -455,7 +488,9 @@ and the lock — for hours, so a deploy hook sat inside one statement printing n
 `helm upgrade --wait` blocked and `backoffLimit` never fired, because a job that never finishes
 never fails. It then ensures `x_migrations`
 (`id, name, checksum, applied_at, app_version, duration_ms`), audits, then applies each pending
-migration inside its own transaction. It refuses **before applying anything** when:
+migration inside its own transaction — or, for one marked `-- transaction: false`, one
+autocommitted statement at a time ([Indexes built concurrently](#indexes-built-concurrently-and-every-index-drop)).
+It refuses **before applying anything** when:
 
 - the ledger records a migration this build does not ship **and** its `app_version` differs from
   the running one — another version owns the database; or

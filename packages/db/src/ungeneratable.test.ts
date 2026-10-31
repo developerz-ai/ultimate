@@ -223,6 +223,8 @@ describe('unit · the generatable list is the generators own output', () => {
     indexes: [
       index('posts_moved_idx', ['id'], { unique: true }),
       index('posts_new_idx', ['org_id']),
+      // Built concurrently, so the non-transactional step carries `create index concurrently`.
+      index('posts_built_idx', ['title'], { concurrently: true }),
     ],
     invariants: [
       { name: 'new_rule', kind: 'check', message: '', sql: 'price >= 1', where: null },
@@ -257,7 +259,10 @@ describe('unit · the generatable list is the generators own output', () => {
       // own rail then reported.
       replicaIdentityFull: ['posts'],
     });
-    return [migration.up, migration.down];
+    // The non-transactional step too: an index removal and a concurrent build land there, and a
+    // corpus without it would hold `drop index concurrently` to no form at all.
+    const later = migration.followUp;
+    return [migration.up, migration.down, ...(later === undefined ? [] : [later.up, later.down])];
   };
 
   test('nothing generateMigration emits is reported — a false positive on our own output', () => {

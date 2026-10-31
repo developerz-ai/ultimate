@@ -52,6 +52,7 @@ export const OFF_SOCKET: Pins = {
     'X_SCHEMA_DUMP_DRIFT',
     'X_APPEND_ONLY_TRIGGER_MISSING',
     'X_MIGRATION_APPEND_ONLY_BACKFILL',
+    'X_MIGRATION_CONCURRENT_IN_TRANSACTION',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],

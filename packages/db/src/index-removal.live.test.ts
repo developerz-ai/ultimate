@@ -134,6 +134,8 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
     name: 'status becomes text',
     now: at,
   });
+  // The removal is index work only, so it is ONE `-- transaction: false` migration: each
+  // constraint half and every concurrent drop, in its contract phase (`concurrent-plan.ts`).
   const chain = [created, dropped, retyped];
 
   const clean = async (): Promise<void> => {
@@ -194,10 +196,11 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
     ]);
   });
 
-  test('`drop index` on that one is 2BP01, and `if exists` does NOT suppress it', async () => {
+  test('`drop index` on that one is 2BP01, and neither `if exists` nor `concurrently` helps', async () => {
     for (const statement of [
       `drop index "${POSTS}_slug_key"`,
       `drop index if exists "${POSTS}_slug_key"`,
+      `drop index concurrently if exists "${POSTS}_slug_key"`,
     ]) {
       const failure = await client.execute(raw(statement)).then(
         () => undefined,
@@ -210,12 +213,15 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
   });
 
   test('the generated removal APPLIES, and takes all three shapes off the table', async () => {
-    // The pair for the two total unique ones, a bare drop for the partial.
+    // The constraint half for the two total unique ones, then the concurrent drop — the partial
+    // one needs no constraint half at all. All of it outside a transaction.
+    expect(dropped.transactional).toBe(false);
     expect(dropped.up).toContain(
-      `alter table "${POSTS}" drop constraint if exists "${POSTS}_slug_key";`,
+      `alter table "${POSTS}" drop constraint if exists "${POSTS}_slug_key";\n` +
+        `drop index concurrently if exists "${POSTS}_slug_key";`,
     );
-    expect(dropped.up).toContain(`drop index if exists "${POSTS}_slug_key";`);
-    expect(dropped.up).toContain(`drop index "${POSTS}_feed_idx";`);
+    expect(dropped.up).not.toContain(`drop constraint if exists "${POSTS}_feed_idx"`);
+    expect(dropped.up).toContain(`drop index concurrently if exists "${POSTS}_feed_idx";`);
 
     expect(await applyThrough(2)).toEqual([dropped.id]);
     // Only the primary key's own index is left; the constraint went with its index.

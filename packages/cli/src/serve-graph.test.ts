@@ -133,8 +133,15 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `jobs/src/worker-process-cap.ts` (the per-process count, read before each claim) and
  * `worker-claim-sweep.ts` (which queue a pass asks, rotated) — `worker.ts` is at the 500-line
  * ceiling; reached through the jobs barrel.
+ * raised 654 → 660, measured 660 (2026-10-31, `indexes: [{ concurrently: true }]`): the migrator
+ * applies a `-- transaction: false` step outside a transaction — `db/src/migration-step.ts` (one
+ * script, tx or not, plus the INVALID-index recovery, split out of `migrate.ts`),
+ * `concurrent-index.ts` (the marker and the statements that need it), `marker-line.ts` (the one
+ * marker scan, shared with `destructive.ts`), and on the generator's side of the db barrel
+ * `concurrent-plan.ts` and `generate-steps.ts`; `entity/src/index-identity.ts` (the index dedupe,
+ * split out of `entity.ts` at the 500-line ceiling).
  */
-const MIGRATE_CEILING = 654;
+const MIGRATE_CEILING = 660;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -265,8 +272,10 @@ const MIGRATE_CEILING = 654;
  * raised 968 → 969, measured 969 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
  * `render/src/route-navigation.ts`, the declaration's one reader, which `route.ts` imports and so
  * every role reaches through the render barrel.
+ * raised 969 → 975, measured 975 (2026-10-31, `indexes: [{ concurrently: true }]`): the six modules
+ * named on `MIGRATE_CEILING` for that change.
  */
-const SERVING_ROLE_CEILING = 969;
+const SERVING_ROLE_CEILING = 975;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -383,8 +392,10 @@ const SERVING_ROLE_CEILING = 969;
  * named on `MIGRATE_CEILING` for that change.
  * raised 1100 → 1101, measured 1101 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
  * the one module named on `SERVING_ROLE_CEILING` for that change.
+ * raised 1101 → 1107, measured 1107 (2026-10-31, `indexes: [{ concurrently: true }]`): the six
+ * modules named on `MIGRATE_CEILING` for that change.
  */
-const WEB_ROLE_CEILING = 1101;
+const WEB_ROLE_CEILING = 1107;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

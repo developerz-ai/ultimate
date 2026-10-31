@@ -84,6 +84,22 @@ describe('unit · destructiveStatements', () => {
     expect(destructiveStatements('drop index "post_org_id_idx";')).toEqual([]);
   });
 
+  test('a concurrent index drop is safe; a column or table drop beside it still is not', () => {
+    // The contract half of expand → contract: `x db gen` writes every index removal this way,
+    // and an index holds no row of its own — so the rail stays quiet on it, and only on it.
+    const up = [
+      '-- transaction: false',
+      'drop index concurrently if exists "runs_status_idx";',
+      'create index concurrently if not exists "runs_bank_idx" on "runs" ("bank");',
+    ].join('\n');
+    expect(destructiveStatements(up)).toEqual([]);
+    expect(
+      destructiveStatements(
+        `${up}\nalter table "runs" drop column "legacy";\ndrop table "runs_archive";`,
+      ).map((found) => found.kind),
+    ).toEqual(['drop-column', 'drop-table']);
+  });
+
   test('creating and adding are not destructive', () => {
     const up = [
       'create table "post" (\n  "id" uuid primary key,\n  "body" text not null\n);',

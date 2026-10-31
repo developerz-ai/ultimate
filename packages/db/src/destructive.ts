@@ -3,8 +3,8 @@
 // an *undeclared* drop is not. Only `up` is ever asked: reversing `create table` is `drop table`,
 // so a rail reading `down` would mark every migration ever generated, and a mark on all is none.
 
+import { hasMarkerLine } from './marker-line';
 import { stripSqlNoise } from './sql-noise';
-import { noiseAt } from './sql-scan';
 import { statementExcerpt } from './statement-excerpt';
 import { statementsOf } from './statement-split';
 
@@ -18,40 +18,12 @@ export const DESTRUCTIVE_MARKER = '-- destructive: true';
  */
 const MARKER_COMMENT = /^--[ \t]*destructive:[ \t]*true[ \t]*\r?\n?$/i;
 
-/** Whether only spaces and tabs separate `index` from the start of its line. */
-function startsLine(sql: string, index: number): boolean {
-  for (let at = index - 1; at >= 0; at -= 1) {
-    const char = sql[at];
-    if (char === '\n') return true;
-    if (char !== ' ' && char !== '\t') return false;
-  }
-  return true;
-}
-
 /**
- * Declared only where a reader would see it: a top-level `--` line of its own.
- *
+ * Declared only where a reader would see it: a top-level `--` line of its own (`marker-line.ts`).
  * A regex over the raw file matched the marker inside `/* … *\/` and inside a dollar-quoted body,
- * where it declares nothing and no reviewer reading the diff would call it a declaration — yet it
- * bought the file past `x verify`. Scanning is what tells a comment from a comment about a
- * comment; the marker is a lexical fact, not a substring.
+ * where it declares nothing — yet it bought the file past `x verify`.
  */
-export function hasDestructiveMarker(sql: string): boolean {
-  let index = 0;
-  while (index < sql.length) {
-    const noise = noiseAt(sql, index);
-    if (noise === null) {
-      index += 1;
-      continue;
-    }
-    const text = sql.slice(index, noise.end);
-    if (noise.kind === 'line-comment' && startsLine(sql, index) && MARKER_COMMENT.test(text)) {
-      return true;
-    }
-    index = noise.end;
-  }
-  return false;
-}
+export const hasDestructiveMarker = (sql: string): boolean => hasMarkerLine(sql, MARKER_COMMENT);
 
 export type DestructiveKind = 'drop-table' | 'drop-column' | 'retype-column' | 'truncate';
 

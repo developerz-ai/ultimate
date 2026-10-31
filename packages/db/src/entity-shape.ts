@@ -97,6 +97,14 @@ export interface IndexDescriptionLike {
    * the declarer; this package cannot import it, so the method crosses the seam structurally.
    */
   readonly using?: IndexMethod | undefined;
+  /**
+   * `indexes: [{ on, concurrently: true }]`: build it with `create index concurrently` in a
+   * migration of its own that runs OUTSIDE a transaction (`concurrent-index.ts`), so a hot table
+   * keeps taking writes while it builds. HOW the index is built, never WHAT it is — so it is not
+   * part of the name, not recorded in a snapshot and never a reason to rebuild one. Absent is the
+   * plain, transactional `create index` every index was before it existed.
+   */
+  readonly concurrently?: boolean | undefined;
 }
 
 /** Structurally assignment-compatible with `@ultimat3/entity`'s `EntityDescription`. */
