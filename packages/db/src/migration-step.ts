@@ -105,7 +105,9 @@ async function dropInvalidLeftover(session: DbClient, statement: string): Promis
  * table behind a long reader — runs in a short transaction under the migration's `lock_timeout`.
  */
 const AUTOCOMMIT_ONLY =
-  /^\s*(?:vacuum|cluster\b(?!\s+\w+\s+using)|create\s+database|drop\s+database|alter\s+system|create\s+tablespace|drop\s+tablespace|reindex\s+(?:\(.*\)\s*)?(?:system|database)\b|create\s+subscription|drop\s+subscription|alter\s+subscription)\b/i;
+  /^\s*(?:vacuum|create\s+database|drop\s+database|alter\s+system|create\s+tablespace|drop\s+tablespace|reindex\s+(?:\(.*\)\s*)?(?:system|database)\b|create\s+subscription|drop\s+subscription|alter\s+subscription)\b/i;
+/** `cluster` with no table re-clusters every table: refused in a transaction. One table's is not. */
+const BARE_CLUSTER = /^\s*cluster(?:\s+verbose)?\s*;?\s*$/i;
 
 /** A statement's text past its leading `--` lines (the step's own marker rides the first one). */
 const withoutLeadingComments = (statement: string): string =>
@@ -120,7 +122,8 @@ async function applyOutsideTransaction(session: DbClient, step: MigrationStep): 
       continue;
     }
     // Postgres refuses these inside a transaction (25001): autocommitted, as the marker promises.
-    if (AUTOCOMMIT_ONLY.test(withoutLeadingComments(statement))) {
+    const bare = withoutLeadingComments(statement);
+    if (AUTOCOMMIT_ONLY.test(bare) || BARE_CLUSTER.test(bare)) {
       await session.execute(raw(statement));
       continue;
     }

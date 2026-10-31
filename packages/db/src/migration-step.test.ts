@@ -146,6 +146,30 @@ describe('unit · a statement in the step that is NOT a concurrent build', () =>
     expect(client.texts.some((text) => text.includes('lock_timeout'))).toBe(false);
   });
 
+  test('CLUSTER of one table keeps the bounded transaction; a bare CLUSTER autocommits', async () => {
+    const one: Migration = {
+      id: '20261031150000_cluster_one',
+      name: 'cluster one',
+      up: '-- transaction: false\ncluster "runs" using "runs_status_idx";',
+      down: '',
+    };
+    await migrate({ migrations: [one], appVersion: 'test', client, lockTimeoutMs: 3_000 });
+    const begin = client.texts.indexOf('BEGIN');
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(position('SET LOCAL lock_timeout = 3000')).toBeGreaterThan(begin);
+
+    client = recordingClient();
+    setDbClient(client);
+    const all: Migration = {
+      id: '20261031150001_cluster_all',
+      name: 'cluster all',
+      up: '-- transaction: false\ncluster;',
+      down: '',
+    };
+    await migrate({ migrations: [all], appVersion: 'test', client, lockTimeoutMs: 3_000 });
+    expect(client.texts).not.toContain('BEGIN');
+  });
+
   test('a blocking statement that is not an alter table (DROP TABLE) keeps the bounded transaction', async () => {
     const drop: Migration = {
       id: '20261031140000_drop_old',
