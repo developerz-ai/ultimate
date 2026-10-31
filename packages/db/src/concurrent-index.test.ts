@@ -65,6 +65,23 @@ describe('unit · statements Postgres refuses inside a transaction block', () =>
     expect(isConcurrentIndexStatement('reindex (verbose) index concurrently "x"')).toBe(true);
   });
 
+  test('REINDEX: past any option list, and CONCURRENTLY as an option too', () => {
+    // The option list can be long enough to push the modifier past any fixed token window.
+    expect(
+      isConcurrentIndexStatement(
+        'REINDEX (VERBOSE true, TABLESPACE pg_default) INDEX CONCURRENTLY "runs_status_idx"',
+      ),
+    ).toBe(true);
+    expect(isConcurrentIndexStatement('reindex (concurrently) table runs')).toBe(true);
+    expect(isConcurrentIndexStatement('reindex (verbose, concurrently true) index x')).toBe(true);
+    expect(isConcurrentIndexStatement('reindex (concurrently false) index x')).toBe(false);
+    expect(isConcurrentIndexStatement('reindex (concurrently off, verbose) table runs')).toBe(
+      false,
+    );
+    expect(isConcurrentIndexStatement('reindex index "concurrently"')).toBe(false);
+    expect(isConcurrentIndexStatement('reindex table runs')).toBe(false);
+  });
+
   test('a plain build, a plain drop and a string mentioning the word are not', () => {
     expect(isConcurrentIndexStatement('create index "x" on "t" ("a")')).toBe(false);
     expect(isConcurrentIndexStatement('drop index if exists "x"')).toBe(false);

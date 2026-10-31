@@ -78,7 +78,7 @@ export function indexPlan(
     const concurrently = index.concurrently === true && !gone;
     if (recorded !== undefined && !gone) {
       if (concurrently) {
-        redefineConcurrently(entity.table, index, recorded, plan, context.concurrent);
+        redefineConcurrently(entity.table, index, recorded, context.concurrent);
       } else {
         redefineIndex(entity.table, index, recorded, plan);
       }
@@ -96,7 +96,7 @@ export function indexPlan(
     // and never a constraint's — the ambiguity is about the recorded side only.
     plan.down.push(dropIndex(index.name));
   }
-  removeUndeclared(entity, live, plan, context, declared);
+  removeUndeclared(entity, live, context, declared);
 }
 
 /**
@@ -106,9 +106,10 @@ export function indexPlan(
  *
  * ALWAYS concurrently, in the non-transactional step (`removeConcurrently`), whether or not the
  * index was built that way: a plain `drop index` takes ACCESS EXCLUSIVE on the TABLE, so every
- * read and write of a hot table queued behind it. Expand → contract: the drop ships after
- * everything the transactional step added, so a renamed index exists twice for a moment and
- * never zero times. Nothing records how an index was built, so the drop cannot depend on it.
+ * read and write of a hot table queued behind it. Expand → contract: the drop — and the
+ * constraint unhook a UNIQUE shape needs — lands in the step's CONTRACT phase, after everything the
+ * transactional step and the step's own builds added, so a renamed index exists twice for a moment
+ * and never zero times. Nothing records how an index was built, so the drop cannot depend on it.
  *
  * Four names are skipped, and each one is a statement Postgres would refuse or repeat:
  *
@@ -125,7 +126,6 @@ export function indexPlan(
 function removeUndeclared(
   entity: EntityDescriptionLike,
   live: TableDescription,
-  plan: Plan,
   context: IndexPlanContext,
   declared: ReadonlySet<string>,
 ): void {
@@ -135,6 +135,6 @@ function removeUndeclared(
     if (context.moved.has(recorded.name)) continue;
     if (recorded.columns.some((column) => context.rebuilt.has(column))) continue;
     if (!recorded.columns.every((column) => columns.has(column))) continue;
-    removeConcurrently(live.name, recorded, plan, context.concurrent);
+    removeConcurrently(live.name, recorded, context.concurrent);
   }
 }

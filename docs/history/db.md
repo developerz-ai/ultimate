@@ -1651,10 +1651,17 @@ by a consuming app that could not remove three redundant indexes from its hot `r
   was built — `concurrently` is HOW, not WHAT, so it is not in the name or the snapshot, and toggling
   it generates nothing (a snapshot-only change would write no migration at all). A removal could
   not depend on it, and a plain `drop index` is never the better choice. A shape a UNIQUE constraint
-  could back (`mayBeConstraintBacked`) is unhooked by `alter table … drop constraint if exists` in
-  the transactional step first: `drop index concurrently if exists` on a constraint's index is
-  `2BP01`, measured on 18.6. `dropRecordedIndex` is deleted; its measured table moved to
-  `dropRecordedConcurrently`.
+  could back (`mayBeConstraintBacked`) is unhooked by `alter table … drop constraint if exists`
+  first: `drop index concurrently if exists` on a constraint's index is `2BP01`, measured on 18.6.
+  `dropRecordedIndex` is deleted; its measured table moved to `dropRecordedConcurrently`.
+- *The unhook lives in the step, in its CONTRACT phase — corrected in review (PR #943).* The first
+  cut put the ALTER in the transactional step ahead of the concurrent one. Three defects followed
+  from that one placement: that step's `down` restored nothing, so rolling it back after a failed
+  concurrent step left the table with no uniqueness; a key renamed to a concurrent replacement was
+  unhooked before the replacement existed, letting in duplicates that then failed its build; and
+  the intermediate snapshot re-inserted a key the first step had already removed. Now the step runs
+  every build, then every unhook and drop (`stepStatements`), and a non-concurrent statement in it
+  gets a transaction of its own under `lock_timeout`, since the ALTER takes ACCESS EXCLUSIVE.
 - *Where it does NOT apply.* An index on a table the same migration creates (empty, invisible until
   COMMIT), and one over a column a retype or a rebuild already took ACCESS EXCLUSIVE for.
 - *Not destructive.* An index holds no row of its own, so the destructive rail stays quiet on a

@@ -111,7 +111,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`lock_timeout` is the migration's** (`SET LOCAL` inside each migration's transaction, from the
   `migrate` profile's 3 s). `migration-step.ts` applies a script.
 - **`-- transaction: false` runs a migration outside a transaction** (`concurrent-index.ts`, a marker
-  on `up` that governs `down`): one autocommit per statement, NO `lock_timeout`, ledger row last; an
+  on `up` that governs `down`): a concurrent statement bare and unbounded, any other in its own tx; an
   INVALID index holding a concurrent build's name is dropped first. A concurrent statement in a
   transactional migration is `X_MIGRATION_CONCURRENT_IN_TRANSACTION`, before `BEGIN`.
 - **The advisory lock is held by one pinned session, and `migrate()`/`rollback()` run every statement
@@ -149,7 +149,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   (primary, moved aside, rebuilt, over a dropped column). **A removal and a `concurrently: true`
   build on a live table go to the non-transactional step** (`concurrent-plan.ts`; `generate-steps.ts`
   makes it `<id>_concurrently` or the whole migration); a shape a constraint could back
-  (`mayBeConstraintBacked`) is unhooked first in the tx step. Never recorded (history 2026-10-31).
+  (`mayBeConstraintBacked`) is unhooked in the step, after its builds. Never recorded (history).
 - **An entity's INVARIANTS reach the DDL** (`invariant-ddl.ts`): a `check` is a named constraint, a
   `unique` a unique INDEX on the one `declaredIndexes` list, an `assert` nothing; `checks` is recorded
   absent-never-`[]`; the name `<table>_<name>_<check|key>` is re-derived, bounded at 63 bytes and

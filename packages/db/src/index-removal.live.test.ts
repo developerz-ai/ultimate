@@ -134,10 +134,9 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
     name: 'status becomes text',
     now: at,
   });
-  // The removal is TWO files: the constraint half inside a transaction, then the concurrent drops
-  // outside one (`concurrent-plan.ts`). Both are in the chain, in the order `x db gen` writes them.
-  const later = dropped.followUp ?? expect.unreachable('the removal generated no concurrent step');
-  const chain = [created, dropped, later, retyped];
+  // The removal is index work only, so it is ONE `-- transaction: false` migration: each
+  // constraint half and every concurrent drop, in its contract phase (`concurrent-plan.ts`).
+  const chain = [created, dropped, retyped];
 
   const clean = async (): Promise<void> => {
     for (const table of [POSTS, RETYPED])
@@ -214,23 +213,23 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
   });
 
   test('the generated removal APPLIES, and takes all three shapes off the table', async () => {
-    // The constraint half for the two total unique ones, in the transaction; every index dropped
-    // concurrently after it — the partial one needs no constraint half at all.
+    // The constraint half for the two total unique ones, then the concurrent drop — the partial
+    // one needs no constraint half at all. All of it outside a transaction.
+    expect(dropped.transactional).toBe(false);
     expect(dropped.up).toContain(
-      `alter table "${POSTS}" drop constraint if exists "${POSTS}_slug_key";`,
+      `alter table "${POSTS}" drop constraint if exists "${POSTS}_slug_key";\n` +
+        `drop index concurrently if exists "${POSTS}_slug_key";`,
     );
     expect(dropped.up).not.toContain(`drop constraint if exists "${POSTS}_feed_idx"`);
-    expect(later.up).toContain(`drop index concurrently if exists "${POSTS}_slug_key";`);
-    expect(later.up).toContain(`drop index concurrently if exists "${POSTS}_feed_idx";`);
+    expect(dropped.up).toContain(`drop index concurrently if exists "${POSTS}_feed_idx";`);
 
-    expect(await applyThrough(3)).toEqual([dropped.id, later.id]);
+    expect(await applyThrough(2)).toEqual([dropped.id]);
     // Only the primary key's own index is left; the constraint went with its index.
     expect(await objects(POSTS)).toEqual([{ name: `${POSTS}_pkey`, constraint: `${POSTS}_pkey` }]);
   });
 
   test('its down restores every one — as an INDEX, which is the recorded shape it can rebuild', async () => {
-    expect(await rollback({ migrations: chain.slice(0, 3), client, steps: 2 })).toEqual([
-      later.id,
+    expect(await rollback({ migrations: chain.slice(0, 2), client, steps: 1 })).toEqual([
       dropped.id,
     ]);
 
@@ -255,7 +254,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
   test('and it re-applies on the reversed database too — the pair is correct on both', async () => {
     // Now `<table>_slug_key` is a plain index rather than a constraint, which is the OTHER of the
     // two databases the generator cannot tell apart. The same `up` has to be right on both.
-    expect(await applyThrough(3)).toEqual([dropped.id, later.id]);
+    expect(await applyThrough(2)).toEqual([dropped.id]);
     expect(await objects(POSTS)).toEqual([{ name: `${POSTS}_pkey`, constraint: `${POSTS}_pkey` }]);
   });
 
@@ -272,7 +271,7 @@ describe.skipIf(!hasPostgres)('live · postgres · a recorded index the entities
     // The measured half, and the APPLY is the assertion: a second drop in the same script is
     // 42704, `migrate()` aborts the whole transaction, and the column comes out still
     // `varchar(20)`. The statement count is checked after, so the server answers first.
-    expect(await applyThrough(4)).toEqual([retyped.id]);
+    expect(await applyThrough(3)).toEqual([retyped.id]);
     expect(retyped.up.match(/drop index "idx_rm_retyped_feed_idx"/g)).toHaveLength(1);
     expect(await names(RETYPED)).toEqual([`${RETYPED}_pkey`]);
     const [type] = await client.query<{ data_type: string }>(

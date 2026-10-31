@@ -3,7 +3,7 @@
 // plans the statements; this file decides which step each list is and what each step records.
 
 import { NO_TRANSACTION_MARKER } from './concurrent-index';
-import { type ConcurrentPlan, intermediateSnapshot } from './concurrent-plan';
+import { type ConcurrentPlan, intermediateSnapshot, stepStatements } from './concurrent-plan';
 import { isDestructiveMigration } from './destructive';
 import type { GeneratedMigration } from './generate';
 import type { SchemaDescription } from './introspect';
@@ -50,8 +50,9 @@ function migrationOf(
 export function assembleSteps(diff: DiffSteps): GeneratedMigration {
   const { id, name, snapshot, unrendered } = diff;
   const body = diff.up.join('\n');
-  const later = diff.concurrent.up.join('\n');
-  const laterDown = [...diff.concurrent.down].reverse().join('\n');
+  const step = stepStatements(diff.concurrent);
+  const later = step.up.join('\n');
+  const laterDown = step.down.join('\n');
   const outside = (report: readonly UnrenderedDeclaration[]): string =>
     `${NO_TRANSACTION_MARKER}\n${unrenderedComment(report)}${later}`;
   if (body.length === 0 && later.length > 0) {

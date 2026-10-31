@@ -25,12 +25,39 @@ export interface DeferredIndex {
   readonly recorded?: IndexDescription | undefined;
 }
 
-/** The non-transactional step's statements, and what each one changes for the snapshot. */
+/**
+ * The non-transactional step's statements, in two phases, and what each changes for the snapshot.
+ * `up`/`down` EXPAND (every build), `contract`/`contractDown` CONTRACT (every removal): the step
+ * runs all of the first before any of the second, so a replacement exists before what it replaces
+ * goes — across tables too, since the phases are joined once, at assembly (`stepStatements`).
+ */
 export interface ConcurrentPlan extends Plan {
+  readonly contract: string[];
+  readonly contractDown: string[];
   readonly deferred: DeferredIndex[];
 }
 
-export const emptyConcurrentPlan = (): ConcurrentPlan => ({ up: [], down: [], deferred: [] });
+export const emptyConcurrentPlan = (): ConcurrentPlan => ({
+  up: [],
+  down: [],
+  contract: [],
+  contractDown: [],
+  deferred: [],
+});
+
+/**
+ * The step's script in apply order — expand, then contract — and its reversal: the removed
+ * indexes are restored FIRST, then the new ones dropped, so the reversal has no gap either.
+ */
+export function stepStatements(plan: ConcurrentPlan): {
+  readonly up: readonly string[];
+  readonly down: readonly string[];
+} {
+  return {
+    up: [...plan.up, ...plan.contract],
+    down: [...plan.down, ...plan.contractDown].reverse(),
+  };
+}
 
 /** A declared index this migration builds new, concurrently, with its concurrent drop as `down`. */
 export function buildConcurrently(
@@ -62,23 +89,24 @@ export function buildConcurrently(
  * | `drop index concurrently if exists "n"`      | **2BP01** — not suppressed | ok               |
  * | `alter table … drop constraint if exists`    | drops it, index and all    | notice, no-op    |
  *
- * So the shape `mayBeConstraintBacked` cannot rule out is first unhooked inside the TRANSACTIONAL
- * step — under its `lock_timeout`, because that ALTER takes ACCESS EXCLUSIVE whichever kind it
- * meets — and the concurrent drop after it is then a no-op notice or the whole job. Constraint
- * first: reversed, the drop reaches a constraint's index and is the 2BP01 this exists to avoid.
+ * So the shape `mayBeConstraintBacked` cannot rule out is first unhooked by the ALTER, and the
+ * concurrent drop after it is then a no-op notice or the whole job. Constraint first: reversed,
+ * the drop reaches a constraint's index and is the 2BP01 this exists to avoid.
+ *
+ * Both in the SAME non-transactional step, and in the phase `into` names. Never the ALTER in the
+ * transactional step before it: that step's `down` cannot restore a constraint, so a rollback after
+ * a failed concurrent step left the table with no uniqueness at all — and it would unhook the old
+ * key before a concurrent replacement existed, letting in the duplicates that then fail its build.
+ * The ALTER takes ACCESS EXCLUSIVE, so the runner gives a statement like it a transaction of its
+ * own under `lock_timeout` (`migration-step.ts`); the concurrent drop stays unbounded.
  */
-function dropRecordedConcurrently(
-  table: string,
-  recorded: IndexDescription,
-  plan: Plan,
-  concurrent: ConcurrentPlan,
-): void {
+function dropRecordedConcurrently(table: string, recorded: IndexDescription, into: string[]): void {
   if (mayBeConstraintBacked(recorded)) {
-    plan.up.push(
+    into.push(
       `alter table ${identifier(table).text} drop constraint if exists ${identifier(recorded.name).text};`,
     );
   }
-  concurrent.up.push(dropIndexConcurrently(recorded.name));
+  into.push(dropIndexConcurrently(recorded.name));
 }
 
 /**
@@ -88,11 +116,10 @@ function dropRecordedConcurrently(
 export function removeConcurrently(
   table: string,
   recorded: IndexDescription,
-  plan: Plan,
   concurrent: ConcurrentPlan,
 ): void {
-  dropRecordedConcurrently(table, recorded, plan, concurrent);
-  concurrent.down.push(createIndex(table, asDeclared(recorded), true));
+  dropRecordedConcurrently(table, recorded, concurrent.contract);
+  concurrent.contractDown.push(createIndex(table, asDeclared(recorded), true));
   concurrent.deferred.push({ table, name: recorded.name, recorded });
 }
 
@@ -106,11 +133,12 @@ export function redefineConcurrently(
   table: string,
   index: IndexDescriptionLike,
   recorded: IndexDescription,
-  plan: Plan,
   concurrent: ConcurrentPlan,
 ): void {
   if (indexShape(index) === indexShape(recorded)) return;
-  dropRecordedConcurrently(table, recorded, plan, concurrent);
+  // One name, so no expand → contract is possible: the drop must precede the build, in the
+  // expand phase, in that order.
+  dropRecordedConcurrently(table, recorded, concurrent.up);
   concurrent.up.push(createIndex(table, index, true));
   // Pushed forwards and read backwards, as `redefineIndex`'s: the recorded definition lands last.
   concurrent.down.push(
@@ -124,7 +152,8 @@ export function redefineConcurrently(
  * The schema the TRANSACTIONAL step leaves behind when a non-transactional one follows it: the
  * final snapshot with every deferred index put back the way it was — gone if it is new, its
  * recorded definition if it is removed or rebuilt. The sidecar is "the schema this migration leaves
- * behind", and a database that applied the first step alone holds exactly this.
+ * behind", and a database that applied the first step alone holds exactly this: the first step
+ * removes no index and unhooks no constraint, so every recorded one is still there.
  */
 export function intermediateSnapshot(
   final: SchemaDescription,

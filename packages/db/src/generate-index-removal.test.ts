@@ -119,14 +119,18 @@ describe('generateMigration · a recorded index the entities no longer declare',
       now: at,
     });
 
-    // The constraint half inside the transaction, under its `lock_timeout` — a `drop index
-    // concurrently` reaching a constraint's index is 2BP01 — and the index half after it, outside.
-    expect(migration.up).toBe('alter table "posts" drop constraint if exists "posts_slug_key";');
-    expect(migration.down).toBe('');
-    expect(migration.followUp?.up).toBe(
-      '-- transaction: false\ndrop index concurrently if exists "posts_slug_key";',
+    // Both halves in the ONE non-transactional step: the constraint first (a `drop index
+    // concurrently` reaching a constraint's index is 2BP01), then the index. Never the constraint
+    // in a transactional step of its own — that step's rollback would restore nothing, and a
+    // failed concurrent half would leave the table with no uniqueness and no way back.
+    expect(migration.transactional).toBe(false);
+    expect(migration.followUp).toBeUndefined();
+    expect(migration.up).toBe(
+      '-- transaction: false\n' +
+        'alter table "posts" drop constraint if exists "posts_slug_key";\n' +
+        'drop index concurrently if exists "posts_slug_key";',
     );
-    expect(migration.followUp?.down).toBe(
+    expect(migration.down).toBe(
       'create unique index concurrently if not exists "posts_slug_key" on "posts" ("slug");',
     );
   });
@@ -276,15 +280,16 @@ describe('generateMigration · a recorded index the entities no longer declare',
       now: at,
     });
 
-    // Expand → contract: the new index is built in the transaction, the old one is dropped in
-    // the step after it — so for a moment both exist, and never neither.
+    // Expand → contract: the new index is built in the transaction, the old one — constraint
+    // and index — is dropped in the step after it, so for a moment both exist and never neither.
     expect(migration.up).toBe(
-      'create unique index "posts_post_slug_unique_key" on "posts" ("org_id", "slug");\n' +
-        'alter table "posts" drop constraint if exists "post_slug_unique_per_org";',
+      'create unique index "posts_post_slug_unique_key" on "posts" ("org_id", "slug");',
     );
     expect(migration.down).toBe('drop index "posts_post_slug_unique_key";');
     expect(migration.followUp?.up).toBe(
-      '-- transaction: false\ndrop index concurrently if exists "post_slug_unique_per_org";',
+      '-- transaction: false\n' +
+        'alter table "posts" drop constraint if exists "post_slug_unique_per_org";\n' +
+        'drop index concurrently if exists "post_slug_unique_per_org";',
     );
     expect(migration.followUp?.down).toBe(
       'create unique index concurrently if not exists "post_slug_unique_per_org" ' +

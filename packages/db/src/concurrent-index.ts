@@ -98,7 +98,38 @@ export function isConcurrentIndexStatement(statement: string): boolean {
       : second === 'index' && third === 'concurrently';
   }
   if (first === 'drop') return second === 'index' && third === 'concurrently';
-  return first === 'reindex' && words.includes('concurrently');
+  return first === 'reindex' && reindexIsConcurrent(statement);
+}
+
+/** The values that switch a boolean `REINDEX` option OFF — Postgres' own spellings of false. */
+const OFF = new Set(['false', 'off', '0', 'no']);
+
+/**
+ * `REINDEX [ ( option [, …] ) ] { INDEX | TABLE | SCHEMA | DATABASE | SYSTEM } [ CONCURRENTLY ] name`
+ * — read whole, never through a fixed window: the option list has no length bound, and
+ * `CONCURRENTLY [ boolean ]` may itself be one of the options.
+ */
+function reindexIsConcurrent(statement: string): boolean {
+  const tokens = leadingTokens(statement, Number.POSITIVE_INFINITY);
+  let at = 1;
+  if (tokens[at]?.text === '(') {
+    let option: (string | undefined)[] = [];
+    const settle = (): boolean => option[0] === 'concurrently' && !OFF.has(option[1] ?? '');
+    for (at += 1; at < tokens.length; at += 1) {
+      const text = tokens[at]?.text;
+      if (text === ')' || text === ',') {
+        if (settle()) return true;
+        option = [];
+        if (text === ')') break;
+        continue;
+      }
+      option.push(tokens[at]?.word);
+    }
+    at += 1;
+  }
+  // The object kind, then the modifier — never the name after it, so `index "concurrently"` and
+  // `index concurrently_idx` are not concurrent.
+  return tokens[at + 1]?.word === 'concurrently';
 }
 
 /** The first statement of `script` that cannot run inside a transaction, or `undefined`. */

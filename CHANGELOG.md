@@ -34,7 +34,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   the non-transactional step after the rest of the diff (expand → contract): a plain `drop index`
   took ACCESS EXCLUSIVE on the table. A total unique btree — a shape a UNIQUE constraint may back,
   where a concurrent drop is `2BP01` — is first unhooked by `alter table … drop constraint if
-  exists` in the transactional step. `down` rebuilds it concurrently. Migrations already generated
+  exists` in the same step, after every build in it, in a short transaction of its own under the
+  migration's `lock_timeout`. `down` rebuilds it concurrently. Migrations already generated
   are untouched; an app regenerating with no entity change gets no diff. `dropRecordedIndex` (never
   exported) is gone.
 

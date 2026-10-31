@@ -211,3 +211,72 @@ describe('generateMigration · `concurrently: true`', () => {
     expect(migration.down).toBe('drop index "runs_bank_idx";');
   });
 });
+
+describe('generateMigration · contract after expand, never before', () => {
+  /** A recorded total unique btree — a shape a UNIQUE constraint may be backing. */
+  const KEYED = index('runs_ref_key', ['bank'], { unique: true });
+
+  test('a constraint-backed unique renamed to a concurrent replacement: built first, unhooked after', () => {
+    // The replacement must exist BEFORE the old key goes: unhooked first, duplicates could land
+    // in the gap and then fail the unique build itself.
+    const migration = generateMigration({
+      entities: [runs([index('runs_bank_key', ['bank'], { unique: true, concurrently: true })])],
+      current: recorded([KEYED]),
+      name: 'rename the key',
+      now: at,
+    });
+
+    expect(migration.transactional).toBe(false);
+    expect(migration.up).toBe(
+      '-- transaction: false\n' +
+        'create unique index concurrently if not exists "runs_bank_key" on "runs" ("bank");\n' +
+        'alter table "runs" drop constraint if exists "runs_ref_key";\n' +
+        'drop index concurrently if exists "runs_ref_key";',
+    );
+    // Restored before the replacement is dropped: reversed, the same no-gap order.
+    expect(migration.down).toBe(
+      'create unique index concurrently if not exists "runs_ref_key" on "runs" ("bank");\n' +
+        'drop index concurrently if exists "runs_bank_key";',
+    );
+  });
+
+  test('every build in the step precedes every drop, across tables', () => {
+    const jobs: EntityDescriptionLike = {
+      ...runs([]),
+      name: 'Job',
+      table: 'jobs',
+    };
+    const migration = generateMigration({
+      // `jobs` sorts before `runs` and loses its key; `runs` gains a concurrent build.
+      entities: [jobs, runs([STATUS])],
+      current: snapshotOf([{ ...jobs, indexes: [KEYED] }, runs([])]),
+      name: 'both',
+      now: at,
+    });
+    const statements = migration.up.split('\n');
+    const lastBuild = statements.findLastIndex((each) => each.startsWith('create'));
+    const firstDrop = statements.findIndex((each) => /^(alter|drop)/.test(each));
+    expect(lastBuild).toBeGreaterThan(0);
+    expect(firstDrop).toBeGreaterThan(lastBuild);
+  });
+
+  test('the transactional step drops no key, so its rollback owes none and its snapshot holds it', () => {
+    // A new column beside the removal: two files. The first must not touch the key — its `down`
+    // could not restore one — and the sidecar it records must still describe it.
+    const migration = generateMigration({
+      entities: [runs([], [column('note')])],
+      current: recorded([KEYED]),
+      name: 'add note',
+      now: at,
+    });
+
+    expect(migration.up).toBe('alter table "runs" add column "note" text;');
+    expect(migration.up).not.toContain('constraint');
+    expect(migration.snapshot.tables[0]?.indexes.map((each) => each.name)).toEqual([
+      'runs_ref_key',
+    ]);
+    expect(migration.followUp?.up).toContain(
+      'alter table "runs" drop constraint if exists "runs_ref_key";',
+    );
+  });
+});

@@ -95,6 +95,42 @@ describe('unit · a `-- transaction: false` migration', () => {
   });
 });
 
+describe('unit · a statement in the step that is NOT a concurrent build', () => {
+  test('runs in a short transaction of its own, under the migration lock_timeout', async () => {
+    // `alter table … drop constraint` takes ACCESS EXCLUSIVE: unbounded, it would queue every
+    // read and write of the table behind one long reader. The concurrent builds around it keep
+    // running without a bound, outside any transaction.
+    const contract: Migration = {
+      id: '20261031120000_drop_key',
+      name: 'drop key',
+      up:
+        '-- transaction: false\n' +
+        'create unique index concurrently if not exists "runs_bank_key" on "runs" ("bank");\n' +
+        'alter table "runs" drop constraint if exists "runs_ref_key";\n' +
+        'drop index concurrently if exists "runs_ref_key";',
+      down: '',
+    };
+    await migrate({ migrations: [contract], appVersion: 'test', client, lockTimeoutMs: 3_000 });
+
+    const begin = client.texts.indexOf('BEGIN');
+    const timeout = position('SET LOCAL lock_timeout = 3000');
+    const alter = position('drop constraint if exists "runs_ref_key"');
+    const commit = client.texts.indexOf('COMMIT');
+    const drop = position('drop index concurrently if exists "runs_ref_key"');
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(timeout).toBeGreaterThanOrEqual(0);
+    expect(alter).toBeGreaterThanOrEqual(0);
+    expect(commit).toBeGreaterThanOrEqual(0);
+    expect(drop).toBeGreaterThanOrEqual(0);
+    expect(begin).toBeGreaterThan(position('create unique index concurrently'));
+    expect([begin, timeout, alter, commit]).toEqual(
+      [...[begin, timeout, alter, commit]].sort((a, b) => a - b),
+    );
+    expect(commit).toBeLessThan(drop);
+    expect(client.texts.filter((text) => text === 'BEGIN')).toHaveLength(1);
+  });
+});
+
 describe('unit · a concurrent statement in a transactional migration', () => {
   test('is refused before BEGIN, naming the migration and the marker', async () => {
     const inside: Migration = {

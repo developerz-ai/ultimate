@@ -131,20 +131,85 @@ describe.skipIf(!hasPostgres)('live · postgres · a concurrent index step', () 
     await client.execute(raw(`drop index "${STATUS.name}"`));
     await client.execute(raw(`delete from ${LEDGER_TABLE} where id = '${built.id}'`));
     const reader = postgresClient({ url: url ?? '' });
+    const observer = postgresClient({ url: url ?? '' });
     try {
       using held = await reader.reserve();
       await held.execute(raw('begin isolation level repeatable read'));
       await held.query(raw(`select count(*) from "${TABLE}"`));
-      // real-clock: the reader is ANOTHER Postgres session; the build waits on its transaction.
-      const release = Bun.sleep(1_000).then(() => held.execute(raw('commit')));
 
-      const report = await migrate({ migrations: chain, client, lockTimeoutMs: 200 });
-      await release;
+      let settled = false;
+      const running = migrate({ migrations: chain, client, lockTimeoutMs: 200 }).finally(() => {
+        settled = true;
+      });
+      // Released only once the build is SEEN waiting on a lock — otherwise a build that started
+      // after the reader committed would pass this test under any lock_timeout at all.
+      const waiting = async (): Promise<boolean> => {
+        const [row] = await observer.query<{ n: number }>(
+          raw(
+            `select count(*)::int as n from pg_stat_activity where wait_event_type = 'Lock' ` +
+              `and query like '%create unique index concurrently%${STATUS.name}%'`,
+          ),
+        );
+        return (row?.n ?? 0) > 0;
+      };
+      for (let tries = 0; !(await waiting()); tries += 1) {
+        expect(tries).toBeLessThan(200);
+        expect(settled).toBe(false);
+        // real-clock: polling ANOTHER Postgres session's state; nothing here owns its timers.
+        await Bun.sleep(25);
+      }
+      // real-clock: past the 200 ms bound, while the build is still blocked on the reader.
+      await Bun.sleep(400);
+      expect(settled).toBe(false);
+      expect(await waiting()).toBe(true);
+
+      await held.execute(raw('commit'));
+      const report = await running;
 
       expect(report.applied.map((each) => each.id)).toEqual([built.id]);
       expect(await validity()).toBe(true);
     } finally {
+      await observer.close();
       await reader.close();
     }
+  });
+
+  test('a constraint key renamed to a concurrent replacement: the replacement first, then the key', async () => {
+    // `status` already carries the built key from the chain; make the old one a real CONSTRAINT
+    // and rename it to a concurrently built replacement. The step builds the new unique index
+    // while the constraint still guards writes, and unhooks the constraint only after.
+    await client.execute(raw(`drop index "${STATUS.name}"`));
+    await client.execute(
+      raw(`alter table "${TABLE}" add constraint "${STATUS.name}" unique ("status")`),
+    );
+    const renamed = generateMigration({
+      entities: [runs([{ ...STATUS, name: `${TABLE}_status_uq` }])],
+      current: snapshotOf([runs([STATUS])]),
+      name: 'rename the key',
+      now: new Date('2026-10-31T14:00:00.000Z'),
+    });
+    const statements = renamed.up.split('\n');
+    const build = statements.findIndex((each) => each.startsWith('create unique index'));
+    const unhook = statements.findIndex((each) => each.includes('drop constraint'));
+    expect(build).toBeGreaterThanOrEqual(0);
+    expect(unhook).toBeGreaterThan(build);
+
+    await migrate({ migrations: [...chain, renamed], client });
+
+    const keys = await client.query<{ name: string; constraint: string | null }>(
+      raw(
+        `select c.relname as name, con.conname as constraint from pg_index i ` +
+          `join pg_class c on c.oid = i.indexrelid left join pg_constraint con on con.conindid = c.oid ` +
+          `where i.indrelid = '"${TABLE}"'::regclass and not i.indisprimary order by 1`,
+      ),
+    );
+    expect(keys).toEqual([{ name: `${TABLE}_status_uq`, constraint: null }]);
+    const duplicate = await client
+      .execute(raw(`insert into "${TABLE}" (id, status) values (9, 'x')`))
+      .then(
+        () => 'inserted',
+        () => 'refused',
+      );
+    expect(duplicate).toBe('refused');
   });
 });
