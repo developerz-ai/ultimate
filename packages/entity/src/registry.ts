@@ -112,6 +112,11 @@ export interface IndexDescription {
    * predates the field and an index that declares nothing read the same, so nothing regenerates.
    */
   readonly using?: IndexMethod | undefined;
+  /**
+   * `true` when the index is built with `create index concurrently`, outside a transaction; absent
+   * otherwise, so an entity that never asked hashes exactly what it hashed before.
+   */
+  readonly concurrently?: true | undefined;
 }
 
 export interface EntityDescription {

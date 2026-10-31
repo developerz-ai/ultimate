@@ -8,6 +8,7 @@
 import { renderFixShellArg } from '@ultimat3/core';
 import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';
 import { DbError } from './errors';
+import { statementExcerpt } from './statement-excerpt';
 
 /**
  * The migration advisory lock was still held when the wait ran out. `pg_advisory_lock` blocks with
@@ -154,4 +155,24 @@ export const migrationDestructive = (
       `${more === 0 ? '' : ` (and ${more} more destructive)`}: ${first.statement}`,
     fix: `add the line "${DESTRUCTIVE_MARKER}" to ${file}, or regenerate it: x db gen "<name>" --allow-destructive`,
     meta: { file, kind: first.kind, statements: more + 1 },
+  });
+
+/**
+ * A concurrent index statement in a migration the runner would wrap in a transaction, refused
+ * BEFORE `BEGIN` — Postgres answers `25001` only after the transaction is open, in words that name
+ * neither the migration nor the marker that fixes it. `-- transaction: false` is the marker
+ * (`concurrent-index.ts`); the path is the one directory `x db gen` writes, `packages/db/migrations`.
+ * The id is FILENAME text, so it reaches the command through `renderFixShellArg`.
+ */
+export const migrationConcurrentInTransaction = (id: string, statement: string): DbError =>
+  new DbError({
+    code: 'X_MIGRATION_CONCURRENT_IN_TRANSACTION',
+    cause:
+      `migration "${id}" runs inside a transaction and holds a statement Postgres refuses there ` +
+      `(25001): ${statementExcerpt(statement)}`,
+    // The marker is spelled out rather than spliced: it is `NO_TRANSACTION_MARKER`, and
+    // `concurrent-index.ts` imports nothing from here, but a constant in the command position is
+    // one the shell-argument screen cannot tell from caller input.
+    fix: `sed -i '1i -- transaction: false' packages/db/migrations/${renderFixShellArg(id, '<id>')}.sql   # before it is applied — or move the statement into a migration of its own`,
+    meta: { id },
   });

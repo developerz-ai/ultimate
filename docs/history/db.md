@@ -1616,3 +1616,64 @@ the same slice and the current one is in that file.
   `unknown-schema` refusal) paired bare SQL or prose with a `#`: `#` is not a comment to Postgres
   and `alter` is not a program to a shell. `changed-primary-key` had already moved to
   `psql "$DATABASE_URL" -c '…'`; the rest followed through two helpers, `repair()` and `byHand()`.
+
+## 2026-10-31 — concurrent index steps, and two bullets moved out
+
+**Why a step outside the transaction exists.** `x db gen` wrote every index as a plain `create
+index` inside the migration's transaction, and every removal as a plain `drop index`. The first
+holds SHARE on the table for the whole build — every insert, update and delete waits — and the
+second takes ACCESS EXCLUSIVE, so reads queue too; on a big hot table either one stalls the app or
+trips the 3 s `lock_timeout` mid-deploy. Their concurrent forms take SHARE UPDATE EXCLUSIVE, which
+queues no read and no write, and Postgres refuses both inside a transaction block (`25001`). Raised
+by a consuming app that could not remove three redundant indexes from its hot `runs` table.
+
+**The design, and what it rejected.**
+
+- *A marker line, not a new file kind or a snapshot field.* `-- transaction: false` is read off `up`
+  exactly as `-- destructive: true` is (`marker-line.ts` is now the one scan for both), so a
+  hand-written migration can use it too — and the checksum covers it, so it cannot be added to an
+  applied file silently.
+- *Two files, never one file in two halves.* A migration is one ledger row. A file whose
+  transactional half committed and whose concurrent half then failed is either recorded (the index
+  never built) or not (the re-run re-applies the committed half: `42P07`). The non-transactional
+  step is therefore its own migration, `<id>_concurrently`, sorting right after the plain id, and
+  is the whole migration when the diff holds nothing else. Its first file records the INTERMEDIATE
+  snapshot (`intermediateSnapshot`), the second the whole diff.
+- *Idempotent by construction.* The step holds only `create index concurrently if not exists` and
+  `drop index concurrently if exists`; a failure leaves what ran in place and no ledger row, so the
+  next `migrate()` simply re-runs it. An interrupted build leaves an INVALID index holding the name —
+  `if not exists` would skip it — so the runner looks the name up (`to_regclass`, `pg_index.
+  indisvalid`) before each named concurrent build and drops an invalid one concurrently first.
+- *No `lock_timeout` on the step.* A concurrent build waits for every transaction older than it,
+  and that wait is a lock wait: under the transactional path's 3 s bound it was `55P03` and an
+  INVALID index (`concurrent-index.live.test.ts` measures it at 200 ms).
+- *Every removal is concurrent, not only a concurrently-built one.* Nothing records how an index
+  was built — `concurrently` is HOW, not WHAT, so it is not in the name or the snapshot, and toggling
+  it generates nothing (a snapshot-only change would write no migration at all). A removal could
+  not depend on it, and a plain `drop index` is never the better choice. A shape a UNIQUE constraint
+  could back (`mayBeConstraintBacked`) is unhooked by `alter table … drop constraint if exists`
+  first: `drop index concurrently if exists` on a constraint's index is `2BP01`, measured on 18.6.
+  `dropRecordedIndex` is deleted; its measured table moved to `dropRecordedConcurrently`.
+- *The unhook lives in the step, in its CONTRACT phase — corrected in review (PR #943).* The first
+  cut put the ALTER in the transactional step ahead of the concurrent one. Three defects followed
+  from that one placement: that step's `down` restored nothing, so rolling it back after a failed
+  concurrent step left the table with no uniqueness; a key renamed to a concurrent replacement was
+  unhooked before the replacement existed, letting in duplicates that then failed its build; and
+  the intermediate snapshot re-inserted a key the first step had already removed. Now the step runs
+  every build, then every unhook and drop (`stepStatements`), and a non-concurrent statement in it
+  gets a transaction of its own under `lock_timeout`, since the ALTER takes ACCESS EXCLUSIVE.
+- *Where it does NOT apply.* An index on a table the same migration creates (empty, invisible until
+  COMMIT), and one over a column a retype or a rebuild already took ACCESS EXCLUSIVE for.
+- *Not destructive.* An index holds no row of its own, so the destructive rail stays quiet on a
+  concurrent drop and still fires on a column or table drop beside it.
+
+**Moved out of `packages/db/CLAUDE.md` to make room**, verbatim:
+
+- **A generated column** (`generated-column.ts`): the clause right after the type; generated-and-
+  defaulted refused; an expression change is `set expression as (…)`; a retype has no `using`; a NOT
+  NULL add is one statement; generated → plain is `drop expression`; plain → generated rebuilds
+  (`rebuilt`) and moves dependents aside, its own type change does not. `introspectSchema` never reads
+  `generation_expression`.
+  `generate-generated-{column,rebuild}.live.test.ts`.
+- **`unexpectedTable`'s `fix:` never names `x db gen`**: `psql -c '\d "T"'`, commented with the two
+  repairs (claim it with `create table if not exists`, or drop it).

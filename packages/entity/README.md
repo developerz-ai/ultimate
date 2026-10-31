@@ -534,6 +534,13 @@ export const posts = entity('posts', {
 | Refused | a unique GIN and an ordered GIN, at `entity()` — Postgres has neither, and the refusal names the edit |
 | Naming | the method is part of what separates two indexes on the same columns, so a btree and a GIN on one column are two indexes with two names |
 
+On a big, hot table, build an index with `concurrently: true` — `{ on: ['status'], concurrently:
+true }`. `x db gen` emits `create index concurrently if not exists` in a migration of its own,
+marked `-- transaction: false`, so writes keep flowing while it builds; an interrupted build is
+rebuilt by the next `x db migrate`. It is how the index is built, not what it is: not part of the
+name, not recorded, and toggling it generates nothing. Every index REMOVED from `indexes` is dropped
+the same way, concurrently or not — `@ultimat3/db`'s README, "Indexes built concurrently".
+
 ## Full-text search
 
 `.searchable()` on a `text()` column puts it in the entity's **one** generated `tsvector`, with a

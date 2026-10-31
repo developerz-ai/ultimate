@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "79dd7d50301ae3fc81b4d83d419a07cd9c59247706084ecba9795290d5d9e514",
+  "buildId": "42504cd746383c2104131a159cc35c8a7dfb91dafc21efc90b52fffd125bffc2",
   "tiers": {
     "0": [
       "core",
@@ -2591,6 +2591,11 @@
     },
     {
       "code": "X_MIGRATION_APPEND_ONLY_BACKFILL",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_MIGRATION_CONCURRENT_IN_TRANSACTION",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },

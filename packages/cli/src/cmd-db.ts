@@ -166,6 +166,8 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
     data: {
       outcome: generated.outcome,
       migration: migration.id,
+      // The `-- transaction: false` step written beside it, when the diff needed one.
+      followUp: migration.followUp?.id ?? null,
       name: migration.name,
       files: [...generated.files],
       schemaHash: generated.schemaHash ?? null,

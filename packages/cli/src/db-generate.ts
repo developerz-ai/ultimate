@@ -155,20 +155,31 @@ export async function generateAppMigration(
     };
   }
 
+  // One migration, or two: a diff that also builds or drops indexes concurrently carries that step
+  // as `followUp` — its own `.sql` marked `-- transaction: false`, its own sidecars, sorting right
+  // after this one. Each file is a ledger row of its own; see `@ultimat3/db`'s `generate-steps.ts`.
+  const steps = [migration, ...(migration.followUp === undefined ? [] : [migration.followUp])];
   const dir = join(root, MIGRATIONS_DIR);
-  const sql = `${migration.id}.sql`;
-  const snapshot = snapshotFileName(migration.id);
-  await Bun.write(join(dir, sql), migrationSql(migration));
-  // `snapshotJson`, never `JSON.stringify`: the sidecar is the one migration artefact a scaffolded
-  // app's `biome check .` reads, and its bytes carry their own trailing newline.
-  await Bun.write(join(dir, snapshot), snapshotJson(migration.snapshot));
-  const schemaHash = await writeSchemaHash(root, migration.id);
+  const files: string[] = [];
+  let schemaHash = '';
+  for (const step of steps) {
+    const sql = `${step.id}.sql`;
+    const snapshot = snapshotFileName(step.id);
+    await Bun.write(join(dir, sql), migrationSql(step));
+    // `snapshotJson`, never `JSON.stringify`: the sidecar is the one migration artefact a
+    // scaffolded app's `biome check .` reads, and its bytes carry their own trailing newline.
+    await Bun.write(join(dir, snapshot), snapshotJson(step.snapshot));
+    schemaHash = await writeSchemaHash(root, step.id);
+    files.push(
+      ...[sql, snapshot, hashFileName(step.id)].map((file) => `${MIGRATIONS_DIR}/${file}`),
+    );
+  }
 
   return {
     outcome: 'generated',
     migration,
     schemaHash,
-    files: [sql, snapshot, hashFileName(migration.id)].map((file) => `${MIGRATIONS_DIR}/${file}`),
+    files,
     findings: [],
     unrendered: migration.unrendered,
   };
