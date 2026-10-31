@@ -48,6 +48,7 @@ import {
 } from './errors';
 import { assertObjectLockOptions, type ObjectLock } from './object-lock';
 import { assertSafeKey } from './path';
+import { assertGetOptions, type GetOptions, servedRange } from './range';
 import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
@@ -261,14 +262,24 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       return (await present(safe)) ? statObject(safe) : undefined;
     },
 
-    async get(key: string): Promise<StorageRead> {
+    async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
       const safe = assertSafeKey(key);
+      assertGetOptions(DRIVER_NAME, getOptions);
       const file = conn().file(safe);
       if (!(await present(safe))) throw objectNotFound(diskName, safe);
       // The HEAD comes FIRST, and it is the whole point: a client PUT straight into the bucket is
       // bounded by nothing on this disk, so `arrayBuffer()` on whatever is there was heap growth
       // the uploader chose. Refused on the provider's own size before a byte is read.
       const object = await statObject(safe);
+      const range = getOptions?.range;
+      if (range !== undefined) {
+        // Clamped against the HEAD's size, so the `Range:` Bun sends (`slice` is end-EXCLUSIVE)
+        // never asks past the end and the provider never answers a 416 this disk did not decide.
+        const served = servedRange(DRIVER_NAME, safe, range, object.size, maxGetBytes);
+        const sliced = file.slice(served[0], served[1] + 1);
+        const bytes = new Uint8Array(await sliced.arrayBuffer().catch(refusedRead(safe)));
+        return { object, bytes, range: served };
+      }
       if (object.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, object.size, maxGetBytes);
       const bytes = new Uint8Array(await file.arrayBuffer().catch(refusedRead(safe)));
       return { object, bytes };

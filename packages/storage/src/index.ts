@@ -63,6 +63,7 @@ export type {
   S3FileLike,
   S3ListEntryLike,
   S3ListResultLike,
+  S3RangeLike,
   S3StatLike,
 } from './driver-s3-client';
 export type { S3FetchLike } from './driver-s3-signed';
@@ -84,6 +85,7 @@ export {
   pathUnsafe,
   putFailed,
   putTooLarge,
+  rangeUnsatisfiable,
   readFailed,
   STORAGE_ERROR_CODES,
   STORAGE_ERROR_TITLES,
@@ -144,6 +146,12 @@ export {
   orgPrefix,
   scopedKey,
 } from './path';
+/**
+ * `get(key, { range })`. A third-party driver screens and clamps through these two, or it is a
+ * fourth answer to what a range means.
+ */
+export type { ByteRange, GetOptions } from './range';
+export { assertGetOptions, servedRange } from './range';
 export type {
   SignedUrlConstraints,
   SignedUrlFailure,

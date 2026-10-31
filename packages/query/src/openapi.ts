@@ -26,6 +26,7 @@ import { MAX_PAGE_SIZE } from '@ultimat3/entity';
 import { policyCapability } from '@ultimat3/policy';
 import type { SchemaNode } from '@ultimat3/schema';
 import { nodeToJsonSchema, tryIntrospect } from '@ultimat3/schema';
+import { DOWNLOAD_GRANT_PARAM } from './download-token';
 import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-controls';
 import type { AnyQuery } from './query';
 import { queryName } from './read';
@@ -90,6 +91,7 @@ export function queryOpenApiPaths(
  */
 export function toQueryOpenApiOperation(target: AnyQuery): Record<string, unknown> {
   const name = queryName(target);
+  if (target.download === true) return downloadOperation(target, name);
   if (target.single === true) return singleOperation(target, name);
   return {
     operationId: name,
@@ -167,6 +169,59 @@ function singleOperation(target: AnyQuery, name: string): Record<string, unknown
     },
   };
 }
+
+/**
+ * A download: one URL, two answers decided by `_token` — the mint (`{ url, expiresAt }`, JSON) and
+ * the file (bytes, a `Range:` window as 206). No page controls, no rows, no MCP tool.
+ */
+function downloadOperation(target: AnyQuery, name: string): Record<string, unknown> {
+  return {
+    operationId: name,
+    tags: [QUERY_TAG],
+    summary: name,
+    ...(target.deprecated === undefined ? {} : { deprecated: true }),
+    parameters: [
+      ...inputParameters(target.input),
+      {
+        name: DOWNLOAD_GRANT_PARAM,
+        in: 'query',
+        required: false,
+        description: 'absent: mint a signed URL for this input; present: the file that URL grants',
+        schema: { type: 'string' },
+      },
+    ],
+    responses: {
+      '200': {
+        description: `without ${DOWNLOAD_GRANT_PARAM}, the minted URL; with it, the file`,
+        content: {
+          'application/json': { schema: MINTED_URL },
+          'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+        },
+      },
+      '206': { description: 'the one byte range the Range header named' },
+      '400': problemResponse('X_INPUT_INVALID'),
+      '403': problemResponse('policy denied, or X_QUERY_DOWNLOAD_TOKEN_INVALID'),
+      '410': problemResponse('X_QUERY_DOWNLOAD_TOKEN_EXPIRED — mint again'),
+      '416': { description: 'the Range header starts past the end of the file' },
+    },
+    'x-ultimate': {
+      capability: policyCapability(target.policy),
+      live: false,
+      download: true,
+      cacheTags: [],
+      tool: null,
+    },
+  };
+}
+
+const MINTED_URL: Readonly<Record<string, unknown>> = {
+  type: 'object',
+  required: ['url', 'expiresAt'],
+  properties: {
+    url: { type: 'string', description: `this path, with the input and ${DOWNLOAD_GRANT_PARAM}` },
+    expiresAt: { type: 'string', format: 'date-time' },
+  },
+};
 
 /** One row. Its members are not published — a query declares no output schema, as `ANSWERS` says. */
 const SINGLE_ANSWER: Readonly<Record<string, unknown>> = { type: 'object' };

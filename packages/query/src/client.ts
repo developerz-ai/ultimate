@@ -18,12 +18,13 @@
 
 import type { ClientFlight, ClientRetry } from '@ultimat3/core';
 import type { FetchLike, RecordEnvelope } from '@ultimat3/core/page';
-import { clientTransport, isJsonObject, queryPath } from '@ultimat3/core/page';
+import { clientTransport, queryPath } from '@ultimat3/core/page';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { DownloadClientMethod, DownloadQuery } from './download';
 import type { PageControls } from './page-controls';
-import { PAGE_AFTER_KEY, PAGE_FIRST_KEY } from './page-keys';
 import type { Page } from './pagination';
 import type { Query } from './query';
+import { searchOf } from './search-string';
 
 /** Core's, re-exported under the name this package always exported it by — one declaration. */
 export type { FetchLike } from '@ultimat3/core/page';
@@ -79,6 +80,15 @@ export interface QueryClientMethod<TInput extends StandardSchemaV1, TRow extends
 }
 
 /**
+ * A download query's signed URL, as `url()` answers it. `url` is a PATH on the server and absolute
+ * from a client with a `baseUrl`; `expiresAt` is an ISO instant — mint again past it.
+ */
+export interface DownloadUrl {
+  readonly url: string;
+  readonly expiresAt: string;
+}
+
+/**
  * A `single: true` read's method: the route answers the row itself, or 404 `X_NOT_FOUND` — which
  * the transport rejects with, as it does every problem document. No `page`: the route refuses the
  * page controls on a single read, so the method a list read carries would be a guaranteed 400.
@@ -112,13 +122,11 @@ export type QueryMap = Record<string, QueryLike>;
 
 /** `queries.publicPost({ slug })`, with the input schema and the row type both inferred. */
 export type QueryClient<TQueries extends QueryMap> = {
-  readonly [K in keyof TQueries]: TQueries[K] extends Query<
-    infer TInput,
-    infer TRow,
-    infer TSingle extends boolean
-  >
-    ? QueryClientMethodOf<TInput, TRow, TSingle>
-    : never;
+  readonly [K in keyof TQueries]: TQueries[K] extends DownloadQuery<infer TInput>
+    ? DownloadClientMethod<TInput>
+    : TQueries[K] extends Query<infer TInput, infer TRow, infer TSingle extends boolean>
+      ? QueryClientMethodOf<TInput, TRow, TSingle>
+      : never;
 };
 
 /**
@@ -152,11 +160,33 @@ export function queryClient<TQueries extends QueryMap>(
   return proxy as QueryClient<TQueries>;
 }
 
-/** One query's method — what `query.client()` returns, and what `queryClient` proxies to. */
+/**
+ * One query's method — what `query.client()` returns, and what `queryClient` proxies to. It
+ * carries `url` too, the download half; the declaration's TYPE decides which half a caller sees.
+ */
 export function queryClientMethodFor<TInput extends StandardSchemaV1, TRow extends object>(
   name: string,
   options: QueryClientOptions,
 ): QueryClientMethod<TInput, TRow> {
+  return methodsOf<TInput, TRow>(name, options);
+}
+
+/**
+ * A download query's client half: `url(input)` asks the server to mint. A GET with no `_token` IS
+ * the mint, so the request is the plain read's and only the answer — `{ url, expiresAt }` — differs.
+ */
+export function downloadClientFor<TInput extends StandardSchemaV1>(
+  name: string,
+  options: QueryClientOptions,
+): DownloadClientMethod<TInput> {
+  return { url: methodsOf<TInput, object>(name, options).url };
+}
+
+/** The rows call, `page` and `url` over one base — `url` typed only on a download's method. */
+function methodsOf<TInput extends StandardSchemaV1, TRow extends object>(
+  name: string,
+  options: QueryClientOptions,
+) {
   const base = options.baseUrl.replace(/\/+$/, '');
   // Erased at the wire seam; the row type is this query's by construction.
   const rows = (input: InferInput<TInput>, callOptions: QueryCallOptions = {}) =>
@@ -166,7 +196,14 @@ export function queryClientMethodFor<TInput extends StandardSchemaV1, TRow exten
     args: PageControls,
     callOptions: QueryCallOptions = {},
   ) => read(base, options, name, input, callOptions, args) as Promise<Page<TRow>>;
-  return Object.assign(rows, { page });
+  const url = async (
+    input: InferInput<TInput>,
+    callOptions: QueryCallOptions = {},
+  ): Promise<DownloadUrl> => {
+    const minted = (await read(base, options, name, input, callOptions)) as DownloadUrl;
+    return { ...minted, url: base + minted.url };
+  };
+  return Object.assign(rows, { page, url });
 }
 
 /**
@@ -198,44 +235,4 @@ function read(
     ...(callOptions.adopt === undefined ? {} : { adopt: callOptions.adopt }),
     ...(options.fetch === undefined ? {} : { fetchImpl: options.fetch }),
   });
-}
-
-/**
- * Input as a query string. Keys are sorted so the same input always produces the
- * same URL — a GET is a cache key, and an unstable one caches nothing.
- *
- * The page controls come LAST, after the sorted input and in a fixed order, so a paged URL is the
- * plain URL with a suffix — the same dedup key for the same page, and a log line a reader can
- * split at `_first=` to recover the read underneath.
- *
- * An EMPTY array sends nothing, and the route reads a required array nobody sent as `[]`
- * (`absentArraysOf`, `input-shape.ts`) — the two halves of one rule, so `{ tags: [] }` arrives.
- */
-function searchOf(input: unknown, page?: PageControls): string {
-  const params = new URLSearchParams();
-  if (isJsonObject(input)) {
-    for (const key of Object.keys(input).sort()) {
-      const value = input[key];
-      if (value === undefined || value === null) continue;
-      for (const item of Array.isArray(value) ? (value as readonly unknown[]) : [value]) {
-        params.append(key, wireText(item));
-      }
-    }
-  }
-  if (page !== undefined) {
-    params.append(PAGE_FIRST_KEY, String(page.first));
-    if (page.after !== undefined) params.append(PAGE_AFTER_KEY, page.after);
-  }
-  return params.toString();
-}
-
-/**
- * One value as the characters `coerceQuery` reads back. A `Date` is its ISO instant: through
- * `JSON.stringify` it arrived wrapped in quotes, which `t.date` refuses on the far side. An
- * Invalid Date has no instant, and `toISOString()` throws a bare `RangeError` on it, so it is sent
- * as the text it prints and the read's own schema says what is wrong with it.
- */
-function wireText(item: unknown): string {
-  if (item instanceof Date) return Number.isNaN(item.getTime()) ? String(item) : item.toISOString();
-  return typeof item === 'object' ? JSON.stringify(item) : String(item);
 }

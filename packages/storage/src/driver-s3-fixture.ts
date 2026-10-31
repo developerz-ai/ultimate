@@ -79,6 +79,9 @@ export class FakeS3Client implements S3ClientLike {
   readonly fileCalls: string[] = [];
   readonly presignCalls: PresignCall[] = [];
   readonly listCalls: ListCall[] = [];
+  /** Every ranged GET, end-exclusive as Bun's `slice` takes it — a whole-object read records none. */
+  readonly sliceCalls: { readonly key: string; readonly begin: number; readonly end: number }[] =
+    [];
   listResult: S3ListResultLike = { contents: [] };
   /** A provider REFUSAL (403/503/reset) — the failure `delete()` must surface, not swallow. */
   failDeleteFor: string | undefined;
@@ -217,6 +220,18 @@ export class FakeS3Client implements S3ClientLike {
         if (client.absentDeleteFor === key) throw s3Error('NoSuchKey', 404, key);
         if (client.failDeleteFor === key) throw s3Error('AccessDenied', 403, key);
         store.delete(key);
+      },
+      slice(begin, end) {
+        client.sliceCalls.push({ key, begin, end });
+        return {
+          async arrayBuffer() {
+            if (client.failReadWith !== undefined) throw client.failReadWith;
+            if (client.failBodyWith !== undefined) throw client.failBodyWith;
+            const entry = store.get(key);
+            if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
+            return new Uint8Array(entry.bytes.slice(begin, end)).buffer;
+          },
+        };
       },
       stream() {
         const entry = store.get(key);

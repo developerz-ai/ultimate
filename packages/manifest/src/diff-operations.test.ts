@@ -148,3 +148,33 @@ describe('unit · a query input schema', () => {
     expect(kindsAt([unpublished], withQuery({ input: { required: ['id'] } }))).toEqual([]);
   });
 });
+
+// Rows and a signed URL are two different answers: every caller is written against one of them.
+describe('unit · a query that becomes, or stops being, a download', () => {
+  test('rows -> download and download -> rows are both breaking', () => {
+    const became = diffManifest(
+      fixtureManifest(),
+      fixtureManifest({ queries: withQuery({ download: true }) }),
+    );
+    expect(became.changes).toContainEqual({
+      kind: 'breaking',
+      path: 'queries.feed.download',
+      detail: 'rows -> download',
+    });
+    const stopped = diffManifest(
+      fixtureManifest({ queries: withQuery({ download: true }) }),
+      fixtureManifest(),
+    );
+    expect(stopped.changes).toContainEqual({
+      kind: 'breaking',
+      path: 'queries.feed.download',
+      detail: 'download -> rows',
+    });
+  });
+
+  test('a download that stayed one reports nothing', () => {
+    const both = fixtureManifest({ queries: withQuery({ download: true }) });
+    const paths = diffManifest(both, both).changes.map((change) => change.path);
+    expect(paths).not.toContain('queries.feed.download');
+  });
+});

@@ -137,6 +137,8 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       // empty list is refused at `query()`, so absence carries the whole meaning.
       ...(query.subscribes === null ? {} : { subscribes: query.subscribes }),
       cacheTags: query.tags,
+      // Written only when true — the reason `mutator` is: absence already means "answers rows".
+      ...(query.download ? { download: true as const } : {}),
     })),
     // Already the fact's shape, sorted and flattened by `describeChannels` — projected field by
     // field all the same, for the reason above.

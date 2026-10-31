@@ -213,6 +213,12 @@ export interface QueryFact {
    */
   readonly subscribes?: readonly string[];
   readonly cacheTags: readonly string[];
+  /**
+   * `true` when the read is a `query({ download })` — it answers a file at a signed URL, never
+   * rows. Absent on every other read, like `ActionFact.mutator`: a `false` per read is bytes for
+   * no fact. A caller built against rows is broken by the flip, and one built against a URL too.
+   */
+  readonly download?: true;
 }
 
 /**

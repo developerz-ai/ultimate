@@ -135,6 +135,19 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
     expect(body).toBe('streamed bytes');
   });
 
+  test('a ranged get() sends Range: and answers only the window, clamped to the object', async () => {
+    await disk.put(at('range.txt'), bytesOf('0123456789'), { contentType: 'text/plain' });
+
+    const window = await disk.get(at('range.txt'), { range: [2, 5] });
+    const tail = await disk.get(at('range.txt'), { range: [7, 1_000] });
+
+    expect([textOf(window.bytes), window.range, window.object.size]).toEqual(['2345', [2, 5], 10]);
+    expect([textOf(tail.bytes), tail.range]).toEqual(['789', [7, 9]]);
+    expect(codeOf(await catchError(() => disk.get(at('range.txt'), { range: [10, 11] })))).toBe(
+      'X_STORAGE_RANGE_UNSATISFIABLE',
+    );
+  });
+
   test('an object past one part round-trips byte for byte', async () => {
     // 6 MiB: over the 5 MiB S3 part floor, under the driver's 10 MiB `maxPutBytes`.
     const big = new Uint8Array(6 * 1024 * 1024);

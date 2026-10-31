@@ -24,12 +24,7 @@ import {
   resetStorage,
   scopedKey,
 } from '@ultimat3/storage';
-import {
-  etagMatches,
-  parseByteRange,
-  STORAGE_READ_PERMISSION,
-  storageRoutes,
-} from './runtime-storage';
+import { etagMatches, STORAGE_READ_PERMISSION, storageRoutes } from './runtime-storage';
 
 const BYTES = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 const KEY = scopedKey('org-1', 'avatars', 'a.png');
@@ -379,31 +374,5 @@ describe('unit · dev storage · conditional and range parsing', () => {
     expect(etagMatches('*', '"abc"')).toBe(true);
     expect(etagMatches('"other"', '"abc"')).toBe(false);
     expect(etagMatches(null, '"abc"')).toBe(false);
-  });
-
-  test('the ranges a media element actually sends', () => {
-    expect(parseByteRange('bytes=0-', 10)).toEqual({ start: 0, end: 9 });
-    expect(parseByteRange('bytes=2-4', 10)).toEqual({ start: 2, end: 4 });
-    expect(parseByteRange('bytes=5-99', 10)).toEqual({ start: 5, end: 9 });
-    expect(parseByteRange('bytes=-3', 10)).toEqual({ start: 7, end: 9 });
-    // A suffix longer than the object is the whole object.
-    expect(parseByteRange('bytes=-99', 10)).toEqual({ start: 0, end: 9 });
-  });
-
-  test('unsatisfiable and ignorable are different answers', () => {
-    expect(parseByteRange('bytes=10-', 10)).toBe('unsatisfiable');
-    expect(parseByteRange('bytes=4-2', 10)).toBe('unsatisfiable');
-    expect(parseByteRange('bytes=0-', 0)).toBe('unsatisfiable');
-    // A SUFFIX against a zero-byte object. The non-suffix branch already answered this through
-    // `start >= size`; the suffix branch had no such test, so `bytes=-5` on an empty object
-    // answered `{ start: 0, end: -1 }` and the route rendered `content-range: bytes 0--1/0` with
-    // status 206. RFC 9110 requires 416 — nothing satisfies a range over no bytes at all.
-    expect(parseByteRange('bytes=-5', 0)).toBe('unsatisfiable');
-    expect(parseByteRange('bytes=-1', 0)).toBe('unsatisfiable');
-    expect(parseByteRange('bytes=-99', 0)).toBe('unsatisfiable');
-    // Multi-range and nonsense are ignored, not refused: the whole object is a valid answer.
-    expect(parseByteRange('bytes=0-1,4-5', 10)).toBeUndefined();
-    expect(parseByteRange('items=0-1', 10)).toBeUndefined();
-    expect(parseByteRange(null, 10)).toBeUndefined();
   });
 });

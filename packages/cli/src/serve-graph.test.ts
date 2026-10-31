@@ -133,8 +133,12 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * `jobs/src/worker-process-cap.ts` (the per-process count, read before each claim) and
  * `worker-claim-sweep.ts` (which queue a pass asks, rotated) — `worker.ts` is at the 500-line
  * ceiling; reached through the jobs barrel.
+ * raised 654 → 660, measured 660 (2026-10-31, `query({ download })` + ranged storage reads):
+ * `query/src/download.ts`, `download-token.ts`, `download-http.ts`, `download-errors.ts` and
+ * `search-string.ts` (the input encoding the client and a minted URL share), reached through the
+ * query barrel, and `http/src/byte-range.ts` — the one `Range:` reader, through the http barrel.
  */
-const MIGRATE_CEILING = 654;
+const MIGRATE_CEILING = 660;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -265,8 +269,12 @@ const MIGRATE_CEILING = 654;
  * raised 968 → 969, measured 969 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
  * `render/src/route-navigation.ts`, the declaration's one reader, which `route.ts` imports and so
  * every role reaches through the render barrel.
+ * raised 969 → 981, measured 981 (2026-10-31, `query({ download })` + ranged storage reads): the
+ * six modules named on `MIGRATE_CEILING` for that change, `storage/src/range.ts`, and core's
+ * `seal.ts` closure (`seal-errors`, `seal-keys`, `secrets`, `secrets-errors`, `secrets-store`) —
+ * the download token is sealed, and the query barrel every serving role loads reaches it.
  */
-const SERVING_ROLE_CEILING = 969;
+const SERVING_ROLE_CEILING = 981;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -383,8 +391,10 @@ const SERVING_ROLE_CEILING = 969;
  * named on `MIGRATE_CEILING` for that change.
  * raised 1100 → 1101, measured 1101 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
  * the one module named on `SERVING_ROLE_CEILING` for that change.
+ * raised 1101 → 1113, measured 1113 (2026-10-31, `query({ download })` + ranged storage reads):
+ * the twelve modules named on `SERVING_ROLE_CEILING` for that change.
  */
-const WEB_ROLE_CEILING = 1101;
+const WEB_ROLE_CEILING = 1113;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

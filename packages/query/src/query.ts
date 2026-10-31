@@ -15,6 +15,8 @@ import { policyCapability, policyPermissions } from '@ultimat3/policy';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryCacheScope } from './cache';
 import type { QueryClientMethodOf, QueryClientOptions } from './client';
+import type { DownloadQuery, DownloadQueryDef, QueryDownload } from './download';
+import { assertDownloadDef, buildDownloadQuery } from './download';
 import { QueryCacheTtlInvalidError, QuerySingleInvalidError } from './errors';
 import { facadeFor } from './facade';
 import { assertEncodableInput } from './input-shape';
@@ -190,6 +192,8 @@ export interface QueryDescriptor {
   readonly ttlMs: number | null;
   readonly rateLimit: QueryRateLimit | null;
   readonly deprecated: Deprecation | null;
+  /** Declared `download:` — the read answers a file at a signed URL, never rows. */
+  readonly download: boolean;
 }
 
 /**
@@ -210,6 +214,8 @@ export interface AnyQueryDef {
   readonly rateLimit?: QueryRateLimit;
   readonly deprecated?: Deprecation;
   readonly audit?: boolean;
+  /** A download's handler. Private like `sql`: `download.ts` reaches it through `defOf`. */
+  readonly download?: QueryDownload<StandardSchemaV1>;
 }
 
 export interface AnyQuery {
@@ -231,6 +237,8 @@ export interface AnyQuery {
   /** Lifted so `toQueryRoute` reads the declaration without reaching through `defOf`. */
   readonly rateLimit?: QueryRateLimit;
   readonly deprecated?: Deprecation;
+  /** `true` on a `query({ download })` — the route mints a URL or serves a file. Absent otherwise. */
+  readonly download?: true;
   describe(): QueryDescriptor;
   /** A twin under another name. Registration names through `named`. */
   named(name: string): AnyQuery;
@@ -288,15 +296,33 @@ export type QueryFacade<
   | 'client'
 >;
 
+/**
+ * A read whose answer is a FILE at a short-lived signed URL — `download.ts`. Same primitive: one
+ * policy, one name, one route; `sql` and every rows option are refused beside it.
+ */
+export function query<TInput extends StandardSchemaV1>(
+  def: DownloadQueryDef<TInput>,
+): DownloadQuery<TInput>;
 export function query<
   TInput extends StandardSchemaV1,
   TRow extends object,
   TSingle extends boolean = false,
->(def: QueryDef<TInput, TRow, TSingle>): Query<TInput, TRow, TSingle> {
+>(def: QueryDef<TInput, TRow, TSingle>): Query<TInput, TRow, TSingle>;
+export function query<
+  TInput extends StandardSchemaV1,
+  TRow extends object,
+  TSingle extends boolean = false,
+>(
+  def: QueryDef<TInput, TRow, TSingle> | DownloadQueryDef<TInput>,
+): Query<TInput, TRow, TSingle> | DownloadQuery<TInput> {
   // Here and not in `toQueryRoute`: a read is projected to `GET /_x/query/<kebab>` whether or not
   // anyone mounts it, and the typed client derives that same URL — so an input a query string
   // cannot carry is wrong for every call, and the file that declared it is where it is repaired.
   assertEncodableInput(def.input);
+  if (isDownloadDef(def)) {
+    assertDownloadDef(def);
+    return buildDownloadQuery(def, '', describeQuery);
+  }
   assertCacheTtl(def.cache);
   assertSubscribes(def.subscribes, def.live);
   // A JS caller or generated code can write `single: 'yes'`; truthiness would read it as `true`
@@ -310,6 +336,12 @@ export function query<
   // FULL from. A frozen copy makes the declaration the descriptor carries the one that was checked.
   const subscribes = def.subscribes === undefined ? undefined : Object.freeze([...def.subscribes]);
   return build(subscribes === undefined ? def : { ...def, subscribes }, '');
+}
+
+function isDownloadDef<TInput extends StandardSchemaV1>(
+  def: QueryDef<TInput, object, boolean> | DownloadQueryDef<TInput>,
+): def is DownloadQueryDef<TInput> {
+  return 'download' in def && def.download !== undefined;
 }
 
 /**
@@ -384,6 +416,7 @@ export function describeQuery(target: AnyQuery): QueryDescriptor {
     ttlMs: target.cache?.ttlMs ?? null,
     rateLimit: target.rateLimit ?? null,
     deprecated: target.deprecated ?? null,
+    download: target.download === true,
   };
 }
 

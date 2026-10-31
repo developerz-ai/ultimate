@@ -31,6 +31,10 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_QUERY_AUDIT_SINK_MISSING: 'a query declares audit: true and no audit sink is installed',
   X_QUERY_AUDIT_SINK_FAILED:
     'an audited read was refused because the audit sink rejected its record',
+  X_QUERY_DOWNLOAD_INVALID: 'a query declares a download it cannot serve',
+  X_QUERY_DOWNLOAD_ONLY: 'rows were asked of a query that answers a file',
+  X_QUERY_DOWNLOAD_TOKEN_INVALID: 'a download URL carries a token this app did not mint for it',
+  X_QUERY_DOWNLOAD_TOKEN_EXPIRED: 'a download URL is past its expiry',
 };
 
 /**

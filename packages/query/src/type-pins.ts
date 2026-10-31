@@ -5,6 +5,8 @@
 
 import type { McpExposureDeclaration } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import type { QueryClient } from './client';
+import type { DownloadClientMethod, DownloadQuery, DownloadQueryDef } from './download';
 import type { AnyQuery, Query, QueryDef } from './query';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -60,3 +62,19 @@ export type _NoQueryMcpTwin = import('./index').QueryMcp;
 export type _NoQueryMcpAnnotationsTwin = import('./index').QueryMcpAnnotations;
 // @ts-expect-error — `QueryListParams` is core's `McpListParams`.
 export type _NoQueryListParamsTwin = import('./index').QueryListParams;
+
+/**
+ * A download query's client is `url()` and nothing else: no rows call, no `page` — the route
+ * answers a minted URL or a file, never rows, so a method that promised rows would be a lie.
+ */
+type DownloadInput = StandardSchemaV1<{ runId: string }, { runId: string }>;
+export type _DownloadClientIsUrlOnly = Assert<
+  Identical<
+    QueryClient<{ rec: DownloadQuery<DownloadInput> }>['rec'],
+    DownloadClientMethod<DownloadInput>
+  >
+>;
+/** And a download declares no rows option: `sql` beside `download` does not compile. */
+export type _DownloadDeclaresNoSql = Assert<
+  Equals<NonNullable<DownloadQueryDef<DownloadInput>['sql']>, never>
+>;

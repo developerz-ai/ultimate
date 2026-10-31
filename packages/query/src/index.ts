@@ -47,6 +47,7 @@ export {
   requestMemo,
 } from './cache';
 export type {
+  DownloadUrl,
   FetchLike,
   QueryCallOptions,
   QueryClient,
@@ -58,7 +59,7 @@ export type {
   QuerySingleClientMethod,
 } from './client';
 /** `queryClient` is the map-wide read client; `queryClientMethodFor` is what `.client()` binds. */
-export { queryClient, queryClientMethodFor } from './client';
+export { downloadClientFor, queryClient, queryClientMethodFor } from './client';
 /**
  * `isNull` is the one definition of SQL NULL a custom `SqlSource` has to agree with, and
  * `totalOrder` is the one definition of the order it must serve a page in. `compareRows`,
@@ -67,6 +68,30 @@ export { queryClient, queryClientMethodFor } from './client';
  */
 export type { KindOf } from './column-kinds';
 export { kindsOf } from './column-kinds';
+/**
+ * `query({ download })` — a read answered by a FILE at a short-lived signed URL. Still a `query`:
+ * one policy, one name, one route (`GET /_x/query/<kebab>`: mint without `_token`, serve with it).
+ */
+export type {
+  DownloadArgs,
+  DownloadClientMethod,
+  DownloadFile,
+  DownloadQuery,
+  DownloadQueryDef,
+  QueryDownload,
+} from './download';
+export {
+  DEFAULT_DOWNLOAD_TTL_MS,
+  MAX_DOWNLOAD_TTL_MS,
+  MIN_DOWNLOAD_TTL_MS,
+} from './download';
+export type { DownloadTokenProblem } from './download-errors';
+export {
+  QueryDownloadInvalidError,
+  QueryDownloadOnlyError,
+  QueryDownloadTokenExpiredError,
+  QueryDownloadTokenInvalidError,
+} from './download-errors';
 export {
   CursorValueUnsupportedError,
   MatcherUnsupportedError,

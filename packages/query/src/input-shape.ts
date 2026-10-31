@@ -16,6 +16,7 @@
 // input cannot be written.
 
 import { type SchemaNode, tryIntrospect } from '@ultimat3/schema';
+import { DOWNLOAD_GRANT_PARAM } from './download-token';
 import { QueryInputUnencodableError } from './errors';
 import { PAGE_CONTROL_KEYS } from './page-controls';
 
@@ -33,6 +34,9 @@ function unencodable(node: SchemaNode): string | undefined {
     // exactly like a nested object, and for the same reason: the wire cannot carry it.
     if (PAGE_CONTROL_KEYS.includes(key)) {
       return `${key} is reserved — the route reads it as a page control (see query.page())`;
+    }
+    if (key === DOWNLOAD_GRANT_PARAM) {
+      return `${key} is reserved — a download's route reads it as the signed token (see query.url())`;
     }
     // Required AND nullable: `searchOf` sends nothing for a `null`, and absence is what the far
     // side then sees — so the value the caller explicitly chose fails validation on arrival.

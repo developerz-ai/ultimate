@@ -194,6 +194,33 @@ the disk's own size (a HEAD on s3) before a byte is read — and is read with `s
 because an object's size is not the server's to choose: a presigned PUT lands in a bucket
 unmeasured, so a later `get()` of it was heap growth the uploader picked.
 
+## Ranged reads — `get(key, { range: [first, last] })`
+
+```ts
+import { disk } from '@ultimat3/storage';
+
+const page = await disk('debug').get('runs/r1/http.ndjson', { range: [0, 65_535] });
+page.bytes;        // at most 65 536 bytes
+page.range;        // [0, 65_535] — or [0, size - 1] when the object is shorter
+page.object.size;  // the WHOLE object's size, for `Content-Range: bytes 0-65535/<size>`
+```
+
+| Rule | |
+|---|---|
+| Offsets | `first` and `last` are BOTH inclusive — HTTP's `bytes=first-last`, S3's `Range:` |
+| On the wire | s3: a HEAD, then one GET with `Range:` (Bun's `S3File.slice`); local: `Bun.file().slice()`; memory: a slice of its copy |
+| Clamp | a `last` past the end is clamped to `size - 1`, as HTTP clamps it; `read.range` says what was served |
+| Refusal | a `first` at or past the end — an empty object has none — is `X_STORAGE_RANGE_UNSATISFIABLE` (416) |
+| Screen | a backwards, negative, fractional or malformed tuple is the caller's defect: core's `X_INVARIANT` |
+| Ceiling | `maxGetBytes` bounds the RANGE, not the object: a 40MB log is refused whole and readable 1MB at a time |
+| Absence | `read.range` is present exactly when a range was asked — a third-party driver that ignored the option answers none |
+
+**A SEALED object cannot be range-read meaningfully.** `seal()` (`@ultimat3/core`) writes one
+`x1` envelope — one AES-256-GCM ciphertext, base64url, whose tag authenticates every byte — so a
+slice of it neither opens nor means anything, and there is no framed or chunked form of the
+envelope to slice along (`As of 2026-10`). Range-read plain objects. To page a sealed log, seal
+each page as its OWN object (`runs/<id>/http/0000`, `…/0001`) and read the page you need whole.
+
 ## Write-once objects (S3 Object Lock)
 
 ```ts
@@ -425,6 +452,7 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_PUT_FAILED` | the disk REFUSED a `put()`/`copy()` — `EACCES`, `ENOSPC`, `EROFS`, a provider's refused PUT |
 | `X_STORAGE_OBJECT_LOCKED` | local, memory: a delete, overwrite or copy onto a key under retention or a legal hold; the cause names the key, the mode and `retainUntil` or the hold, and the bytes are unchanged. Never raised by s3, where the provider keeps the locked version |
 | `X_STORAGE_READ_FAILED` | the disk REFUSED a `get`/`stat`/`exists`/`stream` or the read half of a `copy` — a denied `s3:GetObject`, a throttle, an unreadable file. An **absent** object is still `X_STORAGE_NOT_FOUND`, including one deleted between the existence check and the read |
+| `X_STORAGE_RANGE_UNSATISFIABLE` | `get(key, { range })` whose first byte is at or past the object's size — the 416 |
 | `X_STORAGE_KEY_CONFLICT` | local and memory disks (never s3): the key's path is another key's directory, or the reverse (`a` and `a/b`) |
 | `X_NOT_IMPLEMENTED` | `serverSideEncryption` on any driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |

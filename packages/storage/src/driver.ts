@@ -7,6 +7,7 @@ import type { Clock, Page } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import { putTooLarge } from './errors';
 import type { ObjectLock, ObjectLockOptions } from './object-lock';
+import type { ByteRange, GetOptions } from './range';
 import type { SignedUrlVerification } from './signed-url';
 
 export type StorageBody = Uint8Array | ReadableStream<Uint8Array> | Blob;
@@ -81,8 +82,15 @@ export interface ListOptions {
 }
 
 export interface StorageRead {
+  /** The WHOLE object's description — `size` is the object's, never the range's. */
   readonly object: StorageObject;
   readonly bytes: Uint8Array;
+  /**
+   * The bytes served, both inclusive, after the clamp — present exactly when `range` was asked.
+   * A third-party driver that ignored the option answers none, and that absence is how a caller
+   * tells a slice from the whole object rather than trusting `bytes.byteLength`.
+   */
+  readonly range?: ByteRange | undefined;
 }
 
 export type SignedUrlMethod = 'GET' | 'PUT';
@@ -134,9 +142,11 @@ export interface StorageDriver {
   stat(key: string): Promise<StorageObject | undefined>;
   /**
    * The whole object, BUFFERED — so bounded: an object over the driver's `maxGetBytes` is
-   * `X_STORAGE_TOO_LARGE`, exactly as `put()` refuses a body over `maxPutBytes`. Past it, `stream()`.
+   * `X_STORAGE_TOO_LARGE`, exactly as `put()` refuses a body over `maxPutBytes`. Past it, `stream()`
+   * — or `{ range: [first, last] }`, which reads only those bytes (inclusive) and is bounded by
+   * the range's length: s3 sends `Range:`, the local disk slices the file, memory slices its copy.
    */
-  get(key: string): Promise<StorageRead>;
+  get(key: string, options?: GetOptions): Promise<StorageRead>;
   /** Bytes without buffering — the only safe path for anything over a few MB. */
   stream(key: string): Promise<ReadableStream<Uint8Array>>;
   /**

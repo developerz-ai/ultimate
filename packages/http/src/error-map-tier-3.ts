@@ -97,4 +97,10 @@ export const TIER_3_ERROR_STATUS = {
   X_QUERY_AUDIT_SINK_MISSING: 500,
   // @ultimat3/query — an audited read was refused because the audit sink rejected its record
   X_QUERY_AUDIT_SINK_FAILED: 503,
+  // @ultimat3/query — rows were asked of a query that answers a file
+  X_QUERY_DOWNLOAD_ONLY: 400,
+  // @ultimat3/query — a download URL carries a token this app did not mint for it
+  X_QUERY_DOWNLOAD_TOKEN_INVALID: 403,
+  // @ultimat3/query — a download URL is past its expiry
+  X_QUERY_DOWNLOAD_TOKEN_EXPIRED: 410,
 } satisfies Readonly<Record<string, number>>;
