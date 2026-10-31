@@ -4,7 +4,7 @@
 // not the object. Three drivers each restating it is how a slice comes back one byte off on one.
 
 import { assert } from '@ultimat3/core';
-import { getTooLarge, rangeUnsatisfiable } from './errors';
+import { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
 
 /**
  * The first and the last byte, BOTH INCLUSIVE — HTTP's `Range: bytes=first-last` and S3's, so a
@@ -66,7 +66,6 @@ export function servedRange(
   const [first, wanted] = range;
   if (first >= size) throw rangeUnsatisfiable(disk, key, range, size);
   const last = Math.min(wanted, size - 1);
-  const bytes = last - first + 1;
-  if (bytes > maxGetBytes) throw getTooLarge(disk, key, bytes, maxGetBytes, true);
+  if (last - first + 1 > maxGetBytes) throw rangeTooLarge(disk, key, [first, last], maxGetBytes);
   return [first, last];
 }

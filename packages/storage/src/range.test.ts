@@ -73,6 +73,7 @@ describe('get(key, { range }) — inclusive first and last byte', () => {
   });
 
   test('a plain get() still answers no range, so a slice is never mistaken for the object', async () => {
+    await rm(root, { recursive: true, force: true });
     await seeded(100);
     for (const [name, disk] of disks) {
       const read = await disk.get(KEY);
@@ -101,7 +102,9 @@ describe('the ceiling bounds the RANGE, not the object', () => {
     for (const [name, disk] of disks) {
       const caught = await catchError(() => disk.get(KEY, { range: [0, 8] }));
       expect([name, anyCodeOf(caught)]).toEqual([name, 'X_STORAGE_TOO_LARGE']);
-      expect(isUltimateError(caught) && caught.fix).toContain('ask a range of at most 6 bytes');
+      expect(isUltimateError(caught) && caught.fix).toStartWith(
+        `await disk.get("${KEY}", { range: [0, 5] })`,
+      );
     }
     expect(fake.sliceCalls).toEqual([]);
   });
@@ -110,9 +113,18 @@ describe('the ceiling bounds the RANGE, not the object', () => {
 describe('refusals', () => {
   test('a first byte at or past the end is X_STORAGE_RANGE_UNSATISFIABLE on every disk', async () => {
     for (const [name, disk] of disks) {
-      const caught = await catchError(() => disk.get(KEY, { range: [10, 12] }));
-      expect([name, anyCodeOf(caught)]).toEqual([name, 'X_STORAGE_RANGE_UNSATISFIABLE']);
-      expect(isUltimateError(caught) && caught.meta).toMatchObject({ size: 10, first: 10 });
+      for (const first of [10, 11, 50]) {
+        const caught = await catchError(() => disk.get(KEY, { range: [first, first + 2] }));
+        expect([name, first, anyCodeOf(caught)]).toEqual([
+          name,
+          first,
+          'X_STORAGE_RANGE_UNSATISFIABLE',
+        ]);
+        expect(isUltimateError(caught) && caught.meta).toMatchObject({ size: 10, first });
+        expect(isUltimateError(caught) && caught.fix).toStartWith(
+          `await disk.get("${KEY}", { range: [0, 9] })`,
+        );
+      }
     }
   });
 
@@ -121,6 +133,10 @@ describe('refusals', () => {
       await disk.put('org/org-1/empty', new Uint8Array(), { contentType: 'text/plain' });
       const caught = await catchError(() => disk.get('org/org-1/empty', { range: [0, 0] }));
       expect([name, anyCodeOf(caught)]).toEqual([name, 'X_STORAGE_RANGE_UNSATISFIABLE']);
+      // Not `[0, 0]` again, which is the same 416: the plain read of an empty object.
+      expect(isUltimateError(caught) && caught.fix).toStartWith(
+        'await disk.get("org/org-1/empty")   #',
+      );
     }
   });
 
@@ -144,5 +160,45 @@ describe('refusals', () => {
       const caught = await catchError(() => disk.get('org/org-1/nope', { range: [0, 1] }));
       expect([name, anyCodeOf(caught)]).toEqual([name, 'X_STORAGE_NOT_FOUND']);
     }
+  });
+});
+
+describe('s3: an object that changes between the HEAD and the ranged GET', () => {
+  const s3Of = (): StorageDriver => disks.find(([name]) => name === 's3')?.[1] as StorageDriver;
+  const rewrite = (text: string) => {
+    let once = true;
+    fake.beforeRangeRead = (key) => {
+      if (!once) return;
+      once = false;
+      fake.store.set(key, { bytes: bytesOf(text), type: 'application/x-ndjson' });
+    };
+  };
+
+  test('shrunk: the served range and the size are the object the bytes came from', async () => {
+    rewrite('01234567');
+    const read = await s3Of().get(KEY, { range: [7, 9] });
+    expect([textOf(read.bytes), read.range, read.object.size]).toEqual(['7', [7, 7], 8]);
+  });
+
+  test('grown: the size is re-read, never the stale HEAD', async () => {
+    rewrite('0123456789AB');
+    const read = await s3Of().get(KEY, { range: [8, 11] });
+    expect([textOf(read.bytes), read.range, read.object.size]).toEqual(['89AB', [8, 11], 12]);
+  });
+
+  test('shrunk past the first byte asked: the 416 the new object owes', async () => {
+    rewrite('0123');
+    const caught = await catchError(() => s3Of().get(KEY, { range: [6, 9] }));
+    expect(anyCodeOf(caught)).toBe('X_STORAGE_RANGE_UNSATISFIABLE');
+  });
+
+  test('a writer that never stops: X_STORAGE_READ_FAILED, never a slice of an unknown object', async () => {
+    let n = 0;
+    fake.beforeRangeRead = (key) => {
+      n += 1;
+      fake.store.set(key, { bytes: bytesOf('x'.repeat(10 + n)), type: 'text/plain' });
+    };
+    const caught = await catchError(() => s3Of().get(KEY, { range: [0, 3] }));
+    expect(anyCodeOf(caught)).toBe('X_STORAGE_READ_FAILED');
   });
 });

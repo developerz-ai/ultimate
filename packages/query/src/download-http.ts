@@ -95,6 +95,19 @@ function tokenOf(
   throw new QueryInputInvalidError(name, `${DOWNLOAD_GRANT_PARAM} was sent ${token.length} times`);
 }
 
+/**
+ * A lone UTF-16 surrogate has no UTF-8 form, so `encodeURIComponent` throws a bare `URIError` on it.
+ * Spelled out because `String#isWellFormed` is ES2024 and the lib is ES2023 (core's cookie rule).
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * What a served file may load: nothing from anywhere, but its own bytes as an image or a video —
+ * the tab a browser renders an image or a film in fetches that one URL. `sandbox` alone still let
+ * an inline HTML file fetch `<img src="https://elsewhere">` and carry this bearer URL in `Referer`.
+ */
+export const DOWNLOAD_CSP = "default-src 'none'; img-src 'self'; media-src 'self'; sandbox";
+
 /** A C0 control or DEL — what turns one header value into two. */
 const hasControl = (text: string): boolean =>
   [...text].some((char) => char.charCodeAt(0) < 0x20 || char.charCodeAt(0) === 0x7f);
@@ -109,7 +122,7 @@ function assertFile(file: DownloadFile): void {
   assert(
     body instanceof Uint8Array || body instanceof Blob || body instanceof ReadableStream,
     'a download handle() answered a body that is not a Uint8Array, a Blob or a ReadableStream',
-    "return { body: bytes, contentType: 'video/mp4', filename: 'run.mp4' } — bytes, never a base64 string",
+    "return { body: bytes, contentType: 'video/mp4', filename: 'run.mp4' }   // bytes, never a base64 string",
   );
   assert(
     typeof contentType === 'string' && contentType !== '' && !hasControl(contentType),
@@ -117,8 +130,11 @@ function assertFile(file: DownloadFile): void {
     "return { body, contentType: 'video/mp4', filename }",
   );
   assert(
-    typeof filename === 'string' && filename !== '' && !hasControl(filename),
-    'a download handle() answered a filename that is empty, not a string, or carries a control character',
+    typeof filename === 'string' &&
+      filename !== '' &&
+      !hasControl(filename) &&
+      !LONE_SURROGATE.test(filename),
+    'a download handle() answered a filename that is empty, not a string, or carries a control character or a lone UTF-16 surrogate',
     "return { body, contentType, filename: 'run.mp4' }",
   );
   assert(
@@ -129,7 +145,7 @@ function assertFile(file: DownloadFile): void {
   assert(
     size === undefined || (Number.isSafeInteger(size) && size >= 0),
     `a download handle() answered size ${String(size)}, which is not a whole number of bytes`,
-    'size: the stream’s length in bytes — or omit it, and the stream is served whole',
+    'size: stream.byteLength   // the stream’s length in bytes, or omit it to serve it whole',
   );
 }
 
@@ -183,9 +199,10 @@ export function fileResponse(file: DownloadFile, rangeHeader: string | null): Re
     'content-type': file.contentType,
     'content-disposition': contentDisposition(file),
     'x-content-type-options': 'nosniff',
-    // A browser that renders it anyway gets an opaque origin, no script and no cookies — so a
-    // file navigated to loads nothing that could carry this capability URL off in a `Referer`.
-    'content-security-policy': 'sandbox',
+    // Loads nothing but itself, in an opaque origin with no script — and names no URL on the way
+    // out: the one this file is served at is a bearer grant until it expires.
+    'content-security-policy': DOWNLOAD_CSP,
+    'referrer-policy': 'no-referrer',
   });
   const size = sizeOf(file);
   if (size === undefined) {

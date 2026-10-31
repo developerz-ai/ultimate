@@ -15,7 +15,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `await q.url(input, { ctx })` on the server) runs the read's policy and answers `{ url,
   expiresAt }`; `GET <url>` serves `handle`'s `{ body: Uint8Array | Blob | ReadableStream,
   contentType, filename, disposition?, size? }` to whoever holds the URL — a `<video>`, a tab —
-  with `content-disposition`, one `Range:` window (206/416), `nosniff`, `sandbox` and `no-store`.
+  with `content-disposition`, one `Range:` window (206/416), `nosniff`, `no-store`, `referrer-policy:
+  no-referrer` and `default-src 'none'; img-src 'self'; media-src 'self'; sandbox` — an inline file
+  loads nothing elsewhere. A handler's `referrer-policy: no-referrer` is now kept by the security
+  stage, as its `content-security-policy` already was (it only narrows).
   The `_token` is the minting actor, the query, the parsed input's fingerprint and the expiry,
   `seal()`ed under the app master key: forged, truncated, another query's or re-pointed at other
   input is `X_QUERY_DOWNLOAD_TOKEN_INVALID` (403), past `expiresInMs` (default 5 min, at most 1 h)
@@ -25,7 +28,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   way is breaking), OpenAPI documents the mint and the file, `x routes` lists the read's own GET.
   `packages/query/src/download*.ts`.
 - **`disk.get(key, { range: [first, last] })` on the memory, local and s3 disks** — both offsets
-  inclusive; s3 sends `Range:`, the local disk slices the file. The last byte is clamped, a first
+  inclusive; s3 sends `Range:` and re-HEADs after it (a write between the two re-sizes the window,
+  three in a row are `X_STORAGE_READ_FAILED`), the local disk slices the file. The last byte is clamped, a first
   byte at or past the end is `X_STORAGE_RANGE_UNSATISFIABLE` (416), and `maxGetBytes` bounds the
   range rather than the object; `read.range` is the window served. A SEALED object (one AES-GCM
   envelope) is not range-readable — page it as one sealed object per page.

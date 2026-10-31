@@ -6,7 +6,12 @@
 import type { McpExposureDeclaration } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryClient } from './client';
-import type { DownloadClientMethod, DownloadQuery, DownloadQueryDef } from './download';
+import type {
+  DownloadClientMethod,
+  DownloadQuery,
+  DownloadQueryDef,
+  QueryDownload,
+} from './download';
 import type { AnyQuery, Query, QueryDef } from './query';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -77,4 +82,26 @@ export type _DownloadClientIsUrlOnly = Assert<
 /** And a download declares no rows option: `sql` beside `download` does not compile. */
 export type _DownloadDeclaresNoSql = Assert<
   Equals<NonNullable<DownloadQueryDef<DownloadInput>['sql']>, never>
+>;
+
+/**
+ * And the other way: a rows declaration names `download?: never`, so a VARIABLE holding both `sql`
+ * and `download` (no excess-property check reaches one) matches neither overload — a compile
+ * error where it is written, never `X_QUERY_DOWNLOAD_INVALID` on the first call.
+ */
+type RowsDownload =
+  QueryDef<DownloadInput, object> extends { readonly download?: infer D } ? D : 'absent';
+export type _RowsDeclareNoDownload = Assert<Equals<NonNullable<RowsDownload>, never>>;
+export type _BothDoNotCompile = Assert<
+  Equals<
+    {
+      input: DownloadInput;
+      policy: QueryDef<DownloadInput, object>['policy'];
+      sql: () => never;
+      download: QueryDownload<DownloadInput>;
+    } extends QueryDef<DownloadInput, object> | DownloadQueryDef<DownloadInput>
+      ? true
+      : false,
+    false
+  >
 >;

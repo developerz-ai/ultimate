@@ -195,11 +195,18 @@ function downloadOperation(target: AnyQuery, name: string): Record<string, unkno
         description: `without ${DOWNLOAD_GRANT_PARAM}, the minted URL; with it, the file`,
         content: {
           'application/json': { schema: MINTED_URL },
-          'application/octet-stream': { schema: { type: 'string', format: 'binary' } },
+          // The file's own type — whatever `handle` answered — so any media type, as bytes.
+          '*/*': { schema: FILE_BYTES },
         },
       },
-      '206': { description: 'the one byte range the Range header named' },
+      '206': {
+        description: 'the one byte range the Range header named, with content-range',
+        content: { '*/*': { schema: FILE_BYTES } },
+      },
       '400': problemResponse('X_INPUT_INVALID'),
+      '401': problemResponse(
+        'X_UNAUTHENTICATED — a mint with no session, under a policy that needs one',
+      ),
       '403': problemResponse('policy denied, or X_QUERY_DOWNLOAD_TOKEN_INVALID'),
       '410': problemResponse('X_QUERY_DOWNLOAD_TOKEN_EXPIRED — mint again'),
       '416': { description: 'the Range header starts past the end of the file' },
@@ -213,6 +220,8 @@ function downloadOperation(target: AnyQuery, name: string): Record<string, unkno
     },
   };
 }
+
+const FILE_BYTES: Readonly<Record<string, unknown>> = { type: 'string', format: 'binary' };
 
 const MINTED_URL: Readonly<Record<string, unknown>> = {
   type: 'object',

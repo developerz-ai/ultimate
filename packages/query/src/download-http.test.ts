@@ -189,6 +189,41 @@ describe('the file', () => {
     const server = serve(wrong, viewer);
     const response = await get(server, await mintedPath(server));
     expect(response.status).toBe(500);
+    const problem = await json(response);
+    expect(problem['code']).toBe('X_INVARIANT');
+    expect(String(problem['fix'])).toStartWith('return { body: bytes,');
+  });
+
+  test('a filename with a lone surrogate is X_INVARIANT, never a bare URIError', async () => {
+    const wrong = recording((bytes) => ({
+      body: bytes,
+      contentType: 'video/mp4',
+      filename: 'run-\uD800.mp4',
+    }));
+    const server = serve(wrong, viewer);
+    const response = await get(server, await mintedPath(server));
+    expect(response.status).toBe(500);
+    expect((await json(response))['code']).toBe('X_INVARIANT');
+  });
+
+  test('an inline HTML file loads nothing and sends no Referer: its URL is a bearer grant', async () => {
+    const page = recording(() => ({
+      body: new TextEncoder().encode(
+        '<img src="https://evil.example/" referrerpolicy="unsafe-url">',
+      ),
+      contentType: 'text/html',
+      filename: 'a.html',
+      disposition: 'inline',
+    }));
+    const server = serve(page, viewer);
+    const response = await get(server, await mintedPath(server));
+    const csp = response.headers.get('content-security-policy') ?? '';
+    // The handler's policy is the first; the app's own is appended and can only narrow it.
+    const own = csp.split(',')[0] ?? '';
+    expect(own).toContain("default-src 'none'");
+    expect(own).toContain('sandbox');
+    expect(own).not.toMatch(/img-src [^;]*https?:/);
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
   });
 });
 

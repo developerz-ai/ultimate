@@ -190,40 +190,18 @@ export const getTooLarge = (
   key: string,
   bytes: number,
   maxBytes: number,
-  ranged = false,
 ): StorageError =>
   new StorageError({
     code: 'X_STORAGE_TOO_LARGE',
-    cause: ranged
-      ? `the range asked of "${key}" is ${bytes}B against the ${disk} disk's get ceiling of ${maxBytes}B, and get() buffers the range`
-      : `"${key}" is ${bytes}B against the ${disk} disk's get ceiling of ${maxBytes}B, and get() buffers the whole object`,
+    cause: `"${key}" is ${bytes}B against the ${disk} disk's get ceiling of ${maxBytes}B, and get() buffers the whole object`,
     fix:
-      (ranged
-        ? `ask a range of at most ${maxBytes} bytes, or raise the ceiling: `
-        : `read it with disk.stream(key) instead of get(), or raise the ceiling: `) +
+      `await disk.stream(${renderFixLiteral(key, "'<key>'")})   # unbuffered; or a window with get(key, { range }), or raise the ceiling: ` +
       (disk === 's3'
         ? `s3Driver({ bucket, maxGetBytes: ${bytes} })`
         : disk === 'memory'
           ? `memoryStorageDriver({ maxGetBytes: ${bytes} })`
           : `localDriver({ root, maxGetBytes: ${bytes} })`),
     meta: { disk, key, bytes, maxBytes },
-  });
-
-/**
- * A ranged `get()` whose first byte is at or past the end — HTTP's 416. The last byte is CLAMPED
- * (`range.ts`), so only the first can miss; an empty object has no first byte to serve.
- */
-export const rangeUnsatisfiable = (
-  disk: string,
-  key: string,
-  range: readonly [number, number],
-  size: number,
-): StorageError =>
-  new StorageError({
-    code: 'X_STORAGE_RANGE_UNSATISFIABLE',
-    cause: `get() asked "${key}" for bytes ${range[0]}-${range[1]}, and the object on the ${disk} disk is ${size}B — its first byte is past the end`,
-    fix: `await disk.stat(key) answers the size; ask a first byte below it — get(key, { range: [0, ${Math.max(size - 1, 0)}] })`,
-    meta: { disk, key, first: range[0], last: range[1], size },
   });
 
 /**

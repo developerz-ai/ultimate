@@ -273,8 +273,10 @@ const MIGRATE_CEILING = 660;
  * six modules named on `MIGRATE_CEILING` for that change, `storage/src/range.ts`, and core's
  * `seal.ts` closure (`seal-errors`, `seal-keys`, `secrets`, `secrets-errors`, `secrets-store`) —
  * the download token is sealed, and the query barrel every serving role loads reaches it.
+ * raised 981 → 982, measured 982 (2026-10-31, PR #944 review): `storage/src/errors-range.ts` —
+ * the ranged read's two refusals, split out so `errors.ts` stays under the 500-line ceiling.
  */
-const SERVING_ROLE_CEILING = 981;
+const SERVING_ROLE_CEILING = 982;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -393,8 +395,10 @@ const SERVING_ROLE_CEILING = 981;
  * the one module named on `SERVING_ROLE_CEILING` for that change.
  * raised 1101 → 1113, measured 1113 (2026-10-31, `query({ download })` + ranged storage reads):
  * the twelve modules named on `SERVING_ROLE_CEILING` for that change.
+ * raised 1113 → 1114, measured 1114 (2026-10-31, PR #944 review): the one module named on
+ * `SERVING_ROLE_CEILING` for that change.
  */
-const WEB_ROLE_CEILING = 1113;
+const WEB_ROLE_CEILING = 1114;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

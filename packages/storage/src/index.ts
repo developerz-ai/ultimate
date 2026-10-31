@@ -85,7 +85,6 @@ export {
   pathUnsafe,
   putFailed,
   putTooLarge,
-  rangeUnsatisfiable,
   readFailed,
   STORAGE_ERROR_CODES,
   STORAGE_ERROR_TITLES,
@@ -99,6 +98,7 @@ export {
   xmlBodyUnreadable,
 } from './errors';
 export { alreadyPromoted, quarantined } from './errors-promote';
+export { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
 export type { GrantUploadInput, UploadGrant, UploadRequest } from './grant';
 export { grantUpload } from './grant';
 export type {

@@ -55,8 +55,8 @@ string exactly when another object exists past the page, on every driver: a full
 
 ## A ranged read — `get(key, { range: [first, last] })`
 
-`As of 2026-10-31`. Both offsets INCLUSIVE, as HTTP's `Range:` is. s3 sends `Range:` (one HEAD,
-one ranged GET), the local disk slices the file, memory slices its copy. A `last` past the end is
+`As of 2026-10-31`. Both offsets INCLUSIVE, as HTTP's `Range:` is. s3 sends `Range:` (a HEAD, the
+ranged GET, and a HEAD that proves the object did not change under it), the local disk slices the file, memory slices its copy. A `last` past the end is
 clamped (`read.range` says what was served; `read.object.size` is the whole object's), a `first`
 at or past the end is `X_STORAGE_RANGE_UNSATISFIABLE` (416), and `maxGetBytes` bounds the RANGE —
 an object refused whole is readable a page at a time.

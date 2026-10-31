@@ -12,7 +12,7 @@ export class QueryDownloadInvalidError extends UltimateError {
     super({
       code: 'X_QUERY_DOWNLOAD_INVALID',
       cause: `a download query cannot be built: ${problem}`,
-      fix: 'query({ input, policy, download: { expiresInMs: 300_000, handle: async ({ input, ctx }) => ({ body, contentType, filename }) } }) — a download declares no sql and no row options',
+      fix: 'query({ input, policy, download: { expiresInMs: 300_000, handle: async ({ input, ctx }) => ({ body, contentType, filename }) } })   // no sql and no rows option beside download',
       meta: { problem },
     });
   }

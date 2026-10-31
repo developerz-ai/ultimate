@@ -82,6 +82,8 @@ export class FakeS3Client implements S3ClientLike {
   /** Every ranged GET, end-exclusive as Bun's `slice` takes it — a whole-object read records none. */
   readonly sliceCalls: { readonly key: string; readonly begin: number; readonly end: number }[] =
     [];
+  /** Runs inside a ranged GET, before its bytes are read: a write racing the HEAD it was sized by. */
+  beforeRangeRead: ((key: string) => void) | undefined;
   listResult: S3ListResultLike = { contents: [] };
   /** A provider REFUSAL (403/503/reset) — the failure `delete()` must surface, not swallow. */
   failDeleteFor: string | undefined;
@@ -227,6 +229,8 @@ export class FakeS3Client implements S3ClientLike {
           async arrayBuffer() {
             if (client.failReadWith !== undefined) throw client.failReadWith;
             if (client.failBodyWith !== undefined) throw client.failBodyWith;
+            // A writer between the HEAD and this GET — S3 answers what is there NOW, clamped.
+            client.beforeRangeRead?.(key);
             const entry = store.get(key);
             if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
             return new Uint8Array(entry.bytes.slice(begin, end)).buffer;

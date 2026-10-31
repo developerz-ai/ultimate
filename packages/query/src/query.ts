@@ -120,6 +120,11 @@ export interface QueryDef<
    * `X_QUERY_AUDIT_SINK_MISSING` before the input is parsed.
    */
   readonly audit?: boolean;
+  /**
+   * Absent on a rows read, by type: a declaration holding `sql` AND `download` — a variable, where
+   * no excess-property check reaches — must match neither `query()` overload. `download.ts`.
+   */
+  readonly download?: never;
 }
 
 export interface QueryOptions {

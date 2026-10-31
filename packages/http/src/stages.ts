@@ -461,6 +461,10 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         // policies, both enforced — so a handler can only narrow (a `sandbox` on an uploaded file),
         // never widen. Overwritten, that `sandbox` never reached a browser.
         if (isCspHeader(name) && response.headers.has(name)) response.headers.append(name, value);
+        // The strictest referrer policy a handler set is KEPT for the same reason — it narrows: a
+        // file served at a bearer URL (a query's download) must name that URL to nobody.
+        else if (name === 'referrer-policy' && response.headers.get(name) === 'no-referrer')
+          continue;
         else response.headers.set(name, value);
       }
       response.headers.set('server-timing', `total;dur=${elapsedMs(ctx)}`);
