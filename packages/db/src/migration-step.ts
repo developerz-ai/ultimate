@@ -91,16 +91,25 @@ async function dropInvalidLeftover(session: DbClient, statement: string): Promis
  * write, and the long waits they do make — for every transaction older than the build — are lock
  * waits too, so the 3 s bound would turn a slow-but-harmless build into an INVALID index.
  *
- * An `alter table` — the `drop constraint` a UNIQUE removal needs, or a hand-written one — takes a
- * lock that does queue the table, so it gets a transaction of its own under the same
- * `SET LOCAL lock_timeout` a transactional migration runs with. Every other statement runs
- * autocommitted, as the marker says (a `vacuum` would fail inside BEGIN).
+ * Every other statement — the `alter table … drop constraint` a UNIQUE removal needs, a hand-written
+ * `drop table` — can queue the table, so it gets a transaction of its own under the same
+ * `SET LOCAL lock_timeout` a transactional migration runs with. Only what Postgres refuses inside a
+ * transaction (`vacuum`, `create database`, …: `AUTOCOMMIT_ONLY`) runs autocommitted.
  *
  * The step must be idempotent, since a failure leaves what already ran in place and no ledger
  * row: `x db gen` writes only `if not exists` / `if exists` forms here.
  */
-/** The statements that queue a table (ACCESS EXCLUSIVE) and so take a bounded transaction. */
-const ALTER_TABLE = /^\s*alter\s+table\b/i;
+/**
+ * The statements Postgres refuses inside a transaction block (25001): they run autocommitted. Every
+ * other statement under the marker — an `alter table`, a `drop table`, any DDL that can queue the
+ * table behind a long reader — runs in a short transaction under the migration's `lock_timeout`.
+ */
+const AUTOCOMMIT_ONLY =
+  /^\s*(?:vacuum|cluster\b(?!\s+\w+\s+using)|create\s+database|drop\s+database|alter\s+system|create\s+tablespace|drop\s+tablespace|reindex\s+(?:\(.*\)\s*)?(?:system|database)\b|create\s+subscription|drop\s+subscription|alter\s+subscription)\b/i;
+
+/** A statement's text past its leading `--` lines (the step's own marker rides the first one). */
+const withoutLeadingComments = (statement: string): string =>
+  statement.replace(/^(?:\s*--[^\n]*(?:\n|$))+/, '');
 
 async function applyOutsideTransaction(session: DbClient, step: MigrationStep): Promise<void> {
   await refuseDependentViews(session, step.script);
@@ -110,9 +119,8 @@ async function applyOutsideTransaction(session: DbClient, step: MigrationStep): 
       await session.execute(raw(statement));
       continue;
     }
-    // Anything but an `alter table` runs autocommitted, as the marker promises: Postgres refuses
-    // `vacuum`, `create database` and their kin inside a transaction (25001).
-    if (!ALTER_TABLE.test(statement)) {
+    // Postgres refuses these inside a transaction (25001): autocommitted, as the marker promises.
+    if (AUTOCOMMIT_ONLY.test(withoutLeadingComments(statement))) {
       await session.execute(raw(statement));
       continue;
     }

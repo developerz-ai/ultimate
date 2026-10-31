@@ -145,6 +145,21 @@ describe('unit · a statement in the step that is NOT a concurrent build', () =>
     expect(client.texts).not.toContain('BEGIN');
     expect(client.texts.some((text) => text.includes('lock_timeout'))).toBe(false);
   });
+
+  test('a blocking statement that is not an alter table (DROP TABLE) keeps the bounded transaction', async () => {
+    const drop: Migration = {
+      id: '20261031140000_drop_old',
+      name: 'drop old',
+      up: '-- transaction: false\ndrop table if exists "runs_old";',
+      down: '',
+    };
+    await migrate({ migrations: [drop], appVersion: 'test', client, lockTimeoutMs: 3_000 });
+
+    const begin = client.texts.indexOf('BEGIN');
+    expect(begin).toBeGreaterThanOrEqual(0);
+    expect(position('SET LOCAL lock_timeout = 3000')).toBeGreaterThan(begin);
+    expect(position('drop table if exists "runs_old"')).toBeGreaterThan(begin);
+  });
 });
 
 describe('unit · a concurrent statement in a transactional migration', () => {
