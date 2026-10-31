@@ -152,7 +152,6 @@ export class ChannelBook {
       this.#byTopic.delete(topic);
       held.disarm?.();
       held.disarm = null;
-      held.buffered = null;
       // The rows this channel alone kept go with it; a row a reader still holds stays.
       this.#deps.store.disown(sidOf(held));
       this.#deps.send(this.#frame(held, 'drop', false));
@@ -221,7 +220,7 @@ export class ChannelBook {
     const entry = this.#byTopic.get(frame.channel);
     if (entry === undefined) return;
     if (entry.buffered !== null) {
-      this.#hold(entry, [frame]);
+      this.#hold(entry, entry.buffered, [frame]);
       // The echo of a write the answered read waits on: it lands with the read, settling it there.
       if (frame.write !== undefined) entry.landing?.recheck();
       return;
@@ -296,7 +295,7 @@ export class ChannelBook {
     // A hole the ring has moved past (a frame lost with no `replay-gap`): no replay can fill it, so
     // the read does — and `above` stops growing for the rest of the session.
     if (entry.above.size > CHANNEL_HELD_FRAMES) {
-      this.#catchUp(entry, [], entry.epoch ?? undefined);
+      this.#catchUp(entry, []);
       return;
     }
     if (entry.state !== 'live') this.#set(entry, 'live');
@@ -311,7 +310,7 @@ export class ChannelBook {
    */
   #catchUp(entry: Entry, pending: ChannelRecordsFrame[], epoch?: string): void {
     if (entry.buffered !== null) {
-      this.#hold(entry, pending);
+      this.#hold(entry, entry.buffered, pending);
       if (pending.length === 0) entry.again = { epoch: epoch ?? entry.again?.epoch };
       // No read in flight — the last one failed — so this gap is the retry, now.
       if (entry.waiting) this.#read(entry);
@@ -326,13 +325,12 @@ export class ChannelBook {
    * Frames held behind the read, bounded by the ring: past it they are dropped and one more read
    * follows, in the newest frame's epoch — the read answers what they carried.
    */
-  #hold(entry: Entry, frames: readonly ChannelRecordsFrame[]): void {
-    const held = entry.buffered ?? [];
+  #hold(entry: Entry, held: ChannelRecordsFrame[], frames: readonly ChannelRecordsFrame[]): void {
     held.push(...frames);
-    entry.buffered = held;
-    if (held.length <= CHANNEL_HELD_FRAMES) return;
-    entry.again = { epoch: held.at(-1)?.epoch ?? entry.again?.epoch };
-    entry.buffered = [];
+    if (held.length > CHANNEL_HELD_FRAMES) {
+      entry.again = { epoch: held.at(-1)?.epoch };
+      entry.buffered = [];
+    }
   }
 
   /** The cursor, reset into `epoch`: every seq before the read is the read's to answer. */

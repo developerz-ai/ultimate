@@ -44,6 +44,8 @@ export interface RecordStoreOptions {
  */
 export const DEFAULT_MAX_ROWS_PER_TYPE = 10_000;
 
+const MAX = Number.MAX_SAFE_INTEGER;
+
 export class RecordStore implements RecordSink {
   readonly #synced = new SyncedLayer();
   /** The overlay's answer per key: a row, or `null` for a record the overlay deleted. */
@@ -62,22 +64,20 @@ export class RecordStore implements RecordSink {
   readonly #names = new WriteNames();
   /** Server truth held behind this page's writes in flight (`afterWrites`). */
   readonly #landings: Landings;
+  /** The per-type cap: every type's, then each type `maxRowsByType` names. */
   readonly #cap: number;
-  readonly #capByType = new Map<string, number>();
+  readonly #caps = new Map<string, number>();
 
   constructor(options: RecordStoreOptions = {}) {
     this.#report = options.report ?? ((error) => console.error(error));
+    // `Infinity` is "no cap": the largest count there is. `NaN` stays `NaN`, and is refused.
     const maxRowsPerType = options.maxRowsPerType ?? DEFAULT_MAX_ROWS_PER_TYPE;
-    this.#cap =
-      maxRowsPerType === Number.POSITIVE_INFINITY
-        ? maxRowsPerType
-        : finiteCount('RecordStore', 'maxRowsPerType', maxRowsPerType, 1);
+    this.#cap = finiteCount('RecordStore', 'maxRowsPerType', Math.min(maxRowsPerType, MAX), 1);
     for (const [type, cap] of Object.entries(options.maxRowsByType ?? {})) {
-      const screened =
-        cap === Number.POSITIVE_INFINITY
-          ? cap
-          : finiteCount('RecordStore', `maxRowsByType.${type}`, cap, 1);
-      this.#capByType.set(type, screened);
+      this.#caps.set(
+        type,
+        finiteCount('RecordStore', `maxRowsByType.${type}`, Math.min(cap, MAX), 1),
+      );
     }
     this.#wait = new ServerWait(options.schedule, options.awaitMs);
     this.#landings = new Landings(
@@ -133,7 +133,7 @@ export class RecordStore implements RecordSink {
           continue;
         }
         this.merge(type, key, row);
-        if (owner !== undefined) this.#synced.own(recordKey(type, key), owner);
+        if (owner) this.#synced.own(recordKey(type, key), owner);
       }
     });
   }
@@ -445,15 +445,10 @@ export class RecordStore implements RecordSink {
 
   /** The per-type cap, at the close of each batch — never over a row a pending write touched. */
   #trim(): void {
-    let pinned: Set<RecordKey> | undefined;
-    const capOf = (type: string): number => this.#capByType.get(type) ?? this.#cap;
-    const evicted = this.#synced.trim(capOf, (rk) => {
-      pinned ??= new Set([
-        ...this.#view.keys(),
-        ...[...this.#touched.values()].flatMap((k) => [...k]),
-      ]);
-      return pinned.has(rk);
-    });
+    const evicted = this.#synced.trim(
+      (type) => this.#caps.get(type) ?? this.#cap,
+      (rk) => this.#view.has(rk) || [...this.#touched.values()].some((keys) => keys.has(rk)),
+    );
     for (const rk of evicted) this.#touchSynced(rk);
   }
 
