@@ -131,3 +131,18 @@ export function deadline(clock: Clock, totalMs: number, subject = 'a scrape wait
   const remainingMs = (): number => Math.max(0, budgetMs - (clock.monotonic() - startedAt));
   return { totalMs: budgetMs, remainingMs, expired: () => remainingMs() <= 0 };
 }
+
+/**
+ * The timer a request DEADLINE is armed on (`deadline-signal.ts`) — not a wait this package
+ * performs, but a timer all the same, so it lives here. Cleared when the request settles, where
+ * `AbortSignal.timeout` stayed armed for its whole span after the answer had landed.
+ */
+export interface DeadlineTimer {
+  set(fire: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+
+export const platformDeadlineTimer: DeadlineTimer = Object.freeze({
+  set: (fire: () => void, ms: number): unknown => setTimeout(fire, ms),
+  clear: (handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>),
+});

@@ -107,7 +107,10 @@ export const config = defineRoute({
   // against 184320. why: the client router grew 24,448 → 27,845 B (+3,397) — a route modal opens
   // on the click as a busy frame its document then fills, opened with show() + showPopover()
   // instead of showModal(); charged to every app/ document. All of the +3,397 B over main's 180178.
-  budget: { js: '180kb' },
+  // measured: 185502 B (x build --target static) — why: bounded page record store (no leak) —
+  // raised 180kb → 181.5kb (29.3.2): a joined channel keeps the rows it adopted until it is
+  // dropped, and a per-type cap bounds one joined for hours; page boot 76,906 → 78,198 B (+1,292).
+  budget: { js: '181.5kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

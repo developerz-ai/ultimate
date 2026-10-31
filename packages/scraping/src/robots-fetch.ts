@@ -10,6 +10,7 @@
 
 import type { HostRule } from '@ultimat3/core';
 import { finiteCount, isUltimateError, readWithinLimit } from '@ultimat3/core';
+import { type DeadlineTimer, deadlineSignal } from './deadline-signal';
 import type { ScrapeFetch } from './http';
 import { redirectHop } from './http-redirect';
 import { interceptVerdict } from './intercept';
@@ -58,6 +59,8 @@ export interface RobotsFetchInit {
   readonly allowHosts?: readonly HostRule[] | undefined;
   /** The resolver a wildcard-admitted name is checked and pinned with. Defaults to `Bun.dns`. */
   readonly resolve?: HostResolve | undefined;
+  /** The deadline's timer. Defaults to the platform's; a test hands its own (`deadline-signal.ts`). */
+  readonly timer?: DeadlineTimer | undefined;
   /**
    * The platform `fetch`, injectable so the default path itself is testable. `ScrapeFetch` and not
    * `typeof fetch`: the latter also carries `preconnect`, so nothing a caller can write satisfies
@@ -92,7 +95,12 @@ const answerOf = async (response: Response, limit: number): Promise<RobotsAnswer
     await response.body?.cancel().catch(() => undefined);
     return { unreachable: `status ${String(response.status)}` };
   }
-  if (!response.ok) return undefined;
+  if (!response.ok) {
+    // A 4xx's body is never read: cancelled, so its connection is not held until collection (the
+    // deadline that used to abort it is disposed with the read).
+    await response.body?.cancel().catch(() => undefined);
+    return undefined;
+  }
   // Counted as it arrives rather than `.text()`, which materialises the whole body first: a
   // multi-gigabyte robots.txt is a heap the worker never gets back.
   const capped = await readWithinLimit(response.body, limit);
@@ -131,8 +139,10 @@ export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
   return async (robotsUrl: string): Promise<RobotsAnswer> => {
     // Armed per read, not per gate: the gate is long-lived and reads once per origin, so a
     // deadline created alongside it would already have expired by the second origin.
-    const deadline = AbortSignal.timeout(timeoutMs);
-    const signal = init.signal === undefined ? deadline : AbortSignal.any([deadline, init.signal]);
+    // Disposed when the read settles: the timer cleared and the run-long `init.signal` let go.
+    // `AbortSignal.any` here hung one listener on it per origin read, for the life of the run.
+    using deadline = deadlineSignal(timeoutMs, init.signal, init.timer);
+    const signal = deadline.signal;
     // Resolved here, at the read, because the session that owns the exit did not exist when this
     // fetcher was built. An empty string is not an exit and is dropped with the absent one.
     const proxy = init.proxy?.();
@@ -176,7 +186,7 @@ export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
       // The pin refusing an inward name is a POLICY answer about the host, and the navigation is
       // refused by the same rule — it is not evidence the origin is down.
       if (isUltimateError(error) && error.code === 'X_SCRAPE_HOST_BLOCKED') return undefined;
-      if (deadline.aborted) return { unreachable: 'timeout' };
+      if (deadline.timedOut()) return { unreachable: 'timeout' };
       if (init.signal?.aborted === true) return { unreachable: 'cancelled' };
       return { unreachable: 'network' };
     }

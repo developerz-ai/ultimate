@@ -103,10 +103,14 @@ const LIVE_READER_ID = 'live-window';
  *
  * `tenant === null` runs under the node's own actor, which has no org: a tenant-scoped read is
  * then `X_TENANCY_ACTOR_ORG_REQUIRED`, the verdict the same anonymous read gets over HTTP.
+ *
+ * EVERY read runs in a fresh child context, the tenant-less one included. The node's `ctx` lives
+ * as long as the process, and per-request state is keyed off the context object (`@ultimat3/cache`'s
+ * request memo is a `WeakMap` on it): run straight in it, every tenant-less read memoised into one
+ * store that never died — stale answers served to every later read, and a heap that only grew.
  */
 function readFor<T>(ctx: Ctx, tenant: string | null, read: () => Promise<T>): Promise<T> {
-  if (tenant === null) return runWithContext(ctx, read);
-  const actor = serviceActor({ id: LIVE_READER_ID, orgId: tenant });
+  const actor = tenant === null ? undefined : serviceActor({ id: LIVE_READER_ID, orgId: tenant });
   return runWithContext(ctx, () => withChildContext({ actor }, read));
 }
 

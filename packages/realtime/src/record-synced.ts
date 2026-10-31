@@ -1,6 +1,7 @@
 // The store's SYNCED layer: server truth per `type:key`, merged column by column, with the holds
-// that evict a record nobody renders and the provisional mark on rows restored from disk. Pure
-// state — it answers what moved, and the store decides who hears about it.
+// that evict a record nobody renders, the channels that keep what they adopted, the per-type cap,
+// and the provisional mark on rows restored from disk. Pure state — it answers what moved, and the
+// store decides who hears about it.
 
 import type { Row } from '@ultimat3/core/page';
 import { sameJson } from './json';
@@ -25,6 +26,14 @@ export class SyncedLayer {
    * a colon (`?query:<name>`, an unnamed live query's rows), so `type:key` splits two ways.
    */
   readonly #typeOfKey = new Map<RecordKey, string>();
+  /**
+   * Per key, the owners (a joined channel's sid) whose frames adopted it: each keeps the row like a
+   * key holder until it leaves, or the server removes the row. Only rows that are here: a removed
+   * row leaves it, so a feed joined for hours holds no key it no longer has.
+   */
+  readonly #owners = new Map<RecordKey, Set<string>>();
+  /** Per type, the writes since the last `trim` — its newest rows, which no reader could hold yet. */
+  readonly #written = new Map<string, Set<RecordKey>>();
 
   get(rk: RecordKey): Row | undefined {
     return this.#rows.get(rk);
@@ -101,6 +110,7 @@ export class SyncedLayer {
   /** Answers whether a row was there to remove. */
   remove(rk: RecordKey): boolean {
     this.#provisional.delete(rk);
+    this.#owners.delete(rk);
     // Gone is no longer spared: a row the server sends again later is a new arrival, not this one.
     const type = this.#typeOfKey.get(rk) ?? typeOf(rk);
     this.#typeOfKey.delete(rk);
@@ -127,14 +137,59 @@ export class SyncedLayer {
       return false;
     }
     this.#holds.delete(rk);
-    const type = this.#typeOfKey.get(rk) ?? typeOf(rk);
-    if (this.#typeHolds.has(type)) {
-      const spared = this.#spared.get(type) ?? new Set<RecordKey>();
-      spared.add(rk);
-      this.#spared.set(type, spared);
-      return false;
+    // A channel that adopted it still keeps it: it goes when that channel leaves.
+    return !this.#owners.has(rk) && this.#evict(rk);
+  }
+
+  /** `owner` (a joined channel) adopted this row, just merged: it stays until the owner leaves. */
+  own(rk: RecordKey, owner: string): void {
+    setIn(this.#owners, rk).add(owner);
+  }
+
+  /**
+   * The owner left (its channel was dropped): every row it alone kept goes — exactly as a last key
+   * holder's release would, so a reader of the whole type still spares it. Answers the rows that went.
+   */
+  disown(owner: string): readonly RecordKey[] {
+    const evicted: RecordKey[] = [];
+    // A walk of the kept rows, not an index per owner: a drop is rare, and an index is bytes in
+    // every page's boot. Deleting the entry being visited is safe while iterating a Map.
+    for (const [rk, owners] of this.#owners) {
+      if (!owners.delete(owner) || owners.size > 0) continue;
+      this.#owners.delete(rk);
+      if (!this.#holds.has(rk) && this.#evict(rk)) evicted.push(rk);
     }
-    return this.remove(rk);
+    return evicted;
+  }
+
+  /**
+   * The per-type cap: each type that grew since the last trim is cut back to its cap, least
+   * recently written first. Never a row a key reader holds, never one `pinned` (a pending write's),
+   * never one written since the last trim (an HTTP answer's rows, before its reader holds them).
+   * A channel's ownership and a whole-type hold do NOT protect a row here: a fleet feed
+   * joined for hours, read by `useRecords(type)`, is exactly what the cap exists to bound.
+   */
+  trim(capOf: (type: string) => number, pinned: (rk: RecordKey) => boolean): readonly RecordKey[] {
+    const evicted: RecordKey[] = [];
+    for (const [type, written] of this.#written) {
+      const keys = this.#byType.get(type) ?? new Set<RecordKey>();
+      let over = keys.size - capOf(type);
+      // Oldest first: `#put` moves a row to the end of its type on every write, so the DISTINCT
+      // rows written since the last trim that are still there are the last ones — never reached
+      // (a row written twice counts once; one removed since is no longer at the end). Deleting the
+      // entry being visited is safe while iterating a Set.
+      let fresh = 0;
+      for (const rk of written) if (keys.has(rk)) fresh += 1;
+      let older = keys.size - fresh;
+      for (const rk of keys) {
+        if (over <= 0 || older-- <= 0) break;
+        if (this.#holds.has(rk) || pinned(rk) || !this.remove(rk)) continue;
+        evicted.push(rk);
+        over -= 1;
+      }
+    }
+    this.#written.clear();
+    return evicted;
   }
 
   retainType(type: string): void {
@@ -157,12 +212,14 @@ export class SyncedLayer {
     this.#spared.delete(type);
     const evicted: RecordKey[] = [];
     for (const rk of spared ?? []) {
-      if (!this.#holds.has(rk) && this.remove(rk)) evicted.push(rk);
+      if (!this.#holds.has(rk) && !this.#owners.has(rk) && this.remove(rk)) evicted.push(rk);
     }
     return evicted;
   }
 
   clear(): void {
+    this.#owners.clear();
+    this.#written.clear();
     this.#rows.clear();
     this.#byType.clear();
     this.#typeOfKey.clear();
@@ -170,16 +227,37 @@ export class SyncedLayer {
     this.#spared.clear();
   }
 
-  #put(rk: RecordKey, row: Row, type: string): void {
-    if (!this.#typeOfKey.has(rk)) {
-      this.#typeOfKey.set(rk, type);
-      const keys = this.#byType.get(type);
-      if (keys === undefined) this.#byType.set(type, new Set([rk]));
-      else keys.add(rk);
+  /** A row nobody holds goes — unless a reader holds its whole type, which spares it till it leaves. */
+  #evict(rk: RecordKey): boolean {
+    const type = this.#typeOfKey.get(rk) ?? typeOf(rk);
+    if (this.#typeHolds.has(type)) {
+      setIn(this.#spared, type).add(rk);
+      return false;
     }
+    return this.remove(rk);
+  }
+
+  #put(rk: RecordKey, row: Row, named: string): void {
+    const type = this.#typeOfKey.get(rk) ?? named;
+    this.#typeOfKey.set(rk, type);
+    // Re-inserted on every write: a type's index is also its recency order, oldest first.
+    const keys = setIn(this.#byType, type);
+    keys.delete(rk);
+    keys.add(rk);
+    setIn(this.#written, type).add(rk);
     this.#rows.set(rk, row);
   }
 }
 
 /** A key's type when no writer named it (a hold on a row not yet there): before its first `:`. */
 const typeOf = (rk: RecordKey): string => rk.slice(0, rk.indexOf(':'));
+
+/** The set `map` holds under `key`, made on first use. */
+function setIn<K, V>(map: Map<K, Set<V>>, key: K): Set<V> {
+  let set = map.get(key);
+  if (set === undefined) {
+    set = new Set();
+    map.set(key, set);
+  }
+  return set;
+}

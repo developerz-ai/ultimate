@@ -436,6 +436,8 @@ over it, and an HTTP answer's records, a socket patch and an optimistic write al
 | A value is **replaced, never mutated**; a write **merges** columns | a mutated row is a render that never happens; a narrower projection must not blank a wider one |
 | A structurally bad row is `X_RECORD_REJECTED`, dropped and reported | never partially merged — a keyless row would overwrite another record |
 | The last holder leaving evicts the record | an infinite scroll must not retain every row it ever saw |
+| A joined channel keeps the rows its frames and catch-up reads adopted — dropped (the last `useChannel` released) it evicts each it alone kept; a row the server removes leaves its keep at once | a `records` frame's rows carry no reader hold: a run page's channel left its events behind after the reader navigated away |
+| Each type is capped — `new RecordStore({ maxRowsPerType, maxRowsByType })`: `maxRowsPerType` for every type (default `DEFAULT_MAX_ROWS_PER_TYPE` = 10 000), `maxRowsByType: { run_logs: 50_000 }` for the types it names; `Infinity` turns a cap off, anything not a whole number ≥ 1 is `X_INVARIANT`. Past it, at the close of a batch, the least recently written row goes — never one a key reader holds (`useRecord`, `useRecords(type, keys)`, a `useQuery` list, a live window), never one a pending write touched, never one that arrived in that batch | a backstop against a fleet feed joined for hours, which adopts a row per run forever — not a view limit: the default sits far above what a page shows of one type. Neither a channel's keep nor a whole-type reader (`useRecords(type, selection)`, which shows at most the cap) exempts a type, so a type a page shows more of than the default names its own cap |
 | A principal change clears the store | nothing of the previous principal survives in memory |
 
 ## Reconnect is the hard part
@@ -866,8 +868,11 @@ principal.
   table not on FULL, on every boot. `ReplicationStreamStats.partialBefore` still counts changes off
   a non-FULL relation — a volume figure, not a correctness one.
 - The record store is **per page**, in memory, and it is not a query cache: it answers "what is
-  record X now", never "have I run this query before". Nothing evicts by time or size — a record
-  lives as long as something holds it. Persisting it (IndexedDB) is plan 101 slice 12.
+  record X now", never "have I run this query before". Nothing evicts by time; size is bounded —
+  a record lives while a reader, a joined channel or a pending write holds it, and an unheld row
+  (an HTTP answer's before its reader holds it, a channel's) is also bounded by the per-type cap
+  (`maxRowsPerType` / `maxRowsByType`, least recently written first). An eviction is a change like any other: the
+  persister deletes the row from disk with it. Persisting it (IndexedDB) is plan 101 slice 12.
 
 ## Errors
 

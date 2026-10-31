@@ -8,6 +8,7 @@
 import type { HostRule } from '@ultimat3/core';
 import { hostDecision } from '@ultimat3/core';
 import type { NetworkEntry, ResourceType } from './rings';
+import { clamped } from './rings';
 
 export interface InterceptRules {
   readonly allowHosts: readonly HostRule[];
@@ -38,4 +39,4 @@ export const refusalEntry = (
   verdict: Exclude<InterceptVerdict, 'allow'>,
   at: number,
   method = 'GET',
-): NetworkEntry => ({ method, url, resourceType, at, refused: verdict });
+): NetworkEntry => ({ method, url: clamped(url), resourceType, at, refused: verdict });

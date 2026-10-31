@@ -44,10 +44,13 @@ export interface PageError {
  * The per-entry cap, which the ring itself cannot give: a ring bounds the COUNT, and one
  * `RangeError: Maximum call stack size exceeded` carries thousands of frames — 200 of those is
  * megabytes held per page, which is the same OOM this file exists to prevent, one level down.
+ * The same cap holds a console line's text and a network entry's URL: a page that logs a
+ * serialised state blob, or requests a `data:` URL, is the same megabytes per entry.
  */
 export const MAX_PAGE_ERROR_CHARS = 4_000;
 
-const clamped = (text: string): string =>
+/** One entry's text, held to `MAX_PAGE_ERROR_CHARS` — every ring entry a page controls goes through it. */
+export const clamped = (text: string): string =>
   text.length <= MAX_PAGE_ERROR_CHARS ? text : `${text.slice(0, MAX_PAGE_ERROR_CHARS - 1)}…`;
 
 /**

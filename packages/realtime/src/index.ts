@@ -139,6 +139,7 @@ export { hasPageSocket, type SyncTarget } from './page-store';
 export { installRealtime, type RealtimeInstall } from './reactivity';
 export { persistedTypes, type RecordPersister, recordPersister } from './record-persister';
 export {
+  DEFAULT_MAX_ROWS_PER_TYPE,
   type RecordKey,
   type RecordListener,
   RecordStore,
