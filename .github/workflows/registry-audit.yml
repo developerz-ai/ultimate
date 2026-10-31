@@ -52,6 +52,8 @@ jobs:
         run: |
           set -o pipefail
           bun run scripts/registry-audit.ts --json | tee audit.json
+        # Not a swallowed failure: the two steps below key on this `outcome`, file the alarm, then
+        # fail the run themselves. Without it a red audit would skip the issue it exists to open.
         continue-on-error: true
 
       - name: open an issue when the registry disagrees
