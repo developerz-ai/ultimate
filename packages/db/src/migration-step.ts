@@ -91,18 +91,28 @@ async function dropInvalidLeftover(session: DbClient, statement: string): Promis
  * write, and the long waits they do make — for every transaction older than the build — are lock
  * waits too, so the 3 s bound would turn a slow-but-harmless build into an INVALID index.
  *
- * Every OTHER statement — the `alter table … drop constraint` a UNIQUE removal needs, or a
- * hand-written one — takes a lock that does queue the table, so it gets a transaction of its own
- * under the same `SET LOCAL lock_timeout` a transactional migration runs with.
+ * An `alter table` — the `drop constraint` a UNIQUE removal needs, or a hand-written one — takes a
+ * lock that does queue the table, so it gets a transaction of its own under the same
+ * `SET LOCAL lock_timeout` a transactional migration runs with. Every other statement runs
+ * autocommitted, as the marker says (a `vacuum` would fail inside BEGIN).
  *
  * The step must be idempotent, since a failure leaves what already ran in place and no ledger
  * row: `x db gen` writes only `if not exists` / `if exists` forms here.
  */
+/** The statements that queue a table (ACCESS EXCLUSIVE) and so take a bounded transaction. */
+const ALTER_TABLE = /^\s*alter\s+table\b/i;
+
 async function applyOutsideTransaction(session: DbClient, step: MigrationStep): Promise<void> {
   await refuseDependentViews(session, step.script);
   for (const statement of statementsOf(step.script)) {
     if (isConcurrentIndexStatement(statement)) {
       await dropInvalidLeftover(session, statement);
+      await session.execute(raw(statement));
+      continue;
+    }
+    // Anything but an `alter table` runs autocommitted, as the marker promises: Postgres refuses
+    // `vacuum`, `create database` and their kin inside a transaction (25001).
+    if (!ALTER_TABLE.test(statement)) {
       await session.execute(raw(statement));
       continue;
     }

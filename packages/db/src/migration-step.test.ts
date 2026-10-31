@@ -129,6 +129,22 @@ describe('unit · a statement in the step that is NOT a concurrent build', () =>
     expect(commit).toBeLessThan(drop);
     expect(client.texts.filter((text) => text === 'BEGIN')).toHaveLength(1);
   });
+
+  test('a statement Postgres forbids in a transaction (VACUUM) still runs autocommitted', async () => {
+    // Only an `alter table` takes the bounded transaction: a hand-written `vacuum` or
+    // `create database` under the marker would fail with 25001 inside BEGIN.
+    const maintenance: Migration = {
+      id: '20261031130000_vacuum',
+      name: 'vacuum',
+      up: '-- transaction: false\nvacuum "runs";',
+      down: '',
+    };
+    await migrate({ migrations: [maintenance], appVersion: 'test', client, lockTimeoutMs: 3_000 });
+
+    expect(position('vacuum "runs"')).toBeGreaterThanOrEqual(0);
+    expect(client.texts).not.toContain('BEGIN');
+    expect(client.texts.some((text) => text.includes('lock_timeout'))).toBe(false);
+  });
 });
 
 describe('unit · a concurrent statement in a transactional migration', () => {
