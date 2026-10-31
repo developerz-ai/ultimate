@@ -2,7 +2,7 @@
  * Where an org wants to hear about its posts: one receiver URL and the secret every delivery to it
  * is signed with. `secret` is `.sealed()` — the database holds ciphertext, a `where` on it does
  * not compile, and no serialiser carries it — and is read once per delivery attempt, never stored
- * anywhere else (`apps/web/app/webhooks/jobs.ts`).
+ * anywhere else (`apps/web/app/webhooks/jobs/post-published-webhook.ts`).
  *
  * `disabledReason` is the delivery mechanism's verdict (`disableAfter` consecutive failures), and
  * the only thing that writes it. Nullable: `null` is an endpoint that takes deliveries.

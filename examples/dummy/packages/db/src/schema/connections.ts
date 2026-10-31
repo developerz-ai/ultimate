@@ -1,6 +1,6 @@
 /**
  * A site an org signs in to, and the credential it signs in with. One run per connection at a
- * time — that is `syncConnection`'s keyed concurrency (`apps/web/app/runs/jobs.ts`), not a column.
+ * time — that is `syncConnection`'s keyed concurrency (`apps/web/app/runs/jobs/sync-connection.ts`), not a column.
  *
  * `credential` and `exit` are `.sealed()`: the database holds `x1.<keyId>.<iv>.<ciphertext>` and never the
  * plaintext, a `where` on it does not compile, and the property is not enumerable on a row, so no
