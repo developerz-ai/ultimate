@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 29.4.0 - 2026-10-31
+
 ### Added
 
 - **`indexes: [{ on, concurrently: true }]` â€” an index built without blocking writes.** `x db gen`
@@ -67,6 +71,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `@ultimat3/http`** â€” one `Range:` reader for `/_storage`, the site assets and a download. The
   site-asset route answered 416 to an empty `bytes=-` where `/_storage` served the whole object;
   both now ignore it, as RFC 9110 allows.
+
+### Commits
+
+- feat(query,storage,http): download queries and ranged storage reads (#944)
+- feat(db): concurrent index builds and safe concurrent index drops (#943)
+- docs: repair dead jobs.ts idiom references in llms.txt and postly/db (#942)
 
 ## 29.3.2 - 2026-10-31
 
