@@ -85,6 +85,8 @@ export class FakeS3Client implements S3ClientLike {
   readonly listCalls: ListCall[] = [];
   /** Runs as a ranged GET arrives, before it is answered: a write racing the read. */
   beforeRangeRead: ((key: string) => void) | undefined;
+  /** A 206 whose body breaks mid-read (a reset connection): headers arrive, the bytes never do. */
+  breakRangeBody = false;
   listResult: S3ListResultLike = { contents: [] };
   /** A provider REFUSAL (403/503/reset) — the failure `delete()` must surface, not swallow. */
   failDeleteFor: string | undefined;
@@ -199,7 +201,12 @@ export class FakeS3Client implements S3ClientLike {
     if (start >= size)
       return xmlError('InvalidRange', 'The requested range is not satisfiable', 416);
     const end = Math.min(to === '' ? size - 1 : Number(to), size - 1);
-    return new Response(entry.bytes.slice(start, end + 1), {
+    const body = this.breakRangeBody
+      ? new ReadableStream<Uint8Array>({
+          pull: (controller) => controller.error(new TypeError('socket connection was reset')),
+        })
+      : entry.bytes.slice(start, end + 1);
+    return new Response(body, {
       status: 206,
       headers: {
         'content-range': `bytes ${start}-${end}/${size}`,

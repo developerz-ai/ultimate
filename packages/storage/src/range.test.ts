@@ -207,6 +207,16 @@ describe('s3: the bytes and what they are come from ONE response', () => {
     expect([textOf(read.bytes), read.range, read.object.size]).toEqual(['89AB', [8, 11], 12]);
   });
 
+  test('a 206 whose body breaks mid-read is X_STORAGE_READ_FAILED, never a bare TypeError', async () => {
+    fake.breakRangeBody = true;
+    try {
+      const caught = await catchError(() => s3Of().get(KEY, { range: [2, 5] }));
+      expect(anyCodeOf(caught)).toBe('X_STORAGE_READ_FAILED');
+    } finally {
+      fake.breakRangeBody = false;
+    }
+  });
+
   test('shrunk past the first byte asked: the provider’s 416 is X_STORAGE_RANGE_UNSATISFIABLE', async () => {
     rewrite('0123');
     const caught = await catchError(() => s3Of().get(KEY, { range: [6, 9] }));
