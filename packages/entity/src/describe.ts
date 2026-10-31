@@ -231,6 +231,8 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
       // Spread, never `?? null`: absent is what `@ultimat3/db` reads as the btree it always was,
       // and a written-out `null` would be a field no existing snapshot carries.
       ...(index.using === undefined ? {} : { using: index.using }),
+      // `true` or absent, never `false`, for the same reason: `x verify` hashes this projection.
+      ...(index.concurrently === true ? { concurrently: true as const } : {}),
     })),
     tags: input.tags,
     cacheTag: input.cacheTag,

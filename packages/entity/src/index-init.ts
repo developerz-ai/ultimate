@@ -26,4 +26,16 @@ export interface IndexInit<C extends ColumnMap> {
    * unique and cannot order its keys.
    */
   readonly using?: IndexMethod;
+  /**
+   * Build it with `create index concurrently`, in a migration step of its own that runs OUTSIDE a
+   * transaction — so a big, hot table keeps taking writes while the index builds. A plain `create
+   * index` holds SHARE on the table for the whole build: every insert, update and delete waits.
+   *
+   * How the index is BUILT, never what it is: not part of its name, not recorded in a snapshot,
+   * and switching it on for an existing index generates nothing. `x db gen` writes the step as
+   * `<id>_concurrently.sql` beside the migration (or as the migration, when it is the only change),
+   * marked `-- transaction: false`; an index on a table the same migration creates is still built
+   * inside that migration's transaction — the table is empty and nobody else can see it.
+   */
+  readonly concurrently?: boolean;
 }

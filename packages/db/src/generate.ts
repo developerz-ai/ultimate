@@ -7,11 +7,12 @@ import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan, declaredChecks } from './check-ddl';
 import { alterColumnInPlace } from './column-alter';
 import { defaultExpression } from './column-default';
-import { isDestructiveMigration } from './destructive';
+import { type ConcurrentPlan, emptyConcurrentPlan } from './concurrent-plan';
 import { dropOrder } from './drop-order';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { type ConstraintPlans, foreignKeyPlan, foreignKeysOf, type Plan } from './foreign-key-plan';
 import { appendOnlyBackfillRefused, appendOnlyPlan } from './generate-append-only';
+import { assembleSteps } from './generate-steps';
 import type { Regeneration } from './generated-column';
 import { generatedClause, isGenerated, regenerate } from './generated-column';
 import { createIndex, impliedByColumnClause } from './index-ddl';
@@ -32,7 +33,7 @@ import { moveDependentsAside } from './retype-dependents';
 import { moveKeysAside, retypedColumns, retypedIn } from './retype-keys';
 import { identifier } from './sql';
 import { sqlType } from './sql-type';
-import { type UnrenderedDeclaration, unrenderedComment, unrenderedOf } from './unrendered';
+import { type UnrenderedDeclaration, unrenderedOf } from './unrendered';
 
 function columnClause(column: ColumnDescriptionLike): string {
   // The generation clause sits directly after the type, and `generatedClause` refuses the pairs
@@ -186,6 +187,7 @@ function diffTable(
   live: TableDescription,
   plan: Plan,
   retyped: ReadonlySet<string>,
+  concurrent: ConcurrentPlan,
 ): void {
   const existing = new Map(live.columns.map((column) => [column.name, column]));
   const added = new Set<string>();
@@ -233,7 +235,7 @@ function diffTable(
 
   // Both directions, in `index-plan.ts`: a recorded index the entity no longer declares is DROPPED
   // there, which is the arm this loop did not have for as long as it lived here.
-  indexPlan(entity, live, plan, { added, rebuilt, moved: moved.indexes });
+  indexPlan(entity, live, plan, { added, rebuilt, moved: moved.indexes, concurrent });
 
   // Last: a CHECK may read a column this migration just added, and `add constraint` on a column
   // that does not exist yet is `42703`. `check-ddl.ts` owns which of them move; `rebuilt` because a
@@ -283,6 +285,18 @@ export interface GeneratedMigration {
    * (`x db gen`) and a reviewer reading the committed file are looking at one answer.
    */
   readonly unrendered: readonly UnrenderedDeclaration[];
+  /**
+   * `false` when `up` opens with `-- transaction: false` and the runner applies it statement by
+   * statement outside a transaction — the step holding every concurrent index build and every
+   * index removal (`concurrent-plan.ts`).
+   */
+  readonly transactional: boolean;
+  /**
+   * The non-transactional step this diff ALSO needs, when it needs both: `<id>_concurrently`,
+   * sorting right after this one, written as a file of its own. Absent when the diff holds only
+   * one kind — a diff that only builds or drops indexes IS the non-transactional step.
+   */
+  readonly followUp?: GeneratedMigration | undefined;
 }
 
 export function migrationStamp(now: Date): string {
@@ -299,6 +313,8 @@ export function slugify(name: string): string {
 export function generateMigration(options: GenerateOptions): GeneratedMigration {
   const current = options.current ?? { tables: [] };
   const plan: Plan = { up: [], down: [] };
+  // Applied AFTER `plan`, outside its transaction, in a step of its own (`concurrent-plan.ts`).
+  const concurrent = emptyConcurrentPlan();
   // Merged into `plan` once every table statement is in, never interleaved with them.
   const constraints: Plan = { up: [], down: [] };
   // Merged in BEFORE them, for the mirror-image reason: a key still pointing at a table this
@@ -334,7 +350,7 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     // The key first and last, around every column statement of the table (`primary-key.ts`): the
     // snapshot below records `entity.primaryKey`, and until this arm existed nothing produced it.
     dropChangedKey(entity, live, current, plan, options.name);
-    diffTable(entity, live, plan, retypedIn(retyped, entity.table));
+    diffTable(entity, live, plan, retypedIn(retyped, entity.table), concurrent);
     const kept = new Set(entity.columns.map((column) => column.column));
     for (const column of live.columns) {
       if (kept.has(column.name)) continue;
@@ -408,19 +424,16 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   // `current`, not the entities alone: an `assert` whose CHECK a previous migration recorded is a
   // loss only because THIS plan drops it, and the recorded schema is the only thing that knows.
   const unrendered = unrenderedOf(options.entities, current);
-  const body = [...preAlters.up, ...plan.up].join('\n');
-  const up = body.length === 0 ? body : unrenderedComment(unrendered) + body;
-  return {
+  return assembleSteps({
     id,
     name: options.name,
-    fileName: `migrations/${id}.sql`,
-    up,
+    up: [...preAlters.up, ...plan.up],
     // Reverse order: the last thing created is the first thing dropped. `preAlters` goes in at the
     // FRONT here precisely so reversal puts it last — a key is added back only once both of its
     // ends have been retyped back, which is every other statement in the script.
-    down: [...preAlters.down, ...plan.down].reverse().join('\n'),
+    down: [...preAlters.down, ...plan.down].reverse(),
+    concurrent,
     snapshot: snapshotOf(options.entities, replicaIdentityFullAfter(replicaIdentity)),
-    destructive: isDestructiveMigration(up),
     unrendered,
-  };
+  });
 }

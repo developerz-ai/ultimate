@@ -451,4 +451,6 @@ export interface IndexDef {
    * one fact that this release exists to stop.
    */
   readonly using?: IndexMethod;
+  /** `indexes: [{ concurrently: true }]` — `true` or absent, never `false` (`IndexInit`). */
+  readonly concurrently?: true;
 }

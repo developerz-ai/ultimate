@@ -16,16 +16,15 @@
 // declaration is already broken — the key has nothing to point at — and the failure arrives with
 // the server's own words naming both ends.
 
+import {
+  buildConcurrently,
+  type ConcurrentPlan,
+  redefineConcurrently,
+  removeConcurrently,
+} from './concurrent-plan';
 import type { EntityDescriptionLike } from './entity-shape';
 import type { Plan } from './foreign-key-plan';
-import {
-  asDeclared,
-  createIndex,
-  dropIndex,
-  dropRecordedIndex,
-  impliedByColumnClause,
-  redefineIndex,
-} from './index-ddl';
+import { createIndex, dropIndex, impliedByColumnClause, redefineIndex } from './index-ddl';
 import type { TableDescription } from './introspect';
 import { declaredIndexes } from './invariant-ddl';
 
@@ -40,6 +39,11 @@ export interface IndexPlanContext {
   readonly rebuilt: ReadonlySet<string>;
   /** Indexes a retype already dropped ahead of its ALTER (`moveDependentsAside`). */
   readonly moved: ReadonlySet<string>;
+  /**
+   * The non-transactional step (`concurrent-plan.ts`): every `concurrently: true` build and every
+   * removal lands here, outside the transaction `plan` is applied in.
+   */
+  readonly concurrent: ConcurrentPlan;
 }
 
 /**
@@ -68,16 +72,28 @@ export function indexPlan(
     // `redefineIndex` sees a definition that never moved and would emit nothing at all.
     const gone =
       context.moved.has(index.name) || index.columns.some((each) => context.rebuilt.has(each));
+    // `concurrently` only where the table is live and the index is the only thing moving: a
+    // rebuilt or retyped column already holds ACCESS EXCLUSIVE inside the transaction, so a
+    // concurrent rebuild after it buys nothing and leaves the table without the index between.
+    const concurrently = index.concurrently === true && !gone;
     if (recorded !== undefined && !gone) {
-      redefineIndex(entity.table, index, recorded, plan);
+      if (concurrently) {
+        redefineConcurrently(entity.table, index, recorded, plan, context.concurrent);
+      } else {
+        redefineIndex(entity.table, index, recorded, plan);
+      }
       continue;
     }
     // `added` only: an index over a column that was already there is implied by no clause this
     // migration emits, so it still needs a statement of its own.
     if (impliedByColumnClause(entity, index, context.added)) continue;
+    if (concurrently) {
+      buildConcurrently(entity.table, index, context.concurrent);
+      continue;
+    }
     plan.up.push(createIndex(entity.table, index));
     // The plain drop, always: this migration CREATED it, with `create index`, so it is an index
-    // and never a constraint's — `dropRecordedIndex`'s ambiguity is about the recorded side only.
+    // and never a constraint's — the ambiguity is about the recorded side only.
     plan.down.push(dropIndex(index.name));
   }
   removeUndeclared(entity, live, plan, context, declared);
@@ -87,6 +103,12 @@ export function indexPlan(
  * Every recorded index this entity no longer declares, dropped — and restored in `down` from what
  * the SNAPSHOT recorded, never from what the entity declares, since the entity is precisely what
  * stopped describing it. The rule the retype path already states.
+ *
+ * ALWAYS concurrently, in the non-transactional step (`removeConcurrently`), whether or not the
+ * index was built that way: a plain `drop index` takes ACCESS EXCLUSIVE on the TABLE, so every
+ * read and write of a hot table queued behind it. Expand → contract: the drop ships after
+ * everything the transactional step added, so a renamed index exists twice for a moment and
+ * never zero times. Nothing records how an index was built, so the drop cannot depend on it.
  *
  * Four names are skipped, and each one is a statement Postgres would refuse or repeat:
  *
@@ -113,7 +135,6 @@ function removeUndeclared(
     if (context.moved.has(recorded.name)) continue;
     if (recorded.columns.some((column) => context.rebuilt.has(column))) continue;
     if (!recorded.columns.every((column) => columns.has(column))) continue;
-    plan.up.push(...dropRecordedIndex(live.name, recorded));
-    plan.down.push(createIndex(live.name, asDeclared(recorded)));
+    removeConcurrently(live.name, recorded, plan, context.concurrent);
   }
 }

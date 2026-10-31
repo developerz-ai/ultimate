@@ -83,8 +83,17 @@ function indexPredicateSql(index: IndexDescriptionLike): string {
  * Every part of the declaration reaches the statement: the whole column list in its declared
  * order, the direction when one was asked for, and the predicate that makes it partial. A part
  * dropped here is a constraint the database does not hold or an index the planner cannot use.
+ *
+ * `concurrently` writes `create index concurrently if not exists` — the spelling the
+ * non-transactional step needs (`concurrent-index.ts`): re-running a step that failed after this
+ * build finished must find it and move on, and one that failed DURING it left an INVALID index the
+ * runner drops first (`migration-step.ts`). Off, the statement is byte-for-byte what shipped before.
  */
-export function createIndex(table: string, index: IndexDescriptionLike): string {
+export function createIndex(
+  table: string,
+  index: IndexDescriptionLike,
+  concurrently = false,
+): string {
   assert(
     index.columns.length > 0,
     `index "${index.name}" on "${table}" names no columns`,
@@ -106,7 +115,9 @@ export function createIndex(table: string, index: IndexDescriptionLike): string 
     `index "${index.name}" on "${table}" is ${method} and ${index.order}; only a btree orders its keys`,
     `indexes: [{ on: ['<column>'], using: '${method}' }]   # drop order, or drop using`,
   );
-  const kind = index.unique ? 'create unique index' : 'create index';
+  const kind =
+    (index.unique ? 'create unique index' : 'create index') +
+    (concurrently ? ' concurrently if not exists' : '');
   const direction = indexOrderSql(index);
   const columns = index.columns
     .map((column) => `${identifier(column).text}${direction}`)
@@ -125,13 +136,22 @@ export function createIndex(table: string, index: IndexDescriptionLike): string 
 export const dropIndex = (name: string): string => `drop index ${identifier(name).text};`;
 
 /**
+ * `drop index concurrently if exists "n";` — the non-transactional drop. `if exists` because a
+ * re-run of a step that already dropped it must move on, and because it also removes an INVALID
+ * index a failed concurrent build left behind. Postgres refuses it on a constraint's index (2BP01),
+ * so a recorded index that may be one is unhooked first by `dropRecordedConcurrently`.
+ */
+export const dropIndexConcurrently = (name: string): string =>
+  `drop index concurrently if exists ${identifier(name).text};`;
+
+/**
  * Whether Postgres could be backing this RECORDED index with a UNIQUE constraint rather than
  * holding it as an index of its own — which decides the only question `dropIndex` cannot answer.
  *
  * A UNIQUE constraint's index is unique, total, unordered and btree; `add constraint … unique`
  * and a `unique` column clause can produce nothing else. So an index missing any one of those is
  * provably an index, and `drop index` on it is right. Everything else is genuinely ambiguous —
- * see `dropRecordedIndex`.
+ * see `dropRecordedConcurrently` (`concurrent-plan.ts`).
  */
 export function mayBeConstraintBacked(index: IndexDescription): boolean {
   return (
@@ -141,38 +161,6 @@ export function mayBeConstraintBacked(index: IndexDescription): boolean {
     index.order === null &&
     indexMethodOf(index) === 'btree'
   );
-}
-
-/**
- * Remove a RECORDED index whose kind this generator cannot know, in statements that are correct
- * on both databases it cannot tell apart.
- *
- * `TableDescription` carries no discriminator, and it cannot be given one that would help: the
- * SAME declaration reaches the server as a CONSTRAINT or as an INDEX depending on which migration
- * created it. A `unique` column on a table `createTable` writes emits `create table … slug text
- * unique`, and Postgres backs that with a constraint named `posts_slug_key`; the same column
- * gaining `unique` later takes `diffTable`'s `create unique index "posts_slug_key"` and is a plain
- * index. `snapshotOf` records both as `{ unique: true, primary: false }`, and every sidecar already
- * on disk was written that way — a new field could not classify one of them retroactively.
- *
- * Measured on 18.4 (`index-removal.live.test.ts`), which is why the pair and not a guess:
- *
- * | statement                                  | on a constraint's index | on a plain index |
- * |--------------------------------------------|-------------------------|------------------|
- * | `drop index "n"`                           | **2BP01**               | ok               |
- * | `drop index if exists "n"`                 | **2BP01** — not suppressed | ok            |
- * | `alter table … drop constraint if exists`  | drops it, index and all | notice, no-op    |
- *
- * Constraint first, then the index: reversed, the `drop index` reaches a constraint's index and is
- * the 2BP01 this exists to avoid. Both halves carry `if exists`, so whichever one did nothing says
- * so with a notice rather than 42704.
- */
-export function dropRecordedIndex(table: string, index: IndexDescription): readonly string[] {
-  if (!mayBeConstraintBacked(index)) return [dropIndex(index.name)];
-  return [
-    `alter table ${identifier(table).text} drop constraint if exists ${identifier(index.name).text};`,
-    `drop index if exists ${identifier(index.name).text};`,
-  ];
 }
 
 /**

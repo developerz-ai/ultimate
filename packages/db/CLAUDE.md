@@ -109,19 +109,22 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `MIGRATION_LOCK_WAIT_MS`, then `X_MIGRATE_CONCURRENT`), declared with `expectedQueryLoop`;
   `recordingClient` stubs the lock as `locked: true`.
 - **`lock_timeout` is the migration's** (`SET LOCAL` inside each migration's transaction, from the
-  `migrate` profile's 3 s).
+  `migrate` profile's 3 s). `migration-step.ts` applies a script.
+- **`-- transaction: false` runs a migration outside a transaction** (`concurrent-index.ts`, a marker
+  on `up` that governs `down`): one autocommit per statement, NO `lock_timeout`, ledger row last; an
+  INVALID index holding a concurrent build's name is dropped first. A concurrent statement in a
+  transactional migration is `X_MIGRATION_CONCURRENT_IN_TRANSACTION`, before `BEGIN`.
 - **The advisory lock is held by one pinned session, and `migrate()`/`rollback()` run every statement
   on it.** `lock: false` reserves nothing and takes no lock; no shipped path passes it
   (`migrate-pin.test.ts`). `migrate.live.test.ts` pins concurrent and failed-midway runs.
-- **One send is one statement**: `applyScript` sends `statementsOf(script)` one at a time inside the
-  same transaction. **`statement-split.ts` is the only splitter** (a left-to-right scan; `$1` is never a
-  `$tag$`; `\` escapes only inside `E''`; comment-only chunks dropped). **`sql-scan.ts` is the one
+- **One send is one statement**: `applyScript` sends `statementsOf(script)` one at a time.
+  **`statement-split.ts` is the only splitter** (a left-to-right scan; `$1` is never a `$tag$`; `\`
+  escapes only inside `E''`; comment-only chunks dropped). **`sql-scan.ts` is the one
   lexer** (`noiseAt`, source order; a `$tag$` needs separating from the identifier before it);
   `sql-noise.ts` holds `stripSqlNoise`.
 - **`destructive.ts` decides WHAT is destructive**: only `up`, a closed list of four (`drop table`,
   `drop column`, `truncate`, `alter column … type`), decided on blanked text and reported on the
-  original; the `-- destructive: true` marker is a top-level line comment (`hasDestructiveMarker`
-  walks `sql-scan.ts`). `X_MIGRATION_DESTRUCTIVE` (ship) and `X_MIGRATION_IRREVERSIBLE` (generate) are
+  original; a marker is a top-level line comment (`marker-line.ts`). `X_MIGRATION_DESTRUCTIVE` (ship) and `X_MIGRATION_IRREVERSIBLE` (generate) are
   two questions.
 - **The ledger audit asks one question** — `auditLedger`'s `foreign` filter is `!known.has(row.id)`;
   the app version lives in the cause.
@@ -142,10 +145,11 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   refuses); absent is `btree` through one function; `snapshotOf` records `using` only when declared;
   `indexMethodSql` re-derives the literal (`X_SQL_UNSAFE` default); a unique or ordered GIN is
   `X_INVARIANT`. `introspectSchema()` reads `pg_am` (`introspect-embedded.test.ts`).
-- **`index-plan.ts` walks both directions** (declared first, removed last). `dropRecordedIndex` emits
-  `alter table … drop constraint if exists` then `drop index` for a shape a constraint could back
-  (`mayBeConstraintBacked`); four names are skipped (primary, moved aside, rebuilt, over a dropped
-  column). `index-ddl.ts` writes the statements; `index-removal.live.test.ts`.
+- **`index-plan.ts` walks both directions** (declared first, removed last); four names are skipped
+  (primary, moved aside, rebuilt, over a dropped column). **A removal and a `concurrently: true`
+  build on a live table go to the non-transactional step** (`concurrent-plan.ts`; `generate-steps.ts`
+  makes it `<id>_concurrently` or the whole migration); a shape a constraint could back
+  (`mayBeConstraintBacked`) is unhooked first in the tx step. Never recorded (history 2026-10-31).
 - **An entity's INVARIANTS reach the DDL** (`invariant-ddl.ts`): a `check` is a named constraint, a
   `unique` a unique INDEX on the one `declaredIndexes` list, an `assert` nothing; `checks` is recorded
   absent-never-`[]`; the name `<table>_<name>_<check|key>` is re-derived, bounded at 63 bytes and
@@ -169,12 +173,8 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   (`retype-keys.ts`): the retype set is derived once for the whole schema (`retypedColumns`), drops go
   in `preAlters` at the top of `up`, re-adding is `foreignKeyPlan`'s, both `breaksOn` ends are needed
   (`generate-retype-key.live.test.ts`). `sql-type.ts` reads `SQL_TYPES` with `Object.hasOwn`.
-- **A generated column** (`generated-column.ts`): the clause right after the type; generated-and-
-  defaulted refused; an expression change is `set expression as (…)`; a retype has no `using`; a NOT
-  NULL add is one statement; generated → plain is `drop expression`; plain → generated rebuilds
-  (`rebuilt`) and moves dependents aside, its own type change does not. `introspectSchema` never reads
-  `generation_expression`.
-  `generate-generated-{column,rebuild}.live.test.ts`.
+- **A generated column** (`generated-column.ts`): plain → generated rebuilds (`rebuilt`); the rest of
+  its rules are in `docs/history/db.md` (2026-10-31). `generate-generated-{column,rebuild}.live.test.ts`.
 - **`REPLICA IDENTITY FULL` is a PARAMETER** (`GenerateOptions.replicaIdentityFull`, from the CLI's
   `db-generate.ts`; `replica-identity.ts`): recorded `true` or absent, as a union; last in `up`; an
   undeclared name skipped; `down` reverts it unless this migration created the table.
@@ -218,8 +218,6 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
   `x_migrations` by default. **`app-relation.ts`**: `nonAppRelations(client, schema)` — extension
   ownership from `pg_depend` (`deptype = 'e'`) plus views, materialised views and foreign tables —
   merged into `excluded` unconditionally.
-- **`unexpectedTable`'s `fix:` never names `x db gen`**: `psql -c '\d "T"'`, commented with the two
-  repairs (claim it with `create table if not exists`, or drop it).
 - **`dbDrift()` lives in `drift-errors.ts`** (it needs `shellInertIdentifier`) and is the only one —
   `@ultimat3/entity`'s copy is deleted. `errors.ts` registers `DB_ERROR_TITLES` unconditionally.
 - `drift-findings.ts` holds every `DriftDifference` constructor and `DriftKind`; `drift.ts` keeps the

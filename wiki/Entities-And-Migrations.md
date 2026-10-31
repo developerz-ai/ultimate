@@ -65,7 +65,7 @@ The entity name is the first argument. Everything else is the init object:
 | `table` | the physical table, when it is not the entity's own name. For a schema this framework did not generate — see [Adopting an existing database](#adopting-an-existing-database) |
 | `tenant` | the tenant column. Omitted, it is inferred from `.tenant()` or a column named `orgId` — silence never means unscoped |
 | `invariants` | `(c) => [invariant(name, expr), …]` — named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible. `c` is typed from `columns`, so a typo is a compile error |
-| `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead |
+| `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead. `concurrently: true` on an entry builds it with `create index concurrently` in a migration of its own, outside a transaction — for a big, hot table ([Indexes built concurrently](Migrations-And-Backfills#indexes-built-concurrently--expand--contract)) |
 | `primaryKey` | composite keys only — a single key is `.primaryKey()` on the column |
 | `tags` | extra cache tags this entity participates in, beyond its own `entity:<name>` |
 
