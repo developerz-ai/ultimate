@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 29.3.2 - 2026-10-31
+
 ### Added
 
 - **`RecordStore`'s `maxRowsPerType` and `maxRowsByType` options and `DEFAULT_MAX_ROWS_PER_TYPE`
@@ -53,6 +57,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   acquired once and never asked about again kept its expired slot for the life of the process; an
   `acquire` now sweeps every key at most once a minute (`LEASE_SWEEP_INTERVAL_MS`).
   `packages/jobs/src/leases.ts`.
+
+### Commits
+
+- fix(realtime,scraping,jobs,cache): no memory leaks in long-lived processes and tabs (#940)
 
 ## 29.3.1 - 2026-10-30
 
