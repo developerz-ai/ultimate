@@ -40,7 +40,9 @@ export interface RecordStoreOptions {
 
 /**
  * The per-type cap's default. A backstop against hours of a fleet feed: well above what a page
- * shows of one type (a run's 2 000 log lines), so a whole-type reader never loses a row it shows.
+ * shows of one type (a run's 2 000 log lines): a whole-type reader loses no row it shows while its
+ * type stays under its cap (past it the least recently written unheld rows go — name a bigger
+ * cap for that type in `maxRowsByType`).
  */
 export const DEFAULT_MAX_ROWS_PER_TYPE = 10_000;
 

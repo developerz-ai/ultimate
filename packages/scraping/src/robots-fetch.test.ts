@@ -85,6 +85,18 @@ describe('unit · the default robots.txt read', () => {
     expect(await read('https://gone.test/robots.txt')).toBeUndefined();
   });
 
+  test("a 4xx answer's body is cancelled, never left holding its connection", async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const read = robotsFetcher({ fetch: () => Promise.resolve(bodyResponse(body, 404)) });
+    expect(await read('https://gone.test/robots.txt')).toBeUndefined();
+    expect(cancelled).toBe(true);
+  });
+
   // The exit is RESOLVED per read, never captured at construction: the gate is built as an
   // argument to `driver.open()`, and the proxy is a driver option resolved inside it — so a
   // string captured here could only ever be the one nobody has yet, which is how the robots read

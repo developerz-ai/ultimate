@@ -98,10 +98,29 @@ describe('a channel joined for hours', () => {
       expect(() => new RecordStore({ maxRowsPerType: bad })).toThrow(/maxRowsPerType/);
       expect(() => new RecordStore({ maxRowsByType: { runs: bad } })).toThrow(/maxRowsByType/);
     }
+    // Past the default, in separate batches (each trims): Infinity keeps every row.
     const store = new RecordStore({ maxRowsPerType: Number.POSITIVE_INFINITY });
-    store.adopt('runs', Object.fromEntries(Array.from({ length: 50 }, (_, n) => [`r${n}`, {}])));
-    store.adopt('runs', { last: { id: 'last' } });
-    expect(store.size).toBe(51);
+    const past = DEFAULT_MAX_ROWS_PER_TYPE + 500;
+    for (let start = 0; start < past; start += 1_000) {
+      const rows = Array.from({ length: Math.min(1_000, past - start) }, (_, n) => [
+        `r${start + n}`,
+        {},
+      ]);
+      store.adopt('runs', Object.fromEntries(rows));
+    }
+    expect(store.size).toBe(past);
+  });
+
+  test('a row written several times in one batch shields only itself, not older rows', () => {
+    const store = new RecordStore({ maxRowsPerType: 2 });
+    store.adopt('runs', { a: { id: 'a' } });
+    store.adopt('runs', { b: { id: 'b' } });
+    store.batch(() => {
+      store.adopt('runs', { c: { id: 'c', v: 1 } });
+      store.adopt('runs', { c: { id: 'c', v: 2 } });
+      store.adopt('runs', { c: { id: 'c', v: 3 } });
+    });
+    expect(store.size).toBe(2);
   });
 
   test('the cap is the store’s option', () => {

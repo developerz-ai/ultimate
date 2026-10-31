@@ -95,7 +95,12 @@ const answerOf = async (response: Response, limit: number): Promise<RobotsAnswer
     await response.body?.cancel().catch(() => undefined);
     return { unreachable: `status ${String(response.status)}` };
   }
-  if (!response.ok) return undefined;
+  if (!response.ok) {
+    // A 4xx's body is never read: cancelled, so its connection is not held until collection (the
+    // deadline that used to abort it is disposed with the read).
+    await response.body?.cancel().catch(() => undefined);
+    return undefined;
+  }
   // Counted as it arrives rather than `.text()`, which materialises the whole body first: a
   // multi-gigabyte robots.txt is a heap the worker never gets back.
   const capped = await readWithinLimit(response.body, limit);

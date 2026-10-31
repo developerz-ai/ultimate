@@ -33,7 +33,7 @@ export class SyncedLayer {
    */
   readonly #owners = new Map<RecordKey, Set<string>>();
   /** Per type, the writes since the last `trim` — its newest rows, which no reader could hold yet. */
-  readonly #written = new Map<string, number>();
+  readonly #written = new Map<string, Set<RecordKey>>();
 
   get(rk: RecordKey): Row | undefined {
     return this.#rows.get(rk);
@@ -174,10 +174,13 @@ export class SyncedLayer {
     for (const [type, written] of this.#written) {
       const keys = this.#byType.get(type) ?? new Set<RecordKey>();
       let over = keys.size - capOf(type);
-      // Oldest first: `#put` moves a row to the end of its type on every write, so the rows
-      // written since the last trim are the last `written` — never reached. Deleting the entry
-      // being visited is safe while iterating a Set.
-      let older = keys.size - written;
+      // Oldest first: `#put` moves a row to the end of its type on every write, so the DISTINCT
+      // rows written since the last trim that are still there are the last ones — never reached
+      // (a row written twice counts once; one removed since is no longer at the end). Deleting the
+      // entry being visited is safe while iterating a Set.
+      let fresh = 0;
+      for (const rk of written) if (keys.has(rk)) fresh += 1;
+      let older = keys.size - fresh;
       for (const rk of keys) {
         if (over <= 0 || older-- <= 0) break;
         if (this.#holds.has(rk) || pinned(rk) || !this.remove(rk)) continue;
@@ -241,7 +244,7 @@ export class SyncedLayer {
     const keys = setIn(this.#byType, type);
     keys.delete(rk);
     keys.add(rk);
-    this.#written.set(type, (this.#written.get(type) ?? 0) + 1);
+    setIn(this.#written, type).add(rk);
     this.#rows.set(rk, row);
   }
 }
