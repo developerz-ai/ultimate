@@ -253,7 +253,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - Anything a component reads is a getter or accessor. `MutatorLike.local` uses method syntax.
   `useQuery`'s input is read once, at call time.
 - **`useRecords(type, selection)` holds the TYPE** (`retainType`): `ready` at once, recomputed per
-  change to that type, no row of it evicted while held; the last type hold evicts what it spared.
+  change to that type, no row of it released away while held; the last type hold evicts what it spared.
+- **Bounded store**: README "One record per `type:key`"; `channel-retention.test.ts`.
 - **Read hooks answer the SAME object until what they show moved** (`keptAnswer`); a `where`
   reader hears only keys it shows or keeps (history, 2026-10-29).
 - Every subscription handle is `Disposable`; `[Symbol.dispose]` IS the release. Type claims go in

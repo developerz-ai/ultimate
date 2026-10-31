@@ -7,7 +7,7 @@ import { ctxOf } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { memoryJobDriver } from './driver-memory';
 import { job, resetJobs } from './job';
-import { jobLeaseKey, memoryLeaseStore } from './leases';
+import { jobLeaseKey, LEASE_SWEEP_INTERVAL_MS, memoryLeaseStore } from './leases';
 import { jobWorker } from './worker';
 
 afterEach(() => {
@@ -197,5 +197,25 @@ describe('the lease store itself', () => {
     expect(await store.held('job:x')).toBe(1);
     await store.release(held);
     expect(await store.held('job:x')).toBe(0);
+  });
+
+  test('expired keys nobody asks about again are swept by a later acquire, at most once a minute', async () => {
+    let at = 1_000_000;
+    const store = memoryLeaseStore({
+      clock: { now: () => new Date(at), monotonic: () => at },
+    });
+    // One key per account, each run crashed before release: nothing ever asks about them again.
+    for (let n = 0; n < 500; n += 1) await store.acquire(`job-key:sync:${n}`, 1, 1_000, 'dead');
+    expect(store.retained()).toBe(500);
+
+    // Expired, but inside the sweep interval: an acquire prunes only its own key.
+    at += 2_000;
+    await store.acquire('job:other', 1, 1_000, 'live');
+    expect(store.retained()).toBe(501);
+
+    at += LEASE_SWEEP_INTERVAL_MS;
+    await store.acquire('job:fresh', 1, 120_000, 'live');
+    // Every expired key went; only the slot just granted is left.
+    expect(store.retained()).toBe(1);
   });
 });

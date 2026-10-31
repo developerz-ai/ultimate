@@ -8,7 +8,51 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`RecordStore`'s `maxRowsPerType` and `maxRowsByType` options and `DEFAULT_MAX_ROWS_PER_TYPE`
+  (10 000)**, the per-type cap below: `maxRowsPerType` for every type, `maxRowsByType` (`{ run_logs:
+  50_000 }`) for the types it names; `Infinity` turns a cap off, a value that is not a whole number
+  ≥ 1 is `X_INVARIANT`. A backstop against hours of a fleet feed, not a view limit. `RecordStore.adopt(type, rows, owner?)` and
+  `RecordStore.disown(owner)` are what a joined channel keeps its rows by.
+
+### Fixed
+
+- **The page record store is bounded: a channel's rows no longer live forever.** Rows a `records`
+  frame or a catch-up read adopted carried no reader hold, so nothing evicted them — a panel tab on
+  a fleet feed kept every row it ever heard of, and leaving a run's channel left its rows. Now a
+  joined channel keeps what it adopted until it is dropped (then each row it alone kept is evicted,
+  exactly as a last key holder's release would, a whole-type reader sparing it until it leaves) or
+  the server removes the row; and each type is capped (`maxRowsPerType`, `maxRowsByType`) — past
+  it, at the close of a batch, the least recently written row goes, never one a key reader holds,
+  one a pending write touched, or one that arrived in that batch. A whole-type reader
+  (`useRecords(type, selection)`) shows at most the cap — the default is far above a page's view
+  (a run's 2 000 log lines lose none); a type shown in larger numbers names its own cap. An
+  eviction is a change like any other: the persister deletes the row from disk with it.
+  `packages/realtime/src/record-synced.ts`, `record-store.ts`, `client-channels.ts`.
+- **A channel's held frames stop at the ring.** Frames that arrived while a catch-up read was in
+  flight — or failing, for as long as it failed — were held without bound; past
+  `CHANNEL_HELD_FRAMES` (256, the node's `DEFAULT_CHANNEL_RING`) they are dropped and one more read
+  follows. `packages/realtime/src/client-channels.ts`.
+- **A lost frame no `replay-gap` announced no longer grows the cursor for the session.** Every
+  applied seq above the hole was kept; past the ring size no replay can fill it, so the channel is
+  re-read. `packages/realtime/src/client-channels.ts`.
+- **A tenant-less live read runs in a fresh child context.** It ran straight in the sync node's
+  process-long context, so the request memo (a `WeakMap` on the context) kept every such read for
+  the life of the node and served its answer to every later read.
+  `packages/realtime/src/live-definition.ts`.
+- **Console text and network URLs in the CDP rings are clamped** to `MAX_PAGE_ERROR_CHARS`, as a
+  page error's message and stack already were: the ring bounds the count, and one serialised state
+  blob or `data:` URL is megabytes per entry. `packages/scraping/src/cdp-arm.ts`, `intercept.ts`.
+- **The HTTP leg and the robots read no longer leave a listener and a timer per request.** One
+  `AbortSignal.any` per hop hung on the run's signal and was never detached, and each
+  `AbortSignal.timeout` outlived its answer; both now compose through a disposable deadline
+  (`deadline-signal.ts`, the shape of `@ultimat3/jobs`' `createRunSignal`) that clears its timer
+  and detaches when the request settles. `packages/scraping/src/http.ts`, `robots-fetch.ts`.
+- **`memoryLeaseStore` sweeps expired keys.** Only the key an `acquire` named was pruned, so a key
+  acquired once and never asked about again kept its expired slot for the life of the process; an
+  `acquire` now sweeps every key at most once a minute (`LEASE_SWEEP_INTERVAL_MS`).
+  `packages/jobs/src/leases.ts`.
 
 ## 29.3.1 - 2026-10-30
 

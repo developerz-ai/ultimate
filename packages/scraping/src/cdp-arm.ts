@@ -16,7 +16,7 @@ import type {
   PageErrorRing,
   ResourceType,
 } from './rings';
-import { pageErrorEntry, RESOURCE_TYPES } from './rings';
+import { clamped, pageErrorEntry, RESOURCE_TYPES } from './rings';
 
 /** What `arm()` reads: the page it subscribes to, the rules it judges by, the clock it stamps with. */
 export interface CdpArmInit {
@@ -134,7 +134,7 @@ export async function arm(init: CdpArmInit, sinks: CdpSinks): Promise<void> {
     const verdict = interceptVerdict(url, type, init.rules);
     const at = init.clock.now().getTime();
     if (verdict === 'allow') {
-      network.push({ method, url, resourceType: type, at });
+      network.push({ method, url: clamped(url), resourceType: type, at });
       // Caught, never floated: both reject when the target closed mid-request (and on any other
       // protocol error), and a floated rejection is one Bun ends the process on. The request is
       // already recorded; there is nothing left to do for a target that is gone.
@@ -147,7 +147,8 @@ export async function arm(init: CdpArmInit, sinks: CdpSinks): Promise<void> {
   init.page.on('console', (payload) => {
     console_.push({
       level: consoleLevel(readStringFrom(payload, 'type') ?? ''),
-      text: readStringFrom(payload, 'text') ?? '',
+      // Clamped: the ring bounds the count, and one `console.log(JSON.stringify(state))` is megabytes.
+      text: clamped(readStringFrom(payload, 'text') ?? ''),
       at: init.clock.now().getTime(),
     });
   });

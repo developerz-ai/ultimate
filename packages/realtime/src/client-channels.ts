@@ -17,6 +17,14 @@ import type {
 } from './sync-protocol';
 import { PROTOCOL_VERSION } from './wire-version';
 
+/**
+ * Frames held behind a catch-up read, and applied seqs above a hole, at most: the node's own ring
+ * (`DEFAULT_CHANNEL_RING`, held equal by a test — not imported, that module is the server's). Past
+ * it the node could not replay them either, so the read answers instead: held, a read failing
+ * for an hour held every frame of the hour, and one lost frame grew `above` for the session.
+ */
+export const CHANNEL_HELD_FRAMES = 256;
+
 /** What a browser needs of a `channel()` declaration: its name, its topic rule, its catch-up read. */
 export interface ChannelRef<K extends string = string> {
   readonly name: string;
@@ -144,6 +152,9 @@ export class ChannelBook {
       this.#byTopic.delete(topic);
       held.disarm?.();
       held.disarm = null;
+      held.buffered = null;
+      // The rows this channel alone kept go with it; a row a reader still holds stays.
+      this.#deps.store.disown(sidOf(held));
       this.#deps.send(this.#frame(held, 'drop', false));
     };
     return {
@@ -210,7 +221,7 @@ export class ChannelBook {
     const entry = this.#byTopic.get(frame.channel);
     if (entry === undefined) return;
     if (entry.buffered !== null) {
-      entry.buffered.push(frame);
+      this.#hold(entry, [frame]);
       // The echo of a write the answered read waits on: it lands with the read, settling it there.
       if (frame.write !== undefined) entry.landing?.recheck();
       return;
@@ -267,7 +278,8 @@ export class ChannelBook {
     }
     const store = this.#deps.store;
     store.batch(() => {
-      for (const [type, rows] of Object.entries(frame.adopt ?? {})) store.adopt(type, rows);
+      const owner = sidOf(entry);
+      for (const [type, rows] of Object.entries(frame.adopt ?? {})) store.adopt(type, rows, owner);
       for (const [type, keys] of Object.entries(frame.remove ?? {})) store.remove(type, keys);
       // This page's own write, echoed: settled in the same batch as its rows, so its twin is
       // never replayed over the truth that already holds it.
@@ -281,6 +293,12 @@ export class ChannelBook {
     let next = contiguous;
     while (entry.above.delete(next + 1)) next += 1;
     entry.contiguous = next;
+    // A hole the ring has moved past (a frame lost with no `replay-gap`): no replay can fill it, so
+    // the read does — and `above` stops growing for the rest of the session.
+    if (entry.above.size > CHANNEL_HELD_FRAMES) {
+      this.#catchUp(entry, [], entry.epoch ?? undefined);
+      return;
+    }
     if (entry.state !== 'live') this.#set(entry, 'live');
   }
 
@@ -293,7 +311,7 @@ export class ChannelBook {
    */
   #catchUp(entry: Entry, pending: ChannelRecordsFrame[], epoch?: string): void {
     if (entry.buffered !== null) {
-      entry.buffered.push(...pending);
+      this.#hold(entry, pending);
       if (pending.length === 0) entry.again = { epoch: epoch ?? entry.again?.epoch };
       // No read in flight — the last one failed — so this gap is the retry, now.
       if (entry.waiting) this.#read(entry);
@@ -302,6 +320,19 @@ export class ChannelBook {
     entry.buffered = [...pending];
     this.#restart(entry, epoch ?? pending[0]?.epoch ?? entry.epoch);
     this.#read(entry);
+  }
+
+  /**
+   * Frames held behind the read, bounded by the ring: past it they are dropped and one more read
+   * follows, in the newest frame's epoch — the read answers what they carried.
+   */
+  #hold(entry: Entry, frames: readonly ChannelRecordsFrame[]): void {
+    const held = entry.buffered ?? [];
+    held.push(...frames);
+    entry.buffered = held;
+    if (held.length <= CHANNEL_HELD_FRAMES) return;
+    entry.again = { epoch: held.at(-1)?.epoch ?? entry.again?.epoch };
+    entry.buffered = [];
   }
 
   /** The cursor, reset into `epoch`: every seq before the read is the read's to answer. */
@@ -380,7 +411,7 @@ export class ChannelBook {
       entry.again = null;
       // Its rows land now, alone: they are newer than the store's, and a re-read that fails would
       // otherwise leave the older ones for the whole retry curve. The frames wait for the re-read.
-      this.#adopt(answered);
+      this.#adopt(entry, answered);
       entry.buffered = held.filter((frame) => frame.epoch === epoch);
       this.#restart(entry, epoch);
       this.#read(entry);
@@ -393,7 +424,7 @@ export class ChannelBook {
     // `#adopt` and `#apply` open batches of their own inside this one: `RecordStore.batch` nests,
     // so the read's rows and every held frame are still ONE notification.
     store.batch(() => {
-      this.#adopt(answered);
+      this.#adopt(entry, answered);
       for (const frame of current) {
         if (entry.contiguous === null) entry.contiguous = frame.seq - 1;
         this.#apply(entry, frame);
@@ -403,11 +434,13 @@ export class ChannelBook {
   }
 
   /** A catch-up read's rows, unless the principal it was read for has left (`CatchUpRecords`). */
-  #adopt(answered: CatchUpRecords | undefined): void {
+  #adopt(entry: Entry, answered: CatchUpRecords | undefined): void {
     if (answered === undefined || answered.current?.() === false) return;
     const store = this.#deps.store;
+    const owner = sidOf(entry);
     store.batch(() => {
-      for (const [type, rows] of Object.entries(answered.records ?? {})) store.adopt(type, rows);
+      for (const [type, rows] of Object.entries(answered.records ?? {}))
+        store.adopt(type, rows, owner);
       for (const [type, keys] of Object.entries(answered.removed ?? {})) store.remove(type, keys);
     });
   }

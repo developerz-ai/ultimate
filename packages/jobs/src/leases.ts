@@ -50,7 +50,12 @@ export interface MemoryLeaseStoreOptions {
 export interface MemoryLeaseStore extends LeaseStore {
   /** Keys with at least one live slot. A key nothing holds is not retained — see `live`. */
   tracked(): number;
+  /** Keys in the heap right now, expired or not — no sweep. What the sweep's own test reads. */
+  retained(): number;
 }
+
+/** How often `acquire` sweeps every key for expired slots: at most once per this many ms. */
+export const LEASE_SWEEP_INTERVAL_MS = 60_000;
 
 /**
  * The `x dev` / test implementation. One heap, so it is not a fleet gate — it exists so the
@@ -75,8 +80,22 @@ export function memoryLeaseStore(options: MemoryLeaseStoreOptions = {}): MemoryL
     return held;
   };
 
+  /**
+   * `live` only prunes the key it is asked about, so a key acquired once and never asked about
+   * again (its job's run crashed before release, one key per account) kept its expired slot for
+   * the life of the process. Bounded to once a minute: a sweep walks every key.
+   */
+  let swept = nowMs(clock);
+  const sweep = (): void => {
+    const at = nowMs(clock);
+    if (at - swept < LEASE_SWEEP_INTERVAL_MS) return;
+    swept = at;
+    for (const key of [...slots.keys()]) live(key);
+  };
+
   return {
     acquire(key, limit, ttlMs, holder) {
+      sweep();
       const held = live(key);
       for (let slot = 0; slot < limit; slot += 1) {
         if (held.has(slot)) continue;
@@ -112,6 +131,9 @@ export function memoryLeaseStore(options: MemoryLeaseStoreOptions = {}): MemoryL
     },
     tracked() {
       for (const key of [...slots.keys()]) live(key);
+      return slots.size;
+    },
+    retained() {
       return slots.size;
     },
   };

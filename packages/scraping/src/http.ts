@@ -15,6 +15,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { ScrapeClock } from './clock';
 import { cookieHeaderFor } from './cookie-scope';
+import { type DeadlineTimer, deadlineSignal } from './deadline-signal';
 import { bodyTooLarge, hostBlocked, httpFailed, redirectLoop, scrapeTimeout } from './error-throws';
 import type { RedirectHop } from './http-redirect';
 import { MAX_REDIRECT_HOPS, redirectHop } from './http-redirect';
@@ -123,6 +124,8 @@ export interface HttpTransportInit {
   readonly fetch?: ScrapeFetch | undefined;
   /** The resolver a wildcard-admitted name is checked and pinned with. Defaults to `Bun.dns`. */
   readonly resolve?: HostResolve | undefined;
+  /** The deadline's timer. Defaults to the platform's; a test hands its own (`deadline-signal.ts`). */
+  readonly timer?: DeadlineTimer | undefined;
 }
 
 /**
@@ -320,15 +323,16 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
       init.onActivity?.();
       let dial = await screen(url);
       const session = await init.session();
-      // `AbortSignal.timeout` and NOT `clock.sleep`: this is a deadline handed to the platform's
+      // A platform timer and NOT `clock.sleep`: this is a deadline handed to the platform's
       // own fetch, not a wait this package performs — and under a test clock a slept deadline
       // would fire on the microtask after it was armed, cancelling every request instantly.
       // The offline transport (`http-recorded.ts`) is what a test runs, and it has no deadline.
       //
       // ONE deadline for the whole chain, not one per hop: the caller declared a budget for
       // getting an answer, and ten hops each allowed the full budget is ten times the wait.
-      const deadlineSignal = AbortSignal.timeout(timeoutMs);
-      const signals = init.signal === undefined ? [deadlineSignal] : [deadlineSignal, init.signal];
+      // Disposed when the request settles: the timer cleared and the session-long `init.signal`
+      // let go — `AbortSignal.any` per hop hung a listener on it for every hop of every request.
+      using deadline = deadlineSignal(timeoutMs, init.signal, init.timer);
       try {
         let hop: RedirectHop = {
           url,
@@ -365,7 +369,7 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
             ),
             ...(dial.serverName === undefined ? {} : { tls: { serverName: dial.serverName } }),
             ...(hop.body === undefined ? {} : { body: hop.body }),
-            signal: AbortSignal.any(signals),
+            signal: deadline.signal,
             // The whole point: the platform's own `follow` is what made the four lines above
             // decorative, because it dials the target itself and hands back one Response.
             redirect: 'manual',
@@ -404,7 +408,7 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
       } catch (thrown) {
         // A deadline that fired is this package's own timeout, with its own code and fix — never
         // the platform's bare `TimeoutError` reaching a job's retry classifier unclassified.
-        if (deadlineSignal.aborted) throw scrapeTimeout(`http ${url}`, timeoutMs);
+        if (deadline.timedOut()) throw scrapeTimeout(`http ${url}`, timeoutMs);
         throw thrown;
       }
     },

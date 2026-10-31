@@ -4,7 +4,7 @@
 // core's `RecordSink`, so `clientTransport` adopts into it without importing this package.
 
 import type { ConflictPolicy, RecordRows, RecordSink, Row } from '@ultimat3/core/page';
-import { resolveConflict } from '@ultimat3/core/page';
+import { finiteCount, resolveConflict } from '@ultimat3/core/page';
 import { RebaseConflictError, RecordRejectedError } from './page-errors';
 import { ServerWait } from './record-await';
 import { isRow, type RecordKey, recordKey } from './record-key';
@@ -28,7 +28,21 @@ export interface RecordStoreOptions {
   readonly schedule?: Scheduler;
   /** How long an overlay waits for the server's row before the synced layer stands. */
   readonly awaitMs?: number;
+  /**
+   * The per-type cap: rows of one type the store keeps at most. Past it the least recently written
+   * row no key reader holds is evicted (`SyncedLayer.trim`) — a backstop for a channel joined for
+   * hours, not a view limit. Default `DEFAULT_MAX_ROWS_PER_TYPE`; `Infinity` turns it off.
+   */
+  readonly maxRowsPerType?: number;
+  /** The cap for the types named here, over `maxRowsPerType` — a log type that runs long, say. */
+  readonly maxRowsByType?: Readonly<Record<string, number>>;
 }
+
+/**
+ * The per-type cap's default. A backstop against hours of a fleet feed: well above what a page
+ * shows of one type (a run's 2 000 log lines), so a whole-type reader never loses a row it shows.
+ */
+export const DEFAULT_MAX_ROWS_PER_TYPE = 10_000;
 
 export class RecordStore implements RecordSink {
   readonly #synced = new SyncedLayer();
@@ -48,9 +62,23 @@ export class RecordStore implements RecordSink {
   readonly #names = new WriteNames();
   /** Server truth held behind this page's writes in flight (`afterWrites`). */
   readonly #landings: Landings;
+  readonly #cap: number;
+  readonly #capByType = new Map<string, number>();
 
   constructor(options: RecordStoreOptions = {}) {
     this.#report = options.report ?? ((error) => console.error(error));
+    const maxRowsPerType = options.maxRowsPerType ?? DEFAULT_MAX_ROWS_PER_TYPE;
+    this.#cap =
+      maxRowsPerType === Number.POSITIVE_INFINITY
+        ? maxRowsPerType
+        : finiteCount('RecordStore', 'maxRowsPerType', maxRowsPerType, 1);
+    for (const [type, cap] of Object.entries(options.maxRowsByType ?? {})) {
+      const screened =
+        cap === Number.POSITIVE_INFINITY
+          ? cap
+          : finiteCount('RecordStore', `maxRowsByType.${type}`, cap, 1);
+      this.#capByType.set(type, screened);
+    }
     this.#wait = new ServerWait(options.schedule, options.awaitMs);
     this.#landings = new Landings(
       (fire) => this.#wait.bound(fire),
@@ -90,8 +118,9 @@ export class RecordStore implements RecordSink {
   /**
    * `RecordSink.adopt`: server truth, keyed by the server (it holds the entity's primary key; the
    * browser does not). Merged column by column. A structurally bad row is dropped, never merged.
+   * `owner` is the joined channel whose frame carried them: it keeps them until `disown`.
    */
-  adopt(type: string, rows: RecordRows): void {
+  adopt(type: string, rows: RecordRows, owner?: string): void {
     this.batch(() => {
       for (const [key, row] of Object.entries(rows)) {
         if (!isRow(row) || key === '') {
@@ -104,7 +133,15 @@ export class RecordStore implements RecordSink {
           continue;
         }
         this.merge(type, key, row);
+        if (owner !== undefined) this.#synced.own(recordKey(type, key), owner);
       }
+    });
+  }
+
+  /** The channel `owner` was dropped: the rows only it kept are evicted (`SyncedLayer.disown`). */
+  disown(owner: string): void {
+    this.batch(() => {
+      for (const rk of this.#synced.disown(owner)) this.#touchSynced(rk);
     });
   }
 
@@ -159,7 +196,7 @@ export class RecordStore implements RecordSink {
     this.#synced.retain(recordKey(type, key));
   }
 
-  /** The last holder leaving evicts the synced record: an infinite scroll must not keep every row. */
+  /** The last holder leaving evicts the synced record — unless a joined channel still keeps it. */
   release(type: string, key: string): void {
     const rk = recordKey(type, key);
     if (this.#synced.release(rk)) this.#touchSynced(rk);
@@ -321,6 +358,7 @@ export class RecordStore implements RecordSink {
     try {
       return fn();
     } finally {
+      this.#trim();
       // Synced truth moved under pending writes: replay them once, at the end, over the new truth.
       if (this.#syncedMoved) {
         this.#syncedMoved = false;
@@ -403,6 +441,20 @@ export class RecordStore implements RecordSink {
     this.#names.forget(key);
     this.#wait.forget(key);
     return this.#overlays.delete(key);
+  }
+
+  /** The per-type cap, at the close of each batch — never over a row a pending write touched. */
+  #trim(): void {
+    let pinned: Set<RecordKey> | undefined;
+    const capOf = (type: string): number => this.#capByType.get(type) ?? this.#cap;
+    const evicted = this.#synced.trim(capOf, (rk) => {
+      pinned ??= new Set([
+        ...this.#view.keys(),
+        ...[...this.#touched.values()].flatMap((k) => [...k]),
+      ]);
+      return pinned.has(rk);
+    });
+    for (const rk of evicted) this.#touchSynced(rk);
   }
 
   #touchSynced(rk: RecordKey): void {
