@@ -39,7 +39,7 @@ for dir in "$REPO"/packages/*/; do
   name="$(jq -r '.name // ""' "$dir/package.json")"
   # A nameless workspace would fall through the case below and ship the npm copy instead of this tree's.
   [ -n "$name" ] || refuse "$dir/package.json has no name, so it cannot be packed into the proof app. fix: give it its @ultimat3/<pkg> name"
-  case "$name" in @ultimat3/*) (cd "$dir" && bun pm pack --destination "$APP/vendor" --quiet >/dev/null 2>&1) ;; esac
+  case "$name" in @ultimat3/*) (cd "$dir" && bun pm pack --destination "$APP/vendor" --quiet >/dev/null) ;; esac
 done
 (cd "$APP" && bun -e '
   const pkg = await Bun.file("package.json").json();
@@ -84,13 +84,16 @@ kubectl create secret generic proofapp-secrets \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl rollout status deploy/postgres --timeout=180s >/dev/null
 
+# The exit status is kept, not discarded: a red `x deploy` still prints its `--json` document, and
+# the refusal names both its exit status and its findings rather than a bare rollout status.
 deploy() {
-  local out="$WORK/deploy-$1.json"
-  (cd "$APP" && bunx x deploy --method helm --image "proofapp:$1" --timeout 5m --json) > "$out" || true
-  local status
-  status="$(jq -r '.data.rollout.status // "unknown"' "$out")"
-  echo "   x deploy proofapp:$1 -> $(jq -c '.data.rollout' "$out")"
-  [ "$status" = deployed ] || refuse "x deploy --method helm --image proofapp:$1 reported rollout status '$status'. fix: KEEP_CLUSTER=1 bash docker/deploy-proof/run.sh, then kubectl get pods,events"
+  local out="$WORK/deploy-$1.json" exit_status=0 status findings
+  (cd "$APP" && bunx x deploy --method helm --image "proofapp:$1" --timeout 5m --json) > "$out" || exit_status=$?
+  # A document jq cannot read is its own verdict, named below, never a set -e exit with no message.
+  status="$(jq -r '.data.rollout.status // "unknown"' "$out")" || status="unreadable: $(head -c 500 "$out")"
+  findings="$(jq -c '.findings // []' "$out")" || findings='[]'
+  echo "   x deploy proofapp:$1 exited $exit_status -> $(jq -c '.data.rollout' "$out" || true)"
+  [ "$exit_status" = 0 ] && [ "$status" = deployed ] || refuse "x deploy --method helm --image proofapp:$1 exited $exit_status, rollout status '$status', findings $findings. fix: KEEP_CLUSTER=1 bash docker/deploy-proof/run.sh, then kubectl get pods,events"
 }
 
 step "first install: the migrate hook must not wait on an object the chart has not made yet"

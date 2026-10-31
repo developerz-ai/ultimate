@@ -122,3 +122,13 @@ schedules:
     days: [mon, tue, wed, thu, fri, sat, sun]
     hours_utc: [7]
     brief_file: .dz/briefs/health.md
+  # Leave it measurably better and one step ahead of the next Bun release: at most three small,
+  # evidenced PRs, never a version bump, never a breaking change (narrower than `escalate:` on
+  # purpose: an improvement nobody asked for is not worth a migration for every app, so the brief
+  # files an issue for the owner instead). Fires EVERY Monday because the schema has weekdays, not
+  # days of the month; the brief acts only on the first Monday of the month (UTC day 1-7) and stops
+  # on the others.
+  - name: improve
+    days: [mon]
+    hours_utc: [8]
+    brief_file: .dz/briefs/improve.md
