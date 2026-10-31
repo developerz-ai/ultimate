@@ -61,6 +61,19 @@ export async function readObjectBytes(
     .then((buffer) => new Uint8Array(buffer), refusedRead(root, key, disk));
 }
 
+/** `readObjectBytes` for the inclusive window `[first, last]` — `Bun.file().slice()`, one read. */
+export async function readObjectRange(
+  root: string,
+  key: string,
+  disk: string,
+  [first, last]: readonly [number, number],
+): Promise<Uint8Array> {
+  return Bun.file(`${root}/${key}`)
+    .slice(first, last + 1)
+    .arrayBuffer()
+    .then((buffer) => new Uint8Array(buffer), refusedRead(root, key, disk));
+}
+
 /** `etagOf`, streamed: a copy or a `stat()` must settle a doubt without buffering the object. */
 export async function etagOfFile(root: string, key: string, disk = 'local'): Promise<string> {
   const hasher = new Bun.CryptoHasher('sha256');

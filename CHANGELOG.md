@@ -38,6 +38,35 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   migration's `lock_timeout`. `down` rebuilds it concurrently. Migrations already generated
   are untouched; an app regenerating with no entity change gets no diff. `dropRecordedIndex` (never
   exported) is gone.
+- **`query({ input, policy, download: { handle, expiresInMs? } })` — a read answered by a FILE at
+  a short-lived signed URL**, still a `query` (no ninth primitive). `client.<name>.url(input)` (and
+  `await q.url(input, { ctx })` on the server) runs the read's policy and answers `{ url,
+  expiresAt }`; `GET <url>` serves `handle`'s `{ body: Uint8Array | Blob | ReadableStream,
+  contentType, filename, disposition?, size? }` to whoever holds the URL — a `<video>`, a tab —
+  with `content-disposition`, one `Range:` window (206/416), `nosniff`, `no-store`, `referrer-policy:
+  no-referrer` and `default-src 'none'; img-src 'self'; media-src 'self'; sandbox` — an inline file
+  loads nothing elsewhere. A handler's `referrer-policy: no-referrer` is now kept by the security
+  stage, as its `content-security-policy` already was (it only narrows).
+  The `_token` is the minting actor, the query, the parsed input's fingerprint and the expiry,
+  `seal()`ed under the app master key: forged, truncated, another query's or re-pointed at other
+  input is `X_QUERY_DOWNLOAD_TOKEN_INVALID` (403), past `expiresInMs` (default 5 min, at most 1 h)
+  `X_QUERY_DOWNLOAD_TOKEN_EXPIRED` (410). Rows asked of one (`.live()`, `.page()`, `.as()`,
+  `sourceFor`, MCP) are `X_QUERY_DOWNLOAD_ONLY`; a rows option beside `download` is
+  `X_QUERY_DOWNLOAD_INVALID`. The manifest's `QueryFact` carries `download: true` (a flip either
+  way is breaking), OpenAPI documents the mint and the file, `x routes` lists the read's own GET.
+  `packages/query/src/download*.ts`.
+- **`disk.get(key, { range: [first, last] })` on the memory, local and s3 disks** — both offsets
+  inclusive; s3 sends ONE signed GET with `Range:` and takes the window, the size and the etag from
+  that answer's `Content-Range` and `ETag` — no HEAD beside it to race — and the local disk slices
+  the file. The last byte is clamped, a first
+  byte at or past the end is `X_STORAGE_RANGE_UNSATISFIABLE` (416), and `maxGetBytes` bounds the
+  range rather than the object; `read.range` is the window served. A SEALED object (one AES-GCM
+  envelope) is not range-readable — page it as one sealed object per page.
+  `packages/storage/src/range.ts`.
+- **`parseByteRange`, `byteWindow`, `contentRangeOf` and `RANGE_UNSATISFIABLE` in
+  `@ultimat3/http`** — one `Range:` reader for `/_storage`, the site assets and a download. The
+  site-asset route answered 416 to an empty `bytes=-` where `/_storage` served the whole object;
+  both now ignore it, as RFC 9110 allows.
 
 ## 29.3.2 - 2026-10-31
 

@@ -82,4 +82,6 @@ export const TIER_1_ERROR_STATUS = {
   X_STORAGE_ALREADY_PROMOTED: 409,
   // @ultimat3/seo — a sitemap entry carries a lastmod or a locale the sitemap cannot write
   X_SITEMAP_ENTRY_INVALID: 500,
+  // @ultimat3/storage — the requested byte range starts past the end of the object
+  X_STORAGE_RANGE_UNSATISFIABLE: 416,
 } satisfies Readonly<Record<string, number>>;

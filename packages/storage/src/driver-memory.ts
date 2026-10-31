@@ -42,6 +42,7 @@ import {
   requestedLock,
 } from './object-lock';
 import { assertSafeKey } from './path';
+import { assertGetOptions, type GetOptions, servedRange } from './range';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import { resolveSigningSecret } from './signing-secret';
@@ -190,9 +191,16 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
       return hit && snapshot(hit.object);
     },
 
-    async get(key: string): Promise<StorageRead> {
+    async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
       const safe = assertSafeKey(key);
+      assertGetOptions(DRIVER_NAME, getOptions);
       const hit = found(safe);
+      const range = getOptions?.range;
+      if (range !== undefined) {
+        const served = servedRange(DRIVER_NAME, safe, range, hit.bytes.byteLength, maxGetBytes);
+        const bytes = hit.bytes.slice(served[0], served[1] + 1);
+        return { object: snapshot(hit.object), bytes, range: served };
+      }
       // The local disk's refusal, so a suite on this disk meets the ceiling production has.
       if (hit.bytes.byteLength > maxGetBytes) {
         throw getTooLarge(DRIVER_NAME, safe, hit.bytes.byteLength, maxGetBytes);

@@ -258,6 +258,45 @@ async function buildSource(
   options: SourceOptions,
   trace: ReadTrace | null,
 ): Promise<SqlSource<object>> {
+  const input = await admit(target, raw, ctx, options, trace);
+  const source = defOf(target).sql(input, ctx);
+  // A live window is served in the order its patches are placed in. The matcher breaks a tie on
+  // the declared keys with `id` (`totalOrder`) and so does the keyset re-read a reconnect resumes
+  // with, so an initial window served in the declared keys alone puts tied rows where neither of
+  // them would: the client renders one order and the next read answers another. A source that
+  // cannot say (`total` absent) already serves one order it can be resumed in.
+  return options.surface === 'live' && source.total !== undefined ? source.total() : source;
+}
+
+/**
+ * One whole call for a read that is ANSWERED by something other than `sql` — a download's file,
+ * or the URL minted for it. The same front half every surface shares (actor, audit, the declared
+ * limit, the parse, the policy), so a download is not a second read path: only what is done with
+ * the admitted input differs. `options.unenforced` is honoured exactly as `sourceFor` honours it.
+ */
+export function admittedCall<T>(
+  target: AnyQuery,
+  raw: unknown,
+  options: SourceOptions,
+  use: (input: unknown, ctx: Ctx) => Promise<T>,
+): Promise<T> {
+  return asActor(options, async (ctx) => {
+    const audit = auditFor(target, ctx, options);
+    if (audit === null) return use(await admit(target, raw, ctx, options, null), ctx);
+    return audited(audit, async () =>
+      use(await admit(target, raw, ctx, options, audit.trace), ctx),
+    );
+  });
+}
+
+/** Everything before `sql()`: the actor half, the declared limit, the parse, the policy. */
+async function admit(
+  target: AnyQuery,
+  raw: unknown,
+  ctx: Ctx,
+  options: SourceOptions,
+  trace: ReadTrace | null,
+): Promise<unknown> {
   const def = defOf(target);
   const name = queryName(target);
   const unenforced = options.unenforced;
@@ -312,13 +351,7 @@ async function buildSource(
     // comparison when nothing is listening.
     logger.debug('query.policy.unenforced', { query: name, reason: unenforced });
   }
-  const source = def.sql(input, ctx);
-  // A live window is served in the order its patches are placed in. The matcher breaks a tie on
-  // the declared keys with `id` (`totalOrder`) and so does the keyset re-read a reconnect resumes
-  // with, so an initial window served in the declared keys alone puts tied rows where neither of
-  // them would: the client renders one order and the next read answers another. A source that
-  // cannot say (`total` absent) already serves one order it can be resumed in.
-  return options.surface === 'live' && source.total !== undefined ? source.total() : source;
+  return input;
 }
 
 /** The parse without the refusal — only for the record of a read already refused on other grounds. */

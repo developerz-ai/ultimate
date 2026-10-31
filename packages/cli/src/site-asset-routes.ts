@@ -5,7 +5,13 @@
 
 import { isUltimateError } from '@ultimat3/core';
 import type { CacheHint, Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders, jsonResponse } from '@ultimat3/http';
+import {
+  applyCacheHeaders,
+  contentRangeOf,
+  jsonResponse,
+  parseByteRange,
+  RANGE_UNSATISFIABLE,
+} from '@ultimat3/http';
 import type { SiteAsset, SiteAssetTable } from './site-assets';
 import { parseHashedAssetUrl, SITE_ASSET_BASE_PATH } from './site-assets';
 
@@ -15,36 +21,14 @@ export const SITE_ASSET_CACHE: CacheHint = { mode: 'immutable' };
 const notFound = (code: string, cause: string, fix: string): Response =>
   jsonResponse({ ok: false, error: { code, cause, fix } }, { status: 404 });
 
-/** One `bytes=` range, resolved against the file's size; `null` when it cannot be satisfied. */
-export function byteRange(
-  header: string | null,
-  size: number,
-): { readonly start: number; readonly end: number } | null | undefined {
-  if (header === null) return undefined;
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  // A multi-range or a unit we do not speak: RFC 9110 lets a server ignore Range and send it all.
-  if (match === null) return undefined;
-  const [, from = '', to = ''] = match;
-  if (from === '' && to === '') return null;
-  if (from === '') {
-    const suffix = Number(to);
-    if (suffix === 0) return null;
-    return { start: Math.max(0, size - suffix), end: size - 1 };
-  }
-  const start = Number(from);
-  const end = to === '' ? size - 1 : Math.min(Number(to), size - 1);
-  if (start >= size || end < start) return null;
-  return { start, end };
-}
-
 function assetResponse(asset: SiteAsset, range: string | null): Response {
   const file = Bun.file(asset.file);
   const headers: Record<string, string> = {
     'content-type': asset.contentType,
     'accept-ranges': 'bytes',
   };
-  const wanted = byteRange(range, asset.bytes);
-  if (wanted === null) {
+  const wanted = parseByteRange(range, asset.bytes);
+  if (wanted === RANGE_UNSATISFIABLE) {
     return new Response(null, {
       status: 416,
       headers: { ...headers, 'content-range': `bytes */${String(asset.bytes)}` },
@@ -58,7 +42,7 @@ function assetResponse(asset: SiteAsset, range: string | null): Response {
       status: 206,
       headers: {
         ...headers,
-        'content-range': `bytes ${String(wanted.start)}-${String(wanted.end)}/${String(asset.bytes)}`,
+        'content-range': contentRangeOf(wanted, asset.bytes),
       },
     }),
     SITE_ASSET_CACHE,

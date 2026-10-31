@@ -216,6 +216,11 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `source.ts` | the `SqlSource` contract + `from()`, the in-memory reference |
 | `column-kinds.ts` | `kindsOf(relation)` — the declared kind of each column, which every comparison is decided by |
 | `sealed-shape.ts` | a live read may not filter or order on a `.sealed()` column — refused at subscribe |
+| `download.ts` | `query({ download })` — the declaration, the in-process file, the mint and the serve |
+| `download-token.ts` | the `_token`: claims sealed with core's `seal()`, opened against one query, one input, the clock |
+| `download-http.ts` | the route's two answers — mint JSON or the file: `content-disposition`, one `Range:` window, `no-store` |
+| `download-errors.ts` | `X_QUERY_DOWNLOAD_INVALID` / `_ONLY` / `_TOKEN_INVALID` / `_TOKEN_EXPIRED` |
+| `search-string.ts` | the input as a search string — what the client sends and a minted URL carries |
 
 ## Live queries
 
@@ -665,12 +670,70 @@ before the parse; a sink refusing a **denied/failed** record is logged (`audit.s
 original error still reaches the caller; a sink refusing an **allowed** record withholds the rows,
 `X_QUERY_AUDIT_SINK_FAILED` — a read commits nothing, so a retry is safe.
 
+## `download:` — a file at a short-lived signed URL
+
+A read whose answer is BYTES — a recording, an export, an attachment — is still a `query`: one
+input, one policy, one name, one route. `download:` replaces `sql:`; every rows option (`sql`,
+`live`, `single`, `rows`, `subscribes`, `cache`, `mcp`) beside it is a type error and
+`X_QUERY_DOWNLOAD_INVALID`.
+
+```ts
+import { open } from '@ultimat3/core';
+import { can } from '@ultimat3/policy';
+import { query, t } from '@ultimat3/query';
+import { disk } from '@ultimat3/storage';
+
+export const runRecording = query({
+  input: t.object({ runId: t.uuid, index: t.number.int().min(0) }),
+  policy: can('recording:watch'),
+  download: {
+    expiresInMs: 600_000, // 1 000 … 3 600 000; default 300 000
+    async handle({ input }) {
+      const key = `runs/${input.runId}/recordings/${input.index}`;
+      const { bytes } = await disk('debug').get(key);
+      // A SEALED object opens whole (one AES-GCM envelope), then is served as plain bytes.
+      const plain = await open(new TextDecoder().decode(bytes), { purpose: `run-debug:${key}` });
+      return { body: plain, contentType: 'video/mp4', filename: `run-${input.runId}.mp4` };
+    },
+  },
+});
+```
+
+| Call | Answers |
+|---|---|
+| `client.runRecording.url(input)` (browser, `queryClient`/`.client()`) | `{ url, expiresAt }` — `url` absolute on the client's `baseUrl` |
+| `await runRecording.url(input, { ctx })` (server) | the same, `url` a path: `/_x/query/run-recording?runId=…&index=0&_token=…` |
+| `GET <url>` | the file — to ANY requester holding the URL until `expiresAt`; no session needed |
+| `await runRecording(input, { ctx })` | the `DownloadFile` in-process, as the caller |
+
+| Rule | |
+|---|---|
+| The route | `GET /_x/query/<kebab>` — the read's own. No `_token`: MINT (`application/json`). `_token`: SERVE (the bytes). `auth: 'public'`, `enforcedBy: 'handler'`, `cache: no-store` |
+| Policy | evaluated at MINT, exactly as for a rows read: actor half, the declared `rateLimit:`, the parse, the predicate. A refusal is the policy's own 401/403 |
+| The token | `seal()`ed (`@ultimat3/core`, AES-256-GCM under the app master key, purpose `ultimate.query.download:<name>`) claims: the query, `fingerprint()` of the PARSED input, the expiry on `ctx.now()`, the minting actor minus `facts`. The ACTOR is ciphertext — no id, role or grant readable; the query's path and its input are plain in the URL, as on any read |
+| The serve | the seal first (forged, truncated, another query's, a retired key → `X_QUERY_DOWNLOAD_TOKEN_INVALID`, 403), then the expiry (`X_QUERY_DOWNLOAD_TOKEN_EXPIRED`, 410), then the URL's input re-parsed against the bound fingerprint (edited → 403). `handle` runs as the MINTING actor; the policy is not re-run — it decided at mint, with `facts` the token cannot carry |
+| `handle`'s answer | `{ body: Uint8Array \| Blob \| ReadableStream, contentType, filename, disposition?: 'attachment' \| 'inline', size? }` — bytes, never base64. Anything else is a 500 (`X_INVARIANT`) naming the fix |
+| Headers | `content-type`, `content-disposition` (`attachment` default; ASCII `filename` + exact `filename*=UTF-8''…`), `x-content-type-options: nosniff`, `content-security-policy: default-src 'none'; img-src 'self'; media-src 'self'; sandbox`, `referrer-policy: no-referrer`, `cache-control: no-store`; `content-length` only when the size is known — a `Uint8Array`, a `Blob`, or a stream with `size` |
+| `Range:` | one `bytes=` window, 206 + `content-range`; past the end 416. A `Uint8Array`/`Blob` always (a `Blob` slices lazily); a `ReadableStream` only with `size`, else `accept-ranges: none` and the whole body |
+| Rows | `.live()`, `.page()`, `.as()`, `sourceFor`, `explain`, an MCP tool: `X_QUERY_DOWNLOAD_ONLY`. `describeSql` lists it with `sql: null` |
+| Audit | `audit: true` records the MINT — the decision of who may read what. A serve, and every `Range:` a player sends, is not a second read |
+| Manifest / OpenAPI | `download: true` on the `QueryFact` (rows ↔ download is breaking); one GET with `_token`, `200` as JSON or `application/octet-stream`, `206`, `410`, `416` |
+
+**A sealed object is buffered.** WebCrypto's AES-GCM opens a whole envelope or nothing, so a
+sealed recording is read with `get()` (bounded by the disk's `maxGetBytes`) and opened before a
+byte is served; ranges are then sliced from the plaintext. A PLAIN object can be a `Bun.file`
+or a stream with `size`, served without buffering.
+
 ## Errors
 
 | Code | When | Fix |
 |---|---|---|
 | `X_QUERY_AUDIT_SINK_MISSING` | `audit: true` and no audit sink installed — refused before the parse | `setAuditSink(sink)` from `@ultimat3/core` at boot |
 | `X_QUERY_AUDIT_SINK_FAILED` | the sink refused the record of an allowed read; the rows were withheld | fix the sink, then retry the read |
+| `X_QUERY_DOWNLOAD_INVALID` | `download:` beside a rows option, a `handle` that is not a function, `expiresInMs` outside 1 000 … 3 600 000 | declare `download: { handle }` alone |
+| `X_QUERY_DOWNLOAD_ONLY` | rows asked of a download (`.live()`, `.page()`, `.as()`, `sourceFor`) | `await q.url(input)`, or `await q(input)` for the file |
+| `X_QUERY_DOWNLOAD_TOKEN_INVALID` | a `_token` forged, truncated, another query's, under a retired key, or bound to other input — 403 | mint again: `client.<name>.url(input)` |
+| `X_QUERY_DOWNLOAD_TOKEN_EXPIRED` | a genuine `_token` past `expiresAt` — 410 | mint again right before the request |
 | `X_QUERY_DUPLICATE` | two queries under one name | rename one export |
 | `X_QUERY_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_QUERY_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
@@ -700,6 +763,10 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `QueryAuditSinkMissingError` | `X_QUERY_AUDIT_SINK_MISSING` | `src/audit-errors.ts` |
 | `QueryDeniedError` | the policy denial's own code (`X_FORBIDDEN`, `X_UNAUTHENTICATED`, …), kept on `.denial` | `src/errors.ts` |
 | `QueryDeprecationInvalidError` | `X_QUERY_DEPRECATION_INVALID` | `src/errors.ts` |
+| `QueryDownloadInvalidError` | `X_QUERY_DOWNLOAD_INVALID` | `src/download-errors.ts` |
+| `QueryDownloadOnlyError` | `X_QUERY_DOWNLOAD_ONLY` | `src/download-errors.ts` |
+| `QueryDownloadTokenExpiredError` | `X_QUERY_DOWNLOAD_TOKEN_EXPIRED` | `src/download-errors.ts` |
+| `QueryDownloadTokenInvalidError` | `X_QUERY_DOWNLOAD_TOKEN_INVALID` | `src/download-errors.ts` |
 | `QueryDuplicateError` | `X_QUERY_DUPLICATE` | `src/errors.ts` |
 | `QueryForeignError` | `X_QUERY_FOREIGN` | `src/errors.ts` |
 | `QueryInputInvalidError` | `X_INPUT_INVALID` | `src/errors.ts` |

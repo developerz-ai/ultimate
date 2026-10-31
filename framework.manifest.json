@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3823a88d0b3d2b9274d3eac361e0554dd019b0afb6d29a8390363626ea07e000",
+  "buildId": "42504cd746383c2104131a159cc35c8a7dfb91dafc21efc90b52fffd125bffc2",
   "tiers": {
     "0": [
       "core",
@@ -3090,6 +3090,26 @@
       "at": "packages/query/src/errors.ts"
     },
     {
+      "code": "X_QUERY_DOWNLOAD_INVALID",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_DOWNLOAD_ONLY",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_DOWNLOAD_TOKEN_EXPIRED",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_DOWNLOAD_TOKEN_INVALID",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_DUPLICATE",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -4196,6 +4216,11 @@
     },
     {
       "code": "X_STORAGE_QUARANTINED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_RANGE_UNSATISFIABLE",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },

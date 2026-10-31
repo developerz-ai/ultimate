@@ -53,6 +53,18 @@ string exactly when another object exists past the page, on every driver: a full
 `cursor = page.nextCursor` until it is `null` walks the prefix. `limit` is a positive integer or
 `X_INVARIANT`. Until 25.0.0 it was `{ objects, truncated, cursor? }` ([Upgrading](Upgrading)).
 
+## A ranged read — `get(key, { range: [first, last] })`
+
+`As of 2026-10-31`. Both offsets INCLUSIVE, as HTTP's `Range:` is. s3 sends ONE signed GET with
+`Range:` and reads the window, the size and the etag off that same answer, the local disk slices the file, memory slices its copy. A `last` past the end is
+clamped (`read.range` says what was served; `read.object.size` is the whole object's), a `first`
+at or past the end is `X_STORAGE_RANGE_UNSATISFIABLE` (416), and `maxGetBytes` bounds the RANGE —
+an object refused whole is readable a page at a time.
+
+**A sealed object is not range-readable.** `seal()` writes one AES-256-GCM envelope whose tag
+covers every byte, and there is no chunked form of it: a slice neither opens nor means anything.
+Page a sealed log by sealing each page as its own object; range-read plain objects.
+
 ## Keys are refused, never sanitised
 
 `assertSafeKey()` runs on every key: `..`, absolute keys, backslashes, control bytes, encoded

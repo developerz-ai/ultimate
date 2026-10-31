@@ -43,7 +43,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   // that same file are already inside this number.
   scripts: 174,
   seo: 13,
-  storage: 27,
+  storage: 26,
   testing: 28,
   time: 8,
   ui: 13,

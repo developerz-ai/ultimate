@@ -140,10 +140,15 @@ export const config = defineRoute({
    * a `where` reader is told only of keys it shows or keeps, `useRecords`' opt-in `throttleMs`,
    * and the store's per-type index; on bank-integrations' run page 260 → 80 notifications.
    */
-  // measured: 171472 B (x build --target static) — why: bounded page record store (no leak) —
-  // raised 166.5kb → 167.5kb (29.3.2): a joined channel keeps the rows it adopted until it is
-  // dropped, and a per-type cap bounds one joined for hours; page boot 76,906 → 78,198 B (+1,292).
-  budget: { js: '167.5kb' },
+  /*
+   * raised 166.5kb → 167.5kb (29.3.2), measured 171,472 B: a joined channel keeps the rows it
+   * adopted until it is dropped, and a per-type cap bounds one joined for hours; page boot
+   * 76,906 → 78,198 B (+1,292).
+   */
+  // measured: 171600 B (x build --target static) — why: the typed read client's `url()`, how a
+  // `query({ download })` mints its signed URL — raised 167.5kb → 167.6kb: page boot 78,198 →
+  // 78,326 B (+128), the one method every read's client carries and a download's type exposes.
+  budget: { js: '167.6kb' },
   /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
   load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),

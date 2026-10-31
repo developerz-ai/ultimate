@@ -10,7 +10,14 @@
 import type { Actor } from '@ultimat3/core';
 import { actorOf } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
-import { asCtx, unauthenticated } from '@ultimat3/http';
+import {
+  asCtx,
+  byteWindow,
+  contentRangeOf,
+  parseByteRange,
+  RANGE_UNSATISFIABLE,
+  unauthenticated,
+} from '@ultimat3/http';
 import type { KnownPermission } from '@ultimat3/policy';
 import {
   can,
@@ -174,76 +181,11 @@ export async function readStorageObject(
   return { object, open: () => driver.stream(key) };
 }
 
-/** Inclusive, as `Range` and `Content-Range` both are. */
-export interface ByteRange {
-  readonly start: number;
-  readonly end: number;
-}
-
-const UNSATISFIABLE = 'unsatisfiable';
-
-/**
- * One range or none. A multi-range or malformed header is ignored rather than refused — RFC 9110
- * lets a server answer the whole representation, and `multipart/byteranges` is a body format no
- * caller of this route asks for. Ranges exist here for one reason: Safari will not play a `<video>`
- * from a source that answers 200 to a `Range` probe, so an uploaded video would be a dead player.
- */
-export function parseByteRange(
-  header: string | null,
-  size: number,
-): ByteRange | typeof UNSATISFIABLE | undefined {
-  if (header === null) return undefined;
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (match === null) return undefined;
-  const from = match[1] ?? '';
-  const to = match[2] ?? '';
-  if (from === '' && to === '') return undefined;
-  if (from === '') {
-    const wanted = Number(to);
-    // A suffix longer than the object is the whole object, not a refusal — but there is no whole
-    // object to fall back to at `size === 0`, and the arithmetic below answers `{ start: 0, end:
-    // -1 }`, which the route renders as `content-range: bytes 0--1/0` with status 206. RFC 9110
-    // requires 416. The non-suffix branch already gets this right through `start >= size`; this
-    // one had no equivalent test.
-    return size === 0 || wanted === 0
-      ? UNSATISFIABLE
-      : { start: Math.max(size - wanted, 0), end: size - 1 };
-  }
-  const start = Number(from);
-  const end = to === '' ? size - 1 : Math.min(Number(to), size - 1);
-  return start >= size || end < start ? UNSATISFIABLE : { start, end };
-}
-
 /** `*`, a weak validator and a comma list all count — the etag is what has to match. */
 export function etagMatches(header: string | null, etag: string): boolean {
   if (header === null) return false;
   if (header.trim() === '*') return true;
   return header.split(',').some((candidate) => candidate.trim().replace(/^W\//, '') === etag);
-}
-
-/**
- * The inclusive window `[start, end]` of a stream, as a stream. A disk streams from byte 0 (the
- * driver contract has no ranged read), so the bytes before `start` are read and dropped: bounded
- * memory, at the cost of reading the prefix — the trade a `Range` probe on a video wants over
- * buffering the whole object.
- */
-function windowOf(
-  source: ReadableStream<Uint8Array>,
-  start: number,
-  end: number,
-): ReadableStream<Uint8Array> {
-  let offset = 0;
-  return source.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        const from = Math.max(start - offset, 0);
-        const to = Math.min(end + 1 - offset, chunk.byteLength);
-        offset += chunk.byteLength;
-        if (to > from) controller.enqueue(chunk.subarray(from, to));
-        if (offset > end) controller.terminate();
-      },
-    }),
-  );
 }
 
 /**
@@ -277,7 +219,7 @@ export async function storageResponse(
 
   const size = object.size;
   const range = parseByteRange(request.header('range'), size);
-  if (range === UNSATISFIABLE) {
+  if (range === RANGE_UNSATISFIABLE) {
     headers.set('content-range', `bytes */${size}`);
     return new Response(null, { status: 416, headers });
   }
@@ -287,9 +229,11 @@ export async function storageResponse(
     headers.set('content-length', String(size));
     return new Response(await served.open(), { headers });
   }
-  headers.set('content-range', `bytes ${range.start}-${range.end}/${size}`);
+  // A disk could serve the window itself (`get(key, { range })`), but `get` buffers and is bounded
+  // by `maxGetBytes`; a video's `bytes=0-` probe is the whole object, which only a stream holds.
+  headers.set('content-range', contentRangeOf(range, size));
   headers.set('content-length', String(range.end - range.start + 1));
-  return new Response(windowOf(await served.open(), range.start, range.end), {
+  return new Response(byteWindow(await served.open(), range), {
     status: 206,
     headers,
   });

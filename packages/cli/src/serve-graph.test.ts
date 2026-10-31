@@ -140,8 +140,10 @@ const NEVER_AT_BOOT: readonly (readonly [string, RegExp])[] = [
  * marker scan, shared with `destructive.ts`), and on the generator's side of the db barrel
  * `concurrent-plan.ts` and `generate-steps.ts`; `entity/src/index-identity.ts` (the index dedupe,
  * split out of `entity.ts` at the 500-line ceiling).
+ * raised 660 → 666 (2026-10-31, `query({ download })`): `query/src/download{,-token,-http,-errors}.ts`
+ * and `search-string.ts` through the query barrel, `http/src/byte-range.ts` through the http one.
  */
-const MIGRATE_CEILING = 660;
+const MIGRATE_CEILING = 666;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -272,10 +274,12 @@ const MIGRATE_CEILING = 660;
  * raised 968 → 969, measured 969 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
  * `render/src/route-navigation.ts`, the declaration's one reader, which `route.ts` imports and so
  * every role reaches through the render barrel.
- * raised 969 → 975, measured 975 (2026-10-31, `indexes: [{ concurrently: true }]`): the six modules
- * named on `MIGRATE_CEILING` for that change.
+ * raised by 6 more (2026-10-31, `indexes: [{ concurrently: true }]`): `MIGRATE_CEILING`'s six.
+ * raised 969 → 983, measured 983 (2026-10-31, `query({ download })` + ranged storage reads): the
+ * six modules on `MIGRATE_CEILING` for it, storage's `range.ts`, `errors-range.ts` and
+ * `driver-s3-range.ts`, and core's `seal.ts` closure (5) — the download token is sealed.
  */
-const SERVING_ROLE_CEILING = 975;
+const SERVING_ROLE_CEILING = 989;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -392,10 +396,10 @@ const SERVING_ROLE_CEILING = 975;
  * named on `MIGRATE_CEILING` for that change.
  * raised 1100 → 1101, measured 1101 (2026-10-29, `navigation: { modal: true, prefetch: 'intent' }`):
  * the one module named on `SERVING_ROLE_CEILING` for that change.
- * raised 1101 → 1107, measured 1107 (2026-10-31, `indexes: [{ concurrently: true }]`): the six
- * modules named on `MIGRATE_CEILING` for that change.
+ * raised 1101 → 1121 (2026-10-31): `indexes: [{ concurrently: true }]` (+6) and `query({ download })`
+ * with ranged reads (+14) — the modules named on `SERVING_ROLE_CEILING` for each.
  */
-const WEB_ROLE_CEILING = 1107;
+const WEB_ROLE_CEILING = 1121;
 
 interface MetaInput {
   readonly imports: readonly { readonly path: string; readonly kind: string }[];

@@ -31,7 +31,13 @@ import {
   sha256Base64,
   toBytes,
 } from './driver';
-import { etagOfFile, headObject, readObjectBytes, readSidecar } from './driver-local-read';
+import {
+  etagOfFile,
+  headObject,
+  readObjectBytes,
+  readObjectRange,
+  readSidecar,
+} from './driver-local-read';
 import { lockOfSidecar, type Sidecar, sidecarLock } from './driver-local-sidecar';
 import {
   commitObject,
@@ -50,6 +56,7 @@ import {
   requestedLock,
 } from './object-lock';
 import { assertSafeKey, META_DIR } from './path';
+import { assertGetOptions, type GetOptions, servedRange } from './range';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import { resolveSigningSecret } from './signing-secret';
@@ -256,13 +263,25 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       return entry && { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
     },
 
-    async get(key: string): Promise<StorageRead> {
+    async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
       const safe = assertSafeKey(key);
+      assertGetOptions(DRIVER_NAME, getOptions);
+      const range = getOptions?.range;
       // Queued behind this key's writers: an object is two files, and a read between a put()'s
       // renames is a pair in doubt this process has no need to meet.
       return oneAtATime(safe, async () => {
         const file = Bun.file(filePath(safe));
         if (!(await file.exists())) throw objectNotFound(registered, safe);
+        if (range !== undefined) {
+          const served = servedRange(DRIVER_NAME, safe, range, file.size, maxGetBytes);
+          const bytes = await readObjectRange(root, safe, registered, served);
+          // A doubt is settled by streaming the WHOLE file through the hash, never by buffering it:
+          // the range is the only part of this object the read may hold.
+          const entry = await headObject(root, safe, () => etagOfFile(root, safe, registered));
+          if (entry === undefined) throw objectNotFound(registered, safe);
+          const object = { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
+          return { object, bytes, range: served };
+        }
         if (file.size > maxGetBytes) throw getTooLarge(DRIVER_NAME, safe, file.size, maxGetBytes);
         const bytes = await readObjectBytes(root, safe, registered);
         // Settled against the bytes this read ALREADY holds: hashed only for a sidecar-less object

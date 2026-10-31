@@ -34,6 +34,7 @@ import {
 import { isAbsentObject } from './driver-s3-absent';
 import { buildClient, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
 import { needsSignedPut, readObjectLock, signedPut } from './driver-s3-lock';
+import { readS3Range } from './driver-s3-range';
 import { regionMismatch } from './driver-s3-region';
 import type { S3FetchLike } from './driver-s3-signed';
 import {
@@ -48,6 +49,7 @@ import {
 } from './errors';
 import { assertObjectLockOptions, type ObjectLock } from './object-lock';
 import { assertSafeKey } from './path';
+import { assertGetOptions, type GetOptions } from './range';
 import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
@@ -261,8 +263,30 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       return (await present(safe)) ? statObject(safe) : undefined;
     },
 
-    async get(key: string): Promise<StorageRead> {
+    async get(key: string, getOptions?: GetOptions): Promise<StorageRead> {
       const safe = assertSafeKey(key);
+      assertGetOptions(DRIVER_NAME, getOptions);
+      const range = getOptions?.range;
+      // ONE signed GET, bytes and description from the same response (`driver-s3-range.ts`).
+      if (range !== undefined) {
+        return readS3Range(options, safe, range, {
+          driver: DRIVER_NAME,
+          maxGetBytes,
+          refused: (key, refusal) => refusedRead(key)(refusal),
+          sizeOf: async (key) => {
+            if (!(await present(key))) throw objectNotFound(diskName, key);
+            return (await statObject(key)).size;
+          },
+          unreadable: (key, why) => {
+            throw readFailed(
+              DRIVER_NAME,
+              key,
+              why,
+              `aws s3api get-object --bucket ${renderFixShellArg(options.bucket, "'<bucket>'")} --key ${renderFixShellArg(key, "'<key>'")} --range bytes=0-0 /dev/null   # what the provider answers a ranged GET`,
+            );
+          },
+        });
+      }
       const file = conn().file(safe);
       if (!(await present(safe))) throw objectNotFound(diskName, safe);
       // The HEAD comes FIRST, and it is the whole point: a client PUT straight into the bucket is

@@ -32,6 +32,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_OBJECT_LOCKED',
   'X_STORAGE_KEY_UNSHARED',
   'X_STORAGE_ALREADY_PROMOTED',
+  'X_STORAGE_RANGE_UNSATISFIABLE',
 ] as const;
 
 /**
@@ -74,6 +75,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_OBJECT_LOCKED: 'the object is under retention or a legal hold',
   X_STORAGE_KEY_UNSHARED: 'object key is outside every tenant and every shared prefix',
   X_STORAGE_ALREADY_PROMOTED: 'the upload was already promoted onto its row',
+  X_STORAGE_RANGE_UNSATISFIABLE: 'the requested byte range starts past the end of the object',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws
@@ -193,7 +195,7 @@ export const getTooLarge = (
     code: 'X_STORAGE_TOO_LARGE',
     cause: `"${key}" is ${bytes}B against the ${disk} disk's get ceiling of ${maxBytes}B, and get() buffers the whole object`,
     fix:
-      `read it with disk.stream(key) instead of get(), or raise the ceiling: ` +
+      `await disk.stream(${renderFixLiteral(key, "'<key>'")})   # unbuffered; or a window with get(key, { range }), or raise the ceiling: ` +
       (disk === 's3'
         ? `s3Driver({ bucket, maxGetBytes: ${bytes} })`
         : disk === 'memory'

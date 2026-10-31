@@ -137,6 +137,15 @@ export function diffQueries(
         detail: `live ${String(query.live)} -> ${String(next.live)}`,
       });
     }
+    // Rows one side, a minted URL and a file the other: every caller of the read is written
+    // against one answer, so the flip breaks them whichever way it goes.
+    if ((query.download === true) !== (next.download === true)) {
+      changes.push({
+        kind: 'breaking',
+        path: `${path}.download`,
+        detail: next.download === true ? 'rows -> download' : 'download -> rows',
+      });
+    }
     // The same fact as an action's `cacheInvalidates`, and the same class: which tag flushes a
     // read is not a caller's contract, but a reviewer has to see it move.
     if (canonicalJson(query.cacheTags) !== canonicalJson(next.cacheTags)) {

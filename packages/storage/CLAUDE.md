@@ -39,6 +39,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | File | Owns |
 |---|---|
 | `driver.ts` | `StorageDriver` contract (9 methods; `registerAs`/`verifySigned`/`retentionOf` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
+| `range.ts` | `get(key, { range })`: screen + `servedRange` (`errors-range.ts`); s3's one-GET read is `driver-s3-range.ts` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
 | `driver-local-write.ts` | the local WRITE: staged under `.meta/.tmp/`, renamed marker → sidecar → bytes, `X_STORAGE_KEY_CONFLICT` / `X_STORAGE_PUT_FAILED`, the per-key queue |
 | `driver-local-read.ts` | `headObject`: sidecar + pending marker → trusted, re-checked, or untyped |
@@ -274,8 +275,7 @@ Gotchas:
   default header, and `decodeError` keeps a refusal `X_STORAGE_UPLOAD_FAILED` with the disk's
   status. A request with no response at all is the transport's `X_CLIENT_TRANSPORT_FAILED` — it was a
   bare `TypeError` before. This file calls no `fetch`; the XHR above is the one exemption.
-- **Bundle** (`bun build --target=browser --minify`, `uploadFile` only, `As of 2026-09-22`):
-  **17,767 B** on `clientTransport`; the +5.9 kB over 20.2.1 is core's transport graph.
+- **Bundle** (`uploadFile` only, browser, minified, `As of 2026-09-22`): **17,767 B**.
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
 
 Why each rule above is shaped the way it is: [`docs/history/storage.md`](../../docs/history/storage.md).

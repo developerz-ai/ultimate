@@ -21,6 +21,9 @@ export type {
   BearerResolver,
 } from './bearer-mount';
 export { bearerMount, bearerTokenOf, mountedPath } from './bearer-mount';
+/** One `Range:` reader for every route that answers bytes — `/_storage`, site assets, a download. */
+export type { RequestedRange } from './byte-range';
+export { byteWindow, contentRangeOf, parseByteRange, RANGE_UNSATISFIABLE } from './byte-range';
 export type { HttpConfig, HttpConfigInput } from './config';
 export { defineHttpConfig, MAX_PROXY_HOPS } from './config';
 export type { ActorView, RequestContext, RequestContextInit } from './context';

@@ -12,6 +12,7 @@ import type { RateLimitDecision, Route, RouteMeta, UltimateRequest } from '@ulti
 import { publishRateLimit, toBucket } from '@ultimat3/http';
 import { admitsAnonymous, policyCapability } from '@ultimat3/policy';
 import { coerceQuery } from '@ultimat3/schema';
+import { toDownloadRoute } from './download-http';
 import { QueryDeprecationInvalidError, QueryInputInvalidError } from './errors';
 import { absentArraysOf } from './input-shape';
 import { PAGE_FIRST_KEY, pageControlsOf } from './page-controls';
@@ -30,6 +31,7 @@ export function toQueryRoute(target: AnyQuery): Route {
   // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
   // not a surprise on the first read.
   const sunsetting = deprecationHeadersFor(name, target.deprecated);
+  if (target.download === true) return toDownloadRoute(target, name, sunsetting);
   const answer = recordAnswerFor(target.rows);
   const answerRow = recordRowAnswerFor(target.rows);
 
@@ -137,7 +139,7 @@ export function toQueryRoute(target: AnyQuery): Route {
 }
 
 /** Validates the declaration through the limiter's own conversion, then hands the route its flag. */
-function rateLimitedByHandler(name: string, limit: QueryRateLimit): 'handler' {
+export function rateLimitedByHandler(name: string, limit: QueryRateLimit): 'handler' {
   toBucket(name, limit);
   return 'handler';
 }

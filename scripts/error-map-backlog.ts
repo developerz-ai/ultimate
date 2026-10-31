@@ -99,6 +99,7 @@ export const OFF_SOCKET: Pins = {
     'X_QUERY_SINGLE_INVALID',
     'X_QUERY_SUBSCRIBES_DRIFT',
     'X_QUERY_SUBSCRIBES_INVALID',
+    'X_QUERY_DOWNLOAD_INVALID',
   ],
   // tier 3 — the sync node's own vocabulary, answered on a WebSocket frame that carries a
   // `kind` and not a status; the HTTP upgrade has none of these. Revisit the day a frame kind

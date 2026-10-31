@@ -24,10 +24,11 @@ export const liveFeed = query({
 | `policy` | yes | `can('<perm>')`, optionally with a predicate over `{ input, actor }`. Evaluated at HTTP call, client hook, subscribe, **and per delivered row** |
 | `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
 | `single` | no — default `false` | `true` declares a read of ONE object (a detail page's row by id or slug). Only the wire changes: the HTTP GET answers the first row `sql` returns as the body, **404 `X_NOT_FOUND`** when there is none (a list read answers `200 []`), refuses `_first`/`_after` (400), and `openapi.json` documents one object, a `404` and no page controls. The typed client answers `Promise<TRow>` and has no `.page`. The MCP tool answers as the route does — the row, or `X_NOT_FOUND` — over `tools/call` alike (`As of 2026-10`). Every in-process caller — `read(input)`, `.as()`, `.page()`, `.live()` — keeps `readonly TRow[]`. Anything but a boolean is `X_QUERY_SINGLE_INVALID`. `As of 2026-09-29` |
-| `sql` | yes | `(input) => SqlSource`. `from()` (`@ultimat3/query`) wraps an already-resolved `@ultimat3/entity` repo call and restates `where`/`orderBy`/`limit` for the matcher to read back; `select`/`preload` happen inside that repo call, before `from()` ever sees a row. No ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
+| `sql` | yes, on a rows read — never beside `download` | `(input) => SqlSource`. `from()` (`@ultimat3/query`) wraps an already-resolved `@ultimat3/entity` repo call and restates `where`/`orderBy`/`limit` for the matcher to read back; `select`/`preload` happen inside that repo call, before `from()` ever sees a row. No ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `audit` | no — default `false` | `true` records every call in the installed `AuditSink` — allowed, denied, failed, and a memo or cache hit (`replayed: true`). See [Audit](#audit-who-saw-what) |
+| `download` | no | `{ handle, expiresInMs? }` in place of `sql`: the read answers a FILE at a short-lived signed URL. Every rows field beside it is `X_QUERY_DOWNLOAD_INVALID`. See [A file at a signed URL](#a-file-at-a-signed-url--download) |
 | cache tags | derived | acquired automatically from the tables `sql` touches. Never hand-declared on a query |
 
 Nothing else is a query field. Sorting, paging, and filtering are `input` fields consumed by `sql`.
@@ -146,6 +147,53 @@ export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 | Failures | the server's own code, off `problem+json` — `X_INPUT_INVALID` stays `X_INPUT_INVALID`. A gateway answering HTML, a network fault and a 2xx body that is not JSON are `X_CLIENT_TRANSPORT_FAILED`, the same code an action's client answers. It was `X_RPC_FAILED` until 21.0.0 |
 | Rows are JSON, with their instants revived | what the body parses to, plus every value the server answered as a `Date` handed back as one (`As of 2026-10`, #710): the route names them in `x-ultimate-dates` by path — one entry per column of a list — and `clientTransport` revives exactly those. The body and the OpenAPI document are unchanged; a client that ignores the header reads ISO strings. A query declares no output schema, so the header is how the row type's `Date` stays true |
 | `then` is not a read | the proxy answers `undefined` for it, so `await queries` resolves to the client instead of fetching `/_x/query/then`. Same rule in `rpc` |
+
+## A file at a signed URL — `download:`
+
+`As of 2026-10-31`. A read whose answer is bytes — a recording, an export, an attachment, a sealed
+object decrypted on the way out — is a `query` with `download:` instead of `sql:`. Same input,
+same policy, same name, same route; never a base64 string inside a JSON answer.
+
+```ts
+import { open } from '@ultimat3/core';
+import { can } from '@ultimat3/policy';
+import { query, queryClient, t } from '@ultimat3/query';
+import { disk } from '@ultimat3/storage';
+
+export const runRecording = query({
+  input: t.object({ runId: t.uuid }),
+  policy: can('recording:watch'),
+  download: {
+    expiresInMs: 600_000, // 1 000 … 3 600 000; default 300 000
+    async handle({ input }) {
+      const key = `runs/${input.runId}/recording`;
+      const { bytes } = await disk('debug').get(key);
+      const plain = await open(new TextDecoder().decode(bytes), { purpose: `run-debug:${key}` });
+      return { body: plain, contentType: 'video/mp4', filename: `run-${input.runId}.mp4` };
+    },
+  },
+});
+
+// an island: mint, then hand the URL to the element that plays or saves it
+declare const video: { src: string };
+const client = queryClient<{ runRecording: typeof runRecording }>({ baseUrl: '' });
+const { url } = await client.runRecording.url({ runId: '00000000-0000-4000-8000-000000000001' });
+video.src = url;
+```
+
+| Step | What happens |
+|---|---|
+| `client.runRecording.url(input)` | `GET /_x/query/run-recording?runId=…` with no `_token` — the MINT. The policy decides as for any read (401/403, the declared `rateLimit:`, `audit: true` records it); the answer is `{ url, expiresAt }` |
+| the token | the claims — query, `fingerprint()` of the parsed input, expiry on `ctx.now()`, the minting actor without `facts` — `seal()`ed with the app master key (AES-256-GCM, purpose bound to the query). The ACTOR is ciphertext: no id, role or grant is readable. The query's path and its input are plain in the URL, as on every read — keep a secret out of a download's input |
+| `GET <url>` | the SERVE, to whoever holds the URL — a `<video>`, a tab, a caller's own user — with no session. Seal checked first (`X_QUERY_DOWNLOAD_TOKEN_INVALID`, 403), then expiry (`X_QUERY_DOWNLOAD_TOKEN_EXPIRED`, 410), then the URL's input against the bound fingerprint (403). `handle` runs as the minting actor |
+| the answer | the bytes, `content-disposition` (`attachment` default, `inline` on request; ASCII `filename` + exact `filename*`), `nosniff`, `content-security-policy: default-src 'none'; img-src 'self'; media-src 'self'; sandbox` (an inline file loads nothing elsewhere), `referrer-policy: no-referrer`, `cache-control: no-store`; `content-length` when the size is known; one `Range:` window as 206, 416 past the end |
+
+`handle` answers `{ body: Uint8Array | Blob | ReadableStream, contentType, filename, disposition?, size? }`. A `Uint8Array` or a `Blob` (a `Bun.file`, sliced lazily) is always range-served; a stream only with `size`, else whole with `accept-ranges: none`. A sealed object is one AES-GCM envelope, so it is read with `get()` (bounded by `maxGetBytes`) and opened whole before a byte is served.
+
+`.live()`, `.page()`, `.as()`, `sourceFor` and an MCP tool are `X_QUERY_DOWNLOAD_ONLY`; the
+manifest marks the read `download: true` (rows ↔ download is breaking), and `x routes` lists it
+on the read's own `GET /_x/query/<kebab>`. In-process, `await runRecording(input, { ctx })` is
+the `DownloadFile` and `await runRecording.url(input, { ctx })` the path.
 
 ## Owns / never
 

@@ -97,6 +97,7 @@ export {
   xmlBodyUnreadable,
 } from './errors';
 export { alreadyPromoted, quarantined } from './errors-promote';
+export { rangeTooLarge, rangeUnsatisfiable } from './errors-range';
 export type { GrantUploadInput, UploadGrant, UploadRequest } from './grant';
 export { grantUpload } from './grant';
 export type {
@@ -144,6 +145,12 @@ export {
   orgPrefix,
   scopedKey,
 } from './path';
+/**
+ * `get(key, { range })`. A third-party driver screens and clamps through these two, or it is a
+ * fourth answer to what a range means.
+ */
+export type { ByteRange, GetOptions } from './range';
+export { assertGetOptions, servedRange } from './range';
 export type {
   SignedUrlConstraints,
   SignedUrlFailure,

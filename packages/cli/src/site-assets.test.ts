@@ -10,7 +10,7 @@ import { join } from 'node:path'; // why: Bun ships no path join.
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import type { AssetPath } from '@ultimat3/render';
 import { asset, setAssetResolver } from '@ultimat3/render';
-import { byteRange, siteAssetRoutes } from './site-asset-routes';
+import { siteAssetRoutes } from './site-asset-routes';
 import {
   createSiteAssetTable,
   hashedAssetUrl,
@@ -153,14 +153,5 @@ describe('the served surface', () => {
     const beyond = await get(table, url, { range: 'bytes=40-' });
     expect(beyond.status).toBe(416);
     expect(beyond.headers.get('content-range')).toBe('bytes */10');
-  });
-
-  test('byteRange reads the three single-range spellings and ignores the rest', () => {
-    expect(byteRange(null, 10)).toBeUndefined();
-    expect(byteRange('bytes=0-1,4-5', 10)).toBeUndefined();
-    expect(byteRange('bytes=-3', 10)).toEqual({ start: 7, end: 9 });
-    expect(byteRange('bytes=8-', 10)).toEqual({ start: 8, end: 9 });
-    expect(byteRange('bytes=5-100', 10)).toEqual({ start: 5, end: 9 });
-    expect(byteRange('bytes=6-2', 10)).toBeNull();
   });
 });

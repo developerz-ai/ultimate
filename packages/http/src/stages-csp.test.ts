@@ -23,6 +23,15 @@ const routes: readonly Route[] = [
     handler: () => textResponse('ok'),
   },
   { method: 'GET', path: '/upload', meta: { name: 'upload', auth: 'public' }, handler: sandboxed },
+  {
+    method: 'GET',
+    path: '/referrer/:policy',
+    meta: { name: 'referrer', auth: 'public' },
+    handler: (request) =>
+      new Response('x', {
+        headers: { 'referrer-policy': request.ctx.params['policy'] ?? '' },
+      }),
+  },
 ];
 
 const pipelineFor = (reportOnly: boolean) =>
@@ -68,5 +77,17 @@ describe('unit · a handler-set content-security-policy', () => {
     expect(response.headers.get('content-security-policy-report-only')).toContain(
       "default-src 'self'",
     );
+  });
+});
+
+describe('unit · a handler-set referrer-policy', () => {
+  test('no-referrer is kept: it only narrows, and a bearer URL must leave in no Referer', async () => {
+    const response = await get(pipelineFor(false), '/referrer/no-referrer');
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  });
+
+  test('anything wider is the app policy, so a handler cannot loosen it', async () => {
+    const response = await get(pipelineFor(false), '/referrer/unsafe-url');
+    expect(response.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
   });
 });

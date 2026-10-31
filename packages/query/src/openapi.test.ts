@@ -108,6 +108,44 @@ describe('the read half of openapi.json', () => {
   });
 });
 
+describe('a download query', () => {
+  const recording = query({
+    input: t.object({ runId: t.uuid }),
+    policy: can('recording:read'),
+    download: {
+      handle: async () => ({ body: new Uint8Array(), contentType: 'video/mp4', filename: 'a' }),
+    },
+  }).named('runRecording');
+
+  test('publishes the input and _token, the mint and the file, and no page control', () => {
+    const operation = toQueryOpenApiOperation(recording) as Operation;
+    expect(operation.parameters.map((p) => p.name)).toEqual(['runId', '_token']);
+    // The file is whatever `handle` answers — `video/mp4`, `text/csv` — so its media type is `*/*`.
+    expect(Object.keys(operation.responses['200']?.content ?? {}).sort()).toEqual([
+      '*/*',
+      'application/json',
+    ]);
+    expect(operation.responses['200']?.content['*/*']?.schema).toEqual({
+      type: 'string',
+      format: 'binary',
+    });
+    expect(operation.responses['206']?.content['*/*']?.schema).toEqual({
+      type: 'string',
+      format: 'binary',
+    });
+    expect(Object.keys(operation.responses).sort()).toEqual([
+      '200',
+      '206',
+      '400',
+      '401',
+      '403',
+      '410',
+      '416',
+    ]);
+    expect(operation['x-ultimate']).toMatchObject({ download: true, live: false, tool: null });
+  });
+});
+
 /**
  * Key-sorted JSON, so two documents that differ only in declaration order serialise to the same
  * bytes — what `@ultimat3/action`'s `serializeOpenApi` does for the merged document. Spelled here

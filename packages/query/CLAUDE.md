@@ -38,6 +38,11 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
 | `audit-gate.ts` | `audit: true` — **the only** file that calls an `AuditSink` (core's): one record per call, an audited source per `execute()` |
 | `audit-errors.ts` | `X_QUERY_AUDIT_SINK_MISSING` / `X_QUERY_AUDIT_SINK_FAILED` (titles in `errors.ts`) |
+| `download.ts` | `query({ download })`: the build, the in-process file, the mint, the serve — through `admittedCall` |
+| `download-token.ts` | the `_token`: claims `seal()`ed under the master key, opened against one query, one input, the clock |
+| `download-http.ts` | the download route: mint JSON without `_token`, the file with it (`Range:`, `content-disposition`) |
+| `download-errors.ts` | the four `X_QUERY_DOWNLOAD_*` classes (titles in `errors.ts`) |
+| `search-string.ts` | `searchOf`: the input as a search string — the client's request and a minted URL, one encoding |
 
 ## Invariants — the read path
 
@@ -112,6 +117,20 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A live read keyed on a sealed column is refused at subscribe** (`assertNoSealedKey`, called by
   `toLiveQuery`): a change row carries none, so the window would be read once and never patched.
   The refusal names the column, never the filter's value.
+
+## Invariants — download
+
+- **A download is a `query`, never a ninth primitive** (`docs/history/primitive-factories.md`):
+  `download:` replaces `sql:` and every rows option is refused beside it (`X_QUERY_DOWNLOAD_INVALID`).
+- **Its stored `sql` throws `X_QUERY_DOWNLOAD_ONLY`** — the ONE refusal every rows projection meets.
+  Never add a per-projection `download` check.
+- **Mint and in-process call go through `admittedCall`** (`read.ts`, the front half `buildSource`
+  shares). The serve re-parses through it as `unenforced` with a written reason: the token IS the
+  policy's decision. Never re-run the policy at serve — the token carries no `facts`.
+- **The token is SEALED, never signed**: it carries the actor. Seal before expiry before input —
+  an expired forgery is a forgery. `X_SEAL_KEY_MISSING` stays a 500 (the server's fault).
+- **`audit: true` records the mint, `rateLimit:` spends at the mint** — a player's `Range:` GETs
+  are one admitted read.
 
 ## Invariants — audit
 
