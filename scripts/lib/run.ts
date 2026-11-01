@@ -95,13 +95,15 @@ export async function run(
       'run(command, { cwd, timeoutMs: LONG_RUN_TIMEOUT_MS })   # a positive, finite number of milliseconds',
     );
   }
+  // ONE deadline, ONE killer: the timer armed below. Bun's own `timeout` option is deliberately
+  // absent — a second killer on the same deadline raced that timer, and whichever won decided
+  // the verdict's SHAPE (the coded timeout, or the killed child's own exit code), per host.
   const proc = Bun.spawn([head, ...rest], {
     cwd: options.cwd,
     env: { ...(options.env ?? Bun.env) },
     stdin: 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
-    timeout: timeoutMs,
     killSignal: 'SIGKILL',
   });
   const stdout = drain(proc.stdout);

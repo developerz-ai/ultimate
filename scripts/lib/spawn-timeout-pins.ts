@@ -32,11 +32,13 @@ export const SPAWN_TIMEOUT_PINS: Readonly<Record<string, SpawnTimeoutPin>> = {
     reason:
       "why: `e2e-spawn.ts` starts the app under test, which serves until `stop()` kills it; readiness is bounded by `DEFAULT_READY_TIMEOUT_MS`. `cdp-launch-attempt.ts` starts Chrome, which exits when its command pipe (fd 3) closes, and the launch is bounded by the attempt's own deadline.",
   },
-  // why: three children killed by the script that started them, and one bounded by test timeouts.
-  // `lib/run.ts` left this row in #780: its own deadline (`DEFAULT_RUN_TIMEOUT_MS`) now ends a child.
+  // why: three children killed by the script that started them, one bounded by test timeouts,
+  // and one — `lib/run.ts`'s — ended by its OWN deadline: Bun's own `timeout` killer raced that
+  // timer on one deadline and the winner decided the verdict's shape, so that spawn carries no
+  // `timeout` key and this rule reads it as untimed.
   scripts: {
-    count: 4,
+    count: 5,
     reason:
-      "why: `coverage-gate.ts` runs one `bun test --coverage` per unit, bounded by each test's own timeout and the CI job's; SUSPECT, the one row a hang could still outlast locally. `scaffold-admin.ts` boots `x dev` and kills it in its `finally`; `bench/restart-bench.ts` starts a server and its client shards and kills both when the run ends.",
+      "why: `lib/run.ts` ends the child it spawns at its own deadline (`DEFAULT_RUN_TIMEOUT_MS`, or the caller's `timeoutMs`): one timer, one killer, so the spawn carries no `timeout` key and this rule reads it as untimed. `coverage-gate.ts` runs one `bun test --coverage` per unit, bounded by each test's own timeout and the CI job's; SUSPECT, the one row a hang could still outlast locally. `scaffold-admin.ts` boots `x dev` and kills it in its `finally`; `bench/restart-bench.ts` starts a server and its client shards and kills both when the run ends.",
   },
 };

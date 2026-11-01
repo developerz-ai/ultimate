@@ -8,7 +8,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A run that outlived its deadline answers the same way on every host: the coded timeout, never
+  the child's own exit code.** The `windows` CI job's `unit · scripts/lib` step was red because
+  `run()` (`scripts/lib/run.ts`) armed TWO killers on ONE deadline — its own timer and Bun's
+  spawn `timeout` — and whichever won the race decided the verdict's SHAPE: `timedOut: true` with
+  `code: null` (`X_SPAWN_TIMED_OUT`), or the killed child's own exit code with `timedOut: false`.
+  On `windows-latest` the second killer won, so "a child that never exits is killed at the
+  deadline" read a killed code and the step failed. `run()` now arms ONE killer — its own timer
+  — so the verdict is the coded timeout on every host, and the deadline tests assert that shape
+  everywhere instead of gating it to POSIX.
+  `scripts/lib/run.ts`, `scripts/lib/run.test.ts`.
 
 ## 29.4.0 - 2026-10-31
 
