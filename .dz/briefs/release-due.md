@@ -7,14 +7,15 @@ was reached, and a maintainer can still cut one by hand at any time (`PUBLISHING
 
 ## Judge
 
-Read `data.shipping`, those commits' diffs and `## [Unreleased]`, then ask: does someone using the
-published packages get something from a release now?
+Read everything merged since the last release (`git log v<data.lastTag>..origin/main`), the diffs of
+`data.shipping` and `## [Unreleased]`, then ask: does someone using the published packages get
+something real from a release now?
 
 - Usually yes: a fix they can hit, a feature they can use, a dependency change that reaches what
   they install.
 - Usually no: a run of dev-dependency or CI bumps. The script counts any `package.json` edit as
-  shipping, so read whether a bump moved `dependencies` or only `devDependencies`. With nothing
-  for users, skip the week: no empty release.
+  shipping, so read whether a bump moved `dependencies` or only `devDependencies`. Nothing real:
+  no release, and it rolls into the next one.
 
 Say why either way: a release ask opens with your reason, and a no ends your run summary with
 `no release: <reason>`.
