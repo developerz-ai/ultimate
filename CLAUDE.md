@@ -77,8 +77,8 @@ Run everything from the repo root.
 | test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM, silent; unset, live suites skip |
 | test (one name) | `bun test packages/core/src/errors.test.ts -t '<name>'` — **always with a path**: a bare `-t` loads every test file into one process |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — both tracked apps built (`x build --target static`) then verified, blocking on a ratchet: a passing step must keep passing, a step pinned in `expectedRed` (`scripts/lib/gated-apps.ts`) must still fail |
-| shrink the ratchet | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds both apps (`x build --target static`), then verifies. As of 2026-11, both `expectedRed` tables (`scripts/lib/gated-apps.ts`) are empty: all declared steps stay gated and must pass |
+| future pins | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` — retained for future pins; neither app has a pin to remove |
 | a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket)` — writes the registration, its `wiki/Error-Codes.md` row and its HTTP status decision together. Tier ≤ 4 takes exactly one of the two flags, tier 5 neither |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |

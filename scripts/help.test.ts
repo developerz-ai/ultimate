@@ -31,6 +31,15 @@ describe('unit · the script catalogue', () => {
     }
   });
 
+  test('the app gate asserts every step and unpin is retained only for future pins', () => {
+    expect(does('bun run scripts/reference-app-gate.ts')).toContain(
+      'empty expectedRed tables assert every declared step',
+    );
+    const unpin = does('bun run scripts/reference-app-gate.ts --unpin <app>:<step>');
+    expect(unpin).toContain('retained for future pins');
+    expect(unpin).toContain('neither tracked app currently has a pin to remove');
+  });
+
   test('every entry names a distinct command and says what it does', () => {
     expect(new Set(SCRIPTS.map((entry) => entry.command)).size).toBe(SCRIPTS.length);
     for (const entry of SCRIPTS) expect(entry.does.length).toBeGreaterThan(10);

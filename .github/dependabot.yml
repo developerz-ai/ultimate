@@ -7,6 +7,8 @@ updates:
   # `bun`, never `npm`: the tree is locked by `bun.lock` alone, and the npm ecosystem refuses to
   # touch it — every weekly run failed `misconfigured_tooling` (run 39198764973, 2026-10-19).
   - package-ecosystem: bun
+    # Resolve local siblings together through root package.json's workspaces and bun.lock.
+    # Isolated manifest jobs lose that context, including versioned @postly dependencies.
     directory: /
     schedule:
       interval: weekly
