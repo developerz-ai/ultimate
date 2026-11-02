@@ -6,8 +6,10 @@
 // has to join the root `tsc -b` solution. Red never becomes the resting state.
 //
 //   bun run scripts/reference-app-gate.ts [--app <dir>] [--json]   # one app: its own CI runner
-//   bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]   # shrink the ratchet
+//   bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]   # retained for future pins
 //
+// As of 2026-11, both expectedRed tables are empty and every declared step is asserted;
+// neither tracked app currently has a pin to remove. New red steps remain regressions, not pins.
 // The pins live in scripts/lib/gated-apps.ts; this file owns only what the ratchet does with them.
 // `--app` is scripts/lib/app-select.ts and the `--unpin` edit is scripts/reference-app-unpin.ts.
 
