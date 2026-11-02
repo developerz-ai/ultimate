@@ -7,7 +7,16 @@ updates:
   # `bun`, never `npm`: the tree is locked by `bun.lock` alone, and the npm ecosystem refuses to
   # touch it — every weekly run failed `misconfigured_tooling` (run 39198764973, 2026-10-19).
   - package-ecosystem: bun
-    directory: /
+    # Root coverage is not recursive: every external-dependency manifest needs its own directory.
+    directories:
+      - /
+      - /packages/render
+      - /packages/realtime
+      - /packages/cli
+      - /examples/dummy
+      - /examples/dummy/apps/web
+      - /examples/dummy/packages/ui
+      - /dummy/social-media-clone
     schedule:
       interval: weekly
       day: monday
