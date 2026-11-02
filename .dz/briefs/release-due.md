@@ -7,7 +7,8 @@ was reached, and a maintainer can still cut one by hand at any time (`PUBLISHING
 
 ## Judge
 
-Read everything merged since the last release (`git log v<data.lastTag>..origin/main`), the diffs of
+Read everything merged since the last release (`git log <data.lastTag>..origin/main` — `lastTag`
+already carries its `v`), the diffs of
 `data.shipping` and `## [Unreleased]`, then ask: does someone using the published packages get
 something real from a release now?
 
