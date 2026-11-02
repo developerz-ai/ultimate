@@ -1,6 +1,7 @@
 // `--unpin <app>:<step>` — the edit `X_REFERENCE_APP_PIN_STALE` names, performed. It fails closed
 // at every disagreement, because a pins file this cannot read is a hand edit and deleting the wrong
-// line widens the ratchet silently. Every case here runs against a COPY of the real pins file.
+// line widens the ratchet silently. Real empty-table cases use disposable copies of the pins file;
+// successful removals use synthetic pins, never invented entries in the real tables.
 
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 // why: `mkdtemp`/`rm`/`join`: the copy needs a real throwaway directory, and Bun ships no
@@ -12,7 +13,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import type { GatedApp } from './lib/gated-apps';
-import { PINS_FILE } from './lib/gated-apps';
+import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
 import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
 import { pinnedSteps } from './lib/unpin';
 import { appWith } from './reference-app-gate.fixtures';
@@ -67,6 +68,30 @@ describe('unpin', () => {
       await rm(root, { recursive: true, force: true });
     }
   };
+
+  test('both tracked apps have empty pin tables', () => {
+    expect(GATED_APPS.map((app) => app.dir)).toEqual([
+      'examples/dummy',
+      'dummy/social-media-clone',
+    ]);
+    for (const app of GATED_APPS) expect(app.expectedRed).toEqual({});
+  });
+
+  for (const app of GATED_APPS) {
+    test(`${app.dir}: unpin refuses a valid step from the real empty table without changing bytes`, async () => {
+      const source = await Bun.file(PINS_FILE).text();
+      await withPinsCopy(async (root, path) => {
+        const before = await Bun.file(path).bytes();
+        const result = await unpin(root, `${app.dir}:typecheck`, GATED_APPS);
+        expect(result.ok).toBe(false);
+        expect(result.findings?.[0]?.code).toBe('X_CLI_BAD_FLAG');
+        expect(result.findings?.[0]?.cause).toBe(
+          `typecheck is not pinned for ${app.dir} — its table is already empty`,
+        );
+        expect(await Bun.file(path).bytes()).toEqual(before);
+      }, source);
+    });
+  }
 
   // Plan 101 row S12: the gated apps' directories are spliced into the `--unpin` usage line, and a
   // fix is pasted whole — the prose list after the command included.

@@ -23,11 +23,11 @@ export const SCRIPTS: readonly Entry[] = [
   },
   {
     command: 'bun run scripts/reference-app-gate.ts',
-    does: "both tracked apps' own gates, on their expectedRed ratchet",
+    does: "both tracked apps' own gates: empty expectedRed tables assert every declared step",
   },
   {
     command: 'bun run scripts/reference-app-gate.ts --unpin <app>:<step>',
-    does: 'shrink that ratchet — the edit X_REFERENCE_APP_PIN_STALE names, performed',
+    does: 'retained for future pins; neither tracked app currently has a pin to remove',
   },
   {
     command: 'bun run scripts/boundaries.ts',
