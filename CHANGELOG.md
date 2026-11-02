@@ -8,7 +8,31 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The bare-`Error` rule now reads shipped source, not only tests.** `bun run scripts/test-bare-error.ts`
+  reads the `source` corpus — every package's `src/` and `e2e/`, and `scripts/` — and reports a bare
+  builtin `Error` throw as `X_SOURCE_BARE_ERROR` unless an exemption covers it; an exemption that
+  matches no site is `X_SOURCE_BARE_ERROR_EXEMPT_STALE`. The exemptions live in
+  `scripts/lib/source-bare-error-exemptions.ts`, one row per intentional site with the reason it is
+  there: the fixture doubles that throw AT the subject, which are shipped source and are not
+  verdicts.
+
+### Fixed
+
+- **The scanner reads a regex literal as a literal, so a real bare throw is no longer hidden.** A
+  `/class="([^"]*)"/` holds quotes that delimit nothing, and the old reader took the first of them
+  for a string opener and swallowed the rest of the file: the bare `TypeError` in
+  `packages/render/src/navigation-dom-fixture.ts` was invisible to every rule that read it.
+- **The two benchmark refusals throw coded errors.** `scripts/bench/restart-bench.ts` answers a
+  stdout stream that closed before the line it was waiting for with `X_BENCH_STREAM_CLOSED`, and
+  `scripts/bench/restart-bench-client-worker.ts` answers a missing `--url` with
+  `X_BENCH_URL_REQUIRED` — each with a one-line cause and a runnable fix, where both threw a bare
+  `Error` that carried no code, no cause and nothing to run.
+- **`@ultimat3/ai`'s two wire readers refuse a frame that is not an object with a coded error.**
+  `wire.ts` and `openai-wire.ts` parse inside the try and throw the `AiTransportError` themselves,
+  where a bare `SyntaxError` was thrown first and caught by the very catch that re-threw it — two
+  builtin Error throws in shipped source, which the new source scope reads.
 
 ## 29.4.0 - 2026-10-31
 

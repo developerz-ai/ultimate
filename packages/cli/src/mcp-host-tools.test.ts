@@ -106,9 +106,10 @@ beforeAll(async () => {
   calls = recording.calls;
   // Builds the REAL capability object: `databaseTarget` runs here, nothing else does.
   host = await createDevMcpServer({ root: ROOT, env: {}, runner: recording.runner });
-  // 30s for the reason `mcp-host.test.ts` and `cmd-mcp.test.ts` both say so: `loadCodeFixes()`
-  // reads every installed package's source once, and this is the call that awaits it.
-}, 30_000);
+  // `REPO_SCAN_TIMEOUT_MS`'s value, as a literal, for the reason `mcp-host.test.ts` and
+  // `cmd-mcp.test.ts` both say so: `loadCodeFixes()` reads every installed package's source once,
+  // and this is the call that awaits it.
+}, 180_000);
 
 afterAll(async () => {
   await host.close();

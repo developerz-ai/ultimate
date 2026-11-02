@@ -33,6 +33,7 @@
 // connection, and `seq.missing` is what a lost channel frame looks like.
 
 import { cpus } from 'node:os';
+import { ScriptError } from '../lib/script-error';
 import type { ClientStats } from './restart-bench-client';
 import { type BenchReport, type PhaseSummary, summarizeDurations } from './restart-bench-report';
 import { summarizeSeq, unrepairedFindings } from './restart-bench-seq';
@@ -84,7 +85,13 @@ async function readLine(
   try {
     for (;;) {
       const { value, done } = await reader.read();
-      if (done) throw new Error(`stream closed before printing "${prefix}"`);
+      if (done) {
+        throw new ScriptError({
+          code: 'X_BENCH_STREAM_CLOSED',
+          cause: `the benchmark's stdout stream closed before it printed "${prefix}", so the orchestrator never read the line it was waiting for`,
+          fix: 'bun run scripts/bench/restart-bench.ts --clients 50000 --out scripts/bench/results/50k-restart.json',
+        });
+      }
       buffer += decoder.decode(value, { stream: true });
       let newlineAt = buffer.indexOf('\n');
       while (newlineAt >= 0) {

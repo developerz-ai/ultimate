@@ -1,13 +1,23 @@
 // The failure case first, then the two ways this rule could stop being one: a pin above what the
 // tree holds (which would let throws back in), and a glob matching nothing (which reads exactly
 // like a clean tree). Every case builds its input by hand — a test that edits a real test file to
-// prove it can fail is a test that races the gate it guards.
+// prove it can fail is a test that races the gate it guards. The last block is the one exception:
+// it builds a FIXTURE ROOT, because the entry point reads a tree and a tree is what it reads.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun ships no `Bun.*` equivalent — `mkdtemp`/`rm` own a fixture root the scan reads.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
+import type { SourceBareErrorExemption } from './lib/source-bare-error-exemptions';
 import {
   type BareErrorGap,
   bareErrorFindingFor,
+  bareErrorFindings,
   checkBareErrors,
+  checkSourceBareErrors,
   scanBareErrorThrows,
 } from './test-bare-error';
 
@@ -186,5 +196,104 @@ describe('the ratchet', () => {
     const gaps = checkBareErrors({ files: [], pins: { x: 1 } });
     expect(gaps[0]?.kind).toBe('unscanned');
     expect(bareErrorFindingFor(gaps[0] as BareErrorGap).code).toBe('X_TEST_BARE_ERROR_UNSCANNED');
+  });
+});
+
+describe('the source scope', () => {
+  const script = (text: string) => ({ path: 'scripts/bench/thing.ts', text });
+  const fixture = (text: string) => ({ path: 'packages/x/src/thing-fixture.ts', text });
+  const exempt = (path: string, line: number): SourceBareErrorExemption => ({
+    path,
+    line,
+    reason: 'the fixture stands in for the test',
+  });
+
+  test('a bare throw in a scripts file is reported', () => {
+    const gaps = checkSourceBareErrors([script("throw new Error('boom');\n")], []);
+    expect(gaps).toHaveLength(1);
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.code).toBe('X_SOURCE_BARE_ERROR');
+    expect(finding.at).toBe('scripts/bench/thing.ts:1');
+  });
+
+  test('a bare throw in a fixture file is reported too — a fixture is shipped source', () => {
+    const gaps = checkSourceBareErrors([fixture("throw new TypeError('boom');\n")], []);
+    expect(gaps).toHaveLength(1);
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.code).toBe('X_SOURCE_BARE_ERROR');
+    expect(finding.at).toBe('packages/x/src/thing-fixture.ts:1');
+  });
+
+  // A file name may hold a newline, and the `fix` line is a shell comment: `# … replace the
+  // throw at scripts/a` ends there, and the rest of the path runs as a COMMAND when the
+  // diagnostic is pasted. Escaped, not dropped — the reader still sees which file it is about.
+  // The RAW path stays in `at`: it is location metadata, and a machine reads it to open the file.
+  test('a path carrying a newline cannot break the diagnostic', () => {
+    const gaps = checkSourceBareErrors(
+      [{ path: 'scripts/a\nid #.ts', text: "throw new Error('boom');\n" }],
+      [],
+    );
+    expect(gaps).toHaveLength(1);
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.cause).not.toContain('\n');
+    expect(finding.fix).not.toContain('\n');
+    expect(finding.fix).toContain('scripts/a\\nid #.ts:1');
+    expect(finding.at).toBe('scripts/a\nid #.ts:1');
+  });
+
+  test('a site the exemption inventory covers is not reported', () => {
+    const gaps = checkSourceBareErrors(
+      [fixture("throw new Error('boom');\n")],
+      [exempt('packages/x/src/thing-fixture.ts', 1)],
+    );
+    expect(gaps).toEqual([]);
+  });
+
+  test('an exemption matching no site is reported as stale', () => {
+    const gaps = checkSourceBareErrors(
+      [fixture('export const a = 1;\n')],
+      [exempt('packages/x/src/thing-fixture.ts', 9)],
+    );
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.kind).toBe('stale');
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.code).toBe('X_SOURCE_BARE_ERROR_EXEMPT_STALE');
+    expect(finding.at).toBe('scripts/lib/source-bare-error-exemptions.ts');
+  });
+});
+
+describe('the production entry point', () => {
+  let root = '';
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), 'ultimate-bare-error-'));
+    // The two halves of the SOURCE scope: a script and a package fixture. The corpus reads
+    // `scripts/**` and `packages/*/src/**`, so both land in it.
+    await Bun.write(join(root, 'scripts/thing.ts'), "throw new Error('boom');\n");
+    await Bun.write(
+      join(root, 'packages/fixture/src/thing-fixture.ts'),
+      "throw new TypeError('boom');\n",
+    );
+    // One clean test file: the `tests` corpus needs a file of its own to clear its floor.
+    await Bun.write(join(root, 'packages/fixture/src/x.test.ts'), 'export {};\n');
+  });
+
+  afterAll(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  /**
+   * THE ENTRY POINT, not the pure helper above: nothing in production calls
+   * `checkSourceBareErrors`, so a rule that stopped reading `scripts/` would leave every case
+   * above green while a script's bare throw became invisible. This goes through
+   * `bareErrorFindings` — what `x verify`'s errors step runs — over a fixture root of its own.
+   */
+  test('a bare throw in a script and in a package fixture is both reported', async () => {
+    const findings = await bareErrorFindings(root);
+    const sources = findings
+      .filter((one) => one.code === 'X_SOURCE_BARE_ERROR')
+      .map((one) => one.at ?? '')
+      .sort();
+    expect(sources).toEqual(['packages/fixture/src/thing-fixture.ts:1', 'scripts/thing.ts:1']);
   });
 });

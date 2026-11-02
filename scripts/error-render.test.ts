@@ -3,8 +3,20 @@
 // delimiter — a template whose end is read wrong is a `${…}` nobody checks. A false positive here
 // is a rule an agent learns to skip; a miss is the bug that shipped three times.
 
-import { describe, expect, test } from 'bun:test';
-import { checkFile, maskToCode, topLevelSegments, unsafeRenderFindingFor } from './error-render';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+// why: Bun ships no `Bun.*` equivalent — `mkdtemp`/`rm` own a fixture root the scan reads.
+import { mkdtemp, rm } from 'node:fs/promises';
+// why: Bun exposes no tmpdir(), so only node:os answers the platform temp root.
+import { tmpdir } from 'node:os';
+// why: Bun exposes no path-join primitive.
+import { join } from 'node:path';
+import {
+  checkFile,
+  errorRendering,
+  maskToCode,
+  topLevelSegments,
+  unsafeRenderFindingFor,
+} from './error-render';
 
 const scan = (source: string) => checkFile({ path: 'packages/x/src/errors.ts', source });
 
@@ -276,5 +288,62 @@ describe('the mask and the scope', () => {
         interface Shape { readonly detail?: unknown }
       `),
     ).toEqual([]);
+  });
+});
+
+describe('the entry point sees a catch binding', () => {
+  let root = '';
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), 'ultimate-error-render-'));
+  });
+
+  afterAll(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const write = async (source: string): Promise<void> => {
+    await Bun.write(join(root, 'packages/x/src/thing.ts'), source);
+  };
+
+  // The catch half of the rule, through the entry point the command and the gate step both call.
+  // `error-render.ts` reads PARAMETERS typed `unknown`, and a catch binding is neither — so the
+  // half that sees one is `catch-render.ts`, and this is the composition of the two.
+  test('a catch binding rendered into a cause is reported', async () => {
+    await write(
+      [
+        'export function readPayload(raw: string): string {',
+        '  try {',
+        '    return JSON.parse(raw) as string;',
+        '  } catch (error) {',
+        '    throw new Error({',
+        '      cause: `unreadable payload: ${error instanceof Error ? error.message : String(error)}`,',
+        '    });',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const findings = await errorRendering(root);
+    expect(findings.map((one) => one.code)).toContain('X_CATCH_RENDER_UNSAFE');
+  });
+
+  test('the same value routed through renderThrowable is not', async () => {
+    await write(
+      [
+        'export function readPayload(raw: string): string {',
+        '  try {',
+        '    return JSON.parse(raw) as string;',
+        '  } catch (error) {',
+        '    throw new Error({',
+        '      cause: `unreadable payload: ${renderThrowable(error)}`,',
+        '    });',
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const findings = await errorRendering(root);
+    expect(findings.map((one) => one.code)).not.toContain('X_CATCH_RENDER_UNSAFE');
   });
 });

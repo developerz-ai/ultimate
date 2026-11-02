@@ -208,11 +208,35 @@ describe('MessageStream', () => {
     expect(isRetryable(thrown)).toBe(false);
   });
 
-  test('a frame whose data is not an object is a transport failure, never a silent skip', () => {
+  test('a frame whose data is not JSON is a transport failure, never a silent skip', () => {
     const message = new MessageStream();
     expect(() => message.push({ event: 'message_delta', data: '{"delta":' })).toThrow(
       /unreadable "message_delta" frame/,
     );
+  });
+
+  // The OTHER unreadable frame: `JSON.parse` SUCCEEDS and the payload is still not an
+  // object, so the catch above never runs — only the `asRecord` refusal stands in the way.
+  // Deleting it does not make the frame read as an empty one: `payloadOf` would hand back
+  // `undefined`, and `push` reads `payload['type']` off it — an UNCODED `TypeError`, where
+  // the gateway's retry rule reads a code. The refusal is what keeps this frame the coded
+  // transport failure it belongs to.
+  test('a frame whose data is JSON but not an object is a transport failure', () => {
+    const message = new MessageStream();
+    for (const data of ['"a string"', '[]']) {
+      let thrown: unknown;
+      try {
+        message.push({ event: 'message_delta', data });
+      } catch (error) {
+        thrown = error;
+      }
+      // The coded refusal, not some other error: a `TypeError` from reading an absent
+      // payload carries no code, and the gateway's retry rule reads the code.
+      expect(thrown).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE' });
+      expect(String((thrown as { cause: unknown }).cause)).toContain(
+        'unreadable "message_delta" frame: frame data is not an object',
+      );
+    }
   });
 
   test('an in-band error type off the prototype chain maps to no status, never a function', () => {

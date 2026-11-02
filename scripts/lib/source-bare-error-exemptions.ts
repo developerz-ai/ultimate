@@ -1,0 +1,101 @@
+// The exemption inventory for the SOURCE scope of `scripts/test-bare-error.ts`: every
+// intentional bare throw in shipped source, one row per site, with the reason it is there.
+// Data only — the guard owns what it does with a row.
+//
+// WHY A LIST AND NOT A RULE. A fixture double that throws AT the subject is a test's INPUT, and
+// this repo's rule says an input is never reported. A `*-fixture.ts` file is shipped source to
+// every scope that reads the tree, so the source scope sees its throws and cannot tell them from
+// a verdict by shape — the distinction is not textual, so it is written down here.
+//
+// ONE ROW PER SITE, never per file and never per package: a count let one exempt site be deleted
+// and a real bare throw added in the same file with no number moving — the swap
+// `scripts/secret-compare.ts` closed by grouping per site.
+//
+// A row that matches no site is a finding of its own: an exemption nobody reads is a licence the
+// next throw inherits.
+
+/** Where the inventory lives, so a finding can name the file a repair edits. */
+export const SOURCE_BARE_ERROR_EXEMPTIONS_FILE = 'scripts/lib/source-bare-error-exemptions.ts';
+
+/** One intentional bare throw in shipped source, and why it is there. */
+export interface SourceBareErrorExemption {
+  /** Repo-relative, POSIX separators. */
+  readonly path: string;
+  /** The line the throw is on. */
+  readonly line: number;
+  /** Why this site throws a bare Error and is not a verdict. */
+  readonly reason: string;
+}
+
+export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] = [
+  {
+    path: 'packages/admin/src/inert-jsx-fixture.ts',
+    line: 143,
+    reason:
+      'the inert-JSX harness standing in for a test selector: a node matched by anything other than exactly one is the test finding out, not the framework refusing',
+  },
+  {
+    path: 'packages/admin/src/inert-jsx-fixture.ts',
+    line: 152,
+    reason:
+      'the same harness firing an event handler: a node carrying no handler prop is the test finding out, not the framework refusing',
+  },
+  {
+    path: 'packages/cache/src/redis-fake-fixture.ts',
+    line: 81,
+    reason:
+      'the fake redis cannot run Lua: an unprogrammed EVAL refuses loudly, so a gutted script is never read as the empty member list it answered',
+  },
+  {
+    path: 'packages/cli/e2e/client-navigation-fixture.ts',
+    line: 359,
+    reason:
+      'the route under test writes and then fails, so what answers it is the framework own error page and not this throw',
+  },
+  {
+    path: 'packages/pwa/src/service-worker-harness-fixture.ts',
+    line: 86,
+    reason:
+      'the service-worker harness is all-or-nothing like the browser: a non-ok response refuses the whole install',
+  },
+  {
+    path: 'packages/pwa/src/service-worker-harness-fixture.ts',
+    line: 131,
+    reason: 'the harness offline fetch, so a suite can drive the worker with no network at all',
+  },
+  {
+    path: 'packages/render/src/navigation-dom-fixture.ts',
+    line: 440,
+    reason:
+      'the fake DOMParser refuses a document no test registered, rather than answering an empty one the router would read as a page',
+  },
+  {
+    path: 'packages/realtime/src/client-harness-fixture.ts',
+    line: 159,
+    reason:
+      'what a browser throws when it refuses a new WebSocket: the fixture must be the real failure, not a framework error this code path can never produce',
+  },
+  {
+    path: 'packages/realtime/src/pg-replication-fixture.ts',
+    line: 328,
+    reason:
+      'the socket whose close() raises — the one way a teardown failure reaches a caller of start()',
+  },
+  {
+    path: 'packages/ui/src/jsx-probe-fixture.ts',
+    line: 63,
+    reason:
+      'the JSX probe harness standing in for a test selector: a node matched by anything other than exactly one is the test finding out',
+  },
+  {
+    path: 'packages/ui/src/jsx-probe-fixture.ts',
+    line: 71,
+    reason: 'the same harness attaching a ref: a node carrying no ref prop is the test finding out',
+  },
+  {
+    path: 'packages/ui/src/jsx-probe-fixture.ts',
+    line: 79,
+    reason:
+      'the same harness firing an event handler: a node carrying no handler prop is the test finding out',
+  },
+];

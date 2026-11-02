@@ -215,17 +215,25 @@ export class MessageStream {
   }
 
   private payloadOf(frame: SseFrame): Record<string, unknown> {
+    let parsed: unknown;
     try {
-      const parsed: unknown = JSON.parse(frame.data);
-      const record = asRecord(parsed);
-      if (record === undefined) throw new SyntaxError('frame data is not an object');
-      return record;
+      parsed = JSON.parse(frame.data);
     } catch (error) {
       throw new AiTransportError({
         provider: 'anthropic',
         detail: `unreadable "${frame.event}" frame: ${renderThrowable(error)}`,
       });
     }
+    const record = asRecord(parsed);
+    if (record === undefined) {
+      // The same coded refusal the catch above produces, thrown where the frame is known: a bare
+      // `SyntaxError` in shipped source carries no code, no cause and no fix.
+      throw new AiTransportError({
+        provider: 'anthropic',
+        detail: `unreadable "${frame.event}" frame: frame data is not an object`,
+      });
+    }
+    return record;
   }
 
   private onMessageStart(payload: Record<string, unknown>): readonly StreamChunk[] {
