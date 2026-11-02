@@ -308,6 +308,27 @@ describe('the stream ends', () => {
     expect(() => drive([{ event: 'message', data: 'not json' }])).toThrow(/unreadable/);
   });
 
+  // The OTHER unreadable frame: `JSON.parse` SUCCEEDS and the payload is still not an
+  // object, so the catch above never runs — only the `asRecord` refusal stands in the way.
+  // Deleting it leaves `record` undefined, and the frame is read as no answer at all: the
+  // one outcome nothing downstream can detect.
+  test('a frame whose data is JSON but not an object is a coded refusal', () => {
+    for (const data of ['"a string"', '[]']) {
+      let thrown: unknown;
+      try {
+        drive([{ event: 'message', data }]);
+      } catch (error) {
+        thrown = error;
+      }
+      // The coded refusal, not some other error: a `TypeError` from reading an absent
+      // payload carries no code, and the gateway's retry rule reads the code.
+      expect(thrown).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE' });
+      expect(String((thrown as { cause: unknown }).cause)).toContain(
+        'unreadable "message" frame: frame data is not an object',
+      );
+    }
+  });
+
   test('[DONE] while a tool call is still open is NOT complete', () => {
     // `onFinish` is the only drain of `pending`, so a `[DONE]` with no finish reason behind it
     // dropped the whole call and left a successful, empty `end_turn` — a tool the model asked for

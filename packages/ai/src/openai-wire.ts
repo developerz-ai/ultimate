@@ -436,16 +436,20 @@ export class ChatCompletionStream {
   }
 
   private payloadOf(frame: SseFrame): Record<string, unknown> {
+    const where = `unreadable "${frame.event}" frame`;
+    let parsed: unknown;
     try {
-      const record = asRecord(JSON.parse(frame.data));
-      if (record === undefined) throw new SyntaxError('frame data is not an object');
-      return record;
+      parsed = JSON.parse(frame.data);
     } catch (error) {
-      throw malformed(
-        this.provider,
-        `unreadable "${frame.event}" frame: ${renderThrowable(error)}`,
-      );
+      throw malformed(this.provider, `${where}: ${renderThrowable(error)}`);
     }
+    const record = asRecord(parsed);
+    // The same coded refusal the catch above produces, thrown where the frame is known: a bare
+    // `SyntaxError` in shipped source carries no code, no cause and no fix.
+    if (record === undefined) {
+      throw malformed(this.provider, `${where}: frame data is not an object`);
+    }
+    return record;
   }
 }
 

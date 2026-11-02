@@ -19,6 +19,7 @@
 //
 // Never imported, and not part of `x verify` — see restart-bench.ts.
 
+import { ScriptError } from '../lib/script-error';
 import { newClientStats, runClient } from './restart-bench-client';
 
 interface WorkerArgs {
@@ -33,7 +34,14 @@ function parseArgs(argv: readonly string[]): WorkerArgs {
     return i >= 0 ? argv[i + 1] : undefined;
   };
   const url = flag('url');
-  if (!url) throw new Error('restart-bench-client-worker: --url <ws-url> is required');
+  if (!url) {
+    throw new ScriptError({
+      code: 'X_BENCH_URL_REQUIRED',
+      cause:
+        'the client shard was started without --url, so it has no endpoint to connect its clients to',
+      fix: 'bun run scripts/bench/restart-bench-client-worker.ts --url <ws-url> --count <n> --offset <n>',
+    });
+  }
   return {
     url,
     count: Number(flag('count') ?? '0'),

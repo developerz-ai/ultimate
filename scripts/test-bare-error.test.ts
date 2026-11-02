@@ -4,10 +4,12 @@
 // prove it can fail is a test that races the gate it guards.
 
 import { describe, expect, test } from 'bun:test';
+import type { SourceBareErrorExemption } from './lib/source-bare-error-exemptions';
 import {
   type BareErrorGap,
   bareErrorFindingFor,
   checkBareErrors,
+  checkSourceBareErrors,
   scanBareErrorThrows,
 } from './test-bare-error';
 
@@ -186,5 +188,51 @@ describe('the ratchet', () => {
     const gaps = checkBareErrors({ files: [], pins: { x: 1 } });
     expect(gaps[0]?.kind).toBe('unscanned');
     expect(bareErrorFindingFor(gaps[0] as BareErrorGap).code).toBe('X_TEST_BARE_ERROR_UNSCANNED');
+  });
+});
+
+describe('the source scope', () => {
+  const script = (text: string) => ({ path: 'scripts/bench/thing.ts', text });
+  const fixture = (text: string) => ({ path: 'packages/x/src/thing-fixture.ts', text });
+  const exempt = (path: string, line: number): SourceBareErrorExemption => ({
+    path,
+    line,
+    reason: 'the fixture stands in for the test',
+  });
+
+  test('a bare throw in a scripts file is reported', () => {
+    const gaps = checkSourceBareErrors([script("throw new Error('boom');\n")], []);
+    expect(gaps).toHaveLength(1);
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.code).toBe('X_SOURCE_BARE_ERROR');
+    expect(finding.at).toBe('scripts/bench/thing.ts:1');
+  });
+
+  test('a bare throw in a fixture file is reported too — a fixture is shipped source', () => {
+    const gaps = checkSourceBareErrors([fixture("throw new TypeError('boom');\n")], []);
+    expect(gaps).toHaveLength(1);
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.code).toBe('X_SOURCE_BARE_ERROR');
+    expect(finding.at).toBe('packages/x/src/thing-fixture.ts:1');
+  });
+
+  test('a site the exemption inventory covers is not reported', () => {
+    const gaps = checkSourceBareErrors(
+      [fixture("throw new Error('boom');\n")],
+      [exempt('packages/x/src/thing-fixture.ts', 1)],
+    );
+    expect(gaps).toEqual([]);
+  });
+
+  test('an exemption matching no site is reported as stale', () => {
+    const gaps = checkSourceBareErrors(
+      [fixture('export const a = 1;\n')],
+      [exempt('packages/x/src/thing-fixture.ts', 9)],
+    );
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]?.kind).toBe('stale');
+    const finding = bareErrorFindingFor(gaps[0] as BareErrorGap);
+    expect(finding.code).toBe('X_SOURCE_BARE_ERROR_EXEMPT_STALE');
+    expect(finding.at).toBe('scripts/lib/source-bare-error-exemptions.ts');
   });
 });

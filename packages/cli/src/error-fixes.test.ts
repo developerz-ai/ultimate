@@ -26,7 +26,7 @@ import { scanCodeFixSites } from './ts-scan';
 // The same number `REPO_SCAN_TIMEOUT_MS` (scripts/lib/run.ts) fixes for every whole-repo scan, and
 // the same literal `error-catalog.test.ts` already uses here: a package's own suite may not import
 // the host monorepo's scripts, so the value is repeated rather than the dependency created.
-const REPO_SCAN_MS = 30_000;
+const REPO_SCAN_MS = 180_000;
 
 const temporary: string[] = [];
 

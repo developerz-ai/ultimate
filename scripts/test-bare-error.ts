@@ -1,21 +1,35 @@
 #!/usr/bin/env bun
-// Enforce, as a gate step, that a test does not report ITS OWN verdict by throwing a bare `Error`.
+// Enforce, as a gate step, that a test does not report ITS OWN verdict by throwing a bare `Error`,
+// and that shipped source throws no bare builtin Error class at all.
 //
 // `CLAUDE.md` says never throw a bare `Error`, and `checkErrorFixes` opens with
 // `if (isTest(path) || isGenerated(path)) continue` — so in test files the rule was prose only,
 // which axiom 3 says is no rule at all. 422 `new Error(` sites were sitting under a green gate;
 // the issue that opened this (#132) counted 295, and the growth is its own argument.
 //
+// THE SOURCE SCOPE, the half that had no table: two bare builtin throws sat in `@ultimat3/ai`'s
+// two wire readers, where a `SyntaxError` was thrown and caught by the very catch that re-threw it
+// as a coded transport error. A fixture double that throws AT the subject is shipped source too,
+// and no shape tells the two apart, so the distinction is written down —
+// `scripts/lib/source-bare-error-exemptions.ts`, one row per intentional site, and a row that
+// matches no site is a finding of its own.
+//
 //   bun run scripts/test-bare-error.ts [--json]
 //   bun run scripts/test-bare-error.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
-import { stripComments } from '../packages/core/src/source-mask';
+import { maskLiterals } from '../packages/core/src/source-mask';
+import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
 import type { PinTable, RatchetGap } from './lib/ratchet';
-import { ratchetGaps, ratchetMain } from './lib/ratchet';
+import { packageOf, ratchetGaps, ratchetMain } from './lib/ratchet';
 import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
-import { insideString, sourceStrings } from './lib/source-strings';
+import {
+  SOURCE_BARE_ERROR_EXEMPTIONS,
+  SOURCE_BARE_ERROR_EXEMPTIONS_FILE,
+  type SourceBareErrorExemption,
+} from './lib/source-bare-error-exemptions';
+import { isTestPath } from './lib/source-scan';
 import { BARE_ERROR_PINS, PINS_FILE } from './lib/test-bare-error-pins';
 import { readTestSources } from './test-fix-citations';
 
@@ -62,16 +76,18 @@ export function scanBareErrorThrows(path: string, source: string): readonly Bare
   // whose header read "reads a literal `throw new Error(…)` as a verdict wherever it appears" took
   // that package 24 -> 25 with no throw in the file, and the comment was reworded to clear a gate.
   // `dead-docs-host.ts` already carries the same carve-out in the same words — a comment naming
-  // the banned thing as the thing that was removed cannot commit it. `stripComments` blanks a
+  // the banned thing as the thing that was removed cannot commit it. `maskLiterals` blanks a
   // comment to spaces and preserves every offset, so the string exemption below still lines up.
-  const code = stripComments(source);
-  const literals = sourceStrings(source);
+  //
+  // The mask is `maskLiterals`, not comments alone: it blanks a string's CONTENTS and a REGEX
+  // body's too, and a regex holds quotes that delimit nothing (`/class="([^"]*)"/`). The reader
+  // that took the first of those for a string opener swallowed the rest of the file and hid a
+  // real bare throw behind it — `packages/render/src/navigation-dom-fixture.ts`, whose fake
+  // DOMParser threw a builtin `TypeError` in shipped source that no rule could see.
+  const code = maskLiterals(source);
   const out: BareErrorSite[] = [];
   for (const match of code.matchAll(THROWN)) {
     const at = match.index ?? 0;
-    // A rule's own test spells the bad shape as a STRING and feeds it to the pure function below.
-    // Same exemption `to-throw-returns.ts` and `test-fix-citations.ts` rest on, same tokenizer.
-    if (insideString(literals, at)) continue;
     out.push({ path, line: source.slice(0, at).split('\n').length });
   }
   return out;
@@ -117,20 +133,117 @@ const unscannedFinding = (): Finding => ({
   at: 'scripts/test-bare-error.ts',
 });
 
-export const bareErrorFindingFor = (gap: BareErrorGap): Finding =>
+/** The test scope's own findings — the per-package ratchet, unchanged. */
+const testBareErrorFindingFor = (gap: BareErrorGap): Finding =>
   gap.kind === 'over'
     ? overFinding(gap)
     : gap.kind === 'stale'
       ? staleFinding(gap)
       : unscannedFinding();
 
+/**
+ * The row a source site answers to: the site itself, `path:line`.
+ *
+ * PER SITE, never per package: a per-package count let one exempt site be deleted and a real bare
+ * throw added in the same file with no number moving — the swap `scripts/secret-compare.ts`
+ * closed by grouping per site.
+ */
+const sourceRow = (path: string, line: number): string => `${path}:${String(line)}`;
+
+/** A package for a test, the site itself for shipped source — the two scopes never share a row. */
+const groupOf = (site: BareErrorSite): string =>
+  isTestPath(site.path) ? packageOf(site.path) : sourceRow(site.path, site.line);
+
+/** A source row is `path:line`; a package is a bare directory name, and never holds a `/`. */
+const isSourceRow = (row: string): boolean => row.includes('/');
+
+/** The exemption inventory as the ratchet's rows: one row per exempt site, holding one site. */
+const exemptionRows = (exemptions: readonly SourceBareErrorExemption[]): PinTable =>
+  Object.fromEntries(exemptions.map((one) => [sourceRow(one.path, one.line), 1]));
+
+/** Both scopes' rows in one table: a package's test count, and the sites shipped source exempts. */
+const PINS: PinTable = { ...BARE_ERROR_PINS, ...exemptionRows(SOURCE_BARE_ERROR_EXEMPTIONS) };
+
+/**
+ * The source scope's gaps over a hand-built input: the sites no exemption covers, and the
+ * exemptions that match no site. Pure, so a test builds its input by hand instead of editing a
+ * real file.
+ *
+ * The tree walk below answers the same question with BOTH scopes in ONE ratchet, so the command
+ * and the gate step can never disagree; the rules are the same ones — the same scanner, the same
+ * row, the same exemption table.
+ */
+export const checkSourceBareErrors = (
+  files: readonly { readonly path: string; readonly text: string }[],
+  exemptions: readonly SourceBareErrorExemption[],
+): readonly BareErrorGap[] =>
+  ratchetGaps(
+    files.flatMap((file) => scanBareErrorThrows(file.path, file.text)),
+    exemptionRows(exemptions),
+    true,
+    (site) => sourceRow(site.path, site.line),
+  );
+
+/** The exemption a row names, and the reason it was there. */
+const exemptionOf = (row: string): SourceBareErrorExemption | undefined =>
+  SOURCE_BARE_ERROR_EXEMPTIONS.find((one) => sourceRow(one.path, one.line) === row);
+
+/** A bare throw in shipped source that no exemption covers. */
+const sourceOverFinding = (gap: BareErrorGap): Finding => {
+  const site = leadSite(gap);
+  const where = site === undefined ? gap.pkg : `${site.path}:${String(site.line)}`;
+  return {
+    code: 'X_SOURCE_BARE_ERROR',
+    cause: `${where} throws a bare builtin Error class in shipped source, and no exemption covers it — a bare Error carries no code, no cause and no fix, so whoever reads it is left with a stack`,
+    fix: `bun run scripts/test-bare-error.ts --json   # then replace the throw at ${where} with a coded error — new UltimateError({ code, cause, fix }) from @ultimat3/core, or new ScriptError({ code, cause, fix }) from scripts/lib/script-error.ts in a script — or exempt the site in ${SOURCE_BARE_ERROR_EXEMPTIONS_FILE} with the reason it is allowed`,
+    at: where,
+  };
+};
+
+/** An exemption that matches no site: the throw it named was repaired, or the file is gone. */
+const sourceStaleFinding = (gap: BareErrorGap): Finding => {
+  const exemption = exemptionOf(gap.pkg);
+  const reason =
+    exemption === undefined ? '' : ` — the row was allowed because ${exemption.reason}`;
+  return {
+    code: 'X_SOURCE_BARE_ERROR_EXEMPT_STALE',
+    cause: `the exemption for ${gap.pkg} matches no bare throw in shipped source${reason} — an exemption nobody reads is a licence the next throw inherits`,
+    fix: `bun run scripts/test-bare-error.ts --json   # then delete the stale row from ${SOURCE_BARE_ERROR_EXEMPTIONS_FILE}`,
+    at: SOURCE_BARE_ERROR_EXEMPTIONS_FILE,
+  };
+};
+
+/**
+ * The source scope's own findings. Only `over` and `stale` can reach it: the rows are plain
+ * counts (a blank reason is a thing the TEST scope's table has and this one does not), and the
+ * corpus read refuses rather than answering empty.
+ */
+const sourceBareErrorFindingFor = (gap: BareErrorGap): Finding =>
+  gap.kind === 'over' ? sourceOverFinding(gap) : sourceStaleFinding(gap);
+
+/** One finding per gap, whichever scope the gap belongs to. */
+export const bareErrorFindingFor = (gap: BareErrorGap): Finding =>
+  isSourceRow(gap.pkg) ? sourceBareErrorFindingFor(gap) : testBareErrorFindingFor(gap);
+
 const treeSites = async (root: string): Promise<readonly BareErrorSite[]> =>
   (await readTestSources(root)).flatMap((file) => scanBareErrorThrows(file.path, file.text));
+
+/** Shipped source: the `source` corpus without the test paths the test scope already reads. */
+const sourceTreeSites = async (root: string): Promise<readonly BareErrorSite[]> =>
+  (await corpus(root, 'source'))
+    .filter((file) => !isTestPath(file.path))
+    .flatMap((file) => scanBareErrorThrows(file.path, file.source));
+
+/** Both scopes, as one list: a test site answers to its package, a source site to itself. */
+const allSites = async (root: string): Promise<readonly BareErrorSite[]> => [
+  ...(await treeSites(root)),
+  ...(await sourceTreeSites(root)),
+];
 
 const PROBE: SiteProbe<BareErrorSite> = { rescan: scanBareErrorThrows, line: (site) => site.line };
 
 export const bareErrorGaps = async (root: string): Promise<readonly BareErrorGap[]> =>
-  newSitesFirst(root, ratchetGaps(await treeSites(root), BARE_ERROR_PINS, true), PROBE);
+  newSitesFirst(root, ratchetGaps(await allSites(root), PINS, true, groupOf), PROBE);
 
 /** What this repo contributes to `x verify`'s `errors` step. */
 export const bareErrorFindings = async (root: string): Promise<readonly Finding[]> =>
@@ -140,10 +253,12 @@ if (import.meta.main) {
   await ratchetMain({
     script: SCRIPT,
     pinsFile: PINS_FILE,
-    pins: BARE_ERROR_PINS,
-    sites: treeSites,
+    pins: PINS,
+    sites: allSites,
     findingFor: bareErrorFindingFor,
     probe: PROBE,
-    clean: 'no package reports a test verdict with a bare Error above its pin',
+    groupOf,
+    clean:
+      'no package reports a test verdict with a bare Error above its pin, and no shipped source throws one',
   });
 }
