@@ -44,6 +44,19 @@ const scriptTests = (): readonly string[] =>
   [...new Bun.Glob('**/*.test.ts').scanSync({ cwd: join(repoRoot(), 'scripts') })].sort();
 
 /**
+ * The mirror's own constant, matched in the MASK and not in the raw text.
+ *
+ * The raw text accepts a declaration that only exists in a COMMENT: `const REPO_SCAN_MS =
+ * 30_000; // const REPO_SCAN_MS = 180_000;` carries the budget as text and runs every repo scan
+ * under 30 seconds — a sixth of the budget the mirror claims — while the USE check below still
+ * passes, because the tests pass the constant and the constant is the wrong number.
+ * `maskLiterals` blanks a comment to spaces, so a declaration that is only quoted is no
+ * declaration at all.
+ */
+const declaresBudget = (source: string): boolean =>
+  maskLiterals(source).includes(`const REPO_SCAN_MS = ${String(REPO_SCAN_TIMEOUT_MS / 1000)}_000;`);
+
+/**
  * One `test(…)` call: the body it runs, and the third argument it passes.
  *
  * The third argument is where a test declares its own timeout — the budget, when it has one.
@@ -189,9 +202,24 @@ describe('unit · a scripts test that reads the tree declares the repo-scan budg
     expect(source, `${path} no longer names REPO_SCAN_TIMEOUT_MS`).toContain(
       'REPO_SCAN_TIMEOUT_MS',
     );
-    expect(source, `${path} does not carry the budget`).toContain(
-      `const REPO_SCAN_MS = ${String(REPO_SCAN_TIMEOUT_MS / 1000)}_000;`,
-    );
+    expect(declaresBudget(source), `${path} does not carry the budget`).toBe(true);
+  });
+
+  /**
+   * THE REGRESSION DIRECTION: the declaration is matched in the MASK, so a budget that only
+   * appears in a comment is not a declaration. Match the raw text and this mutation goes green
+   * again — the file carries the budget as TEXT and every repo scan in it runs under 30 seconds.
+   */
+  test('a budget quoted in a comment is not a declaration', () => {
+    const budget = String(REPO_SCAN_TIMEOUT_MS / 1000);
+    const mutated = [
+      `const REPO_SCAN_MS = 30_000; // const REPO_SCAN_MS = ${budget}_000;`,
+      "test('scans the repo', async () => { await loadCodeFixes(); }, REPO_SCAN_MS);",
+    ].join('\n');
+    expect(declaresBudget(mutated)).toBe(false);
+    // The USE still passes on the mutation — the tests pass the constant, and the constant is
+    // the wrong number. That is why the DECLARATION has to be read, not the use.
+    expect(testCalls(mutated)[0]?.third).toBe('REPO_SCAN_MS');
   });
 
   /**

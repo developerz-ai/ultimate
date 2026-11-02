@@ -17,6 +17,8 @@
 //   bun run scripts/test-bare-error.ts [--json]
 //   bun run scripts/test-bare-error.ts --unpin <pkg>[,<pkg>]   # shrink the ratchet
 
+// The leaf module, never the `@ultimat3/core` barrel: a guard must not link the whole tree.
+import { singleLine } from '../packages/core/src/error-render';
 import { maskLiterals } from '../packages/core/src/source-mask';
 import { corpus } from './lib/corpus';
 import type { Finding } from './lib/log';
@@ -110,18 +112,35 @@ export const checkBareErrors = (input: BareErrorInput): readonly BareErrorGap[] 
 const at = (site: BareErrorSite | undefined): string =>
   site === undefined ? '' : `${site.path}:${String(site.line)}`;
 
+/**
+ * A value as a DIAGNOSTIC shows it: every control character escaped.
+ *
+ * WHY: a path may hold a newline — a file named `a\nb.ts` — and the `fix` line is a shell
+ * comment, so `# … replace the throw at scripts/a` ends that comment at the newline and the
+ * rest of the path runs as a COMMAND when the diagnostic is pasted. The same is true of a
+ * package name in an `--unpin` command. `singleLine` is core's one escape for exactly this
+ * (the 3-line contract format is line-oriented, and the terminal is the reader), so the guard
+ * spells no second one.
+ *
+ * The RAW path stays in `at`: it is location metadata, and a machine reads it to open the file.
+ */
+const shown = (text: string): string => singleLine(text);
+
+/** A site as a DIAGNOSTIC shows it — the path escaped, the line number as it is. */
+const shownAt = (site: BareErrorSite | undefined): string => shown(at(site));
+
 /** Every throw, new ones first — the package's first is usually one its pin already allows. */
 const overFinding = (gap: BareErrorGap): Finding => ({
   code: 'X_TEST_BARE_ERROR',
-  cause: `${gap.pkg} has ${String(gap.found)} test(s) reporting a verdict with a bare Error and is pinned at ${String(gap.pinned)} — ${siteList(gap, at, EXPLAIN)} — and a bare Error carries no code, no cause and no fix, and reports at the throw rather than at the assertion`,
-  fix: `replace the throw at ${siteTarget(gap, at)}: expect.unreachable('<what was expected>') reports at the assertion, and its never return also narrows the variable, so the cast below it goes away`,
+  cause: `${shown(gap.pkg)} has ${String(gap.found)} test(s) reporting a verdict with a bare Error and is pinned at ${String(gap.pinned)} — ${siteList(gap, shownAt, EXPLAIN)} — and a bare Error carries no code, no cause and no fix, and reports at the throw rather than at the assertion`,
+  fix: `replace the throw at ${siteTarget(gap, shownAt)}: expect.unreachable('<what was expected>') reports at the assertion, and its never return also narrows the variable, so the cast below it goes away`,
   at: at(leadSite(gap)),
 });
 
 const staleFinding = (gap: BareErrorGap): Finding => ({
   code: 'X_TEST_BARE_ERROR_PIN_STALE',
-  cause: `${gap.pkg} is pinned at ${String(gap.pinned)} bare-Error throw(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
-  fix: `bun run scripts/test-bare-error.ts --unpin ${gap.pkg}`,
+  cause: `${shown(gap.pkg)} is pinned at ${String(gap.pinned)} bare-Error throw(s) and has ${String(gap.found)} — the pin is above what this tree contains, so it would let ${String(gap.pinned - gap.found)} back in`,
+  fix: `bun run scripts/test-bare-error.ts --unpin ${shown(gap.pkg)}`,
   at: PINS_FILE,
 });
 
@@ -192,10 +211,12 @@ const exemptionOf = (row: string): SourceBareErrorExemption | undefined =>
 const sourceOverFinding = (gap: BareErrorGap): Finding => {
   const site = leadSite(gap);
   const where = site === undefined ? gap.pkg : `${site.path}:${String(site.line)}`;
+  // The path as a DIAGNOSTIC shows it — `shown`. The RAW one stays in `at`.
+  const place = shown(where);
   return {
     code: 'X_SOURCE_BARE_ERROR',
-    cause: `${where} throws a bare builtin Error class in shipped source, and no exemption covers it — a bare Error carries no code, no cause and no fix, so whoever reads it is left with a stack`,
-    fix: `bun run scripts/test-bare-error.ts --json   # then replace the throw at ${where} with a coded error — new UltimateError({ code, cause, fix }) from @ultimat3/core, or new ScriptError({ code, cause, fix }) from scripts/lib/script-error.ts in a script — or exempt the site in ${SOURCE_BARE_ERROR_EXEMPTIONS_FILE} with the reason it is allowed`,
+    cause: `${place} throws a bare builtin Error class in shipped source, and no exemption covers it — a bare Error carries no code, no cause and no fix, so whoever reads it is left with a stack`,
+    fix: `bun run scripts/test-bare-error.ts --json   # then replace the throw at ${place} with a coded error — new UltimateError({ code, cause, fix }) from @ultimat3/core, or new ScriptError({ code, cause, fix }) from scripts/lib/script-error.ts in a script — or exempt the site in ${SOURCE_BARE_ERROR_EXEMPTIONS_FILE} with the reason it is allowed`,
     at: where,
   };
 };
@@ -204,10 +225,10 @@ const sourceOverFinding = (gap: BareErrorGap): Finding => {
 const sourceStaleFinding = (gap: BareErrorGap): Finding => {
   const exemption = exemptionOf(gap.pkg);
   const reason =
-    exemption === undefined ? '' : ` — the row was allowed because ${exemption.reason}`;
+    exemption === undefined ? '' : ` — the row was allowed because ${shown(exemption.reason)}`;
   return {
     code: 'X_SOURCE_BARE_ERROR_EXEMPT_STALE',
-    cause: `the exemption for ${gap.pkg} matches no bare throw in shipped source${reason} — an exemption nobody reads is a licence the next throw inherits`,
+    cause: `the exemption for ${shown(gap.pkg)} matches no bare throw in shipped source${reason} — an exemption nobody reads is a licence the next throw inherits`,
     fix: `bun run scripts/test-bare-error.ts --json   # then delete the stale row from ${SOURCE_BARE_ERROR_EXEMPTIONS_FILE}`,
     at: SOURCE_BARE_ERROR_EXEMPTIONS_FILE,
   };

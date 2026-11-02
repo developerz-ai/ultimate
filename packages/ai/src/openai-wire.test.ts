@@ -310,8 +310,10 @@ describe('the stream ends', () => {
 
   // The OTHER unreadable frame: `JSON.parse` SUCCEEDS and the payload is still not an
   // object, so the catch above never runs — only the `asRecord` refusal stands in the way.
-  // Deleting it leaves `record` undefined, and the frame is read as no answer at all: the
-  // one outcome nothing downstream can detect.
+  // Deleting it does not make the frame read as an empty answer: `payloadOf` would hand back
+  // `undefined`, and `throwInBandError` reads `payload['error']` off it — an UNCODED
+  // `TypeError`, which carries no code for the gateway's retry rule to read. The refusal is
+  // what keeps this frame the CODED transport failure it belongs to.
   test('a frame whose data is JSON but not an object is a coded refusal', () => {
     for (const data of ['"a string"', '[]']) {
       let thrown: unknown;
