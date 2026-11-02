@@ -395,7 +395,7 @@ Twelve milestones, each ending in a working demo app and a green gate. **0–10 
 | an outside change to CI, release or publish automation | declined: members maintain the pipeline that publishes to npm |
 | a breaking change | the bot's call, not a human's — it weighs that a major is a migration for every app |
 
-Releases follow the work, not a calendar: when a fix that ships has merged and nobody has released it, the bot opens the version bump (`bun run scripts/release-due.ts` decides), and merging that bump publishes all packages to npm with provenance — [PUBLISHING.md](PUBLISHING.md). The bot's policy is committed: [`.dz/maintainer/maintainer.yml`](.dz/maintainer/maintainer.yml).
+Each week the bot judges whether users would get something from a release; a merge alone never cuts one, and a security fix a first-tier source confirms ships right away. When one is needed, the bot opens the version bump, and merging that bump publishes all packages to npm with provenance — [PUBLISHING.md](PUBLISHING.md). The bot's policy is committed: [`.dz/maintainer/maintainer.yml`](.dz/maintainer/maintainer.yml).
 
 ## Contributing
 
