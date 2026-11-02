@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
-// Answer whether a release is due: commits since the last `v*` tag that change a file a
-// published package packs, judged against [Unreleased] and a settle window. Fetches
-// origin/main's tip when this checkout lacks it — so the bot releases only what no
-// maintainer released at once, and never a major on its own judgement.
+// Gather the facts for the weekly release judgement: commits since the last `v*` tag that change a
+// file a published package packs, read against [Unreleased] and a settle window. Fetches
+// origin/main's tip when this checkout lacks it. Its `due` is a count, not a verdict: the release-due
+// checkup decides (.dz/briefs/release-due.md), and never a major on its own judgement.
 //
 //   bun run scripts/release-due.ts [--settle-hours 24] [--json]
 

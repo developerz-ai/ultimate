@@ -11,8 +11,10 @@
 #   Dependabot        driven to green and merged, majors included — CI is the verdict
 #   breaking changes  the bot's call too (`escalate.ask_before_acting: []`); only the platform's
 #                     hardcoded asks (security, license, CLA) reach a human
-#   releases          cut when due: `scripts/release-due.ts` decides, the bot opens the bump PR,
-#                     merging it IS the release (`.github/workflows/release-tag.yml`)
+#   releases          the bot judges weekly whether one is needed (`.dz/briefs/release-due.md`;
+#                     `scripts/release-due.ts` gathers its facts), opens the bump PR, and merging it
+#                     IS the release (`.github/workflows/release-tag.yml`). A security fix a
+#                     first-tier source confirms is the one off-cycle release
 #
 # Every pull request is reviewed, whoever wrote it — `review.force` below.
 #
@@ -112,10 +114,17 @@ escalate:
   ask_before_acting: []
 
 schedules:
+  # Weekly and judged, so a merge never cuts a release (owner, 2026-11-01: "no auto, not dependabot,
+  # us developerz.ai AI decides if needed"). One weekday per repo, so the fleet is not hit at once.
   - name: release-due
-    days: [mon, tue, wed, thu, fri]
-    hours_utc: [6]
+    days: [tue]
+    hours_utc: [3]
     brief_file: .dz/briefs/release-due.md
+  # The one exception, so a confirmed security fix does not wait up to a week for Tuesday.
+  - name: security-release
+    days: [mon, wed, thu, fri, sat, sun]
+    hours_utc: [4]
+    brief_file: .dz/briefs/security-release.md
   # The failures nothing announces: a red `main`, a publish that did not land, npm drift, a stuck
   # Dependabot PR. Bot-authored alarm issues never pass intake, so this is how they reach the bot.
   - name: health

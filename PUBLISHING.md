@@ -432,9 +432,11 @@ A release with nothing under `[Unreleased]` and no commit since the previous tag
 
 ### When a release is due
 
-`bun run scripts/release-due.ts --json` answers it, fetching `origin/main`'s tip when the
-checkout lacks it, and is the check the maintainer bot runs on its daily schedule before it
-opens a release PR. The window is every commit since the highest `v*` tag HEAD contains,
+The maintainer bot judges it weekly (`.dz/briefs/release-due.md`), reading what would ship; a merge
+alone never cuts a release, and a maintainer can still cut one by hand. A fix for a security advisory
+a first-tier source confirms is the one off-cycle release (`.dz/briefs/security-release.md`).
+`bun run scripts/release-due.ts --json` gathers the facts for that judgement, fetching `origin/main`'s
+tip when the checkout lacks it. The window is every commit since the highest `v*` tag HEAD contains,
 release commits excluded. A commit **ships** when it changes a path a published tarball packs —
 each package's `files` field, plus its `package.json` — minus `*.md`, tests and fixtures. Root
 tooling, `bun.lock`, `.github/`, docs, the wiki and both tracked apps ship nothing.
@@ -444,9 +446,9 @@ tooling, `bun.lock`, `.github/`, docs, the wiki and both tracked apps ship nothi
 | `awaiting_tag` | the tree is stamped past the last tag: a release PR merged and `release-tag.yml` has not tagged it yet |
 | `nothing_ships` | no commit in the window changes a published file |
 | `major_needs_a_maintainer` | a `BREAKING —` line under `[Unreleased]`, or a `!:` subject: a major's `wiki/Upgrading.md` walkthrough is a maintainer's judgement |
-| `settling` | the oldest shipping commit is younger than `--settle-hours` (default 24); `.data.dueAt` says when. A maintainer usually releases their own work at once — the bot releases what nobody did |
+| `settling` | the oldest shipping commit is younger than `--settle-hours` (default 24); `.data.dueAt` says when |
 
-Otherwise `.data.due` is `true`, and the bump is still the prose rule (`BREAKING —` or `!:` major, `### Added` or a
+Otherwise `.data.due` is `true`, which says shipping commits have waited and leaves the call to the judge, and the bump is still the prose rule (`BREAKING —` or `!:` major, `### Added` or a
 `feat:` subject minor, else patch — `### Changed` alone is a patch, as 20.1.2 and 20.2.1 were).
 
 Every field of `DueDecision` in `scripts/lib/release-due-rule.ts`, one row each:
