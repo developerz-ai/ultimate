@@ -200,6 +200,23 @@ describe('unit · test services · no compose file this repo ships starts MinIO'
   });
 });
 
+describe('unit · test services · Dependabot moves the scaffold pin with docker/', () => {
+  test('the docker-compose ecosystem watches both directories and groups the gateway', async () => {
+    const { updates } = Bun.YAML.parse(await Bun.file(`${root}/.github/dependabot.yml`).text()) as {
+      readonly updates: readonly {
+        readonly 'package-ecosystem': string;
+        readonly directories?: readonly string[];
+        readonly groups?: Readonly<Record<string, { readonly patterns?: readonly string[] }>>;
+      }[];
+    };
+    const compose = updates.find((update) => update['package-ecosystem'] === 'docker-compose');
+    expect(compose?.directories).toEqual(['/docker', '/packages/cli/src/templates/pinned']);
+    expect(Object.values(compose?.groups ?? {}).flatMap((group) => group.patterns)).toContain(
+      'versity/versitygw',
+    );
+  });
+});
+
 describe('unit · test services · every image is a tag pinned by digest', () => {
   // A tag is a pointer its publisher can move: the same commit could start a different server
   // tomorrow. The tag stays for the reader; the multi-arch index digest is what runs.

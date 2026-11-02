@@ -4,6 +4,7 @@
 // so both can run at once; `ci.yml` starts this file before `bun run check`.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { S3_GATEWAY_IMAGE } from './pinned-images';
 
 export const TEST_COMPOSE_PATH = 'docker/docker-compose.test.yml';
 export const TEST_ENV_PATH = 'docker/test-services.env';
@@ -99,7 +100,7 @@ services:
   # A directory under /data is a bucket, so the tmpfs mounted AT the bucket's path is the bootstrap.
   s3:
     <<: *silent
-    image: versity/versitygw:v1.8.0@sha256:30292fc2eeacc67a36993b01f7a7a5e3361a19cced0e80c1d71cfa2a4b0a2499
+    image: ${S3_GATEWAY_IMAGE}
     environment:
       VGW_BACKEND: posix
       VGW_BACKEND_ARG: /data

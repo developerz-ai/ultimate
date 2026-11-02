@@ -68,8 +68,10 @@ updates:
 
   # The `docker` ecosystem reads Dockerfiles only; the compose files pin their service images by
   # digest beside the tag too (scripts/test-services-shape.test.ts), and a pin nothing moves rots.
+  # The scaffold's pin moves in the same PR as docker/'s: the group is what spans the two
+  # directories, and test-services-shape.test.ts holds them equal.
   - package-ecosystem: docker-compose
-    directories: ['/docker']
+    directories: ['/docker', '/packages/cli/src/templates/pinned']
     schedule:
       interval: weekly
       day: monday
@@ -78,6 +80,9 @@ updates:
     labels: [dependencies, docker]
     commit-message:
       prefix: 'chore(docker)'
+    groups:
+      s3-gateway:
+        patterns: ['versity/versitygw']
     ignore:
       # The same Postgres-major rule as the Dockerfile ecosystem above (#655).
       - dependency-name: postgres
