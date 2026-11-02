@@ -31,7 +31,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | Planned commands | `PLANNED_COMMANDS` / `PLANNED_SUBCOMMANDS` (`cmd-planned.ts`): in the registry, exit `X_NOT_IMPLEMENTED` with a fix naming a shipped command |
 | Errors | codes + titles in `error-codes.ts`, a runnable line per code in `mcp-errors.ts` (typed over `CliErrorCode`), classes in `errors.ts` or beside their one thrower when `errors.ts` is at its ceiling. Never a bare `Error` |
 | Subprocesses | only through `exec.ts`'s injectable `Runner`; `gh` through `ctx.runner` with a required `fix` |
-| Templates | `templates/*.ts` return strings, pre-formatted for Biome (`wrap.ts`'s `wrapList` / `wrapImport` / `sortSpecifiers`); no fixture files on disk |
+| Templates | `templates/*.ts` return strings, pre-formatted for Biome (`wrap.ts`'s `wrapList` / `wrapImport` / `sortSpecifiers`); no fixture files on disk. The one data file is `templates/pinned/docker-compose.yml`: image pins Dependabot can rewrite, read by `pinned-images.ts` |
 | Strings | rendered output through `messages.ts` (missing key renders `⟦key⟧`). NOT in the catalog: `CommandSpec` summaries and usage, `Finding.cause` / `fix`, fixed-width table headers |
 | Facts | load the app (`app-load.ts`), then project a framework package's registry — never parse source for primitives, never re-derive a fact another package owns |
 | Public API | `src/index.ts`, explicit re-exports only. Every name there is a semver promise; a name nothing outside this package reads is not exported (22.0.0 pruned 236) |

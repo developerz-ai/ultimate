@@ -1,0 +1,6 @@
+# The image pins a scaffolded app's compose files read (pinned-images.ts). YAML because Dependabot
+# rewrites only compose files and Dockerfiles: a pin held in a template string is one it never sees.
+# It is grouped in .github/dependabot.yml with docker/, so one PR moves every copy together.
+services:
+  s3:
+    image: versity/versitygw:v1.9.0@sha256:eb7f786fcd91e72194e48fcf1ac16302d686bf8e3a71434bdbc067a6efd3fdc7
