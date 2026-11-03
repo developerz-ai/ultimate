@@ -52,7 +52,7 @@ describe('unit · X_NOT_IN_APP', () => {
   });
 
   test('nothing here at all still says to start one', async () => {
-    expect(refusal(await tree([])).fix).toBe('x new myapp && cd myapp');
+    expect(refusal(await tree([])).fix).toBe('bunx create-ultimate myapp && cd myapp');
   });
 });
 

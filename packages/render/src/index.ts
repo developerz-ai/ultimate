@@ -99,7 +99,7 @@ export type { IslandProps, JsonValue } from './island-props';
 export { ISLAND_PROPS_MAX_BYTES } from './island-props';
 export { parseByteBudget } from './islands';
 export type { JsxComponent, JsxNode, JsxProps } from './jsx';
-export { Fragment, h, isJsxNode, JSX_NODE } from './jsx';
+export { Fragment, h, isJsxNode } from './jsx';
 export type { ModeCheckContext, ModeSpec, RouteShape } from './modes';
 export {
   assertModeInvariants,

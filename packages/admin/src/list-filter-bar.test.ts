@@ -3,9 +3,9 @@
 // the bar must narrow the list an operator is looking at, never silently widen it.
 
 import { describe, expect, test } from 'bun:test';
+import { byComponent, byTag, nodesOf } from '@ultimat3/core/render-nodes';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
-import { byComponent, byTag, nodesOf } from './inert-jsx-fixture';
 import type { AdminListRequest } from './list-scope';
 import type { AdminResource } from './resource';
 import type { WidgetContext } from './widget-value';
@@ -78,6 +78,7 @@ const bar = (request: AdminListRequest = {}, over: Partial<WidgetContext> = {}) 
       clearHref: '/admin/orders?scope=open',
       returnTo: '/admin/orders?scope=open&f.paid=true',
     }),
+    { components: 'keep' },
   );
 
 /** The CONTROL carrying a parameter — the component, not the `<input>` it renders in turn. */

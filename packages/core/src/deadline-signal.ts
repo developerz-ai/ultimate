@@ -1,11 +1,22 @@
 // One request's signal: a deadline plus the caller's own signal, undone when the request settles.
-// `AbortSignal.any([AbortSignal.timeout(ms), outer])` composed the same thing and could not be
-// undone — every read hung one listener (and one composite) on a session-long `outer` and armed a
-// timer that outlived the answer. The shape is `@ultimat3/jobs`' `createRunSignal`.
+// `AbortSignal.any([AbortSignal.timeout(ms), outer])` could not be undone: every read hung one
+// listener on a session-long `outer` and armed a timer that outlived the answer. In core since
+// `outbound()` arms one per attempt; `@ultimat3/scraping` imports it from `@ultimat3/core/outbound`.
 
-import { type DeadlineTimer, platformDeadlineTimer } from './clock';
+/**
+ * The timer a request DEADLINE is armed on — not a wait, but a timer all the same, so a test hands
+ * its own and fires it rather than waiting. Cleared when the request settles, where
+ * `AbortSignal.timeout` stayed armed for its whole span after the answer had landed.
+ */
+export interface DeadlineTimer {
+  set(fire: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
 
-export type { DeadlineTimer } from './clock';
+export const platformDeadlineTimer: DeadlineTimer = Object.freeze({
+  set: (fire: () => void, ms: number): unknown => setTimeout(fire, ms),
+  clear: (handle: unknown): void => clearTimeout(handle as ReturnType<typeof setTimeout>),
+});
 
 export interface DeadlineSignal extends Disposable {
   /** Aborts at the deadline (a `TimeoutError`, as `AbortSignal.timeout`'s) or with `outer`. */

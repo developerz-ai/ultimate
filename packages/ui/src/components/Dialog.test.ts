@@ -3,7 +3,7 @@
 // closed the dialog under a user who was only selecting text. Both halves must land on the backdrop.
 
 import { describe, expect, test } from 'bun:test';
-import { attachRef, byTag, fire, one, renderNodes } from '../jsx-probe-fixture';
+import { attachRef, byTag, fire, one, renderNodes } from '@ultimat3/core/render-nodes';
 import { Dialog } from './Dialog';
 
 describe('Dialog backdrop dismiss', () => {

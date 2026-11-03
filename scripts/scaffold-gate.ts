@@ -1,18 +1,18 @@
 #!/usr/bin/env bun
-// A freshly scaffolded app's OWN `bun run setup && bun run check`, run as CI's check — the two
+// A freshly scaffolded app's OWN `bun run setup && bun run verify`, run as CI's check — the two
 // commands a dz-runner box runs on an Ubuntu VM with bun and git and nothing else, and the contract the
 // platform depends on. Nothing here re-spells them: the scripts under test are the ones `x new`
 // wrote, so a change to either is measured on the next push rather than discovered on a box.
 //
 // NO WAIVER AND NO FIX-FOLLOW, and both absences are the point:
 //
-//   * The ratchet this file used to carry allowed `budgets` to stay red, because `x verify` weighs
-//     `.x/build-stats.json` and nothing in the gate wrote one. `bun run check` builds BEFORE it
-//     verifies, which is what makes the step measurable — so the allowance had nothing left to
-//     excuse, and an allowance nobody needs is a hole waiting for the next red step to fall into.
+//   * The ratchet this file used to carry allowed `budgets` to stay red, because `x verify` weighed
+//     `.x/build-stats.json` and nothing in the gate wrote one. The step now builds when the stats
+//     are missing (plan 101, 21), which is what makes it measurable — so the allowance has nothing
+//     to excuse, and an allowance nobody needs is a hole waiting for the next red step to fall into.
 //   * The fix-follow loop asked a weaker question than the contract does. "Red, then green after
 //     running the printed `fix:`" is not what a box gets: it runs the two commands once. The FIRST
-//     `bun run check` is the one that has to be green, and a gate that repairs the tree it is
+//     `bun run verify` is the one that has to be green, and a gate that repairs the tree it is
 //     measuring cannot tell you whether it was.
 //
 //   bun run scripts/scaffold-gate.ts <app dir> [--json]
@@ -43,12 +43,12 @@ const SCRIPT = 'scaffold-gate';
  * `bin/` path: the scripts are `bin/*.ts` that Bun runs, the same on Linux, macOS and Windows.
  */
 export const SETUP_COMMAND = 'bun run setup';
-export const CHECK_COMMAND = 'bun run check';
+export const GATE_COMMAND = 'bun run verify';
 
 /**
  * Steps that must be GREEN, not merely not-red. A skipped step satisfies every other rule here,
- * and `budgets` is the one where that would be a silent regression: `bun run check` spends a whole
- * static build ahead of the gate for no other reason than to make this step measurable, so a
+ * and `budgets` is the one where that would be a silent regression: on a fresh scaffold it spends
+ * a whole static build for no other reason than to make itself measurable, so a
  * `budgets` that reports `skipped` means the build bought nothing and nobody would see it.
  */
 export const MEASURED_STEPS: readonly string[] = ['budgets'];
@@ -59,7 +59,7 @@ export const MEASURED_STEPS: readonly string[] = ['budgets'];
  * space in it, and `cd /tmp/my app` enters `/tmp/my` or nothing at all.
  */
 export const reproduce = (dir: string): string =>
-  `cd ${quoteArg(dir)} && ${SETUP_COMMAND} && ${CHECK_COMMAND} --json`;
+  `cd ${quoteArg(dir)} && ${SETUP_COMMAND} && ${GATE_COMMAND} --json`;
 
 /** The first half alone, for a finding raised before the gate could run. */
 export const reproduceSetup = (dir: string): string => `cd ${quoteArg(dir)} && ${SETUP_COMMAND}`;
@@ -68,7 +68,7 @@ export const reproduceSetup = (dir: string): string => `cd ${quoteArg(dir)} && $
 export const appDir = (dir: string): string => resolve(dir);
 
 /** `bun run <script>` through the running Bun's own path: no shell and no PATH lookup decide it. */
-export const appCommand = (script: 'setup' | 'check', ...args: string[]): string[] => [
+export const appCommand = (script: 'setup' | 'verify', ...args: string[]): string[] => [
   process.execPath,
   'run',
   script,
@@ -127,7 +127,7 @@ export const scaffoldFindings = (input: ScaffoldGateInput): readonly Finding[] =
     return [
       {
         code: 'X_SCAFFOLD_VERIFY_UNREADABLE',
-        cause: `${CHECK_COMMAND} in the scaffolded app at ${dir} printed no step table this gate could parse, so no step's verdict is known — the build ahead of the gate is in the same output and fails the same way`,
+        cause: `${GATE_COMMAND} in the scaffolded app at ${dir} printed no step table this gate could parse, so no step's verdict is known — the build the budgets step runs is in the same output and fails the same way`,
         fix: reproduce(dir),
         at: dir,
       },
@@ -152,7 +152,7 @@ export const scaffoldFindings = (input: ScaffoldGateInput): readonly Finding[] =
   if (red.length > 0) {
     findings.push({
       code: 'X_SCAFFOLD_GATE_RED',
-      cause: `${red.join(', ')} ${red.length === 1 ? 'is' : 'are'} red on the FIRST ${CHECK_COMMAND} in the scaffolded app at ${dir}, and this gate waives nothing: a box runs ${SETUP_COMMAND} and ${CHECK_COMMAND} once`,
+      cause: `${red.join(', ')} ${red.length === 1 ? 'is' : 'are'} red on the FIRST ${GATE_COMMAND} in the scaffolded app at ${dir}, and this gate waives nothing: a box runs ${SETUP_COMMAND} and ${GATE_COMMAND} once`,
       fix: reproduce(dir),
       at: dir,
     });
@@ -163,7 +163,7 @@ export const scaffoldFindings = (input: ScaffoldGateInput): readonly Finding[] =
   if (unmeasured.length > 0) {
     findings.push({
       code: 'X_SCAFFOLD_GATE_RED',
-      cause: `${unmeasured.join(', ')} reported skipped rather than green in the scaffolded app at ${dir} — ${CHECK_COMMAND} runs a static build ahead of the gate precisely so that step measures something`,
+      cause: `${unmeasured.join(', ')} reported skipped rather than green in the scaffolded app at ${dir} — on a fresh scaffold that step runs a static build precisely so it measures something`,
       fix: reproduce(dir),
       at: dir,
     });
@@ -201,11 +201,11 @@ export interface ScaffoldRun {
 }
 
 /**
- * `bun run setup` then `bun run check --json` — the app's own scripts, in the app's own directory,
- * once each. `bun run check` forwards `--json` to the build AND to the gate, which is why the step
- * table is taken from the LAST `{`-line rather than the first.
+ * `bun run setup` then `bun run verify --json` — the app's own scripts, in the app's own directory,
+ * once each. The step table is taken from the LAST `{`-line rather than the first, so an app whose
+ * own script prints a document ahead of the gate's is read the same way.
  *
- * A failed `bun run setup` short-circuits: `bun run check` on an app whose database was never
+ * A failed `bun run setup` short-circuits: `bun run verify` on an app whose database was never
  * migrated reports a red table describing the setup failure twice, in steps that have nothing to do with it.
  */
 export const runScaffoldGate = async (dir: string, runner: Runner): Promise<ScaffoldRun> => {
@@ -220,7 +220,7 @@ export const runScaffoldGate = async (dir: string, runner: Runner): Promise<Scaf
       timings: [{ name: SETUP_COMMAND, ms: setup.durationMs, ok: false }],
     };
   }
-  const check = await runner(appCommand('check', '--json'), { cwd: appDir(dir) });
+  const check = await runner(appCommand('verify', '--json'), { cwd: appDir(dir) });
   return {
     setupMs: setup.durationMs,
     setupOk: true,
@@ -229,7 +229,7 @@ export const runScaffoldGate = async (dir: string, runner: Runner): Promise<Scaf
     steps: parseSteps(check.stdout),
     timings: [
       { name: SETUP_COMMAND, ms: setup.durationMs, ok: true },
-      { name: CHECK_COMMAND, ms: check.durationMs, ok: check.ok },
+      { name: GATE_COMMAND, ms: check.durationMs, ok: check.ok },
       ...stepTimings(check.stdout),
     ],
   };
@@ -267,7 +267,7 @@ if (import.meta.main) {
       script: SCRIPT,
       summary:
         findings.length === 0
-          ? `${dir}: ${SETUP_COMMAND} in ${run.setupMs}ms, ${CHECK_COMMAND} green in ${run.checkMs}ms — ${total - red.length} of ${total} steps pass`
+          ? `${dir}: ${SETUP_COMMAND} in ${run.setupMs}ms, ${GATE_COMMAND} green in ${run.checkMs}ms — ${total - red.length} of ${total} steps pass`
           : `${findings.length} scaffold finding(s) — ${total - red.length} of ${total} steps pass`,
       findings,
       // The tracked apps' renderer: a red step brings its own findings and captured output, so a

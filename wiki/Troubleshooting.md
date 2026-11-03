@@ -11,6 +11,7 @@ Run these first, in this order. All support `--json`.
 | `x doctor --json` | Bun version, env schema, DB/transport/storage reachability, port conflicts |
 | `x verify --json` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap |
 | `x errors explain <CODE> --json` | cause, fix command, docs URL for any `X_*` code |
+| `x docs "<symptom or question>" --json` | the framework's own docs and this wiki, offline from the install — the first lookup for a symptom with no code |
 | `x doctor --json` | environment, versions, drift, ports, PWA prerequisites — each with a fix |
 | `x dev` then `/_x` | the live panels: routes, timeline, jobs, db, mail, cache, policy, manifest |
 | `x status --json` · `x logs tail --json` | **planned**, not shipped — both throw `X_NOT_IMPLEMENTED` naming the two rows above ([CLI reference](CLI-Reference)) |
@@ -24,7 +25,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 | Process exits in ~40ms, `X_ENV_MISSING` | a key in the `defineEnv` schema is missing, or present but fails its schema (short secret, non-URL, bad enum) | the cause names every offending key and its constraint at once; `x doctor --json` lists them too |
 | `X_CONFIG_INVALID` at load | `app.config.ts` field invalid — `defaultLocale` not in `locales`, `db.pool < 1`, non-IANA `timeZone`, `realtime.transport` set without `realtime.urlEnv` | `x config show --json`, then edit the field named in `cause` |
 | `X_ROLE_INVALID` | `ROLE` is not one of `web sync worker scheduler migrate replicator all` | fix the env var on that service |
-| `X_BUN_VERSION` | below the Bun 1.3 floor | upgrade Bun |
+| `X_BUN_VERSION` | below the Bun floor, `>= 1.4.4` (`engines.bun`) | `bun upgrade` |
 | Container starts then loops | `/readyz` failing, not `/healthz` — a registered check answers `failing`, and which one is in the body | `curl /readyz` **from the container itself** (`docker exec`, `kubectl exec`, a port-forward — the detail goes to `healthDetailPeers`, default `['loopback']`) and read `checks`, a map of name → `ok`/`failing`: `database` is registered always, `transport` whenever it can report a connection, so a disconnected NATS node fails on that one. Read `registered` with it: `0` means nothing was checked, so the 200 meant only that the socket was bound |
 | Config edits have no effect | you edited a per-environment file that does not exist — config is **one file** | put the difference in an env var ([Configuration](Configuration)) |
 
@@ -56,7 +57,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 | `X_BOUNDARY_SERVICE_TO_HTTP` | a service imported request/headers | a service that knows about requests cannot be reused by a job |
 | `X_BOUNDARY_PACKAGE_TO_APP` | a file under `packages/` imports `apps/` at runtime, relative or by workspace name. `import type` is fine, and so is `packages/db/src/` reading an entity module | move the shared code into the package, or import in the opposite direction |
 | `X_FEATURE_REQUIRED` | `x g query` or `x g backfill` named no slice with an `entity.ts`: neither creates a table | run the printed line: `--feature <closest slice>`, or `x g resource <name>` for a new table |
-| Tier violation in a framework package | imported sideways or upward | `bun run boundaries`; consult the tier table in [Contributing](Contributing) |
+| Tier violation in a framework package | imported sideways or upward | `bun run boundaries`; consult the tier table in [Project layout](Project-Layout#framework-package-tiers) |
 
 Boundaries run on pre-push and inside `x verify`. They are build errors, never lint warnings.
 

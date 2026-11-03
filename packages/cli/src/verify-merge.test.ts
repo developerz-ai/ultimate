@@ -253,7 +253,7 @@ describe('unit · reading a part', () => {
     expect(sum()).toEqual({ ran: 6, skipped: 0 });
   });
 
-  test('the LAST line is the document — bin/check --json prints the build first', () => {
+  test('the LAST line is the document — an older scaffold’s bin/check --json prints the build first', () => {
     const doc = renderJson({
       ok: true,
       command: 'verify',

@@ -95,6 +95,12 @@ describe('a count the shipped rule could not read', () => {
     ).toEqual([]);
   });
 
+  test('a tally with a thousands separator is one number, not a short tally', () => {
+    // `wiki/FAQ.md:30`: "0 of 9,028 requests failed" on a line naming the `roadmap` step read as
+    // "0 of 9" steps, because `\b` falls between the 9 and the comma.
+    expect(gaps('the `roadmap` step; 0 of 9,028 requests failed in kind')).toEqual([]);
+  });
+
   test('a spelled-out total with no `steps` after it — how packages/cli/README.md wrote it', () => {
     const [gap] = gaps('Seventeen, in cost order, defined once as `VERIFY_STEP_NAMES`.');
     if (gap === undefined) return expect.unreachable('a spelled-out total must be reported');

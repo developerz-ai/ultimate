@@ -68,7 +68,7 @@ describe('unit · @ultimat3/flags errors', () => {
 /**
  * Axiom 4: a `fix:` is an instruction, and an instruction that does not parse is not one. The
  * subject kind and the actor id are app-supplied, so neither can be pasted into a JS literal
- * unquoted — treasury's own ids are `bank_integration:<name>`, and a `bank-integration` kind is
+ * unquoted — one adopter's own ids are `<kind>:<name>`, and a `payments-provider` kind is
  * one hyphen away from an invalid object key.
  */
 describe('unit · the subject fix is executable JavaScript', () => {
@@ -91,7 +91,7 @@ describe('unit · the subject fix is executable JavaScript', () => {
   test('a kind that is not a valid identifier still yields a parseable call', () => {
     const error = flagSubjectRequired({
       key: 'scraper.persist-profile',
-      kind: 'bank-integration',
+      kind: 'payments-provider',
       actorId: 'user-7',
       via: 'subjects',
     });
@@ -101,7 +101,7 @@ describe('unit · the subject fix is executable JavaScript', () => {
   test('a key or actor id carrying a quote does not break the fix', () => {
     const record = flagSubjectRequired({
       key: 'flag\'with"quotes',
-      kind: 'bank-integration',
+      kind: 'payments-provider',
       actorId: 'actor\'with"quotes',
       via: 'subjects',
     });

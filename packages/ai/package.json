@@ -2,6 +2,18 @@
   "name": "@ultimat3/ai",
   "version": "29.4.0",
   "description": "LLM gateway, versioned prompts, evals as tests, embeddings, hybrid vector search, RAG",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "ai",
+    "llm",
+    "agents",
+    "evals",
+    "rag",
+    "embeddings"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/MCP-And-AI",
   "license": "MIT",
   "type": "module",
   "repository": {

@@ -6,9 +6,10 @@ import {
   type AnySchema,
   type Check,
   checkOf,
-  fail,
   isPlainObject,
   makeSchema,
+  mistyped,
+  rejected,
   type Schema,
 } from './builder';
 import { expected } from './describe-value';
@@ -101,13 +102,23 @@ export function discriminatedUnionSchema<S extends readonly [AnySchema, ...AnySc
 
   return makeSchema<InferInput<S[number]>, Out>(node, (value, path) => {
     if (!isPlainObject(value)) {
-      return fail(path, expected(`an object with a "${discriminant}" discriminant`, value));
+      return mistyped(
+        path,
+        expected(`an object with a "${discriminant}" discriminant`, value),
+        value,
+        'object',
+      );
     }
     const branch = branches.get(value[discriminant]);
     if (branch === undefined) {
-      return fail(
+      const listed = renderKnown(known);
+      return rejected(
         [...path, discriminant],
-        expected(`one of ${renderKnown(known)}`, value[discriminant]),
+        expected(`one of ${listed}`, value[discriminant]),
+        'union',
+        {
+          values: listed,
+        },
       );
     }
     // The named branch's issues, and only those: the caller already said which shape they meant,

@@ -3,6 +3,8 @@
 Transactional email as data. One template renders **both** an HTML part and a plain-text part,
 every string is an i18n key, every colour is a design token, and delivery is a job.
 
+`bun add @ultimat3/mail` · guide: [Mail](https://github.com/developerz-ai/ultimate/wiki/Mail)
+
 ```ts
 import { defineMail, send, blocks, t } from '@ultimat3/mail';
 

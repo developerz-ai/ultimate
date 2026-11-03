@@ -73,7 +73,8 @@ describe('unit · what x g prints after a resource', () => {
       'bunx x db migrate',
       MEASURE_PAGE,
     ]);
-    expect(MEASURE_PAGE).toBe('bunx x build --target static && bunx x verify --only budgets');
+    // One command: `budgets` builds when the page is newer than the stats (plan 101, 21).
+    expect(MEASURE_PAGE).toBe('bunx x verify --only budgets');
   });
 
   test('an entity alone owes the migration and nothing to weigh', () => {

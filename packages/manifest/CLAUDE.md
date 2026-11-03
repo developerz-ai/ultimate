@@ -30,6 +30,8 @@ by the CLI, not imported.
 | `agents-md.ts` | read-only AGENTS.md existence + size check |
 | `docs-scan.ts` | read-only: an installed package tree → `DocEntry[]`. Never writes |
 | `docs-search.ts` | pure ranking of `DocEntry[]` against a question. No I/O, no clock |
+| `docs-wiki.ts` | read-only: a shipped `wiki/` directory → `DocEntry[]`, topic `wiki.<Page>#<GitHub anchor>`; `wikiSection` is one whole section. Never reads `Error-Codes.md` |
+| `docs-tokens.ts` | pure: the query/name splitter and the one-suffix stem both sides of `docs-search` share |
 | `diff-rows.ts` | a read's row, member by member: removed, retyped or no longer required is breaking, added is additive. Never `canonicalJson` inequality: an entity gaining a column would flip every `rows: X.$schema` read |
 | `diff-mounts.ts` | a bearer mount's cut, per (scope, name): the one classifier that sees a held token's 404, because the primitive stays registered |
 
@@ -110,6 +112,8 @@ by the CLI, not imported.
 - `docs-scan.ts` indexes the **file header comment**, not JSDoc: `As of 2026-08`, 99.8% of source
   files carry a header, 42.3% of public exports carry JSDoc, and `job()` is in the missing 57.7%.
 - A guide topic is unique within its package — repeated headings take a document-order suffix.
+- **`docs-search-eval-set-fixture.ts` is the ranking's regression set**: `docs-search.test.ts` holds it at
+  `EVAL_FLOOR` (18 of 20) over the repo's `packages/` and `wiki/`. Ranking is not a stable surface.
 - Neither docs module may import a registry or a clock. `docs-search.ts` is pure; `docs-scan.ts`
   reads files and nothing else.
 - **A new manifest field ⇒ a `diff-*.ts` rule for it.** Always — a field nothing classifies is a

@@ -58,6 +58,30 @@ All of them read locale and zone from the context and pass `timeZone` explicitly
 | Adding `24 * 60 * 60 * 1000` for "tomorrow" | wrong on the 23h and 25h DST days | add one **calendar** day in the zone |
 | `date` column read as an instant | shifts by a day west of UTC | `date` columns are civil dates; never convert |
 | Formatting in a service or repo | untestable, unlocalizable | format in the route/component only |
+| `date.setMonth(date.getMonth() + 1)` | Jan 31 + 1 rolls into March | `addMonthsInZone(at, 1, zone)` or `addPlainMonths(date, 1)` — [Month arithmetic](#month-arithmetic) |
+
+## Month arithmetic
+
+A month has no fixed length, so both helpers clamp the day to the target month's last day.
+
+| Function | Answers |
+|---|---|
+| `addPlainMonths(date, months)` | a `PlainDate`: `2026-01-31` + 1 → `2026-02-28`; `2024-01-31` + 1 → `2024-02-29`; negative counts go back. A non-integer count or a year outside `0000`–`9999` is `X_SCHEDULE_INVALID` |
+| `addMonthsInZone(at, months, timeZone)` | an `Instant` at the same **local** wall-clock time `months` calendar months away; `timeZone` is required. A wall time that does not exist moves forward by the gap; one that exists twice takes the earlier instant |
+| `plainDateRange(start, end, { exclusive?, stepDays? })` | a frozen array of `PlainDate`s, `[start, end]` by default; a span over `MAX_PLAIN_DATE_RANGE_DAYS` (3660) is `X_SCHEDULE_INVALID` |
+
+**Compute a recurring date from its anchor, never by chaining.** A clamp does not compose:
+`2026-01-31` + 1 + 1 is `2026-03-28`, `2026-01-31` + 2 is `2026-03-31`.
+
+```ts
+import { addMonthsInZone, fromIso } from '@ultimat3/time';
+
+const anchor = fromIso('2026-01-31T00:00:00-05:00');
+const renewal = (n: number) => addMonthsInZone(anchor, n, 'America/Bogota');
+// renewal(1): Feb 28 00:00, renewal(2): Mar 31 00:00 — never stuck on the 28th
+```
+
+Full rules: [`packages/time/README.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/time/README.md#months-clamp).
 
 ## Duration strings
 

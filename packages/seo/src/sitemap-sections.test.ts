@@ -8,7 +8,7 @@ import type { RouteRecord } from './routes';
 import { buildSitemap, SITEMAP_MAX_BYTES } from './sitemap';
 import { sectionOf } from './sitemap-sections';
 
-const ORIGIN = 'https://notificado.co';
+const ORIGIN = 'https://a.example.com';
 const BASE = { baseUrl: ORIGIN } as const;
 
 function route(partial: Partial<RouteRecord> & Pick<RouteRecord, 'path' | 'file'>): RouteRecord {
@@ -47,7 +47,7 @@ describe('no sections configured', () => {
     expect(result.files.map((file) => file.path)).toEqual(['/sitemap.xml']);
     expect(result.files[0]?.xml.length).toBe(3047);
     expect(sha(result.files[0]?.xml ?? '')).toBe(
-      'e17df8fe22fec2d3f10140132f883e707bfbcc934f55f98f455188e745b36c7e',
+      'd1e9f8ed8d62ee189eed0a17963f6de357ea319ad1c880a5be0549632e09c688',
     );
   });
 
@@ -55,7 +55,7 @@ describe('no sections configured', () => {
     const result = await buildSitemap(site(), { ...BASE, maxUrls: 3 });
     const all = [result.index, ...result.files].map((file) => `${file?.path}\n${file?.xml}`);
     expect(sha(all.join('\n'))).toBe(
-      'de7c14d80e71b8b804596b91a108ad0dc3ea7cd4d5bf2d8f4eb2fc406a25a457',
+      '16223cde519d1b618053bb9b67abe39cb3a60563748b4ab100bf6dea986cb434',
     );
   });
 

@@ -3,7 +3,7 @@
 // — `@ultimat3/money`'s `Money`, `@ultimat3/entity`'s `MoneyValue` — so it earns a file a reader
 // can open by name instead of scrolling to.
 
-import { fail, failWith, isPlainObject, makeSchema, pass, type Schema } from './builder';
+import { failWith, isPlainObject, makeSchema, mistyped, pass, type Schema } from './builder';
 import { expected } from './describe-value';
 import type { StandardIssue } from './standard';
 
@@ -101,7 +101,9 @@ export const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue
     },
   },
   (value, path) => {
-    if (!isPlainObject(value)) return fail(path, expected('a Money object', value));
+    if (!isPlainObject(value)) {
+      return mistyped(path, expected('a Money object', value), value, 'money');
+    }
     const minor = value['minor'];
     const currency = value['currency'];
     const scale = value['scale'];
@@ -113,12 +115,14 @@ export const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue
       issues.push({
         message: expected('a safe integer number of minor units', minor),
         path: [...path, 'minor'],
+        rule: 'money',
       });
     }
     if (!isCurrencyCode(currency)) {
       issues.push({
         message: expected('a 3-letter ISO 4217 code', currency),
         path: [...path, 'currency'],
+        rule: 'money',
       });
     }
     if (scale !== undefined && !isMoneyScale(scale)) {
@@ -128,6 +132,7 @@ export const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue
           scale,
         ),
         path: [...path, 'scale'],
+        rule: 'money',
       });
     }
     if (issues.length > 0) return failWith(issues);

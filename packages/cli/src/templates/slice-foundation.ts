@@ -38,19 +38,17 @@ const errorsSource = (feature: NameSet): string => {
   return `// The ${feature.kebab} feature's X_* codes. Never throw a bare Error: an agent reading the failure
 // needs the code, the cause and the exact command that fixes it.
 
-import { UltimateError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core';
 
-// No \`docs:\`. \`UltimateError\` resolves it from the code's registered descriptor, so the link has
-// one home; a per-code URL written here is a page that does not exist.
-export class ${feature.pascal}NotFoundError extends UltimateError {
-  constructor(input: { id: string }) {
-    super({
-      code: '${errorCode}',
-      cause: \`no ${feature.kebab} with id \${input.id}\`,
-      fix: 'x queries list --json, then pass an id the ${feature.kebab} read returns',
-    });
-  }
-}
+// One declaration: the title, the 404 a response answers, and the class a service throws. No
+// \`docs:\` — it resolves from the code's registered descriptor, so the link has one home.
+export const ${feature.pascal}NotFoundError = defineError<{ readonly id: string }>({
+  code: '${errorCode}',
+  title: 'no such ${feature.kebab}',
+  status: 404,
+  cause: (input) => \`no ${feature.kebab} with id \${input.id}\`,
+  fix: 'x queries list --json, then pass an id the ${feature.kebab} read returns',
+});
 `;
 };
 
@@ -170,7 +168,7 @@ const listedExports = (code: string): readonly string[] =>
 
 /**
  * Whether `source` — a slice module as it stands on the app's disk — exports the VALUE `name`.
- * Read at generation time because assuming it was measured: `x g action` into ai-maxxing's
+ * Read at generation time because assuming it was measured: `x g action` into one adopter's
  * `fleet` slice wrote `import { FleetNotFoundError } from '../errors'` into a slice whose
  * `errors.ts` declared `HostNotFoundError` and `SessionNotFoundError` and no `FleetNotFoundError`.
  * The file failed at import — and because `x db gen` and `x manifest` load every module, one

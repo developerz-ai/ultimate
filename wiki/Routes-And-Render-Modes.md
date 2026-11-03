@@ -482,7 +482,7 @@ shell — an `@ultimat3/admin` mount whose `guardedPage()` returned `AdminPageDe
 
 **Not a throw, deliberately.** Throwing is the other 404 and it is still there: a route the table
 does not have, or a loader that throws `X_NOT_FOUND`, gets the framework's error page —
-outside the app's shell, no sidebar, no session list. Measured in ai-maxxing on 2026-09-07,
+outside the app's shell, no sidebar, no session list. Measured in one adopter's app on 2026-09-07,
 `/fleet/nope` rendered the right page inside the shell and answered 200, because the only way to
 the status was the way that lost the shell. The two answers stay distinct: **the table lacks the
 route** → throw → error page; **the route exists and says "not found"** → `withStatus` → its own page.

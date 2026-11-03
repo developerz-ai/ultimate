@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { drainDeadlineMs } from '@ultimat3/core';
 import { names } from './naming';
+import { containerFiles } from './scaffold-container';
 import { composeProdFile } from './scaffold-container-compose';
 
 interface Service {
@@ -31,11 +32,28 @@ describe('unit · the scaffolded compose file is hardened and rotates its logs',
     expect(app.length).toBeGreaterThan(4);
     for (const [name, service] of app) {
       expect([name, service.read_only]).toEqual([name, true]);
-      // The two paths the app writes: the OS temp dir and the embedded-state directory.
-      expect([name, service.tmpfs]).toEqual([name, ['/tmp', '/app/.x']]);
+      // The two paths the app writes: the OS temp dir and the embedded-state directory, the
+      // second owned by the image's runtime user (the next test reads that number off the image).
+      expect([name, service.tmpfs?.[0]]).toEqual([name, '/tmp']);
+      expect([name, service.tmpfs?.[1]?.split(':')[0]]).toEqual([name, '/app/.x']);
       expect([name, service.cap_drop]).toEqual([name, ['ALL']]);
       expect([name, service.security_opt]).toEqual([name, ['no-new-privileges:true']]);
       expect([name, typeof service.mem_limit]).toEqual([name, 'string']);
+    }
+  });
+
+  // A tmpfs mounts root-owned. Under `read_only: true` the image's `chown` of `/app/.x` is hidden
+  // by the mount, so a non-root role met `X_STORAGE_UNWRITABLE … EACCES mkdir '/app/.x/storage'`
+  // and every role crash-looped on `x deploy --method compose` (as run 2026-11-02).
+  test("the .x tmpfs is owned by the uid the scaffold's Dockerfile runs as", () => {
+    const dockerfile = containerFiles(names('shop')).find((f) => f.path === 'docker/Dockerfile');
+    const contents = dockerfile?.contents;
+    const user = /^USER (\d+):(\d+)$/m.exec(typeof contents === 'string' ? contents : '');
+    expect(user).not.toBeNull();
+    const [, uid, gid] = user ?? [];
+    for (const [name, service] of Object.entries(services())) {
+      if (name === 'db') continue;
+      expect([name, service.tmpfs?.[1]]).toEqual([name, `/app/.x:uid=${uid},gid=${gid}`]);
     }
   });
 

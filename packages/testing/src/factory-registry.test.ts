@@ -7,11 +7,10 @@ import { defaultFor, factoriesFor } from './factory-registry';
 import { testName } from './test-types';
 
 const registry = {
-  orgs: { kind: 'entity', table: 'orgs', columns: { id: 0, name: 0 } },
+  orgs: { $table: 'orgs', $columns: { id: 0, name: 0 } },
   posts: {
-    kind: 'entity',
-    table: 'posts',
-    columns: {
+    $table: 'posts',
+    $columns: {
       id: 0,
       orgId: 0,
       title: 0,

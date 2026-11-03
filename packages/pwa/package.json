@@ -2,6 +2,16 @@
   "name": "@ultimat3/pwa",
   "version": "29.4.0",
   "description": "Generated service worker, web manifest, icons, push and version-skew handling.",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "pwa",
+    "service-worker",
+    "offline",
+    "push"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/PWA-And-Offline",
   "license": "MIT",
   "type": "module",
   "repository": {

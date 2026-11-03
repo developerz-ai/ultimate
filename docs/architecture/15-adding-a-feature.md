@@ -7,7 +7,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | # | Step | Command | Lands in |
 |---|---|---|---|
 | 0 | Pick the surface | — | see the table below |
-| 1 | Generate the slice | `x g resource post --admin` | 35 files — 33 without `--admin`, `As of 2026-10-01`. A resource already ships a live list query; `--live` belongs to `x g query` and is refused here. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
+| 1 | Generate the slice | `x g resource post --admin` | 41 files — 38 without `--admin`; 43 and 40 once `x.manifest.json` and `openapi.json` exist (it re-projects both), `As of 2026-11-03`. A resource already ships a live list query; `--live` belongs to `x g query` and is refused here. What each file is: [`12-generated-app.md`](./12-generated-app.md). Re-derive with `--dry-run --json` and count `data.files`, plus `data.refreshes` when those two exist; a stale number here is `X_DOC_FILE_COUNT_STALE` from the gate's `manifest` step |
 | 2 | Entity + invariants | edit | `apps/web/app/post/entity.ts` |
 | 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/<stamp>_create_posts.{sql,snapshot.json,hash}`, and the schema dump: `packages/db/schema/04_tables/posts.sql` plus its index and foreign-key files |
 | 4 | Apply | `x db migrate` | the dev database; the schema dump again, when a migration was written by hand |
@@ -20,7 +20,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | 11 | i18n keys | `x i18n sync es` | `packages/i18n/catalogs/{en,es}.json` (merged in) |
 | 12 | Tests | fill the scaffolds | `*.test.ts` next to each source |
 | 13 | Manifest | `x manifest` | `x.manifest.json`, `openapi.json` |
-| 14 | Gate | `bun run check` | `x build --target static`, then `x verify` — exit 0 = shippable. **Not `x verify` alone**: `budgets` weighs `.x/build-stats.json`, which only the build writes |
+| 14 | Gate | `x verify` | exit 0 = shippable. **`x verify` alone**: `budgets` runs the static build itself when `.x/build-stats.json` is missing or older than the source (`As of 30.0`) |
 
 ## 0. Pick the surface
 
@@ -280,17 +280,17 @@ The assertion that matters per type: **contract** — a non-owner is denied with
 
 ```bash
 x manifest
-bun run check
-bun run check --json | tail -n 1 | jq '.steps[] | select(.ok == false)'
+x verify
+x verify --json | jq '.steps[] | select(.ok == false)'
 ```
 
 Green = shippable. There is no `--skip`.
 
-`bun run check` is `x build --target static` and then `x verify`, in that order and for one reason: the
-`budgets` step compares each declared limit against measured bytes in `.x/build-stats.json`, and
-that build is the file's only writer — a bare `x verify` reports `X_BUDGET_UNMEASURED` on an app
-nobody has built. `--json` is forwarded to both commands, each emits one object, and a machine
-consumer takes the last line.
+`x verify` is the whole gate, `As of 30.0`. The `budgets` step compares each declared limit against
+measured bytes in `.x/build-stats.json`, and when that file is missing, of an earlier measurement
+rule, or older than the newest app source, the step runs `x build --target static` first (into
+`.x/verify-static`, under its own deadline). After an edit that costs one static build; on an
+unchanged tree, nothing. A failed build is the step's verdict, with the build's own findings.
 
 ## When it fails
 

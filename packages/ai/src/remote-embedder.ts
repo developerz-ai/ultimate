@@ -6,7 +6,14 @@
 // vendor: `baseUrl` selects the provider and nothing else changes. A second class per vendor
 // would be a second thing to learn for a difference that does not exist on the wire.
 
-import { finiteCount, readWithinLimit, renderThrowable } from '@ultimat3/core';
+import {
+  abandonment,
+  finiteCount,
+  isUltimateError,
+  readWithinLimit,
+  renderThrowable,
+} from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import type { Embedder } from './embeddings';
 import { normalizeVector } from './embeddings';
 import { detailOf, withoutKey } from './error-body';
@@ -108,21 +115,41 @@ export class RemoteEmbedder implements Embedder {
     if (apiKey === undefined || apiKey === '') {
       throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
     }
-    const doFetch: AiFetch = this.config.fetch ?? fetch;
+    const doFetch: AiFetch =
+      this.config.fetch ??
+      ((input, init) => fetch(input, { ...init, signal: init.signal ?? null }));
     const timeoutMs = this.timeoutMs;
     const url = `${this.config.baseUrl ?? DEFAULT_BASE_URL}/embeddings`;
     let response: Response;
     try {
-      response = await doFetch(url, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: this.name, input: texts }),
-        // Without this the call has no deadline at all: the per-request budget produces a
-        // `ctx.signal` that never reaches here, so a provider that accepts the connection and
-        // never answers holds a worker for as long as the socket stays open.
-        signal: AbortSignal.timeout(timeoutMs),
-      });
+      // Through core's `outbound()`: `timeoutMs` bounds the WHOLE batch, the ambient request's
+      // signal and deadline end it, and an embedding is a pure read of its input, so a 5xx or a
+      // throttle is retried inside that bound (`idempotent: true`). The body is capped as it lands.
+      response = await outboundResponse(
+        {
+          url,
+          vendor: this.name,
+          dial: 'named',
+          method: 'POST',
+          idempotent: true,
+          deadlineMs: timeoutMs,
+          maxBytes: this.maxResponseBytes,
+          headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ model: this.name, input: texts }),
+        },
+        { fetch: doFetch },
+      );
     } catch (error) {
+      // A caller gone keeps its own reason; the cap is the over-limit refusal below, said once.
+      if (abandonment() !== undefined) throw error;
+      if (isUltimateError(error) && error.code === 'X_OUTBOUND_TOO_LARGE') {
+        throw new AiTransportError({
+          provider: this.name,
+          status: 200,
+          detail: `response body is over the limit of ${this.maxResponseBytes} bytes`,
+          envVar: API_KEY_ENV,
+        });
+      }
       throw new AiTransportError({
         provider: this.name,
         // `renderThrowable`, never `error instanceof Error` and `.message`: `fetch` is injected

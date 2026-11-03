@@ -78,7 +78,7 @@ describe('a browser that hits nothing, in production', () => {
     const body = (await response?.text()) ?? '';
     expect(body).toContain('Page not found');
     expect(body).toContain('https://github.com/developerz-ai/ultimate');
-    expect(body).toContain('https://www.developerz.ai');
+    expect(body).not.toContain('https://www.developerz.ai');
   });
 
   test("gets the app's own file when it wrote one, byte for byte", async () => {

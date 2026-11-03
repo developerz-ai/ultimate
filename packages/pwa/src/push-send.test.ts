@@ -226,7 +226,9 @@ describe('unit · one message to one subscription', () => {
     };
     expect(wrong.code).toBe('X_PWA_PUSH_REJECTED');
     expect(wrong.retry).toBe('terminal');
-    expect(wrong.cause).toContain('invalid JWT provided');
+    // A refusal's raw text is never kept (`outbound()`'s detail: a JSON object, redacted, or nothing).
+    expect(wrong.cause).not.toContain('invalid JWT provided');
+    expect(wrong.cause).toContain('403');
     expect(wrong.fix).toContain('x vapid show');
   });
 

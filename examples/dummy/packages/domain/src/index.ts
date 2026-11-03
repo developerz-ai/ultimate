@@ -1,6 +1,6 @@
 /** The public surface of @postly/domain. Explicit — never `export *`. */
 
-export { DomainError, InvariantViolation } from './errors';
+export { InvariantViolation } from './errors';
 export type { CommentId, MemberId, OrgId, PostId } from './ids';
 export { commentId, memberId, orgId, postId } from './ids';
 export type { BillingCurrency, Plan, PlanCode } from './plans';

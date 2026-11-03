@@ -118,3 +118,51 @@ describe('unit · release-notes · the CLI', () => {
     REPO_SCAN_TIMEOUT_MS,
   );
 });
+
+// wiki/Stability.md: from 30.0.0 a Release body is the Highlights and where to read the rest,
+// so it reads in under 30 seconds. The full section stays in CHANGELOG.md, linked at the tag.
+describe('unit · release-notes · a highlighted section is a short Release body', () => {
+  const highlighted = [
+    '# Changelog',
+    '',
+    '## [Unreleased]',
+    '',
+    'Nothing yet.',
+    '',
+    '## 30.0.0 - 2026-11-10',
+    '',
+    '### Highlights',
+    '',
+    '- one major for the whole plan',
+    '- a stability promise',
+    '',
+    '### Changed',
+    '',
+    '- **BREAKING — (#1) a long entry nobody reads in a Release body.**',
+    '',
+    '## 29.4.0 - 2026-10-31',
+    '',
+    '- older',
+  ].join('\n');
+
+  test('a major opens with its Highlights, then its Upgrading anchor and the full section', () => {
+    const read = notesFindings(highlighted, '30.0.0');
+    const notes = 'notes' in read ? read.notes : '';
+    expect(notes).toStartWith(
+      '### Highlights\n\n- one major for the whole plan\n- a stability promise',
+    );
+    expect(notes).toContain(
+      'https://github.com/developerz-ai/ultimate/wiki/Upgrading#29x--3000-entry-by-entry',
+    );
+    expect(notes).toContain('https://github.com/developerz-ai/ultimate/blob/v30.0.0/CHANGELOG.md');
+    expect(notes).not.toContain('a long entry nobody reads');
+  });
+
+  test('a minor names no Upgrading walkthrough: it has nothing to migrate', () => {
+    const minor = highlighted.replace('## 30.0.0 - 2026-11-10', '## 30.1.0 - 2026-11-17');
+    const read = notesFindings(minor, '30.1.0');
+    const notes = 'notes' in read ? read.notes : '';
+    expect(notes).toStartWith('### Highlights');
+    expect(notes).not.toContain('wiki/Upgrading');
+  });
+});

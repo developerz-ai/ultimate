@@ -245,10 +245,10 @@ describe('site and seo', () => {
 
   test('an overlay patches one section without dropping the other', () => {
     const config = defineConfig(
-      { name: 'app', site: { origin: 'https://notificado.co' } },
+      { name: 'app', site: { origin: 'https://example.com' } },
       { seo: { robots: { disallow: ['/panel'] } } },
     );
-    expect(config.site.origin).toBe('https://notificado.co');
+    expect(config.site.origin).toBe('https://example.com');
     expect(config.seo.robots.disallow).toEqual(['/panel']);
   });
 });

@@ -4,7 +4,7 @@
 
 // The migrate that follows still runs and finds every migration in the ledger — so a template
 // that is missing something is completed by it, never trusted over it. Measured on
-// bank-integrations (33 migrations, a loaded 12-core box, 3 runs each): `x db reset` 8.7 s → 7.5 s.
+// one adopter's app (33 migrations, a loaded 12-core box, 3 runs each): `x db reset` 8.7 s → 7.5 s.
 // What is left is the CLI's boot, the migrator's no-op pass and the schema dump's own replay (~3 s,
 // `db-schema-refresh.ts`). The e2e step's app boots through exactly this reset, once per gate.
 

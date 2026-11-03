@@ -92,6 +92,37 @@ describe('a published page that names a path which does not exist', () => {
   });
 });
 
+describe('a markdown link whose target does not exist', () => {
+  test('a dead relative link is the finding, resolved from the page it is on', () => {
+    const found = checkDocPaths({
+      files: [
+        page(
+          'see [the dx page](../idea/13-dx.md) and [gone](../idea/99-gone.md)',
+          'docs/architecture/a.md',
+        ),
+      ],
+      exists,
+    });
+    expect(found).toEqual([
+      { kind: 'dead', at: 'docs/architecture/a.md:1', subject: 'docs/idea/99-gone.md' },
+    ]);
+  });
+
+  test('a bare wiki name is its wiki page; a URL and a fragment are not read', () => {
+    const wiki = (path: string): boolean => path === 'wiki/Home.md';
+    const found = checkDocPaths({
+      files: [page('[h](Home#top) [n](Nowhere) [u](https://x.dev) [f](#here)')],
+      exists: wiki,
+    });
+    expect(found.map((gap) => gap.subject)).toEqual(['wiki/Nowhere.md']);
+  });
+
+  test('a link inside a fence or a **Historical:** section is not read', () => {
+    expect(dead('```md\n[gone](../idea/99-gone.md)\n```')).toEqual([]);
+    expect(dead('**Historical:** [gone](../idea/99-gone.md)')).toEqual([]);
+  });
+});
+
 describe('**Historical:** — a section that records a tree that no longer exists', () => {
   test('exempts from the marker to the next heading, and no further', () => {
     const text = [

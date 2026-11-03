@@ -341,7 +341,7 @@ describe('WORKER_QUEUES — the exact queues this worker serves', () => {
     expect(error.fix).toStartWith('WORKER_QUEUES=<queue>,<queue>   # on this Deployment');
   });
 
-  // The production shape that must keep booting (bank-integrations, 2026-10-27): every run is
+  // The production shape that must keep booting (one adopter, 2026-10-27): every run is
   // enqueued onto a per-country queue chosen at enqueue time, so no job declares those queues —
   // `jobs.worker.queue-unregistered` names them at info — and the app's config lists them, computed.
   test('per-country queues only a computed jobs.queues lists boot, off the real loader', async () => {

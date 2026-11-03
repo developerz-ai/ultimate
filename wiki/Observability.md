@@ -159,6 +159,8 @@ CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle socket
 |---|---|
 | Tracing | always on, not a flag. `otel.endpoint` absent means spans are still recorded and exported nowhere → [Configuration](Configuration) |
 | Head sampling | `otel.sampling`, default `0.1`; errors are always sampled |
+| OTLP delivery | a 429, 502, 503, 504 or a transport failure is retried, 3 attempts with full jitter and `Retry-After` honoured, inside the exporter's `timeoutMs` (default 10 s, the whole export); any other status is one POST. One `otlp export rejected`/`failed` line per batch, with `attempts`. A collector that accepted and then answered 503 receives that batch twice; span ids dedupe it |
+| Error grouping | `errorFingerprint(report)`: 16 hex over `code`, `source`, `scope.operation`, plus the top application frame (function and root-relative path, no line) for `X_INTERNAL`. Never the cause or an id, so two throws differing in a row id are one group, and a deploy is not a new one. The Sentry envelope sends it as `fingerprint` |
 | Log level | `LOG_LEVEL`, default `info` |
 | Secret redaction | a `Secret` is redacted by value before every other branch, at any depth → [Configuration](Configuration) |
 | Request context | the ALS context carries the request id every log line and span inherits |

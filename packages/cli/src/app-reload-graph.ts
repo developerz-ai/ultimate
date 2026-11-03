@@ -4,7 +4,7 @@
 // 2026-09-27 `x dev` re-imported only the edited ROUTE module, under `?x-reload=<hash>`, and every
 // module that route imports resolved to the instance already cached: a save to a component, its
 // `.module.scss` or a helper logged "reloaded" and rendered the old code until a restart
-// (notificado.co: the panel's balance card and the home page, observed twice on one day).
+// (one adopter: the panel's balance card and the home page, observed twice on one day).
 //
 // The rule is a reverse-dependency closure. A rescan hashes every file this graph knows; each
 // changed file, and every module that imports it transitively, leaves the registry, and the scan's
@@ -62,7 +62,7 @@ export function takeStalePins(): readonly StalePin[] {
   return taken;
 }
 /**
- * Edges cost a transpile scan and a resolve per import (~300 ms over notificado.co's 1200 modules),
+ * Edges cost a transpile scan and a resolve per import (~300 ms over one adopter's 1200 modules),
  * so only the one process that rescans pays it: `x dev` turns this on before its first scan. Off,
  * a rescan still re-evaluates each changed module itself — a route saved in place reloads — but
  * nothing it is imported by.

@@ -1,0 +1,40 @@
+name: tutorial-run
+
+# Does a stranger following tutorials 1–4 on this commit see what the pages show? Every ```bash
+# fence, in order, on a scaffold built from this checkout (`scripts/tutorial-run.ts`). Its own
+# workflow, never a `ci` job: it installs and gates a scaffold several times, and `ci`'s clock and
+# push count must not pay for that. On a push to `main` only, filtered to the files that can move a
+# tutorial's output — a push touching none of them starts nothing. Not on a PR: a tutorial left
+# wrong breaks `main` for one push at most, and the red run is read by the daily health brief.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wiki/Tutorial-0[1-4]*'
+      - 'packages/cli/src/templates/**'
+      - 'packages/cli/src/cmd-generate*'
+      - 'packages/cli/src/verify-*'
+      - 'scripts/tutorial-run.ts'
+      - 'scripts/lib/tutorial-steps.ts'
+      - '.github/workflows/tutorial-run.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: tutorial-run
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tutorials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: tutorials 1–4, fence by fence
+        run: bun run scripts/tutorial-run.ts

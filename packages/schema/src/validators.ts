@@ -8,12 +8,13 @@ import {
   type AnySchema,
   type Check,
   checkOf,
-  fail,
   failWith,
   isPlainObject,
   makeSchema,
+  mistyped,
   pass,
   type Refinement,
+  rejected,
   type Schema,
   type Shape,
   type ShapeInput,
@@ -26,7 +27,7 @@ import { isIsoDateTime, isZonelessDateTime } from './iso-date';
 import { type JsonValue, jsonSchema } from './json-value';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
-import { isPrototypeKey, PROTOTYPE_KEYS } from './prototype-keys';
+import { recordSchema } from './record-schema';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
 import { isIanaZoneName } from './time-zone-name';
 import { unstorable } from './unstorable-text';
@@ -87,22 +88,47 @@ function patternTester(node: SchemaNode): ((value: string) => boolean) | undefin
 function stringLike(node: SchemaNode, what: string, test?: (value: string) => boolean) {
   const matchesPattern = patternTester(node);
   const check: Check<string> = (value, path) => {
-    if (typeof value !== 'string') return fail(path, expected(what, value));
+    if (typeof value !== 'string') return mistyped(path, expected(what, value), value, 'string');
     // A NUL or a lone surrogate passed here reached the row write — or a `where` bind — as
     // `X_DB_STATEMENT_FAILED`, a 500 blaming the server for what the caller sent (`unstorable`).
     // Only those: a tab, a newline or any other C0 control is legal text Postgres stores unchanged.
     const unfit = unstorable(value);
-    if (unfit !== undefined) return fail(path, `${expected(what, value)} ${unfit}`);
+    // `type`: a string Postgres cannot store is not a string this field can hold, whatever its rule.
+    if (unfit !== undefined) {
+      return rejected(path, `${expected(what, value)} ${unfit}`, 'type', { type: 'string' });
+    }
     if (node.minLength !== undefined && charCount(value) < node.minLength) {
-      return fail(path, expected(`${what} of at least ${node.minLength} chars`, value));
+      return rejected(
+        path,
+        expected(`${what} of at least ${node.minLength} chars`, value),
+        'string.min',
+        {
+          min: node.minLength,
+        },
+      );
     }
     if (node.maxLength !== undefined && charCount(value) > node.maxLength) {
-      return fail(path, expected(`${what} of at most ${node.maxLength} chars`, value));
+      return rejected(
+        path,
+        expected(`${what} of at most ${node.maxLength} chars`, value),
+        'string.max',
+        {
+          max: node.maxLength,
+        },
+      );
     }
     if (matchesPattern !== undefined && !matchesPattern(value)) {
-      return fail(path, expected(`${what} matching ${describePattern(node)}`, value));
+      const pattern = describePattern(node);
+      return rejected(path, expected(`${what} matching ${pattern}`, value), 'string.pattern', {
+        pattern,
+      });
     }
-    if (test !== undefined && !test(value)) return fail(path, expected(what, value));
+    if (test !== undefined && !test(value)) {
+      // Every builtin with a `test` declares the `format` it tests for (`uuid`, `email`, …).
+      return rejected(path, expected(what, value), 'string.format', {
+        format: node.format ?? 'string',
+      });
+    }
     return pass(value);
   };
   return check;
@@ -136,7 +162,7 @@ function makeStringSchema(
 function makeNumberSchema(node: SchemaNode): NumberSchema {
   const check: Check<number> = (value, path) => {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
-      return fail(path, expected('a finite number', value));
+      return mistyped(path, expected('a finite number', value), value, 'number');
     }
     // Safe, not merely whole — the same rule `money-value.ts` states one file over, for the same
     // reason: `Number.isInteger` let 2^53 through the boundary as a 200, so the policy gate and
@@ -145,13 +171,17 @@ function makeNumberSchema(node: SchemaNode): NumberSchema {
     // without. Above 2^53 a double cannot name its own successor, so a "whole" number there is
     // already a rounded one.
     if (node.integer === true && !Number.isSafeInteger(value)) {
-      return fail(path, expected('a safe integer', value));
+      return rejected(path, expected('a safe integer', value), 'number.integer');
     }
     if (node.minimum !== undefined && value < node.minimum) {
-      return fail(path, expected(`a number >= ${node.minimum}`, value));
+      return rejected(path, expected(`a number >= ${node.minimum}`, value), 'number.min', {
+        min: node.minimum,
+      });
     }
     if (node.maximum !== undefined && value > node.maximum) {
-      return fail(path, expected(`a number <= ${node.maximum}`, value));
+      return rejected(path, expected(`a number <= ${node.maximum}`, value), 'number.max', {
+        max: node.maximum,
+      });
     }
     return pass(value);
   };
@@ -178,7 +208,7 @@ export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
   const node: SchemaNode = { kind: 'object', properties };
 
   const check: Check<ShapeOutput<S>> = (value, path) => {
-    if (!isPlainObject(value)) return fail(path, expected('an object', value));
+    if (!isPlainObject(value)) return mistyped(path, expected('an object', value), value, 'object');
     const issues: StandardIssue[] = [];
     // `Object.create(null)`, for `recordSchema`'s reason one screen down: on a `{}` literal
     // `out['__proto__'] = value` hits the `Object.prototype` SETTER, so a DECLARED `__proto__`
@@ -239,14 +269,19 @@ export function enumSchema<const V extends readonly [string, ...string[]]>(
     if (typeof value === 'string' && (values as readonly string[]).includes(value)) {
       return pass(value as V[number]);
     }
-    return fail(path, expected(`one of ${values.join(' | ')}`, value));
+    const listed = values.join(' | ');
+    return rejected(path, expected(`one of ${listed}`, value), 'enum', { values: listed });
   });
 }
 
 export function literalSchema<const V extends string | number | boolean>(value: V): Schema<V, V> {
   const node: SchemaNode = { kind: 'literal', literal: value };
   return makeSchema<V, V>(node, (candidate, path) =>
-    candidate === value ? pass(value) : fail(path, expected(JSON.stringify(value), candidate)),
+    candidate === value
+      ? pass(value)
+      : rejected(path, expected(JSON.stringify(value), candidate), 'literal', {
+          value: JSON.stringify(value),
+        }),
   );
 }
 
@@ -262,61 +297,8 @@ export function unionSchema<S extends readonly [AnySchema, ...AnySchema[]]>(
       if (result.ok) return pass(result.value as InferOutput<S[number]>);
       reasons.push(result.issues.map((issue) => issue.message).join(', '));
     }
-    return fail(path, `no union member matched (${reasons.join(' | ')})`);
+    return rejected(path, `no union member matched (${reasons.join(' | ')})`, 'union');
   });
-}
-
-export function recordSchema<S extends AnySchema>(
-  values: S,
-): Schema<Readonly<Record<string, InferInput<S>>>, Record<string, InferOutput<S>>> {
-  const valueCheck = checkOf(values);
-  const node: SchemaNode = { kind: 'record', valueNode: values.node };
-  return makeSchema<Readonly<Record<string, InferInput<S>>>, Record<string, InferOutput<S>>>(
-    node,
-    (value, path) => {
-      if (!isPlainObject(value)) return fail(path, expected('an object', value));
-      const issues: StandardIssue[] = [];
-      const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-      for (const [index, [key, entry]] of Object.entries(value).entries()) {
-        // The entry's POSITION, never its key. `describe-value.ts`'s absolute is stated about the
-        // rejected value, and a record's KEY is the caller's data just as much: the path travels
-        // `formatIssue` -> `bodyInvalid`'s `cause` -> the problem document AND the log line, and
-        // core's logger redacts by key, so a key baked into a string has no key left to redact.
-        // `@ultimat3/http`'s `bodyInvalid` states the contract this was breaking in its own doc
-        // block — *"`issues` … must name only facts the framework itself chose"*. A record keyed
-        // by an email address, a phone number or a pasted credential wrote every one of them into
-        // the central log index, in the same shape the password bug did.
-        //
-        // The index rather than nothing at all: the segment's whole job is to say WHICH entry
-        // failed, and dropping it makes three failing entries render three identical lines. It is
-        // the same segment `arraySchema` already uses, so `formatPath` renders `meta[3]` with no
-        // new spelling to learn. It is `Object.entries` order — integer-like keys sort ahead of
-        // string ones — so it names an entry that exists rather than a byte offset in the body.
-        const at = [...path, index];
-        // A record is stored as `jsonb` far more often than not, and jsonb refuses an unstorable
-        // KEY exactly as it does a value — so the key is refused here, by position, not quoted.
-        const unfitKey = unstorable(key);
-        if (unfitKey !== undefined) {
-          issues.push({ message: `expected a record key, received one ${unfitKey}`, path: at });
-          continue;
-        }
-        if (isPrototypeKey(key)) {
-          issues.push({
-            // The refused NAMES are a closed set declared right here, so the message may state
-            // them: that is the one part of this line the caller did not choose.
-            message: expected(`a record key that is not ${PROTOTYPE_KEYS.join(' | ')}`, key),
-            path: at,
-          });
-          continue;
-        }
-        const result = valueCheck(entry, at);
-        if (result.ok) out[key] = result.value;
-        else issues.push(...result.issues);
-      }
-      if (issues.length > 0) return failWith(issues);
-      return pass(out as Record<string, InferOutput<S>>);
-    },
-  );
 }
 
 export function nullableSchema<S extends AnySchema>(
@@ -351,12 +333,14 @@ function isLocale(value: string): boolean {
   }
 }
 
+const DATE_TIME = Object.freeze({ format: 'date-time' });
+
 const dateSchema: Schema<Date | string | number, Date> = makeSchema<Date | string | number, Date>(
   { kind: 'date', format: 'date-time' },
   (value, path) => {
     if (value instanceof Date) {
       return Number.isNaN(value.getTime())
-        ? fail(path, expected('a valid Date', value))
+        ? rejected(path, expected('a valid Date', value), 'type', { type: 'date' })
         : pass(value);
     }
     if (typeof value === 'string' || typeof value === 'number') {
@@ -365,19 +349,24 @@ const dateSchema: Schema<Date | string | number, Date> = makeSchema<Date | strin
       // process's zone — reachable from the wire, since `coerceQuery` routes a `t.date` field
       // here and a container's `TZ` then decided which instant a query parameter meant.
       if (typeof value === 'string' && isZonelessDateTime(value)) {
-        return fail(path, expected('an ISO-8601 date-time with an offset or Z', value));
+        return rejected(
+          path,
+          expected('an ISO-8601 date-time with an offset or Z', value),
+          'string.format',
+          DATE_TIME,
+        );
       }
       // `new Date` also parses `'March 14, 2026'` and `'12'` at the host's local midnight, so the
       // shape is checked first: a string that is not ISO-8601 is refused, not guessed at.
       if (typeof value === 'string' && !isIsoDateTime(value)) {
-        return fail(path, expected('an ISO-8601 date-time', value));
+        return rejected(path, expected('an ISO-8601 date-time', value), 'string.format', DATE_TIME);
       }
       const parsed = new Date(value);
       return Number.isNaN(parsed.getTime())
-        ? fail(path, expected('an ISO-8601 date-time', value))
+        ? rejected(path, expected('an ISO-8601 date-time', value), 'string.format', DATE_TIME)
         : pass(parsed);
     }
-    return fail(path, expected('an ISO-8601 date-time', value));
+    return mistyped(path, expected('an ISO-8601 date-time', value), value, 'date');
   },
 );
 
@@ -433,7 +422,9 @@ export const builtinT: TNamespace = Object.freeze({
   string: makeStringSchema({ kind: 'string', minLength: 1 }, 'a non-empty string'),
   number: makeNumberSchema({ kind: 'number' }),
   boolean: makeSchema<boolean, boolean>({ kind: 'boolean' }, (value, path) =>
-    typeof value === 'boolean' ? pass(value) : fail(path, expected('a boolean', value)),
+    typeof value === 'boolean'
+      ? pass(value)
+      : mistyped(path, expected('a boolean', value), value, 'boolean'),
   ),
   uuid: makeStringSchema({ kind: 'string', format: 'uuid' }, 'a uuid', (value) =>
     UUID_RE.test(value),

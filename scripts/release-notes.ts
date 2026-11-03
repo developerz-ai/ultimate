@@ -1,13 +1,19 @@
 #!/usr/bin/env bun
+
 // Print one version's CHANGELOG.md section body — the GitHub Release's notes, which
 // `.github/workflows/release-tag.yml` creates from it, so a Release says what the changelog says.
+// From 30.0.0 a section opens with `### Highlights`, and the body is those plus where to read the
+// rest (wiki/Stability.md): 29.4.0's raw 5,026-character section was nobody's 30-second read.
 //
 //   bun run scripts/release-notes.ts --version 1.2.3 [--json]     (--json: the body is .data.notes)
 
+import { githubSlug as slugOf } from '@ultimat3/manifest';
 import { parseChangelog } from './changelog-check';
 import { flagString, parseScriptArgs } from './lib/args';
+import { HIGHLIGHTS_HEADING, releaseHighlights } from './lib/changelog-highlights';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { majorOf } from './lib/major-window';
 import { UNRELEASED_PLACEHOLDER } from './lib/release-changelog';
 import { repoRoot } from './lib/run';
 
@@ -39,6 +45,36 @@ export function sectionBody(changelog: string, version: string): string | undefi
 
 const SEMVER = /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/;
 
+const REPO = 'https://github.com/developerz-ai/ultimate';
+
+/**
+ * The short body: the Highlights, the Upgrading walkthrough for a major (its heading's slug, the
+ * `## 29.x → 30.0.0, entry by entry` form changelog-check holds every major to), and the full
+ * section at the tag. Undefined for a section with no Highlights, which keeps its raw body.
+ */
+export function highlightNotes(changelog: string, version: string): string | undefined {
+  const bullets = releaseHighlights(changelog, version);
+  if (bullets === undefined) return undefined;
+  const major = majorOf(version);
+  const walkthrough =
+    major === undefined
+      ? []
+      : [
+          `- Upgrading from ${major - 1}.x: ${REPO}/wiki/Upgrading#${slugOf(`${major - 1}.x → ${version}, entry by entry`)}`,
+        ];
+  return [
+    HIGHLIGHTS_HEADING,
+    '',
+    ...bullets,
+    '',
+    '### Read more',
+    '',
+    ...walkthrough,
+    `- Every entry: ${REPO}/blob/v${version}/CHANGELOG.md`,
+    `- What a release promises: ${REPO}/wiki/Stability`,
+  ].join('\n');
+}
+
 /** Every refusal before a Release could be created with notes that say nothing. */
 export function notesFindings(
   changelog: string,
@@ -56,7 +92,7 @@ export function notesFindings(
       ],
     };
   }
-  const notes = sectionBody(changelog, version);
+  const notes = highlightNotes(changelog, version) ?? sectionBody(changelog, version);
   if (notes === undefined || notes.length === 0) {
     return {
       findings: [

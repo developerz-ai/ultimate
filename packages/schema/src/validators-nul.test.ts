@@ -3,8 +3,9 @@
 // `t.record` key. A loosened rule fails here rather than as a 500 from the row write.
 
 import { describe, expect, test } from 'bun:test';
+import { recordSchema } from './record-schema';
 import { formatIssues, validate } from './standard';
-import { builtinT, objectSchema, recordSchema } from './validators';
+import { builtinT, objectSchema } from './validators';
 
 const NUL = '\u0000';
 

@@ -64,7 +64,7 @@ export const GATE_BUDGET_SHARE = 0.25;
 
 /**
  * The budget never plans below this: enough for TWO workers at `WORKER_BYTES`. A quarter of an
- * 8 GB laptop (2 GiB) planned one worker, ~4.7 min for notificado.co's unit tier; two stay inside
+ * 8 GB laptop (2 GiB) planned one worker, ~4.7 min for one adopter's unit tier; two stay inside
  * the owner's 1-4 GB gate target (~2.6 GB measured).
  */
 export const GATE_BUDGET_FLOOR = 2.75 * 1024 * 1024 * 1024;
@@ -76,9 +76,9 @@ export const GATE_BUDGET_FLOOR = 2.75 * 1024 * 1024 * 1024;
  *   | corpus                                  | workers | batch | peak tree | tree / worker |
  *   |-----------------------------------------|---------|-------|-----------|---------------|
  *   | framework unit (1620 files)             | 4       | 24    | 3.61-3.78 GB | 0.90-0.95 GB |
- *   | notificado.co unit (768 files)          | 4       | 24    | 4.26-4.58 GB | 1.07-1.15 GB |
- *   | notificado.co unit (768 files)          | 4       | 48    | 4.35 GB   | 1.09 GB       |
- *   | notificado.co unit (768 files)          | 3       | 24    | 3.28-3.61 GB | 1.09-1.20 GB |
+ *   | one adopter's unit (768 files)          | 4       | 24    | 4.26-4.58 GB | 1.07-1.15 GB |
+ *   | one adopter's unit (768 files)          | 4       | 48    | 4.35 GB   | 1.09 GB       |
+ *   | one adopter's unit (768 files)          | 3       | 24    | 3.28-3.61 GB | 1.09-1.20 GB |
  *
  * The planning figure is what the TREE costs per worker at its peak — the `x` parent and Bun's
  * coordinator included — rounded up from the heaviest corpus, not the largest single worker:
@@ -103,7 +103,7 @@ export const BATCH_FILES_PER_WORKER = 24;
  * The recycle point WITHOUT isolation (the default since 22.7). A shared worker's peak is set by
  * its live PGlite, not by how many files it has run, and a batch boundary is pure cost: every
  * worker restarts, re-imports the app and re-boots its database, and the batch waits on its
- * slowest file. Measured on notificado.co's unit tier (768 files, 281 s of file time, 3 workers,
+ * slowest file. Measured on one adopter's unit tier (768 files, 281 s of file time, 3 workers,
  * no isolation): 6 batches of 48/worker 150-172 s, ONE batch 92-94 s at 3.9 GB peak — the work
  * floor (281 s / 3). 256 a worker keeps a recycle point for a corpus far past that size.
  */

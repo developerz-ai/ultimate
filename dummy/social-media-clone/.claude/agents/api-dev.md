@@ -35,8 +35,8 @@ not ship; a new capability is a factory over an existing primitive, never a nint
 - A `task` only enqueues. Work inside one runs on the single-instance scheduler and is not retried.
 - Set `mcp: { expose: true, description }` unless the operation must never be agent-callable — and
   if not, say why in a comment.
-- Never `throw new Error`. Subclass `UltimateError` with a stable `X_*` code, a cause, and a
-  runnable `fix:`.
+- Never `throw new Error`. Declare each code once with `defineError` from `@ultimat3/core` — a
+  stable `X_*` code, a title, a status, a cause and a runnable `fix:` — and throw its class.
 
 **Commands**: `x g action|mutator|query|job|task|policy <name> --feature <f>` · `x actions list
 --json` · `x policy explain <subject>` · `bunx x test contract` · `bunx x test live`.

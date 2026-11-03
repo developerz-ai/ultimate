@@ -17,6 +17,7 @@ import type { SiteProbe } from './lib/ratchet-sites';
 import { leadSite, newSitesFirst, siteList, siteTarget } from './lib/ratchet-sites';
 import { isTestPath, lineOf } from './lib/source-scan';
 import { SPAWN_TIMEOUT_PINS, SPAWN_TIMEOUT_PINS_FILE } from './lib/spawn-timeout-pins';
+import { hasTopLevelKey } from './lib/top-level-key';
 
 const SCRIPT = 'spawn-timeout';
 const EXPLAIN = 'bun run scripts/spawn-timeout.ts --explain --json lists every one';
@@ -32,22 +33,7 @@ const DEADLINE = /(?<![\w$.])(?:timeout|signal)\s*[:,}]/g;
 const BUN_SHELL = /(?<![\w$])Bun\s*\.\s*\$\s*`/g;
 const BUN_IMPORT = /\bimport\s*\{([^}]*)\}\s*from\s*['"]bun['"]/g;
 
-/**
- * Whether one of the call's OWN options is a deadline: the key must sit directly inside an object
- * at the arguments' top level. `{ env: { timeout: '5' } }` names a variable the child reads, and
- * read as the call's deadline it waved an untimed child through (sweep 11).
- */
-const hasDeadline = (args: string): boolean => {
-  for (const match of args.matchAll(DEADLINE)) {
-    const opened: string[] = [];
-    for (const char of args.slice(0, match.index)) {
-      if (char === '{' || char === '[' || char === '(') opened.push(char);
-      else if (char === '}' || char === ']' || char === ')') opened.pop();
-    }
-    if (opened.length === 1 && opened[0] === '{') return true;
-  }
-  return false;
-};
+const hasDeadline = (args: string): boolean => hasTopLevelKey(args, DEADLINE);
 
 /** Every local name the file's imports from `'bun'` give the shell: `$`, or its alias. */
 const shellNames = (masked: string, source: string): readonly string[] => {

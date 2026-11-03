@@ -9,6 +9,7 @@ import {
   type ValidationIssue,
 } from './errors';
 import type { SchemaNode, SchemaRefinement } from './node';
+import { issueRuleFacts, type SchemaIssueParams, type SchemaRule } from './schema-rules';
 import {
   formatIssues,
   formatPath,
@@ -42,8 +43,46 @@ export function pass<Out>(value: Out): CheckOk<Out> {
   return { ok: true, value };
 }
 
-export function fail(path: Path, message: string): CheckErr {
-  return { ok: false, issues: [{ message, path: [...path] }] };
+/**
+ * The PROVIDER's refusal: `rule` and `params` optional, because a library backing `t` may have no
+ * name for its rule. A builtin validator never calls this — it calls `rejected`, whose `rule` is
+ * required, so a builtin refusal a translator cannot key on is a type error (`schema-rules.test.ts`
+ * pins that no builtin file reaches for `fail`).
+ */
+export function fail(
+  path: Path,
+  message: string,
+  rule?: string,
+  params?: SchemaIssueParams,
+): CheckErr {
+  return {
+    ok: false,
+    issues: [
+      {
+        message,
+        path: [...path],
+        ...(rule === undefined ? {} : { rule }),
+        ...(params === undefined ? {} : { params }),
+      },
+    ],
+  };
+}
+
+/** Package-internal: a builtin's refusal, naming its rule from the closed `SCHEMA_RULES`. */
+export function rejected(
+  path: Path,
+  message: string,
+  rule: SchemaRule,
+  params?: SchemaIssueParams,
+): CheckErr {
+  return fail(path, message, rule, params);
+}
+
+/** The wrong kind of value: `required` when nothing was sent, `type` naming what was wanted. */
+export function mistyped(path: Path, message: string, value: unknown, type: string): CheckErr {
+  return value === undefined
+    ? rejected(path, message, 'required')
+    : rejected(path, message, 'type', { type });
 }
 
 export function failWith(issues: readonly StandardIssue[]): CheckErr {
@@ -98,6 +137,12 @@ export interface Schema<In = unknown, Out = In> extends StandardSchemaV1<In, Out
   nullable(): Schema<In | null, Out | null>;
   default(value: Out): Schema<In | undefined, Out>;
   describe(description: string): Schema<In, Out>;
+  /**
+   * Sent in, never written down, never sent back. The audit record and `x jobs show` mask it, it
+   * publishes as `writeOnly`, and an output that reaches it is `X_SCHEMA_SENSITIVE_OUTPUT`. NOT the
+   * app's own log lines — a `logger.info('x', input)` holds no schema; that stays `redactKeys`.
+   */
+  sensitive(): Schema<In, Out>;
   /**
    * Attach a cross-field rule. Returns a plain `Schema` on purpose — `extend`/`pick`/`omit`
    * rebuild from the shape and would silently drop the refinement, so refining last is a type
@@ -191,6 +236,7 @@ function toIssues(result: CheckErr): readonly ValidationIssue[] {
     expected: issue.message,
     received: '',
     message: issue.message,
+    ...issueRuleFacts(issue),
   }));
 }
 
@@ -242,6 +288,9 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
     describe(description: string): Schema<In, Out> {
       return makeSchema<In, Out>({ ...node, description }, check);
     },
+    sensitive(): Schema<In, Out> {
+      return makeSchema<In, Out>({ ...node, sensitive: true }, check);
+    },
     refine(refinement: Refinement<Out>): Schema<In, Out> {
       const declared: SchemaRefinement = {
         name: refinement.name,
@@ -257,7 +306,9 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
           if (!result.ok) return result;
           return refinement.check(result.value)
             ? result
-            : fail([...path, ...(refinement.path ?? [])], refinement.message);
+            : rejected([...path, ...(refinement.path ?? [])], refinement.message, 'refine', {
+                name: refinement.name,
+              });
         },
       );
     },
@@ -270,6 +321,7 @@ export function checkOf<In, Out>(schema: Schema<In, Out>): Check<Out> {
   return (value, path) => {
     const result = schema['~standard'].validate(value);
     if (isThenable(result)) {
+      // A provider fault, not a rule a value broke: no `rule`, so a form falls back to the text.
       return fail(path, 'expected a synchronous schema, received an async one');
     }
     if (result.issues === undefined) return pass(result.value);
@@ -277,6 +329,8 @@ export function checkOf<In, Out>(schema: Schema<In, Out>): Check<Out> {
       result.issues.map((issue) => ({
         message: issue.message,
         path: [...path, ...(issue.path ?? [])],
+        // A composite re-roots a member's issues; the rule that refused rides along unchanged.
+        ...issueRuleFacts(issue),
       })),
     );
   };

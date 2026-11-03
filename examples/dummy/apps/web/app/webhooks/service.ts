@@ -41,7 +41,8 @@ const insertInFreeSlot = async (row: {
   for (let attempt = 1; ; attempt += 1) {
     const used = await usedSlots(row.orgId);
     const slot = WEBHOOK_ENDPOINT_SLOTS.find((candidate) => !used.has(candidate));
-    if (slot === undefined) throw new EndpointLimitReached(row.orgId, ENDPOINTS_PER_ORG);
+    if (slot === undefined)
+      throw new EndpointLimitReached({ orgId: row.orgId, limit: ENDPOINTS_PER_ORG });
     try {
       return await insertEndpoint({ ...row, slot });
     } catch (error) {

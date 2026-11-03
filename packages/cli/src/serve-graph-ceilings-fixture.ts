@@ -101,8 +101,15 @@
  * the claim by queue demand `jobs/src/{worker-queue-demand,driver-pg-claim-sql,
  * driver-pg-demand-sql}.ts`; `http/src/{compress,compress-read}.ts` (a compressed answer, and a
  * compressed body read bounded); `entity/src/memory-observed.ts`.
+ * raised 706 → 726, measured 726 (2026-11-03, plan 101 wave 3): one outbound HTTP call and its
+ * breaker, `core/src/{outbound,outbound-attempt,outbound-dial,outbound-errors,outbound-hops,
+ * outbound-read,outbound-types,outbound-subpath,deadline-signal,breaker}.ts`, reached through the
+ * jobs, cache and auth barrels' vendor calls; the OTLP retry `core/src/otlp-post.ts` and
+ * `error-fingerprint.ts`; `core/src/error-status-declared.ts` (`defineError`'s status rows);
+ * `.sensitive()` and the schema rules `schema/src/{sensitive,schema-rules,record-schema}.ts`;
+ * `entity/src/view-issue.ts` — 17 new files, and 3 existing modules they newly reach.
  */
-export const MIGRATE_CEILING = 706;
+export const MIGRATE_CEILING = 726;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -245,8 +252,10 @@ export const MIGRATE_CEILING = 706;
  * driver-s3-presign,driver-s3-put-stream,driver-s3-settle,driver-s3-sse,driver-s3-multipart}.ts`;
  * `render/src/hole.ts` (`<Hole>`, on the render barrel); `cli/src/{runtime-s3-path-style,
  * runtime-statement-bound,app-load-unresolved,output-findings}.ts`.
+ * raised 1047 → 1068, measured 1068 (2026-11-03, plan 101 wave 3): `MIGRATE_CEILING`'s 20, and
+ * `core/src/render-node.ts` (the node brands, split out so `render` reads them from a leaf).
  */
-export const SERVING_ROLE_CEILING = 1047;
+export const SERVING_ROLE_CEILING = 1068;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -370,5 +379,7 @@ export const SERVING_ROLE_CEILING = 1047;
  * `runtime-render.ts` for the web role, less what earlier raises left as slack.
  * raised 1149 → 1179, measured 1179 (2026-11-03, plan 101 wave 2): the 29 named on
  * `SERVING_ROLE_CEILING` for it and `cli/src/stream-hole-scope.ts`, a `<Hole>`'s request scope.
+ * raised 1179 → 1200, measured 1200 (2026-11-03, plan 101 wave 3): the 21 named on
+ * `SERVING_ROLE_CEILING` for it; the web role adds no new module of its own.
  */
-export const WEB_ROLE_CEILING = 1179;
+export const WEB_ROLE_CEILING = 1200;

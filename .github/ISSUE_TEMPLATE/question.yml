@@ -1,0 +1,29 @@
+name: ❓ Question
+description: Not a bug and not a proposal. Ask how something works, or whether it should.
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+      description: What you are trying to do, and where you looked. `x docs "<question>"` first — it searches the wiki offline.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you ran
+      description: The command and its `--json` output, if a command is involved. Else `none`.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: '`x version`, or `none` if you have not installed it yet.'
+      placeholder: 30.0.0
+    validations:
+      required: true

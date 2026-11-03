@@ -6,6 +6,7 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { isRenderNode } from '@ultimat3/core/render-nodes';
 import { configureLocales, type Locale, localeConfig } from '@ultimat3/i18n';
 import { configureTime, type TimeZone, timeConfig } from '@ultimat3/time';
 import { AppShell } from '../components/AppShell';
@@ -68,17 +69,6 @@ function h(
   return { inert: true, type, props: base };
 }
 
-/**
- * `@ultimat3/render`'s node brand, read off the GLOBAL symbol registry rather than by importing
- * the package this one may not depend on — which is exactly why the symbol is registered there.
- * Recognising neither shape is what used to fall through to `String(value)` and assert against
- * `"[object Object]"`.
- */
-const RENDER_NODE: symbol = Symbol.for('ultimate.render.jsx');
-
-const isNode = (value: unknown): value is JsxLike =>
-  typeof value === 'object' && value !== null && ('inert' in value || RENDER_NODE in value);
-
 const SKIPPED_PROPS = new Set(['children', 'ref', 'innerHTML']);
 
 function attributes(props: Record<string, unknown>): string {
@@ -95,7 +85,7 @@ function render(value: unknown): string {
   if (value === null || value === undefined || typeof value === 'boolean') return '';
   if (typeof value === 'string' || typeof value === 'number') return String(value);
   if (Array.isArray(value)) return value.map(render).join('');
-  if (isNode(value)) {
+  if (isRenderNode(value)) {
     if (typeof value.type === 'function') return render(value.type(value.props));
     return `<${value.type}${attributes(value.props)}>${render(value.props['children'])}</${value.type}>`;
   }
@@ -123,7 +113,7 @@ describe('the inert server path', () => {
       label: 'Email',
       children: () => null,
     });
-    expect(isNode(node)).toBe(true);
+    expect(isRenderNode(node)).toBe(true);
   });
 
   test('Field renders with no Solid runtime registered', () => {

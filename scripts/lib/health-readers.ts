@@ -1,4 +1,4 @@
-// The health checkup's default readers: what each of the nine rows reads, and the one query row 4
+// The health checkup's default readers: what each of the ten rows reads, and the one query row 4
 // asks `gh` for. Moved out of scripts/health.ts, which stood at 499 lines — one under the 500-line
 // ceiling `x verify`'s filesize step enforces — and the runner is a parameter, so a test can drive
 // the real row-4 reader and read the argv it asked for: no subprocess, no second copy. Row 9's
@@ -6,6 +6,8 @@
 
 import type { ReleaseExistsRead } from './health-release';
 import { releaseExistsReader } from './health-release';
+import type { TutorialsRunRead } from './health-tutorials';
+import { tutorialsRunReader } from './health-tutorials';
 import { gh } from './release-due-gh';
 import { git } from './release-due-git';
 import type { RunResult } from './run';
@@ -121,6 +123,7 @@ export interface HealthReaders {
   readonly 'dependabot-not-stuck': () => Promise<DependabotRead>;
   readonly 'demo-shipped': () => Promise<DemoShippedRead>;
   readonly 'release-exists': () => Promise<ReleaseExistsRead>;
+  readonly 'tutorials-run': () => Promise<TutorialsRunRead>;
 }
 
 /** Replaces any single reader, so a test names a world without one subprocess. */
@@ -241,4 +244,5 @@ export const defaultReaders = (root: string, ghRunner: GhRunner = gh): HealthRea
     ),
   }),
   'release-exists': () => releaseExistsReader(root, ghRunner),
+  'tutorials-run': () => tutorialsRunReader(root, ghRunner),
 });

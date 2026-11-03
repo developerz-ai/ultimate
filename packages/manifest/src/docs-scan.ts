@@ -46,8 +46,11 @@ const MAX_TEXT = 1_200;
 /** Only `README.md` and `CLAUDE.md`: the two files every package is already gated on carrying. */
 const GUIDE_FILES = ['README.md', 'CLAUDE.md'] as const;
 
-const clamp = (text: string): string =>
+export const clampDocText = (text: string): string =>
   text.length <= MAX_TEXT ? text : `${text.slice(0, MAX_TEXT).trimEnd()}…`;
+
+/** A fence opener or closer. Inside one, a `## line` is a shell comment, never a heading. */
+export const isFence = (line: string): boolean => /^\s*(?:```|~~~)/.test(line);
 
 const read = async (path: string): Promise<string | undefined> => {
   const file = Bun.file(path);
@@ -112,7 +115,7 @@ export function headerComment(source: string): string {
     }
   }
   // A rule of dashes under a heading is a separator in prose, never a sentence.
-  return clamp(
+  return clampDocText(
     out
       .join('\n')
       .replace(/^-{3,}$/gm, '')
@@ -134,14 +137,16 @@ export function parseGuideSections(
   markdown: string,
 ): readonly { readonly heading: string; readonly body: string }[] {
   const sections: { heading: string; body: string[] }[] = [];
+  let fenced = false;
   for (const line of markdown.split('\n')) {
-    const heading = /^#{2,}\s+(.+?)\s*$/.exec(line);
+    if (isFence(line)) fenced = !fenced;
+    const heading = fenced ? null : /^#{2,}\s+(.+?)\s*$/.exec(line);
     if (heading !== null) sections.push({ heading: heading[1] ?? '', body: [] });
     else sections.at(-1)?.body.push(line);
   }
   return sections.map((section) => ({
     heading: section.heading,
-    body: clamp(section.body.join('\n').trim()),
+    body: clampDocText(section.body.join('\n').trim()),
   }));
 }
 

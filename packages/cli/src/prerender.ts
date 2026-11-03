@@ -39,6 +39,7 @@ import { loadPwaArtifacts, writePwaIcons } from './pwa-artifacts';
 import { routeDocument, servedDocument } from './runtime-render';
 import { writeSiteAssets } from './site-assets';
 import { loadSiteSettings, originWarning, publicOrigin } from './site-config';
+import { newestSourceMtime } from './source-mtime';
 import type { SkippedRoute, UnmeasuredRoute } from './static-report';
 import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 import { styleBundle, writeStyles } from './style-bundle';
@@ -130,6 +131,9 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   // The load `x dev` and `x manifest` perform: importing the app's modules fills the route registry.
   // A module that would not import registered nothing, so its page would vanish from the export
   // under a green build — refused BEFORE the export is emptied, so the last good artifact survives.
+  // Read BEFORE the app loads: a source saved while this build runs is newer than this, so the
+  // gate's `budgets` step rebuilds rather than weighing bytes that predate the save.
+  const sourcesAt = await newestSourceMtime(options.root);
   const loaded = await loadApp(options.root);
   if (loaded.findings.length > 0) throw new PrerenderLoadFailedError(loaded.findings);
   // Emptied before anything is written: a deleted route's HTML kept shipping when it only grew.
@@ -437,7 +441,10 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   if (serviceWorker !== undefined) {
     await Bun.write(join(options.out, SERVICE_WORKER_PATH.slice(1)), serviceWorker.source);
   }
-  const stats = await writeBuildStats(options.root, { routes });
+  const stats = await writeBuildStats(options.root, {
+    routes,
+    ...(sourcesAt === undefined ? {} : { sourcesAt }),
+  });
   // Written LAST and by the same call that writes the stats, so an app whose `prerender.ts` does
   // not reach `prerenderSite` produces neither — and `x verify`'s `budgets` step already reds that
   // app with `X_BUDGET_UNMEASURED`, which is why this side needs no second code of its own.

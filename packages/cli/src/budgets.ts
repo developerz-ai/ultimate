@@ -61,6 +61,11 @@ export interface BuildStats {
   readonly measuredBy?: number;
   /** Set by `readBuildStats` on a file an earlier rule wrote: there are no numbers to read. */
   readonly stale?: true;
+  /**
+   * The newest source mtime (ms) the build read before it rendered (`source-mtime.ts`): `budgets`
+   * calls the stats fresh only if no source is newer, so a save during the build is not missed.
+   */
+  readonly sourcesAt?: number;
 }
 
 /**
@@ -148,7 +153,10 @@ function unmeasuredFinding(
   }
   return {
     code: 'X_BUDGET_UNMEASURED',
-    cause: `${url} declares a ${declared} budget and no build has written ${BUILD_STATS_FILE} in this repo`,
+    // Inside the gate this is a build that ran and still wrote nothing: `x verify`'s budgets step
+    // builds whenever the file is missing (`verify-budgets-build.ts`), so the cause names the one
+    // writer that did not run. The fix is the build alone, which prints why.
+    cause: `${url} declares a ${declared} budget and no build has written ${BUILD_STATS_FILE} in this repo — x verify builds when it is missing, so a static build that ran wrote none: apps/web/prerender.ts must call prerenderSite()`,
     // `--target static` is load-bearing and `x build` alone was a fix that changes nothing: the
     // flag defaults to `docker`, and only the static target runs `apps/web/prerender.ts`, which is
     // the one caller of `writeBuildStats`.

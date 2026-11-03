@@ -4,11 +4,13 @@
 
 import type { Clock } from '@ultimat3/core';
 import {
+  abandonment,
   classifyAddress,
   isRetryableStatus,
   renderThrowable,
   retryAfterSecondsOf,
 } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import {
   PwaPushFailedError,
   PwaPushHostUnlistedError,
@@ -146,23 +148,28 @@ export async function sendPushMessage(input: PushSendInput): Promise<PushSendOut
   }
   let response: Response;
   try {
-    response = await (input.fetch ?? fetch)(input.target.endpoint, {
-      method: 'POST',
-      headers,
-      body,
-      // Never followed: a redirect would carry a token signed for one origin to another.
-      redirect: 'manual',
-      // A deadline: one service that accepts and never answers must not hold the rest of the
-      // fan-out — every later device of this person waits behind it.
-      signal:
-        input.signal === undefined
-          ? AbortSignal.timeout(PUSH_SEND_TIMEOUT_MS)
-          : AbortSignal.any([input.signal, AbortSignal.timeout(PUSH_SEND_TIMEOUT_MS)]),
-    });
+    // Through core's `outbound()`: a deadline (one service that accepts and never answers must
+    // not hold the rest of the fan-out), the caller's signal beside the ambient one, ONE attempt
+    // (an encrypted push replayed is a second notification), and a 3xx never followed — a redirect
+    // would carry a token signed for one origin to another. `dial: 'named'`: the host passed the
+    // push-service allow-list above, so it is one this app names, never the caller's choice.
+    response = await outboundResponse(
+      {
+        url: input.target.endpoint,
+        vendor: 'push',
+        dial: 'named',
+        method: 'POST',
+        headers,
+        body,
+        deadlineMs: PUSH_SEND_TIMEOUT_MS,
+        signal: input.signal,
+      },
+      input.fetch === undefined ? {} : { fetch: input.fetch },
+    );
   } catch (error) {
     // The CALLER cancelled: not the push service's fault, so not the retryable class — a retry
     // would re-deliver to every device already served. Rethrown as is; the fan-out stops.
-    if (input.signal?.aborted === true) throw error;
+    if (input.signal?.aborted === true || abandonment() !== undefined) throw error;
     throw new PwaPushFailedError({ origin, status: null, detail: renderThrowable(error) });
   }
   if (response.status >= 200 && response.status < 300) {

@@ -14,9 +14,9 @@ tracked apps — the reference app (`examples/dummy`) and the deployed demo
 (`dummy/social-media-clone`), each gated on its own `expectedRed` table. CLI binary `x`, npm scope
 `@ultimat3`, imports `@ultimat3/<pkg>`.
 
-**Status:** released — every `@ultimat3/*` package plus `create-ultimate`, versioned and published
-in lockstep. Semver applies: the eight primitive shapes, the `x` CLI surface and the tier table are
-as stable as the `X_*` codes.
+**Status:** released, every package in lockstep. Semver covers the primitive shapes, the `x` CLI,
+the tier table and the `X_*` codes; from v30 one major per 90 days (`X_RELEASE_MAJOR_WINDOW`),
+breaks wait on `next` (`X_BREAKING_ON_MAIN`): [`wiki/Stability.md`](wiki/Stability.md).
 
 **This page states no version number, deliberately.** Every fact below is a command — run the
 right-hand column. What each answer means:
@@ -37,9 +37,8 @@ right-hand column. What each answer means:
 | the `v*` tag rule and no reviewers on `npm-publish` | `gh api repos/developerz-ai/ultimate/environments/npm-publish --jq '.protection_rules, .deployment_branch_policy'` · `gh api repos/developerz-ai/ultimate/environments/npm-publish/deployment-branch-policies` — by hand, an admin token |
 | which majors shipped, and what each breaks | `grep -n '^## ' CHANGELOG.md` · [`wiki/Upgrading.md`](wiki/Upgrading.md) |
 
-**The `npm-publish` environment has no required reviewers**: the gate is `release.yml`'s `check`
-job plus the `v*` deployment tag rule — a repository setting nothing in this tree reads back
-today, verified by a person with the command above.
+**`npm-publish` has no required reviewers**: the gate is `release.yml`'s `check` plus the `v*` tag
+rule, a setting only a person reads back ([why](docs/history/publishing-and-provenance.md)).
 
 ## Design axioms (override any instinct that conflicts)
 
@@ -77,13 +76,12 @@ Run everything from the repo root.
 | test services | `docker compose -f docker/docker-compose.test.yml up -d --wait`, then `set -a; . docker/test-services.env; set +a` — in RAM, silent; unset, live suites skip |
 | test (one name) | `bun test packages/core/src/errors.test.ts -t '<name>'` — **always with a path**: a bare `-t` loads every test file into one process |
 | coverage, per unit | `bun run coverage` — 30 packages, `create-ultimate` and `scripts/` · `bun run coverage:package <pkg>` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds both apps (`x build --target static`), then verifies. As of 2026-11, both `expectedRed` tables (`scripts/lib/gated-apps.ts`) are empty: all declared steps stay gated and must pass |
-| future pins | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` — retained for future pins; neither app has a pin to remove |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — builds both apps (`x build --target static`), then verifies. As of 2026-11 both `expectedRed` tables (`scripts/lib/gated-apps.ts`) are empty: every declared step must pass. `--unpin <app>:<step>` drops a future pin |
 | a new error code | `bun run new-error-code <CODE> --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> \| --off-socket)` — writes the registration, its `wiki/Error-Codes.md` row and its HTTP status decision together. Tier ≤ 4 takes exactly one of the two flags, tier 5 neither |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
 | regenerate manifest | `bun run manifest` |
 | both tracked apps' schema dumps | `bun run schema-dumps` regenerates `packages/db/schema/` in each · `--check` only reports |
-| stale `@ultimat3/*` ranges in `bun.lock` | `bun run lockfile` reports, `bun run lockfile:fix` performs the edit |
+| stale `@ultimat3/*` ranges in `bun.lock` | `bun run lockfile` reports, `bun run lockfile:fix` edits |
 | the CLI, in-repo | `bun run x -- <args>` (e.g. `bun run x -- doctor --json`) |
 | **every guard** | [`docs/architecture/guards.md`](docs/architecture/guards.md) — generated from each guard's header by `bun run scripts/guards-doc.ts --write`, drift refused by `--check` |
 
@@ -120,8 +118,7 @@ copy of this table, and they must agree.
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui`, `notify`, `scraping` |
 | 5 | `admin`, `testing`, `cli` |
 
-Declared sideways edges, one line each — the full record per edge is
-[`docs/history/tier-decisions.md`](docs/history/tier-decisions.md):
+Declared sideways edges, one line each ([record](docs/history/tier-decisions.md)):
 
 - `core → schema` — the reverse stays forbidden: `t` is in every bundle graph.
 - `realtime → query` — a live query is a query.
@@ -192,7 +189,7 @@ a list, never a count or an ordinal: `PRIMITIVE_FACTORIES` in the same file, hel
 
 ## CI
 
-Free runners (`ubuntu-latest`; `windows-latest` for `windows`, free on a public repo), never a paid one. Target under 5 minutes. One runner per unit
+Free runners only: `ubuntu-latest`, plus `windows-latest` and `macos-latest`, free on a public repo. Under 5 min. One runner per unit
 ([why](docs/history/ci-split.md)); each job's question is the comment above it in `ci.yml`.
 `awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the jobs.
 
@@ -203,12 +200,13 @@ Free runners (`ubuntu-latest`; `windows-latest` for `windows`, free on a public 
   gate catches broken generators.
 - `windows` — native Windows in pwsh: lint, typecheck, a path-heavy unit subset, scaffold smoke.
 
-Other workflows: `release-tag.yml` (green `ci` on a release commit at an untagged version →
-annotated tag, Release, `release.yml` dispatched), `release.yml` (that dispatch or a **published**
-Release → npm via OIDC
-trusted publishing, after `check`), `registry-audit.yml` (daily; a `registry-drift` issue on
-disagreement), `deploy-social-demo.yml` (green `ci` on `main` → the demo image),
-`wiki.yml` (push to `main` → the GitHub wiki).
+`ci.yml` runs on pushes to `main`, `next` and `release/*`. Other workflows: `release-tag.yml`
+(green `ci` push of a release commit to `main` or `release/*` at an untagged version → annotated
+tag, Release, `release.yml` dispatched), `release.yml` (that dispatch or a **published** Release →
+npm via OIDC, after `check`), `registry-audit.yml` (daily; a `registry-drift` issue),
+`deploy-social-demo.yml` (green `ci` on `main` → the demo image), `wiki.yml` (push to `main` →
+the wiki), `tutorial-run.yml` (push to `main` touching a tutorial or a generator → tutorials 1–4
+fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci`).
 
 ## How to work
 

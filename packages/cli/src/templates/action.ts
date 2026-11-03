@@ -25,7 +25,7 @@ import { wrapImport } from './wrap';
  * The handler's lookup-by-id, or the comment that says what a slice needs before it can have one.
  * `x g resource` writes a slice whose `errors.ts` declares `<Feature>NotFoundError`, and so does
  * the foundation this generator lays under an empty directory; a slice an author wrote by hand
- * (ai-maxxing's `fleet`, with `HostNotFoundError` and `SessionNotFoundError`) declares the errors
+ * (one adopter's `fleet`, with `HostNotFoundError` and `SessionNotFoundError`) declares the errors
  * it has and not this one. Importing it anyway is a file that fails at import.
  */
 const missingLookup = (

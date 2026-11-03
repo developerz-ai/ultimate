@@ -4,6 +4,8 @@ Browser automation as a **job**. `scrape()` returns a `JobHandle` — one row of
 `PRIMITIVE_FACTORIES` in `@ultimat3/core`, the derived list of every factory that ships. There is
 no ninth primitive, and no ordinal here to go stale when the next factory lands.
 
+`bun add @ultimat3/scraping` · guide: [Scraping](https://github.com/developerz-ai/ultimate/wiki/Scraping)
+
 ```ts
 import { t } from '@ultimat3/schema';
 import { scrape, storageSessionStore } from '@ultimat3/scraping';

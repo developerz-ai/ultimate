@@ -7,6 +7,7 @@
 // 500-line ceiling.
 
 import { describe, expect, test } from 'bun:test';
+import { recordSchema } from './record-schema';
 import { formatIssues, validate } from './standard';
 import {
   builtinT,
@@ -15,7 +16,6 @@ import {
   nullableSchema,
   objectSchema,
   optionalSchema,
-  recordSchema,
   refineSchema,
   unionSchema,
 } from './validators';

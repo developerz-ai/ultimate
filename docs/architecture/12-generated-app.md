@@ -21,8 +21,8 @@ myapp/
     i18n/                 # app catalogs (en, es, ...)
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
-  bin/                    # setup.ts (six steps), check.ts (x build --target static, then x verify)
-  .github/workflows/      # ci.yml — bun run setup then bun run check, on push and pull request
+  bin/                    # setup.ts (six steps); the gate is `bun run verify` (x verify), no file
+  .github/workflows/      # ci.yml — bun run setup then bun run verify, on push and pull request
   docker/                 # compose (dev) + per-role compose (prod) + Dockerfile
   app.config.ts           # the one config file
   x.manifest.json         # GENERATED: routes, entities, actions, jobs, policies
@@ -45,7 +45,7 @@ myapp/
 | `packages/i18n/` | catalogs are data, versioned separately from code, extracted against | strings scattered per surface, locales drifting |
 | `packages/ui/` | app components on `@ultimat3/ui`, budgeted like `shared/` | components with fetching inside them, duplicated per surface |
 | `packages/mcp/` | the app's own tools, declared in one place next to their policies | MCP exposure defined far from the authz it depends on |
-| `bin/` | TypeScript Bun runs (never shell, so PowerShell and cmd run it too), reached through `package.json`'s scripts: `bun run setup` (`bin/setup.ts`) — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest`; `bun run dev` — `x dev`, no file; `bun run check` (`bin/check.ts`) — `x build --target static` **and then** `x verify`, because `budgets` weighs `.x/build-stats.json` and only that build writes it | onboarding by README archaeology |
+| `bin/` | TypeScript Bun runs (never shell, so PowerShell and cmd run it too), reached through `package.json`'s scripts: `bun run setup` (`bin/setup.ts`) — `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest`; `bun run dev` — `x dev`, no file; `bun run verify` — `x verify`, no file: its `budgets` step runs `x build --target static` when `.x/build-stats.json` is missing or stale (`As of 30.0`), so no `bin/check.ts` wraps it | onboarding by README archaeology |
 | `.github/workflows/ci.yml` | the two commands the README opens with, run by a machine that has never seen the repository | a gate that only ever runs on the author's laptop |
 | `docker/` | dev compose + per-role prod compose + one Dockerfile | drift between what you tested and what runs ([`13-topology-runtime.md`](./13-topology-runtime.md)) |
 | `app.config.ts` | one config file, typed, validated at boot | five config files and an env scavenger hunt |
@@ -172,9 +172,12 @@ refused at registration with `X_ROUTE_FILE_INVALID`, and `ROUTE_FILENAME` has no
 x g resource post --admin --locales en
 ```
 
-That invocation writes 35 files, `As of 2026-10` — `x g resource` writes 33 files without
-`--admin`, and the two extra are the override in row 12 and its test. Re-derive by counting
-`data.files` under `--dry-run --json`; a stale number here is `X_DOC_FILE_COUNT_STALE` from the
+That invocation prints 41 files in a `--no-example` scaffold, 43 once `bun run setup` has run,
+`As of 2026-11-03` — 38 and 40 without `--admin`. The count is the slice plus what the command
+edits outside it (the role map, the API index, the db handle, two `package.json` files) and, after
+setup, the `x.manifest.json` and `openapi.json` it refreshes; `--admin` adds the override in row 12,
+its test and the admin index. Re-derive by counting `data.files` under `--dry-run --json`, plus
+`data.refreshes` for a run after setup; a stale number here is `X_DOC_FILE_COUNT_STALE` from the
 gate's `manifest` step. Each further locale in `--locales` adds its catalog to `data.files`, one
 merged file per locale.
 

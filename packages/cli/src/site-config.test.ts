@@ -29,11 +29,11 @@ describe('loadSiteSettings', () => {
   test('reads site.origin (trailing slash dropped) and seo.robots.disallow', async () => {
     await Bun.write(
       join(ROOT, 'app', 'app.config.ts'),
-      "export const config = { name: 'demo', site: { origin: 'https://notificado.co/' }," +
+      "export const config = { name: 'demo', site: { origin: 'https://example.com/' }," +
         " seo: { robots: { disallow: ['/panel'] } } };\n",
     );
     expect(await loadSiteSettings(join(ROOT, 'app'))).toEqual({
-      origin: 'https://notificado.co',
+      origin: 'https://example.com',
       disallow: ['/panel'],
       robotsGroups: [],
       sitemap: { extra: [], lastmod: 'none', sections: [], pageSize: 50_000 },
@@ -61,7 +61,7 @@ describe('loadSiteSettings', () => {
   test('an app that declares no favicon reports none — never a placeholder path', async () => {
     await Bun.write(
       join(ROOT, 'no-favicon', 'app.config.ts'),
-      "export const config = { name: 'demo', site: { origin: 'https://notificado.co' } };\n",
+      "export const config = { name: 'demo', site: { origin: 'https://example.com' } };\n",
     );
     expect((await loadSiteSettings(join(ROOT, 'no-favicon'))).favicon).toBeUndefined();
   });
@@ -96,7 +96,7 @@ describe('publicOrigin', () => {
 
   test('a production build with no origin warns; any other build, or a declared one, does not', () => {
     expect(originWarning('production', undefined)).toHaveLength(1);
-    expect(originWarning('production', 'https://notificado.co')).toEqual([]);
+    expect(originWarning('production', 'https://example.com')).toEqual([]);
     expect(originWarning('development', undefined)).toEqual([]);
   });
 });

@@ -2,8 +2,8 @@
 // geometry has its own tests in `line-chart-view.test.ts` and `chart-ticks-view.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe-fixture';
-import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
+import type { RenderNode } from '@ultimat3/core/render-nodes';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { AreaChart, LineChart } from './LineChart';
 
 const keys = ['mon', 'tue', 'wed'];
@@ -13,7 +13,7 @@ const series = [
 ];
 const base = { label: 'Signups, this week', keys, series, keyLabel: 'Day' };
 
-const text = (node: ProbeNode | undefined): string =>
+const text = (node: RenderNode | undefined): string =>
   [node?.props['children']]
     .flat()
     .filter((c) => typeof c === 'string' || typeof c === 'number')
@@ -46,7 +46,7 @@ describe('LineChart', () => {
   });
 
   test('a line chart fills nothing; an area chart fills under every series', () => {
-    const area = (nodes: ProbeNode[]) => withAttr(nodes, 'data-area', 'true');
+    const area = (nodes: RenderNode[]) => withAttr(nodes, 'data-area', 'true');
     expect(area(renderNodes(LineChart, base))).toHaveLength(0);
     // Web is one unbroken run; App's two points are split by a gap, and a lone point has no area.
     expect(area(renderNodes(AreaChart, base))).toHaveLength(1);

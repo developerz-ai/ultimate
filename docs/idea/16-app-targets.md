@@ -257,7 +257,7 @@ the `spa` projection of every `app/` route and nothing else changes.
 ## Project layout
 
 ```
-tesote.ai/
+my-app/
   apps/
     web/{site,app,api,shared}/       # unchanged
     admin/                           # unchanged

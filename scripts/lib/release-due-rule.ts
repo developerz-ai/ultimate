@@ -106,6 +106,9 @@ export interface DueInput {
    * and absent whenever the lookup could not answer — no known PRs, never "none open". Only ever
    * read on a `due` decision. */
   readonly openPrTitles?: readonly string[];
+  /** `YYYY-MM-DD`: the day the next major may ship (`nextMajorWindow`, wiki/Stability.md).
+   * Absent before v30, when no window is open yet. */
+  readonly majorWindowOpensOn?: string;
 }
 
 export interface DueDecision {
@@ -130,6 +133,8 @@ export interface DueDecision {
   /** HEAD's SHA at the moment `decideAt` resolved the base ref. Pass-through only: the rule
    * never reads it. Undefined for a `releaseDue` unit test, defined for a real decision. */
   readonly headSha?: string;
+  /** Set on a `major_needs_a_maintainer` decision made before the major window opens. */
+  readonly windowOpensOn?: string;
 }
 
 /** Conventional `type(scope)!:` — a subject declaring itself breaking. */
@@ -247,6 +252,14 @@ export function releaseDue(input: DueInput): DueDecision {
         : majorIssue.open
           ? `; a pending-major issue already open: ${majorIssue.twin}`
           : `; file one issue titled \`${majorIssueTitle(next)}\`, listing the breaking entries, for a maintainer`;
+    // The maintainer's call sits inside the window: before it opens, `release.ts` refuses the
+    // major (X_RELEASE_MAJOR_WINDOW), so the decision names the date rather than a bump.
+    const opensOn = input.majorWindowOpensOn;
+    const closed =
+      opensOn !== undefined && new Date(input.nowMs).toISOString().slice(0, 10) < opensOn;
+    const windowNote = closed
+      ? `; next window on ${opensOn}: until then the break waits on the \`next\` branch (wiki/Stability.md)`
+      : '';
     return {
       ...base,
       bump,
@@ -255,7 +268,8 @@ export function releaseDue(input: DueInput): DueDecision {
       breaking: breakingEntries(input.unreleased, shipping),
       due: false,
       reason: 'major_needs_a_maintainer',
-      detail: `a breaking change is pending (a \`BREAKING —\` line under [Unreleased], or a \`!:\` subject): ${next} needs a maintainer to judge its wiki/Upgrading.md walkthrough${majorNote}`,
+      ...(closed ? { windowOpensOn: opensOn } : {}),
+      detail: `a breaking change is pending (a \`BREAKING —\` line under [Unreleased], or a \`!:\` subject): ${next} needs a maintainer to judge its wiki/Upgrading.md walkthrough${windowNote}${majorNote}`,
       command: `bun run scripts/release.ts --version ${next} --dry-run --json`,
     };
   }

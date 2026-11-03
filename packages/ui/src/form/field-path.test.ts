@@ -2,26 +2,26 @@
 // segments an issue path formats from is a rejection that reaches no control.
 
 import { describe, expect, test } from 'bun:test';
-import { formatFieldPath, MAX_FIELD_INDEX, parseFieldPath } from './field-path';
+import { formatPath } from '@ultimat3/schema';
+import { MAX_FIELD_INDEX, parseFieldPath } from './field-path';
 
-describe('formatFieldPath', () => {
+// `@ultimat3/schema`'s `formatPath` IS this grammar's writer; pinned here against the reader.
+describe('formatPath, the grammar parseFieldPath reads', () => {
   test('renders a nested array path exactly as the server does', () => {
-    expect(formatFieldPath(['items', 2, 'price'])).toBe('items[2].price');
+    expect(formatPath(['items', 2, 'price'])).toBe('items[2].price');
   });
 
   test('accepts the wrapped segments a Standard Schema issue carries', () => {
-    expect(formatFieldPath([{ key: 'items' }, { key: 0 }, { key: 'price' }])).toBe(
-      'items[0].price',
-    );
+    expect(formatPath([{ key: 'items' }, { key: 0 }, { key: 'price' }])).toBe('items[0].price');
   });
 
   test('an absent or empty path is the form itself, never a field named ""', () => {
-    expect(formatFieldPath(undefined)).toBe('');
-    expect(formatFieldPath([])).toBe('');
+    expect(formatPath(undefined)).toBe('');
+    expect(formatPath([])).toBe('');
   });
 
   test('a leading index keeps its brackets — the root is an array, not a key', () => {
-    expect(formatFieldPath([0, 'price'])).toBe('[0].price');
+    expect(formatPath([0, 'price'])).toBe('[0].price');
   });
 });
 
@@ -29,7 +29,7 @@ describe('parseFieldPath', () => {
   test('round-trips the path format', () => {
     const parsed = parseFieldPath('items[2].price');
     expect(parsed).toEqual(['items', 2, 'price']);
-    expect(formatFieldPath(parsed ?? [])).toBe('items[2].price');
+    expect(formatPath(parsed ?? [])).toBe('items[2].price');
   });
 
   test('reads consecutive indexes', () => {

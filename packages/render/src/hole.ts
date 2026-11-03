@@ -2,8 +2,7 @@
 // decides nothing, it only names the three trees. `renderNode` calls a component with no view of
 // the walk, so the walker in `render-html.ts` is what sees this node and picks what it means.
 
-/** Registered globally so two copies of this module agree on what a hole node is. */
-export const HOLE_NODE: unique symbol = Symbol.for('ultimate.render.hole') as never;
+import { HOLE_NODE } from '@ultimat3/core/render-node';
 
 export interface HoleProps {
   /** Markup in the first flush, until the hole fills. Rendered at shell time. */

@@ -48,7 +48,7 @@ the surface stylesheet is the renderer's, so neither `rel` is spellable here.
 export const config = defineRoute({
   render: 'static',
   meta: () => ({
-    title: 'Notificado',
+    title: 'Acme',
     description: 'Notificaciones electrónicas con constancia de entrega',
     links: [
       {
@@ -182,7 +182,7 @@ locale when it declares none. A page listed in one locale declares its own:
 import { defineConfig } from '@ultimat3/core';
 
 export const config = defineConfig({
-  name: 'notificado',
+  name: 'acme',
   seo: {
     sitemap: {
       pageSize: 1000,

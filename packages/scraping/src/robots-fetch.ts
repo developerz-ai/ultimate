@@ -10,12 +10,12 @@
 
 import type { HostRule } from '@ultimat3/core';
 import { finiteCount, isUltimateError, readWithinLimit } from '@ultimat3/core';
-import { type DeadlineTimer, deadlineSignal } from './deadline-signal';
+import { type DeadlineTimer, deadlineSignal, resolveDialHost } from '@ultimat3/core/outbound';
 import type { ScrapeFetch } from './http';
 import { redirectHop } from './http-redirect';
 import { interceptVerdict } from './intercept';
 import type { HostResolve } from './pinned-host';
-import { dialTarget, resolveHost } from './pinned-host';
+import { dialTarget } from './pinned-host';
 import type { RobotsAnswer, RobotsFetch } from './robots';
 
 /**
@@ -116,7 +116,7 @@ const answerOf = async (response: Response, limit: number): Promise<RobotsAnswer
  */
 export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
   const call: ScrapeFetch = init.fetch ?? fetch;
-  const resolve = init.resolve ?? resolveHost;
+  const resolve = init.resolve ?? resolveDialHost;
   // Both bounds are screened HERE, at construction, and both floors are 1 — because a bad bound
   // turns into a failed read on every origin, and a read that fails is never evidence of a rule. A
   // `NaN` deadline throws a bare `TypeError` out of `AbortSignal.timeout` (measured: "Value NaN is

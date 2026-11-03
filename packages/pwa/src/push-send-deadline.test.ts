@@ -61,3 +61,35 @@ test('every POST carries a deadline, and a caller that cancels is not a retryabl
   expect(thrown).toBeInstanceOf(DOMException);
   expect((thrown as DOMException).name).toBe('AbortError');
 });
+
+test('a drained worker sends no push: the ambient signal ends it before the POST', async () => {
+  const { ctxOf, runWithContext, UltimateError } = await import('@ultimat3/core');
+  const vapid = await generateVapidKeys();
+  let dialled = 0;
+  const fetch = (async () => {
+    dialled += 1;
+    return new Response('', { status: 201 });
+  }) as unknown as typeof globalThis.fetch;
+  const reason = new UltimateError({ code: 'X_DRAINING', cause: 'draining', fix: 'retry' });
+  const drained = new AbortController();
+  drained.abort(reason);
+  const keys = await subscriberKeys();
+  const thrown = await runWithContext(ctxOf({ signal: drained.signal }), async () =>
+    sendPushMessage({
+      pushHosts: ['push.example.test'],
+      target: { endpoint: 'https://push.example.test/a', keys },
+      plaintext: new Uint8Array(1),
+      vapid: {
+        keys: await importVapidKeys(vapid),
+        publicKey: vapid.publicKey,
+        subject: 'mailto:a@b.c',
+      },
+      fetch,
+    }).then(
+      () => expect.unreachable('a push went out under a drained worker'),
+      (error: unknown) => error,
+    ),
+  );
+  expect(thrown).toBe(reason);
+  expect(dialled).toBe(0);
+});

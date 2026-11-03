@@ -133,6 +133,8 @@ export async function serverLikeCount(
       'sec-fetch-site': 'same-origin',
       cookie: `${DEMO_MEMBER_COOKIE}=${member}`,
     },
+    // A stalled app fails this read, not the whole e2e run (the raw-fetch guard).
+    signal: AbortSignal.timeout(10_000),
   });
   const body: unknown = await response.json();
   // Bare rows, or the record envelope when the query declares entity rows.
@@ -160,6 +162,7 @@ export async function likeOverHttp(
       cookie: `${DEMO_MEMBER_COOKIE}=${member}`,
     },
     body: JSON.stringify({ postId: POSTS[post].id, orgId: POSTS[post].orgId }),
+    signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
     fail(`likePost as ${member} answered ${String(response.status)}: ${await response.text()}`);

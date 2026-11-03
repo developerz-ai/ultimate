@@ -59,7 +59,11 @@ describe('appMcpMount', () => {
     expect(route.method).toBe('POST');
     expect(route.path).toBe('/agent');
     // The http pipeline must not pre-judge: the route reads its own bearer token.
-    expect(route.meta).toEqual({ name: APP_MCP_ROUTE_NAME, auth: 'public', enforcedBy: 'handler' });
+    // And it names its own authenticator, answering nobody: a session cookie is no credential here
+    // (`app-mcp-session.test.ts` drives that through the pipeline).
+    const { authenticate, ...meta } = route.meta;
+    expect(meta).toEqual({ name: APP_MCP_ROUTE_NAME, auth: 'public', enforcedBy: 'handler' });
+    expect(authenticate?.({} as never, {} as never)).toBeNull();
     const raw = new Request('http://app.test/agent', { method: 'POST' });
     const ctx = { url: new URL(raw.url), https: true } as never;
     const response = await route.handler({ raw } as unknown as UltimateRequest, ctx);

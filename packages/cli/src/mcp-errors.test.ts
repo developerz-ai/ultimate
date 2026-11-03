@@ -95,7 +95,9 @@ describe('unit · errors.explain', () => {
     expect(explainErrorCode('X_BUDGET_UNMEASURED')?.fix).toBe(
       'x build --target static --json && x verify --json',
     );
-    expect(explainErrorCode('X_NOT_IN_APP')?.fix).toBe('x new myapp --json && cd myapp');
+    expect(explainErrorCode('X_NOT_IN_APP')?.fix).toBe(
+      'bunx create-ultimate myapp --json && cd myapp',
+    );
   });
 
   // Two surfaces answer for this one code — `checkBudgets`'s finding and `errors.explain` — and

@@ -36,7 +36,7 @@ describe('the emitted install block, executed', () => {
     ]);
   });
 
-  // The measured failure (notificado.co, 22.3.2): one precached stylesheet answered 404, `addAll`
+  // The measured failure (one adopter, 22.3.2): one precached stylesheet answered 404, `addAll`
   // rejected, and the install failed on every deploy — every visitor stayed on the first worker
   // that ever installed, serving pages that named assets gone from the server, until Shift+F5.
   test('an entry that fails costs that entry, never the install', async () => {
@@ -126,7 +126,7 @@ describe('the emitted install block, executed', () => {
   });
 
   /**
-   * The Shift+F5 defect (22.3.1, measured on notificado.co): a `static` route with
+   * The Shift+F5 defect (22.3.1, measured on one adopter's app): a `static` route with
    * `offline: 'precache'` was cache-first, so every online navigation was answered with the HTML
    * this worker precached — the previous deploy's, naming the previous deploy's hashed CSS and
    * islands. The precache is the OFFLINE copy; online, the network's document wins.

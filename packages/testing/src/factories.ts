@@ -11,10 +11,13 @@ import { seededRandom, seededUuid } from './determinism';
 import { FactoryTraitUnknownError } from './errors';
 import { persistRow } from './factory-persist';
 
+/**
+ * The two members of `entity()`'s value a factory reads, structurally: `@ultimat3/entity` is a
+ * dynamic-only dependency of this barrel. `$table` is the PHYSICAL table, what the persister writes.
+ */
 export interface EntityLike {
-  readonly kind: 'entity';
-  readonly table: string;
-  readonly columns: Readonly<Record<string, unknown>>;
+  readonly $table: string;
+  readonly $columns: Readonly<Record<string, unknown>>;
 }
 
 /** The seeded generators a `defaults` or trait body draws from. Never `Math.random` directly. */
@@ -106,7 +109,7 @@ export function defineFactory<TRow extends object, TTraits extends TraitMap<TRow
   options: FactoryOptions<TRow, TTraits>,
 ): Factory<TRow, Extract<keyof TTraits, string>> {
   type Name = Extract<keyof TTraits, string>;
-  const seed = options.seed ?? seedFor(entity.table);
+  const seed = options.seed ?? seedFor(entity.$table);
   const traits: TraitMap<TRow> = options.traits ?? {};
   const declared = Object.keys(traits).sort() as Name[];
   // Erased to one shape for iteration; the public `AssociationMap` already held each entry to its
@@ -130,7 +133,7 @@ export function defineFactory<TRow extends object, TTraits extends TraitMap<TRow
   // was accepted the same way and applied nothing at all.
   const assertTrait = (name: string): string => {
     if (!Object.hasOwn(traits, name)) {
-      throw new FactoryTraitUnknownError({ table: entity.table, trait: name, declared });
+      throw new FactoryTraitUnknownError({ table: entity.$table, trait: name, declared });
     }
     return name;
   };
@@ -172,12 +175,12 @@ export function defineFactory<TRow extends object, TTraits extends TraitMap<TRow
       if (!(column in overrides)) linked[column] = await link.create();
     }
     const row = { ...base, ...(linked as Partial<TRow>), ...overrides };
-    await persistRow(entity.table, row);
+    await persistRow(entity.$table, row);
     return row;
   };
 
   const view = (applied: readonly string[]): Factory<TRow, Name> => ({
-    table: entity.table,
+    table: entity.$table,
     traits: declared,
     build: (over = {}) => buildRow(applied, over),
     buildMany: (count, over = {}) => Array.from({ length: count }, () => buildRow(applied, over)),

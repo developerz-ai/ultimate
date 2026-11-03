@@ -372,7 +372,8 @@ describe('the ratchet moves in one direction', () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-secret-pins-')).then(made);
     const path = join(dir, SECRET_PINS_FILE);
     await Bun.write(path, await Bun.file(join(repoRoot(), SECRET_PINS_FILE)).text());
-    const triple = 'packages/manifest/src/docs-search.ts: !matched.includes(token)';
+    // Any row the real file carries; the fixture below pins it at 3 whatever the file says.
+    const triple = 'packages/ai/src/prompt.ts: existing.hash !== hash';
     const single = 'packages/time/src/cron-parse.ts: list.indexOf(token)';
     const fixture: Readonly<Record<string, SecretComparePin>> = {
       [triple]: pin(3),

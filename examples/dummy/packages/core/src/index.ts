@@ -15,7 +15,7 @@ export {
   previousDigestAt,
   scheduleByOrgAndZone,
 } from './digest-schedule';
-export { CoreError, NotAMember, NotAnUpgrade, SeatsExceeded } from './errors';
+export { NotAMember, NotAnUpgrade, SeatsExceeded } from './errors';
 export type { Actor, ActorLike, OwnedRecord } from './membership';
 export {
   mayAdministerOrg,

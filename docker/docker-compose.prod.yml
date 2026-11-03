@@ -55,8 +55,10 @@ x-common: &common
   # escalation through a setuid binary. The two writable paths are tmpfs, so nothing written there
   # outlives the container: `/tmp`, and `/app/.x`, where any binding still embedded keeps its state
   # — which is why production names a real DATABASE_URL and object store, and never relies on it.
+  # A tmpfs mounts root-owned and hides any chown in the image, so `.x/` names the image's user:
+  # 65532, distroless `nonroot`, the `runAsUser` in docker/helm/values.yaml.
   read_only: true
-  tmpfs: [/tmp, /app/.x]
+  tmpfs: [/tmp, '/app/.x:uid=65532,gid=65532']
   cap_drop: [ALL]
   security_opt: ['no-new-privileges:true']
   # A leak or a runaway island build takes one container down, never the box. The chart's largest

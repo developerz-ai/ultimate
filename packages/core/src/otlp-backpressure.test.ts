@@ -86,6 +86,46 @@ describe('a stalled collector', () => {
     for (const body of collector.bodies) expect(spansIn(body)).toBeLessThanOrEqual(512);
   });
 
+  test('span exporter: a batch waiting out a retry holds the queue to maxQueueSize', async () => {
+    const bodies: string[] = [];
+    const fetch = Object.assign(
+      (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        bodies.push(String(init?.body ?? ''));
+        return Promise.resolve(new Response('', { status: bodies.length === 1 ? 503 : 200 }));
+      },
+      { preconnect: (): void => {} },
+    ) as typeof globalThis.fetch;
+    let wake: (() => void) | undefined;
+    const exporter = otlpSpanExporter({
+      endpoint: 'http://collector:4318/v1/traces',
+      maxQueueSize: 2048,
+      maxBatchSize: 512,
+      timeoutMs: 60_000,
+      fetch,
+      // The retry's wait is held open until the test releases it: the 503'd batch is in flight.
+      sleep: () =>
+        new Promise<void>((resolve) => {
+          wake = resolve;
+        }),
+      random: () => 0,
+    });
+    for (let index = 0; index < 512; index += 1) exporter.export(span(index));
+    await Bun.sleep(0);
+    expect(bodies).toHaveLength(1);
+    expect(wake).toBeDefined();
+    for (let index = 512; index < 100_000; index += 1) exporter.export(span(index));
+    // Still one batch: nothing was taken off the queue behind the retrying one.
+    expect(bodies).toHaveLength(1);
+
+    wake?.();
+    await exporter.shutdown();
+    // The retried batch went again first and whole, so a parent still precedes its child.
+    expect(bodies[1]).toBe(bodies[0] as string);
+    const sent = bodies.slice(1).reduce((total, body) => total + spansIn(body), 0);
+    expect(sent).toBeLessThanOrEqual(2048 + 512);
+    expect(bodies.at(-1)).toContain('span-99999');
+  });
+
   test('metric exporter: one snapshot in flight and only the NEWEST waiting behind it', async () => {
     const collector = stalledCollector();
     const exporter = otlpMetricExporter({

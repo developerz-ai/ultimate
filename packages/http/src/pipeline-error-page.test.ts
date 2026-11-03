@@ -56,7 +56,7 @@ describe('a browser, in production', () => {
     expect(body).toStartWith('<!doctype html>');
     expect(body).toContain('Page not found');
     expect(body).toContain('https://github.com/developerz-ai/ultimate');
-    expect(body).toContain('https://www.developerz.ai');
+    expect(body).not.toContain('https://www.developerz.ai');
     expect(body).toContain('X_ROUTE_NOT_FOUND');
     // The fix line is an instruction for the author, and it names the app's own route table.
     expect(body).not.toContain('x routes --json');
@@ -80,7 +80,7 @@ describe('a browser, in production', () => {
     const body = await response.text();
     expect(body).toContain(SECRET);
     expect(body).toContain('x errors explain');
-    expect(body).not.toContain('https://www.developerz.ai');
+    expect(body).not.toContain('Built with Ultimate');
   });
 
   test("an app's own file wins, verbatim", async () => {

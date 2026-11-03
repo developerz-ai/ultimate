@@ -232,6 +232,7 @@ describe('the tables that live inside a script', () => {
       'scripts/set-cookie-literals.ts',
       'scripts/factory-names-pins.ts',
       'scripts/wiki-fences-backlog.ts',
+      'scripts/package-front.ts',
     ]);
   });
 

@@ -255,6 +255,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_APP_IMPORT_UNRESOLVED',
   'X_STREAM_ALREADY_FLUSHED',
   'X_QUERY_SLICE_ENTITY',
+  'X_DEPLOY_ENV_MISSING',
+  'X_ENV_FILE_EXISTS',
+  'X_DEV_STOP_TIMEOUT',
+  'X_DEV_STOP_DENIED',
 ] as const;
 
 /**
@@ -466,6 +470,10 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_APP_IMPORT_UNRESOLVED: 'an app module imports what does not resolve',
   X_STREAM_ALREADY_FLUSHED: 'a response header was written after the stream flushed',
   X_QUERY_SLICE_ENTITY: 'x g query into a slice whose entity is not the one it scaffolds',
+  X_DEPLOY_ENV_MISSING: 'x deploy --method compose found no complete .env.production',
+  X_ENV_FILE_EXISTS: 'x env init --production found .env.production already written',
+  X_DEV_STOP_TIMEOUT: 'x stop sent SIGTERM and x dev did not exit in time',
+  X_DEV_STOP_DENIED: 'x stop may not signal the x dev the lock names',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

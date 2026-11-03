@@ -1,6 +1,6 @@
-// `x env` — the two things a typed environment owes an agent: the committed `.env.example` that
-// says which variables exist, and the answer to "does this process have them?". Both are
-// projections of the one `defineEnv` declaration in `app.config.ts`; neither reads a second list.
+// `x env` — the things a typed environment owes an agent: the committed `.env.example` that says
+// which variables exist, the answer to "does this process have them?", and (`init`,
+// `cmd-env-init.ts`) the deploy's `.env.production`. All read the one `defineEnv` declaration.
 
 // Bun ships no path-join primitive, and `.env.example` is written app-root-relative.
 import { join } from 'node:path';
@@ -123,8 +123,8 @@ export const envCommand: CliCommand = {
     // `subcommand`, never `positionals[0]`: the parser has already lifted a declared subcommand
     // out of the positionals, so reading the array here matches nothing and every invocation
     // silently ran the default.
-    return (ctx.args.subcommand ?? 'check') === 'example'
-      ? writeExample(ctx)
-      : checkProcessEnv(ctx);
+    const subcommand = ctx.args.subcommand ?? 'check';
+    if (subcommand === 'init') return (await import('./cmd-env-init')).initProductionEnv(ctx);
+    return subcommand === 'example' ? writeExample(ctx) : checkProcessEnv(ctx);
   },
 };

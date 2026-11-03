@@ -3,7 +3,7 @@
 // box it may never omit, and the AVIF/WebP `<source>`s in front of the fallback.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, one, renderNodes } from '../jsx-probe-fixture';
+import { byTag, one, renderNodes } from '@ultimat3/core/render-nodes';
 import { Image } from './Image';
 
 const BOX = { width: 620, height: 320 } as const;

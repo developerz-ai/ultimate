@@ -1,5 +1,5 @@
 // A module two islands import is ONE file a browser fetches once, not a copy inside each island.
-// Real builds of a fixture shaped like the one that found it (notificado.co, 2026-09-29): two
+// Real builds of a fixture shaped like the one that found it (one adopter, 2026-09-29): two
 // islands on one page, both importing a ~20 kB upload helper, weighed 55.5 kB against ~34 kB.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';

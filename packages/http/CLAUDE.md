@@ -134,8 +134,10 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Rules — errors and the problem document
 
-- Statuses live in `error-map.ts` only; the framework table is closed and an app declares its codes
-  with `registerErrorStatus()` (refuses a framework code). No projection of the app's half.
+- Statuses live in `error-map.ts` only; the framework table is closed. The app's half lives in core
+  (`error-status-declared.ts`, `@ultimat3/core/internal/error-status`): an app's own code declares
+  its status with core's `defineError`; `registerErrorStatus()` keeps its refusals (a framework code)
+  and writes there, for codes an app re-raises but does not declare. No projection of the app's half.
   **`error-facts.ts` renders the throwable**; the seam is `declaredStatusFor(code)`, imports one way.
 - **A problem's `type` is `problemTypeFor(code)` = `urn:ultimate:error:<CODE>`; its `docs` is core's
   `ERROR_DOCS_URL`.** `finalize.ts`'s `lastResort` literal is pinned against `problemTypeFor('X_INTERNAL')`.

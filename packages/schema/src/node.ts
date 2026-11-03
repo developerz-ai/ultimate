@@ -54,6 +54,11 @@ export interface SchemaNode {
   readonly hasDefault?: boolean | undefined;
   readonly default?: unknown;
   readonly description?: string | undefined;
+  /**
+   * `.sensitive()`: sent in, never written down by the framework, never sent back — JSON Schema's
+   * `writeOnly`. Read by the walkers that hold this schema (`maskSensitive`), never a key table.
+   */
+  readonly sensitive?: boolean | undefined;
   readonly format?: SchemaFormat | undefined;
   readonly minLength?: number | undefined;
   readonly maxLength?: number | undefined;

@@ -60,9 +60,9 @@ describe('completeOpenApi', () => {
   const complete = () =>
     completeOpenApi(buildOpenApi({ title: 'app', version: '0.1.0' }), {
       declared: {
-        title: 'Notificado API',
+        title: 'Acme API',
         version: '1.0.0',
-        servers: [{ url: 'https://www.notificado.co' }],
+        servers: [{ url: 'https://www.example.com' }],
       },
       routes: listActions().map(toRoute),
       bearer: true,
@@ -70,8 +70,8 @@ describe('completeOpenApi', () => {
 
   test("carries the app's info and servers", () => {
     const doc = complete();
-    expect(doc.info).toEqual({ title: 'Notificado API', version: '1.0.0' });
-    expect(doc.servers).toEqual([{ url: 'https://www.notificado.co' }]);
+    expect(doc.info).toEqual({ title: 'Acme API', version: '1.0.0' });
+    expect(doc.servers).toEqual([{ url: 'https://www.example.com' }]);
   });
 
   test('declares the cookie scheme, and bearer when a mount exists', () => {
@@ -108,7 +108,7 @@ describe('completeOpenApi', () => {
 describe('mountOpenApi', () => {
   const mounted = () =>
     mountOpenApi(buildOpenApi({ title: 'app', version: '0.1.0' }), {
-      declared: { title: 'Notificado API', version: '1.0.0' },
+      declared: { title: 'Acme API', version: '1.0.0' },
       mount: {
         prefix: '/v1',
         scopes: { 'cases:write': ['createCase'], 'ops:read': ['health'] },

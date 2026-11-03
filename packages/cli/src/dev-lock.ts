@@ -17,6 +17,7 @@
 import { linkSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stringField, UltimateError } from '@ultimat3/core';
+import { reusedPid, startedOf } from './dev-lock-identity';
 import { exec, type Runner } from './exec';
 import { portPairAfter } from './flag-number';
 import { quoteArg } from './shell-quote';
@@ -30,7 +31,12 @@ export interface DevLock {
   readonly url: string;
   /** ISO 8601. Only ever printed — a stale lock is decided by the pid, never by the clock. */
   readonly startedAt: string;
+  /** The holder's OS start time (`dev-lock-identity.ts`): a reused pid does not match it. */
+  readonly started?: string;
 }
+
+// Re-exported: `cmd-stop.ts` asks the same question before it signals.
+export { reusedPid };
 
 export const lockPath = (stateDir: string): string => join(stateDir, DEV_LOCK_FILE);
 
@@ -47,6 +53,7 @@ export const parseLock = (raw: string): DevLock | null => {
       port: value.port,
       url: typeof value.url === 'string' ? value.url : `http://localhost:${value.port}`,
       startedAt: typeof value.startedAt === 'string' ? value.startedAt : '',
+      ...(typeof value.started === 'string' ? { started: value.started } : {}),
     };
   } catch {
     return null;
@@ -115,7 +122,8 @@ export class DevAlreadyRunningError extends UltimateError {
     super({
       code: 'X_DEV_ALREADY_RUNNING',
       cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}`,
-      fix: `use the one already running at ${input.lock.url}, or stop it: kill ${input.lock.pid}`,
+      // `x stop`, not `kill <pid>`: a kill returns before the drain ends and the next boot refuses.
+      fix: `use the one already running at ${input.lock.url}, or stop it: x stop --json`,
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
     });
   }
@@ -396,12 +404,13 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
     // is what the refusal prints, and it is the address the boot is about to ask for.
     url: `http://${input.hostname}:${input.port}`,
     startedAt: new Date().toISOString(),
+    ...(await startedOf(process.pid)),
   };
   let clearedStale = false;
 
   if (!claimExclusive(input.stateDir, path, mine)) {
     const held = await readLock(path);
-    if (held !== null && alive(held.pid)) {
+    if (held !== null && alive(held.pid) && !(await reusedPid(held))) {
       throw new DevAlreadyRunningError({
         lock: held,
         stateDir: input.stateDir,
@@ -455,11 +464,13 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
  * with the address the server actually bound, which is the one field the preflight could not know.
  */
 export const writeLock = async (stateDir: string, lock: DevLock): Promise<void> => {
+  const stamped: DevLock =
+    lock.started === undefined ? { ...lock, ...(await startedOf(lock.pid)) } : lock;
   // Staged and renamed over the claim, never rewritten in place: a truncate-then-write leaves an
   // empty lock for an instant, and a preflight reading it then would clear a live claim as stale.
   const path = lockPath(stateDir);
   const staged = stagingPath(path);
-  writeFileSync(staged, lockText(lock));
+  writeFileSync(staged, lockText(stamped));
   renameSync(staged, path);
 };
 

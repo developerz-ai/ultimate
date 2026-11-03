@@ -2,7 +2,7 @@
 // `@use`s, a helper — must reach the page `x dev` serves on the next rescan. Until this file, only
 // the route module itself was re-imported (`?x-reload=<hash>`), and its own imports resolved to the
 // modules already in Bun's cache: `x dev` logged "reloaded" and kept rendering the old component
-// (notificado.co, 2026-09-27: the panel's balance card and the home page, until a restart).
+// (one adopter, 2026-09-27: the panel's balance card and the home page, until a restart).
 //
 // The second half pins the other side of the rule: a module that DEFINES a primitive (an entity, an
 // action) is never re-evaluated — that would be `X_ENTITY_DUPLICATE`, or a second handler nobody

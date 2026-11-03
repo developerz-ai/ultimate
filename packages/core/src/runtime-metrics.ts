@@ -101,3 +101,16 @@ export function recordJob(queue: string, outcome: 'ok' | 'failed' | 'dead'): voi
 export function recordLeaseLost(queue: string): void {
   leasesLost.add(1, { queue });
 }
+
+export const breakerTransitions: Counter = counter('breaker_transitions_total', {
+  unit: '{transition}',
+  description: 'Circuit breaker state changes, by breaker name and the state entered',
+});
+
+/**
+ * One per state change of a `breaker()`, called only by `breaker.ts`. `name` is a label the app
+ * chose in code (bounded), never a tenant or a URL, so the series count is the breaker count × 3.
+ */
+export function recordBreakerTransition(name: string, to: 'closed' | 'open' | 'half-open'): void {
+  breakerTransitions.add(1, { name, to });
+}

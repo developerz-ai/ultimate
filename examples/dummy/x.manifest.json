@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "d347a81969d31854",
+  "buildId": "92d977d9c8f6b0fb",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -431,7 +431,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "168kb"
+        "js": "169kb"
       }
     },
     {
@@ -481,7 +481,7 @@
       ],
       "surface": "site",
       "budget": {
-        "js": "25kb"
+        "js": "26kb"
       }
     },
     {
@@ -492,7 +492,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "182kb"
+        "js": "183.5kb"
       }
     },
     {
@@ -503,7 +503,7 @@
       "revalidateTags": [],
       "surface": "app",
       "budget": {
-        "js": "72kb"
+        "js": "72.5kb"
       }
     }
   ],
@@ -1540,7 +1540,8 @@
           "credential": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200
+            "maxLength": 200,
+            "writeOnly": true
           },
           "exit": {
             "type": "string",
@@ -6685,6 +6686,10 @@
       "package": "guards/bare-error.ts"
     },
     {
+      "code": "X_ERROR_DECLARED",
+      "package": "guards/error-declared.ts"
+    },
+    {
       "code": "X_FOCUS_VISIBLE",
       "package": "guards/focus-visible.ts"
     },
@@ -6703,6 +6708,10 @@
     {
       "code": "X_RAW_COLOUR",
       "package": "guards/raw-colour.ts"
+    },
+    {
+      "code": "X_RAW_FETCH",
+      "package": "guards/raw-fetch.ts"
     },
     {
       "code": "X_RAW_LENGTH",
@@ -6763,10 +6772,6 @@
     {
       "code": "X_DOMAIN_INVARIANT",
       "package": "packages/domain"
-    },
-    {
-      "code": "X_MCP_TOOL_UNSAFE",
-      "package": "packages/mcp"
     }
   ]
 }

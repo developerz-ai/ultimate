@@ -1,6 +1,6 @@
 // `asset()` from Sass: a stylesheet names a site asset by the same path a page passes `asset()`,
 // and the compiled CSS carries the content-hashed URL `/assets/*` serves. Sass `url()` could not
-// call the TypeScript `asset()`, so notificado.co generated its `@font-face` rules by script.
+// call the TypeScript `asset()`, so one adopter generated its `@font-face` rules by script.
 //
 // Pinned: the rewrite, its use inside `url()`, the refusal of a missing file as `X_ASSET_MISSING`
 // (never a Sass stack), and a disk-cache entry that goes stale when the asset's hash moves.

@@ -273,6 +273,10 @@ services:
 
 `x deploy --method compose` applies this against the committed `docker/docker-compose.prod.yml`; it is a plain compose file you can read, diff, and run by hand — from the app root, as `docker compose --env-file .env.production -f docker/docker-compose.prod.yml up -d`.
 
+**`.env.production` has one writer**, `x env init --production` (`As of 30.0.0`): it fills every `${VAR:?}` above, a `DATABASE_URL` naming the compose `db` (role `postgres`, database the app name, the generated `POSTGRES_PASSWORD`), and every secret the boot refuses to start without — then `x deploy` reads it before the first step and names what is missing (`X_DEPLOY_ENV_MISSING`). The three commands, executed on every push by the `compose-deploy` CI job: `x env init --production`, `x build --target docker`, `x deploy` ([Deploy recipes](Deploy-Recipes#one-box-compose)).
+
+**The `/app/.x` tmpfs is owned by the image's user** (`As of 30.0.0`): `'/app/.x:uid=1000,gid=1000'` in the scaffold (its `USER 1000:1000`), `uid=65532` in the framework's specimen (distroless `nonroot`). A tmpfs mounts root-owned under `read_only: true`, so before this every role refused at boot with `X_STORAGE_UNWRITABLE … EACCES mkdir '/app/.x/storage'`. An app scaffolded earlier edits that one line.
+
 > **`web` and `sync` are one replica each, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both declare `replicas: 1` — a ceiling that is declared rather than discovered when the second container dies on `port is already allocated`. `worker`, `scheduler` and `replicator` publish nothing; `worker` scales freely.
 >
 > | Want | Do |
@@ -427,7 +431,7 @@ The only requirement: **something that runs containers, plus Postgres.** NATS an
 | Target | How | Notes |
 |---|---|---|
 | Hetzner + Compose | `compose.prod.yml` on one or two boxes | cheapest credible production; one node runs all roles |
-| Fly.io | one app per role, or process groups | drain semantics map cleanly to Fly's SIGTERM handling |
+| Fly.io | one app per role | drain semantics map cleanly to Fly's SIGTERM handling; settings per host: [Deploy recipes](Deploy-Recipes) |
 | Railway / Render | one service per role, same image | set `ROLE` per service |
 | AWS ECS / Fargate | one task definition per role | ALB for `web`, NLB for `sync` |
 | Any Kubernetes | the generated Helm chart | EKS, GKE, AKS, k3s — no cloud-specific resources |

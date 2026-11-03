@@ -58,15 +58,15 @@ On the scaffold above, `As of 2026-08-23`:
 
 | Run | Result |
 |---|---|
-| `bun run setup && bun run check` on a fresh scaffold | the gate green on the **first** pass, **20 of 20 steps** with `budgets` among them. Measured on a WSL2 developer box — not a VM, not a CI runner — warm cache, `As of 2026-09-11`: `bun run setup` 6,802ms, `bun run check` 5,389ms; the `--no-example` shape 5,135ms and 3,909ms ([`wiki/Bare-VM.md`](../../wiki/Bare-VM.md)) |
-| `x verify` alone, on an app nobody has built | red on `budgets` — `X_BUDGET_UNMEASURED`, because `.x/build-stats.json` is written by `x build --target static` and by nothing else. The build is `bun run check`'s first line, which is the whole reason the two commands are in that order |
+| `bun run setup && bun run check` on a fresh scaffold (the pre-30.0 wrapper: `x build --target static`, then `x verify`) | the gate green on the **first** pass, **20 of 20 steps** with `budgets` among them. Measured on a WSL2 developer box — not a VM, not a CI runner — warm cache, `As of 2026-09-11`: `bun run setup` 6,802ms, `bun run check` 5,389ms; the `--no-example` shape 5,135ms and 3,909ms ([`wiki/Bare-VM.md`](../../wiki/Bare-VM.md)) |
+| `x verify` alone, on an app nobody has built | green on `budgets` too, `As of 30.0`: the step runs `x build --target static` itself when `.x/build-stats.json` is missing, of an earlier rule, or older than the newest source, so the scaffold ships no `bun run check`. Before 30.0 this row was red, `X_BUDGET_UNMEASURED` |
 | `lint` on run one | green, zero diagnostics across every source file the scaffold writes, `As of 2026-09-11`. It used to be **name-dependent** — the templates emit `@<app>/…` before `@ultimat3/…`, which `organizeImports` accepted only while the app name sorted first — until `sortedImports` closed that half ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)) |
 
 Re-derive: `bun run scripts/scaffold-gate.ts <app dir> --json`, which runs that app's own two
 scripts and prints the wall time of each.
 
 **No waiver and no fix-follow**, `As of 2026-09`. CI runs exactly those two scripts, once, on every
-push, outside the checkout, in `ci.yml`'s `scaffold-smoke` job — and the FIRST `bun run check` is the
+push, outside the checkout, in `ci.yml`'s `scaffold-smoke` job — and the FIRST gate run is the
 one that has to be green, because one pass is all a box gets. The `--allow-red budgets` allowance is
 gone: the build ahead of the gate left it nothing to excuse, and `budgets` is now asserted **green**
 rather than merely not-red, since a skipped step would mean that build bought nothing

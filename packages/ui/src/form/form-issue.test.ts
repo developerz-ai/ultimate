@@ -1,6 +1,6 @@
-// The two readers of a rejection, and the format each one has to survive. The wire carries no
-// structured issue list today, so the cause-line reader is the bridge — and it is pinned against
-// the exact string `@ultimat3/action`'s `InputInvalidError` mints.
+// The two readers of a rejection, and the format each one has to survive. The wire carries
+// `meta.issues`; the cause-line reader is the fallback for a rejection that lost it — and it is
+// pinned against the exact string `@ultimat3/action`'s `InputInvalidError` mints.
 
 import { describe, expect, test } from 'bun:test';
 import { issuesFromRejection, issuesFromValidation } from './form-issue';
@@ -98,5 +98,38 @@ describe('issuesFromRejection', () => {
       expect(issues).toHaveLength(1);
       expect(issues[0]?.path).toBe('');
     }
+  });
+});
+
+describe('rule and params, the keys a translator writes against', () => {
+  const ruled = { path: ['title'], message: 'expected …', rule: 'string.min', params: { min: 3 } };
+
+  test('a local parse and a server rejection give the same rule and params', () => {
+    const [local] = issuesFromValidation({ issues: [ruled] });
+    const [server] = issuesFromRejection({
+      code: 'X_INPUT_INVALID',
+      meta: { issues: [{ ...ruled, path: 'title', expected: '', received: '' }] },
+    });
+    expect(local).toMatchObject({ path: 'title', rule: 'string.min', params: { min: 3 } });
+    expect(server).toMatchObject({ path: 'title', rule: 'string.min', params: { min: 3 } });
+  });
+
+  test('a non-string rule and a params holding a non-scalar are dropped', () => {
+    const [issue] = issuesFromValidation({
+      issues: [{ message: 'm', rule: 7, params: { min: 1 } } as never],
+    });
+    expect(issue?.rule).toBeUndefined();
+    const [other] = issuesFromRejection({
+      code: 'X_INPUT_INVALID',
+      meta: { issues: [{ path: 'a', message: 'm', rule: 'string.min', params: { v: {} } }] },
+    });
+    expect(other).toMatchObject({ rule: 'string.min' });
+    expect(other?.params).toBeUndefined();
+  });
+
+  test('a third-party issue with no rule leaves both absent, so messageFor falls back', () => {
+    const [issue] = issuesFromValidation({ issues: [{ message: 'expected number' }] });
+    expect(issue?.rule).toBeUndefined();
+    expect(issue?.params).toBeUndefined();
   });
 });

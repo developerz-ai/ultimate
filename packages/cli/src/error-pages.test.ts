@@ -70,12 +70,12 @@ describe('which page wins', () => {
 });
 
 describe('the document a static export carries', () => {
-  test("is the framework's page, with both backlinks and no request row", async () => {
+  test("is the framework's page, with the repository backlink and no request row", async () => {
     expect(STATIC_ERROR_PAGE).toBe('404.html');
     const page = await errorPageDocument(ROOT, 404);
     expect(page).toStartWith('<!doctype html>');
     expect(page).toContain('https://github.com/developerz-ai/ultimate');
-    expect(page).toContain('https://www.developerz.ai');
+    expect(page).not.toContain('https://www.developerz.ai');
     expect(page).not.toContain('⟦');
     expect(page).not.toContain('<dt>request</dt>');
   });

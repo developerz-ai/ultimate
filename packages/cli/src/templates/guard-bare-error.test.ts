@@ -42,6 +42,9 @@ describe('unit · shipped guard · bare-error', () => {
   test('the finding names the class actually thrown', async () => {
     const findings = await findingsFor("throw URIError('bad link');");
     expect(findings[0]?.cause).toContain('throws a bare URIError');
+    // The one way to declare an app code, never a handwritten subclass `error-declared` refuses.
+    expect(findings[0]?.fix).toContain('defineError({ code, title, status, cause, fix })');
+    expect(findings[0]?.fix).not.toContain('subclass');
   });
 
   test('a subclass, a lookalike name and an Error that is input stay silent', async () => {

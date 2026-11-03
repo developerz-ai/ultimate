@@ -243,66 +243,6 @@ export const SECRET_COMPARE_PINS: Readonly<Record<string, SecretComparePin>> = {
     reason:
       'A test fixture filtering listed rows by the idempotency key a scheduled fire derives from its occurrence (`nightly:<ms>`) — a dedupe name the fixture built itself. Visible from sweep 11, when an interpolating template stopped reading as a constant.',
   },
-  'packages/manifest/src/docs-search.ts: out.includes(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      '`docs-search.ts` is a SEARCH INDEX: `token` is one word a human typed into `x docs search`, deduplicated here.',
-  },
-  'packages/manifest/src/docs-search.ts: symbolsLower.indexOf(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — looked up among symbol names.',
-  },
-  'packages/manifest/src/docs-search.ts: symbol.includes(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — matched inside a symbol name.',
-  },
-  'packages/manifest/src/docs-search.ts: topicTokens.includes(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — matched against a topic’s words.',
-  },
-  'packages/manifest/src/docs-search.ts: packageToken === token': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — matched against a package name.',
-  },
-  'packages/manifest/src/docs-search.ts: !matched.includes(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 3,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — recorded once per field it matched in.',
-  },
-  'packages/manifest/src/docs-search.ts: titleLower.includes(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — matched inside a doc title.',
-  },
-  'packages/manifest/src/docs-search.ts: textLower.includes(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — matched inside a doc body.',
-  },
-  'packages/manifest/src/docs-search.ts: topic.includes(token)': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token` — one word a human typed into `x docs search` — scored against a topic.',
-  },
-  'packages/manifest/src/docs-search.ts: topic.includes(token.slice(0, 4))': {
-    // why: re-keyed per site in plan 101 sweep 11; it was counted under the `manifest` package row.
-    count: 1,
-    reason:
-      'A search `token`’s four-letter prefix scored against a topic, so `retries` reaches `retry` — a word a human typed into `x docs search`.',
-  },
   'packages/query/src/live.ts: cursor.queryHash !== hash': {
     // why: re-keyed per site in plan 101 sweep 11; it was counted under the `query` package row.
     count: 1,

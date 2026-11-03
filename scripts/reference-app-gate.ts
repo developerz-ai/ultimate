@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-// Every tracked app's own `x verify`, built first as its `bin/check` does, run as a BLOCKING check
-// on this repo — `examples/dummy` and the deployed `dummy/social-media-clone`. A ratchet rather
+// Every tracked app's own `x verify`, built first, run as a BLOCKING check on this repo —
+// `examples/dummy` and the deployed `dummy/social-media-clone`. A ratchet rather
 // than a pass/fail: every step passing today must keep passing, every step pinned in that app's
 // `expectedRed` must still be failing, and the moment an app's `typecheck` comes off the pin it
 // has to join the root `tsc -b` solution. Red never becomes the resting state.
@@ -393,7 +393,7 @@ if (import.meta.main) {
   // Sequentially, not `Promise.all`: each app's `x verify` runs its own test workers, boots an
   // embedded Postgres and binds the e2e server's port. CI gives each app a runner (`--app`).
   for (const app of apps) {
-    // Built first, as `bin/check` does: `budgets` weighs what this build writes.
+    // Built first: `budgets` weighs what this build writes, and finds it fresh, so it builds nothing.
     const built = await buildApp(root, exec, app);
     if (built !== undefined) findings.push(built);
     const steps = await runAppGate(root, exec, app.dir);

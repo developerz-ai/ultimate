@@ -40,7 +40,8 @@ const failureOf = async (
   response: Response,
   keys: readonly string[] = ['post'],
 ): Promise<{ code?: string; cause?: string; fix?: string; meta?: Record<string, unknown> }> => {
-  const { fetch } = recorder(() => response);
+  // A clone per call: a 5xx is now retried, and a Response body is read once.
+  const { fetch } = recorder(() => response.clone());
   const failure = await driverWith(fetch)
     .purge(keys)
     .then(
@@ -176,7 +177,9 @@ describe('cloudflarePurgeDriver failures', () => {
 
   test('an html error page is reported as text rather than swallowed', async () => {
     const failure = await failureOf(new Response('<html>bad gateway</html>', { status: 502 }));
-    expect(failure.cause).toContain('bad gateway');
+    // An HTML page is raw text, which `outbound()` never keeps: the status is what is reported.
+    expect(failure.cause).not.toContain('bad gateway');
+    expect(failure.cause).toContain('HTTP 502');
   });
 });
 

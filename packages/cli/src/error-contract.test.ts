@@ -35,7 +35,7 @@ describe('fixProblem', () => {
     expect(fixProblem('runWithContext(ctxOf({ … }), fn)')).toBeUndefined();
   });
 
-  // An app's own gate is `bin/check`, and "check" is a banned word: without the script token,
+  // An older scaffold's gate is `bin/check`, and "check" is a banned word: without the script token,
   // `fix: 'bin/check --full'` — the exact command to run — was refused as advice.
   test('accepts a repo script as the command: bin/<name> and scripts/<name>.ts', () => {
     expect(fixProblem('bin/check --full')).toBeUndefined();

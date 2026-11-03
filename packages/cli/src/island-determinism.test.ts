@@ -5,7 +5,7 @@
 // imports, and a single module is where this defect is invisible — its
 // "the same source hashes to the same URL" test passed throughout. `Bun.build`'s minified output
 // is not byte-deterministic once there is a third-party graph to walk: measured on 1.4.0 against
-// ai-maxxing's 131,858-byte `session-console` island with no source file touched (`find -newermt`
+// one adopter's 131,858-byte `session-console` island with no source file touched (`find -newermt`
 // clean), TEN distinct `session-console-*.js` names in ten minutes, flipping BACK AND FORTH
 // between values — roughly one build in ten renamed its minified identifiers differently, same
 // output length, `var ca=Object.defineProperty` against `var la=…`.

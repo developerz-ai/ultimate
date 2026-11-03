@@ -3,7 +3,7 @@
 // to the input — and the form posted three avatars for one slot.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { attachRef, byTag, fire, one, renderNodes } from '../jsx-probe-fixture';
+import { attachRef, byTag, fire, one, renderNodes } from '@ultimat3/core/render-nodes';
 import { Dropzone } from './Dropzone';
 import type { FileCandidate, FileSelection } from './file-input-view';
 

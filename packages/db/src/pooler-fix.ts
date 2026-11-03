@@ -10,9 +10,10 @@
 /**
  * `DATABASE_URL` with its `options` query parameter cut out, as shell: the pooler refused the
  * connection for an option in there, so a `psql` that sent it again would fail before `alter role`
- * ran. Every other parameter (`sslmode`, `application_name`) stays.
+ * ran. Every other parameter (`sslmode`, `application_name`) stays, and only the query is
+ * searched: a password may read `&options=`, the query starts at the first `?`.
  */
-const PSQL_WITHOUT_OPTIONS = `psql "$(printf '%s' "$DATABASE_URL" | sed -E 's/([?&])options=[^&]*(&|$)/\\1/; s/[?&]$//')"`;
+const PSQL_WITHOUT_OPTIONS = `psql "$(printf '%s' "$DATABASE_URL" | sed -E 's/^([^?]*\\?([^&]*&)*)options=[^&]*(&|$)/\\1/; s/[?&]$//')"`;
 
 const ALTER_ROLE =
   `${PSQL_WITHOUT_OPTIONS} -c "alter role <user> set statement_timeout = '10s'" ` +

@@ -30,9 +30,11 @@ packages/*/src/**/*.d.ts.map
 packages/*/src/**/*.jsx
 packages/*/src/**/*.jsx.map
 
+# The wiki copy `@ultimat3/cli`'s prepack writes for its tarball (scripts/pack-cli-wiki.ts); `wiki/` is the one source
+packages/cli/wiki/
+
 # Task-master local state
-.claude-task-master/
-.ai-task-master/
+.*-task-master/
 
 # CodeGraph index
 .codegraph/

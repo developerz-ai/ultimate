@@ -47,7 +47,7 @@ describe('visually-hidden', () => {
    * no inset leaves the box at its static position and only takes it out of flow; after a long run
    * of inline text that position is already past the viewport edge, and the box escapes the
    * truncating ancestor's `overflow: hidden` because that ancestor is not positioned and so is not
-   * its containing block. Measured in ai-maxxing: `Link`'s `.hint` after truncated titles put
+   * its containing block. Measured in one adopter: `Link`'s `.hint` after truncated titles put
    * seven boxes at right edges of 753–1119px, making the document 1119px wide in a 390px viewport
    * and 1480px in a 1440px one. Verified in a browser at both sizes after the fix —
    * `document.documentElement.scrollWidth === clientWidth`.

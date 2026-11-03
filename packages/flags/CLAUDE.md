@@ -80,7 +80,7 @@ what lets `policy` (tier 2) call it from inside a predicate.
   an inherited function, and a non-string id never reaches `bucketOf`. Same rule for the targeting
   map, which is why the loop is `for…in` + `Object.hasOwn` and not `Object.entries`.
 - **Every app-supplied string in a `fix:` goes through `JSON.stringify`, and a subject kind becomes
-  a computed key.** A `bank-integration` kind is not a valid identifier, so `{ bank-integration: … }`
+  a computed key.** A `payments-provider` kind is not a valid identifier, so `{ payments-provider: … }`
   would be a fix that does not parse — axiom 4 wants an instruction that runs. Pinned by
   `errors.test.ts` running the generated snippet through `new Function`.
 - **An unknown key throws.** Answering `false` is a branch that never runs and never says so.

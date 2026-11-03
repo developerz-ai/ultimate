@@ -10,6 +10,7 @@ import {
   systemClock,
   UltimateError,
 } from '@ultimat3/core';
+import { deadlineSignal } from '@ultimat3/core/outbound';
 import type { QueueDemand, WorkerRecord } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
 import type { CommandContext } from './command';
@@ -83,6 +84,25 @@ export interface DeployVerifyDeps {
   expire(ms: number, signal: AbortSignal): Promise<void>;
 }
 
+/**
+ * Resolves once `ms` of real time pass; `signal`'s abort disarms it. Core's `deadlineSignal`, the
+ * one undoable deadline: a timer left armed would hold the process open past the verdict.
+ */
+export function expireAfter(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const deadline = deadlineSignal(ms, signal);
+    deadline.signal.addEventListener(
+      'abort',
+      () => {
+        const fired = deadline.timedOut();
+        deadline[Symbol.dispose]();
+        if (fired) resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
 /** Imported when asked: the verdict on the build alone never loads the app or a database driver. */
 const realDeps: DeployVerifyDeps = {
   clock: systemClock,
@@ -90,11 +110,7 @@ const realDeps: DeployVerifyDeps = {
   expectedQueues: async (root) => (await import('./deploy-verify-queues')).expectedQueues(root),
   openQueue: async (url, env, statementTimeoutMs) =>
     (await import('./deploy-verify-queues')).openQueue(url, env, statementTimeoutMs),
-  expire: (ms, signal) =>
-    new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, ms);
-      signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
-    }),
+  expire: expireAfter,
 };
 
 interface Answered {

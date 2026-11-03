@@ -4,6 +4,14 @@ A thin, **owned** layer over `Bun.serve`. Not a framework-agnostic HTTP kit — 
 lifecycle belongs to us so ALS context, tracing, locale/tz and authz are impossible
 to skip.
 
+`bun add @ultimat3/http` · guide: [Routes And Render Modes](https://github.com/developerz-ai/ultimate/wiki/Routes-And-Render-Modes)
+
+```ts
+import { configureHttp } from '@ultimat3/http';
+
+configureHttp({ bodyLimitBytes: 8 * 1024 * 1024, requestTimeoutMs: 300_000 });
+```
+
 ## What it owns
 
 | Concern | Module |

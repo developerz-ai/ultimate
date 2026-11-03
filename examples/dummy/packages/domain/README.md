@@ -14,7 +14,7 @@ this package importable from a route, a job, a native mobile client, and a test 
 | `PostStatus` `SLUG_PATTERN` `isValidSlug` `TITLE_MAX` `EXCERPT_MAX` | post invariants | the same predicates the entity's CHECK constraints are generated from |
 | `PlanCode` `PLAN_CATALOG` `seatLimit` `priceOf` | plan catalog | prices are `Money` per currency; nothing is converted at runtime |
 | `SUPPORTED_LOCALES` `SUPPORTED_ZONES` | member preferences | the closed sets the settings page renders |
-| `DomainError` `InvariantViolation` | errors | `X_DOMAIN_INVARIANT` |
+| `InvariantViolation` | errors (`defineError`, 422) | `X_DOMAIN_INVARIANT` |
 
 ## Why it exists
 

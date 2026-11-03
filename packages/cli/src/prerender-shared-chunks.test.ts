@@ -1,6 +1,6 @@
 // The static build's shared-chunk half, end to end: a page rendering two islands that import one
 // ~20 kB module is charged for that module ONCE, and the service worker precaches it with the page.
-// The consumer that found it (notificado.co, 2026-09-29) measured 55.5 kB for a page that loads
+// The consumer that found it (one adopter, 2026-09-29) measured 55.5 kB for a page that loads
 // ~34 kB, and raised its route budget from 30 kB to 56 kB to hold a number no browser downloads.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';

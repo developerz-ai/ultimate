@@ -424,11 +424,11 @@ the replication stream's column names alone and never consulted `.column()` over
 | a repository / `query()` | `githubLogin` |
 | a **live** query patch | `ghLogin` |
 
-**The next major closes it** — in the tree, not yet tagged, `As of 2026-09-23`: `entityRow` in
+**Closed in 22.0.0**: `entityRow` in
 [`packages/realtime/src/pg-entity-row.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/realtime/src/pg-entity-row.ts)
 decodes through the registered entity (`decodeRow`, the repository's own reader), so a live patch
-carries `githubLogin` too. **Action on 21.x:** do not make a slice with renamed columns your first
-live slice, or have the subscriber map the physical name itself.
+carries `githubLogin` too. **Pinned below 22.0.0, on 21.x:** do not make a slice with renamed
+columns your first live slice, or have the subscriber map the physical name itself.
 
 ---
 

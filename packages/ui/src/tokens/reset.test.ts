@@ -209,7 +209,7 @@ describe('reset.scss is zero-specificity', () => {
   });
 
   /**
-   * The defect, measured on notificado.co: `a:hover` (0,1,1) beat `.primary:hover`'s missing
+   * The defect, measured on one adopter's app: `a:hover` (0,1,1) beat `.primary:hover`'s missing
    * `color` AND `.primary`'s own `color` (0,1,0), so an `<a class="primary">` — a filled button
    * link — turned its text accent-strong on an accent-strong hover background. Any class-styled
    * link that set `color` only in its base rule had the bug.

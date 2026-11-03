@@ -36,6 +36,7 @@ import { actionsSpec, entitiesSpec, queriesSpec } from './cmd-registries-spec';
 import { routesSpec } from './cmd-routes-spec';
 import { secretsSpec } from './cmd-secrets-spec';
 import { shotSpec } from './cmd-shot-spec';
+import { stopSpec } from './cmd-stop-spec';
 import { tasksSpec } from './cmd-tasks-spec';
 import { testSpec } from './cmd-test-spec';
 import { upgradeSpec } from './cmd-upgrade-spec';
@@ -79,6 +80,7 @@ const lazy = (spec: CommandSpec, load: () => Promise<CliCommand>): LazyCommand =
 export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(newSpec, async () => (await import('./cmd-new')).newCommand),
   lazy(devSpec, async () => (await import('./cmd-dev')).devCommand),
+  lazy(stopSpec, async () => (await import('./cmd-stop')).stopCommand),
   lazy(buildSpec, async () => (await import('./cmd-build')).buildCommand),
   lazy(testSpec, async () => (await import('./cmd-test')).testCommand),
   lazy(verifySpec, async () => (await import('./cmd-verify')).verifyCommand),

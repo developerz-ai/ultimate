@@ -3,7 +3,7 @@
 // pseudo-element — it compiles to a rule no element matches, and the dim silently never applies.
 
 import { describe, expect, test } from 'bun:test';
-import { compileScssFile } from '../sass-probe-fixture';
+import { compileScssFile, compileSheets } from '../sass-probe-fixture';
 
 const COMPONENTS = Bun.fileURLToPath(new URL('.', import.meta.url));
 
@@ -21,8 +21,10 @@ function ruleBody(css: string, selector: string): string {
 describe('a disabled control is dimmed by a rule that can match it', () => {
   test('no component sheet compiles a disabled state that no element can be in', async () => {
     const faults: string[] = [];
-    for (const sheet of [...new Bun.Glob('*.module.scss').scanSync({ cwd: COMPONENTS })].sort()) {
-      const dead = DEAD_DISABLED.exec(await compileScssFile(`${COMPONENTS}${sheet}`));
+    const sheets = await compileSheets(COMPONENTS);
+    expect(sheets.size).toBeGreaterThan(40);
+    for (const [sheet, css] of sheets) {
+      const dead = DEAD_DISABLED.exec(css);
       if (dead !== null) faults.push(`${sheet}: ${dead[0]}`);
     }
     expect(faults).toEqual([]);

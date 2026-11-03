@@ -6,9 +6,11 @@
 
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { DocEntry, DocHit } from '@ultimat3/manifest';
-import { nearestTopics, scanInstalledDocs, searchDocs } from '@ultimat3/manifest';
+import { nearestTopics, searchDocs } from '@ultimat3/manifest';
 import { DEFAULT_LIMIT, docsSpec } from './cmd-docs-spec';
 import type { CliCommand, CommandContext } from './command';
+import { parseWikiTopic, sectionResult } from './docs-section';
+import { loadDocs, wikiSource } from './docs-sources';
 import { MissingPositionalError } from './errors';
 import { frameworkScopeDir } from './framework-scope';
 import { parseLimitFlag } from './jobs-report';
@@ -36,6 +38,19 @@ const asJson = (hit: DocHit): JsonValue => ({
   source: hit.entry.source,
   matched: [...hit.matched],
   score: hit.score,
+});
+
+/**
+ * The tarball ships `wiki/` (its `prepack`), so an install without it is broken in the same way as
+ * one whose CLI cannot see `@ultimat3/core`: the answer is still given from the packages, and the
+ * finding says what is missing rather than leaving the wiki's absence to look like no answer.
+ */
+const noWikiFinding = (): Finding => ({
+  code: 'X_CLI_UNEXPECTED',
+  cause: '@ultimat3/cli ships no wiki/ directory, so no wiki page could be searched',
+  fix: 'bun install && x doctor --json',
+  docs: ERROR_DOCS_URL,
+  at: import.meta.dir,
 });
 
 /** The exact path an agent opens next — package-relative is ambiguous across 29 packages. */
@@ -96,7 +111,11 @@ function codeResult(code: string, query: string): CommandResult {
  * related at all, the honest fallback is the list of packages actually installed — the universe
  * the question could have been about — rather than five topics picked for sharing letters.
  */
-function missResult(query: string, entries: readonly DocEntry[]): CommandResult {
+function missResult(
+  query: string,
+  entries: readonly DocEntry[],
+  findings: readonly Finding[],
+): CommandResult {
   const suggestions = nearestTopics(entries, query);
   const packages = [...new Set(entries.map((entry) => entry.package))].sort();
   const next =
@@ -108,6 +127,7 @@ function missResult(query: string, entries: readonly DocEntry[]): CommandResult 
     command: 'docs',
     summary: msg('cli.docs.none', { query }),
     lines: [...next, ...alsoTry()],
+    ...(findings.length > 0 ? { findings } : {}),
     data: { matches: [], suggestions: [...suggestions], packages, query },
   };
 }
@@ -131,6 +151,14 @@ export const docsCommand: CliCommand = {
     const code = CODE_QUERY.exec(query)?.[0];
     if (code !== undefined) return codeResult(code, query);
 
+    // A wiki topic is answered with its whole section, before any package is scanned.
+    const topic = parseWikiTopic(query);
+    if (topic !== undefined) {
+      const wiki = await wikiSource();
+      const section = wiki === undefined ? undefined : await sectionResult(wiki, topic, query);
+      if (section !== undefined) return section;
+    }
+
     const scope = frameworkScopeDir();
     if (scope === undefined) {
       const finding = unresolvedFinding();
@@ -143,20 +171,22 @@ export const docsCommand: CliCommand = {
       };
     }
 
-    const entries = await scanInstalledDocs(scope);
+    const { entries, wiki } = await loadDocs(scope);
+    const findings = wiki === undefined ? [noWikiFinding()] : [];
     // `x jobs list --limit`'s reader, and its `command` parameter exists for exactly this second
     // caller. A local `Number.parseInt` accepted `--limit 1e9` as 1 and answered with one match,
     // and fell silently through to the default for `abc`, `0` and `-3` — a bound other than the one
     // typed, from the same binary that refuses all four one command over.
     const limit = parseLimitFlag(flagString(ctx.args, 'limit'), 'docs') ?? DEFAULT_LIMIT;
     const hits = searchDocs(entries, query, limit);
-    if (hits.length === 0) return missResult(query, entries);
+    if (hits.length === 0) return missResult(query, entries, findings);
 
     return {
       ok: true,
       command: 'docs',
       summary: msg('cli.docs.found', { count: hits.length, query }),
       lines: [...humanLines(hits)],
+      ...(findings.length > 0 ? { findings } : {}),
       data: { matches: hits.map(asJson), suggestions: [], query },
     };
   },

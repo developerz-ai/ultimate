@@ -165,7 +165,7 @@ describe('x build --target static, with islands', () => {
   });
 
   test('an island handed props over the cap is X_ISLAND_PROPS_INVALID on the gate, naming the prop — not X_BUDGET_UNMEASURED', async () => {
-    // Measured on ai-maxxing, 2026-09-05: a 34-row model catalog in an island's props took the
+    // Measured on one adopter, 2026-09-05: a 34-row model catalog in an island's props took the
     // page down at RUNTIME with a 500. The page derives a budget from its island, so the build
     // renders it to weigh it — and that render is where the overflow is a VERIFY-time finding.
     // It used to be filed as `X_BUDGET_UNMEASURED`, whose fix is to run the build and read its

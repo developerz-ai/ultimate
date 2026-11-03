@@ -14,7 +14,8 @@ dashboard.
 | OTel-shaped spans, trace context propagated as `traceparent` | **shipped** — [`packages/core/src/telemetry.ts`](../../packages/core/src/telemetry.ts) | the default exporter is still a no-op, so nothing leaves the process until you register one |
 | An OTLP span and metric exporter | **shipped** — `otlpSpanExporter()` / `otlpMetricExporter()`, OTLP/HTTP JSON over `fetch`, no new dependency ([`packages/core/src/otlp.ts`](../../packages/core/src/otlp.ts)) | set `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector's HTTP receiver and register the exporter. Spans batch, and batches are chained rather than concurrent, so a collector cannot reorder a parent behind its child |
 | Head-based sampling | **shipped** — `parentBasedRatioSampler`, `OTEL_TRACES_SAMPLER_ARG` | `span.end()` honours `traceFlags`, so an upstream's do-not-sample decision is respected instead of propagated and ignored |
-| An OTLP **logs** signal, and retry of a rejected export | **not implemented** | a rejected POST is dropped with a `warn`; a collector outage loses that window rather than backing it up. Ship logs as stdout, as row 1 |
+| Retry of a transient OTLP export | **shipped** — `postOtlp` ([`packages/core/src/otlp-post.ts`](../../packages/core/src/otlp-post.ts)) sends a batch again on 429, 502, 503, 504 or a transport failure: 3 attempts, full jitter, `Retry-After` honoured, all inside the exporter's `timeoutMs` (default 10 s, the whole export) | nothing to wire. A collector rolling restart no longer drops a window. Any other status is one POST; the last outcome is one `otlp export rejected`/`failed` line per batch with `attempts`. A collector that accepted then answered 503 gets the batch twice: span ids dedupe at the backend |
+| An OTLP **logs** signal | **not implemented** | ship logs as stdout, as row 1 |
 | `/metrics` in the Prometheus text format, on every role | **shipped** — [`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts), served on `METRICS_PORT` (9090), **not** the app's port | scrape it; see [Scrape config](#scrape-config) |
 | Error reporting: caught server faults, with code, cause and `fix:` | **shipped as a seam** — [`packages/core/src/error-reporter.ts`](../../packages/core/src/error-reporter.ts), wired for HTTP, jobs and realtime | the default reporter is a no-op; set `SENTRY_DSN` to switch the shipped transport on |
 | `x logs` | listed **planned** in `x --help` | — |
@@ -33,6 +34,7 @@ exactly one emitter:
 | `queue_demand` | gauge | `queue` | the worker, beside `queue_depth`, and only when `stats()` shows work: running on a serving worker plus due rows on an unpaused queue. What the worker HPA reads. Every serving worker publishes the same number and a draining one 0, so aggregate with `max by (queue)`, never `sum` |
 | `jobs_total` | counter | `queue`, `outcome` (`ok`\|`failed`\|`dead`) | the worker's outcome path |
 | `job_leases_lost_total` | counter | `queue` | the worker's lease heartbeat, once per job whose window lapsed |
+| `breaker_transitions_total` | counter | `name`, `to` (`closed`\|`open`\|`half-open`) | `@ultimat3/core`'s `breaker()`, once per state change — the AI gateway's per-provider breakers (`ai.<provider>`) and the replica router's (`db.replica`) included. A rising `to="open"` is a dependency down |
 | `queue_oldest_ready_seconds` | gauge | `queue` | the worker, beside `queue_depth` — how long the oldest waiting job has waited (`packages/jobs/src/metrics.ts`) |
 | `queue_dead_jobs` | gauge | `queue` | the worker, beside `queue_depth` — dead-lettered jobs still on the table |
 | `channel_frames_dropped_total` | counter | none | the sync node, per channel frame a socket's backpressure dropped (`packages/realtime/src/socket.ts`) |
@@ -186,7 +188,12 @@ that never failed.
 Every event is tagged with `release` = the deploy's **build id** — the same value
 `x-ultimate-build` carries and the same one `apps/web/server.ts`'s boot computed, never a second
 identity — plus `environment`, the `X_*` code, the source (`http`/`job`/`realtime`) and the role.
-Group on the code.
+Group on the envelope's `fingerprint`, never on the code alone: every unclassified throw is
+`X_INTERNAL`, so a code-only group is one issue per app. `errorFingerprint(report)` hashes `code`,
+`source` and `scope.operation`, plus the top application frame for `X_INTERNAL` (function and
+root-relative path, no line or column), and never the cause, an id or the release: two throws
+from one line differing only in a row id are one issue, and the same fault after a deploy is the
+same issue. A reporter of your own groups on the same call.
 
 To send somewhere else, implement `ErrorReporter` and call `configureErrorReporting({ reporter })`
 in the app entry. `memoryErrorReporter()` is the one to use in tests.

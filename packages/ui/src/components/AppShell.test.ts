@@ -6,25 +6,25 @@
 
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
+import { byTag, one, type RenderNode, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { compileScssFile } from '../sass-probe-fixture';
 import { AppShell } from './AppShell';
 
 const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
 const SHEET = Bun.fileURLToPath(new URL('./AppShell.module.scss', import.meta.url));
 
-const shell = (extra: Record<string, unknown> = {}): ProbeNode[] =>
+const shell = (extra: Record<string, unknown> = {}): RenderNode[] =>
   renderNodes(AppShell, { children: 'body', header: 'top', sidebar: 'links', ...extra });
 
 /** Every text a node holds, flattened — a label may be split across an icon and a span. */
-const textOf = (node: ProbeNode | undefined): string => {
+const textOf = (node: RenderNode | undefined): string => {
   const walk = (value: unknown): string => {
     if (typeof value === 'string') return value;
     if (Array.isArray(value)) return value.map(walk).join('');
     if (typeof value === 'object' && value !== null && 'props' in value) {
-      return walk((value as ProbeNode).props['children']);
+      return walk((value as RenderNode).props['children']);
     }
     return '';
   };

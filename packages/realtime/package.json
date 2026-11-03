@@ -2,6 +2,16 @@
   "name": "@ultimat3/realtime",
   "version": "29.4.0",
   "description": "Three-tier realtime: channels, live queries, local-first sync — one protocol, one mutator shape",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "realtime",
+    "websocket",
+    "local-first",
+    "sync"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Realtime",
   "license": "MIT",
   "type": "module",
   "sideEffects": [

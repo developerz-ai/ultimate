@@ -3,6 +3,8 @@ contact_links:
   - name: 🩺 Broken environment
     url: https://github.com/developerz-ai/ultimate/wiki/Error-Codes
     about: Run `x doctor --json` — every finding carries the command that fixes it.
+  # Answers only once Discussions is switched on (an owner step, plan 101 slice 42-adopt-outsiders);
+  # the Question issue form beside this file takes a question either way.
   - name: 💬 Questions and design discussion
     url: https://github.com/developerz-ai/ultimate/discussions
     about: Not a bug and not a proposal yet? Start here.

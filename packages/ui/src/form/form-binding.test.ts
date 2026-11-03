@@ -2,18 +2,19 @@
 // is a way a form could report success — or a corrected value — that no server ever agreed to.
 
 import { describe, expect, test } from 'bun:test';
+import type { StandardResult, StandardSchemaV1 } from '@ultimat3/schema';
 import { UI_ERROR_CODES } from '../errors';
 import { formBinding } from './form-binding';
-import type { FormIssue, FormSchema, FormValidationResult } from './form-issue';
+import type { FormIssue } from './form-issue';
 import type { FormState } from './form-state';
 
 const raw = (found: FormIssue): string => found.message;
 
-/** A schema in the one shape this package declares: Standard Schema's single member. */
+/** A Standard Schema over one validator — the shape every conforming library ships. */
 const schemaOf = (
-  validate: (value: unknown) => FormValidationResult | Promise<FormValidationResult>,
-): FormSchema => ({
-  '~standard': { validate },
+  validate: (value: unknown) => StandardResult<unknown> | Promise<StandardResult<unknown>>,
+): StandardSchemaV1 => ({
+  '~standard': { version: 1, vendor: 'test', validate },
 });
 
 interface Saved {
@@ -70,11 +71,14 @@ describe('formBinding', () => {
   for (const [how, validate] of [
     [
       'throws',
-      (): FormValidationResult => {
+      (): StandardResult<unknown> => {
         throw new TypeError('schema bug');
       },
     ],
-    ['rejects', (): Promise<FormValidationResult> => Promise.reject(new TypeError('schema bug'))],
+    [
+      'rejects',
+      (): Promise<StandardResult<unknown>> => Promise.reject(new TypeError('schema bug')),
+    ],
   ] as const) {
     test(`a local validate that ${how} fails the form — it never strands it in submitting`, async () => {
       let called = 0;

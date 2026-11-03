@@ -16,6 +16,7 @@ import {
   singleFlight,
   systemClock,
 } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import { decodeJwtSegment, isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import { oauthExchangeFailed, oauthTokenInvalid } from './oauth-errors';
@@ -183,14 +184,27 @@ export function jwksClient(options: JwksClientOptions): JwksKeySource {
 
   const fetchKeys = async (): Promise<Map<string, CryptoKey>> => {
     const issued = fence.bump();
-    const doFetch: OAuthFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+    const doFetch: OAuthFetch =
+      options.fetch ??
+      ((input, init) => globalThis.fetch(input, { ...init, signal: init.signal ?? null }));
     let response: Response;
     try {
-      response = await doFetch(options.jwksUri, {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
+      // Through core's `outbound()`: `timeoutMs` bounds the whole call, the ambient request's signal
+      // ends it, a GET's 5xx is retried inside that bound (a POST never is), a 3xx is never followed.
+      response = await outboundResponse(
+        {
+          url: options.jwksUri,
+          vendor: options.provider,
+          dial: 'named',
+          deadlineMs: timeoutMs,
+          // One attempt: this file's own fence and cooldown are its retry discipline (one fetch per
+          // outage), and a login waiting on a key must not wait out a backoff.
+          retry: { attempts: 1, base: 0, max: 0, jitter: 'none' },
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        },
+        { fetch: doFetch },
+      );
     } catch (error) {
       throw oauthExchangeFailed({
         provider: options.provider,

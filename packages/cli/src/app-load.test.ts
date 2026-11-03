@@ -162,7 +162,7 @@ console.log(JSON.stringify(app.findings.map((finding) => finding.code)));`;
 /**
  * `Bun.Glob` answers in directory order, which ext4 derives from a per-filesystem hash seed: two
  * pods of one image imported the app in two orders, registered its stylesheets in two orders, and
- * served two different `/styles/<hash>.css` for one page (notificado.co, 22.3.2).
+ * served two different `/styles/<hash>.css` for one page (one adopter, 22.3.2).
  */
 describe('unit · the app is imported in one order on every machine', () => {
   test('module paths are sorted within each glob, whatever order the files were created in', async () => {

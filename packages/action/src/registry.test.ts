@@ -201,3 +201,32 @@ describe('one derived path, one action', () => {
     expect(() => registerAction('archiveOrder', target)).not.toThrow();
   });
 });
+
+describe('a .sensitive() field in an output', () => {
+  beforeEach(() => {
+    resetActions();
+  });
+
+  test('is refused at registration: an output is sent back, writeOnly forbids it', () => {
+    const leaky = action({
+      input: t.object({ ssn: t.string.sensitive() }),
+      output: t.object({ payer: t.object({ ssn: t.string.sensitive() }) }),
+      policy: can('payer:create'),
+      handle: ({ input }) => ({ payer: { ssn: input.ssn } }),
+    });
+    expect(() => registerAction('createPayer', leaky)).toThrow(
+      'action "createPayer" output reaches the .sensitive() field payer.ssn',
+    );
+    expect(getAction('createPayer')).toBeUndefined();
+  });
+
+  test('a sensitive INPUT field registers', () => {
+    const fine = action({
+      input: t.object({ ssn: t.string.sensitive() }),
+      output: t.object({ ok: t.boolean }),
+      policy: can('payer:create'),
+      handle: () => ({ ok: true }),
+    });
+    expect(registerAction('createPayer', fine).name).toBe('createPayer');
+  });
+});

@@ -16,8 +16,22 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 
 Module order (no cycles):
 `char-count → describe-value → node → builder → money-value → json-value → array-schema →
-validators → discriminated-union → provider → t` (`node-fits` and `json-schema` read `json-value`
-too).
+validators → record-schema → discriminated-union → provider → t` (`node-fits` and `json-schema` read
+`json-value` too). `record-schema.ts` (`t.record`) split from `validators.ts` at the ceiling.
+`schema-rules.ts` is a leaf (`SCHEMA_RULES`, `issueRuleFacts`), imported by `standard.ts`,
+`errors.ts` (type only) and `builder.ts`. `sensitive.ts` reads `provider.ts` and is not in `t`'s graph.
+
+- **A builtin refusal names its rule**: `rejected(path, message, rule, params?)` (`builder.ts`,
+  internal) has `rule` REQUIRED; `mistyped(path, message, value, type)` answers `required` for
+  `undefined` and `type { type }` otherwise. The exported `fail` keeps `rule?` optional for
+  providers. `schema-rules.test.ts` fails if a builtin file calls `fail(`, and pins `SCHEMA_RULES`
+  (add, never rename). `params` are declared facts only, never the rejected value.
+- **`.sensitive()` is a node fact, never a key table**: `maskSensitive` memoises "holds a flag" per
+  node in a WeakMap, so an unflagged schema costs one map read and returns the same reference. A
+  union masks every branch's flagged keys (fails closed). `assertNoSensitiveOutput` lives here
+  because `query` cannot import `action`.
+- Bytes: the `t`-only browser chunk is 19,788 B minified (+1,321 B, gzip +404, for a rule and params
+  at every refusal site), `Bun.build --minify`, 2026-11-03.
 `char-count.ts` is imported by BOTH `validators.ts` (which rejects on length) and
 `describe-value.ts` (which renders the length in the same message), because they disagreed: the
 rule counted code points and the message counted UTF-16 units, so `t.string.min(3)` refused `'👍a'`

@@ -1,7 +1,7 @@
 // The per-file memory of an isolated `bun test` run. Bun 1.4.0 never frees a finished file's global
 // object under `--isolate` (implied by `--parallel`, which `x test` uses) once ANY `Bun.plugin`
 // load/resolve handler is registered — and the framework registers two in every file: the registry
-// leak guard (preload) and render's `.tsx`/`.scss` loader. Measured on notificado.co: 18 workers
+// leak guard (preload) and render's `.tsx`/`.scss` loader. Measured on one adopter: 18 workers
 // climbing ~100 MB → 2.1–2.3 GB each, about 57 MB per file. Both runs below are real `bun test`
 // processes over a fixture corpus, because the leak is a property of the runner, not of a function.
 

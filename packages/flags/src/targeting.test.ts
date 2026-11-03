@@ -153,7 +153,7 @@ describe('unit · the org axis', () => {
 });
 
 /**
- * The general axis. Treasury's `flipper_id` is `"<kind>:<id>"` and its gates OR across whichever
+ * The general axis. One adopter's `flipper_id` is `"<kind>:<id>"` and its gates OR across whichever
  * records are in play — a workspace, a bank integration, a bank connection. `subjects` is that,
  * with `orgs` kept as the shorthand for the 90% case.
  */

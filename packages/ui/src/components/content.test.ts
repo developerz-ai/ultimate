@@ -5,7 +5,7 @@
 // the helper has.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, fire, one, type ProbeNode, renderNodes } from '../jsx-probe-fixture';
+import { byTag, fire, one, type RenderNode, renderNodes } from '@ultimat3/core/render-nodes';
 import { Accordion } from './Accordion';
 import { Link, type LinkProps } from './Link';
 
@@ -206,7 +206,7 @@ describe('the content components', () => {
         onToggle: (id: string, open: boolean) => seen.push([id, open]),
       });
 
-      const second = one([byTag(nodes, 'details')[1] as ProbeNode], 'the second section');
+      const second = one([byTag(nodes, 'details')[1] as RenderNode], 'the second section');
       fire(second, 'onToggle', { currentTarget: { open: false } });
       expect(seen).toEqual([['two', false]]);
     });

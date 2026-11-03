@@ -933,3 +933,20 @@ Moved out of `packages/ai/CLAUDE.md` for its ceiling (2026-11):
   - no code of its own (a media refusal is the shared `X_AI_CONTENT_UNSUPPORTED`);
     `AiTransportError` takes the provider's `envVar`; the key is revealed late,
     never stored, scrubbed from `detail`.
+
+## Moved out 2026-11-03 (plan 101 wave 3, the `CLAUDE.md` ceiling)
+
+Provider prompt caching, as the agent notes stated it:
+
+- **`GenerateRequest.promptCache` is the one switch; what it sends is a ROW in `PROMPT_CACHE_RULES`**
+  (wire, host, model prefix → marks, session carrier), never an `if`. An unnamed endpoint gets
+  NOTHING. At most 3 `cache_control`, a caller's own counted first (cap 4), never on a blank text
+  block; never a `provider` routing object.
+- **`agent()` defaults `'auto'`, `llm()` `'off'`.** The stable system part (`prompt.system` +
+  `system().stable`) is sent FIRST; the mark follows the tail. The hint is not in `promptCacheKey`.
+- **Usage**: chat-completions `prompt_tokens` INCLUDES read and written tokens; both are subtracted,
+  clamped. A budget debits all four counters; the estimate prices a WRITE only where a provider
+  would mark (`marksPromptCache`), at the dearer rate.
+- **`maxRepeatedToolCalls` compares calls AND results over cycles of 1–3 turns**; `deadlineMs` has no
+  default and rides the request's AND each tool's signal; both stops are `terminal`
+  (`errors-retry.ts`).

@@ -2,7 +2,7 @@
 
 Three primitives, three rules. A `job` is durable work with memoized steps. A `task` is a cron trigger that only ever enqueues. A `query` with `live: true` is a bounded, totally-ordered read that patches per subscriber.
 
-`As of 2026-08`. Every output on this page was executed against a `create-ultimate@1.1.0` app carrying the [tutorial 2](Tutorial-02-First-Feature) `todo` slice.
+`As of 2026-11-03`. Every command, generated file and output on this page was re-run in the app tutorials 1–3 leave, built from this tree's packages (`scripts/scaffold-smoke-overrides.ts`), carrying the [tutorial 2](Tutorial-02-First-Feature) `todo` slice. The [capacity figures](#capacity-measured) are the committed benchmark results, quoted, not re-run.
 
 Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · **4** · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 
@@ -34,7 +34,7 @@ export const reindexTodo = job({
 | `retry` | per-attempt backoff, independent per step |
 | `.enqueue(input)` | the **only** queue path. A job is never run inline |
 
-The generated test pins the distant invariant rather than the happy path:
+The generated `reindex-todo.job.test.ts` pins the distant invariant rather than the happy path:
 
 ```ts
 const first = await reindexTodo.enqueue({ id });
@@ -43,7 +43,7 @@ const again = await reindexTodo.enqueue({ id });
 expect(again.deduped).toBe(true);
 ```
 
-Rename it `reindex-todo.job.test.ts` and it runs in the gate's `job` step instead of `unit` — see [tutorial 2](Tutorial-02-First-Feature#name-the-tests-after-their-step).
+Its `.job.test.ts` suffix is what runs it in the gate's `job` step rather than `unit` — see [tutorial 2](Tutorial-02-First-Feature#name-the-tests-after-their-step).
 
 Enqueue from an action and the outbox makes it transactional: the row and the job commit together, or neither does. `ctx.jobs` is the facade `<job>.enqueue()` resolves through. Full model: [Jobs and workflows](Jobs-And-Workflows).
 
@@ -55,25 +55,26 @@ bunx x g task daily-digest --feature todo
 
 ```text
   + apps/web/app/todo/tasks/daily-digest.ts
+  + apps/web/app/todo/tasks/daily-digest.job.test.ts
   + apps/web/app/todo/tasks/daily-digest.test.ts
   + apps/web/app/todo/jobs/daily-digest-job.ts
+  + apps/web/app/todo/jobs/daily-digest-job.job.test.ts
   + apps/web/app/todo/jobs/daily-digest-job.test.ts
+  + apps/web/api/index.ts
+  + x.manifest.json
+  + openapi.json
+✓ wrote 9 file(s) for task daily-digest
 ```
 
-**`--feature` is not optional at 1.1.0.** Without it the generator opens a new slice and the job it writes imports `../repo`, which does not exist there:
-
-```text
-  X_CLI_UNEXPECTED (apps/web/app/daily-digest/jobs/daily-digest-job.ts)
-    cause: ResolveMessage: Cannot find module '../repo' from '…/daily-digest/jobs/daily-digest-job.ts'
-```
-
-Point `--feature` at a slice that already has a `repo.ts`, or write the repo first.
+`--feature todo` puts the task in the existing slice; without it the generator opens a `daily-digest` slice of its own. Either way the task and its job are added to `apps/web/api/index.ts`, which is what names them.
 
 ```ts
 export const dailyDigest = task({
   cron: '0 3 * * *',
   tz: 'UTC',
-  enqueue: () => [[dailyDigestJob, { id: '…' }]],
+  // The org rides in the payload: the job declares its tenant from its own input, and a task has
+  // no request behind it whose org could be read instead.
+  enqueue: () => [[dailyDigestJob, { id: '…', orgId: '…' }]],
 });
 ```
 
@@ -85,18 +86,16 @@ export const dailyDigest = task({
 
 ### Registration names it
 
-Export names become primitive names, and only `defineApi` (or `registerTasks`) stamps them. Without `apps/web/api/index.ts`:
+Export names become primitive names, and only `defineApi` (or `registerTasks`) stamps them. A task no `defineApi` lists keeps a positional name (`anonymous-task-1`, enqueuing `anonymous-job-2`); `x verify`'s `manifest` step refuses that job as `X_JOB_UNREGISTERED`. With the generator's edit to `apps/web/api/index.ts` in place:
 
-```text
-  name              cron       tz   catchUp  jobs             next
-  anonymous-task-1  0 3 * * *  UTC  skip     anonymous-job-2  2026-08-12T03:00:00Z
+```bash
+bunx x tasks list
 ```
 
-With it:
-
 ```text
-  name         cron       tz   catchUp  jobs            next
-  dailyDigest  0 3 * * *  UTC  skip     dailyDigestJob  2026-08-12T03:00:00Z
+  name         cron       tz   catchUp  jobs            last  next
+  dailyDigest  0 3 * * *  UTC  skip     dailyDigestJob  -     2026-11-04T03:00:00Z
+✓ 1 task(s)
 ```
 
 ```bash
@@ -111,10 +110,12 @@ bunx x tasks show dailyDigest --count 3
   catchUp: skip
   maxCatchUp: 10
   jobs: ["dailyDigestJob"]
+  last: -
   at 03:00 every day
-    2026-08-12T03:00:00Z
-    2026-08-13T03:00:00Z
-    2026-08-14T03:00:00Z
+    2026-11-04T03:00:00Z
+    2026-11-05T03:00:00Z
+    2026-11-06T03:00:00Z
+✓ dailyDigest — 0 3 * * * (UTC), next …
 ```
 
 Every instant renders in the task's **own** zone, never a machine-local default. Full model: [Scheduled tasks](Scheduled-Tasks).
@@ -145,20 +146,22 @@ There is no Redis or NATS **job** driver, `As of 2026-10` — 25.0.0 deleted bot
 
 ```ts
 export const todoList = query({
-  // No `orgId` input: the org is the actor's, and the typed handle under `repo.list` scopes the
-  // read to it — on a sync node too, where each window is read as its subscriber's tenant.
   input: t.object({ limit: t.number.default(50) }),
   policy: canTodoRead,
   live: true,
+  // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
   mcp: { expose: true, description: 'todoList — edit this description' },
   sql: ({ limit }) =>
+    // `feature.table`, not the kebab plural: `from()` quotes the identifier into the SQL text,
+    // and the entity created the table as snake_case.
     from<Todo>('todos', () => repo.list(limit))
-      // Newest first, as `repo.list` answers: the thunk is the in-memory read and this chain the
-      // SQL, so the two must agree on direction.
+      // Newest first — `repo.list`'s own order. These two lines are ONE read spelled twice: the
+      // thunk is what the in-memory driver answers and this chain is the SQL Postgres runs, so a
+      // direction that differs here is a bounded page holding different rows on each.
       .orderBy('createdAt', 'desc')
-      // The primary key last is what makes the order TOTAL: `createdAt` alone ties, and two rows
-      // that tie can swap between evaluations — a bounded read then drops one and repeats the
-      // other, and a live subscription patches a row it never sent.
+      // The primary key last is what makes the order TOTAL: `createdAt` alone ties, and two
+      // rows that tie can swap between evaluations — a bounded read then drops one and repeats
+      // the other, and a live subscription patches a row it never sent.
       .orderBy('id')
       .limit(limit),
 });
@@ -173,7 +176,7 @@ export const todoList = query({
 | no `now()` / `random()` | the same `(input, row)` must always yield the same membership answer |
 | no cross-tenant predicate | tenancy comes from `ctx`, not from `input` — otherwise `X_FORBIDDEN` at subscribe |
 
-The generated test asserts on the **SQL text**, because that is the contract an agent reads to self-correct:
+The generated `todo-list.live.test.ts` asserts on the **SQL text**, because that is the contract an agent reads to self-correct:
 
 ```ts
 const source = await sourceFor(
@@ -198,10 +201,11 @@ Not a subscribe-time gate that then trusts the stream. The same `policy` object 
 
 `toolFrom(todoList)` from `@ultimat3/mcp` is a read tool (`annotations.readOnlyHint: true`) that reads through `todoList`'s own policy. A read hands rows to an agent, so MCP exposure on a query is opt-in — silence exposes nothing.
 
-Five projections from the one declaration: HTTP `GET /_x/query/todo-list?limit=50`, a typed client hook, the live subscription, a cache entry keyed by tenant and policy scope, and the MCP read tool. Full table: [Queries and live queries](Queries-And-Live-Queries).
+Five projections from the one declaration: HTTP `GET /_x/query/todo-list?limit=50` (`x routes` lists it as `query todoList · todo:read`), a typed client hook, the live subscription, a cache entry keyed by tenant and policy scope, and the MCP read tool. Full table: [Queries and live queries](Queries-And-Live-Queries).
 
 ## Which role runs what
 
+<!-- no-run: boots every role on a fixed port; the run is the reader's -->
 ```bash
 bunx x dev --once --port 3100
 ```
@@ -209,6 +213,8 @@ bunx x dev --once --port 3100
 ```text
   roles web, sync, worker, scheduler
 ```
+
+The same run logs `sync reachable` with the node on `ws://localhost:3101/_x/sync` and the app's own `http://localhost:3100/_x/sync` in front of it.
 
 | Role | Runs | Scales on |
 |---|---|---|
@@ -240,7 +246,7 @@ bunx x dev --once --port 3100
 
 Both are per-node recovery — neither run crossed NATS, so neither is a multi-node result nor a throughput figure. Detail and limits: [Realtime](Realtime).
 
-Realtime tier 3 (local-first) has **not shipped**, `As of 2026-08`. `persist` is not a field a `query()` accepts yet — writing it is a `TS2353` excess property, not a runtime refusal.
+Realtime tier 3 (local-first) shipped in 21.0.0, and it is declared on the **entity**, not the query: `entity(name, { persist: true })`, default `false`, keeps its records in IndexedDB beside the one outbox ([Realtime](Realtime#tier-3-shipped-in-2100)). `persist` is not a `query()` field — writing it there is a `TS2353` excess property.
 
 ## Next
 

@@ -4,7 +4,7 @@
 // x offset is physical, so one drawn on an inline edge needs its `[dir='rtl']` mirror.
 
 import { describe, expect, test } from 'bun:test';
-import { compileScss, compileScssFile } from '../sass-probe-fixture';
+import { compileScss, compileSheets } from '../sass-probe-fixture';
 
 const COMPONENTS = Bun.fileURLToPath(new URL('.', import.meta.url));
 
@@ -33,8 +33,10 @@ describe('no component sheet centres with a translate beside a logical inset', (
 
   test('every sheet, compiled', async () => {
     const faults: string[] = [];
-    for (const sheet of sheets) {
-      const fault = rtlCentringFault(await compileScssFile(`${COMPONENTS}${sheet}`));
+    const compiled = await compileSheets(COMPONENTS);
+    expect([...compiled.keys()]).toEqual(sheets);
+    for (const [sheet, css] of compiled) {
+      const fault = rtlCentringFault(css);
       if (fault !== null) faults.push(`${sheet}: ${fault}`);
     }
     expect(faults).toEqual([]);
@@ -74,8 +76,7 @@ const INLINE_EDGE_SHADOW =
 describe('an inset shadow on an inline edge is mirrored for RTL', () => {
   test('every sheet that draws one also draws its [dir=rtl] mirror', async () => {
     const faults: string[] = [];
-    for (const sheet of [...new Bun.Glob('*.module.scss').scanSync({ cwd: COMPONENTS })].sort()) {
-      const css = await compileScssFile(`${COMPONENTS}${sheet}`);
+    for (const [sheet, css] of await compileSheets(COMPONENTS)) {
       const edge = INLINE_EDGE_SHADOW.exec(css);
       if (edge !== null && !/\[dir=rtl\][^{]*\{[^}]*box-shadow:\s*inset/.test(css)) {
         faults.push(`${sheet}: ${edge[0]}`);

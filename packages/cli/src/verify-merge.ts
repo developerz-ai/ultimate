@@ -71,8 +71,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * The LAST non-empty line, and only it: `bin/check --json` prints the build's document and then
- * the gate's. Never "the last line that parses" — a part whose tail is not the gate's document is
+ * The LAST non-empty line, and only it: an app's own wrapper script (an older scaffold's
+ * `bin/check --json`) prints the build's document and then the gate's. Never "the last line that parses" — a part whose tail is not the gate's document is
  * a truncated or appended upload, and falling back to an earlier line would believe it.
  */
 export function parsePart(file: string, text: string, command: string = GATE_COMMAND): VerifyPart {

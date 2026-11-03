@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { MemoryErrorReporter } from '@ultimat3/core';
 import { configureErrorReporting, memoryErrorReporter, resetErrorReporting } from '@ultimat3/core';
+import { HOLE_NODE } from '@ultimat3/core/render-node';
 import { Hole, isHoleNode } from './hole';
 import { island } from './island';
 import { islandCollector } from './island-collector';
@@ -49,9 +50,17 @@ describe('the marker', () => {
     expect(isHoleNode([])).toBe(false);
   });
 
-  test('hole.ts imports nothing, so a client graph pays a symbol and a function', async () => {
+  test("its brand is core's HOLE_NODE, the one a tier-0 walker reads", () => {
+    expect(isHoleNode(Hole({ fallback: 'wait', children: 'done' }))).toBe(true);
+    expect(HOLE_NODE in (Hole({ fallback: 'wait', children: 'done' }) as object)).toBe(true);
+  });
+
+  test('hole.ts imports only the brand leaf, so a client graph pays a symbol and a function', async () => {
     const source = await Bun.file(`${import.meta.dir}/hole.ts`).text();
-    expect(source).not.toMatch(/^\s*(import|export .* from)\b/m);
+    const imports = source.match(/^\s*(import|export .* from)\b.*$/gm) ?? [];
+    expect(imports.map((line) => line.trim())).toEqual([
+      "import { HOLE_NODE } from '@ultimat3/core/render-node';",
+    ]);
   });
 
   test('reaches the walker through a wrapping component', async () => {

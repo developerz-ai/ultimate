@@ -3,7 +3,7 @@
 // a screen reader announce the current page twice, on the wrong node first.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
+import { byTag, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { Breadcrumb } from './Breadcrumb';
 
 const trail = (items: readonly Record<string, unknown>[]): Record<string, unknown> => ({ items });

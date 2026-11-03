@@ -2,7 +2,7 @@
 // `qr-encode.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, one, renderNodes } from '../jsx-probe-fixture';
+import { byTag, one, renderNodes } from '@ultimat3/core/render-nodes';
 import { QrCode } from './QrCode';
 import { encodeQr } from './qr-matrix';
 

@@ -74,7 +74,6 @@ const rootPackage = (app: NameSet, version: string): string => `{
   "scripts": {
     "setup": "${binScript(BIN_SCRIPTS.setup)}",
     "dev": "x dev",
-    "check": "${binScript(BIN_SCRIPTS.check)}",
     "verify": "x verify",
     "typecheck": "tsc -p . --pretty",
     "lint": "biome check .",
@@ -435,6 +434,7 @@ packages/*/dist/
 *.tsbuildinfo
 .env
 .env.*.local
+.env.production
 /coverage/
 playwright-report/
 test-results/

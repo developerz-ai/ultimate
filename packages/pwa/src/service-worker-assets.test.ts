@@ -16,7 +16,7 @@ const ROUTES: readonly PwaRoute[] = [
 
 /**
  * Every island chunk was precached, so a first anonymous visit to the home page downloaded the
- * admin, KYC and payment islands too (~1 MB on notificado.co). A chunk the precache does not name
+ * admin, KYC and payment islands too (~1 MB on one adopter). A chunk the precache does not name
  * is cached the first time a page asks for it — content-addressed, so cache-first is exact.
  */
 describe('a runtime asset prefix', () => {

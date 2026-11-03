@@ -4,7 +4,7 @@
 
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
-import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
+import { byTag, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { InlineBar } from './InlineBar';
 
 describe('InlineBar', () => {

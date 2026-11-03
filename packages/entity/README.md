@@ -4,6 +4,8 @@ An entity is **columns + the invariants that hold for every row**. The row type 
 the columns: `type Post = typeof posts.$row`. Declare the shape once — repos, migrations, the
 admin screen, cache tags and the manifest are all projections of that one call.
 
+`bun add @ultimat3/entity` · guide: [Entities And Migrations](https://github.com/developerz-ai/ultimate/wiki/Entities-And-Migrations)
+
 ```ts
 import {
   entity, enumerated, integer, invariant, text, timestamp, url, uuid,
@@ -46,6 +48,7 @@ directly — `output: PostView` — and the projected type flows on to the clien
 | Keys are checked twice | unknown key ⇒ `tsc` error, and `X_INVARIANT_VIOLATED` at declaration for a JS caller |
 | Values are the columns' | each key is parsed by the column that declared it; no second copy of the rule |
 | Nothing is invented | a view projects a row that exists — an absent required key is missing data, not a default |
+| It is an input too | `input: posts.$view(['title'])` publishes `maxLength` and refuses past it with one issue PER KEY — `path: ['title']`, a `rule` from the column's fact (`string.max` `{ max }`, `enum` `{ values }`, `required`, else `type` `{ type }`) and the column's own sentence (`expected at most 200 characters, got 300`) — so a form binds it to the field. There is no `$input.pick()`: this is it |
 | `$name` | `posts.view.id_title_coverUrl_status` — stable, and legal as an OpenAPI `components.schemas` key |
 | It projects | a view carries the schema IR (`node`) the same way every `t.*` schema does, so `output: PostView` reaches OpenAPI, the MCP tool's `outputSchema` and the typed client — `As of 2026-09-05`; before that it validated fine and was refused at registration with `X_SCHEMA_UNSUPPORTED`, so every app re-declared its outputs as `t.object`. Column kinds publish the ROW value's shape: `bigint()`/`decimal()` are strings, `date()` is a `YYYY-MM-DD` string, `money()` is `{ minor, currency, scale? }`, `enumerated()` is an `enum`, a nullable column is `anyOf: [<type>, null]` and still required |
 

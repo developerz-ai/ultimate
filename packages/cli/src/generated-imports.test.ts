@@ -1,7 +1,7 @@
 // A generated file that imports a sibling workspace leaves the manifest of the workspace it landed
 // in declaring that edge — what `package-shape` demands of the author (X_WORKSPACE_DEP_UNDECLARED).
 // `x g admin:page` wrote `useT` from `@<app>/i18n` into `apps/admin` and left the scaffold's own
-// second `bin/check` red on the generator's output.
+// second gate run red on the generator's output.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove, so a throwaway app root's lifetime is node:fs's.

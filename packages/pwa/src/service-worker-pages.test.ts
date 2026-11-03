@@ -11,7 +11,7 @@ import type { PwaRoute, StrategyName } from './strategies';
  * A document rendered for ONE member — `stream`, or a gated `ssr` page — carries
  * `x-ultimate-scope` and `private, no-store`. It was kept in a per-principal partition for offline,
  * so after sign-out an offline navigation on a shared device showed the previous member's cases
- * (notificado.co, 22.3.2). `no-store` means what it says: the worker stores none of it, under any
+ * (one adopter, 22.3.2). `no-store` means what it says: the worker stores none of it, under any
  * rule, and a route the author did not mark personal is caught by the response instead.
  */
 describe('a per-member document on a shared browser', () => {

@@ -11,7 +11,7 @@ import { describeValue } from './error-render';
  * reason is measured rather than cautious: tree shaking across one split build keeps whatever ANY
  * importer uses, so an island that imports one helper from a module other islands use heavily
  * pays for all of it. `examples/dummy`'s plain-DOM update banner went 712 → 16,288 B with it on;
- * notificado.co's `/afiliados` with two upload islands went 55,585 → 42,331 B. Turn it on where a
+ * one adopter's `/afiliados` with two upload islands went 55,585 → 42,331 B. Turn it on where a
  * surface's pages render many islands over one graph, and weigh the routes with `x verify`.
  */
 export interface IslandsConfig {

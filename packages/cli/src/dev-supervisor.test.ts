@@ -3,6 +3,7 @@
 // `cmd-dev-restart.live.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
+import { DEV_SUPERVISOR_PID_ENV } from './dev-child-watch';
 import type { DevChild } from './dev-supervisor';
 import {
   childRestart,
@@ -150,6 +151,54 @@ describe('unit · childRestart', () => {
     restart.options.onRestart?.([]);
     restart.options.onRestart?.([]);
     expect(retired).toEqual([worker]);
+  });
+});
+
+// `x stop` SIGTERMs the child; a save landing during that drain asked for a restart, the child
+// exited DEV_RESTART_EXIT_CODE and the supervisor respawned it — `x stop` said stopped and the next
+// `x dev` was X_DEV_ALREADY_RUNNING. A stop the child was told about wins over a later save.
+describe('unit · childRestart · a stop is never turned into a restart', () => {
+  const supervised = { [DEV_CHILD_ENV]: '1', [DEV_SUPERVISOR_PID_ENV]: '4242' };
+  const exitsOf = (body: (exit: (code: number) => void) => void): readonly number[] => {
+    const exits: number[] = [];
+    const real = process.exit;
+    process.exit = ((code?: number) => {
+      exits.push(code ?? 0);
+    }) as typeof process.exit;
+    try {
+      body((code) => process.exit(code));
+    } finally {
+      process.exit = real;
+    }
+    return exits;
+  };
+
+  const run = (signalled: boolean): { exits: readonly number[]; retired: number } => {
+    let gone: ((why: 'supervisor' | 'root' | 'signal') => void) | undefined;
+    let retired = 0;
+    const restart = childRestart(
+      '/app',
+      supervised,
+      (_root, _env, onGone) => {
+        gone = onGone;
+        return { stopping: () => undefined };
+      },
+      () => {
+        retired += 1;
+        return new Promise<void>(() => undefined);
+      },
+    );
+    if (signalled) gone?.('signal');
+    restart.options.onRestart?.([]);
+    return { exits: exitsOf(() => restart.exit(143)), retired };
+  };
+
+  test('a save alone restarts: the exit answers DEV_RESTART_EXIT_CODE', () => {
+    expect(run(false)).toEqual({ exits: [DEV_RESTART_EXIT_CODE], retired: 1 });
+  });
+
+  test('a save during a signalled stop does not: no restart exit, no retire', () => {
+    expect(run(true)).toEqual({ exits: [], retired: 0 });
   });
 });
 

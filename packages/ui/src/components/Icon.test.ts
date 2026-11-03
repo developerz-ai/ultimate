@@ -4,9 +4,9 @@
 // icon that no allowlist test can see.
 
 import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { UI_ERROR_CODES } from '../errors';
 import { iconChevronDown } from '../icons/glyphs/chevron-down';
-import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Icon } from './Icon';
 import type { IconGlyph } from './icon-glyph';
 

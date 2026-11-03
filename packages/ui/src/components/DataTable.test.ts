@@ -9,17 +9,17 @@
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
-import { UI_KEYS } from '../i18n-keys';
 import {
   byTag,
   fire,
-  isProbeNode,
+  isRenderNode,
   one,
-  type ProbeNode,
+  type RenderNode,
   renderNodes,
   withAttr,
-} from '../jsx-probe-fixture';
+} from '@ultimat3/core/render-nodes';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
+import { UI_KEYS } from '../i18n-keys';
 import { DataTable, type DataTableProps } from './DataTable';
 import type { SortState } from './sort-state';
 
@@ -382,10 +382,10 @@ describe('DataTable, a placeholder count that is not a count', () => {
 });
 
 /** A cell's content with its card label taken out. */
-function cellValue(cell: ProbeNode): unknown {
+function cellValue(cell: RenderNode): unknown {
   const children = cell.props['children'];
   const rest = (Array.isArray(children) ? children : [children]).filter(
-    (child) => !(isProbeNode(child) && child.props['data-label'] !== undefined),
+    (child) => !(isRenderNode(child) && child.props['data-label'] !== undefined),
   );
   return rest.length === 1 ? rest[0] : rest;
 }

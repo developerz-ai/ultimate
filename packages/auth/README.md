@@ -4,6 +4,8 @@
 authorizes on a session row, a user row or an api key — http, actions, jobs and MCP all read
 `ctx.actor` and hand it to `@ultimat3/policy`. One authz system, never two.
 
+`bun add @ultimat3/auth` · guide: [Auth](https://github.com/developerz-ai/ultimate/wiki/Auth)
+
 ```ts
 import { defineAuth, login, oauthLogin, postgresAuthAdapter } from '@ultimat3/auth';
 
@@ -375,7 +377,7 @@ export const { start, callback } = oauthLogin(auth, {
   resolveGrants: async (_profile, context) => {
     const claims = await context.userinfo();
     const apps = Array.isArray(claims['allowed_oauth_apps']) ? claims['allowed_oauth_apps'] : [];
-    return apps.includes('bank-integrations') ? { roles: ['member'] } : { roles: [] };
+    return apps.includes('ledger') ? { roles: ['member'] } : { roles: [] };
   },
 });
 ```

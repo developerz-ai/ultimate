@@ -167,3 +167,7 @@ still hold are in that file, and where the two disagree it wins.
   re-renders a refused write from the catch-all, in the admin's layout: one screen in two shells.
 - **Moved here:** `dev/panel-db.ts`'s `sanitize` decides "did they type a statement", not "is it
   safe" — never cite it as a security property (the reasoning is under slice 15 above).
+
+## Moved out 2026-11-03 (plan 101 wave 3, the `CLAUDE.md` ceiling)
+
+Every admin route is `ssr` + `hydrate: 'never'`, so a control is a link or a native form: `<Pagination hrefFor>`, `<DataTable sortHrefFor>`, scope tabs as links, the filter bar one GET form, a form posted at the URL that rendered it, an action posted at its ROW's URL (`_operation`).

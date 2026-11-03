@@ -2,19 +2,17 @@
 // robots read. Core's `hostDecision` is synchronous and judges NAMES: a wildcard never admits an
 // address literal inside the network, but `allowHosts: ['*']` still admits a hostname that
 // resolves inward. So a name admitted by a wildcard alone is resolved here, every address
-// classified by core's one classifier, and the connection PINNED to the approved address — the
-// shape `@ultimat3/jobs`' `webhook-target.ts` takes for a webhook.
+// classified and the connection PINNED to the approved address by core's `screenDial` — the one
+// screen `@ultimat3/jobs`' `webhook-target.ts` and `outbound()` call too. This keeps its own code.
 
 import type { HostRule } from '@ultimat3/core';
 import { classifyAddress, hostMatches } from '@ultimat3/core';
+import type { DialResolve } from '@ultimat3/core/outbound';
+import { screenDial } from '@ultimat3/core/outbound';
 import { hostResolvesInward } from './error-throws-session';
 
 /** Every address a hostname answers. Injected in tests: the network is sealed in this repo. */
-export type HostResolve = (hostname: string) => Promise<readonly string[]>;
-
-/** `Bun.dns.lookup` — the runtime's own resolver, every family, every address. */
-export const resolveHost: HostResolve = async (hostname) =>
-  (await Bun.dns.lookup(hostname)).map((entry) => entry.address);
+export type HostResolve = DialResolve;
 
 /** What the transport connects to: the URL to dial, and the name it proves when pinned. */
 export interface DialTarget {
@@ -49,17 +47,10 @@ export async function dialTarget(
   const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
   if (classifyAddress(hostname) !== undefined) return { url };
   if (allowHosts.some((rule) => !isWildcard(rule) && hostMatches(hostname, rule))) return { url };
-  const addresses = await resolve(hostname);
-  const inward = addresses.map((address) => classifyAddress(address) ?? 'unclassifiable');
-  const refused =
-    addresses.length === 0 ? 'unresolvable' : inward.find((kind) => kind !== 'public');
-  if (refused !== undefined) throw hostResolvesInward(url, hostname, refused);
-  const pinned = addresses[0] ?? hostname;
-  const target = new URL(parsed.href);
-  target.hostname = pinned.includes(':') ? `[${pinned}]` : pinned;
-  return {
-    url: target.href,
-    host: parsed.host,
-    ...(parsed.protocol === 'https:' ? { serverName: hostname } : {}),
-  };
+  const verdict = await screenDial(parsed, { resolve });
+  if ('pin' in verdict) return verdict.pin;
+  // A resolver failure propagates as itself: nothing unscreened is dialled, and the same name
+  // would not have resolved for `fetch` either. No address at all is refused, as before.
+  if ('unresolved' in verdict && verdict.error !== undefined) throw verdict.error;
+  throw hostResolvesInward(url, hostname, 'refused' in verdict ? verdict.refused : 'unresolvable');
 }

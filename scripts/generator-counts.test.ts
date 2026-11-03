@@ -1,7 +1,8 @@
 // The rule's own negative cases, as fixtures rather than as edits to pages three other people are
 // rewriting — the reason `checkGeneratorCounts` is pure over a page list.
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { generate } from '@ultimat3/cli';
 import {
   checkGeneratorCounts,
   type GeneratorFacts,
@@ -11,6 +12,10 @@ import {
   readMentions,
   readTranscriptClaims,
 } from './generator-counts';
+import { REPO_SCAN_TIMEOUT_MS } from './lib/run';
+
+// A scaffold written to a temporary directory and `x g` run in it, twice: seconds, not milliseconds.
+setDefaultTimeout(REPO_SCAN_TIMEOUT_MS);
 
 const FACTS: readonly GeneratorFacts[] = [
   {
@@ -35,16 +40,61 @@ const gapsFor = (text: string): readonly string[] =>
     .map((gap) => `${gap.generator}:${String(gap.claimed)}`);
 
 describe('the counts come from the generators, never from this file', () => {
-  test('every modelled variant is a real plan length, and the plans differ', () => {
-    const facts = generatorFacts();
+  test('every modelled variant is a real count, and the flags change it, shape by shape', async () => {
+    const facts = await generatorFacts();
     expect(facts.map((entry) => entry.id)).toEqual(['x new', 'x g resource']);
     for (const entry of facts) {
       for (const variant of entry.variants) expect(variant.files).toBeGreaterThan(0);
-      const counts = entry.variants.map((variant) => variant.files);
-      // A flag that changed nothing would make the two variants indistinguishable, and every
-      // assertion about "the flagged spelling" below would then hold for the wrong reason.
-      expect(new Set(counts).size).toBe(counts.length);
+      for (const shape of new Set(entry.variants.map((variant) => variant.shape))) {
+        const counts = entry.variants
+          .filter((variant) => variant.shape === shape)
+          .map((variant) => variant.files);
+        // A flag that changed nothing would make the variants indistinguishable, and every
+        // assertion about "the flagged spelling" below would then hold for the wrong reason.
+        expect(new Set(counts).size).toBe(counts.length);
+      }
     }
+  });
+
+  test('`x g resource` is what the CLI prints in each scaffold shape, not the planner array', async () => {
+    const resource = (await generatorFacts()).find((entry) => entry.id === 'x g resource');
+    const counts = (shape: string, flags: readonly string[]) =>
+      (resource?.variants ?? [])
+        .filter((one) => one.shape?.startsWith(shape) && one.flags.join(' ') === flags.join(' '))
+        .map((variant) => variant.files);
+    // `generate()` plans the slice; the command also edits the role map, the API index, the db
+    // handle and, in a bare app, two package.json files, and after setup refreshes x.manifest.json
+    // and openapi.json. A doc quoting the planner's 33 told its reader a number the CLI never prints.
+    const planned = generate({ kind: 'resource', name: 'widget' }).length;
+    for (const shape of ['the default scaffold', 'a --no-example scaffold']) {
+      const [before, after] = counts(shape, []);
+      expect(before).toBeGreaterThan(planned);
+      expect(after).toBe((before ?? 0) + 2);
+      expect(counts(shape, ['--admin'])).toHaveLength(2);
+    }
+    // The example slice already wired the package.json edits, so the two shapes print apart.
+    expect(counts('the default scaffold', [])[0]).toBeLessThan(
+      counts('a --no-example', [])[0] ?? 0,
+    );
+  });
+
+  test('a stale count names the shape each accepted count belongs to', () => {
+    const shaped: readonly GeneratorFacts[] = [
+      {
+        id: 'x g resource',
+        variants: [
+          { flags: [], files: 36, shape: 'the default scaffold' },
+          { flags: [], files: 38, shape: 'a --no-example scaffold' },
+        ],
+      },
+    ];
+    const [gap] = checkGeneratorCounts({
+      pages: [{ path: 'p.md', text: '`x g resource` writes 33 files' }],
+      facts: shaped,
+    });
+    expect(gap?.detail).toBe(
+      'emits 36 files in the default scaffold, or 38 in a --no-example scaffold',
+    );
   });
 });
 

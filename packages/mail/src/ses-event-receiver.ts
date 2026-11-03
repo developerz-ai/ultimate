@@ -7,9 +7,10 @@ import {
   type Clock,
   ConfigInvalidError,
   finiteCount,
-  readWithinLimit,
+  isUltimateError,
   renderThrowable,
 } from '@ultimat3/core';
+import { outbound } from '@ultimat3/core/outbound';
 import {
   type DeliveryOutcome,
   type DeliveryReceiver,
@@ -54,22 +55,36 @@ export interface SesEventReceiverOptions {
   readonly fetch?: MailFetch | undefined;
 }
 
+/**
+ * Why an `outbound()` call to SNS got no usable answer, in this receiver's own words, or the
+ * error itself when it is not outbound's (a caller's abort keeps its meaning). `dial: 'named'`:
+ * both URLs were already pinned to `sns.<region>.amazonaws.com` before this is reached.
+ */
+function providerReason(error: unknown): string {
+  if (!isUltimateError(error) || !error.code.startsWith('X_OUTBOUND_')) throw error;
+  if (error.code === 'X_OUTBOUND_TOO_LARGE') return 'the answer was too large';
+  const status = error.meta?.['status'];
+  return typeof status === 'number' ? `HTTP ${status}` : renderThrowable(error);
+}
+
 /** The default download: pinned https, no redirect (a redirect would leave the pinned host). */
 function defaultCertificateFetch(fetch: MailFetch): SnsCertificateFetch {
   return async (url) => {
-    const response = await fetch(url, {
-      method: 'GET',
-      redirect: 'error',
-      signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw deliveryProviderUnreachable('certificate', `HTTP ${response.status}`);
+    try {
+      const answer = await outbound(
+        {
+          url,
+          vendor: 'sns',
+          dial: 'named',
+          deadlineMs: PROVIDER_TIMEOUT_MS,
+          maxBytes: CERTIFICATE_MAX_BYTES,
+        },
+        { fetch },
+      );
+      return answer.text();
+    } catch (error) {
+      throw deliveryProviderUnreachable('certificate', providerReason(error));
     }
-    const read = await readWithinLimit(response.body, CERTIFICATE_MAX_BYTES);
-    if ('over' in read)
-      throw deliveryProviderUnreachable('certificate', 'the answer was too large');
-    return new TextDecoder().decode(read.bytes);
   };
 }
 
@@ -85,7 +100,10 @@ export function sesEventReceiver(options: SesEventReceiverOptions): DeliveryRece
     options.toleranceMs ?? DEFAULT_SNS_TOLERANCE_MS,
     1,
   );
-  const doFetch: MailFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  // `outbound()` always hands it the attempt's signal.
+  const doFetch: MailFetch =
+    options.fetch ??
+    ((input, init) => globalThis.fetch(input, { ...init, signal: init.signal ?? null }));
   const verify = {
     topicArns,
     toleranceMs,
@@ -117,18 +135,14 @@ export function sesEventReceiver(options: SesEventReceiverOptions): DeliveryRece
     if (options.confirmSubscriptions !== true) {
       return { type: 'subscription', topicArn: message.TopicArn, confirmUrl, confirmed: false };
     }
-    let response: Response;
     try {
-      response = await doFetch(confirmUrl, {
-        method: 'GET',
-        redirect: 'error',
-        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
-      });
+      await outbound(
+        { url: confirmUrl, vendor: 'sns', dial: 'named', deadlineMs: PROVIDER_TIMEOUT_MS },
+        { fetch: doFetch },
+      );
     } catch (error) {
-      throw deliveryProviderUnreachable('subscription', renderThrowable(error));
+      throw deliveryProviderUnreachable('subscription', providerReason(error));
     }
-    await response.body?.cancel();
-    if (!response.ok) throw deliveryProviderUnreachable('subscription', `HTTP ${response.status}`);
     return { type: 'subscription', topicArn: message.TopicArn, confirmUrl, confirmed: true };
   }
 }

@@ -13,7 +13,7 @@ import { afterAll } from 'bun:test';
 export const ISOLATED_ENV = 'ULTIMATE_TEST_ISOLATED';
 
 /**
- * `Bun.plugin.clearAll()` after each file, isolated runs only. Measured on notificado.co's unit
+ * `Bun.plugin.clearAll()` after each file, isolated runs only. Measured on one adopter's unit
  * suite (652 files, 18 workers): per-worker peak 2.1–2.3 GB → 1.0–1.5 GB, total ~30 GB → 18 GB. The
  * next file's preload registers the plugins again, so every file still gets them.
  *

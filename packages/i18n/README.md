@@ -5,6 +5,8 @@ Every string goes through `t()`. A key with no translation renders `⟦key⟧` �
 never the English fallback, never silence. Numbers, dates and money are **not** i18n
 strings: format those with `Intl` via [@ultimat3/money](../money) and [@ultimat3/time](../time).
 
+`bun add @ultimat3/i18n` · guide: [I18n](https://github.com/developerz-ai/ultimate/wiki/I18n)
+
 | Concern | Owner | Rule |
 |---|---|---|
 | Registration | `define-catalogs.ts` | `defineCatalogs()` — one call, at boot, per app |

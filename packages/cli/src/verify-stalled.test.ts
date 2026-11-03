@@ -251,7 +251,7 @@ describe('stepTimeoutFinding', () => {
   });
 
   test('a batched step that kept finishing runs did not hang: it outgrew its deadline, and says so', () => {
-    // As notificado.co's unit step read on a loaded 12-core box (2026-10-15): 134 coverage slices
+    // As one adopter's unit step read on a loaded 12-core box (2026-10-15): 134 coverage slices
     // over three workers, 91 finished, the three in flight each seconds old — no process stuck.
     const slice = (n: number): readonly string[] => [
       'bun',

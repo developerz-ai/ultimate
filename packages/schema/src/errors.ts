@@ -5,6 +5,7 @@
 import { ULTIMATE_ERROR_BRAND } from './error-brand';
 import { SCHEMA_ERROR_CODES } from './error-codes';
 import { renderMetaRecord } from './render-meta';
+import type { SchemaIssueParams } from './schema-rules';
 import { formatIssues } from './standard';
 
 /**
@@ -158,6 +159,9 @@ export interface ValidationIssue {
   readonly expected: string;
   readonly received: string;
   readonly message: string;
+  /** Which rule refused (`SCHEMA_RULES`), when the schema said. A `string`: a newer server may name one this build does not know. */
+  readonly rule?: string;
+  readonly params?: SchemaIssueParams;
 }
 
 export class ValidationFailedError extends SchemaError {
@@ -220,6 +224,19 @@ export class BoundsInvalidError extends SchemaError {
 
   constructor(init: Omit<SchemaErrorInit, 'code'>) {
     super({ ...init, code: BoundsInvalidError.code });
+  }
+}
+
+/**
+ * Thrown where an action or a query is REGISTERED: a `.sensitive()` field reachable from what the
+ * server sends back contradicts `writeOnly` for every response, so boot is the honest place.
+ */
+export class SensitiveOutputError extends SchemaError {
+  static readonly code = 'X_SCHEMA_SENSITIVE_OUTPUT';
+  override readonly name = 'SensitiveOutputError';
+
+  constructor(init: Omit<SchemaErrorInit, 'code'>) {
+    super({ ...init, code: SensitiveOutputError.code });
   }
 }
 

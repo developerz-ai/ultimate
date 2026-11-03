@@ -8,7 +8,11 @@
 // A green run prints the reporter and nothing else: the process logger's lines go to a sink.
 import '../packages/testing/src/quiet-logs';
 import { closeE2eBrowsersAtRunEnd } from '../packages/testing/src/cdp-browser-lease';
-import { installDeterminism } from '../packages/testing/src/determinism';
+import {
+  captureDeterminism,
+  installDeterminism,
+  restoreCapturedDeterminism,
+} from '../packages/testing/src/determinism';
 import { onFileBoundary } from '../packages/testing/src/file-boundary';
 import { registerFrameworkFixtures } from '../packages/testing/src/framework-fixtures';
 import '../packages/testing/src/matchers';
@@ -33,6 +37,12 @@ installDeterminism({
 });
 
 registerFrameworkFixtures();
+
+// The same per-FILE clock reset an app's preload installs: a file that advanced the frozen instant
+// and never put it back handed every later file on the worker a moved clock — measured, 2.8 s
+// behind `runtime-bus.live.test.ts`, which turned `x tasks`' `lastFiredAtMs` red.
+const installedClock = captureDeterminism();
+onFileBoundary(() => restoreCapturedDeterminism(installedClock));
 
 // `bun run test` runs every package in ONE process, so a file that leaves a process-global
 // registry dirty fails a later file in another package. The guard names the file that leaked.

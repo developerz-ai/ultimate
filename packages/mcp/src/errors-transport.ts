@@ -16,7 +16,7 @@ import './errors';
  * one: the peer sent more in one message than this end agreed to hold, and the two answers must
  * name the same code so an agent learns it once.
  *
- * Measured through ai-maxxing's `POST /mcp` on 2026-09-07: the 413 was a bare `-32600` reading
+ * Measured through one adopter's `POST /mcp` on 2026-09-07: the 413 was a bare `-32600` reading
  * `request body is at least N bytes, limit is M` — two numbers and no next step, while the 401,
  * 403 and 429 beside it all carried `{ code, cause, fix }`. A box agent sending a large
  * `promptSession` had nothing to act on. The fix names both moves, send less or raise the cap,

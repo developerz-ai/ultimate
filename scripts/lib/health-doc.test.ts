@@ -20,6 +20,7 @@ const SIGNAL_IDS = new Map<string, RowId>([
   ['Dependabot is not stuck', 'dependabot-not-stuck'],
   ['the deployed demo shipped', 'demo-shipped'],
   ['the GitHub Release exists', 'release-exists'],
+  ['the tutorials run as written', 'tutorials-run'],
 ]);
 
 /** A command that assigns: the whole inline span is `name=$(...)`. */
@@ -164,7 +165,7 @@ function replaceOnce(text: string, from: string, to: string): string {
 }
 
 describe('unit · health-doc · the brief matches the ordered machine definitions', () => {
-  test('all nine signal identities and full commands agree', () => {
+  test('all ten signal identities and full commands agree', () => {
     assertBrief(brief);
   });
 

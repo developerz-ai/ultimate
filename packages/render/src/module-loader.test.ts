@@ -353,7 +353,7 @@ describe('an app served from /app', () => {
 });
 
 /**
- * Two pods of one image served two different `/styles/<hash>.css` for one page (notificado.co,
+ * Two pods of one image served two different `/styles/<hash>.css` for one page (one adopter,
  * 22.3.2), because the surface stylesheet joined sheets in ARRIVAL order and an island build's
  * arrival order is the bundler's race. Island-only sheets are ordered by path.
  */
@@ -401,7 +401,7 @@ describe('the surface stylesheet does not depend on the order an island build lo
 });
 
 /**
- * 22.3.4 still minted a different `/styles/<hash>.css` per boot of ONE image (notificado.co). The
+ * 22.3.4 still minted a different `/styles/<hash>.css` per boot of ONE image (one adopter). The
  * server's own `.scss` imports register in Bun's `onLoad`, which runs as the loader FETCHES a
  * module's dependencies — in parallel — not as it evaluates them: measured on a real build of the
  * app, three boots registered `@ultimat3/ui`'s Accordion, Alert, AppShell, AsyncRegion, Avatar and

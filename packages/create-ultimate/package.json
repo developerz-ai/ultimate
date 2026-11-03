@@ -2,6 +2,16 @@
   "name": "create-ultimate",
   "version": "29.4.0",
   "description": "bunx create-ultimate myapp — scaffold an Ultimate monorepo",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "create",
+    "scaffold",
+    "starter",
+    "template"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Getting-Started",
   "license": "MIT",
   "type": "module",
   "repository": {

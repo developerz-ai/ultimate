@@ -4,17 +4,8 @@
 // budgeted, and cost-accounted in integer minor units. Everything an app does with a model
 // goes through here, so budgets and accounting cannot be bypassed by a stray fetch.
 
-import type { Random } from '@ultimat3/core';
-import {
-  backoffDelay,
-  fingerprint,
-  finiteCount,
-  isRetryableStatus,
-  isUltimateError,
-  logger,
-  renderThrowable,
-  stringField,
-} from '@ultimat3/core';
+import type { Breaker, Random } from '@ultimat3/core';
+import { fingerprint, finiteCount, logger, renderThrowable } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { billedOf } from './billed';
 import type { BudgetKeys, BudgetLimits, BudgetReservation, BudgetStore } from './budget';
@@ -25,7 +16,13 @@ import {
   estimateSpend,
   withBudget,
 } from './budget';
-import { AiProviderUnavailableError } from './errors';
+import type { GatewayBreakerOption } from './gateway-providers';
+import {
+  admittedProvider,
+  attemptProviders,
+  providerBreakers,
+  streamVerdict,
+} from './gateway-providers';
 import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
@@ -62,8 +59,8 @@ export const DEFAULT_GATEWAY_RETRY: RetryPolicy = {
   maxDelayMs: 8_000,
 };
 
-/** The one code `attempt` may collect into. Every other coded refusal is the caller's answer. */
-const PROVIDER_UNAVAILABLE = 'X_AI_PROVIDER_UNAVAILABLE';
+export type { GatewayBreakerOption } from './gateway-providers';
+export { backoffMs, DEFAULT_GATEWAY_BREAKER, isRetryable } from './gateway-providers';
 
 export interface ProviderGatewayInput {
   /** Tried in order for a given model. First provider that lists the model wins. */
@@ -82,6 +79,12 @@ export interface ProviderGatewayInput {
    * green. Production never passes one.
    */
   readonly random?: Random | undefined;
+  /**
+   * One breaker per provider, on by default (`{ failures: 5, cooldownMs: 30_000 }`): a provider
+   * whose retries ran out five passes running is skipped — no call, no sleep — until one probe
+   * after the cooldown answers. Per process. `(provider) => breaker({ … })` to choose your own, `'off'` declines.
+   */
+  readonly breaker?: GatewayBreakerOption | undefined;
 }
 
 export interface Gateway {
@@ -125,6 +128,7 @@ class GatewayImpl implements Gateway {
   private readonly sleep: (ms: number) => Promise<void>;
   /** Left `undefined` rather than defaulted, so `backoffDelay` owns the one fallback to `Math.random`. */
   private readonly random: Random | undefined;
+  private readonly gateOf: (provider: Provider) => Breaker | undefined;
 
   get defaultModel(): ModelId | undefined {
     return this.config.defaultModel;
@@ -147,6 +151,7 @@ class GatewayImpl implements Gateway {
     if (config.budget !== undefined) assertFiniteLimits(config.budget, 'gateway', 'budget.');
     this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.random = config.random;
+    this.gateOf = providerBreakers(config.breaker);
   }
 
   /**
@@ -198,7 +203,15 @@ class GatewayImpl implements Gateway {
 
     let result: GenerateResult;
     try {
-      result = await this.attempt(model, (provider) => provider.generate(resolved));
+      result = await attemptProviders({
+        model,
+        candidates: this.config.providers.filter((p) => p.models.includes(model)),
+        retry: this.retry,
+        sleep: this.sleep,
+        random: this.random,
+        gateOf: this.gateOf,
+        call: (provider) => provider.generate(resolved),
+      });
     } catch (error) {
       // A call that never landed must not go on holding its reservation — and one that DID land
       // and still failed (`billedOf`: the provider answered with something unusable) is recorded
@@ -253,15 +266,28 @@ class GatewayImpl implements Gateway {
     // single provider serving this model and that call stands or throws; `attempt`'s backoff and
     // its fallback across providers belong to `generate` alone. A caller that wants either uses
     // `generate`, or reconnects itself and knows what it has already shown.
-    const provider = this.providerFor(model);
+    const { provider, ticket } = admittedProvider(model, this.config.providers, this.gateOf);
+    const gate = this.gateOf(provider);
+    let answered = false;
 
     const ledger = currentBudget() ?? this.callLedger({});
-    const reservation = await ledger?.reserve(
-      estimateSpend(resolved, this.marksPromptCache(model)),
-    );
+    let reservation: BudgetReservation | undefined;
+    try {
+      reservation = await ledger?.reserve(estimateSpend(resolved, this.marksPromptCache(model)));
+    } catch (error) {
+      // A refused reservation sent nothing: the half-open probe `admittedProvider` took goes back,
+      // or the next healthy call would wait out a whole extra cooldown.
+      gate?.released(ticket);
+      throw error;
+    }
     let settled = false;
     try {
       for await (const chunk of provider.stream(resolved)) {
+        // The first chunk is the provider's verdict for its breaker: it answered.
+        if (!answered) {
+          answered = true;
+          streamVerdict(gate, ticket, undefined);
+        }
         if (chunk.type !== 'done') {
           yield chunk;
           continue;
@@ -274,6 +300,10 @@ class GatewayImpl implements Gateway {
         yield { type: 'done', result: { ...chunk.result, provider: provider.name } };
       }
     } catch (error) {
+      if (!answered) {
+        answered = true;
+        streamVerdict(gate, ticket, error);
+      }
       // Thrown after the provider reported usage: the bill is recorded, exactly as `generate` does.
       // Only when nothing settled yet — a provider that throws AFTER its `done` chunk was already
       // recorded, and releasing again would credit the ledger a second time.
@@ -286,6 +316,8 @@ class GatewayImpl implements Gateway {
       // A stream its consumer abandoned never reached `done` — so nothing reconciled the
       // reservation and it would hold the ceiling for the rest of the window.
       if (!settled) await ledger?.release(reservation);
+      // Abandoned before a chunk: the probe goes back, counting nothing.
+      if (!answered) gate?.released(ticket);
     }
   }
 
@@ -300,73 +332,6 @@ class GatewayImpl implements Gateway {
     return this.config.providers.some(
       (p) => p.models.includes(model) && p.marksPromptCache?.(model) === true,
     );
-  }
-
-  private providerFor(model: ModelId): Provider {
-    const provider = this.config.providers.find((p) => p.models.includes(model));
-    if (provider === undefined) {
-      throw new AiProviderUnavailableError({
-        model,
-        attempts: this.config.providers.map((p) => `${p.name}: does not serve ${model}`),
-        unserved: true,
-      });
-    }
-    return provider;
-  }
-
-  /**
-   * Try every provider that serves `model`, retrying each on a retryable failure with
-   * exponential backoff plus full jitter (jitter matters: synchronised retries from N
-   * workers reproduce the rate limit they are backing off from).
-   *
-   * Fallback here is across PROVIDERS serving one model, never across models — a silent model
-   * swap changes what answered, what it cost and which eval baseline the answer belongs to. The
-   * provider that did answer is stamped onto the result, so the fallback that DOES exist reaches
-   * the span instead of being invisible.
-   */
-  private async attempt(
-    model: ModelId,
-    call: (provider: Provider) => Promise<GenerateResult>,
-  ): Promise<GenerateResult> {
-    const candidates = this.config.providers.filter((p) => p.models.includes(model));
-    const failures: string[] = [];
-    if (candidates.length === 0) {
-      throw new AiProviderUnavailableError({
-        model,
-        attempts: [`no provider serves ${model}`],
-        unserved: true,
-      });
-    }
-
-    for (const provider of candidates) {
-      for (let attempt = 1; attempt <= this.retry.attempts; attempt += 1) {
-        try {
-          return { ...(await call(provider)), provider: provider.name };
-        } catch (error) {
-          // A coded refusal that is NOT `X_AI_PROVIDER_UNAVAILABLE` reaches the caller verbatim.
-          // Those are raised locally, before the socket opens — a missing credential, a control
-          // the model does not accept — so the same rejection is waiting on every provider and
-          // every attempt, which is the reason a 400 is not retried three lines below. Collecting
-          // one into `X_AI_PROVIDER_UNAVAILABLE` discards its runnable `fix:` and answers the same
-          // failure a different way from `stream`, which does not route through here at all.
-          // A transport failure keeps the old path: `AiTransportError` IS
-          // `X_AI_PROVIDER_UNAVAILABLE`, so "provider one 503'd, provider two timed out" still
-          // collects across the candidates. `stringField` rather than `error.code`, because the
-          // value came from an app's `Provider` and a property read on it can trap.
-          if (isUltimateError(error) && stringField(error, 'code') !== PROVIDER_UNAVAILABLE) {
-            throw error;
-          }
-          // `renderThrowable`, never `error.message` or `String(error)`: this line becomes the
-          // `cause` of `X_AI_PROVIDER_UNAVAILABLE`, and a renderer that throws replaces the coded
-          // refusal with a `TypeError` nothing downstream can catch by code. It bounds the text
-          // too — a provider's 1MB body is not a cause.
-          failures.push(`${provider.name}#${attempt}: ${renderThrowable(error)}`);
-          if (!isRetryable(error) || attempt === this.retry.attempts) break;
-          await this.sleep(backoffMs(this.retry, attempt, this.random));
-        }
-      }
-    }
-    throw new AiProviderUnavailableError({ model, attempts: failures });
   }
 }
 
@@ -402,71 +367,6 @@ const freeOf = (stored: GenerateResult): GenerateResult => ({
  */
 function ceilingOf(request: GenerateRequest): number {
   return finiteCount('the AI gateway', 'maxTokens', request.maxTokens, 1);
-}
-
-/**
- * Full jitter: a uniform pick from [0, exponential], capped BEFORE the roll.
- *
- * The arithmetic is core's `backoffDelay` — this is the mapping from the gateway's own field names
- * onto it, and nothing else. Two things came with the delegation and neither is cosmetic: the
- * result is ROUNDED where this floored it (a shift of at most 1ms, and the same rounding
- * `@ultimat3/jobs` and `@ultimat3/realtime` already use), and a policy carrying a `NaN` — which is
- * what `Number(process.env.…)` answers for an unset variable — is REFUSED rather than clamped.
- * This paragraph said "waits 0" until 2026-08-26, which was the safe answer to the wrong question
- * and had already stopped being true: a schedule of zeroes still spins, it just spins on purpose,
- * so core's `backoffDelay` refuses a non-finite bound before it clamps and this gateway inherits
- * the refusal with the curve. `gateway-backoff.test.ts` pins both halves — the refusal, and the
- * negative base that IS still clamped to zero.
- */
-export function backoffMs(policy: RetryPolicy, attempt: number, random?: Random): number {
-  return backoffDelay({
-    attempt,
-    base: policy.baseDelayMs,
-    max: policy.maxDelayMs,
-    curve: 'exponential',
-    jitter: 'full',
-    random,
-  });
-}
-
-/**
- * Retryable = the request was well formed and the provider was momentarily unable. A 400 is
- * never retried: the same body produces the same rejection and only burns the budget.
- *
- * The status half is core's `isRetryableStatus`, which is WIDER than the `429 || >= 500` this
- * gateway shipped: 408, 409 and 425 join it. Each is transient by construction — the server gave up
- * waiting for a body it never fully read, a concurrent writer won the round, the handshake was not
- * finished — so not retrying them was a gap rather than a policy, and one narrower table in one
- * package was how it stayed invisible. The `code` branch has no equivalent in core and stays here:
- * that table is HTTP status only, and a socket that timed out never produced one.
- */
-/**
- * A transport that never produced a response. Node spells these `ETIMEDOUT`/`ECONNRESET`; Bun's
- * `fetch` spells a refused, dropped or unopenable connection `ConnectionRefused`,
- * `ConnectionClosed` and `FailedToOpenSocket` — which this list did not know, so on the one runtime
- * the framework runs on a provider mid-restart was never retried.
- */
-const RETRYABLE_TRANSPORT_CODES: ReadonlySet<string> = new Set([
-  'ETIMEDOUT',
-  'ECONNRESET',
-  'ConnectionRefused',
-  'ConnectionClosed',
-  'FailedToOpenSocket',
-]);
-
-export function isRetryable(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) return false;
-  // A `Provider` is the APP's object, so the value it rejected with is one the framework did not
-  // build: `e.status` is a getter call and, on a `Proxy`, a trap. A value that fights being read
-  // cannot be SHOWN to be retryable, and this runs inside the catch block that has nothing left
-  // to answer with — so it fails closed rather than raising.
-  try {
-    const e = error as { status?: unknown; code?: unknown };
-    if (typeof e.status === 'number') return isRetryableStatus(e.status);
-    return typeof e.code === 'string' && RETRYABLE_TRANSPORT_CODES.has(e.code);
-  } catch {
-    return false;
-  }
 }
 
 /**

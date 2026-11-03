@@ -2,7 +2,7 @@
 // gets. Pinned because the render side now has a way for a page route to answer 404 with its own
 // document (`@ultimat3/render`'s `withStatus`), and that is only true if nothing between the
 // handler and the socket rewrites a 4xx it did not throw: the error page is for a THROW, never
-// for a status a handler chose. Measured before this pin: ai-maxxing's `/fleet/nope` answered 200
+// for a status a handler chose. Measured before this pin: one adopter's `/fleet/nope` answered 200
 // because the only path to a 404 went through the error page, outside the app's shell.
 import { describe, expect, test } from 'bun:test';
 import { defineHttpConfig } from './config';

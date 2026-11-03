@@ -219,7 +219,7 @@ describe('the observer never changes what a write does', () => {
   });
 });
 
-// Measured on ai-maxxing, 2026-09-06: an `upsertAll` of five pull requests logged
+// Measured on one adopter's app, 2026-09-06: an `upsertAll` of five pull requests logged
 // `X_N_PLUS_ONE_QUERY: pull_requests.findById ran 5 times in one request` — the observer's own
 // `before` reads, one per row, tripping the detector the framework ships. The threshold is the
 // detector's; a batch one past it is the smallest case the old shape could not pass.

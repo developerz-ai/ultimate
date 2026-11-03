@@ -9,6 +9,7 @@ import {
   checkPairing,
   KEYED as KEY_PATTERN,
   numbersIn,
+  pairedSections,
   pairingFinding,
   parseWalkthroughs,
 } from './changelog-pairing';
@@ -141,6 +142,37 @@ describe('pairing', () => {
   });
 });
 
+describe('the in-flight major, before its release', () => {
+  // The walkthrough is headed with the version it WILL be (`29.x → 30.0.0`) and CHANGELOG.md has no
+  // `## 30.0.0` yet: its lines sit under [Unreleased]. Until 2026-11-03 that walkthrough paired
+  // with nothing, so a drifted key passed every PR and failed only at the release commit.
+  const inFlight = (page: string): string =>
+    page.replace('23.x → 24.0.0, entry by entry — **unreleased**', '23.x → 24.0.0, entry by entry');
+
+  test('a walkthrough naming the next major pairs against [Unreleased]', () => {
+    const drifted = changelog(['- **BREAKING — (#1) one.** text', '- **BREAKING — (#3) three.**']);
+    expect(kinds(checkPairing(drifted, inFlight(upgrading({})))).join('\n')).toContain(
+      "[Unreleased]'s BREAKING lines and the Entry by entry table",
+    );
+    expect(checkPairing(changelog(KEYED), inFlight(upgrading({})))).toEqual([]);
+  });
+
+  test('a released section of that version wins; a major two ahead is not the in-flight one', () => {
+    const released = changelog([]).replace(
+      '## 23.0.0 - x',
+      '## 24.0.0 - x\n\n- **BREAKING — unkeyed.**\n\n## 23.0.0 - x',
+    );
+    expect(kinds(checkPairing(released, inFlight(upgrading({}))))[0]).toContain(
+      'BREAKING line(s) in 24.0.0 name no Upgrading entry',
+    );
+    const ahead = upgrading({}).replace(
+      '23.x → 24.0.0, entry by entry — **unreleased**',
+      '24.x → 25.0.0, entry by entry',
+    );
+    expect(pairedSections(changelog(KEYED), ahead)).toEqual([]);
+  });
+});
+
 describe('ranges', () => {
   test('an Entries cell naming a row the table lacks is X_DOC_MIGRATION_RANGE_STALE', () => {
     const gaps = checkPairing(changelog(KEYED), upgrading({ entriesCell: '1, 2–4' }));
@@ -183,5 +215,14 @@ describe('the committed CHANGELOG.md and wiki/Upgrading.md', () => {
     expect(paired.length).toBeGreaterThanOrEqual(2);
     for (const walk of paired) expect(walk.citations.length).toBeGreaterThan(0);
     expect(checkPairing(log, page)).toEqual([]);
+  });
+
+  test('the newest walkthrough is paired, whether or not its major is released yet', async () => {
+    const root = repoRoot();
+    const log = await Bun.file(`${root}/CHANGELOG.md`).text();
+    const page = await Bun.file(`${root}/wiki/Upgrading.md`).text();
+    const newest = parseWalkthroughs(page)[0] ?? expect.unreachable();
+    const paired = pairedSections(log, page).find((one) => one.walk.line === newest.line);
+    expect(paired?.lines.length ?? 0).toBeGreaterThan(0);
   });
 });

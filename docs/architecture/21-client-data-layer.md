@@ -301,7 +301,7 @@ single, so records and sockets do not change.
 
 Opt-in because tree shaking across one split build keeps what ANY importer uses. Measured: the
 update banner in `examples/dummy` 712 → 16,288 B (three reference-app routes over budget);
-notificado.co's `/afiliados` with both uploads 55,585 → 42,331 B, with one upload 33,958 → 39,931 B.
+one adopter's `/afiliados` with both uploads 55,585 → 42,331 B, with one upload 33,958 → 39,931 B.
 The lever that would make it the default is splitting per ROUTE (the islands one document renders),
 not per app.
 

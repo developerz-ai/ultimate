@@ -2,6 +2,16 @@
   "name": "@ultimat3/storage",
   "version": "29.4.0",
   "description": "Named disks over Bun.file and Bun.s3: safe keys, signed URLs, sniffed uploads",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "storage",
+    "uploads",
+    "s3",
+    "files"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Storage-And-Uploads",
   "license": "MIT",
   "type": "module",
   "repository": {

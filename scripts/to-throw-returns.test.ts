@@ -139,6 +139,22 @@ describe('the factory set is derived from source, never listed', () => {
     ].join('\n');
     expect([...errorFactoriesIn(source)].sort()).toEqual(['asError', 'wrapped']);
   });
+
+  /**
+   * `defineError()` answers the CLASS — `DefinedError<P>` carries a construct signature — and a
+   * class is no Error instance, so a `toThrow` over it fails when nothing throws. Reading it as a
+   * factory reported `http`'s two declaration-refusal tests, which can fail and do.
+   */
+  test('a function typed as an error CONSTRUCTOR is no factory of one', () => {
+    const source = [
+      'export interface DefinedError<P = undefined> {',
+      '  new (...args: Args<P>): UltimateError;',
+      '}',
+      'export function defineError<P = undefined>(spec: Spec<P>): DefinedError<P> {',
+      'export function boom(cause: unknown): UltimateError {',
+    ].join('\n');
+    expect([...errorFactoriesIn(source)].sort()).toEqual(['boom']);
+  });
 });
 
 describe('a signature Biome wrapped is still a declaration', () => {

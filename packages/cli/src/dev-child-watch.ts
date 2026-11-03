@@ -28,6 +28,13 @@ export const devHardExitMs = (): number => drainDeadlineMs() + MIN_RELEASE_MS + 
 
 export type DevChildGone = 'supervisor' | 'root';
 
+/**
+ * Why a supervised child is leaving, as its restart bookkeeping records it: `signal` is a stop it
+ * was sent (SIGINT, SIGTERM, the supervisor's drain message — `x stop`), which a save landing during
+ * the drain must never turn into a restart.
+ */
+export type DevChildLeaving = DevChildGone | 'signal';
+
 export interface DevChildWatchInput {
   readonly root: string;
   readonly env: Readonly<Record<string, string | undefined>>;
@@ -169,16 +176,21 @@ export const signalExitCode = (signal: 'SIGINT' | 'SIGTERM'): number =>
 export function startDevChildWatch(
   root: string,
   env: Readonly<Record<string, string | undefined>>,
-  onGone: (why: DevChildGone) => void,
+  onGone: (why: DevChildLeaving) => void,
 ): { readonly stopping: (code: number) => void } {
   const stopping = hardExit((code) => process.exit(code));
   // Beside core's own handlers, never instead of them: the drain is theirs, the deadline is this.
-  process.on('SIGINT', () => stopping(signalExitCode('SIGINT')));
-  process.on('SIGTERM', () => stopping(signalExitCode('SIGTERM')));
+  // `onGone('signal')` first, so a save during this drain cannot become a restart (`childRestart`).
+  const stop = (signal: 'SIGINT' | 'SIGTERM'): void => {
+    onGone('signal');
+    stopping(signalExitCode(signal));
+  };
+  process.on('SIGINT', () => stop('SIGINT'));
+  process.on('SIGTERM', () => stop('SIGTERM'));
   // The supervisor's stop, on every platform: the same drain a signal begins, by message.
   process.on('message', (message: unknown) => {
     if (!isDevDrainMessage(message)) return;
-    stopping(signalExitCode(message.signal));
+    stop(message.signal);
     void drain(message.signal);
   });
   watchDevChild({

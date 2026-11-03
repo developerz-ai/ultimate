@@ -3,11 +3,16 @@
 // already describe. Values are validated by the entity's own column parsers; an unknown key is a
 // declaration-time failure, not a surprise on the first request.
 
-import { renderThrowable } from '@ultimat3/core';
-import { describeValue, type SchemaNode, type StandardSchemaV1 } from '@ultimat3/schema';
+import {
+  describeValue,
+  type SchemaNode,
+  type StandardIssue,
+  type StandardSchemaV1,
+} from '@ultimat3/schema';
 import { viewKeyUnknown } from './entity-error';
 import { invariantViolated } from './errors';
 import type { AnyColumn, ColumnMap } from './types';
+import { columnIssue, missingIssue } from './view-issue';
 
 /** What `bigint()` puts on a row: the digits, as a string — `columns-data.ts` parses by this. */
 const BIGINT_PATTERN = '^-?\\d+$';
@@ -117,47 +122,59 @@ export const viewFor = <Row, K extends keyof Row & string>(
     properties: Object.fromEntries(picked.map(([key, column]) => [key, columnNode(column)])),
   };
 
-  const parse = (value: unknown): Pick<Row, K> => {
+  const nodes = node.properties ?? {};
+
+  /**
+   * Every picked key through its own column's parser, each refusal an issue AT ITS KEY: a form
+   * binds `path: ['title']` to the control, where one wrapped `EntityError` line at `path: ''`
+   * bound to nothing. All keys are read, so a form shows every refused field at once.
+   */
+  const check = (
+    value: unknown,
+  ): { readonly value: Pick<Row, K> } | { readonly issues: readonly StandardIssue[] } => {
     if (typeof value !== 'object' || value === null) {
       // Shape, never content — the same renderer `columns.ts` uses, for the same reason: a
       // view issue is folded into `X_BODY_INVALID` and reaches the caller and the log line.
-      throw invariantViolated(
-        entityName,
-        'view',
-        `expected an object, got ${describeValue(value)}`,
-      );
+      return {
+        issues: [
+          {
+            path: [],
+            message: `expected an object, got ${describeValue(value)}`,
+            rule: 'type',
+            params: { type: 'object' },
+          },
+        ],
+      };
     }
     const input = value as Readonly<Record<string, unknown>>;
     const projected = {} as Record<K, unknown>;
+    const issues: StandardIssue[] = [];
     for (const [key, column] of picked) {
       const given = input[key];
       if (given === undefined || given === null) {
         // No default is filled in: a view projects a row that already exists, so an absent
         // required column is missing data, never a value the projection may invent.
-        if (column.$meta.notNull) throw invariantViolated(entityName, `view.${key}`, 'is required');
-        projected[key] = null;
+        if (column.$meta.notNull) issues.push(missingIssue(key));
+        else projected[key] = null;
         continue;
       }
-      projected[key] = column.$parse(given);
+      try {
+        projected[key] = column.$parse(given);
+      } catch (error) {
+        issues.push(columnIssue(key, column, nodes[key] ?? { kind: 'unknown' }, error));
+      }
     }
     // Every picked key went through its own column's parser, so this is the derived projection.
-    return projected as Pick<Row, K>;
+    return issues.length > 0 ? { issues } : { value: projected as Pick<Row, K> };
   };
 
   return {
     '~standard': {
       version: 1,
       vendor: 'ultimate',
-      validate: (value) => {
-        try {
-          return { value: parse(value) };
-        } catch (error) {
-          // The entity's rule, for the same reason: `instanceof` and `String()` are both reads of
-          // a caught value, and a throwable that fights being read turned a rejected projection
-          // into an uncatchable `TypeError`. `renderThrowable` is total.
-          return { issues: [{ message: renderThrowable(error) }] };
-        }
-      },
+      // Never throws: `columnIssue` reads a caught value through `renderThrowable`, which is
+      // total — `instanceof` and `String()` are reads a hostile throwable refuses.
+      validate: check,
     },
     // `node` is the duck-typed key `nodeOf()` reads — the same one every `t.*` schema carries.
     node,

@@ -4,11 +4,11 @@
 
 import {
   type Check,
-  fail,
   failWith,
   isPlainObject,
   makeSchema,
   pass,
+  rejected,
   type Schema,
 } from './builder';
 import { expected } from './describe-value';
@@ -69,7 +69,7 @@ const CYCLE = 'expected a JSON value, received a cycle (a reference back to an e
 const NOT_PLAIN = 'expected a JSON value, received an object that is not a plain object or array';
 
 function refuse(state: Walk, at: At | readonly PropertyKey[], message: string): null {
-  state.issues.push({ message, path: pathOf(at) });
+  state.issues.push({ message, path: pathOf(at), rule: 'json' });
   return null;
 }
 
@@ -180,7 +180,7 @@ const checkJson: Check<JsonValue> = (value, path) => {
   // Every refusal pushes its issue; the fallback only keeps a refusal from ever reading as success.
   return state.issues.length > 0
     ? failWith(state.issues)
-    : fail(path, expected('a JSON value', value));
+    : rejected(path, expected('a JSON value', value), 'json');
 };
 
 /**

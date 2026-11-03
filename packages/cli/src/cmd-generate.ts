@@ -322,13 +322,16 @@ export function nextSteps(
     'bunx x db migrate',
     // A page that mounts an island has a byte budget only a build can weigh — measured on `x new`'s
     // app (`RESOURCE_PAGE_BUDGET`), and an app that charges more per document is over it on this
-    // run rather than on the next `bin/check`.
+    // run rather than on the next full gate. The step builds itself: the page is newer than the stats.
     ...(written.some((path) => path.endsWith('/page.tsx')) ? [MEASURE_PAGE] : []),
   ];
 }
 
-/** The two commands that weigh a page against its budget: the build writes the bytes it reads. */
-export const MEASURE_PAGE = 'bunx x build --target static && bunx x verify --only budgets';
+/**
+ * The command that weighs a page against its budget. One command: `budgets` runs the static build
+ * itself when the stats are older than the source, and a just-written page is (plan 101, 21).
+ */
+export const MEASURE_PAGE = 'bunx x verify --only budgets';
 
 /** The frame `x new` writes: a resource's page renders inside it when the app has one. */
 export const SHELL_MODULE = 'apps/web/shared/shell.tsx';

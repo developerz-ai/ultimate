@@ -195,6 +195,18 @@ describe('unit · scanPackageDocs', () => {
     expect(entries.map((entry) => entry.topic)).toEqual(['x.README#owns', 'x.CLAUDE#owns']);
   });
 
+  // A `## shell comment` inside a fence is code. Read as a heading, it minted a topic for a line
+  // of a shell script and cut the real section's body off at it.
+  test('a fenced `##` line is not a heading, and stays in the section that holds it', async () => {
+    const dir = fixture({
+      'package.json': '{"name":"@ultimat3/db"}',
+      'README.md': '## Migrate\n\n```sh\n## not a heading\nx db migrate\n```\n\n## Seed\n',
+    });
+    const entries = await scanPackageDocs(dir);
+    expect(entries.map((entry) => entry.topic)).toEqual(['db.README#migrate', 'db.README#seed']);
+    expect(entries[0]?.text).toContain('## not a heading');
+  });
+
   test('entries are stably ordered, so two scans of one tree agree', async () => {
     const dir = fixture({
       'package.json': '{"name":"@ultimat3/x"}',

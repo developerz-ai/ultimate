@@ -137,7 +137,7 @@ const beforeOf = async <Row>(
 
 /**
  * The `before` rows of a batch, read as ONE statement per `MAX_PAGE_SIZE` ids rather than one per
- * row. Measured on ai-maxxing, 2026-09-06: an `upsertAll` of five pull requests logged
+ * row. Measured on one adopter's app, 2026-09-06: an `upsertAll` of five pull requests logged
  * `X_N_PLUS_ONE_QUERY: pull_requests.findById ran 5 times in one request` — the framework's own
  * feed tripping the framework's own detector, exactly as the job step-write did before #415. A
  * `findById` per row is not even coalesced into one statement, because each one is awaited

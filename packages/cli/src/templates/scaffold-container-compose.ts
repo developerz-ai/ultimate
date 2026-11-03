@@ -3,6 +3,7 @@
 // `x deploy --method compose` runs, and the single-node rung of the scale ladder.
 
 import type { NameSet } from './naming';
+import { RUNTIME_UID } from './scaffold-helm';
 
 /**
  * The production env file, relative to the app root. Named once because two readers must agree:
@@ -18,6 +19,8 @@ export const composeProdFile = (
 # What \`x deploy --method compose\` runs. migrate runs to completion before anything serves.
 #
 #   IMAGE=ghcr.io/you/${app.kebab}:1.2.3 x deploy --image ghcr.io/you/${app.kebab}:1.2.3
+#
+# ${PROD_ENV_FILE} first: \`x env init --production\` writes every value below with fresh secrets.
 #
 # By hand, always with \`--env-file ${PROD_ENV_FILE}\`: Compose fills \`\${VAR:?…}\` below from the shell
 # and \`--env-file\` only, NEVER from \`env_file:\`, so without it a value set only in that file is
@@ -55,8 +58,10 @@ x-image: &image
   # filesystem, no Linux capabilities (nothing here binds below 1024), no setuid escalation, and a
   # memory ceiling so one runaway role takes down its container rather than the box. /tmp and .x/
   # are tmpfs — .x/ is where a still-embedded binding keeps state, which production never relies on.
+  # A tmpfs mounts root-owned and hides the image's chown, so .x/ names the image's USER: without
+  # it every role refuses at boot (X_STORAGE_UNWRITABLE, EACCES mkdir '/app/.x/storage').
   read_only: true
-  tmpfs: [/tmp, /app/.x]
+  tmpfs: [/tmp, '/app/.x:uid=${RUNTIME_UID},gid=${RUNTIME_UID}']
   cap_drop: [ALL]
   security_opt: ['no-new-privileges:true']
   mem_limit: 1g

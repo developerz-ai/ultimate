@@ -2,6 +2,19 @@
 
 Feature flags: permanent switches, and temporary ones that cannot be forgotten.
 
+`bun add @ultimat3/flags` · guide: [Feature Flags](https://github.com/developerz-ai/ultimate/wiki/Feature-Flags)
+
+```ts
+import { defineFlag } from '@ultimat3/flags';
+
+export const dunning = defineFlag({
+  kind: 'permanent',
+  key: 'billing.dunning-emails',
+  description: 'ops kill switch for dunning email delivery',
+  targeting: { default: true },
+});
+```
+
 Feature flags are normally a bad trade — N flags are 2^N states nothing tested. This package takes
 the trade only on terms that bound the exponent: every flag declares which of two kinds it is, and
 a `temporary` flag carries an expiry it cannot be declared without. Past that date, every

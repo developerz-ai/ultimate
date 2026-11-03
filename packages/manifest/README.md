@@ -3,6 +3,8 @@
 Generated facts. `x.manifest.json` is emitted from code, committed, and diffed in review —
 it is how an agent learns what the app *is* without reading every file.
 
+`bun add @ultimat3/manifest` · guide: [Agents](https://github.com/developerz-ai/ultimate/wiki/Agents)
+
 ```ts
 import { buildManifest, emitManifest, assertNoDrift, verifyContract } from '@ultimat3/manifest';
 
@@ -135,7 +137,17 @@ disagree with the installed version, because it *is* the installed version.
 | Entry | Source | Topic |
 |---|---|---|
 | `module` | the file header comment on a module `src/index.ts` re-exports, plus its public symbols | `jobs.retry` |
-| `guide` | a `##` section of `README.md` or `CLAUDE.md`, quoted verbatim | `money.README#why-no-floats` |
+| `guide` | a `##` section of `README.md` or `CLAUDE.md`, quoted verbatim; a fenced `##` line is code, never a heading | `money.README#why-no-floats` |
+| `guide` | a wiki page (`scanWikiDocs(dir, origin)`): its intro, then one entry per heading, anchored as GitHub anchors it. `Error-Codes.md` is never read | `wiki.Upgrading#28x--2900-entry-by-entry` |
+
+`githubSlug(heading)` and `wikiHeadings(markdown)` are GitHub's anchor rule, numbering included —
+the one copy: `scripts/wiki-anchors.ts` and `scripts/release-notes.ts` import them, so a topic
+`x docs` prints and a link the gate accepts cannot drift apart.
+`wikiSection(markdown, anchor)` is a page's whole section — subsections included, up to the next
+heading of its level — for `x docs Upgrading#<anchor>`. `tokenize()` is the query and name splitter
+(camelCase and digit runs, stop words dropped); `searchDocs()` compares one-suffix stems, and at an
+equal score ranks a guide over a source header. The ranking is not a stable surface; the regression
+set is `docs-search-eval-set-fixture.ts`, held at 18 of 20 by `docs-search.test.ts`.
 
 The **file header** is the doc unit, not JSDoc. Measured across this repo, `As of 2026-08`: 99.8%
 of source files carry a 1–4 line header (2,510 of 2,514), while only 42.3% of public exports have

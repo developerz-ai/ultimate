@@ -4,17 +4,34 @@
 // combination we never tested. One version, one changelog entry, one tag.
 //
 //   bun run scripts/release.ts --bump minor [--dry-run] [--json]
+//   bun run scripts/release.ts --bump major --security GHSA-xxxx-xxxx-xxxx   (inside the window)
 
 import { join } from 'node:path';
 import { SEMVER } from '@ultimat3/cli';
 import { CHART_FILE, setChartVersions } from './chart-version';
+import { rewriteMainCells } from './doc-unreleased';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
+import { highlightFindings } from './lib/changelog-highlights';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import {
+  bumpWindowFindings,
+  majorWindowFindings,
+  refuseOutsideWindow,
+  securityLines,
+  withSecurityException,
+} from './lib/major-window';
 import { promoteUnreleased, releaseDate } from './lib/release-changelog';
-import { compareReleaseVersions, treeDirtyFindings } from './lib/release-preflight';
-import type { AskIssue } from './lib/release-subject';
-import { askIssueArgs, askTwin } from './lib/release-subject';
+import { treeDirtyFindings } from './lib/release-preflight';
+import { askIssueArgs, askLookupFailedLine, askTwin, parseAskIssues } from './lib/release-subject';
+import {
+  type Bump,
+  badFlagFinding,
+  isBump,
+  RELEASE_FLAGS,
+  readReleaseVersion,
+  unknownReleaseFlags,
+} from './lib/release-version';
 import {
   performedWriteLine,
   performReleaseWrites,
@@ -24,6 +41,7 @@ import {
   stampReleaseFiles,
 } from './lib/release-writes';
 import { repoRoot, run } from './lib/run';
+import { STABILITY_PATH, withNextWindowLine } from './lib/stability-findings';
 import {
   listWorkspaces,
   publishFloorFindings,
@@ -31,103 +49,19 @@ import {
   workspaceManifests,
 } from './lib/workspaces';
 
+export { bumpWindowFindings } from './lib/major-window';
 // The ask query lives with the other release subjects (`lib/release-subject.ts`), one definition
 // for one query; re-exported here so this script stays the one module its callers import it from.
-export { askIssueArgs } from './lib/release-subject';
-
-export const BUMPS = ['patch', 'minor', 'major'] as const;
-
-export type Bump = (typeof BUMPS)[number];
-
-/**
- * `--bump` was cast to the union with no check, so `--bump majr` fell through both branches of
- * `nextVersion` and produced a PATCH — a breaking change shipped as 1.2.1 across all 29 manifests,
- * with an exit code of 0. `--version` was equally unvalidated: `--version 1.2` wrote `"1.2"` into
- * every package.json.
- */
-export const isBump = (value: string): value is Bump =>
-  (BUMPS as readonly string[]).includes(value);
-
-const badFlagFinding = (flag: string, value: string, expected: string): Finding => ({
-  code: 'X_CLI_BAD_FLAG',
-  cause: `--${flag} ${value} is not ${expected}`,
-  fix: `bun run scripts/release.ts --bump minor --dry-run --json`,
-  at: 'scripts/release.ts',
-});
-
-/**
- * The flags this script accepts. Anything else is refused before a manifest is touched — see
- * `readReleaseVersion` for why an unrecognised token must never reach the rewrite.
- */
-export const RELEASE_FLAGS = ['version', 'bump', 'check', 'dry-run', 'json'] as const;
-
-/** Every `--flag` the caller passed that this script does not declare. */
-export const unknownReleaseFlags = (flags: Iterable<string>): readonly string[] =>
-  [...flags].filter((name) => !(RELEASE_FLAGS as readonly string[]).includes(name)).sort();
-
-/**
- * Both flags, refused before a single manifest is rewritten.
- *
- * The absent case is a REFUSAL, not a patch bump. It defaulted to `patch`, so any invocation the
- * parser did not recognise — `--help` most obviously, since this script has never had one — fell
- * through to "no explicit, no bump" and rewrote 47 manifests plus the chart. A release is the most
- * expensive thing in this repo to undo, and it was the one script that acted on a typo. The
- * version to publish is always somebody's decision, so it is always stated.
- */
-export function readReleaseVersion(input: {
-  readonly explicit: string | undefined;
-  readonly bump: string | undefined;
-  readonly current: string;
-}): { version: string } | { findings: readonly Finding[] } {
-  const findings: Finding[] = [];
-  if (input.bump !== undefined && !isBump(input.bump)) {
-    findings.push(badFlagFinding('bump', input.bump, `one of ${BUMPS.join(', ')}`));
-  }
-  if (input.explicit !== undefined && !SEMVER.test(input.explicit)) {
-    findings.push(badFlagFinding('version', input.explicit, 'a semver version (e.g. 1.3.0)'));
-  }
-  if (input.explicit === undefined && input.bump === undefined) {
-    findings.push({
-      code: 'X_RELEASE_VERSION_UNSTATED',
-      cause: `neither --version nor --bump was given, and this repo is at ${input.current}`,
-      // It also offered `--version <current>`, which the forward-only rule below now refuses.
-      fix: 'bun run scripts/release.ts --bump patch --dry-run --json',
-      at: 'scripts/release.ts',
-    });
-  }
-  if (findings.length > 0) return { findings };
-  // Both given: `--bump` used to be read only when `--version` was absent, so one of two stated
-  // intents was dropped without a word. Neither wins; the caller states one.
-  if (input.explicit !== undefined && input.bump !== undefined) {
-    findings.push(
-      invalidVersionFinding(
-        `--version ${input.explicit} and --bump ${input.bump} were both given, and they name two different ways to pick the version after ${input.current}`,
-      ),
-    );
-  } else if (
-    input.explicit !== undefined &&
-    compareReleaseVersions(input.explicit, input.current) <= 0
-  ) {
-    // At or below the current version is a version npm already holds, or one below it: the
-    // publish dies `E403` package by package, after the tag and the Release already exist.
-    findings.push(
-      invalidVersionFinding(
-        `--version ${input.explicit} does not move forward: this repo is already at ${input.current}`,
-      ),
-    );
-  }
-  if (findings.length > 0) return { findings };
-  return {
-    version: input.explicit ?? nextVersion(input.current, (input.bump ?? 'patch') as Bump),
-  };
-}
-
-const invalidVersionFinding = (cause: string): Finding => ({
-  code: 'X_RELEASE_VERSION_INVALID',
-  cause,
-  fix: 'bun run scripts/release.ts --bump patch --dry-run --json   # or --bump minor, --bump major',
-  at: 'scripts/release.ts',
-});
+export { askIssueArgs, askLookupFailedLine, parseAskIssues } from './lib/release-subject';
+export type { Bump } from './lib/release-version';
+export {
+  BUMPS,
+  isBump,
+  nextVersion,
+  RELEASE_FLAGS,
+  readReleaseVersion,
+  unknownReleaseFlags,
+} from './lib/release-version';
 
 /**
  * This run, re-stated from VALIDATED values only — never the raw argv — so a refusal's `fix:` can
@@ -138,12 +72,15 @@ export const releaseInvocation = (input: {
   readonly bump: Bump | undefined;
   readonly dryRun: boolean;
   readonly json: boolean;
+  /** Only after `bumpWindowFindings` held it to `ADVISORY_ID`: no shell syntax can reach here. */
+  readonly security?: string | undefined;
 }): string =>
   [
     'bun run scripts/release.ts',
     input.explicit === undefined
       ? `--bump ${input.bump ?? 'patch'}`
       : `--version ${input.explicit}`,
+    ...(input.security === undefined ? [] : [`--security ${input.security}`]),
     ...(input.dryRun ? ['--dry-run'] : []),
     ...(input.json ? ['--json'] : []),
   ].join(' ');
@@ -162,45 +99,8 @@ export const releaseNextLine = (version: string, fixes?: string): string =>
     ? `  next      bun install, commit, open the \`chore: release ${version}\` PR; merging it is the release (release-tag.yml)`
     : `  next      bun install, commit, open the \`chore: release ${version}\` PR with \`${fixes}\` in the body; merging it is the release (release-tag.yml) and closes the ask`;
 
-/**
- * The `--json number,title` answer, read tolerantly: the lookup only decorates a report that has
- * to print either way, so anything that is not the rows gh promised — an error line, a truncated
- * answer, some future gh's new shape — is simply no ask. Malformed rows drop out of an array;
- * anything else answers empty-handed.
- */
-export const parseAskIssues = (output: string): readonly AskIssue[] => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(output);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  const isAskIssue = (row: unknown): row is AskIssue =>
-    typeof row === 'object' &&
-    row !== null &&
-    typeof (row as { number?: unknown }).number === 'number' &&
-    typeof (row as { title?: unknown }).title === 'string';
-  return parsed.filter(isAskIssue);
-};
-
-/** The one line a failed lookup earns: the close link is unconfirmed, and nothing else moves. */
-export const askLookupFailedLine = (version: string): string =>
-  `  ask       lookup failed — could not confirm whether \`Release ${version}\` is open; \`Fixes #<n>\` belongs in the PR body only if one is`;
-
 /** The only dependency range a lockstep release rewrites — a caret or a tag is somebody's intent. */
 const EXACT_PIN = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
-
-export function nextVersion(current: string, bump: Bump): string {
-  const [major = 0, minor = 0, patch = 0] =
-    current
-      .split('-')[0]
-      ?.split('.')
-      .map((part) => Number.parseInt(part, 10) || 0) ?? [];
-  if (bump === 'major') return `${major + 1}.0.0`;
-  if (bump === 'minor') return `${major}.${minor + 1}.0`;
-  return `${major}.${minor}.${patch + 1}`;
-}
 
 /**
  * The manifest's own `"version"`, which is the second key in every package.json here and so the
@@ -254,9 +154,18 @@ if (import.meta.main) {
   // `wiki/_Footer.md:8` — three files a bump derives from the manifests and did not write. This
   // step exists to refuse BEFORE the gate does, so the same three now have to answer here.
   const check = flagString(args, 'check');
+  const changelogPath = join(root, 'CHANGELOG.md');
+  const changelogText = await Bun.file(changelogPath)
+    .text()
+    .catch(() => '');
+  const date = releaseDate(new Date());
   if (check !== undefined) {
+    // The window too (wiki/Stability.md): the same rule the bump ran, so no bump PR merges past it.
     const findings = SEMVER.test(check)
-      ? await releaseCheckFindings(root, check)
+      ? [
+          ...(await releaseCheckFindings(root, check)),
+          ...majorWindowFindings({ version: check, changelog: changelogText, today: date }),
+        ]
       : [badFlagFinding('check', check, 'a semver version (e.g. 1.3.0)')];
     report(
       {
@@ -313,6 +222,12 @@ if (import.meta.main) {
   }
   const version = resolved.version;
   const dryRun = flagBool(args, 'dry-run');
+  const security = flagString(args, 'security');
+  refuseOutsideWindow(
+    bumpWindowFindings({ version, changelog: changelogText, today: date, security }),
+    { version, current },
+    args.json,
+  );
 
   // Before anything is read, let alone written, and under `--dry-run` too so a dry run predicts
   // the real one: the release commit is `git add -A`, and over a dirty tree it carries whatever
@@ -326,6 +241,7 @@ if (import.meta.main) {
       bump: bumpFlag !== undefined && isBump(bumpFlag) ? bumpFlag : undefined,
       dryRun,
       json: args.json,
+      security,
     }),
   );
   if (dirty.length > 0) {
@@ -362,23 +278,22 @@ if (import.meta.main) {
   // Computed before a single manifest is rewritten, and under `--dry-run` too: a changelog that
   // cannot be promoted is a release that must not start, and finding that out after 47 files have
   // moved is the expensive order to find it out in.
-  const changelogPath = join(root, 'CHANGELOG.md');
-  const date = releaseDate(new Date());
   const promoted = promoteUnreleased({
-    changelog: await Bun.file(changelogPath)
-      .text()
-      .catch(() => ''),
+    changelog: changelogText,
     version,
     date,
     subjects,
   });
-  if ('findings' in promoted) {
+  // A section from 30.0.0 without its Highlights would red the gate the moment it exists.
+  const promotedText = 'findings' in promoted ? '' : promoted.changelog;
+  const unpromotable = 'findings' in promoted ? promoted.findings : highlightFindings(promotedText);
+  if (unpromotable.length > 0) {
     report(
       {
         ok: false,
         script: 'release',
         summary: 'refusing to release: CHANGELOG.md cannot be promoted',
-        findings: promoted.findings,
+        findings: unpromotable,
         data: { version, current, dryRun },
       },
       args.json,
@@ -400,7 +315,24 @@ if (import.meta.main) {
         rewrite: (raw: string) => setChartVersions(raw, version),
         optional: true,
       },
-      { path: changelogPath, rewrite: () => promoted.changelog },
+      {
+        path: changelogPath,
+        rewrite: () => withSecurityException(promotedText, version, security),
+      },
+      // The same step as the promotion: a Known-Gaps `main` cell names what [Unreleased] carried,
+      // and this release is where it shipped (`doc-unreleased.ts` refuses one left behind).
+      {
+        path: join(root, 'wiki/Known-Gaps.md'),
+        rewrite: (raw: string) => rewriteMainCells(raw, version).text,
+        optional: true,
+      },
+      // wiki/Stability.md's next-window date, from the changelog just promoted: a major's own
+      // release PR would otherwise red the gate on the date it was never told (`stability-findings`).
+      {
+        path: join(root, STABILITY_PATH),
+        rewrite: (raw: string) => withNextWindowLine(raw, promotedText),
+        optional: true,
+      },
     ]);
     if (stamped.findings.length > 0) {
       report(
@@ -450,6 +382,8 @@ if (import.meta.main) {
         `  manifests ${manifests.length} rewritten (${published.size} published, the rest repinned)`,
         `  chart     ${CHART_FILE} version + appVersion -> ${version}`,
         `  changelog [Unreleased] promoted to "## ${version} - ${date}", a fresh [Unreleased] above it`,
+        `  gaps      wiki/Known-Gaps.md \`main\` cells -> **${version}**`,
+        `  stability ${STABILITY_PATH} next-window line from the promoted CHANGELOG.md`,
         // Three lines either way: a dry run that listed only what it would NOT do is how the three
         // derived files stayed invisible for nineteen majors.
         ...(dryRun
@@ -458,6 +392,7 @@ if (import.meta.main) {
         log.ok
           ? `  commits   ${subjects.length} since v${current}, appended under ### Commits`
           : `  commits   none listed — this clone has no v${current} tag to bound the range`,
+        ...securityLines(version, security),
         releaseNextLine(version, twin === undefined ? undefined : `Fixes #${twin.number}`),
         ...(twin === undefined && openAsks === undefined ? [askLookupFailedLine(version)] : []),
       ],
@@ -470,6 +405,7 @@ if (import.meta.main) {
         previousTagFound: log.ok,
         changelogDate: date,
         dryRun,
+        ...(security === undefined ? {} : { security }),
         ...(twin === undefined ? {} : { openAsk: { number: twin.number, title: twin.title } }),
         writes: dryRun
           ? RELEASE_WRITES.map((spec) => ({ kind: spec.kind, at: spec.at, command: spec.command }))

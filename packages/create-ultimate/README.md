@@ -1,8 +1,12 @@
 # create-ultimate
 
+Scaffold an Ultimate app — the monorepo, a seeded database and a green gate — with one command.
+
 ```sh
 bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 ```
+
+Guide: [Getting started](https://github.com/developerz-ai/ultimate/wiki/Getting-Started).
 
 `bun run setup` is the scaffold's own script (`bin/setup.ts`, run by Bun — the same command in
 PowerShell, cmd and bash) and it is not optional: `x new` writes files and installs nothing, so

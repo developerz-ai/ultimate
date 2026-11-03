@@ -278,10 +278,16 @@
                 "message": {
                   "type": "string"
                 },
+                "params": {
+                  "type": "object"
+                },
                 "path": {
                   "type": "string"
                 },
                 "received": {
+                  "type": "string"
+                },
+                "rule": {
                   "type": "string"
                 }
               },

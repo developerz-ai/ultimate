@@ -1,9 +1,16 @@
 // The wiring of the four small "premium default" components, asked of the components rather than
 // of the pure modules beneath them (`stat-delta.ts`, `meter-view.ts` have their own tests): what
-// the markup carries, and what a click on the copy control does. `jsx-probe` gives the tree.
+// the markup carries, and what a click on the copy control does. `@ultimat3/core/render-nodes` gives the tree.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, fire, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
+import {
+  byTag,
+  fire,
+  one,
+  type RenderNode,
+  renderNodes,
+  withAttr,
+} from '@ultimat3/core/render-nodes';
 import { CopyButton } from './CopyButton';
 import { Kbd } from './Kbd';
 import { Meter } from './Meter';
@@ -102,7 +109,7 @@ describe('CopyButton', () => {
     });
     try {
       const button = one(byTag(renderNodes(CopyButton, { value: 'copied-value' }), 'button'), 'b');
-      fire(button as ProbeNode, 'onClick', {});
+      fire(button as RenderNode, 'onClick', {});
       await Promise.resolve();
       expect(written).toEqual(['copied-value']);
     } finally {

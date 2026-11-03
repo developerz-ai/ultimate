@@ -30,7 +30,7 @@ import { pathSegments } from './path-segments';
  * - `node_modules` — an install, not an edit. `x dev` cannot reload for a dependency change: the
  *   modules are already in this process's cache.
  * - `.personal` — an app's uncommitted local state, written by scripts while the dev server runs.
- * - `.claude` — agent scratch, session logs and worktrees. ai-maxxing keeps two entire copies of
+ * - `.claude` — agent scratch, session logs and worktrees. One adopter keeps two entire copies of
  *   the app under `.claude/worktrees/`, so a second agent's edit rebuilt the first agent's islands.
  *
  * `dist` and `coverage` were here and are deliberately not: both are ordinary build output that

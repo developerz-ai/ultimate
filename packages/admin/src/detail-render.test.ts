@@ -3,6 +3,7 @@
 // drives the component.
 
 import { describe, expect, test } from 'bun:test';
+import { byComponent, byTag, nodesOf, one, withAttr } from '@ultimat3/core/render-nodes';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AuditEntry } from './audit';
 import {
@@ -13,15 +14,7 @@ import {
   adminDenied,
 } from './authz';
 import type { AdminField } from './fields';
-import {
-  byComponent,
-  byTag,
-  nodesOf,
-  one,
-  renderHtml,
-  shallowNodesOf,
-  withAttr,
-} from './inert-jsx-fixture';
+import { renderHtml } from './inert-jsx-fixture';
 import type { AdminResource } from './resource';
 
 /**
@@ -125,11 +118,12 @@ const detail = (over: Record<string, unknown>): unknown =>
 
 describe('the three states, in the order the component decides them', () => {
   test('an error wins over everything else, rehydrated as an UltimateError', () => {
-    const nodes = shallowNodesOf(
+    const nodes = nodesOf(
       detail({
         error: { code: 'X_ADMIN_DENIED', cause: 'no grant', fix: 'ask an owner' },
         row: null,
       }),
+      { components: 'stop' },
     );
     const state = one(byComponent(nodes, 'ErrorState'), '<ErrorState>');
     const error = state.props['error'] as { code: string; cause: string; fix: string };
@@ -139,7 +133,7 @@ describe('the three states, in the order the component decides them', () => {
   });
 
   test('no row is a not-found state naming the entity, with a way out', () => {
-    const nodes = shallowNodesOf(detail({ row: null }));
+    const nodes = nodesOf(detail({ row: null }), { components: 'stop' });
     const state = one(byComponent(nodes, 'ErrorState'), '<ErrorState>');
     const error = state.props['error'] as { code: string; cause: string; fix: string };
     expect(error.code).toBe('X_ADMIN_ENTITY_UNKNOWN');
@@ -149,7 +143,7 @@ describe('the three states, in the order the component decides them', () => {
   });
 
   test('a row renders the record, and neither failure state', () => {
-    const nodes = shallowNodesOf(detail({}));
+    const nodes = nodesOf(detail({}), { components: 'stop' });
     expect(byComponent(nodes, 'ErrorState')).toHaveLength(0);
     expect(byTag(nodes, 'dl')).toHaveLength(1);
   });
@@ -167,38 +161,39 @@ describe('a sensitive column never reaches the page', () => {
 });
 
 /** The edit control is ui's `<Link appearance="button">`; the delete control is a native form. */
-const editLink = (nodes: ReturnType<typeof shallowNodesOf>): ReturnType<typeof byComponent> =>
+const editLink = (nodes: ReturnType<typeof nodesOf>): ReturnType<typeof byComponent> =>
   byComponent(nodes, 'Link');
 
 const MAY = { update: true, delete: true };
 
 describe('the controls are what the gate already decided — a view decides nothing', () => {
   test('with no decision handed in there is neither an edit link nor a delete form', () => {
-    const nodes = shallowNodesOf(detail({}));
+    const nodes = nodesOf(detail({}), { components: 'stop' });
     expect(editLink(nodes)).toHaveLength(0);
     expect(byTag(nodes, 'form')).toHaveLength(0);
   });
 
   test('an actor who may update but not delete gets the link and no form', () => {
-    const nodes = shallowNodesOf(detail({ may: { update: true, delete: false } }));
+    const nodes = nodesOf(detail({ may: { update: true, delete: false } }), { components: 'stop' });
     expect(editLink(nodes)).toHaveLength(1);
     expect(byTag(nodes, 'form')).toHaveLength(0);
   });
 
   test('the edit link is basePath, the resource path and the row id, in that order', () => {
-    const link = one(editLink(shallowNodesOf(detail({ may: MAY }))), '<Link>');
+    const link = one(editLink(nodesOf(detail({ may: MAY }), { components: 'stop' })), '<Link>');
     expect(link.props['href']).toBe('/back-office/posts/p_1/edit');
     expect(link.props['children']).toBe('Edit (probe)');
   });
 
   test('the id comes from the resource idField, not from a hardcoded "id"', () => {
     const bySlug = { ...resource, idField: 'slug' } as AdminResource;
-    const nodes = shallowNodesOf(
+    const nodes = nodesOf(
       detail({
         resource: bySlug,
         row: { id: 'p_1', slug: 'hello-world', title: 'Hello' },
         may: MAY,
       }),
+      { components: 'stop' },
     );
     expect(one(editLink(nodes), '<Link>').props['href']).toBe(
       '/back-office/posts/hello-world/edit',
@@ -241,7 +236,7 @@ describe('the action bar is handed this row as its subject', () => {
     } as unknown as AdminResource;
 
     // The DEEP walk: `<AdminActions>` has to be CALLED for the gate behind it to run at all.
-    nodesOf(detail({ resource: withAction, authz }));
+    nodesOf(detail({ resource: withAction, authz }), { components: 'keep' });
     expect(asked).toEqual(['admin:write', 'post:publish']);
     // The ROW rides the subject: a rule that reads it decides about this row, not about a table.
     const row = { id: 'p_1', title: 'Hello', secret: 'hunter2' };
@@ -254,7 +249,7 @@ describe('the action bar is handed this row as its subject', () => {
 
 describe('the audit trail', () => {
   test('an empty trail says so rather than rendering an empty list', () => {
-    const nodes = shallowNodesOf(detail({}));
+    const nodes = nodesOf(detail({}), { components: 'stop' });
     expect(byTag(nodes, 'ol')).toHaveLength(0);
     const empty = one(
       byTag(nodes, 'p').filter((node) => node.props['class'] === 'x-admin-empty'),
@@ -264,7 +259,9 @@ describe('the audit trail', () => {
   });
 
   test('each entry carries its instant, its actor and its outcome as data', () => {
-    const nodes = shallowNodesOf(detail({ audit: [entry({ outcome: 'denied' })] }));
+    const nodes = nodesOf(detail({ audit: [entry({ outcome: 'denied' })] }), {
+      components: 'stop',
+    });
     expect(byTag(nodes, 'ol')).toHaveLength(1);
     expect(one(byTag(nodes, 'code'), 'the timestamp').props['children']).toBe(
       '2026-08-19T00:00:00.000Z',

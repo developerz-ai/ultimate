@@ -5,13 +5,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { byTag, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
+import { byTag, one, type RenderNode, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { AsyncRegion } from './AsyncRegion';
 
 const ROWS = ['alpha', 'beta'];
 
 interface Rendered {
-  readonly nodes: ProbeNode[];
+  readonly nodes: RenderNode[];
   readonly slots: string[];
 }
 
@@ -33,7 +33,7 @@ const render = (extra: Record<string, unknown>): Rendered => {
 };
 
 /** The region itself: the one element carrying the reserved box. */
-const region = (nodes: readonly ProbeNode[]): ProbeNode =>
+const region = (nodes: readonly RenderNode[]): RenderNode =>
   one(
     byTag(nodes, 'div').filter(
       (node) =>
@@ -44,7 +44,7 @@ const region = (nodes: readonly ProbeNode[]): ProbeNode =>
   );
 
 /** Skeleton's placeholder lines, identified by the box it was given. */
-const placeholders = (nodes: readonly ProbeNode[]): ProbeNode[] =>
+const placeholders = (nodes: readonly RenderNode[]): RenderNode[] =>
   byTag(nodes, 'span').filter(
     (node) =>
       (node.props['style'] as Record<string, string> | undefined)?.['--skeleton-h'] !== undefined,

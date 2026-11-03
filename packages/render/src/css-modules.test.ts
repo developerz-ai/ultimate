@@ -164,7 +164,7 @@ describe('compileStylesheet', () => {
 describe('a compiled sheet carries no encoding claim — it is a fragment, not a file', () => {
   // Dart Sass writes U+FEFF at the head of any compressed output holding a non-ASCII character,
   // and the registry joins modules verbatim: the second module's BOM landed glued to its first
-  // selector, and the browser dropped that rule. Seven of seven on ai-maxxing's home stylesheet.
+  // selector, and the browser dropped that rule. Seven of seven on one adopter's home stylesheet.
   test("a module with `content: '·'` compiles to CSS whose first byte is the selector's dot", () => {
     const out = compileStylesheet(TOKENS, ".sep{content:'·'}");
     expect(out.css.charCodeAt(0)).toBe('.'.charCodeAt(0));

@@ -137,6 +137,31 @@ describe('unit · the .claude bundle stays deletable and self-contained', () => 
       expect(allow.some((rule) => rule.includes(forbidden))).toBe(false);
   });
 
+  test('every x rule is spelled bunx x — the spelling that runs with no global x', () => {
+    // A permission for `x verify` pre-approves a command that cannot run in a fresh app, and leaves
+    // the one that can — `bunx x verify`, what the generators print — behind a prompt.
+    const allow = parseSettings().permissions.allow;
+    expect(allow.filter((rule) => rule.startsWith('Bash(x '))).toEqual([]);
+    expect(allow).toContain('Bash(bunx x verify:*)');
+    expect(allow).toContain('Bash(bunx x g:*)');
+  });
+
+  test('the workflow commands and subagents spell every command they run as bunx x', () => {
+    const commands = claudeFiles(app).filter(
+      (file) =>
+        file.path.startsWith('.claude/commands/') || file.path.startsWith('.claude/agents/'),
+    );
+    expect(commands.some((file) => file.path.startsWith('.claude/agents/'))).toBe(true);
+    for (const file of commands) {
+      const text = String(file.contents);
+      expect({ path: file.path, bare: text.match(/`x [a-z]/g) ?? [] }).toEqual({
+        path: file.path,
+        bare: [],
+      });
+      expect(text.split('\n').filter((line) => /^x [a-z]/.test(line))).toEqual([]);
+    }
+  });
+
   test('exactly one PostToolUse hook, and it names a binary the scaffold installs', () => {
     const hooks = parseSettings().hooks.PostToolUse.flatMap((entry) => entry.hooks);
     expect(hooks).toHaveLength(1);

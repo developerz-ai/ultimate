@@ -29,7 +29,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # `next` holds the breaks that wait for the major window, `release/*` the maintained majors
+    # (wiki/Stability.md): each is a branch something publishes from, so each is gated on push.
+    branches: [main, next, 'release/*']
   pull_request:
   workflow_dispatch:
 
@@ -208,6 +210,10 @@ jobs:
           PART: ${{ matrix.part }}
           ONLY: ${{ matrix.only }}
           SHARD: ${{ matrix.shard }}
+          # The private adopter names `scripts/private-names.ts` refuses, handed only to the part that
+          # runs `boundaries`. A secret, so no committed file holds the list; a fork's PR reads it
+          # empty and skips, a push to main without it is red (`X_PRIVATE_NAMES_UNSET`).
+          ULTIMATE_PRIVATE_NAMES: ${{ contains(matrix.only, 'boundaries') && secrets.ULTIMATE_PRIVATE_NAMES || '' }}
         run: |
           parts="$RUNNER_TEMP/parts"
           mkdir -p "$parts"
@@ -302,8 +308,8 @@ jobs:
           exit "$status"
 
   # Each tracked app — `examples/dummy` and the deployed `dummy/social-media-clone` — on its own
-  # runner: BUILT (`x build --target static`, as a generated app's `bun run check` does, because
-  # `budgets` weighs what the build writes) and then run through the same 20-step gate a generated
+  # runner: BUILT (`x build --target static`, so `budgets` reads fresh stats and never builds a
+  # second time) and then run through the same 20-step gate a generated
   # app would, and this job BLOCKS on it. Independent of `verify`:
   # the framework gate and the app gate are two different contracts, checked separately — a red app
   # doesn't hide a green framework or vice versa. One runner per app since 2026-10-01: the two ran
@@ -357,8 +363,8 @@ jobs:
 
   # The end-to-end promise, proved for real and proved as the PLATFORM consumes it: a dz-runner box
   # is an Ubuntu VM with bun and git, no docker and no services, and on a freshly scaffolded app it
-  # runs the app's own `bun run setup && bun run check`. This job runs those two scripts — the ones `x new`
-  # writes, spawned as a box spawns them — and holds the FIRST `bun run check` to green with no waiver
+  # runs the app's own `bun run setup && bun run verify`. This job runs those two scripts — the ones `x new`
+  # writes, spawned as a box spawns them — and holds the FIRST `bun run verify` to green with no waiver
   # and no repair round. A GitHub `ubuntu-latest` runner with bun, git and network is the closest
   # thing in this repo to that VM; it is not the VM, and the timings the job prints say so.
   #
@@ -435,18 +441,18 @@ jobs:
           path: ${{ runner.temp }}/${{ matrix.app }}/.x/cache/pglite-*.snapshot
           key: pglite-snapshot-${{ matrix.app }}-${{ steps.pglite.outputs.version }}-${{ hashFiles('packages/db/src/pglite-snapshot.ts') }}
       # THE CONTRACT, and the only step in this repo that runs it. `bun run setup` installs, generates
-      # and applies the first migration, SEEDS and writes the manifest; `bun run check` builds and then
-      # gates. Both are the scaffold's own scripts — no flag waives a step, and nothing runs a
-      # printed `fix:` and tries again, because a box gets one pass.
+      # and applies the first migration, SEEDS and writes the manifest; `bun run verify` is the gate,
+      # and its `budgets` step builds first because no stats exist yet. Both are the scaffold's own
+      # scripts — no flag waives a step, and nothing runs a printed `fix:` and tries again, because a
+      # box gets one pass.
       #
       # `budgets` is asserted GREEN here rather than allowed to stay red, which it was until this
       # change: `x verify` weighs `.x/build-stats.json` and the only writer is `x build --target
-      # static`, which is `bun run check`'s first line. Running the real script is what closed the
-      # waiver — not a change to the budgets step.
+      # static`, which the budgets step now runs itself when the file is missing (plan 101, 21).
       #
       # It prints per-step wall time for both commands and for all 20 gate steps, so the run is its
       # own measurement rather than something a PR body claims.
-      - name: bun run setup && bun run check, first pass, no waiver
+      - name: bun run setup && bun run verify, first pass, no waiver
         run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
       # The generator sweep, over an app whose first run has already happened. All thirteen exit 0
       # even when what they emit cannot resolve an import, so this step is not the catch: the gate
@@ -458,9 +464,9 @@ jobs:
         run: bun run scripts/scaffold-first-run.ts "$RUNNER_TEMP/$APP"
       # The same two scripts again, and the second run is not a repeat: `bun run setup` applies the
       # migration the generators earned (which is also what makes its own documented "idempotent,
-      # safe to re-run" a measurement), and `bun run check` gates 13 generators' output with the same
+      # safe to re-run" a measurement), and `bun run verify` gates 13 generators' output with the same
       # no-waiver rule.
-      - name: bun run setup && bun run check, over every generator's output
+      - name: bun run setup && bun run verify, over every generator's output
         run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
       # The one step here that opens a socket. Everything above typechecks and gates the files
       # `x g resource` wrote; none of it would notice an admin that mounted nothing, or mounted for
@@ -471,6 +477,12 @@ jobs:
       # ~3 s, 2 s of it the boot (measured 2026-10-01, both scaffolds).
       - name: /admin serves the generated resource, to the admin role only
         run: bun run scripts/scaffold-admin.ts "$RUNNER_TEMP/$APP"
+      # The cold start an agent of any vendor meets: the command `.mcp.json` names answers MCP
+      # `initialize` and a non-empty `tools/list`, and `x dev`'s `POST /mcp` refuses a request with
+      # no token (401), lists and calls `health` for the development token, and boots with no
+      # X_MCP_APP_UNMOUNTED. Nothing earlier opens either socket.
+      - name: .mcp.json and POST /mcp answer a cold agent
+        run: bun run scripts/scaffold-agent.ts "$RUNNER_TEMP/$APP"
 
   # The deployable artifacts, BUILT and RENDERED — not merely present.
   #
@@ -802,6 +814,44 @@ jobs:
           esac
           echo "ok: numeric tag renders as a string, only the replicator recreates, an empty repository is refused"
 
+  # Does a fresh scaffold's Compose deploy boot? `container` builds and renders and `deploy-proof`
+  # takes the chart, so until 2026-11 nothing ran the path the docs give a stranger: on 29.4.0 every
+  # role crash-looped on a root-owned `/app/.x` tmpfs (`X_STORAGE_UNWRITABLE`), and no command wrote
+  # the `.env.production` it reads. `docker/deploy-proof/compose.sh` scaffolds on this tree's
+  # packages, runs `x env init --production`, `x build --target docker` and `x deploy`, and asserts
+  # `/readyz` and `/` answer 200. Every push: about 2 minutes (measured 2026-11-03, a warm daemon).
+  compose-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: x env init, x build --target docker, x deploy, on a fresh scaffold
+        run: bash docker/deploy-proof/compose.sh
+
+  # Does a stranger's first hour work on a Mac? `scaffold-smoke`'s first pass on `macos-latest`,
+  # free on a public repo: `x new`, this tree's packages, then the scaffold's own `bun run setup`
+  # and `bun run verify`. Not the generator sweep or the admin walk: those ask about the generators,
+  # which are the same bytes on every platform, and `scaffold-smoke` asks them.
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      APP: macapp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: x new macapp
+        run: bun run x -- new "$APP" --dir "$RUNNER_TEMP"
+      - name: point the app's @ultimat3/* ranges at this repo's own packages
+        run: bun run scripts/scaffold-smoke-overrides.ts "$RUNNER_TEMP/$APP"
+      - name: bun run setup && bun run verify, first pass, no waiver
+        run: bun run scripts/scaffold-gate.ts "$RUNNER_TEMP/$APP"
+
   # The rolling restart, PERFORMED — milestone 11's proof. `container` renders the chart; nothing
   # there can say whether an upgrade drops a request, because that is a property of a running
   # cluster: endpoint removal racing SIGTERM, the readiness grace, keep-alive connections held by
@@ -936,7 +986,7 @@ jobs:
   #
   # The scaffold smoke is `scaffold-smoke`'s shape (the `file:` overrides are its one
   # CI-only line, and its comment explains it), run once and through the scaffold's OWN
-  # `bun run setup` and `bun run check` — the commands a Windows developer types.
+  # `bun run setup` and `bun run verify` — the commands a Windows developer types.
   windows:
     runs-on: windows-latest
     timeout-minutes: 25
@@ -995,16 +1045,16 @@ jobs:
         if: ${{ !cancelled() && steps.overrides.outcome == 'success' }}
         working-directory: ${{ runner.temp }}/winapp
         run: bun run setup
-      # `check`, not a bare `x verify`: it builds `--target static` first, and without that build
-      # `budgets` is X_BUDGET_UNMEASURED. `--json` is forwarded to both; the document goes to a
-      # file, because one megabyte on one line is what the Actions log drops.
-      - name: bun run check --json
+      # `x verify` alone: its `budgets` step builds `--target static` when the stats are missing,
+      # as on this fresh scaffold. The document goes to a file, because one megabyte on one line
+      # is what the Actions log drops.
+      - name: bun run verify --json
         id: check
         if: ${{ !cancelled() && steps.app-setup.outcome == 'success' }}
         working-directory: ${{ runner.temp }}/winapp
         run: |
           $doc = Join-Path $env:RUNNER_TEMP 'check.json'
-          bun run check --json > $doc
+          bun run verify --json > $doc
           $status = $LASTEXITCODE
           try {
             $parsed = Get-Content -Raw $doc | ConvertFrom-Json

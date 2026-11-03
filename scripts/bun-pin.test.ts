@@ -328,3 +328,40 @@ describe('the Bun series is pinned once, in agreement', () => {
     expect(appDockerfiles()).toContain('dummy/social-media-clone/docker/Dockerfile.monorepo');
   });
 });
+
+/**
+ * Every Bun floor a reader's page states: `Bun | >= 1.3`, `Bun ≥ 1.4.0`, `older than the required 1.4.0`,
+ * `Bun 1.3 is the floor`, `the Bun 1.3 floor`. Three pages named three floors at once (2026-11-02)
+ * while `engines.bun` said a fourth. `wiki/Upgrading.md` is history by design — each section
+ * names the floor of its own release — and is not read.
+ */
+const statedFloors = (text: string): string[] =>
+  [
+    ...text.matchAll(/\bBun\b[\s|*]*(?:>=|≥)\s*(\d+\.\d+(?:\.\d+)?)/g),
+    ...text.matchAll(/\bolder than the required (?:>=|≥)?\s*(\d+\.\d+(?:\.\d+)?)/g),
+    ...text.matchAll(/\bBun (\d+\.\d+(?:\.\d+)?) (?:is the )?floor\b/g),
+  ].map((match) => match[1] ?? '');
+
+describe('the Bun floor a reader is told is the one engines.bun declares', () => {
+  test('README.md and every wiki page but Upgrading state engines.bun, or no floor at all', async () => {
+    const floor = (
+      (await Bun.file(join(ROOT, 'package.json')).json()) as {
+        engines: { bun: string };
+      }
+    ).engines.bun.replace(/^[^\d]*/, '');
+    const pages = [
+      'README.md',
+      ...[...new Bun.Glob('wiki/*.md').scanSync({ cwd: ROOT })].filter(
+        (path) => path !== 'wiki/Upgrading.md',
+      ),
+    ].sort();
+    const wrong: string[] = [];
+    for (const path of pages) {
+      for (const stated of statedFloors(await slurp(path))) {
+        if (stated !== floor) wrong.push(`${path}: ${stated}`);
+      }
+    }
+    expect(statedFloors('| Bun | **>= 1.3** |')).toEqual(['1.3']);
+    expect(wrong).toEqual([]);
+  });
+});

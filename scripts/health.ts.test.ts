@@ -90,9 +90,10 @@ const healthyReaders: HealthOverrides = {
       release: { tagName: 'v3.0.0', isDraft: false, publishedAt: '2026-01-01T00:00:00Z' },
     },
   }),
+  'tutorials-run': async () => ({ runs: [{ conclusion: 'success', status: 'completed' }] }),
 };
 describe('unit · health · healthAt over injected readers', () => {
-  test('a readable world answers ok:true with all nine rows in the brief order', async () => {
+  test('a readable world answers ok:true with all ten rows in the brief order', async () => {
     const result = await healthAt('.', healthyReaders);
     expect(result.ok).toBe(true);
     expect(result.script).toBe('health');

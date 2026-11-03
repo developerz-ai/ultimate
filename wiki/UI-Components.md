@@ -27,6 +27,11 @@ decision, skeleton-versus-spinner, response tiers, optimistic writes, forms, mot
 and images are [Interface rules](Interface-Rules) — one page, every rule marked either with the
 guard, type or gate step that refuses it, or as judgement nothing checks.
 
+**Form errors are translated on `FormIssue.rule`.** `formBinding`'s `messageFor` receives the same
+`rule` and `params` (`string.min`, `{ min: 3 }`) from the local parse and from the server's
+`X_INPUT_INVALID`, whose problem document carries the structured `issues` list —
+``messageFor: (issue) => t(`form.${issue.rule}`, issue.params)``. See [I18n](I18n).
+
 ## The four page composites
 
 A screen that hand-rolls a header grid is the bug these exist to prevent. All four hold no state — the route owns it.

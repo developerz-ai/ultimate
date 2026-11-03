@@ -2,11 +2,11 @@
 // `gauge-view.test.ts`, and the share rule is `meter-view.ts`'s.
 
 import { describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe-fixture';
-import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
+import type { RenderNode } from '@ultimat3/core/render-nodes';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { Gauge } from './Gauge';
 
-const text = (node: ProbeNode | undefined): string =>
+const text = (node: RenderNode | undefined): string =>
   [node?.props['children']]
     .flat()
     .filter((c) => typeof c === 'string')

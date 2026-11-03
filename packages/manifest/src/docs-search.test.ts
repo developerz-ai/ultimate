@@ -3,8 +3,14 @@
 // human would call relevant, and ordering that changes between runs.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun ships no path module; the eval reads this repository's own tree off disk.
+import { join } from 'node:path';
 import type { DocEntry } from './docs-scan';
-import { nearestTopics, searchDocs, tokenize } from './docs-search';
+import { scanInstalledDocs } from './docs-scan';
+import { nearestTopics, searchDocs } from './docs-search';
+import { DOCS_EVAL_SET, EVAL_FLOOR, EVAL_TOP, isWanted } from './docs-search-eval-set-fixture';
+import { stem, tokenize } from './docs-tokens';
+import { scanWikiDocs } from './docs-wiki';
 
 const entry = (over: Partial<DocEntry> & Pick<DocEntry, 'topic'>): DocEntry => ({
   package: '@ultimat3/jobs',
@@ -59,6 +65,17 @@ describe('unit · tokenize', () => {
   test('camelCase and dotted topics split into their parts', () => {
     expect(tokenize('nextRetry')).toEqual(['next', 'retry', 'nextretry']);
     expect(tokenize('jobs.retry')).toEqual(['jobs', 'retry']);
+  });
+  test('a digit run is its own word, so a version number reaches the topic that carries it', () => {
+    expect(tokenize('28x--2900-entry')).toEqual(['28', '28x', '2900', 'entry']);
+    expect(tokenize('s3')).toEqual(['s3']);
+  });
+
+  test('stem takes one suffix off and never cuts a word below three characters', () => {
+    expect(stem('upgrading')).toBe(stem('upgrade'));
+    expect(stem('jobs')).toBe('job');
+    expect(stem('uses')).toBe('uses');
+    expect(stem('test')).toBe('test');
   });
 });
 
@@ -156,6 +173,29 @@ describe('unit · searchDocs', () => {
     expect(nearestTopics(corpus, 'kubernetes ingress annotations')).toEqual([]);
   });
 
+  // `upgrade` against the heading `Upgrading`, `jobs` against the `job` module: the measured
+  // misses an exact-token compare could not answer.
+  test('a word reaches a name and a heading that carry its stem', () => {
+    const upgrading = entry({
+      topic: 'wiki.Upgrading#28x--2900-entry-by-entry',
+      package: '@ultimat3/cli',
+      kind: 'guide',
+      title: '28.x → 29.0.0, entry by entry',
+    });
+    expect(searchDocs([upgrading], 'upgrade 28')[0]?.entry.topic).toBe(upgrading.topic);
+  });
+
+  test('at an equal score the guide outranks the source header', () => {
+    const tied: readonly DocEntry[] = [
+      entry({ topic: 'a.drain', title: 'drain' }),
+      entry({ topic: 'z.README#drain', kind: 'guide', title: 'drain' }),
+    ];
+    expect(searchDocs(tied, 'drain').map((hit) => hit.entry.topic)).toEqual([
+      'z.README#drain',
+      'a.drain',
+    ]);
+  });
+
   test('limit caps the result set without changing what wins', () => {
     const all = searchDocs(corpus, 'retry job');
     expect(all.length).toBeGreaterThan(1);
@@ -226,5 +266,34 @@ describe('unit · nearestTopics ranking', () => {
     );
     expect(nearestTopics(many, 'retry')).toHaveLength(5);
     expect(nearestTopics(many, 'retry', 2)).toEqual(['a.retry', 'b.retry']);
+  });
+});
+
+// The regression set, scored over the real tree this repository ships: every package's README,
+// CLAUDE.md and source headers, plus the wiki the CLI tarball carries. The floor is the promise
+// `x docs` makes to an agent with a task and no filename; a ranking change that drops a question
+// out of the top three shows up here as the one question it lost.
+describe('eval · the task questions an adopter asked', () => {
+  test(`at least ${EVAL_FLOOR} of ${DOCS_EVAL_SET.length} land the right package in the top ${EVAL_TOP}`, async () => {
+    const root = join(import.meta.dir, '..', '..', '..');
+    const entries = [
+      ...(await scanInstalledDocs(join(root, 'packages'))),
+      ...(await scanWikiDocs(join(root, 'wiki'), { package: '@ultimat3/cli', version: '0.0.0' })),
+    ];
+    const missed = DOCS_EVAL_SET.filter(
+      ({ question, wanted }) =>
+        !searchDocs(entries, question, EVAL_TOP).some((hit) => isWanted(hit.entry.topic, wanted)),
+    ).map(({ question }) => question);
+    // The missed questions ARE the failure message: a bare count says the ranker regressed and
+    // not on what.
+    const allowed = DOCS_EVAL_SET.length - EVAL_FLOOR;
+    expect(missed.length <= allowed ? [] : missed).toEqual([]);
+  });
+
+  test('isWanted takes a topic under a prefix, never one that merely shares its letters', () => {
+    expect(isWanted('mail.mail', ['mail'])).toBe(true);
+    expect(isWanted('wiki.Upgrading#28x--2900-entry-by-entry', ['wiki.Upgrading'])).toBe(true);
+    expect(isWanted('wiki.Upgrading', ['wiki.Upgrading'])).toBe(true);
+    expect(isWanted('mailer.send', ['mail'])).toBe(false);
   });
 });

@@ -88,7 +88,7 @@ describe('serviceWorkerRoutes', () => {
   /**
    * `public, max-age=3600` under a URL with no content hash: a register script that changed —
    * 22.3.2's own `registration.update()` among them — reached a returning visitor up to an hour
-   * late (measured on notificado.co). Revalidated on every load now, and a 304 when unchanged.
+   * late (measured on one adopter's app). Revalidated on every load now, and a 304 when unchanged.
    */
   test('the register script is revalidated on every load, never cached for an hour', async () => {
     const route = routes[1];

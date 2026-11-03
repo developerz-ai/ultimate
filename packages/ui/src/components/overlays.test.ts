@@ -5,8 +5,8 @@
 // component actually did.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { attachRef, byTag, fire, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { FakeElement, type InstalledDom, installFakeDom, keydown } from '../fake-dom-fixture';
-import { attachRef, byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext, SolidRuntime } from '../theme/solid-adapter';
 import { Dialog } from './Dialog';

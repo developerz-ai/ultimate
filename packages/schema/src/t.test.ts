@@ -61,9 +61,9 @@ describe('t', () => {
   });
 
   test('validate never throws and returns Standard Schema results', () => {
-    const good = validate(t.email, 'dev@tesote.com');
+    const good = validate(t.email, 'dev@example.com');
     expect(good.issues).toBeUndefined();
-    if (good.issues === undefined) expect(good.value).toBe('dev@tesote.com');
+    if (good.issues === undefined) expect(good.value).toBe('dev@example.com');
 
     const bad = validate(t.email, 'nope');
     expect(bad.issues?.[0]?.message).toBe(

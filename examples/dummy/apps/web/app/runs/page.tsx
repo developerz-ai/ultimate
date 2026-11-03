@@ -114,7 +114,12 @@ export const config = defineRoute({
   // `requestId` (core's `withRequestId`, in both the page boot and the console's own action
   // decoder) and the read client's `url()` — raised 181.5kb → 182kb (30.0.0): page boot
   // 78,198 → 78,468 B (+270), the run-console island + inline runtime +421.
-  budget: { js: '182kb' },
+  // measured: 187401 B (2026-11-03; x build --target static, against main's 186,157) — why:
+  // core's shared refusal-title table gained wave 3's 12 codes (`X_OUTBOUND_*`, `X_BREAKER_OPEN`,
+  // `X_ERROR_DECLARATION_INVALID`, `X_SCHEMA_SENSITIVE_OUTPUT`: 878 B of titles), so a refusal
+  // with one of them reaching the island is still titled, and a refusal's issues carry the `rule` and `params` a form translates
+  // on (plan 101 slice 10) — raised 182kb → 183.5kb (30.0.0): run-console island +1,244 B.
+  budget: { js: '183.5kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

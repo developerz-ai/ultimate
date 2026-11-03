@@ -58,7 +58,7 @@ describe('pathStyle', () => {
     expect(actionHttpPath('signIn').path).toBe('/api/sign-in');
   });
 
-  // The Notificado 22.6.0 adoption: the loader evaluated `apps/admin/**` before the api index, so
+  // One adopter's 22.6.0 adoption: the loader evaluated `apps/admin/**` before the api index, so
   // `const SIGN_OUT_PATH = derivePath('signOut').path` captured `/api/outs/sign` and the sign-out
   // form 404'd once `defineApi` declared 'readable'. The capture is a string no re-derivation can
   // reach, so the declaration that would strand it is what refuses.
@@ -187,8 +187,8 @@ describe('the typed client', () => {
 
 describe('defineApi declaration', () => {
   test('holds http and openapi for the boot and x manifest', () => {
-    defineApi({ actions: {}, openapi: { title: 'Notificado API', version: '1.0.0' } });
-    expect(apiDeclaration().openapi?.title).toBe('Notificado API');
+    defineApi({ actions: {}, openapi: { title: 'Acme API', version: '1.0.0' } });
+    expect(apiDeclaration().openapi?.title).toBe('Acme API');
   });
 
   test.each([[{ title: ' ' }], [{ servers: [{ url: 'www.example.com' }] }]])(

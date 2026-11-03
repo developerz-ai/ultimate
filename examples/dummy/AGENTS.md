@@ -17,7 +17,7 @@ Point your MCP client at the dev server. `routes.list`, `schema.describe`, `poli
 ## Before you finish
 
 ```bash
-bun run check # x verify — typecheck, lint, boundaries, six test types, budgets, SEO, i18n
+bun run verify # x verify — typecheck, lint, boundaries, six test types, budgets, SEO, i18n
 ```
 
 Green means shippable. Nothing else is a gate.

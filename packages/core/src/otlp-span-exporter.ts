@@ -7,6 +7,7 @@ import {
   assertFiniteOtlpBound,
   OTLP_SCOPE,
   type OtlpKeyValue,
+  type OtlpPostOptions,
   otlpAttributes,
   otlpEndpoint,
   otlpHeaders,
@@ -110,6 +111,10 @@ export interface OtlpSpanExporterOptions {
   readonly timeoutMs?: number | undefined;
   /** Injected by tests; the preload seals the real one. */
   readonly fetch?: typeof globalThis.fetch | undefined;
+  /** The retry's wait, die and clock, passed to `postOtlp`. Injected by tests. */
+  readonly sleep?: OtlpPostOptions['sleep'];
+  readonly random?: OtlpPostOptions['random'];
+  readonly now?: OtlpPostOptions['now'];
 }
 
 export interface OtlpSpanExporter extends SpanExporter {
@@ -135,6 +140,7 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
     options.flushIntervalMs ?? 5_000,
   );
   const send = options.fetch ?? globalThis.fetch;
+  const seams = { sleep: options.sleep, random: options.random, now: options.now };
   const queue: ReadableSpan[] = [];
   /** The ONE batch in flight, or `undefined`. Never a chain: see `pump`. */
   let sending: Promise<void> | undefined;
@@ -158,7 +164,7 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
       });
       return Promise.resolve();
     }
-    return postOtlp({ url, headers, body, timeoutMs, fetch: send });
+    return postOtlp({ url, headers, body, timeoutMs, fetch: send, ...seams });
   };
 
   /**

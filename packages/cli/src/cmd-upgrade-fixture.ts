@@ -235,14 +235,14 @@ export const run = async (
   return { code, lines, output };
 };
 
-/** ggrts's shape: pins and scripts in the workspaces, and no `app.config.ts` anywhere. */
+/** One adopter's shape: pins and scripts in the workspaces, and no `app.config.ts` anywhere. */
 export const fixtureWithoutApp = async (
   scripts: Readonly<Record<string, string>> = { typecheck: 'tsc', test: 'bun test', lint: 'biome' },
 ): Promise<string> => {
   const dir = await fixture({
     'package.json': `${JSON.stringify(
       {
-        name: 'ggrts',
+        name: 'pinned-app',
         workspaces: ['apps/*'],
         scripts,
         dependencies: { '@ultimat3/core': '^19.4.0' },

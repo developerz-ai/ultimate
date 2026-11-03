@@ -50,7 +50,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `boundary-findings.ts` / `app-boundaries.ts` / `boundary-cuts.ts` / `package-boundaries.ts` | `package-boundaries.ts`: `X_BOUNDARY_PACKAGE_TO_APP`, its own read of `packages/`, never `readAppSources`. surface + layer rules; a finding's `fix:` is the concrete cut |
 | `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport; `browser-transport.ts` is the pure rule, `scripts/browser-transport.ts` calls it. Never a `guards/` file: an app must not be able to delete it. Full rule: `docs/history/cli.md` |
 | `guards.ts` / `guard-sources.ts` | an app's `guards/*.ts`, discovered, run on `boundaries`, held to the error contract; every `check(root, sources)` shares ONE walk, read and Sass compile per file (`GuardSources`) |
-| `templates/scaffold-guards.ts` | `SHIPPED` — the one list of shipped guards: `x new` writes all, `x g guard <name>` writes one, `doctor-guards.ts` lists the ones an app lacks (a listing, never a finding). Full rule: `docs/history/cli.md` |
+| `templates/scaffold-guards.ts` | `SHIPPED` — the one list of the nineteen shipped guards (`error-declared` and `raw-fetch` the newest): `x new` writes all, `x g guard <name>` writes one, `doctor-guards.ts` lists the ones an app lacks (a listing, never a finding). Full rule: `docs/history/cli.md` |
 | `error-contract.ts` / `ts-scan.ts` / `fix-scan.ts` / `fix-imports.ts` / `fix-command.ts` / `fix-path.ts` | the `errors` step: every `fix:` names a runnable command, call or existing file |
 | `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize`. Full rule: `docs/history/cli.md` |
 | `app-permissions.ts` / `permission-grants.ts` / `app-permissions-borrowed.ts` / `app-permissions-site.ts` | `policy`: every permission granted or required is declared, every one required is granted by some role (`X_PERMISSION_UNGRANTED`), and every one an app rule requires is declared by an app module, not only by a package (`X_PERMISSION_BORROWED`, read off `permissionDeclarationSites()`) |
@@ -59,6 +59,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `tool-gate-names.ts` | `manifest`: a gate on no tool |
 | `verify-role-load.ts` / `verify-role-load-probe.ts` | `manifest`: a child imports the app as a worker does, then the rest module by module; a registration only a document-reaching module makes is `X_ROLE_LOAD_INCOMPLETE` with the module and the import the API index lacks |
 | `async-pages.ts` / `live-routes.ts` / `budgets.ts` / `budgets-unmeasured.ts` | `budgets` riders: an async `Page` with no `load`, a live read no island imports, bytes per route; an unweighed route's finding names a refused measurement actor and `defineMeasurementActor()` |
+| `budgets-freshness.ts` / `verify-budgets-build.ts` | the step builds first when stats are missing, of an old rule, or older than source: `x build --target static --no-preflight --out .x/verify-static` through `ctx.runner` |
 | `app-agents-md.ts` / `app-env.ts` / `app-openapi.ts` / `app-manifest.ts` | `manifest` and `contract-diff`. Full rule: `docs/history/cli.md` |
 | `schema-drift.ts` / `drift.ts` / `drift-replica-identity.ts` / `db-destructive.ts` / `db-ungeneratable.ts` | `drift`: snapshot vs declarations (`REPLICA IDENTITY FULL` a params channel needs included — never a `subscribes:` table, #518), the source hash (core's `canonicalJson`), the header markers |
 | `db-rolling.ts` / `doctor-rolling.ts` | `drift`'s fifth rail: what the previous release trips over (`X_MIGRATION_ROLLING_UNSAFE`, `@ultimat3/db`'s classifier), for migrations after `rollingSince` in `x.verify.json` (`x new` writes `"0"`). Full rule: `docs/history/cli.md` |
@@ -91,6 +92,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one file per generator otherwise. Full rule: `docs/history/cli.md` |
 | `generate-feature-required.ts` | `x g query`/`backfill` with no slice holding an `entity.ts` is `X_FEATURE_REQUIRED` |
 | `generate-format-written.ts` | the app's own Biome over the TypeScript a run created, best effort; the verdict is `lint`'s |
+| `templates/scaffold-mcp-json.ts` / `templates/scaffold-mcp-endpoint.ts` | `.mcp.json` (`bunx @ultimat3/cli mcp serve`, never `bunx x`) and the refusing `apps/web/mcp.ts` + `app/auth/agent-token.ts`; `scaffold-agents-md.test.ts` resolves every command `AGENTS.md` names |
 
 ### Boot (`x dev`, the container)
 
@@ -113,7 +115,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `role-start.ts` / `role-start-types.ts` / `role-realtime.ts` | `--role` selection and start/stop for `web`, `sync`, `worker`, `scheduler`; `realtime.enabled: false` drops `sync` and `replicator` |
 | `role-wake.ts` | the worker's LISTEN session (`@ultimat3/jobs`' `startQueueWake`) — worker role only, only over a client that `canListen` — and `queue_wake_live` |
 | `role-sync.ts` / `role-replicator.ts` / `runtime-live-feed.ts` | the sync node, the change feed |
-| `runtime-render.ts` / `runtime-render-document.ts` / `runtime-isr-outcome.ts` / `route-islands.ts` / `runtime-assets.ts` / `runtime-storage.ts` / `runtime-hooks.ts` / `api-routes.ts` | the HTTP surface: pages (an `isr` hit never runs `load`, and a `load` redirect is answered per request, never stored or shared — `runtime-isr-outcome.ts`; `isr` and `static` render as nobody, http's `withAnonymousRequest` — `runtime-render-shared-actor.test.ts`; `route-islands.ts` is a render's island collector and realtime boot), `/icons` + `/media`, `/_storage` (both answered by http's `objectResponse`; `/media` stats the source before it keys a variant), authz, the app's API — plus its bearer mounts (`apiMountRoutes`) and pages' bound `POST`s (`pagePostRoutes`), mounted by BOTH boots `route-islands.ts`'s `streamScripts` re-runs the whole runtime in every chunk once ANY hole recorded an island: a hole records while running and reveals in completion order. `stream-hole-scope.ts`'s `enterHole`: a hole's children run in the request context FORWARDED through a Proxy (a rebuilt `ctxOf` loses `useRequestHeader`), `signal` the hole's, `headers` sealed and `redirect` refused (`X_STREAM_ALREADY_FLUSHED`) |
+| `runtime-render.ts` / `runtime-render-document.ts` / `runtime-isr-outcome.ts` / `route-islands.ts` / `runtime-assets.ts` / `runtime-storage.ts` / `runtime-hooks.ts` / `api-routes.ts` | the HTTP surface: pages, `/icons` + `/media`, `/_storage` (http's `objectResponse`), authz, the app's API, its bearer mounts (`apiMountRoutes`) and pages' bound `POST`s (`pagePostRoutes`), mounted by BOTH boots. `isr` and `static` render as nobody (`runtime-render-shared-actor.test.ts`); a hole's children run in the forwarded request context (`stream-hole-scope.ts`, `X_STREAM_ALREADY_FLUSHED`). Full rule: [`docs/history/cli.md`](../../docs/history/cli.md#moved-out-2026-11-03-plan-101-wave-3-the-claudemd-ceiling) |
 | `runtime-overrides.ts` | the one field a host hands the framework a driver through — and `routes`, the plain routes for a wire format no primitive speaks (OAuth token endpoint) |
 | `app-openapi.ts` | `openapi.json` (complete when `defineApi({ openapi })` is declared) and each bearer mount's own document; staleness for all of them |
 | `script-csp.ts` / `style-csp.ts` / `style-bundle.ts` / `page-sync.ts` / `worker-bundle.ts` | CSP hashes, the CSS file, the page's sync target and worker |
@@ -124,8 +126,9 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`). Full rule: `docs/history/cli.md` |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store (`node_modules/.cache/ultimate`, never `.x/` — state, tmpfs): every role adopts its compiled stylesheets before importing the app; a boot that built an island or ran Sass logs `X_IMAGE_NOT_PREBUILT` once |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, the watcher, the reload, the lock, the port |
+| `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only (its recorded start time must match), SIGTERM, then wait for pid gone and lock clear; Windows clears the lock (`drained: false`); `X_DEV_STOP_TIMEOUT` |
 | `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x` answers a loopback `Host` only (`X_DEV_HOST_REFUSED`, 421 — DNS rebinding); the SQL panel runs on a same-origin `POST /_x/db` only, through admin's `readOnlySql`. Checked in the route, never left to the app's `csrf` config |
-| `doctor-pooler.ts` / `runtime-statement-bound.ts` | the applied bound on demand (`data.statementBound`), a pooler's refusal as the one database finding, `wake off` on a `worker` under `transaction`; the one boot line, total. `startDb` hands `poolerFromEnv(env)` to both pools: a served role never runs `defaultClient()` |
+| `doctor-pooler.ts` / `runtime-statement-bound.ts` | the applied bound on demand (`data.statementBound`), a pooler's refusal as the one database finding; the one boot line, total. `startDb` hands `poolerFromEnv(env)` to both pools |
 
 ### Build and data
 
@@ -135,7 +138,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `prerender.ts` / `measure-scope.ts` / `static-report.ts` | the static export; routes rendered only to weigh run inside a request as core's `measurementActor()`, with the app's API answered in process (`withInProcessFetch`) |
 | `sw-artifacts.ts` / `pwa-artifacts.ts` / `favicon.ts` | the service worker, the web manifest, `/favicon.ico` |
 | `cmd-db.ts` / `migrations.ts` / `db-generate.ts` / `db-branch.ts` / `db-seed.ts` / `db-backfill.ts` / `db-subscribes.ts` / `db-accept-created.ts` | one migration engine for `x db` and `ROLE=migrate` |
-| `db-schema-dump.ts` / `db-schema-refresh.ts` / `db-replay-engine.ts` / `migration-extensions.ts` / `db-object-drift.ts` | the schema dump: replay on a scratch database (embedded, snapshot-cached under `.x/cache`; a real Postgres only when a migration creates an extension PGlite cannot link), written by `x db gen` and `x db migrate`. `migration-extensions.ts` is also what `runtime-queue.ts` links `x dev`'s database with |
+| `db-schema-dump.ts` / `db-schema-refresh.ts` / `db-replay-engine.ts` / `migration-extensions.ts` / `db-object-drift.ts` | the schema dump: replay on a scratch database (full rule: history), written by `x db gen` and `x db migrate`. `migration-extensions.ts` is also what `runtime-queue.ts` links `x dev`'s database with |
 
 ### Introspection and tools
 
@@ -147,8 +150,10 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `cmd-shot*.ts` / `cdp-shot-*.ts` / `browser-launcher*.ts` / `island-*` | `x shot` over raw CDP; `verdict.json` names its own blind spots. Not a gate step |
 | `cmd-pr.ts` / `cmd-ci.ts` | GitHub through `gh`, parsed against a schema. Not gate steps |
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code |
-| `cmd-upgrade.ts` / `upgrade-root.ts` / `upgrade-plan.ts` / `upgrade-pins.ts` / `upgrade-bun-floor.ts` / `upgrade-registry.ts` / `upgrade-gate.ts` / `upgrade-report.ts` | `x upgrade`: one major per run; declares no `requiresApp` (`upgrade-root.ts`), and with no app runs the root's `typecheck`/`test` scripts and says so in `data.proof`. Full rule: `docs/history/cli.md` |
-| `cmd-deploy-verify.ts` / `deploy-verify-grade.ts` / `deploy-verify-flags.ts` / `deploy-verify-findings.ts` / `deploy-verify-queues.ts` | `x deploy verify`: the wait (samples, window, queues), the pure verdict, flags refused before a sample, the `--json` shape, the real sources (lazy, so the build verdict loads neither). It reads `DATABASE_URL` off the env directly, never through `resolveServices`, which would fall back to the embedded database and grade an empty one; with none it passes `graded: false` |
+| `cmd-docs.ts` / `docs-sources.ts` / `docs-section.ts` | `x docs`: the app's `@ultimat3` scope plus the CLI's own (Bun's isolated layout), the wiki at `<cli>/wiki` (tarball) or `<cli>/../../wiki` (checkout); `Page#anchor` prints a whole section |
+| `cmd-env-init.ts` / `env-production.ts` / `cmd-deploy-preflight.ts` | `x env init --production`, the one writer of `.env.production` (values from `cmd-deploy-compose.ts`); compose's pre-flight (`X_DEPLOY_ENV_MISSING`) and a failed step's container line |
+| `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; declares no `requiresApp` (`upgrade-root.ts`), and with no app runs the root's `typecheck`/`test` scripts and says so in `data.proof`. Full rule: `docs/history/cli.md` |
+| `cmd-deploy-verify.ts` / `deploy-verify-*.ts` | `x deploy verify`: the wait (samples, window, queues), the pure verdict, flags refused before a sample, the `--json` shape, the real sources (lazy, so the build verdict loads neither). `DATABASE_URL` from the env only, never `resolveServices` (full rule: history) |
 
 ## Adding a command
 

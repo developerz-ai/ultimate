@@ -5,6 +5,15 @@ An `Instant` is a point on the UTC timeline with no zone attached. Zones exist o
 a human reads the value. No formatter in this package has an ambient default zone, and
 none ever will — "the server's timezone" is not an answer to "what time is it for the user".
 
+`bun add @ultimat3/time` · guide: [Timezones And Dates](https://github.com/developerz-ai/ultimate/wiki/Timezones-And-Dates)
+
+```ts
+import { formatDateTime, fromIso } from '@ultimat3/time';
+
+formatDateTime(fromIso('2026-03-14T08:00:00Z'), { locale: 'en-GB', zone: 'Europe/Berlin' });
+// '14 Mar 2026, 09:00:00' — no zone, no format: there is no ambient default
+```
+
 | Concern | Store | Format / compute |
 |---|---|---|
 | Instants | UTC (`timestamptz`, ISO-8601 `Z`) | `Intl.DateTimeFormat` + explicit `timeZone` |

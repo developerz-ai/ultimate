@@ -242,7 +242,7 @@ const declaredTables = (source: string): readonly string[] =>
 /**
  * Declared beside its one thrower: `errors.ts` sits at its ceiling. The sweep this generator writes
  * reads the slice's OWN scaffolded table (`db.<plural>`, its `title` and `price`), so a slice whose
- * entities are named otherwise — notificado.co's `deadline`, holding `holidays` and
+ * entities are named otherwise — one adopter's `deadline`, holding `holidays` and
  * `court_closures` — got `import type { Deadline }`, `db.deadlines` and admin labels for a table
  * that does not exist. Refused before a file is planned; a hand sweep starts from a job.
  */

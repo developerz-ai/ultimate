@@ -13,6 +13,7 @@ import type {
 import {
   assertFiniteOtlpBound,
   OTLP_SCOPE,
+  type OtlpPostOptions,
   otlpAttributes,
   otlpEndpoint,
   otlpHeaders,
@@ -100,6 +101,10 @@ export interface OtlpMetricExporterOptions {
   readonly timeoutMs?: number | undefined;
   /** Injected by tests; the preload seals the real one. */
   readonly fetch?: typeof globalThis.fetch | undefined;
+  /** The retry's wait, die and clock, passed to `postOtlp`. Injected by tests. */
+  readonly sleep?: OtlpPostOptions['sleep'];
+  readonly random?: OtlpPostOptions['random'];
+  readonly now?: OtlpPostOptions['now'];
   /**
    * Epoch ms this process's counters started at. Defaults to the first export, which is close
    * enough for a rate and exact for a restart detector; pass the boot time when you have it.
@@ -121,6 +126,7 @@ export function otlpMetricExporter(options: OtlpMetricExporterOptions = {}): Otl
   const headers = otlpHeaders(options.headers, process.env, 'metrics');
   const timeoutMs = assertFiniteOtlpBound('timeoutMs', options.timeoutMs ?? 10_000);
   const send = options.fetch ?? globalThis.fetch;
+  const seams = { sleep: options.sleep, random: options.random, now: options.now };
   let startedAtMs = options.startedAtMs;
   /** The ONE POST in flight, and the one body waiting behind it — never a chain. */
   let sending: Promise<void> | undefined;
@@ -138,7 +144,7 @@ export function otlpMetricExporter(options: OtlpMetricExporterOptions = {}): Otl
     const body = waiting;
     waiting = undefined;
     if (body === undefined) return Promise.resolve();
-    sending = postOtlp({ url, headers, body, timeoutMs, fetch: send })
+    sending = postOtlp({ url, headers, body, timeoutMs, fetch: send, ...seams })
       .then(
         () => undefined,
         () => undefined,

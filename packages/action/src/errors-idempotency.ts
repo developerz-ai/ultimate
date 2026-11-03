@@ -203,7 +203,7 @@ export class IdempotencyRunCeilingError extends UltimateError {
     super({
       code: 'X_IDEMPOTENCY_RUN_CEILING',
       cause: `the handler under idempotency key "${key}" was still running ${ceilingMs}ms after it started: it was aborted and the key settled as this failure. It may have written before that, so read its effect before sending a fresh key`,
-      fix: 'configureIdempotency({ scope, ceilingMs: 300_000 })   # at boot, to raise the ceiling; or pass ctx.signal to the call that hung',
+      fix: 'configureIdempotency({ scope, ceilingMs: 300_000 })   # at boot, to raise the ceiling; or make the call that hung with outbound() from @ultimat3/core/outbound, which the ceiling aborts',
       meta: { key, ceilingMs },
     });
   }

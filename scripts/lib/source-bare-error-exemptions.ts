@@ -29,18 +29,6 @@ export interface SourceBareErrorExemption {
 
 export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] = [
   {
-    path: 'packages/admin/src/inert-jsx-fixture.ts',
-    line: 143,
-    reason:
-      'the inert-JSX harness standing in for a test selector: a node matched by anything other than exactly one is the test finding out, not the framework refusing',
-  },
-  {
-    path: 'packages/admin/src/inert-jsx-fixture.ts',
-    line: 152,
-    reason:
-      'the same harness firing an event handler: a node carrying no handler prop is the test finding out, not the framework refusing',
-  },
-  {
     path: 'packages/cache/src/redis-fake-fixture.ts',
     line: 81,
     reason:
@@ -82,12 +70,6 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
       'the socket whose close() raises — the one way a teardown failure reaches a caller of start()',
   },
   {
-    path: 'packages/ui/src/jsx-probe-fixture.ts',
-    line: 63,
-    reason:
-      'the JSX probe harness standing in for a test selector: a node matched by anything other than exactly one is the test finding out',
-  },
-  {
     path: 'packages/storage/src/driver-s3-fixture.ts',
     line: 181,
     reason:
@@ -104,16 +86,5 @@ export const SOURCE_BARE_ERROR_EXEMPTIONS: readonly SourceBareErrorExemption[] =
     line: 387,
     reason:
       'the same fake dropping the answer after the write landed: the TypeError Bun fetch rejects with, handed to the driver under test',
-  },
-  {
-    path: 'packages/ui/src/jsx-probe-fixture.ts',
-    line: 71,
-    reason: 'the same harness attaching a ref: a node carrying no ref prop is the test finding out',
-  },
-  {
-    path: 'packages/ui/src/jsx-probe-fixture.ts',
-    line: 79,
-    reason:
-      'the same harness firing an event handler: a node carrying no handler prop is the test finding out',
   },
 ];

@@ -3,6 +3,8 @@
 Tier 0. The validation seam. One schema declaration projects to a runtime validator, a TypeScript
 type, a JSON Schema, an OpenAPI body, an MCP tool `inputSchema` and HTTP query coercion.
 
+`bun add @ultimat3/schema` · guide: [The Eight Primitives](https://github.com/developerz-ai/ultimate/wiki/The-Eight-Primitives)
+
 | Owns | Module |
 |---|---|
 | Standard Schema v1 types + `validate()` / `parse()` for **any** conforming library | `standard.ts` |
@@ -17,6 +19,8 @@ type, a JSON Schema, an OpenAPI body, an MCP tool `inputSchema` and HTTP query c
 | schema → JSON Schema (OpenAPI + MCP) | `json-schema.ts` |
 | HTTP-boundary coercion, kept out of validation | `coerce.ts` |
 | `X_VALIDATION_FAILED` with path-annotated issues | `errors.ts` |
+| `SCHEMA_RULES` — the closed vocabulary an issue's `rule` names — and `issueRuleFacts` | `schema-rules.ts` |
+| `.sensitive()`'s two readers: `maskSensitive`, `assertNoSensitiveOutput` | `sensitive.ts` |
 
 ## `t`
 
@@ -39,13 +43,50 @@ type PublishPost = Infer<typeof publishPost>;
 
 | Value schemas | Factories | Methods |
 |---|---|---|
-| `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `discriminatedUnion` `record` `optional` `nullable` `refine` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` `.refine(r)` |
+| `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `discriminatedUnion` `record` `optional` `nullable` `refine` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` `.sensitive()` `.refine(r)` |
 | `money` `timezone` `locale` `slug` `cursor` `json()` | `object(...).extend/.pick/.omit` | `string.min/.max/.pattern`, `number.min/.max/.int` |
 
 `nullable` is a value the row holds; `optional` is the caller omitting the key. Both ship as a
 namespace member (`t.nullable`) and a free function (`nullableSchema`) — symmetrically.
 
 Unknown object keys are **dropped**, never forwarded — an action cannot be mass-assigned.
+
+### `.sensitive()` — sent in, never written down, never sent back
+
+`cardPan: t.string.sensitive()` is JSON Schema's `writeOnly`, published as such. Last in a chain:
+it answers a plain `Schema`. Read by the walkers that hold the schema, never by a key table, so
+flagging `note` on one action changes nothing another action records:
+
+| Reader | What it does |
+|---|---|
+| `maskSensitive(schema, value, '[redacted]')` | a copy with every flagged field replaced — through objects, arrays, records and EVERY union branch (fail closed, no branch resolution). The same reference when nothing is flagged |
+| `assertNoSensitiveOutput(owner, schema)` | `X_SCHEMA_SENSITIVE_OUTPUT` naming the path — an action's `output` and a query's `rows` are checked at registration |
+
+Reach, exactly: the `audit: true` record of an action or a query, and `x jobs show` (a job whose
+declaration is gone shows its input `[redacted]` whole). **Not** an app's own log line — a
+`logger.info('x', input)` holds no schema; that stays `redactKeys` or a `Secret`. PII read back
+and only hidden in logs is `redactKeys(['ssn'])`, not this flag.
+
+### An issue names its `rule`
+
+Every builtin refusal carries `rule` from `SCHEMA_RULES` and the declared `params` a translator
+interpolates — ``t(`form.${issue.rule}`, issue.params)``, never a match on the English `message`:
+
+| `rule` | `params` |
+|---|---|
+| `required` (nothing sent) · `type` | — · `{ type }` (`string`, `number`, `object`, `money`, …) |
+| `string.min` `string.max` | `{ min }` `{ max }` (characters) |
+| `string.pattern` · `string.format` | `{ pattern }` · `{ format }` (`uuid`, `email`, `uri`, `timezone`, `locale`, `date-time`) |
+| `number.min` `number.max` `number.integer` | `{ min }` `{ max }` — |
+| `enum` · `literal` · `union` | `{ values }` (`a \| b`) · `{ value }` · — (a discriminated union: `{ values }`) |
+| `array.min` `array.max` | `{ min }` `{ max }` (items) |
+| `record.key` `json` `money` | — |
+| `refine` | `{ name }` |
+
+The values are contract like an `X_*` code: added, never renamed (`schema-rules.test.ts` pins the
+list). `rule` is optional on the issue type — a third-party provider names none — and the exported
+`fail(path, message, rule?, params?)` takes both optionally for a provider. Inside this package a
+builtin refuses through `rejected`, whose `rule` is required.
 
 Refused at the boundary rather than guessed at (`As of 2026-10`):
 

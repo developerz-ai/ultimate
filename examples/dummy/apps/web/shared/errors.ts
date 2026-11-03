@@ -7,13 +7,13 @@
  * nothing under `packages/` resolves them.
  */
 
-// No `docs:` at any construction site below. `UltimateError` fills it from
+// No `docs:` at any declaration below. `UltimateError` fills it from
 // `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for
 // every code, never one per code, because a code lives on that page in a TABLE ROW and a row has
 // no anchor. The `https://ultimate.dev/errors/<code>` links these classes built until 2026-08-23
 // answered 404, host included, on every error this app has ever thrown.
 
-import { UltimateError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core';
 
 /**
  * Raised by `useActor()` when nothing resolved the app's actor facts for this request.
@@ -22,16 +22,15 @@ import { UltimateError } from '@ultimat3/core';
  * distinguishable downstream: an actor minted by a job, a test or an MCP token exchange carries no
  * member row either, and each is a legitimate actor the `app/` surface simply cannot render for.
  * `ActorFacts` is optional per key on purpose (`packages/core/src/actor.ts`) — an unresolved fact
- * is `undefined`, so this is where "nobody resolved it" becomes an instruction.
+ * is `undefined`, so this is where "nobody resolved it" becomes an instruction. 403: the caller is
+ * somebody, and not somebody `app/` renders for.
  */
-export class ActorUnresolved extends UltimateError {
-  constructor() {
-    super({
-      code: 'X_ACTOR_UNRESOLVED',
-      cause:
-        'the request actor carries no `member`/`org` fact, so app/ has no member row to render — ' +
-        'an anonymous, job or agent actor reads exactly the same way',
-      fix: 'mint the request actor with postlyActor({ member, org }) from apps/web/shared/actor.ts',
-    });
-  }
-}
+export const ActorUnresolved = defineError({
+  code: 'X_ACTOR_UNRESOLVED',
+  title: 'the request actor carries no member to render',
+  status: 403,
+  cause:
+    'the request actor carries no `member`/`org` fact, so app/ has no member row to render — ' +
+    'an anonymous, job or agent actor reads exactly the same way',
+  fix: 'mint the request actor with postlyActor({ member, org }) from apps/web/shared/actor.ts',
+});

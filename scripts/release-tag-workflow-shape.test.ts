@@ -56,18 +56,22 @@ const cut = runsOf('cut');
 const at = (shell: string, needle: string): number => shell.indexOf(needle);
 
 describe('unit · release-tag.yml starts only on a green push run of a release commit', () => {
-  test('workflow_run of ci, completed, on main — and no other trigger', () => {
+  // `release/*` since v30 (wiki/Stability.md): a maintenance major's bump PR merges there, and
+  // merging it is that release exactly as on main. `next` is not here: it publishes no release.
+  test('workflow_run of ci, completed, on main or a release/* branch — and no other trigger', () => {
     expect(Object.keys(workflow.on ?? {})).toEqual(['workflow_run']);
     expect(workflow.on?.workflow_run?.workflows).toEqual(['ci']);
     expect(workflow.on?.workflow_run?.types).toEqual(['completed']);
-    expect(workflow.on?.workflow_run?.branches).toEqual(['main']);
+    expect(workflow.on?.workflow_run?.branches).toEqual(['main', 'release/*']);
   });
 
   test('prepare requires success, a push, main, this repository and a release subject', () => {
     const guard = job('prepare').if ?? '';
     expect(guard).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(guard).toContain("github.event.workflow_run.event == 'push'");
-    expect(guard).toContain("github.event.workflow_run.head_branch == 'main'");
+    expect(guard).toContain(
+      "(github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'release/'))",
+    );
     expect(guard).toContain(
       'github.event.workflow_run.head_repository.full_name == github.repository',
     );

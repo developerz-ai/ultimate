@@ -6,9 +6,9 @@ The differentiator. Not a chat widget, not an "AI SDK integration" — the frame
 
 ## Built-in MCP dev server
 
-`x dev` starts an MCP server on the dev socket. Point Claude Code (or any MCP client) at it and the agent stops guessing.
+`x mcp serve` is the dev-tool server, over stdio or HTTP; `x dev` does not start it. Point any MCP client at it and the agent stops guessing. A new app's `.mcp.json` already names it — [Client config](#client-config).
 
-Sixteen tools `As of 2026-09-19` — the whole catalog, spelled exactly as they must be called. No aliases; renaming one is a major.
+The whole catalog, spelled exactly as each tool must be called; `bunx x mcp tools --json` reads it off the server rather than a count here. No aliases; renaming one is a major.
 
 | Tool | Introspects / does | Replaces the agent's usual guess |
 |---|---|---|
@@ -40,6 +40,30 @@ Sixteen tools `As of 2026-09-19` — the whole catalog, spelled exactly as they 
 
 None of them is exposed in `ROLE=web`. `db.query` accepts one statement, whose leading keyword must be `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — necessary, never sufficient. Batches, any write keyword at statement level (a data-modifying CTE included), locking clauses (`FOR UPDATE`/`FOR SHARE`), `EXPLAIN ANALYZE`, and whole function families matched by prefix of the called name, quoted and schema-qualified spellings included — file access (`pg_read_*`, `pg_ls_*`, `lo_*`, `dblink`), locks (`pg_advisory_*`), session settings (`set_config`), sleeps (`pg_sleep*`), catalog writes (`pg_import_*`) and the functions that run a query handed to them as text (`query_to_xml*`, `cursor_to_xml*`, `table_to_xml*`, `schema_to_xml*`, `database_to_xml*`, `ts_stat`, `ts_rewrite`) — are **refused**, not discouraged — `X_MCP_QUERY_REJECTED`, enforced before the host sees the string. What the scan cannot read is refused, never decoded: a Unicode-escaped quoted identifier (`U&"…"`) is `X_MCP_QUERY_REJECTED` (`As of 2026-10`). A keyword is matched as Postgres lexes an identifier, so a column `set2` is a column, not `SET`. Its Postgres SELECT-only role is conditional on the connection's own rights; the answer's `guards` array names the defences that engaged. `db.migrate` refuses a target that is not a branch database — `X_MCP_NOT_BRANCH_DB`.
 
+
+### Client config
+
+`x new` writes one client config, `.mcp.json` at the app root — the format several MCP clients read — and no per-vendor directory: a second copy is a second thing to drift.
+
+```json
+{
+  "mcpServers": {
+    "myapp": {
+      "command": "bunx",
+      "args": ["@ultimat3/cli", "mcp", "serve", "--transport", "stdio"]
+    }
+  }
+}
+```
+
+| Client wants | Give it |
+|---|---|
+| `.mcp.json` | nothing: it reads this file |
+| a command and its arguments | `bunx @ultimat3/cli mcp serve --transport stdio`, started in the app's root — the command needs an app (`X_NOT_IN_APP` otherwise) |
+| a URL | `bunx x mcp serve --transport http --port 9229`, then `http://127.0.0.1:9229/mcp` and the bearer token it prints |
+| its own config file | the same command, in that file's own syntax; the framework generates none |
+
+**`bunx @ultimat3/cli`, never `bunx x`, in a client config.** A client may spawn the command outside the installed app, and there `bunx x` fetches an unrelated npm package named `x`. Inside an app's shell, `bunx x` resolves the app's own CLI. `scaffold-mcp-json.test.ts` pins the spelling, and CI's `scaffold-smoke` spawns the file's own command and asks it `initialize` and `tools/list` on every push.
 
 ### Rate limits on the HTTP transport
 
@@ -183,20 +207,20 @@ server's own business** (`As of 2026-10`): for the caller audience, a thrown 5xx
 statement) renders a fixed sentence as its `cause` and `x errors explain <code> --json` (or its
 `callerFix`) as its `fix` — in a tool result and in a `resources/read` error's `data` alike, the
 verdict a production problem document gives. The developer audience keeps both. An app's own error takes the
-same two fields, plus `docs`:
+same two fields, plus `docs` — declared once with `defineError`:
 
 ```ts
-class RefundWindowError extends UltimateError {
-  constructor() {
-    super({
-      code: 'X_FORBIDDEN',
-      cause: 'the payment is 142 days old; refunds are limited to 90 days',
-      fix: 'x policy explain refund:create --json',
-      callerFix: 'issue a credit note instead',
-      docs: 'docs://recipes/issue-a-credit-note',
-    });
-  }
-}
+import { defineError } from '@ultimat3/core';
+
+export const RefundWindowClosed = defineError<{ readonly ageDays: number }>({
+  code: 'X_REFUND_WINDOW_CLOSED',
+  title: 'the refund window has closed',
+  status: 403,
+  cause: (p) => `the payment is ${p.ageDays} days old; refunds are limited to 90 days`,
+  fix: 'x policy explain refund:create --json',
+  callerFix: 'issue a credit note instead',
+  docs: 'docs://recipes/issue-a-credit-note',
+});
 ```
 
 A `docs` other than the framework's one Error-Codes page is a fourth line of the tool result —
@@ -218,19 +242,20 @@ container. The contract is one file:
 | the mount | `x dev` **and** `runRole`, through one call | `POST <path>` → `mcp.route.handle(request)`; the boot log says `app mcp mounted`, `x dev`'s summary prints `mcp POST /mcp` |
 | auth | the route's own | `auth: 'public'`, `enforcedBy: 'handler'` on the http route — the bearer token is read by `resolveToken`, never pre-judged by the pipeline |
 | exposed and unmountable | `X_MCP_APP_UNMOUNTED`, logged once | no file exports `mcp`, or it was built without `resolveToken` (no `route`); the fix names the file to write |
+| a new app | `x new` writes it | `apps/web/mcp.ts` over the `@<app>/mcp` catalog, `resolveToken` from `apps/web/app/auth/agent-token.ts`: an API key (`issueApiKey`, `x_api_keys`) is an agent in every environment; `dev-agent.<role>` is one under `x dev` alone, and only from a loopback address with no `Origin` (a page rebound to 127.0.0.1 sends one). No token, or one it does not know: 401 |
 
 #### Several endpoints, one per population
 
-`As of Unreleased`. `mcp` may be a non-empty **array** of `defineAppMcp` values — one endpoint per
+`As of 22.14.0`. `mcp` may be a non-empty **array** of `defineAppMcp` values — one endpoint per
 population, each with its own catalog, `instructions`, `groups`, `scopes` and `oauth`. Same export
 name, same file; the order is the contract:
 
 ```ts
 // apps/web/mcp.ts
 export const mcp = [
-  defineAppMcp({ name: 'notificado', include: 'exposed', scopes: CUSTOMER_SCOPES, resolveToken: customerToken, oauth }),
-  defineAppMcp({ name: 'notificado-admin', path: '/mcp/admin', tools: staffTools, surface: 'meta', groups, scopes: STAFF_SCOPES, resolveToken: staffToken, oauth }),
-  defineAppMcp({ name: 'notificado-afiliados', path: '/mcp/afiliados', tools: affiliateTools, scopes: AFFILIATE_SCOPES, resolveToken: affiliateToken, oauth }),
+  defineAppMcp({ name: 'acme', include: 'exposed', scopes: CUSTOMER_SCOPES, resolveToken: customerToken, oauth }),
+  defineAppMcp({ name: 'acme-admin', path: '/mcp/admin', tools: staffTools, surface: 'meta', groups, scopes: STAFF_SCOPES, resolveToken: staffToken, oauth }),
+  defineAppMcp({ name: 'acme-afiliados', path: '/mcp/afiliados', tools: affiliateTools, scopes: AFFILIATE_SCOPES, resolveToken: affiliateToken, oauth }),
 ];
 ```
 
@@ -312,7 +337,7 @@ Where the first two outcomes are declared:
 | Outcome | Declared | Property |
 |---|---|---|
 | Hidden (role) | `mcp: { visibleTo: [...] }`, on the action or query itself | `readonly string[]` — a role allowlist. A primitive declares the list form only: a declared fact stays static and serialisable. The predicate form of `McpVisibility` is for a surface that builds its catalog programmatically (`@ultimat3/admin` derives visibility from the actor's admin permissions) and hands `@ultimat3/mcp` a tool directly. Both are fail-closed: an unnamed role — including a caller carrying no role at all — gets ToolNotFound, never Forbidden. A catalog audience, not an authz rule; the primitive's `policy` still decides every call |
-| Hidden (prompt) | `visibleTo` on an `McpPrompt` passed to `defineAppMcp({ prompts })` | the same `McpVisibility`, the same fail-closed evaluation: absent from `prompts/list`, and `prompts/get` answers exactly as for a prompt that does not exist (`As of Unreleased`). Resources take the same field |
+| Hidden (prompt) | `visibleTo` on an `McpPrompt` passed to `defineAppMcp({ prompts })` | the same `McpVisibility`, the same fail-closed evaluation: absent from `prompts/list`, and `prompts/get` answers exactly as for a prompt that does not exist (`As of 22.14.0`). Resources take the same field |
 | Scope | `scopes:` on `defineAppMcp` | `Readonly<Record<string, readonly string[]>>` — scope name → tool names. A capability of the connection's token, so it is declared once per app rather than beside every primitive. A name the catalog does not contain, or one claimed by two scope entries, refuses at boot: `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT` |
 
 Rationale for each: [`docs/architecture/11-ai-surface.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/11-ai-surface.md).
@@ -350,6 +375,7 @@ export const summarize = llm({
 | Streaming | `.stream()` on the returned action; policy, budget, cache and span unchanged; the `done` chunk carries the validated value |
 | Cost + token accounting | per call, per tenant, per prompt version; exceeding `budget` throws before spending |
 | Retries | typed on provider errors; rate limits back off, content refusals do not retry |
+| Breaker | one per provider, on by default (`{ failures: 5, cooldownMs: 30_000 }`): a provider whose retries ran out five passes running is skipped, no call and no sleep, until one probe after the cooldown answers; a 400 never opens it. `providerGateway({ breaker: (provider) => breaker({ name: provider.name, failures: 3, cooldownMs: 10_000 }) })` chooses your own, `breaker: 'off'` declines. [Outbound HTTP](Outbound-HTTP#breaker-stop-paying-for-a-dependency-that-is-down) |
 | Caching | semantic cache from [Caching and invalidation](Caching-And-Invalidation) |
 | Provider prompt caching | the provider keeps a request's stable prefix; on by default for `agent()`, off for `llm()` → [Agents](Agents#provider-prompt-caching) |
 | Tracing | one OTel span per call with model, tokens, cache hit, prompt version |

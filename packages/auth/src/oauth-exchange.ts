@@ -12,6 +12,7 @@ import {
   renderThrowable,
   systemClock,
 } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
 import { isRecord } from './json';
 import { type IdTokenKeys, providerJwks } from './jwks';
@@ -185,7 +186,9 @@ async function postForm(
   options: OAuthExchangeOptions,
   authorization?: string,
 ): Promise<Record<string, unknown>> {
-  const doFetch: OAuthFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const doFetch: OAuthFetch =
+    options.fetch ??
+    ((input, init) => globalThis.fetch(input, { ...init, signal: init.signal ?? null }));
   // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
   // catch around this fetch renders every throw as a provider failure — so a typo in the app's
   // own config read as the identity provider being unreachable.
@@ -199,18 +202,26 @@ async function postForm(
 
   let response: Response;
   try {
-    response = await doFetch(url, {
-      method: 'POST',
-      headers: {
-        // GitHub answers `application/x-www-form-urlencoded` unless asked for JSON.
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': OAUTH_USER_AGENT,
-        ...(authorization === undefined ? {} : { Authorization: authorization }),
+    // Through core's `outbound()`: `timeoutMs` bounds the whole call, the ambient request's signal
+    // ends it, a GET's 5xx is retried inside that bound (a POST never is), a 3xx is never followed.
+    response = await outboundResponse(
+      {
+        url: url,
+        vendor: provider,
+        dial: 'named',
+        deadlineMs: timeoutMs,
+        method: 'POST',
+        headers: {
+          // GitHub answers `application/x-www-form-urlencoded` unless asked for JSON.
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': OAUTH_USER_AGENT,
+          ...(authorization === undefined ? {} : { Authorization: authorization }),
+        },
+        body: body.toString(),
       },
-      body: body.toString(),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+      { fetch: doFetch },
+    );
   } catch (error) {
     // The rendered value goes to the LOG, never into the `detail:`.
     //

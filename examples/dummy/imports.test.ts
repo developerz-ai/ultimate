@@ -117,8 +117,8 @@ describe('every app module', () => {
     expect(failed).toEqual([]);
   });
 
-  // `bin/setup.ts` and `bin/check.ts` are what `bun run setup` / `check` execute: importing one
-  // RUNS it (an install, `x setup`, a nested `x verify`). Present on disk, absent from the boot.
+  // `bin/setup.ts` is what `bun run setup` executes: importing it
+  // RUNS it (an install, a migration, a seed). Present on disk, absent from the boot.
   test('runs no entry point: nothing under bin/ is in the set the boot imports', async () => {
     expect((await sources()).filter((file) => file.startsWith('bin/')).length).toBeGreaterThan(0);
     expect(booted.files.filter((file) => file.startsWith('bin/'))).toEqual([]);

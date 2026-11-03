@@ -143,12 +143,15 @@ describe('this repository', () => {
     REPO_SCAN_TIMEOUT_MS,
   );
 
-  test('exempts exactly the three core modules whose effect only their own bindings need', () => {
+  test('exempts exactly the five core modules whose effect only their own bindings need', () => {
     // A list and not a predicate, for the reason `SIDE_EFFECTS_ANCHORS` is one — and each row is a
     // measured claim, so one more row is a decision for review rather than a quiet exemption.
+    // `breaker.ts` and `outbound-errors.ts` (plan 101 wave 3) register server-only retry classes.
     expect(Object.keys(SIDE_EFFECTS_BY_USE).sort()).toEqual([
+      'packages/core/src/breaker.ts',
       'packages/core/src/context.ts',
       'packages/core/src/lifecycle-errors.ts',
+      'packages/core/src/outbound-errors.ts',
       'packages/core/src/secrets-errors.ts',
     ]);
   });

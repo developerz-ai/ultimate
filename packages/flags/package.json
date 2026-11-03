@@ -2,6 +2,15 @@
   "name": "@ultimat3/flags",
   "version": "29.4.0",
   "description": "Feature flags: permanent switches, and temporary ones that cannot be forgotten",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "feature-flags",
+    "flags",
+    "toggles"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Feature-Flags",
   "license": "MIT",
   "type": "module",
   "repository": {

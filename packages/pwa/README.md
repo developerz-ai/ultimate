@@ -4,6 +4,8 @@
 whole thesis: a hand-written service worker encodes routing decisions a second time, and
 the second copy is the one nobody updates.
 
+`bun add @ultimat3/pwa` · guide: [PWA And Offline](https://github.com/developerz-ai/ultimate/wiki/PWA-And-Offline)
+
 ```ts
 const { source, precache, warnings } = generateServiceWorker(describePages(), config, buildId);
 ```

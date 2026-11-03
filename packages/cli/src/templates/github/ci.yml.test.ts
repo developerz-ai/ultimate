@@ -80,12 +80,12 @@ describe('unit · the CI workflow x new writes', () => {
   // The contract this file exists for: the app's OWN scripts, in order, never a restatement of
   // their steps. A workflow that ran `bun install && x verify` would be green here and would be a
   // second gate free to drift from the one a human runs.
-  test('it runs bun run setup and then bun run check, and restates neither', () => {
+  test('it runs bun run setup and then bun run verify, and restates neither', () => {
     expect(steps().flatMap((step) => (step.run === undefined ? [] : [step.run]))).toEqual([
       'bun run setup',
       'docker compose -f docker/docker-compose.test.yml up -d --wait',
       'cat docker/test-services.env >> "$GITHUB_ENV"',
-      'bun run check',
+      'bun run verify',
     ]);
   });
 
@@ -97,12 +97,11 @@ describe('unit · the CI workflow x new writes', () => {
     expect(written.has('docker/test-services.env')).toBe(true);
   });
 
-  // `x verify` is HALF of `bun run check`: without the build the `budgets` step has no
-  // `.x/build-stats.json` to measure and reports X_BUDGET_UNMEASURED. A workflow that named the
-  // half would be red on a commit with nothing wrong in it.
-  test('the gate it runs is bun run check, never a bare x verify', () => {
-    for (const run of steps().flatMap((step) => (step.run === undefined ? [] : [step.run])))
-      expect(run.includes('x verify')).toBe(false);
+  // One gate, one name: `bun run verify` is `x verify`, whose budgets step builds when its stats
+  // are missing or stale (plan 101, 21) — so no step builds first, and no `bun run check` exists.
+  test('the gate it runs is bun run verify alone: no build step before it, no check script', () => {
+    const runs = steps().flatMap((step) => (step.run === undefined ? [] : [step.run]));
+    expect(runs.filter((run) => run.includes('x build') || run.includes('run check'))).toEqual([]);
   });
 
   // The defect the whole Bun-floor change exists for, in its CI shape: a runner older than the

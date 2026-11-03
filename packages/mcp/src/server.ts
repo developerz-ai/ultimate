@@ -148,7 +148,7 @@ export class McpServer {
     // rate-limit class. Refused BY NAME rather than falling through to the envelope check below —
     // an array is not an envelope, so it did, and a client sending a batch got the same bare
     // `-32600` as `{ not: 'jsonrpc' }` with no word that batching was the problem. Measured
-    // through ai-maxxing's `POST /mcp` on 2026-09-07. The `message` is the same on every wire;
+    // through one adopter's `POST /mcp` on 2026-09-07. The `message` is the same on every wire;
     // only the fix names the unit — `POST <path>` as mounted, or a line — and only when the
     // transport said which it is.
     if (Array.isArray(body)) {

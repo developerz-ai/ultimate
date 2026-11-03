@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { ERROR_DOCS_URL, frameworkVersion, UltimateError, VERSION_DEFINE } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { buildSpec } from './cmd-build-spec';
+import { DEFAULT_IMAGE } from './cmd-deploy-compose';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
 import { externalArgs } from './compile-externals';
@@ -264,7 +265,14 @@ export function buildResult(input: {
           {
             code: 'X_BUILD_FAILED',
             cause: `${input.command.join(' ')} exited ${result.code}`,
-            fix: target === 'docker' ? 'x doctor --json && docker info' : 'x verify --json',
+            // Static is the build `x verify`'s budgets step runs (plan 101, 21): `x verify` would be
+            // the loop the reader came from, and this command's `data.output` is the builder's own.
+            fix:
+              target === 'docker'
+                ? 'x doctor --json && docker info'
+                : target === 'static'
+                  ? 'x build --target static --json'
+                  : 'x verify --json',
             docs: ERROR_DOCS_URL,
           },
         ],
@@ -377,9 +385,9 @@ export const buildCommand: CliCommand = {
     const platform = readPlatform(flagString(ctx.args, 'platform'));
     if (target === 'prebuilt') return buildPrebuilt(root);
 
-    // Run static verify steps before building — unless the caller is a gate that runs the same
-    // six steps itself right after (`bin/check`: `x build --no-preflight && x verify`), where the
-    // preflight was the same ~17 s of typecheck/lint/scans paid twice per run. The default stays
+    // Run static verify steps before building — unless the caller is the gate itself, which has
+    // run those six steps already (`x verify`'s budgets step spawns `x build --no-preflight`), where
+    // the preflight was the same ~17 s of typecheck/lint/scans paid twice per run. The default stays
     // safe: a bare `x build` never ships an artifact from a tree that does not typecheck.
     const preflight = ctx.args.flags.get('preflight') !== false;
     if (preflight) {
@@ -405,7 +413,7 @@ export const buildCommand: CliCommand = {
         ? join(root, '.x', target === 'static' ? 'static' : 'app')
         : resolve(ctx.cwd, outFlag);
     const out = target === 'binary' ? binaryOutfile(requested, platform) : requested;
-    const tag = flagString(ctx.args, 'tag') ?? 'ultimate-app:dev';
+    const tag = flagString(ctx.args, 'tag') ?? DEFAULT_IMAGE;
     // The docker target stamps the manifest's build id into the image, so no role derives one at
     // boot. The island chunks and stylesheets are the image build's own (`--target prebuilt`).
     const buildId =

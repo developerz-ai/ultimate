@@ -7,18 +7,18 @@
 // components by their module paths (issue #490).
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
-import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
-import { FakeElement } from '../fake-dom-fixture';
-import { UI_KEYS } from '../i18n-keys';
 import {
   attachRef,
   byTag,
   fire,
   one,
-  type ProbeNode,
+  type RenderNode,
   renderNodes,
   withAttr,
-} from '../jsx-probe-fixture';
+} from '@ultimat3/core/render-nodes';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
+import { FakeElement } from '../fake-dom-fixture';
+import { UI_KEYS } from '../i18n-keys';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext } from '../theme/solid-adapter';
 import { Alert } from './Alert';
@@ -255,7 +255,7 @@ describe('the page chrome', () => {
         });
 
         const control = new FakeElement('input', { name: 'title' });
-        attachRef(nodes[0] as ProbeNode, new FakeElement('form').append(control));
+        attachRef(nodes[0] as RenderNode, new FakeElement('form').append(control));
 
         rt.flush();
         // Focusing the summary and stopping there strands the reader one Tab from nothing: the
@@ -275,7 +275,7 @@ describe('the page chrome', () => {
         attachRef(one(withAttr(nodes, 'tabindex', '-1'), 'error summary'), {
           focus: () => (summaryFocus += 1),
         });
-        attachRef(nodes[0] as ProbeNode, new FakeElement('form'));
+        attachRef(nodes[0] as RenderNode, new FakeElement('form'));
         rt.flush();
         expect(summaryFocus).toBe(1);
       } finally {
@@ -296,7 +296,7 @@ describe('the page chrome', () => {
           focus: () => (summaryFocus += 1),
         });
         const password = new FakeElement('input', { name: 'password' });
-        attachRef(nodes[0] as ProbeNode, new FakeElement('form').append(password));
+        attachRef(nodes[0] as RenderNode, new FakeElement('form').append(password));
 
         rt.flush();
         expect(password.focusCount).toBe(0);
@@ -315,12 +315,12 @@ describe('the page chrome', () => {
         onSubmit: () => submits.push(1),
       });
       expect(busy[0]?.props['aria-busy']).toBe('true');
-      fire(busy[0] as ProbeNode, 'onSubmit', event);
+      fire(busy[0] as RenderNode, 'onSubmit', event);
       expect(submits).toEqual([-1]);
 
       const idle = renderNodes(Form, { children: null, onSubmit: () => submits.push(1) });
       expect(idle[0]?.props['aria-busy']).toBeUndefined();
-      fire(idle[0] as ProbeNode, 'onSubmit', event);
+      fire(idle[0] as RenderNode, 'onSubmit', event);
       expect(submits).toEqual([-1, 1]);
     });
 

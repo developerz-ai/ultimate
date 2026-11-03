@@ -20,7 +20,7 @@ app. Both apps must pass independently. Idiom is decided here.)
 |---|---|
 | setup | `bun run setup` (installs, writes `.env`, migrates, seeds) |
 | dev | `bun run dev` → `x dev` (web + sync + worker + scheduler, MCP on `ws://localhost:9229`) |
-| verify | `bun run check` → `x verify` — the only gate |
+| verify | `bun run verify` → `x verify` — the only gate |
 | migration | `x db gen "<message>"` then `x db migrate`. Never hand-write SQL |
 | seed | `x db seed dev` |
 | one test type | `x test unit\|contract\|live\|job\|e2e\|eval` |

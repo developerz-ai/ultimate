@@ -59,6 +59,7 @@ import {
 } from './boundaries';
 import { boundaryRuleDocFindings } from './boundary-rule-docs';
 import { chartVersionFindings } from './chart-version';
+import { cliOutboundFindings } from './cli-outbound';
 import { docCommandFindings } from './doc-commands';
 import { docFixFindings } from './doc-fixes';
 import { docPathFindings } from './doc-paths';
@@ -74,11 +75,15 @@ import { flagBool, parseScriptArgs } from './lib/args';
 import { checkConfigImports, configImportFindingFor } from './lib/config-import';
 import { report, writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
+import { stabilityFindings } from './lib/stability-findings';
 import { REPO_GATE, readVerifyArgs, VERIFY_SUBCOMMANDS } from './lib/verify-args';
 import { llmsTxtFindings } from './llms-txt';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { opsUidFindings } from './ops-uid-docs';
+import { packageFrontFindings } from './package-front';
+import { privateNameFindings } from './private-names';
 import { readmeFenceFindings } from './readme-fences';
+import { readmeSampleFindings } from './readme-sample';
 import { releaseFactFindings } from './release-facts';
 import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
@@ -144,6 +149,12 @@ export const tierBoundaries: HostCheck = async (root) => {
     // One cipher call: a package above tier 0 seals through `seal()` / `open()` in
     // `@ultimat3/core`, never its own `subtle.encrypt`. A text rule, so it rides here.
     ...(await sealCallFindings(root)),
+    // No telemetry: every host `packages/cli/src` spells is reserved or an allowlist row with a why.
+    ...(await cliOutboundFindings(root)),
+    // No private adopter name in a tracked file or path; the names are the CI secret, unset a skip.
+    ...(await privateNameFindings(root, process.env)),
+    // wiki/Stability.md: the major window, Highlights, no break on main, the deprecation window.
+    ...(await stabilityFindings(root)),
   ];
 };
 
@@ -303,6 +314,8 @@ export const errorContract: HostCheck = async (root) => [
  * | `knownGapLinkFindings` | each Known-Gaps `[B<n>]` link resolves to its backlog row and names its issue | the plan files |
  * | `opsUidFindings` | a uid `docs/ops` states is the one its image runs | `RUNTIME_UID`, `docker/helm/values.yaml` |
  * | `boundaryRuleDocFindings` | `02-boundaries.md`'s rule count and code table match the boundary rules | `BOUNDARY_CODES` |
+ * | `readmeSampleFindings` | the root README's code sample is the `examples/dummy` file it quotes | that file |
+ * | `packageFrontFindings` | a publishable package's npm page opens on a sentence, install, example and wiki page, with `keywords` | each `package.json` |
  *
  * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:
  * that step takes no host findings at all (`packages/cli/src/cmd-verify.ts` calls `hostFindings`
@@ -338,6 +351,8 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await knownGapLinkFindings(root)),
   ...(await opsUidFindings(root)),
   ...(await boundaryRuleDocFindings(root)),
+  ...(await readmeSampleFindings(root)),
+  ...(await packageFrontFindings(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {

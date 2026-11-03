@@ -6,40 +6,32 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**`As of 2026-08`.** Stable API, semver from here. 30 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **31 in all** — are **versioned** in lockstep: one version, one commit, one tag.
+**Yes, for a single-region app on one Postgres, `As of 2026-11`, on the evidence below.** What you can check: [the live demo](https://social-media.ultimate.demo.developerz.ai), built from `dummy/social-media-clone/` and deployed on every push to `main` (`deploy-social-demo.yml`). Two apps in the repository build on it and gate on every push, the demo and the reference app `examples/dummy/` (`scripts/lib/gated-apps.ts`); no production use and no outside adopter is claimed. The API is under semver, and the window and the next major's date are on [Stability](Stability).
 
-**Publication is a separate step from versioning, and for the current release it has run.** Repository, tag and registry are the same version; there are no publication holes — every one of the 30 is on npm.
+| Proven | By |
+|---|---|
+| a rolling restart on Kubernetes drops no request | `ci.yml`'s `deploy-proof` job, `docker/deploy-proof/run.sh`: 0 of 9,028 requests failed, `As of 2026-09-24` |
+| a fresh scaffold is green on its first gate run | `ci.yml`'s `scaffold-smoke` job, every push |
+| every package is on npm at one version, published by the workflow over OIDC, attested | `bun run scripts/registry-audit.ts --json`, and `registry-audit.yml` daily |
+| one `sync` node reconnects all 50,000 clients after a forced restart | [`scripts/bench/results/`](https://github.com/developerz-ai/ultimate/tree/main/scripts/bench/results) |
 
-| Fact | State `As of 2026-08-20` | Resolve it yourself |
-|---|---|---|
-| What you can install | whatever `latest` is — `bunx create-ultimate myapp` gives you it | `npm view @ultimat3/core version` |
-| Repository version | all 30 stamped in one commit | the top section of [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) |
-| Tagged | the tag is on origin, annotated, and its GitHub Release is published | `git ls-remote --tags origin 'refs/tags/v<version>*'` — expect the ref and its peeled `^{}` line — then `gh release view v<version> --json tagName,isDraft,publishedAt` |
-| On the registry | **all 30**, at that version | `npm view @ultimat3/scraping version` |
-| Provenance | 1.1.0, 1.2.0, 3.0.0 and 4.0.0 carry an attestation; **2.0.0 does not** | `npm view @ultimat3/core dist.attestations` |
-| Who published it | `GitHub Actions`, over OIDC, on all 30 | `npm view @ultimat3/core _npmUser` |
-
-Only the [footer](_Footer) stamps the number, so this table names the command instead of a version that goes stale on the next tag. In the repository, `bun run scripts/registry-audit.ts --json` covers the **registry** rows in one call — not the tag or the Release, which it never asks about — and `registry-audit.yml` runs it daily and opens an issue on any disagreement.
-
-3.0.0 and 4.0.0 both went out through the workflow. 2.0.0 is the exception in the line: it was hand-published, with no trusted publisher attached for the OIDC exchange to verify against, so its tarballs carry no attestation and `_npmUser: sebyx07`. 1.0.0 was the manual bootstrap. `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages and both are closed — each by the one-time manual bootstrap every package needs before a trusted publisher can attach.
-
-That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
+What you can install is `npm view @ultimat3/core version`; only the [footer](_Footer) stamps it. How each release was published, the hand-published 2.0.0 included: [`PUBLISHING.md`](https://github.com/developerz-ai/ultimate/blob/main/PUBLISHING.md#publication-history).
 
 What it does **not** claim:
 
 | Not claimed | Detail |
 |---|---|
 | A multi-node realtime result | the 50k forced-restart benchmark **is** measured and committed, but on **one** `sync` node over `InProcessTransport` — it never crossed NATS. Fanout across nodes, throughput, and per-node socket capacity are all still targets, not results ([Realtime](Realtime)) |
-| The two-platform deploy proof | all three artifact targets ship — `x build --target docker`, `x build --target binary`, `x build --target static`, plus `prebuilt`, the image build's own step — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
+| A rolling restart on **Compose** | Compose is the single-node rung: one published port has one binder, so a restart there is a restart. The invisible-restart proof is Kubernetes only ([Deployment](Deployment)) |
 | Not shipped, `As of 2026-09-23` | the plugin API, multi-region replication, and the Redis **job** driver — all behind the interfaces that ship today (there is no NATS job driver since 25.0.0). The Redis driver throws `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 
-All 30 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–3 (tier 3 opt-in, since 21.0.0), auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11 is 🚧, open on its two-platform deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
+All 30 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–3 (tier 3 opt-in, since 21.0.0), auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–11 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11's deploy proof closed `As of 2026-09-24`, when `ci.yml`'s `deploy-proof` job upgraded an app in kind with 0 of 9,028 requests failed (Compose is the single-node rung and makes no invisible-restart claim). Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
 
 ### What is left?
 
-**One thing: milestone 11's two-platform deploy proof** — the demo app on Compose **and** K8s from one image, with a rolling restart invisible to connected clients. The other item that was open at 1.0.0, the **50k-socket forced-restart benchmark**, is measured and committed at 1.1.0: 50,000 sockets, forced `sync` restart, first patch on the reconnected socket at p50 54.0s / p90 105.5s, on one node ([Realtime](Realtime)). Milestone 11 lands when it is demonstrated, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets). The open defects the current release shipped with are listed on [Known gaps](Known-Gaps).
+**No milestone is open**: milestone 11's two-platform deploy proof closed `As of 2026-09-24` (`deploy-proof`, above). The other item that was open at 1.0.0, the **50k-socket forced-restart benchmark**, is measured and committed at 1.1.0: 50,000 sockets, forced `sync` restart, first patch on the reconnected socket at p50 54.0s / p90 105.5s, on one node ([Realtime](Realtime)). Everything in milestones 0–11 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets). The open defects the current release shipped with are listed on [Known gaps](Known-Gaps).
 
 ## The stack
 
@@ -136,6 +128,14 @@ Stated risk, not a hidden one. `As of 2026-08` long-running Bun processes are le
 ### Where do plugins fit?
 
 Nowhere — there is no plugin API and there has never been one, `As of 2026-08`. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
+
+### Can I publish a package for other Ultimate apps?
+
+Yes: a factory over the eight primitives, published as `ultimate-<name>` with the keyword `ultimate-package` and `@ultimat3/*` as `peerDependencies` at `^<major>`. There is no marketplace or registry; `npm search keywords:ultimate-package` is the directory. How, and what a consumer's gate sees: [Building your own base](Building-Your-Own-Base#publish-it).
+
+### Does Ultimate collect anything?
+
+Nothing in `x` is written to: no telemetry, analytics, crash report or update check. What the gate proves is narrower, and exactly this: every host a non-test file in `packages/cli/src` spells is either a reserved name (`.invalid`, `.test`, `example.com`, `localhost`) or a row with its reason in `CLI_OUTBOUND_ALLOWLIST` (`scripts/cli-outbound.ts`), and a new one fails the gate's `boundaries` step with `X_CLI_OUTBOUND_UNDECLARED`. It reads literals only, in the CLI's own source: a host assembled at run time, and the other packages, are not covered. The network `x` does touch is the network you asked for: `x upgrade` reads your configured npm registry through `bun pm view`, `x pr` and `x ci` go through your own `gh`, `x deploy verify` polls your own origin. If telemetry is ever added it is opt-in, off by default, and a major.
 
 ### Will you add an adapter for my host or my ORM?
 

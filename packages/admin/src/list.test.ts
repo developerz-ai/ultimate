@@ -4,6 +4,7 @@
 // and nothing on the page is a control that needs a script to act.
 
 import { describe, expect, test } from 'bun:test';
+import { byComponent, nodesOf, one, renderNodes } from '@ultimat3/core/render-nodes';
 import { registerCatalog } from '@ultimat3/i18n';
 import {
   type AdminActor,
@@ -13,7 +14,6 @@ import {
   adminDenied,
 } from './authz';
 import type { AdminField } from './fields';
-import { byComponent, one, renderShallowNodes, shallowNodesOf } from './inert-jsx-fixture';
 import { type ListLocation, listHref } from './list-request';
 import type { AdminPage } from './pagination';
 import type { AdminAction, AdminRow } from './registry';
@@ -86,23 +86,27 @@ const pageOf = (over: Partial<AdminPage<AdminRow>> = {}): AdminPage<AdminRow> =>
     ...over,
   }) as AdminPage<AdminRow>;
 
-type Nodes = ReturnType<typeof shallowNodesOf>;
+type Nodes = ReturnType<typeof nodesOf>;
 
 const render = (over: Record<string, unknown> = {}): Nodes =>
-  renderShallowNodes(AdminList, {
-    resource,
-    page: pageOf(),
-    error: null,
-    ctx: { timeZone: 'UTC', locale: 'en-US' },
-    actor: ACTOR,
-    authz: refuseAll,
-    basePath: '/back-office',
-    request: {},
-    scope: null,
-    counts: new Map(),
-    hrefFor: (location: ListLocation) => listHref('/back-office', resource, location),
-    ...over,
-  });
+  renderNodes(
+    AdminList,
+    {
+      resource,
+      page: pageOf(),
+      error: null,
+      ctx: { timeZone: 'UTC', locale: 'en-US' },
+      actor: ACTOR,
+      authz: refuseAll,
+      basePath: '/back-office',
+      request: {},
+      scope: null,
+      counts: new Map(),
+      hrefFor: (location: ListLocation) => listHref('/back-office', resource, location),
+      ...over,
+    },
+    { components: 'stop' },
+  );
 
 const table = (nodes: Nodes): ReturnType<typeof one> =>
   one(byComponent(nodes, 'DataTable'), '<DataTable>');
@@ -141,21 +145,30 @@ describe('a row opens through a real link', () => {
     const [open] = columnsOf(render());
     expect(open?.key).toBe('open');
     expect(open?.header).toBe('Open (probe)');
-    const anchor = one(shallowNodesOf(open?.cell({ id: 'p_1', title: 'First' })), 'the link');
+    const anchor = one(
+      nodesOf(open?.cell({ id: 'p_1', title: 'First' }), { components: 'stop' }),
+      'the link',
+    );
     expect(anchor.type).toBe('a');
     expect(anchor.props['href']).toBe('/back-office/posts/p_1');
   });
 
   test('it carries NO click handler — on a page that never hydrates one could not run', () => {
     const [open] = columnsOf(render());
-    const anchor = one(shallowNodesOf(open?.cell({ id: 'p_1', title: 'First' })), 'the link');
+    const anchor = one(
+      nodesOf(open?.cell({ id: 'p_1', title: 'First' }), { components: 'stop' }),
+      'the link',
+    );
     expect(Object.keys(anchor.props).filter((name) => name.startsWith('on'))).toEqual([]);
   });
 
   test('the id comes from the resource idField, not from a hardcoded "id"', () => {
     const keyed = { ...resource, idField: 'slug' } as unknown as AdminResource;
     const [open] = columnsOf(render({ resource: keyed }));
-    const anchor = one(shallowNodesOf(open?.cell({ slug: 'hello', title: 'x' })), 'the link');
+    const anchor = one(
+      nodesOf(open?.cell({ slug: 'hello', title: 'x' }), { components: 'stop' }),
+      'the link',
+    );
     expect(anchor.props['href']).toBe('/back-office/posts/hello');
   });
 });
@@ -166,7 +179,10 @@ describe('the derived columns', () => {
     expect(columns.map((column) => column.key)).toEqual(['open', 'title']);
     expect(columns[1]?.header).toBe('Title (probe)');
     const cell = one(
-      byComponent(shallowNodesOf(columns[1]?.cell({ id: 'p_1', title: 'First' })), 'Widget'),
+      byComponent(
+        nodesOf(columns[1]?.cell({ id: 'p_1', title: 'First' }), { components: 'stop' }),
+        'Widget',
+      ),
       '<Widget>',
     );
     expect(cell.props['mode']).toBe('read');
@@ -207,7 +223,9 @@ describe('the derived columns', () => {
     expect(columns.map((column) => column.key)).toEqual(['open', 'title', 'shout']);
     const cell = one(
       byComponent(
-        shallowNodesOf(columns[2]?.cell({ id: 'p_1', title: 'First', apiKey: 'CANARY' })),
+        nodesOf(columns[2]?.cell({ id: 'p_1', title: 'First', apiKey: 'CANARY' }), {
+          components: 'stop',
+        }),
         'ComputedCell',
       ),
       '<ComputedCell>',
@@ -311,7 +329,7 @@ describe('row actions', () => {
     expect(column?.header).toBe('Actions (probe)');
     const row = { id: 'p_9', title: 'Ninth' };
     const bar = one(
-      byComponent(shallowNodesOf(column?.cell(row)), 'AdminActions'),
+      byComponent(nodesOf(column?.cell(row), { components: 'stop' }), 'AdminActions'),
       '<AdminActions>',
     );
     // The row rides the subject so a rule that reads it decides about THIS row.

@@ -227,7 +227,7 @@ describe('unit · x dev serves the save', () => {
     BOOT_TIMEOUT_MS,
   );
 
-  // Two defects in one request (notificado.co, 2026-09-27): the page module's own bytes never
+  // Two defects in one request (one adopter, 2026-09-27): the page module's own bytes never
   // change, so re-importing only a CHANGED route module kept the cached component; and the ISR
   // store kept the first render for the life of the process.
   test(
@@ -274,7 +274,7 @@ describe('unit · x dev serves the save', () => {
     BOOT_TIMEOUT_MS,
   );
 
-  // The half no re-import can serve (notificado.co, 2026-09-29: an admin page's `ui-*.tsx` under
+  // The half no re-import can serve (one adopter, 2026-09-29: an admin page's `ui-*.tsx` under
   // `defineAdmin`, a slice's service under its query): the read that imports the service DEFINES a
   // primitive, so it keeps the first service. Until 22.12 this logged "reloaded" and served
   // "greeting one" until a manual restart. Now it is a restart — `cmd-dev-restart.live.test.ts`

@@ -7,6 +7,7 @@
 
 import { stringField } from '@ultimat3/core';
 import type { ValidationIssue } from '@ultimat3/schema';
+import { issueRuleFacts } from '@ultimat3/schema';
 
 /**
  * A list this long is not a form's worth of rejections; it is a body meant to be expensive. The
@@ -35,12 +36,14 @@ export function issuesFromWire(value: unknown): readonly ValidationIssue[] | und
     if (path === undefined || message === undefined || message.length === 0) return undefined;
     // Built member by member, never spread: a foreign issue object may carry the rejected VALUE
     // (some libraries put it in `received`), and a whole-object copy would forward it to whoever
-    // renders the list. Four members travel; everything else stops here.
+    // renders the list. Four members travel, plus the `rule` a translator keys on and its scalar
+    // `params` (schema's one reader); everything else stops here.
     issues.push({
       path,
       expected: stringField(entry, 'expected') ?? '',
       received: stringField(entry, 'received') ?? '',
       message,
+      ...issueRuleFacts(entry),
     });
   }
   return issues;

@@ -2,6 +2,17 @@
   "name": "@ultimat3/time",
   "version": "29.4.0",
   "description": "UTC instants, DST-correct zone math, cron, durations and Intl formatting with an explicit timezone",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "time",
+    "timezone",
+    "cron",
+    "dates",
+    "intl"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Timezones-And-Dates",
   "license": "MIT",
   "type": "module",
   "sideEffects": [

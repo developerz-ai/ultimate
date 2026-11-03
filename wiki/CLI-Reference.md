@@ -19,6 +19,7 @@ x version              # CLI version
 | Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command. `--verbose` carries each step's captured output on a green run too, in the terminal and under `--json` alike (`steps[].output`); without it a step's output appears only when it fails. `As of 2026-10` |
 | Subcommands | when a command has them, its default is **declared**, never positional: `x actions` is `x actions list` because that command sets `defaultSubcommand: 'list'`. A command with no defensible default declares none and refuses the bare form with `X_CLI_BAD_FLAG` — exactly `db` and `mcp`, pinned by `parse.test.ts`. `--help` is read before the subcommand, so `x db --help` and `x mcp --help` print usage like `x help db`. The parser answered `subcommands[0]` until 1.2.0, which is why `x db` used to run the migration **generator** |
 | Passthrough | a bare `--` sends everything after it to the underlying tool untouched |
+| Telemetry | none written. The gate proves one thing: every host a string literal in a non-test `packages/cli/src` file spells is reserved or a reasoned row in `scripts/cli-outbound.ts`, else `X_CLI_OUTBOUND_UNDECLARED`. A host built at run time, and every other package, is outside it ([FAQ](FAQ#does-ultimate-collect-anything)) |
 | `--json` shape | `{ ok, command, summary, steps?, findings?, data? }`. Findings are `{ code, cause, fix, docs?, at?, meta? }` |
 
 ## Command index
@@ -29,10 +30,11 @@ x version              # CLI version
 |---|---|---|
 | `x new <name>` | scaffold a monorepo that already runs | shipped |
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
+| `x stop [--timeout 30s]` | stop this checkout's `x dev` (the pid its `.x/dev.lock` names, nothing else) and return once the next `x dev` can boot | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill | shipped |
 | `x verify [--only <step>[,<step>…] [--shard i/n [--timings f]]] [--workers N] [--isolate]` · `x verify merge <part.json…>` | the gate — 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `--only <step>[,<step>…]` runs the named steps, in one process and in gate order, for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only` — always a list), writing no floor file; an unknown name is refused with every valid name and the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
-| `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
+| `x env [check\|example\|init]` | validate the process env against `envSchema`, regenerate `.env.example` from it, or write `.env.production` (`init --production`) | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x auth seal-mfa` | one-shot: seal every second-factor secret still stored in the clear | shipped |
 | `x vapid [show\|create]` | the Web Push key pair: which one this app signs with, or mint one and seal both halves | shipped |
@@ -55,7 +57,7 @@ x version              # CLI version
 | `x pr review\|resolve\|reply` | inline review threads — the ones `gh pr view --comments` does not show | shipped |
 | `x ci` | the workflow runs for this branch, and the findings inside the failed step's log | shipped |
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
-| `x docs "<question>"` | framework docs, offline, from `node_modules` | shipped |
+| `x docs "<question>"` | framework docs and this wiki, offline, from the install — the first lookup | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
 | `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate, the section to read | shipped |
 | `x cache` | tag graph, bust, clear, stats | planned |
@@ -94,7 +96,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**This page states no file count, deliberately** — one template added moves it, and a number hand-copied onto four pages goes stale on three of them. `scripts/generator-counts.ts` is the single source: it re-derives both shapes from the CLI's own generators and, as a step of `x verify`'s `manifest` check, turns any page quoting a stale one red on the same commit. Two moves worth knowing about rather than counting: the scaffold gained `apps/web/app/auth/dev-actor.ts` and its test, because `hooks.authenticate` is the only place an actor can come from and a generated app configured none — so every route declaring a `policy:` refused every request and the boot warned `X_CONFIG_INVALID` on every start; and it gained `.github/workflows/ci.yml`, which runs `bun run setup && bun run check` on every push and pull request. Derive the number:
+**This page states no file count, deliberately** — one template added moves it, and a number hand-copied onto four pages goes stale on three of them. `scripts/generator-counts.ts` is the single source: it re-derives both shapes from the CLI's own generators and, as a step of `x verify`'s `manifest` check, turns any page quoting a stale one red on the same commit. Two moves worth knowing about rather than counting: the scaffold gained `apps/web/app/auth/dev-actor.ts` and its test, because `hooks.authenticate` is the only place an actor can come from and a generated app configured none — so every route declaring a `policy:` refused every request and the boot warned `X_CONFIG_INVALID` on every start; and it gained `.github/workflows/ci.yml`, which runs `bun run setup && bun run verify` on every push and pull request. Derive the number:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'
@@ -114,8 +116,8 @@ Deployment artifacts are part of the scaffold — an app is deployable the momen
 | `docker/docker-compose.dev.yml` | parity checks only; `x dev` needs none of it |
 | `docker/helm/` | the chart, 8 files — `Chart.yaml`, `values.yaml` and 6 templates (`_helpers.tpl`, `deployments`, `service`, `migrate-job`, `ingress`, `hpa`). Written `As of 2026-08-19`, which is what makes `x deploy --method helm` work in a scaffold |
 | `docker/README.md` | how the two compose files differ |
-| `.github/workflows/ci.yml` | the generated app's own CI: `bun run setup` then `bun run check`, on push and pull request — the same two commands its `README.md` opens with |
-| `bin/setup.ts`, `bin/check.ts` | TypeScript Bun runs, never shell — `package.json`'s `setup` and `check` scripts (`bun bin/<name>.ts`), so `bun run setup` and `bun run check` are the same commands in PowerShell, cmd and bash; `bun run dev` is `x dev` and needs no file. `bun run check` is **`x build --target static` and then `x verify`**, not the gate alone: `budgets` compares declared limits against measured bytes in `.x/build-stats.json`, which only that build writes, so a gate run with no build ahead of it reports `X_BUDGET_UNMEASURED` on a brand-new app. `--json` is forwarded to both, and a reader takes the last line |
+| `.github/workflows/ci.yml` | the generated app's own CI: `bun run setup` then `bun run verify`, on push and pull request — the same two commands its `README.md` opens with |
+| `bin/setup.ts` | TypeScript Bun runs, never shell — `package.json`'s `setup` script (`bun bin/setup.ts`), so `bun run setup` is the same command in PowerShell, cmd and bash; `bun run dev` is `x dev` and `bun run verify` is `x verify`, and neither needs a file. There is no `bin/check.ts` `As of 30.0`: `x verify`'s `budgets` step builds when the stats are missing or stale, so a wrapper that built first would be a second name for the gate |
 
 The framework repo's own `docker/helm` carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in an npm tarball, so copying them is a `git clone` of this repo, not an install.
 
@@ -279,6 +281,29 @@ serves no logical replication, so the role is refused, but `X_CLI_BAD_FLAG` now 
 real: advisory lock → `postgresChangeFeed()` → `changeFeedReplicator` → publish to the transport.
 Errors: `X_CLI_BAD_FLAG`, `X_PORT_IN_USE`, `X_ENV_MISSING`, `X_DB_DRIFT`.
 
+## x stop
+
+```bash
+x stop [--timeout 30s] [--json]
+```
+
+Ends **this checkout's** `x dev` and returns only once the next `x dev` there can boot. `As of 30.0`.
+
+| Case | What happens | `--json` `data` |
+|---|---|---|
+| a live `x dev` holds `.x/dev.lock` | SIGTERM to the pid the lock names, then wait for the pid to exit and the lock to clear | `{ stopped: true, pid, port, waitedMs, drained: true }` |
+| Windows | `kill` is TerminateProcess, so no drain runs; `x stop` clears the lock itself | `{ …, drained: false }` |
+| no lock, or a lock naming a dead pid | nothing is signalled, exit 0. A stale lock is left for the next `x dev`'s preflight to clear | `{ stopped: false }` |
+| the pid outlives `--timeout` | `X_DEV_STOP_TIMEOUT`, naming the pid; the lock stays | — |
+
+| Flag | Type | Default | Does |
+|---|---|---|---|
+| `--timeout` | duration (`30s`, `2m`, `PT1M`) | core's default drain deadline (25 s) + the 5 s release floor + 5 s | how long to wait for the drain. An app that configured a longer drain passes it here: `x stop` loads no app |
+
+**The lock is the only authority.** No `--all`, no port lookup, no process-name match: on a box shared by several agents, `pkill` ends someone else's server and `x stop` never does. Dev services an app runs beside `x dev` (its own compose file) are the app's to stop. `X_DEV_ALREADY_RUNNING`'s `fix:` is this command.
+
+Errors: `X_DEV_STOP_TIMEOUT`, `X_CLI_BAD_FLAG` (a `--timeout` that is not a positive duration).
+
 ## x g
 
 ```bash
@@ -308,7 +333,7 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | the write plan, nothing written: **every file the run would touch** — the ones it creates (a slice module already on disk is skipped, not listed) and, `As of 27.6.2`, the ones it EDITS outside the slice (role map, typed handle, API index, manifests, catalogs, the i18n index), in the order the run lists them. `--json`: `data.files` is that list, `data.edits` the subset that already exists, `data.refreshes` the committed contracts (`x.manifest.json`, `openapi.json`) a real run re-projects. `ok: false` with every finding the real run would report — an existing file, an API-index binding already held, a grant or a handle entry it cannot place |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **33 files** (35 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). **`x g query` and `x g backfill` read a table and never create one**, `As of 2026-11-02`: both name a slice holding an `entity.ts`, by `--feature <slice>` or by a name that is one, and neither finding it is `X_FEATURE_REQUIRED`, zero files written, its fix the closest slice's `--feature` line or `x g resource <name>`. `x g resource` and `x g entity` are what create a table. Every generator produces code that passes `x verify` unmodified, and writes it through the app's own Biome when the app has one: `node_modules/.bin/biome` over the TypeScript files that run created, best effort, never a failed `x g`. A slice whose `entity.ts` declares another table under its name gets no foundation from `x g action`/`x g mutator`, and `x g query` there is `X_QUERY_SLICE_ENTITY`. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`, `X_FEATURE_UNKNOWN`, `X_FEATURE_REQUIRED`, `X_QUERY_SLICE_ENTITY`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **36 files** on a dry run in an app scaffolded with its example slice, 38 on the real run after `bun run setup` (`x.manifest.json` and `openapi.json` re-projected; 39 dry with `--admin`) — and `x g resource` in a `--no-example` app, which also gains two `package.json` edits, writes 38 and 40 files (41 and 43 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). **`x g query` and `x g backfill` read a table and never create one**, `As of 2026-11-02`: both name a slice holding an `entity.ts`, by `--feature <slice>` or by a name that is one, and neither finding it is `X_FEATURE_REQUIRED`, zero files written, its fix the closest slice's `--feature` line or `x g resource <name>`. `x g resource` and `x g entity` are what create a table. Every generator produces code that passes `x verify` unmodified, and writes it through the app's own Biome when the app has one: `node_modules/.bin/biome` over the TypeScript files that run created, best effort, never a failed `x g`. A slice whose `entity.ts` declares another table under its name gets no foundation from `x g action`/`x g mutator`, and `x g query` there is `X_QUERY_SLICE_ENTITY`. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`, `X_FEATURE_UNKNOWN`, `X_FEATURE_REQUIRED`, `X_QUERY_SLICE_ENTITY`.
 
 **A name the templates would mangle is `X_CLI_BAD_FLAG` before anything is planned**, each with a `fix:` that runs: a reserved word or a leading digit; a letter outside ASCII (`Über` → `x g entity uber` — it was dropped to `ber`); an already-plural `resource`/`entity` name (`posts` → `x g resource post` — it became `entity('postses')`); and a name whose type spelling an emitted file also uses as a global or local type (`promise`, `omit`, `partial`, `row` → `x g resource promise-resource`).
 
@@ -508,6 +533,8 @@ unappliable.
 
 **A rendered `fix:` names `bunx x` where `node_modules/.bin/x` exists** (`As of 2026-11-02`, both renderers, after `&&` too; a `#` tail and quoted text stay as written). `x` need not be on `PATH`. Identical findings collapse to one, with `meta.count` and `meta.reportedAt`.
 
+**`x env init --production`** (`As of 30.0.0`) writes `.env.production`, the file `x deploy --method compose` reads: `ULTIMATE_ENV=production`, `IMAGE=ultimate-app:dev` (the tag `x build --target docker` makes), `POSTGRES_PASSWORD` and a `DATABASE_URL` naming the compose `db` service with it, `APP_URL` and `SYNC_URL` on localhost, and every secret the app declares or the framework refuses to boot without, 32 random bytes as hex each. Secrets are never printed: `--json` lists the key names (`data.written`). `.gitignore` gains `.env.production` first, the file is mode 600, and a second run refuses (`X_ENV_FILE_EXISTS`): the password is the one the database volume was initialised with. A required key nothing can derive is written empty, named in `data.unfilled`, and exits 1.
+
 **`x env check` over a table naming no environment** reads it as production, as the boot does, and its summary says `checked as production: no ULTIMATE_ENV named`. `x doctor` asks about this machine and stays quiet on that shell. On this machine: `ULTIMATE_ENV=development x env check`.
 
 **The schema dump against the newest snapshot** (`As of 2026-11-02`, `drift`, no database) is `X_DB_DRIFT`: a column in `packages/db/schema/04_tables/<t>.sql` no snapshot records means an applied migration was edited and regenerated. A table hand-written SQL names is exempt.
@@ -578,7 +605,7 @@ names them, so a gate that is green because a suite does not exist has to say so
 every reader sees:
 
 ```text
-✓ 17 of 20 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap
+✓ 19 of 20 steps passed in …ms — 1 skipped: roadmap
 ```
 
 `--json` carries the same fact twice: `steps[].skipped` per step, and `data.skipped` as the list of
@@ -616,7 +643,7 @@ corpus peaked higher with every test an app added — and the default of 22.6.1 
 12-core box with 35 GB free, 1 GiB budgeted a worker) took a 45 GB machine with no swap down.
 A pass now runs as `ceil(files / (workers x 24))` `bun test --parallel=N` processes in sequence,
 the files dealt round-robin over the sorted list, so the peak depends on the width and not on the
-corpus. notificado.co's `x test unit`, 768 files, 12 cores: 22.6.1's default (18 workers, one
+corpus. One adopter's `x test unit`, 768 files, 12 cores: 22.6.1's default (18 workers, one
 process) peaked at 17.1-18.2 GB of process tree in 132-167s; 22.6.2's default (13-14 workers,
 3 batches) at 11.3-12.2 GB in 152-163s, on a box shared at load 30-40. At the same width the split
 costs no wall time within noise (12 workers: 150-158s unbatched, 147s in three batches). The split is a pure function of the file list and the width,
@@ -637,7 +664,7 @@ because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342
 |---|---|
 | `typecheck` | `tsc` across every workspace |
 | `lint` | Biome: no `any`, no default exports, no bare `Error`, no raw colours, no hardcoded user-facing strings |
-| `boundaries` | surface and layer imports, resolved transitively; package tiers in a monorepo |
+| `boundaries` | surface and layer imports, resolved transitively; package tiers in a monorepo; an app's `guards/*.ts`. A guard may spawn a process (`check` is any async function): it runs under this step's deadline, so a slow one sets `stepTimeoutMs.boundaries` in `x.verify.json` |
 | `filesize` | a source file over 500 lines |
 | `package-shape` | a workspace package missing `README.md`, `CLAUDE.md`, `tsconfig.json`, `src/index.ts` |
 | `errors` | every `X_*` code has a runnable fix and a docs page |
@@ -649,7 +676,7 @@ because it was slow ([#342](https://github.com/developerz-ai/ultimate/issues/342
 | `eval` | prompt scores vs. their recorded baselines, and a prompt with no eval at all |
 | `drift` | schema vs migrations |
 | `contract-diff` | the code vs the **committed** `x.manifest.json`: a breaking change without a major bump |
-| `budgets` | per-route JS bytes, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`) |
+| `budgets` | per-route JS bytes, the global style layer every document carries (`X_STYLES_GLOBAL_MISSING`), and every route that reads live rows with no island to receive them (`X_LIVE_ROUTE_NO_ISLAND`). **Builds first** when `.x/build-stats.json` is missing, of an earlier measurement rule, or older than the newest app source: `x build --target static --no-preflight --out .x/verify-static`, under this step's deadline (`stepTimeoutMs.budgets`), never over a deployable `.x/static`. A failed build is the step's verdict, with the build's own findings. `As of 30.0` |
 | `manifest` | the files an agent reads: `x.manifest.json` **and `openapi.json`** freshness — the one check `x manifest --check` runs (`X_MANIFEST_MISSING` / `X_MANIFEST_DRIFT` / `X_MANIFEST_STALE`) — `.env.example`, a hand-written `AGENTS.md` that exists and is under 12kB, and `x.verify.json` naming only steps the gate runs |
 | `roadmap` | framework repo only — every `docs/idea/14-roadmap.md` milestone carries a status marker, and a milestone marked shipped still has the artifacts its own row names |
 
@@ -707,7 +734,7 @@ x build --target docker|binary|static|prebuilt [--tag name] [--out path] [--plat
 | `--tag` | string | `ultimate-app:dev` | image tag, docker target only |
 | `--out` | string | `.x/app` (`.x/static` for `static`) | output path, binary and static targets only; relative to the cwd |
 | `--platform` | string | the host | binary target only: `bun-linux-x64`, `bun-linux-arm64`, `bun-windows-x64` or `bun-darwin-arm64`, passed to Bun as `--target` (the list is `BINARY_PLATFORMS` in `packages/cli/src/cmd-build.ts`). A Windows executable — `--platform bun-windows-x64`, or no `--platform` on a Windows host — is written as `<out>.exe`, and `data.artifact` names that file; `data.platform` echoes the flag. Any other value is `X_CLI_BAD_FLAG` before the gate runs, `fix: x build --target binary --platform bun-linux-x64`. For local runs and CI cross-compiles: a Windows host deploys the Linux image under Docker Desktop ([Deployment](Deployment)). `As of 2026-10-05` |
-| `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` runs right after, as `bun run check` does. Not on `prebuilt`. `As of 22.7` |
+| `--no-preflight` | boolean | off | skip the six static gate steps the build runs first (typecheck, lint, boundaries, filesize, package-shape, errors) — only when `x verify` has run them, as its `budgets` step does when it builds. Not on `prebuilt`. `As of 22.7` |
 
 A flag the chosen target never reads — `--tag` on `binary`/`static`, `--out` on `docker`, `--platform` on anything but `binary`, any of them on `prebuilt` — is `X_CLI_BAD_FLAG` before the gate runs, with `fix: x build --target <target>`.
 
@@ -747,7 +774,7 @@ Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize
 | `mode-per-request` | `render: 'ssr'` / `'stream'` on a surface that *does* allow static | yes — `render: 'static'` |
 | `no-prerender-paths` | `render: 'static'` with dynamic params and no `prerender()`, so nothing enumerated | yes — add `prerender()` |
 
-Both lists come from `prerenderSite`, which writes `.x/static-report.json` beside `.x/build-stats.json`; `x build` deletes any previous copy before it spawns the builder, so a stale inventory can never be reported as this run's. An app whose `apps/web/prerender.ts` does not call `prerenderSite` writes neither file, and `x verify`'s `budgets` step already reds it with `X_BUDGET_UNMEASURED`.
+Both lists come from `prerenderSite`, which writes `.x/static-report.json` beside `.x/build-stats.json`; `x build` deletes any previous copy before it spawns the builder, so a stale inventory can never be reported as this run's. An app whose `apps/web/prerender.ts` does not call `prerenderSite` writes neither file, and `x verify`'s `budgets` step, which ran this build itself, reds it with `X_BUDGET_UNMEASURED`.
 
 Budgets are unchanged and still measured in **real bytes on disk** — `measureDocumentJs` weighs every `<script src>` and every `data-x-entry` island chunk in the emitted document against the files in `out`, which is what catches one engine imported twice. A route that is skipped here is still weighed: it is rendered in memory and thrown away, so a `budget:` on an `ssr` or `isr` route has a number.
 
@@ -809,6 +836,12 @@ Errors: `X_DEPLOY_FAILED` (a step exited non-zero — its `fix:` is that step's 
 DNS-1123 label, or a flag `deploy` does not declare), `X_CONFIG_INVALID` (`--method helm` with no
 `--release` and an `app.config.ts` whose `name` is not a helm release name),
 `X_CLI_UNKNOWN_COMMAND`, `X_CLI_UNEXPECTED`.
+
+**`--method compose` reads `.env.production` before its first step** (`As of 30.0.0`): no file, or a
+`${VAR:?}` of `docker/docker-compose.prod.yml` it leaves empty (and the shell does not set), is
+`X_DEPLOY_ENV_MISSING` naming the variables, and nothing runs; `x env init --production` writes the
+file. A failed step's `X_DEPLOY_FAILED` cause carries the container's own line — the last rendered
+`X_*` refusal, read from the one-shot's output or the serving role's `docker compose logs`.
 
 ### x deploy verify
 
@@ -1356,7 +1389,7 @@ A dry run refuses exactly what the real run would, then stops before step 4. It 
 | `dryRun` | nothing written, no gate run |
 | `app` | whether the root holds `app.config.ts` |
 | `proof` | what `done` rests on: `verify`, `scripts` or `none` |
-| `section` | `{ title, url }` in [Upgrading](Upgrading); `null` when no major is crossed |
+| `section` | `{ title, url, local }` in [Upgrading](Upgrading); `local` is the same section as an `x docs` topic, printed whole offline; `null` when no major is crossed |
 | `pins[]` | `{ file, name, from, to }` |
 | `bun` | `{ from, to, edited[], manual[] }`. `manual[]`: `{ path, line, text, why }`, a site only you can move, listed on every run |
 | `guards` | `{ reported, missing[], differs[] }` from the hop's own `x doctor`. Offered, never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
@@ -1555,6 +1588,24 @@ carries. A code raised at more than one site gets one of them, named in the `fix
 command rather than quoting the line. `docs` is `ERROR_DOCS_URL`, the same URL for every code.
 
 `list` enumerates every registered code, and names under `data.unavailable` any package this process could not import — a list silently missing codes is worse than one that says which. An unregistered code is `X_ERROR_CODE_UNKNOWN` with the nearest real code as its fix; the command never invents an explanation.
+
+## x docs
+
+```bash
+x docs "<question|topic|symbol>" [--limit <n>] [--json]
+```
+
+**The first lookup**, before stating or working around a framework limit. Offline, no app needed. `As of 30.0.0`.
+
+| Reads | Topic |
+|---|---|
+| every installed `@ultimat3/*` package's `README.md`, `CLAUDE.md` and source headers — the app's direct dependencies and the CLI's own | `<pkg>.<module>`, `<pkg>.README#<anchor>` |
+| this wiki, shipped in the `@ultimat3/cli` tarball (`wiki/`) — every page but Error codes | `wiki.<Page>`, `wiki.<Page>#<anchor>`, the anchor GitHub renders |
+| an `X_*` code | redirected to `x errors explain <CODE>`, the one way to a code |
+
+A question is ranked; a `Page#anchor` topic (`x docs Upgrading#28x--2900-entry-by-entry`) prints that **whole section**, subsections included, and nothing past it. `x upgrade --json`'s `section.local` is that topic. A search hit carries a capped excerpt.
+
+The ranking — which hits, in which order — is **not a stable surface**: a minor may reorder it. The `--json` shape is. An install with no `wiki/` still answers from the packages, with an `X_CLI_UNEXPECTED` finding.
 
 ## x fix
 

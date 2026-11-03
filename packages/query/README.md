@@ -2,6 +2,8 @@
 
 A read. Optionally live. Never a mutation — writes are `action`.
 
+`bun add @ultimat3/query` · guide: [Queries And Live Queries](https://github.com/developerz-ai/ultimate/wiki/Queries-And-Live-Queries)
+
 ```ts
 import { query, t } from '@ultimat3/query';
 

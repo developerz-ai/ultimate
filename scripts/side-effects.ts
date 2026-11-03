@@ -107,6 +107,10 @@ export const SIDE_EFFECTS_UNDECLARED: readonly string[] = [
  * module running nothing at import, or that an entry imports bare (unlisted, that import is dropped).
  */
 export const SIDE_EFFECTS_BY_USE: Readonly<Record<string, string>> = Object.freeze({
+  'packages/core/src/breaker.ts':
+    "registers X_BREAKER_OPEN's retry class, read only when that error is classified — and only this module's own breaker raises it, on the server.",
+  'packages/core/src/outbound-errors.ts':
+    "registers the ten X_OUTBOUND_* retry classes, read only when one is classified — and only this module's own constructors build one, inside a server's outbound() call.",
   'packages/core/src/context.ts':
     "installs the logger's context provider, which answers only inside a context — and only this module's own runWithContext / withChildContext can open one. In a browser AsyncLocalStorage is stubbed, so the provider can never answer at all.",
   'packages/core/src/lifecycle-errors.ts':

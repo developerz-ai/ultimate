@@ -2,6 +2,17 @@
   "name": "@ultimat3/core",
   "version": "29.4.0",
   "description": "Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "errors",
+    "env",
+    "config",
+    "telemetry",
+    "retry"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Configuration",
   "license": "MIT",
   "type": "module",
   "sideEffects": [
@@ -19,7 +30,11 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./page": "./src/page.ts"
+    "./page": "./src/page.ts",
+    "./internal/error-status": "./src/error-status-declared.ts",
+    "./outbound": "./src/outbound-subpath.ts",
+    "./render-node": "./src/render-node.ts",
+    "./render-nodes": "./src/render-nodes.ts"
   },
   "files": [
     "src",

@@ -4,9 +4,9 @@
 // the `solid-js` specifier resolves to the server build under `bun test`, where no effect runs.
 
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { attachRef, byTag, one, renderNodes } from '@ultimat3/core/render-nodes';
 import type { FormIssue } from '../form/form-issue';
 import { useForm } from '../form/use-form';
-import { attachRef, byTag, one, renderNodes } from '../jsx-probe-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import { Form } from './Form';
 

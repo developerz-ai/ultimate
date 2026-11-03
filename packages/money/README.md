@@ -4,6 +4,8 @@
 `0.1 + 0.2 !== 0.3`, so no amount is ever a float. `Money` carries `minor` and `currency` together
 — plus an optional `scale` — and arithmetic across two currencies throws instead of guessing.
 
+`bun add @ultimat3/money` · guide: [Money](https://github.com/developerz-ai/ultimate/wiki/Money)
+
 `Money` **is** `@ultimat3/schema`'s `MoneyValue`, and so is `@ultimat3/entity`'s: one declaration
 at tier 0, aliased twice, never restated. A row a `money()` column decodes is therefore a `Money`
 already — `add(row.price, shipping)` and `formatMoney(row.price, locale)` take it with no cast.

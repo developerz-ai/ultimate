@@ -15,6 +15,7 @@ import {
   nanoid,
   renderThrowable,
 } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import type { MailDriver, MailMessage, SendResult } from './driver';
 import { messageHeaders, resultFor } from './driver';
 import { sendFailed } from './errors';
@@ -144,7 +145,10 @@ export function resendMailDriver(options: ResendDriverOptions): MailDriver {
   );
   // A bare reference to `globalThis.fetch` risks "Illegal invocation" on some hosts; closing
   // over the call keeps it detached from any receiver, in production and in tests alike.
-  const doFetch: MailFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  // `outbound()` always hands it the attempt's signal.
+  const doFetch: MailFetch =
+    options.fetch ??
+    ((input, init) => globalThis.fetch(input, { ...init, signal: init.signal ?? null }));
 
   return {
     name: 'resend',
@@ -160,12 +164,22 @@ export function resendMailDriver(options: ResendDriverOptions): MailDriver {
 
       let response: Response;
       try {
-        response = await doFetch(`${baseUrl}/emails`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(bodyFor(message, from)),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
+        // Through core's `outbound()`: `timeoutMs` bounds the WHOLE send, and the ambient job's
+        // signal ends it. Retried on a 5xx or a throttle because the key above makes a replay the
+        // same one email (`idempotent: true`); the final answer comes back for the table below.
+        response = await outboundResponse(
+          {
+            url: `${baseUrl}/emails`,
+            vendor: 'resend',
+            dial: 'named',
+            method: 'POST',
+            idempotent: true,
+            deadlineMs: timeoutMs,
+            headers,
+            body: JSON.stringify(bodyFor(message, from)),
+          },
+          { fetch: doFetch },
+        );
       } catch (error) {
         // DNS/TLS/reset, or the timeout firing — none of them got far enough to have a status,
         // and every one of them can succeed unchanged on the job's next attempt.

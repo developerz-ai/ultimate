@@ -71,9 +71,18 @@ describe('the page itself', () => {
     expect(page).toContain('X_ROUTE_NOT_FOUND');
     expect(page).toContain('>404<');
     expect(page).toContain(`href="${ERROR_PAGE_LINKS.repository}"`);
-    expect(page).toContain(`href="${ERROR_PAGE_LINKS.homepage}"`);
     expect(ERROR_PAGE_LINKS.repository).toBe('https://github.com/developerz-ai/ultimate');
-    expect(ERROR_PAGE_LINKS.homepage).toBe('https://www.developerz.ai');
+  });
+
+  test("a stranger's site carries no vendor homepage: the repository is the page's one outside link", () => {
+    expect(Object.keys(ERROR_PAGE_LINKS)).toEqual(['repository']);
+    for (const status of new Set(Object.values(ERROR_STATUS))) {
+      const page = renderErrorPage(input({ status }));
+      expect(page).not.toContain('developerz.ai"');
+      expect(page).not.toContain('>developerz.ai<');
+      const outside = [...page.matchAll(/href="(https?:[^"]+)"/g)].map((match) => match[1]);
+      expect(outside).toEqual([ERROR_PAGE_LINKS.repository]);
+    }
   });
 
   test('renders no key literal — every string it shows is in the catalog', () => {

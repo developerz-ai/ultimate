@@ -351,7 +351,22 @@ describe('sesEventReceiver — bodies and configuration', () => {
     };
     const instance = sesEventReceiver({ topicArns: [TOPIC_ARN], clock, fetch });
     await instance.receive(snsRequest(snsBody(await sesNotification(signer, SES_BOUNCE))));
-    expect(seen[0]?.redirect).toBe('error');
+    // Through `outbound()`: the hop is taken by hand, never by the platform, and a 3xx is refused.
+    expect(seen[0]?.redirect).toBe('manual');
+    const redirected = sesEventReceiver({
+      topicArns: [TOPIC_ARN],
+      clock,
+      fetch: async () =>
+        new Response('', { status: 302, headers: { location: 'https://evil.test/' } }),
+    });
+    const error = await redirected
+      .receive(snsRequest(snsBody(await sesNotification(signer, SES_BOUNCE))))
+      .then(
+        () => expect.unreachable('a redirected download was followed'),
+        (thrown: unknown) => thrown as { code?: string; cause?: string },
+      );
+    expect(error.code).toBe('X_MAIL_EVENT_PROVIDER_UNREACHABLE');
+    expect(error.cause).toContain('HTTP 302');
   });
 
   test.each([[[]], [['not-an-arn']]])('topicArns %p is refused at construction', (topicArns) => {

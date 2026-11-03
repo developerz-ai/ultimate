@@ -1,6 +1,6 @@
 // The surface stylesheet URL across two real BOOTS of one app: `loadApp` + the island store, the
 // path a container takes, each in its own process. 22.3.2–22.3.4 minted a different URL per boot of
-// one image (notificado.co): `.scss` registers in Bun's `onLoad`, whose order is the loader's
+// one image (one adopter): `.scss` registers in Bun's `onLoad`, whose order is the loader's
 // parallel fetch, and the joined bytes followed it. Same sheets, same URL, every boot.
 
 import { describe, expect, test } from 'bun:test';

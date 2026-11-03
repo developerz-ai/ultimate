@@ -3,7 +3,13 @@
 // — `FormIssue.message` is a schema's diagnostic text, never a translated string.
 
 import { renderThrowable, stringField } from '@ultimat3/core';
-import { formatFieldPath, type IssuePathSegment, parseFieldPath } from './field-path';
+import {
+  formatPath,
+  issueRuleFacts,
+  type SchemaIssueParams,
+  type StandardResult,
+} from '@ultimat3/schema';
+import { parseFieldPath } from './field-path';
 
 /**
  * One rejected value, addressed by the path the schema gave it.
@@ -18,47 +24,30 @@ export interface FormIssue {
   readonly message: string;
   /** The framework code that carried it, when a rejection named one. */
   readonly code: string | undefined;
-}
-
-/** One issue as a conforming schema library reports it. */
-export interface FormValidationIssue {
-  readonly message: string;
-  readonly path?: readonly (PropertyKey | IssuePathSegment)[] | undefined;
+  /**
+   * Which rule refused — `@ultimat3/schema`'s `SCHEMA_RULES` (`string.min`), the same from a local
+   * parse and a server rejection. What `messageFor` keys on, with `params` interpolated. Absent
+   * for a library that names none, so a translator falls back to `message`.
+   */
+  readonly rule?: string;
+  /** The declared facts the rule names (`{ min: 3 }`), for interpolation. Scalars only. */
+  readonly params?: SchemaIssueParams;
 }
 
 /**
- * Standard Schema's result: `issues` present is the failure, absent is the pass.
- *
- * The success member holds `value: unknown` and nothing reads it — the type says what the runtime
- * does. A client-side parse is a latency optimisation, so its OUTPUT is not something the server
- * agreed to, and typing it would invite a caller to submit it.
+ * A local parse's issues, addressed by path. A result with none answers `[]`. Standard Schema's own
+ * result, `@ultimat3/schema`'s types: its success `value` is never read, because a client-side
+ * parse is a latency optimisation and its OUTPUT is nothing the server agreed to.
  */
-export type FormValidationResult =
-  | { readonly value: unknown; readonly issues?: undefined }
-  | { readonly issues: readonly FormValidationIssue[] };
-
-/**
- * The minimum of an input schema this package needs — Standard Schema's one member, declared
- * structurally so `@ultimat3/ui` needs no dependency edge on `@ultimat3/schema`. An `action()`'s
- * own `input` satisfies it as written.
- *
- * The OUTPUT type is deliberately absent: a client-side parse is a latency optimisation, its value
- * is thrown away, and typing it would invite a caller to submit it.
- */
-export interface FormSchema {
-  readonly '~standard': {
-    readonly validate: (value: unknown) => FormValidationResult | Promise<FormValidationResult>;
-  };
-}
-
-/** A local parse's issues, addressed by path. A result with none answers `[]`. */
-export function issuesFromValidation(result: FormValidationResult): readonly FormIssue[] {
+export function issuesFromValidation(result: StandardResult<unknown>): readonly FormIssue[] {
   const issues = result.issues;
   if (issues === undefined) return [];
   return issues.map((issue) => ({
-    path: formatFieldPath(issue.path),
+    path: formatPath(issue.path),
     message: issue.message,
     code: undefined,
+    // Schema's one reader: a non-string rule dropped, scalar params only, total.
+    ...issueRuleFacts(issue),
   }));
 }
 
@@ -71,8 +60,8 @@ const LIST_PREFIX = 'failed validation: ';
 /**
  * `formatIssues()`'s separator, on both sides of the wire. A message that itself contains `'; '`
  * splits wrongly here — and degrades VISIBLY, because a fragment whose head is not a field path
- * lands at the form rather than on a control. That is the cost of the wire carrying no structured
- * issue list; see this file's note in `README.md`.
+ * lands at the form rather than on a control. Only for a rejection that lost its `meta.issues`
+ * (`toProblem` serves the list since 2026-10); see this file's note in `README.md`.
  */
 const ISSUE_SEPARATOR = '; ';
 
@@ -109,7 +98,12 @@ function issuesFromMeta(rejection: object, code: string | undefined): readonly F
   for (const entry of held as readonly unknown[]) {
     const message = stringField(entry, 'message');
     if (message === undefined) return null;
-    issues.push({ path: stringField(entry, 'path') ?? '', message, code });
+    issues.push({
+      path: stringField(entry, 'path') ?? '',
+      message,
+      code,
+      ...issueRuleFacts(entry),
+    });
   }
   return issues.length === 0 ? null : issues;
 }

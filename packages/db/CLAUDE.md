@@ -223,7 +223,7 @@ consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`. Kee
 - **`reapBranches` sweeps branches of THIS database**: the marker is `ultimate:branch:<base>:<iso>`,
   split on the ISO tail; an older one-segment marker or an unparseable `createdAt` is skipped, never
   dropped. `@ultimat3/cli`'s `ls`/`drop` scope by name prefix.
-- **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one (`default-client.ts`), and a read only inside `withReplicaReads(fn)` (`replica-scope.ts`). `withTransaction` stays on the primary; `isPlainRead` is an allow-list. Full rule: `docs/history/db.md`.
+- **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one (`default-client.ts`), and a read only inside `withReplicaReads(fn)` (`replica-scope.ts`). `withTransaction` stays on the primary; `isPlainRead` is an allow-list. The breaker is core's `breaker({ name: 'db.replica' })`: `parked` means `state() === 'open'`, routing calls `admit()` last, and after the cooldown one read probes the replica (`replica-client-probe.test.ts`). Full rule: `docs/history/db.md`.
 - **This package owns no "is this SQL a write?" lexer.** Layers: `ensureReadOnlyRole()`, `readOnlyQuery()` (one statement; it throws), then `@ultimat3/mcp`. Full rule: `docs/history/db.md`.
 
 ```bash

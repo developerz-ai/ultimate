@@ -19,7 +19,7 @@ runs a route that did not ask for it.** The server enforces both, before any app
 ```ts
 // app.config.ts
 export const config = defineConfig({
-  name: 'notificado',
+  name: 'acme',
   navigation: { client: ['app'] },
 });
 ```

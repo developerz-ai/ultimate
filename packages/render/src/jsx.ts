@@ -4,8 +4,7 @@
  * thing that decides what a tree means. This is what the `.tsx` loader compiles every element to.
  */
 
-/** Registered on the global symbol registry: two copies of this module must agree on a node. */
-export const JSX_NODE: unique symbol = Symbol.for('ultimate.render.jsx') as never;
+import { JSX_NODE } from '@ultimat3/core/render-node';
 
 export type JsxProps = Readonly<Record<string, unknown>>;
 

@@ -3,6 +3,7 @@
 // and its usage may hold.
 import { connections, RUN_EVENT_KINDS, RUN_STATUSES, runEvents, runs } from '@postly/db';
 import { relationsFor, sealedFields } from '@ultimat3/entity';
+import { maskSensitive } from '@ultimat3/schema';
 import { expect, unitTest } from '@ultimat3/testing';
 import { CONNECTION_PAGE, ConnectInput, ConnectionView, RunKeyIssued, RunStarted } from './entity';
 
@@ -31,6 +32,17 @@ unitTest('a connection is tenant-scoped, and its credential and its exit are sea
 
 unitTest('the connection view names no credential, and no org', () => {
   expect(ConnectionView.$keys).toEqual(['id', 'label', 'createdAt']);
+});
+
+unitTest('the credential is sent in and never written down: .sensitive() masks it', () => {
+  expect(ConnectInput.node.properties?.['credential']?.sensitive).toBe(true);
+  const input = { orgId: ORG, label: 'shop', credential: 'hunter2' };
+  // What an audit record or `x jobs show` holding this input is given — the label stays legible.
+  expect(maskSensitive(ConnectInput, input, '[redacted]')).toEqual({
+    orgId: ORG,
+    label: 'shop',
+    credential: '[redacted]',
+  });
 });
 
 unitTest('a view that names the credential is refused where it is declared', () => {

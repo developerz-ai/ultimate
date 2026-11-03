@@ -2,6 +2,14 @@
 
 SolidJS design system. Semantic tokens, SCSS modules, dark + RTL by construction.
 
+`bun add @ultimat3/ui` · guide: [UI Components](https://github.com/developerz-ai/ultimate/wiki/UI-Components)
+
+```tsx
+import { Button } from '@ultimat3/ui';
+
+export const Save = (props: { label: string }) => <Button type="submit">{props.label}</Button>;
+```
+
 **[`CATALOG.md`](CATALOG.md) is the reference** — every component, every prop, every
 token, generated from source by `bun run catalog` and drift-checked by
 `catalog.test.ts`. Read it instead of reading `src/`.
@@ -601,7 +609,8 @@ binding over an existing `action`, the way `llm()` is a factory over one.
 
 ```tsx
 import { t } from '@ultimat3/i18n';
-import { Field, Form, type FormSchema, Input, useForm, valuesOfForm } from '@ultimat3/ui';
+import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { Field, Form, Input, useForm, valuesOfForm } from '@ultimat3/ui';
 
 // In an app this is `InferInput<typeof createPost.input>` — an object type, not an interface,
 // which is what lets `valuesOfForm`'s `Record<string, unknown>` be narrowed to it below.
@@ -610,8 +619,8 @@ interface Post {
   readonly id: string;
 }
 
-// The action and its typed client, both the app's: `createPost.input` IS a `FormSchema`.
-declare const createPost: { readonly input: FormSchema };
+// The action and its typed client, both the app's: `createPost.input` IS a Standard Schema.
+declare const createPost: { readonly input: StandardSchemaV1 };
 declare const api: { createPost(values: CreatePostInput): Promise<Post> };
 
 export function CreatePostForm() {
@@ -644,19 +653,34 @@ export function CreatePostForm() {
 | Rule | Why |
 |---|---|
 | **`submit` is required and is the only producer of `succeeded`** | a form that decides for itself that a value is acceptable is a security defect. The client-side parse is a latency optimisation; the action re-parses server-side on every path |
-| the local parse's **value** is discarded — only its issues are read | otherwise the browser decides what the server was asked to store. `FormSchema` deliberately has no output type |
-| a `name` attribute and an issue path are the **same string** (`items[0].price`) | one grammar, so a rejection finds its control with no per-form mapping table. `formatFieldPath` / `parseFieldPath` are the two directions; a name the grammar cannot read is `X_UI_FORM_PATH_INVALID`, refused where it is DECLARED |
+| the local parse's **value** is discarded — only its issues are read | otherwise the browser decides what the server was asked to store. The binding takes any `StandardSchemaV1` and never reads its output |
+| a `name` attribute and an issue path are the **same string** (`items[0].price`) | one grammar, so a rejection finds its control with no per-form mapping table. `@ultimat3/schema`'s `formatPath` / this package's `parseFieldPath` are the two directions; a name the grammar cannot read is `X_UI_FORM_PATH_INVALID`, refused where it is DECLARED |
 | an issue whose path matches no declared field goes to **`formErrors`**, never to a neighbouring control | a form that silently drops "the server rejected this" is worse than one with no binding at all. A near miss (`items` against a form holding `items[0].price`) is one of these |
 | every message is the app's, through `messageFor` | a schema issue (`expected number`) is diagnostic text, not a user-facing string. The framework ships the mapping and **no copy table** — there is no `ui.form.*` key to override. A translator that answers `''` or throws falls back to the diagnostic text, the way a missing catalog key renders `⟦key⟧` |
 | a second `submit` while one is in flight **joins** it | a double click is not a second write |
 
-**The wire carries no structured issue list yet.** A server-side validation failure arrives as
-`X_INPUT_INVALID` with the issues rendered into `cause` (`title: too short; items[0].price:
-expected number`) — `packages/action/src/errors.ts` puts nothing in `meta`, and `toProblem`
-(`packages/http/src/error-facts.ts`) has no `issues` member — so `issuesFromRejection` reads
-`meta.issues` where it exists and parses that line where it does not. It binds a fragment to a
-field only when the head is a declared path, so a message holding `'; '` or `': '` degrades to a
-form-level error rather than to a wrong control.
+**The wire carries the structured issue list.** A server-side validation failure arrives as
+`X_INPUT_INVALID` with `issues` on the problem document (`toProblem`,
+`packages/http/src/error-facts.ts`), rebuilt by the typed client into `meta.issues`
+(`packages/action/src/wire-issues.ts`) — `path`, `message`, and the `rule` and `params` a local
+parse gives too. `issuesFromRejection` reads `meta.issues` first; only a rejection that lost it (a
+proxy's body, an old server) falls back to parsing the `cause` line, binding a fragment to a field
+only when its head is a declared path, so a message holding `'; '` degrades to a form-level error.
+
+**Translate on `rule`, never on `message`.** `FormIssue.rule` is `@ultimat3/schema`'s
+`SCHEMA_RULES` (`string.min`, `enum`, `required`, …) and `FormIssue.params` its declared facts
+(`{ min: 3 }`), identical from the local parse and the server:
+
+```ts
+import type { FormIssue } from '@ultimat3/ui';
+
+declare const t: (key: string, params?: FormIssue['params']) => string;
+
+const messageFor = (issue: FormIssue): string =>
+  issue.rule === undefined ? t('form.invalid') : t(`form.${issue.rule}`, issue.params);
+```
+
+`rule` is absent for a library that names none; the translator falls back as above.
 
 ### The submit state, and why `disabled` is refused
 

@@ -7,6 +7,7 @@
  */
 
 import { renderFixShellArg } from '@ultimat3/core';
+import { ISLAND_NODE } from '@ultimat3/core/render-node';
 import { IslandInvalidError } from './errors';
 import type { JsonValue } from './island-props';
 import type { JsxProps } from './jsx';
@@ -17,9 +18,6 @@ import type { JsxProps } from './jsx';
  * opening a file or following an import.
  */
 export const ISLAND_EXTENSION = '.island.tsx';
-
-/** Registered globally so two copies of this module agree on what an island node is. */
-export const ISLAND_NODE: unique symbol = Symbol.for('ultimate.render.island') as never;
 
 /** Characters that would break out of the `data-x-entry` attribute the specifier lands in. */
 const UNSAFE_SPECIFIER = /["'`<>\s\\]/;

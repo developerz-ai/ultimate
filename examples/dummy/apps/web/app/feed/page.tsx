@@ -138,7 +138,7 @@ export const config = defineRoute({
    * `x build --target static`), against main's 169,509 the same way. why: +640 B (page boot +359,
    * island +281) — a read hook answers the same object until what it shows moved (`keptAnswer`),
    * a `where` reader is told only of keys it shows or keeps, `useRecords`' opt-in `throttleMs`,
-   * and the store's per-type index; on bank-integrations' run page 260 → 80 notifications.
+   * and the store's per-type index; on one adopter's run page 260 → 80 notifications.
    */
   /*
    * raised 166.5kb → 167.5kb (29.3.2), measured 171,472 B: a joined channel keeps the rows it
@@ -151,7 +151,11 @@ export const config = defineRoute({
   // measured: 171757 B (x build --target static) — why: a remote error carries the server's
   // `requestId` (core's `withRequestId`, in the transport the page boot holds) — raised 167.6kb →
   // 168kb (30.0.0): page boot 78,326 → 78,468 B (+142), island + inline runtime +51.
-  budget: { js: '168kb' },
+  // measured: 172705 B (2026-11-03; x build --target static, against main's 171,757) — why:
+  // core's shared refusal-title table gained wave 3's 12 codes (`X_OUTBOUND_*`, `X_BREAKER_OPEN`,
+  // `X_ERROR_DECLARATION_INVALID`, `X_SCHEMA_SENSITIVE_OUTPUT`: 878 B of titles), so a refusal
+  // with one of them reaching the island is still titled — raised 168kb → 169kb (30.0.0): feed island +948 B.
+  budget: { js: '169kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 

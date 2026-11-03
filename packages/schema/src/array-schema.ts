@@ -2,7 +2,16 @@
 // bounds. Its own file because the bounds are a declaration-time refusal as well as a parse rule,
 // and `validators.ts` was at the line ceiling.
 
-import { type AnySchema, checkOf, fail, failWith, makeSchema, pass, type Schema } from './builder';
+import {
+  type AnySchema,
+  checkOf,
+  failWith,
+  makeSchema,
+  mistyped,
+  pass,
+  rejected,
+  type Schema,
+} from './builder';
 import { describeValue, expected } from './describe-value';
 import { BoundsInvalidError } from './errors';
 import type { SchemaNode } from './node';
@@ -57,14 +66,18 @@ export function arraySchema<S extends AnySchema>(
     ...(max === undefined ? {} : { maxItems: max }),
   };
   return makeSchema<readonly InferInput<S>[], InferOutput<S>[]>(node, (value, path) => {
-    if (!Array.isArray(value)) return fail(path, expected('an array', value));
+    if (!Array.isArray(value)) return mistyped(path, expected('an array', value), value, 'array');
     // The count before the items: an over-long array is refused without reading a member, so a
     // caller's 10,000-element body costs one comparison, not 10,000 item checks.
     if (min !== undefined && value.length < min) {
-      return fail(path, expected(`an array of at least ${items(min)}`, value));
+      return rejected(path, expected(`an array of at least ${items(min)}`, value), 'array.min', {
+        min,
+      });
     }
     if (max !== undefined && value.length > max) {
-      return fail(path, expected(`an array of at most ${items(max)}`, value));
+      return rejected(path, expected(`an array of at most ${items(max)}`, value), 'array.max', {
+        max,
+      });
     }
     const issues: StandardIssue[] = [];
     const out: unknown[] = [];

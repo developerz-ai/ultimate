@@ -47,13 +47,15 @@ read the envelope instead — every finding carries its own `fix`, and the secon
 
 The envelope is input, and `data.due` is the script's count, not the verdict. Some reasons do settle
 it: `nothing_ships` leaves nothing to release, `awaiting_tag` is one already cutting, and a major
-stays a maintainer's.
+stays a maintainer's — inside the major window: from v30, at most one major per 90 days
+([`wiki/Stability.md`](../../wiki/Stability.md)), and only a security fix that cannot be
+non-breaking takes the exception (`--security <advisory-id>`).
 
 | `data.due` | `data.reason` | What to file |
 |---|---|---|
 | `false` | `nothing_ships` | nothing |
 | `false` | `settling` | usually nothing — the whole window merged in the last `data.settleHours` hours, and next week's checkup sees it |
-| `false` | `major_needs_a_maintainer` | nothing, unless no open issue already says a major is pending: then one issue titled `Major release pending: <data.next>`, listing `data.breaking`, for a maintainer. Check with `gh issue list --state open --search "Major release pending: <next> in:title" --json number,title`, where `<next>` is `data.next` |
+| `false` | `major_needs_a_maintainer` | with `data.windowOpensOn` set: nothing — the major window ([`wiki/Stability.md`](../../wiki/Stability.md)) is closed until that date, `scripts/release.ts` refuses the major (`X_RELEASE_MAJOR_WINDOW`), and the break belongs on `next`. Without it: nothing, unless no open issue already says a major is pending: then one issue titled `Major release pending: <data.next>`, listing `data.breaking`, for a maintainer. Check with `gh issue list --state open --search "Major release pending: <next> in:title" --json number,title`, where `<next>` is `data.next` |
 | `false` | `awaiting_tag` | nothing — the release PR merged and `release-tag.yml` has not tagged it yet: watch `gh run list --workflow release-tag.yml --limit 5 --json status,conclusion,databaseId,displayTitle,headSha,url,createdAt` and file only on a failed run |
 | `false` | `X_RELEASE_HEAD_NOT_MAIN` (in `findings`) | nothing — HEAD is not the tip of `origin/main`; run `git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main && git checkout main`, then re-run |
 | `true` | — | shipping commits have waited: judge them above. When a release is needed, one ask: **Release `<data.next>`**, opening with your reason and listing `data.shipping` — unless `data.detail` names an ask already open |
@@ -109,7 +111,7 @@ any refusal above and never read it as "none open". A due run names the one it f
 ## Rows
 
 - `release-due` — Run the release-due command and read its envelope: handle refusals and HEAD recovery, file nothing for `nothing_ships`, and failing only when you judge a release is needed now, with your reason.
-- `major-release-pending` — On `major_needs_a_maintainer`, check for an open pending-major issue before filing the maintainer issue for `data.next` with `data.breaking`.
+- `major-release-pending` — On `major_needs_a_maintainer`, file nothing while `data.windowOpensOn` is set; otherwise check for an open pending-major issue before filing the maintainer issue for `data.next` with `data.breaking`.
 - `release-tag-run` — On `awaiting_tag`, watch `release-tag.yml` runs and file only on a failed run.
 - `release-ask-open` — When due, check for an open ask titled exactly `Release <next>`; file nothing if one is already open.
 - `bump-pr-open` — For `data.next`, use the callable bump-PR lookup; an open release PR means file nothing and cut nothing, while a lookup refusal requires reading its findings, never treating it as none open.

@@ -16,6 +16,7 @@ import {
   signAwsRequest,
   systemClock,
 } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import { base64Utf8 } from './base64';
 import type { MailDriver, MailMessage, SendResult } from './driver';
 import { resultFor } from './driver';
@@ -133,7 +134,10 @@ export function sesMailDriver(options: SesDriverOptions): MailDriver {
   );
   const retain = resolveRetainMime('sesMailDriver', options.retainMime);
   const clock = options.clock ?? systemClock;
-  const doFetch: MailFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  // `outbound()` always hands it the attempt's signal.
+  const doFetch: MailFetch =
+    options.fetch ??
+    ((input, init) => globalThis.fetch(input, { ...init, signal: init.signal ?? null }));
 
   return { name: 'ses', send };
 
@@ -161,15 +165,24 @@ export function sesMailDriver(options: SesDriverOptions): MailDriver {
         service: 'ses',
         clock,
       });
-      response = await doFetch(signed.url, {
-        method: 'POST',
-        headers: signed.headers,
-        body,
-        signal: AbortSignal.timeout(timeoutMs),
-      });
+      // Through core's `outbound()`: `timeoutMs` bounds the send, the ambient job's signal ends it,
+      // and it is ONE attempt — a signed POST with no idempotency header is never replayed.
+      response = await outboundResponse(
+        {
+          url: signed.url,
+          vendor: 'ses',
+          dial: 'named',
+          method: 'POST',
+          deadlineMs: timeoutMs,
+          headers: signed.headers,
+          body,
+        },
+        { fetch: doFetch },
+      );
     } catch (error) {
-      // The signer's own refusals are coded and say which input to fix; only the network is left.
-      if (isUltimateError(error)) throw error;
+      // The signer's own refusals are coded and say which input to fix, and a caller's abort is
+      // its own: only the network — `outbound()`'s transport codes — is left to translate.
+      if (isUltimateError(error) && !error.code.startsWith('X_OUTBOUND_')) throw error;
       throw sendFailed({
         driver: 'ses',
         stage: 'request',
