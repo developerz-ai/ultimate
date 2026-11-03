@@ -154,3 +154,17 @@ in the sense this page forbids: its question is the platform, which no Ubuntu ru
 | checkout with the runner's default `core.autocrlf` | that is a contributor's clone; `.gitattributes` has to make it LF |
 | a path-heavy unit subset, `./`-prefixed, not the full suite | ~2× slower runner, 25-minute budget; bare, `bun test packages/core` also selects `examples/dummy/packages/core` |
 | `continue-on-error: true`, outside `verify`'s `needs` | lands red first so the sweep's rows can watch it turn green; flipped to required in the diff that makes it green |
+
+## The other workflows
+
+Moved out of root `CLAUDE.md` on 2026-11-03 to make room for the facts `AGENTS.md` carried alone
+when it became a symlink to `CLAUDE.md`. `ci.yml` runs on pushes to `main`, `next` and `release/*`.
+
+| Workflow | Trigger → what it does |
+|---|---|
+| `release-tag.yml` | green `ci` push of a release commit to `main` or `release/*` at an untagged version → annotated tag, Release, `release.yml` dispatched |
+| `release.yml` | that dispatch or a **published** Release → npm via OIDC, after `check` |
+| `registry-audit.yml` | daily → a `registry-drift` issue on disagreement |
+| `deploy-social-demo.yml` | green `ci` on `main` → the demo image |
+| `wiki.yml` | push to `main` → the wiki |
+| `tutorial-run.yml` | push to `main` touching a tutorial or a generator → tutorials 1–4 fence by fence, `X_DOC_TUTORIAL_DIVERGED`; never on a PR, never in `ci` |

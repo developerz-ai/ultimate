@@ -1392,6 +1392,7 @@ A dry run refuses exactly what the real run would, then stops before step 4. It 
 | `section` | `{ title, url, local }` in [Upgrading](Upgrading); `local` is the same section as an `x docs` topic, printed whole offline; `null` when no major is crossed |
 | `pins[]` | `{ file, name, from, to }` |
 | `bun` | `{ from, to, edited[], manual[] }`. `manual[]`: `{ path, line, text, why }`, a site only you can move, listed on every run |
+| `agentsMd` | `link`: `AGENTS.md` was byte-identical to `CLAUDE.md` and the hop makes it a relative symlink to it · `linked`: already one · `differs`: two different files, left alone; merge what only `AGENTS.md` says into `CLAUDE.md`, then `ln -sf CLAUDE.md AGENTS.md` · `none`: one of the two is missing · `null`: no hop planned |
 | `guards` | `{ reported, missing[], differs[] }` from the hop's own `x doctor`. Offered, never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
 | `manifest` | `{ ok, findings[] }`. A failure does not stop the gate |
 | `verify` | `{ ok, summary, failed[], findings[] }`, each finding `{ step?, code, cause, fix, at? }` |

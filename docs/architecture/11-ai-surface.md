@@ -177,7 +177,7 @@ So the split follows the verifiability line:
 | Volume | large, structured, machine-read | small, prose, human-read |
 | Update cadence | every build | rarely |
 
-Ultimate never generates prose documentation at runtime. `x new` scaffolds `AGENTS.md` as a terse editable stub, not an essay.
+Ultimate never generates prose documentation at runtime. `x new` scaffolds `CLAUDE.md` as a terse editable stub, not an essay, and `AGENTS.md` as a relative symlink to it — one source, so the two names cannot drift (a copy only where Windows refuses the link).
 
 ## A generated app's own MCP surface
 

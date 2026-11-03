@@ -25,6 +25,11 @@ export interface GeneratedSourceFile {
   readonly path: string;
   readonly contents: string | Uint8Array;
   readonly merge?: undefined;
+  /**
+   * A sibling path this file is a RELATIVE symlink to (`AGENTS.md` → `CLAUDE.md`). `contents` is
+   * then the target's own text: the copy `write-generated.ts` writes where the OS refuses a link.
+   */
+  readonly link?: string;
 }
 
 /**

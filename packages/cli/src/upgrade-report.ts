@@ -3,6 +3,7 @@
 
 import { msg } from './messages';
 import type { JsonValue } from './output';
+import type { AgentsLinkState } from './upgrade-agents-link';
 import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import type { GateFinding, HopGate, RepoScript } from './upgrade-gate';
 import type { UpgradeHop, UpgradePin } from './upgrade-plan';
@@ -66,8 +67,9 @@ export const humanLines = (input: {
   readonly gate: HopGate | undefined;
   readonly scripts: readonly RepoScript[];
   readonly then: string;
+  readonly agentsMd?: AgentsLinkState;
 }): readonly string[] => {
-  const { hop, writes, gate, scripts, then } = input;
+  const { hop, writes, gate, scripts, then, agentsMd } = input;
   return [
     ...(hop.section === null
       ? []
@@ -78,6 +80,9 @@ export const humanLines = (input: {
     ...writes.manual.map((site) =>
       msg('cli.upgrade.bunManual', { path: site.path, line: site.line, why: site.why }),
     ),
+    ...(agentsMd === 'link' || agentsMd === 'differs'
+      ? [msg(agentsMd === 'link' ? 'cli.upgrade.agentsMd.link' : 'cli.upgrade.agentsMd.differs')]
+      : []),
     ...(gate?.guards.missing ?? []).map((guard) => msg('cli.upgrade.guard', { fix: guard.add })),
     ...(gate?.guards.differs ?? []).map((guard) =>
       msg('cli.upgrade.guard', { fix: guard.refresh }),
@@ -105,6 +110,8 @@ export const report = (input: {
   readonly gate: HopGate | undefined;
   readonly scripts: readonly RepoScript[];
   readonly then: string;
+  /** What the hop does to `AGENTS.md` (`upgrade-agents-link.ts`); absent when no hop is planned. */
+  readonly agentsMd?: AgentsLinkState;
 }): JsonValue => {
   const { hop, done, dryRun, pins, bunFrom, bunTo, writes, app, gate, scripts, then } = input;
   return asJson({
@@ -120,6 +127,7 @@ export const report = (input: {
       ? []
       : pins.map((pin) => ({ file: pin.file, name: pin.name, from: pin.spec, to: hop.to })),
     bun: { from: bunFrom, to: bunTo, edited: writes.edited, manual: writes.manual },
+    agentsMd: input.agentsMd ?? null,
     guards: gate?.guards ?? null,
     manifest: gate?.manifest ?? null,
     verify: gate?.verify ?? null,

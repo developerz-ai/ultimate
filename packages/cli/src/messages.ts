@@ -429,6 +429,10 @@ const CATALOG = {
     'the scripts passed, which is less than x verify would say: review the diff, commit this hop to {to}, then re-run x upgrade --json for the next one',
   'cli.upgrade.then.scriptsRed':
     'read the section, make each failed script pass, commit this hop to {to}, then re-run x upgrade --json for the next one',
+  'cli.upgrade.agentsMd.link':
+    'AGENTS.md: byte-identical to CLAUDE.md, so this hop makes it a symlink to it',
+  'cli.upgrade.agentsMd.differs':
+    'AGENTS.md: differs from CLAUDE.md, left alone. Merge what only AGENTS.md says into CLAUDE.md, then: ln -sf CLAUDE.md AGENTS.md',
   'cli.upgrade.bunEdited': 'bun floor: {path} {from} -> {to}',
   'cli.upgrade.bunManual': 'bun floor, by hand: {path}:{line} — {why}',
   'cli.upgrade.done': '{from} -> {to}: the gate is green',

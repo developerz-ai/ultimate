@@ -212,6 +212,7 @@ A `sending` row is no longer re-claimable at once: it is held for `reclaimAfterM
 | `x docs` reads the wiki and every installed `@ultimat3/*` package; its hits move | nothing: the `--json` shape is unchanged |
 | an app test file through `@ultimat3/testing/preload` starts on the installed frozen instant: the clock is reset at every file boundary | a file that relied on an EARLIER file's `advanceClock` calls `setFrozenClock()` itself |
 | `@ultimat3/core/render-nodes` ships the node-tree walker for tests | optional: a test that copied a walker (a `Symbol.for('ultimate.render.jsx')` check over `type`/`props`) imports `renderNodes`, `nodesOf`, `byTag`, `byComponent`, `withAttr`, `one`, `attachRef` and `fire` from it; `examples/dummy/apps/web/app/settings/page.test.ts` is the worked example |
+| `x new` writes `AGENTS.md` as a symlink to `CLAUDE.md`; `x upgrade` links an `AGENTS.md` byte-identical to `CLAUDE.md` and reports a different one as `data.agentsMd: "differs"` | optional: merge what only `AGENTS.md` says into `CLAUDE.md`, then `ln -sf CLAUDE.md AGENTS.md`. The `manifest` step then holds `CLAUDE.md` to the 12 kB `AGENTS.md` budget: raise `agentsMdMaxBytes` in `x.verify.json` if it needs more. A Windows clone without `core.symlinks` checks the link out as a file reading `CLAUDE.md` |
 | `x env init --production` writes `.env.production`; `x deploy --method compose` refuses without one | add `.env.production` to `.gitignore` if yours does not list it (`x env init` does this itself) |
 
 ## 28.x → 29.0.0, entry by entry

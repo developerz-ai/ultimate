@@ -106,7 +106,7 @@ myapp/
   packages/{domain,db,i18n,ui,mcp}/
   app.config.ts                   # the one config file
   x.manifest.json                 # GENERATED
-  AGENTS.md  CLAUDE.md
+  CLAUDE.md  AGENTS.md            # AGENTS.md is a symlink to CLAUDE.md
 ```
 
 | Package | Rule |

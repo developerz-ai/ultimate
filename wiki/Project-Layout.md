@@ -28,8 +28,8 @@ myapp/
                           #   helm/ — the chart, 8 files. All written by `x new`
   app.config.ts           # the one config file
   x.manifest.json         # GENERATED: routes, entities, actions, jobs, policies
-  AGENTS.md               # short, human-authored
-  CLAUDE.md
+  CLAUDE.md               # short, human-authored conventions
+  AGENTS.md               # a symlink to CLAUDE.md: one source for every agent
 ```
 
 ## Surfaces
