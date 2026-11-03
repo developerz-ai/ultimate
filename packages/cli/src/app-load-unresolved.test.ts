@@ -86,7 +86,7 @@ describe('the app load', () => {
     await Bun.write(join(dir, 'b.ts'), "export { x } from './a';\n");
     const findings = collapseFindings(await load());
     expect(findings.map((one) => one.code)).toEqual(['X_APP_IMPORT_UNRESOLVED']);
-    expect(findings[0]?.fix).toStartWith('grep -n ../nowhere/repo apps/web/app/rel/a.ts   # ');
+    expect(findings[0]?.fix).toStartWith('grep -nF -- ../nowhere/repo apps/web/app/rel/a.ts   # ');
     await Bun.write(join(dir, 'a.ts'), 'export const x = 1;\n');
     expect(await load()).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
@@ -160,7 +160,35 @@ describe('the reading', () => {
       { code: 'ERR_MODULE_NOT_FOUND', specifier: 'a;id', referrer: '/app/x.ts' },
       '/app',
     );
-    expect(finding?.fix).toStartWith("grep -n 'a;id' ");
+    expect(finding?.fix).toStartWith("grep -nF -- 'a;id' ");
+  });
+
+  test('an installed package with no such subpath is an edit to the import, never bun add', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-unresolved-subpath-'));
+    try {
+      await Bun.write(join(dir, 'node_modules/fake-pkg/package.json'), '{"name":"fake-pkg"}');
+      const finding = unresolvedImportFinding(
+        {
+          code: 'ERR_MODULE_NOT_FOUND',
+          specifier: 'fake-pkg/nope',
+          referrer: join(dir, 'apps/x.ts'),
+        },
+        dir,
+      );
+      expect(finding?.fix).toStartWith('grep -nF -- fake-pkg/nope apps/x.ts   # ');
+      expect(finding?.cause).toContain('fake-pkg is installed');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a specifier grep would read as a pattern or a flag is searched as text', () => {
+    const fixOf = (specifier: string) =>
+      unresolvedImportFinding(
+        { code: 'ERR_MODULE_NOT_FOUND', specifier, referrer: '/app/x.ts' },
+        '/app',
+      )?.fix;
+    expect(fixOf('./[')).toStartWith("grep -nF -- './[' x.ts");
   });
 
   test('any other failure is not this one', () => {

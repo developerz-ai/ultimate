@@ -94,7 +94,7 @@ An operator running this stack in production sizes one 6-vCPU / 12-GiB host to h
 
 ## Rung 3 — Kubernetes, NATS, the change feed
 
-The chart is per-role Deployments with per-role HPAs, because CPU is a lagging proxy for all three serving roles: `web` on RPS, `sync` on connections per pod, `worker` on queue depth ([`docker/helm/values.yaml`](../../docker/helm/values.yaml)).
+The chart is per-role Deployments with per-role HPAs, because CPU is a lagging proxy for all three serving roles: `web` on RPS, `sync` on connections per pod, `worker` on queue demand, held plus due ([`docker/helm/values.yaml`](../../docker/helm/values.yaml)).
 
 What actually turns on at this rung:
 
@@ -347,7 +347,7 @@ Two rules underneath all of them:
 | 50k sockets, forced restart, p50 54.0s to the first patch on the reconnected socket | **measured** — one node, in-process transport, `scripts/bench/results/50k-restart.json`. Reachability; it cannot see a lost patch |
 | channel patches delivered across a forced restart, no client observing a gap | **measured at 10k, not at 50k** — 1,666,882 received, 0 observed sequence gaps, a lower bound on loss, `scripts/bench/results/10k-restart-seq.json` |
 | Compose prod topology | **true, and emitted by `x new`** — `web` and `sync` at `replicas: 1` because each publishes a host port; `worker` scales freely |
-| A Helm chart with per-role HPAs | **true, and emitted by `x new`** since 4.0.0 — the worker's `queue_depth` is an `External` metric, because every worker publishes the same global backlog |
+| A Helm chart with per-role HPAs | **true, and emitted by `x new`** since 4.0.0 — the worker's `queue_demand` is an `External` metric, because every serving worker publishes the same fleet-wide number |
 | tracing with `traceparent` across HTTP → job → live query | **true**, and exportable — `otlpSpanExporter()` over OTLP/HTTP JSON, batched and chained; no-op remains the default |
 | a metric API, a `MetricExporter` seam, Prometheus text | **true** — `packages/core/src/metrics.ts`, new in 1.1.0 |
 | `/metrics` served, and HPA signals emitted by the app | **shipped** — every role on `METRICS_PORT`, three call sites, a `metrics` containerPort and Service port in the chart, and an opt-in ServiceMonitor |

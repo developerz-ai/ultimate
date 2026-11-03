@@ -108,19 +108,30 @@ describe.skipIf(!hasPooler)('live · a transaction pooler in its stock config', 
     expect(lostStatementBound(bound, 'web', client.pooler)?.code).toBe('X_DB_STATEMENT_BOUND_LOST');
   });
 
-  test('the printed alter role brings the bound back, on a connection opened after it', async () => {
+  test('the fix the refusal prints, run as printed, brings the bound back', async () => {
     const admin = postgresClient({ url: directUrl ?? '', role: 'web', profile: { max: 1 } });
     clients.push(admin);
     await admin.execute(raw(`create role ${BOUND_ROLE} login password 'bound'`));
-    await admin.execute(raw(`alter role ${BOUND_ROLE} set statement_timeout = '10s'`));
-    await admin.execute(
-      raw(`alter role ${BOUND_ROLE} set idle_in_transaction_session_timeout = '30s'`),
-    );
+    const refused = await postgresClient({ url: poolerUrl ?? '', role: 'web', env: {} })
+      .query(sql`select 1`)
+      .catch((error: unknown) => error as DbError);
+    // The emitted line, its one placeholder filled, then the variable the export left behind.
+    const fix = (refused as DbError).fix.replaceAll('<user>', BOUND_ROLE);
+    const shell = Bun.spawnSync(['bash', '-c', `${fix}\nprintf '%s' "$DATABASE_POOLER"`], {
+      env: { PATH: process.env['PATH'] ?? '', DATABASE_URL: poolerUrl ?? '' },
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 10_000,
+    });
+    expect(shell.stderr.toString()).toBe('');
+    expect(shell.exitCode).toBe(0);
+    const exported = shell.stdout.toString().split('\n').at(-1);
+    expect(exported).toBe('transaction');
+
     const login = new URL(poolerUrl ?? '');
     login.username = BOUND_ROLE;
     login.password = 'bound';
-
-    const client = through({ url: login.toString() });
+    const client = through({ url: login.toString(), env: { DATABASE_POOLER: exported ?? '' } });
     const bound = await statementBound(client);
 
     expect(bound.statementTimeout.applied).toBe(10_000);

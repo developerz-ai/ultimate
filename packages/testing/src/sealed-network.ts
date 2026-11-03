@@ -8,7 +8,7 @@ import { NetworkOfflineError, NetworkRaceError, NetworkSealedError } from './err
 import type { MockHandler, MockRoute } from './mock-route';
 import { mockRoute, routeMatches } from './mock-route';
 import type { LoggedRequest } from './request-log';
-import { hasStreamBody, headersOf, readBody, requestProbe } from './request-log';
+import { hasStreamBody, headersOf, isOpenEnded, readBody, requestProbe } from './request-log';
 import { installSocketSeal } from './sealed-sockets';
 
 export type FetchLike = typeof globalThis.fetch;
@@ -96,11 +96,19 @@ export function sealNetwork(): void {
     // is reached before the body is awaited too, so a call is judged by the state it was made in.
     const call = { method, url, headers: headersOf(probe), body: null as string | null };
     state.log.push(call);
+    const openEnded = isOpenEnded(input, init);
+    /** A finite body is in the entry when `fetch` settles; an open-ended one, once it ends. */
+    const logBody = async (source: Request | undefined): Promise<void> => {
+      const read = readBody(source).then((body) => {
+        call.body = body;
+      });
+      if (!openEnded) await read;
+    };
     // Ahead of the mocks on purpose: a test that mocked Stripe and then went offline is asserting
     // the offline path, and a mock that still answered would be the one thing that path never sees.
     if (state.network !== 'online') {
       const mode = state.network;
-      call.body = await readBody(probe);
+      await logBody(probe);
       throw new NetworkOfflineError({ url, method, mode });
     }
     const mock = state.mocks.find((route) => routeMatches(route, call));
@@ -113,7 +121,7 @@ export function sealNetwork(): void {
       // first cannot let a later GET take its 503. A thrown answer rejects; it is awaited below.
       const answered = (async () => mock.handler(request))();
       answered.catch(() => undefined);
-      call.body = await readBody(logged);
+      await logBody(logged);
       return answered;
     }
     // A server this process booted is not egress — the port is one the kernel just handed us, so
@@ -123,12 +131,16 @@ export function sealNetwork(): void {
     const passes = isSelfOrigin(url) || (host !== undefined && state.allowed.has(host));
     const allowed = [...state.allowed];
     const original = state.original;
-    call.body = await readBody(probe);
     if (passes) {
       if (original === undefined) throw new NetworkRaceError();
       // `(input, init)` as handed: `tls`, `unix` and `proxy` are Bun's own and no Request holds them.
-      return original(input, init);
+      // Dialled before the body is read, so a stream's consumer is the real server, not the log.
+      const dialled = original(input, init);
+      dialled.catch(() => undefined);
+      await logBody(probe);
+      return dialled;
     }
+    await logBody(probe);
     throw new NetworkSealedError({ url, method, allowed });
   }) as FetchLike;
 }

@@ -111,7 +111,7 @@ No, by design. Containers only. Edge runtimes, function-per-route, and vendor KV
 
 ### How much infrastructure does a small app need?
 
-One container running `ROLE=web` and one Postgres — there is **no** `ROLE=all`, and `x dev` is what co-locates roles locally. Split roles when a signal tells you to: RPS for `web`, connection count for `sync`, queue depth for `worker`. `scheduler` and `replicator` are fixed at one replica — a second is a warm standby, not throughput.
+One container running `ROLE=web` and one Postgres — there is **no** `ROLE=all`, and `x dev` is what co-locates roles locally. Split roles when a signal tells you to: RPS for `web`, connection count for `sync`, queue demand (jobs held plus jobs due) for `worker`. `scheduler` and `replicator` are fixed at one replica — a second is a warm standby, not throughput.
 
 ### Can I use it without the realtime tiers?
 

@@ -304,6 +304,61 @@ describe('what a hole owns', () => {
     }
   });
 
+  test('a promise deep in a hole’s JSX is observed too, while an async fallback renders', async () => {
+    const unhandled: unknown[] = [];
+    const listen = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', listen);
+    try {
+      const deep = Promise.reject(BOOM);
+      const SlowFallback = async (): Promise<string> => {
+        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => setImmediate(resolve));
+        return 'wait';
+      };
+      const { sink } = await shellOf(
+        h(Hole, { fallback: h(SlowFallback as never, {}) }, h('div', {}, [h('p', {}, deep)])),
+      );
+      expect(unhandled).toEqual([]);
+      await expect(sink.holes[0]?.resolve(new AbortController().signal)).rejects.toBe(BOOM);
+    } finally {
+      process.off('unhandledRejection', listen);
+    }
+  });
+
+  test('a hole that resolves after its deadline asks `after` once', async () => {
+    let asked = 0;
+    let finish: (value: string) => void = () => undefined;
+    const late = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    await collectStream(
+      renderStreamHtml(
+        {
+          head: '',
+          shell: '',
+          holes: [
+            {
+              id: 'a',
+              fallback: '',
+              after: () => {
+                asked += 1;
+                return '';
+              },
+              resolve: () => late,
+            },
+          ],
+        },
+        { buildId: 'b', holeTimeoutMs: 1 },
+      ),
+    );
+    finish('late');
+    await late;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(asked).toBe(1);
+  });
+
   test('the deadline aborts the hole’s own signal with X_TIMEOUT', async () => {
     let seen: AbortSignal | undefined;
     await collectStream(

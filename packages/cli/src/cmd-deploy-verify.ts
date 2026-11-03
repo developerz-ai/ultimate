@@ -3,7 +3,13 @@
 // never enumerated, and a GitOps roll that never ran `x deploy` is checked the same way.
 
 import type { Clock } from '@ultimat3/core';
-import { BUILD_ID_HEADER, renderCauseValue, renderThrowable, systemClock } from '@ultimat3/core';
+import {
+  BUILD_ID_HEADER,
+  renderCauseValue,
+  renderThrowable,
+  systemClock,
+  UltimateError,
+} from '@ultimat3/core';
 import type { QueueDemand, WorkerRecord } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
 import type { CommandContext } from './command';
@@ -61,8 +67,17 @@ export interface DeployVerifyDeps {
   readonly clock: Clock;
   sleep(ms: number): Promise<void>;
   expectedQueues(root: string): Promise<ExpectedQueues>;
-  /** `env` is the one `DATABASE_URL` came from, so the pooler mode is read from it too. */
-  openQueue(databaseUrl: string, env: CommandContext['env']): Promise<QueueReader>;
+  /**
+   * `env` is the one `DATABASE_URL` came from, so the pooler mode is read from it too.
+   * `statementTimeoutMs` is what is left of `--timeout`: the server cancels a read past it.
+   */
+  openQueue(
+    databaseUrl: string,
+    env: CommandContext['env'],
+    statementTimeoutMs: number,
+  ): Promise<QueueReader>;
+  /** Resolves once `ms` of real time pass: what a hung read is raced against. */
+  expire(ms: number): Promise<void>;
 }
 
 /** Imported when asked: the verdict on the build alone never loads the app or a database driver. */
@@ -70,7 +85,9 @@ const realDeps: DeployVerifyDeps = {
   clock: systemClock,
   sleep: (ms) => Bun.sleep(ms),
   expectedQueues: async (root) => (await import('./deploy-verify-queues')).expectedQueues(root),
-  openQueue: async (url, env) => (await import('./deploy-verify-queues')).openQueue(url, env),
+  openQueue: async (url, env, statementTimeoutMs) =>
+    (await import('./deploy-verify-queues')).openQueue(url, env, statementTimeoutMs),
+  expire: (ms) => Bun.sleep(ms),
 };
 
 interface Answered {
@@ -107,84 +124,119 @@ async function takeSample(origin: string, limitMs: number): Promise<Answered> {
   }
 }
 
-/** Until `--window` of consecutive good samples, or `--timeout`, whichever is first. */
-async function awaitWindow(
-  options: VerifyOptions,
-  build: string,
-  deadline: number,
-  deps: DeployVerifyDeps,
-): Promise<WaitOutcome> {
-  // One bad sample per window's worth of samples is the most a settled fleet is allowed.
-  const perWindow = Math.max(1, Math.ceil(options.windowMs / options.intervalMs));
-  let tally = emptyTally();
-  let lastFailure: string | undefined;
-  for (;;) {
-    const left = deadline - deps.clock.monotonic();
-    const answered = await takeSample(
-      options.origin,
-      Math.max(SAMPLE_FLOOR_MS, Math.min(SAMPLE_TIMEOUT_MS, left)),
-    );
-    lastFailure = answered.failure ?? lastFailure;
-    tally = foldSample(
-      tally,
-      {
-        at: deps.clock.monotonic(),
-        status: answered.status,
-        build: answered.build,
-        cached: answered.cached,
-      },
-      build,
-    );
-    if (windowClosed(tally, options.windowMs, perWindow))
-      return { tally, closed: true, lastFailure };
-    const remaining = deadline - deps.clock.monotonic();
-    if (remaining <= 0) return { tally, closed: false, lastFailure };
-    await deps.sleep(Math.min(options.intervalMs, remaining));
-  }
-}
+/** The least time a database read gets, and the floor of its server-side `statement_timeout`. */
+const READ_FLOOR_MS = 1_000;
 
-/**
- * Re-read until every queue is served or `--timeout` ends the wait. The web role and the workers
- * roll independently and a worker drains for as long as its jobs run, so one read right after the
- * window would fail a healthy roll that had a minute to go. Always reads at least once.
- */
-async function awaitQueues(
-  expected: readonly string[],
-  options: VerifyOptions,
-  build: string,
-  deadline: number,
-  reader: QueueReader,
-  deps: DeployVerifyDeps,
-): Promise<QueueRead> {
-  let grade: QueueGrade | undefined;
-  let lastFailure: string | undefined;
-  for (;;) {
-    // One reset connection is a sample lost, never the verdict: the last grade stands, and the
-    // next interval reads again.
-    try {
-      const [workers, demand] = await Promise.all([reader.workers(), reader.demand()]);
-      grade = gradeQueues({
-        build,
-        expected,
-        workers,
-        depth: new Map(demand.map((queue) => [queue.queue, queue.demand])),
-        idleOk: options.idleOk,
-      });
-    } catch (error) {
-      lastFailure = renderThrowable(error);
-    }
-    const remaining = deadline - deps.clock.monotonic();
-    if ((grade !== undefined && grade.unserved.length === 0) || remaining <= 0) {
-      return { grade, lastFailure };
-    }
-    await deps.sleep(Math.min(options.intervalMs, remaining));
-  }
+/** The queue half: the set to grade, and how to reach the rows. Absent: no `DATABASE_URL`. */
+interface QueuePlan {
+  readonly expected: readonly string[];
+  open(statementTimeoutMs: number): Promise<QueueReader>;
 }
 
 /** The last grade a read produced, and the last read that failed. No grade: none ever landed. */
 interface QueueRead {
   readonly grade: QueueGrade | undefined;
   readonly lastFailure: string | undefined;
+}
+
+interface Verdict {
+  readonly wait: WaitOutcome;
+  /** `undefined`: no queue plan, or the window never closed so nothing was read. */
+  readonly read: QueueRead | undefined;
+}
+
+/** One read of both halves, bounded by `limitMs` of real time. A miss is a failed read. */
+async function readQueues(
+  reader: QueueReader,
+  input: {
+    readonly expected: readonly string[];
+    readonly build: string;
+    readonly idleOk: readonly string[];
+  },
+  limitMs: number,
+  deps: DeployVerifyDeps,
+): Promise<QueueGrade> {
+  const expired = deps.expire(limitMs).then(() => {
+    throw new UltimateError({
+      code: 'X_DB_UNAVAILABLE',
+      cause: `a read of x_job_workers outlasted what was left of --timeout (${limitMs} ms)`,
+      fix: 'x jobs list --json',
+    });
+  });
+  const [workers, demand] = await Promise.race([
+    Promise.all([reader.workers(), reader.demand()]),
+    expired,
+  ]);
+  return gradeQueues({
+    ...input,
+    workers,
+    depth: new Map(demand.map((queue) => [queue.queue, queue.demand])),
+  });
+}
+
+/**
+ * Sample until the window holds AND, with a queue plan, every queue is served, both on the same
+ * pass: web rolling back while the workers still roll is red, never a window that closed earlier.
+ * The queues are read only once the window has closed, then on every pass; the web role and the
+ * workers roll independently, so one read right after the window would fail a healthy roll. A failed
+ * read keeps the last grade. `--timeout` ends the whole wait, reads included.
+ */
+async function awaitVerdict(
+  options: VerifyOptions,
+  build: string,
+  deadline: number,
+  deps: DeployVerifyDeps,
+  plan: QueuePlan | undefined,
+): Promise<Verdict> {
+  // One bad sample per window's worth of samples is the most a settled fleet is allowed.
+  const perWindow = Math.max(1, Math.ceil(options.windowMs / options.intervalMs));
+  let tally = emptyTally();
+  let lastFailure: string | undefined;
+  let reader: QueueReader | undefined;
+  let read: QueueRead | undefined;
+  const left = (): number => deadline - deps.clock.monotonic();
+  try {
+    for (;;) {
+      const answered = await takeSample(
+        options.origin,
+        Math.max(SAMPLE_FLOOR_MS, Math.min(SAMPLE_TIMEOUT_MS, left())),
+      );
+      lastFailure = answered.failure ?? lastFailure;
+      tally = foldSample(
+        tally,
+        {
+          at: deps.clock.monotonic(),
+          status: answered.status,
+          build: answered.build,
+          cached: answered.cached,
+        },
+        build,
+      );
+      const closed = windowClosed(tally, options.windowMs, perWindow);
+      if (closed && plan !== undefined) {
+        const bound = Math.max(READ_FLOOR_MS, left());
+        reader ??= await plan.open(bound);
+        try {
+          const grade = await readQueues(
+            reader,
+            { expected: plan.expected, build, idleOk: options.idleOk },
+            bound,
+            deps,
+          );
+          read = { grade, lastFailure: read?.lastFailure };
+        } catch (error) {
+          // One reset connection is a read lost, never the verdict: the last grade stands.
+          read = { grade: read?.grade, lastFailure: renderThrowable(error) };
+        }
+      }
+      const served = plan === undefined || (read?.grade?.unserved.length ?? 1) === 0;
+      const wait = { tally, closed, lastFailure };
+      if ((closed && served) || left() <= 0) return { wait, read };
+      await deps.sleep(Math.min(options.intervalMs, left()));
+    }
+  } finally {
+    await reader?.close();
+  }
 }
 
 /** The set first, so a typo or an app that will not load costs no wait. */
@@ -230,32 +282,32 @@ export async function runDeployVerify(
   }
 
   const deadline = deps.clock.monotonic() + options.timeoutMs;
-  const wait = await awaitWindow(options, build, deadline, deps);
+  const plan: QueuePlan | undefined =
+    databaseUrl === undefined || expected === undefined
+      ? undefined
+      : {
+          expected: expected.queues,
+          open: (statementTimeoutMs) => deps.openQueue(databaseUrl, ctx.env, statementTimeoutMs),
+        };
+  const { wait, read } = await awaitVerdict(options, build, deadline, deps, plan);
   if (!wait.closed) {
     return failed('deploy', msg('cli.deploy.unverified', { build, count: 1 }), {
       findings: [sampleFinding(failureOf(wait.tally, build), wait, build, options)],
-      data: resultData(build, options.windowMs, wait.tally, UNGRADED),
+      data: resultData(build, options.windowMs, wait.tally, read?.grade ?? UNGRADED),
     });
   }
 
   const samples = wait.tally.total;
   const held = { build, windowMs: options.windowMs, samples };
-  if (databaseUrl === undefined || expected === undefined) {
+  if (plan === undefined) {
     return ok('deploy', msg('cli.deploy.verifiedUngraded', held), {
       data: resultData(build, options.windowMs, wait.tally, UNGRADED),
     });
   }
-  const reader = await deps.openQueue(databaseUrl, ctx.env);
-  let read: QueueRead;
-  try {
-    read = await awaitQueues(expected.queues, options, build, deadline, reader, deps);
-  } finally {
-    await reader.close();
-  }
-  const queues = read.grade;
+  const queues = read?.grade;
   if (queues === undefined) {
     return failed('deploy', msg('cli.deploy.unverified', { build, count: 1 }), {
-      findings: [queueReadFinding(read.lastFailure)],
+      findings: [queueReadFinding(read?.lastFailure)],
       data: resultData(build, options.windowMs, wait.tally, UNGRADED),
     });
   }

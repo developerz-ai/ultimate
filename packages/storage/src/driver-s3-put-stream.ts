@@ -17,6 +17,7 @@ import {
   isAnswered,
   multipartEtagOf,
   type S3Stat,
+  sentObject,
   settleComplete,
   settleLostPut,
 } from './driver-s3-settle';
@@ -69,7 +70,7 @@ export async function putS3Stream(wire: S3WireOptions, input: S3PutStreamInput):
         throw error;
       };
       const refusal = await signedPut(wire, key, whole, putOptions).catch(
-        settleLostPut(stat, { driver, key, bytes: whole }, rethrow),
+        settleLostPut(stat, { driver, key, bytes: whole, attributes: options }, rethrow),
       );
       if (refusal !== undefined) refused(refusal);
       return;
@@ -80,7 +81,7 @@ export async function putS3Stream(wire: S3WireOptions, input: S3PutStreamInput):
       if (isAnswered(lost)) throw lost;
       // Settled here, abort included, so the catch below must not abort a second time.
       uploadId = undefined;
-      const sent = { size: total, etag: multipartEtagOf(etags) };
+      const sent = sentObject(total, multipartEtagOf(etags), options);
       await settleComplete(stat, { ...target, driver }, open, sent, lost);
     });
   } catch (error) {

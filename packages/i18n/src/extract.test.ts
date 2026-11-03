@@ -181,6 +181,20 @@ describe('extractKeys \u00B7 declared properties', () => {
     expect(extraction.usages.map((usage) => usage.key)).toEqual(['a.first', 'a.second', 'a.third']);
   });
 
+  // `stripComments` keeps strings, so a property quoted inside one (a docs example, a fix line) read
+  // as a real key and was demanded of every catalog.
+  test('a property written inside a string is text, not a usage', () => {
+    const lines = [
+      `const fix = "pass { titleKey: 'example.only' }";`,
+      "const doc = `{ subject: 'example.subject' } in defineThing(`;",
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text, a ${…} is the case under test
+      "const tpl = `${{ titleKey: 'a.inside' }.titleKey}`;",
+    ];
+    const extraction = extractKeys(lines.join('\n'), 'a.ts', options);
+    expect(extraction.usages.map((usage) => usage.key)).toEqual(['a.inside']);
+    expect(extraction.dynamic).toEqual([]);
+  });
+
   test('no properties declared: a titleKey is not a usage', () => {
     expect(extractKeys("const a = { titleKey: 'a.title' };").usages).toEqual([]);
   });

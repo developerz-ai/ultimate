@@ -117,8 +117,10 @@ describe('the operator surface on the pg driver', () => {
     test('a row announced without one reads absent, never null', async () => {
       const operator = operatorOf(await open());
       await operator.announceWorker({ ...announced, id: 'worker-old' }, 60_000);
-      const [row] = await operator.workers();
-      expect(row === undefined ? false : 'build' in row).toBe(false);
+      const rows = await operator.workers();
+      // The row first: a driver that dropped the announcement would read "no build" vacuously.
+      expect(rows.map((row) => row.id)).toEqual(['worker-old']);
+      expect('build' in (rows[0] ?? {})).toBe(false);
     });
   });
 

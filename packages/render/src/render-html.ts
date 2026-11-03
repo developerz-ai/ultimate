@@ -72,8 +72,8 @@ export interface HoleSink {
 }
 
 /**
- * How a host runs a hole's children: given the hole's signal (aborted at its deadline, a client
- * disconnect and the document's close), in whatever scope it builds. The CLI makes that signal
+ * How a host runs a hole's children: given the hole's signal (aborted at its deadline and on a
+ * client disconnect; a hole that settled keeps it un-aborted), in whatever scope it builds. The CLI makes that signal
  * the ambient one and refuses response headers after the flush; render knows neither.
  */
 export type HoleEnter = (signal: AbortSignal, run: () => Promise<string>) => Promise<string>;
@@ -166,6 +166,29 @@ async function renderIsland(
 }
 
 /**
+ * A promise already running when the tree was built is awaited only once the stream starts, after
+ * the fallback rendered; a rejection before then is unhandled. Marked through arrays and JSX
+ * children — never by calling a thunk or a component, which have not run — and the hole still
+ * awaits and sees it. `seen` stops a self-referencing array.
+ */
+function observeEagerPromises(value: unknown, seen: Set<object>): void {
+  if (value instanceof Promise) {
+    value.catch(() => undefined);
+    return;
+  }
+  if (typeof value !== 'object' || value === null || seen.has(value)) return;
+  seen.add(value);
+  if (Array.isArray(value)) for (const item of value) observeEagerPromises(item, seen);
+  // An island or hole node is an array whose own items are empty: its tree is in `props`.
+  if (isJsxNode(value) || isIslandNode(value) || isHoleNode(value)) {
+    const props = value.props as { children?: unknown; fallback?: unknown; error?: unknown };
+    observeEagerPromises(props.children, seen);
+    observeEagerPromises(props.fallback, seen);
+    observeEagerPromises(props.error, seen);
+  }
+}
+
+/**
  * Everything under a hole walks with no sink: a nested hole is inline inside the outer one, since
  * the set of pending holes is fixed at the first flush (`renderStreamHtml`). `resolve` is a thunk,
  * so `children` start inside `start()`, in the request's async context, after the shell is out.
@@ -176,11 +199,7 @@ async function renderHole(node: HoleNode, depth: number, walk: RenderHtmlOptions
   const { children, error, fallback } = node.props;
   if (sink === undefined) return unwrap(children, depth + 1, inner);
   const id = sink.nextId();
-  // A promise already running when the tree was built is awaited only once the stream starts; a
-  // rejection before then would be unhandled. Marked here; the hole still awaits and sees it.
-  for (const child of Array.isArray(children) ? children : [children]) {
-    if (child instanceof Promise) child.catch(() => undefined);
-  }
+  observeEagerPromises(children, new Set());
   const [shown, failed] = await Promise.all([
     unwrap(fallback, depth + 1, inner),
     error === undefined ? undefined : unwrap(error, depth + 1, inner),

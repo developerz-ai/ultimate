@@ -20,7 +20,7 @@ ROLE=replicator myapp
 |---|---|---|---|
 | `web` | SSR + static + RPC (actions/queries over HTTP) | **RPS** | behind CDN, stateless, N replicas, no local state |
 | `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
-| `worker` | jobs + steps | **queue depth** | one pool per queue served; `WORKER_QUEUES=default,integrations` claims exactly those and nothing else, unset claims `jobs.queues` plus every registered job's queue ([Configuration](Configuration#jobs)) |
+| `worker` | jobs + steps | **queue demand** (`queue_demand`: held plus due) | one pool per queue served; `WORKER_QUEUES=default,integrations` claims exactly those and nothing else, unset claims `jobs.queues` plus every registered job's queue ([Configuration](Configuration#jobs)) |
 | `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`postgresLeaseLeader`), never an advisory lock — that grant is session-scoped and the executor is a pool. A second instance is a warm standby, not a duplicate |
 | `migrate` | run-once, pre-deploy | n/a | applies migrations through the ledger and **exits**; never binds a port. Holds the migration advisory lock on one pinned session for the whole run, so overlapping deploys serialise — the second waits, polling once per 500ms for up to 60s, then exits non-zero with `X_MIGRATE_CONCURRENT` rather than hanging the rollout (`As of 2026-08`; 1.2.0 waits forever — [Known gaps](Known-Gaps)) |
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock — a container that loses it stays up, `/readyz` 503, and takes over when the holder goes (`x dev --role replicator` refuses with `X_REPLICATOR_SLOT_HELD` instead) |
@@ -290,7 +290,7 @@ services:
 |---|---|---|---|
 | `web` | requests/sec (or CPU as fallback) | 3–50 | behind Ingress + CDN; `terminationGracePeriodSeconds` derived per role from `drain.*` in values (45 s web/sync, 35 s the rest, by default) |
 | `sync` | **active WS connections** (custom metric) | 2–100 | no session affinity; connection count is the only honest signal |
-| `worker` | **queue depth** per named queue (custom metric) | 2–200 | one Deployment per queue when isolation matters |
+| `worker` | **queue demand** per named queue (`queue_demand`, External metric) | 2–200 | one Deployment per queue when isolation matters |
 | `scheduler` | none — `replicas: 1` | 1 | `PodDisruptionBudget` maxUnavailable 1, leader lock covers overlap |
 | `replicator` | none — `replicas: 1` | 1 | owns the slot; `strategy: Recreate`, because a surged pod can only stand by unready and `maxUnavailable: 0` would never retire the holder |
 | `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |

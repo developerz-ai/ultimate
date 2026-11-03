@@ -640,7 +640,7 @@ job the moment Postgres fails over.
 | `X_MIGRATION_ROLLING_UNSAFE` | a drop or rename the previous release would still read, from `x db gen`, the `drift` rail past `rollingSince`, or `migrate()` with a retire and its drop both pending in production |
 | `X_DB_POOL_EXHAUSTED` | `53300` / `53200`, or a statement or `reserve()` past `acquireTimeoutMs` |
 | `X_DB_DRIFT` | live schema differs from migrations |
-| `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch — never for rows that are all newer than the build (a rollback). A mismatch's fix restores the file: `git checkout -- packages/db/migrations/<id>.sql`, then `x db gen "<change>"` |
+| `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch — never for rows that are all newer than the build (a rollback). A mismatch's fix restores the file: `git log -- packages/db/migrations/<id>.sql`, then `git checkout <rev> -- …` the revision whose checksum the ledger names, then `x db gen "<change>"` |
 | `X_MIGRATE_CONCURRENT` | another migrator still held the lock when the wait ran out |
 | `X_MIGRATION_IRREVERSIBLE` | generated `down` would lose data |
 | `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |

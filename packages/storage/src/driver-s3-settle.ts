@@ -4,19 +4,51 @@
 // What neither can settle is `X_STORAGE_WRITE_OUTCOME_UNKNOWN`, never a refusal the disk did not make.
 
 import { isUltimateError, stringField } from '@ultimat3/core';
+import { DEFAULT_CONTENT_TYPE, type PutOptions } from './driver';
 import { abortS3Upload, type S3UploadTarget } from './driver-s3-multipart';
 import { writeOutcomeUnknown } from './errors-stream';
 
 /** The disk's own HEAD: `undefined` for nothing there. A throw is a stat that could not answer. */
 export type S3Stat = (
   key: string,
-) => Promise<{ readonly size: number; readonly etag: string } | undefined>;
+) => Promise<
+  { readonly size: number; readonly etag: string; readonly contentType: string } | undefined
+>;
 
 export interface SentObject {
   readonly size: number;
   /** The etag the provider gives exactly these bytes, unquoted; `undefined` when it cannot be known. */
   readonly etag: string | undefined;
+  readonly contentType: string;
+  /**
+   * The write set something a HEAD does not read back (metadata, cache-control, a lock). Then a
+   * match proves only the bytes, which an overwrite of the same bytes matches already: unknown.
+   */
+  readonly unverifiable: boolean;
 }
+
+/** What a write said about the object, beyond its bytes. */
+export interface SentAttributes
+  extends Pick<PutOptions, 'contentType' | 'cacheControl' | 'metadata'> {
+  readonly retention?: unknown;
+  readonly legalHold?: unknown;
+}
+
+/** `SentObject` for `size` bytes of `etag` under `attributes`. */
+export const sentObject = (
+  size: number,
+  etag: string | undefined,
+  attributes: SentAttributes | undefined,
+): SentObject => ({
+  size,
+  etag,
+  contentType: attributes?.contentType ?? DEFAULT_CONTENT_TYPE,
+  unverifiable:
+    attributes?.metadata !== undefined ||
+    attributes?.cacheControl !== undefined ||
+    attributes?.retention !== undefined ||
+    attributes?.legalHold !== undefined,
+});
 
 const unquoted = (etag: string): string => etag.replace(/^W\//, '').replaceAll('"', '');
 
@@ -49,8 +81,12 @@ async function holds(stat: S3Stat, key: string, sent: SentObject): Promise<boole
     return undefined;
   }
   if (found === undefined) return false;
-  if (sent.etag === undefined) return undefined;
-  return found.size === sent.size && unquoted(found.etag) === sent.etag;
+  if (sent.etag === undefined || sent.unverifiable) return undefined;
+  return (
+    found.size === sent.size &&
+    unquoted(found.etag) === sent.etag &&
+    found.contentType === sent.contentType
+  );
 }
 
 /**
@@ -67,12 +103,17 @@ export const isAnswered = (error: unknown): boolean =>
 export const settleLostPut =
   (
     stat: S3Stat,
-    input: { readonly driver: string; readonly key: string; readonly bytes: Uint8Array },
+    input: {
+      readonly driver: string;
+      readonly key: string;
+      readonly bytes: Uint8Array;
+      readonly attributes: SentAttributes | undefined;
+    },
     refused: (error: unknown) => never,
   ) =>
   async (error: unknown): Promise<undefined> => {
     if (isAnswered(error)) return refused(error);
-    const sent = { size: input.bytes.byteLength, etag: putEtagOf(input.bytes) };
+    const sent = sentObject(input.bytes.byteLength, putEtagOf(input.bytes), input.attributes);
     await settlePut(stat, { driver: input.driver, key: input.key, lost: error }, sent);
     return undefined;
   };

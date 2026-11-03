@@ -106,14 +106,14 @@ verbatim, `As of 2026-08` — change them there, not here:
 |---|---|---|---|
 | `web` | `rps`, via the ingress metric adapter | 3–30 | behind Ingress + CDN; `terminationGracePeriodSeconds` >= drain |
 | `sync` | `connections` — concurrent websockets per pod | 2–40 | no session affinity; connection count is the only honest signal |
-| `worker` | `queue_depth` — jobs waiting, exported by the worker role | 1–50 | one Deployment per queue when isolation matters |
+| `worker` | `queue_demand` — jobs held by serving workers plus jobs due, exported by the worker role | 1–50 | one Deployment per queue when isolation matters |
 | `scheduler` | none — `replicas: 1` | 1 | `PodDisruptionBudget` maxUnavailable 1; the leader **lease** covers overlap ([`../architecture/08-jobs-internals.md`](../architecture/08-jobs-internals.md)) |
 | `replicator` | none — `replicas: 1` | 1 | `StatefulSet`-shaped for stable identity; owns the slot |
 | `migrate` | n/a | — | pre-install/pre-upgrade `Job` hook; blocks the release on failure |
 
 CPU-based autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog.
 
-**The chart scales on three metrics, and the app emits all three `As of 2026-08`.** `@ultimat3/core` ships the instruments under the chart's exact names — `http_requests_total`, `connections`, `queue_depth` — plus a Prometheus-text renderer, and each has one call site: `pipeline.ts`'s `finally`, `SocketRegistry.add`/`remove`, `worker.ts`'s tick. Every role serves `METRICS_PATH` on `METRICS_PORT` (default 9090, never the app port), the chart declares that port on every role but `migrate` and publishes it on the Service, and [`docker/helm/templates/servicemonitor.yaml`](../../docker/helm/templates/servicemonitor.yaml) gives Prometheus a scrape target behind `serviceMonitor.enabled` ([`11-topology.md`](./11-topology.md#autoscaling-signals-honestly)). What the framework still does not supply is the last hop: a **custom-metrics adapter** in the cluster, which is the operator's and never the chart's. Without one an HPA pointed at these sits at `<unknown>` — disable it and pin `replicas` until the adapter is installed.
+**The chart scales on three metrics, and the app emits all three `As of 2026-08`.** `@ultimat3/core` ships the instruments under the chart's exact names — `http_requests_total`, `connections`, `queue_demand` — plus a Prometheus-text renderer, and each has one call site: `pipeline.ts`'s `finally`, `SocketRegistry.add`/`remove`, `worker.ts`'s tick. Every role serves `METRICS_PATH` on `METRICS_PORT` (default 9090, never the app port), the chart declares that port on every role but `migrate` and publishes it on the Service, and [`docker/helm/templates/servicemonitor.yaml`](../../docker/helm/templates/servicemonitor.yaml) gives Prometheus a scrape target behind `serviceMonitor.enabled` ([`11-topology.md`](./11-topology.md#autoscaling-signals-honestly)). What the framework still does not supply is the last hop: a **custom-metrics adapter** in the cluster, which is the operator's and never the chart's. Without one an HPA pointed at these sits at `<unknown>` — disable it and pin `replicas` until the adapter is installed.
 
 ## Static deploys independently
 

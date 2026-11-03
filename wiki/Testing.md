@@ -104,6 +104,7 @@ mockFetch('POST https://api.vendor.test/charge', [
   new Response('{"id":"ch_1"}'),
 ]);
 await charge();
+expect(requestLog()).toHaveLength(2);
 const [first, second] = requestLog();
 expect(second?.headers['authorization']).toBe(first?.headers['authorization']);
 expect(second?.body).toBe(first?.body);
@@ -111,7 +112,7 @@ expect(second?.body).toBe(first?.body);
 
 - `match`: an exact URL, a prefix ending in `*`, or a RegExp, every verb. A string may name one verb first, `'POST https://…'`. An address-literal URL carrying a `host` header also matches a route on that name, so a pinned dial answers the mock of its host.
 - `answer`: a handler, or a list of `Response | Error` answered in order with the last repeated. An `Error` is thrown. An empty list is `X_INVARIANT`.
-- `requestLog()`: `{ method, url, headers, body }[]`, in call order, refused calls and socket dials included, unredacted. Header names are lowercase. `body` is UTF-8 text or `null`; a `ReadableStream` on its way to a real server is never read and logs `null`.
+- `requestLog()`: `{ method, url, headers, body }[]`, in call order, refused calls and socket dials included, unredacted. Header names are lowercase. `body` is UTF-8 text or `null`; a `ReadableStream` on its way to a real server is never read and logs `null`. A stream body or a `Request`'s own is captured beside the call, never ahead of the answer: it is in the entry once it ends, `null` until then.
 
 Locale and zone are declared per test when the behavior under test depends on them — see [Timezones and dates](Timezones-And-Dates) and [I18n](I18n).
 

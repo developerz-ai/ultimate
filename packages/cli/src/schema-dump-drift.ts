@@ -43,10 +43,14 @@ const dumpColumns = (sql: string): readonly string[] =>
 
 /** The tables a statement alters or creates, as written: optionally schema-qualified, quoted or not. */
 const TABLE_STATEMENT =
-  /\b(?:alter|create|drop)\s+(?:unlogged\s+|temp(?:orary)?\s+)?table\s+(?:if\s+(?:not\s+)?exists\s+)?(?:only\s+)?(?:"?[\w$]+"?\.)?"?([\w$]+)"?/gi;
+  /\b(?:alter|create|drop)\s+(?:unlogged\s+|temp(?:orary)?\s+)?table\s+(?:if\s+(?:not\s+)?exists\s+)?(?:only\s+)?(?:(?:"[^"]+"|[\w$]+)\.)?(?:"([^"]+)"|([\w$]+))/gi;
 
+/** As Postgres names it: an unquoted identifier folds to lower case, a quoted one is kept. */
 const tablesNamedBy = (sql: string): readonly string[] =>
-  [...sql.matchAll(TABLE_STATEMENT)].flatMap((match) => (match[1] === undefined ? [] : [match[1]]));
+  [...sql.matchAll(TABLE_STATEMENT)].flatMap((match) => {
+    const name = match[1] ?? match[2]?.toLowerCase();
+    return name === undefined ? [] : [name];
+  });
 
 /**
  * Tables whose columns a snapshot cannot speak for: `x db gen` writes a snapshot from the entities,

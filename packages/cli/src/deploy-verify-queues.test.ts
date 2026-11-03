@@ -100,7 +100,7 @@ describe('the reader over a driver', () => {
 describe('the pg reader', () => {
   test('a read with nothing listening rejects, and the pool still closes', async () => {
     // Port 1 on loopback: refused at once on every machine, and never egress.
-    const reader = await openQueue('postgres://x:x@127.0.0.1:1/none', {});
+    const reader = await openQueue('postgres://x:x@127.0.0.1:1/none', {}, 5_000);
     const failure = await reader.workers().then(
       () => expect.unreachable('a read with no database answered'),
       (error: unknown) => error,

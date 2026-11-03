@@ -44,7 +44,7 @@ there is one environment, and it hides the object a reviewer needs to see.
 |---|---|---|---|
 | `web` | Deployment + Service + Ingress | HPA on request rate | `/readyz` readiness, `/healthz` liveness on `:3000` |
 | `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
-| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue depth, an `External` metric | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
+| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue demand (`queue_demand`, held plus due), an `External` metric | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
 | `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
 | `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, readiness on `/readyz?deep=1`, both `:9090` |

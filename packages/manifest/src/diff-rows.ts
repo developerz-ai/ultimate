@@ -48,6 +48,36 @@ export function diffRows(path: string, before: unknown, after: unknown): readonl
     changes.push(...diffMembers(path, before, after, members, nextMembers));
   } else if (!same(members, nextMembers)) {
     changes.push(retyped(path));
+  } else {
+    // No members to walk, but `required` still promises names: compared as a set of its own.
+    changes.push(...diffRequired(path, requiredOf(before), requiredOf(after)));
+  }
+  return changes;
+}
+
+function diffRequired(
+  path: string,
+  before: ReadonlySet<string>,
+  after: ReadonlySet<string>,
+): readonly ManifestChange[] {
+  const changes: ManifestChange[] = [];
+  for (const name of before) {
+    if (!after.has(name)) {
+      changes.push({
+        kind: 'breaking',
+        path: `${path}.${name}`,
+        detail: 'row member no longer required',
+      });
+    }
+  }
+  for (const name of after) {
+    if (!before.has(name)) {
+      changes.push({
+        kind: 'additive',
+        path: `${path}.${name}`,
+        detail: 'row member now required',
+      });
+    }
   }
   return changes;
 }

@@ -125,19 +125,22 @@ export function auditLedger(
     if (checksum === row.checksum) continue;
     throw migrationConflict(
       `migration "${row.id}" was applied with checksum ${row.checksum} but now hashes ${checksum}`,
-      editedMigrationFix(row.id),
+      editedMigrationFix(row.id, row.checksum),
     );
   }
 }
 
 /**
  * Restore first. `x db gen` was this line, and it exits 0 and writes the edited SQL into the schema
- * dump, with `drift` green over it. The id is the name of a file on disk here, so an id the shell
- * would read restores the whole directory rather than reaching the command.
+ * dump, with `drift` green over it. `git checkout -- <file>` was the next, and a COMMITTED edit
+ * restores the same wrong blob, so the line lists the file's revisions and the ledger's checksum
+ * names the one applied. The id is a file name and the checksum a ledger value: either one the
+ * shell would read is left out (the directory, then the cause) rather than spliced.
  */
-const editedMigrationFix = (id: string): string => {
+const editedMigrationFix = (id: string, checksum: string): string => {
   const path = isFixShellSafe(id) ? `${APP_MIGRATIONS_DIR}/${id}.sql` : APP_MIGRATIONS_DIR;
-  return `git checkout -- ${path}   # never edit an applied migration; then x db gen "<change>"`;
+  const applied = isFixShellSafe(checksum) ? `checksum ${checksum}` : 'the checksum in the cause';
+  return `git log --format='%h %ad %s' --date=short -- ${path}   # restore the revision applied with ${applied}: git checkout <rev> -- ${path} and never edit an applied migration; then x db gen "<change>"`;
 };
 
 /**

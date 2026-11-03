@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { auditLedger, checksumOf, type LedgerRow } from '@ultimat3/db';
 import { readSchemaDump, SCHEMA_DUMP_DIR } from './db-schema-dump';
 import { exec } from './exec';
-import { type FixtureApp, fixtureApp } from './fix-truth-fixture';
+import { type FixtureApp, fixtureApp, GIT } from './fix-truth-fixture';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 import type { Finding } from './output';
 import { checkSchemaDump } from './schema-dump-drift';
@@ -276,11 +276,21 @@ describe('D2 · an applied migration, edited', () => {
       const clean = (await readMigrations(app.root))[0];
       const applied = { ...row, checksum: checksumOf(clean?.up ?? '') };
       expect(await ledgerAudit(applied)).toBeUndefined();
+      // Committed, which is what `git checkout -- <file>` could not undo: HEAD is the edit.
       await write(SQL, 'create table truth (id text, hacked text);\n');
+      await app.sh(`${GIT} commit -qam edit`);
       const fix = (await ledgerAudit(applied)) ?? '';
-      expect(fix).toStartWith(`git checkout -- ${SQL}`);
-      expect((await app.sh(fix)).code).toBe(0);
-      expect(await ledgerAudit(applied)).toBeUndefined();
+      const listed = await app.sh(fix);
+      expect(listed.code).toBe(0);
+      // As the line says: each listed revision, until the ledger's checksum agrees.
+      const restore = /git checkout <rev> -- (\S+)/.exec(fix)?.[1] ?? '';
+      let agreed = false;
+      for (const rev of listed.stdout.split('\n').map((line) => line.split(' ')[0] ?? '')) {
+        if (rev === '' || agreed) continue;
+        await app.sh(`git checkout -q ${rev} -- ${restore}`);
+        agreed = (await ledgerAudit(applied)) === undefined;
+      }
+      expect(agreed).toBe(true);
     },
     ROW_MS,
   );

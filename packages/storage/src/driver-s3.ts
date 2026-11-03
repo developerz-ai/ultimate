@@ -198,8 +198,8 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
 
   /** The HEAD a lost write's answer is settled against, and the `.catch` of a single PUT. */
   const statOf = async (key: string) => ((await present(key)) ? statObject(key) : undefined);
-  const lostPut = (key: string, bytes: Uint8Array) =>
-    settleLostPut(statOf, { driver: DRIVER_NAME, key, bytes }, refusedWrite(key));
+  const lostPut = (key: string, bytes: Uint8Array, attributes: PutOptions | undefined) =>
+    settleLostPut(statOf, { driver: DRIVER_NAME, key, bytes, attributes }, refusedWrite(key));
 
   return {
     name: DRIVER_NAME,
@@ -226,7 +226,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         // Off the Bun client only for what it cannot send: `S3File.write` takes a type, an ACL and
         // a storage class and no header. One request either way — never a PUT then a second call.
         const refusal = await signedPut(options, safe, bytes, putOptions).catch(
-          lostPut(safe, bytes),
+          lostPut(safe, bytes, putOptions),
         );
         if (refusal !== undefined) refusedWrite(safe)(refusal);
         // Stored — the PUT succeeded with them — so reported, as the local disk reports its own.
@@ -241,7 +241,7 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       await conn()
         .file(safe)
         .write(bytes, { type: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE })
-        .catch(lostPut(safe, bytes));
+        .catch(lostPut(safe, bytes, putOptions));
       return statObject(safe);
     },
 

@@ -275,7 +275,8 @@ export function renderStreamHtml(
         // `after` inside the chain: a throw there is this hole's failure, never an unhandled
         // rejection that holds the document to its deadline.
         void startHole(hole, signal)
-          .then((html) => ({ html, after: afterOf(hole, 'filled') }))
+          // Asked only for a reveal that will write: a hole past its deadline already answered.
+          .then((html) => ({ html, after: revealed || closed ? '' : afterOf(hole, 'filled') }))
           .then(
             ({ html, after }) => {
               reveal(html, after);

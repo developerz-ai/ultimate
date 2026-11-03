@@ -393,6 +393,7 @@ expect(requestLog().map((call) => call.headers['authorization'])).toEqual([BEARE
 |---|---|
 | `requestLog()` | `{ method, url, headers, body }[]`, in call order, refused calls included, unredacted, process-local. Header names are lowercase; `body` is UTF-8 text or `null`. `resetNetwork` clears it, `captureNetwork` carries it |
 | A body is read from a clone | so a handler and the real call still get theirs. A `ReadableStream` on its way to a real server is never read and logs `null`: reading it would take its backpressure away |
+| Never ahead of the answer | a stream body or a `Request`'s own is captured beside the call, so a mock answering 413 at once is not held to the stream's end: it is in the entry once it ends, `null` until then |
 | A socket dial | logs `method: 'WEBSOCKET'` or `'CONNECT'`, empty `headers`, `body: null` |
 | A pinned dial | an address-literal URL carrying a `host` header also matches a route on that name: `mockFetch('https://vendor.test/a', …)` answers `https://203.0.113.9/a` with `host: vendor.test`. The log keeps the URL dialled |
 

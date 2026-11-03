@@ -121,13 +121,6 @@ describe('a plain put() whose answer never arrives', () => {
     expect(object.size).toBe(5);
   });
 
-  test('landed through the signed PUT a metadata write takes: reported as stored', async () => {
-    fake.loseAnswerOf = 'put-after';
-    const object = await disk.put(KEY, bytesOf('hello'), { metadata: { run: 'r-1' } });
-    expect(object.size).toBe(5);
-    expect(object.metadata).toEqual({ run: 'r-1' });
-  });
-
   test('not landed: the outcome is said to be unknown, on both transports', async () => {
     fake.loseAnswerOf = 'write-before';
     expect(anyCode(await catchError(() => disk.put(KEY, bytesOf('hello'))))).toBe(
@@ -138,6 +131,34 @@ describe('a plain put() whose answer never arrives', () => {
       disk.put(KEY, bytesOf('hello'), { metadata: { a: 'b' } }),
     );
     expect(anyCode(signed)).toBe('X_STORAGE_WRITE_OUTCOME_UNKNOWN');
+  });
+
+  // The same bytes again: size and etag match the PREVIOUS object, so they prove nothing about a
+  // write that also changed what the object says about itself.
+  test('an overwrite of the same bytes with another type is judged on the type too', async () => {
+    await disk.put(KEY, bytesOf('hello'), { contentType: 'text/plain' });
+    fake.loseAnswerOf = 'write-before';
+    const refused = await catchError(() =>
+      disk.put(KEY, bytesOf('hello'), { contentType: 'text/html' }),
+    );
+    expect(anyCode(refused)).toBe('X_STORAGE_WRITE_OUTCOME_UNKNOWN');
+  });
+
+  test('what a HEAD cannot read back leaves it unknown, never success', async () => {
+    for (const options of [
+      { metadata: { run: 'r-2' } },
+      { cacheControl: 'no-store' },
+      { legalHold: true },
+    ]) {
+      fake.loseAnswerOf = 'put-after';
+      const refused = await catchError(() => disk.put(KEY, bytesOf('hello'), options));
+      expect(anyCode(refused)).toBe('X_STORAGE_WRITE_OUTCOME_UNKNOWN');
+    }
+  });
+
+  test('the same type, landed, is still reported as stored', async () => {
+    fake.loseAnswerOf = 'write-after';
+    expect((await disk.put(KEY, bytesOf('hello'), { contentType: 'text/plain' })).size).toBe(5);
   });
 
   test('a write the provider refused is still the refusal: it answered', async () => {

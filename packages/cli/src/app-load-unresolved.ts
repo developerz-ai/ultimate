@@ -2,6 +2,9 @@
 // it, with `x doctor --json` as the fix, and doctor answered "shippable": the cycle closed on itself.
 // Leaf module: `output.ts` reads it for a throw outside the scan, and the scan for one inside it.
 
+// why: a synchronous probe for an installed package's manifest; Bun ships no path helpers.
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { stringField } from '@ultimat3/core';
 import type { Finding } from './output';
 import { posixRelative } from './posix-path';
@@ -20,6 +23,14 @@ export const installablePackage = (specifier: string): string | undefined => {
   return rest === '' || rest.startsWith('/') ? name : undefined;
 };
 
+/** Is `pkg` in a `node_modules` the referrer resolves through, as the resolver walks: up to `/`. */
+const isInstalled = (pkg: string, referrer: string): boolean => {
+  for (let dir = dirname(referrer); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, 'node_modules', pkg, 'package.json'))) return true;
+    if (dirname(dir) === dir) return false;
+  }
+};
+
 /**
  * Bun's `ResolveMessage`, read through `stringField`: a caught value this process did not build. The
  * `specifier` and `referrer` are the failing import's own, however many modules were importing the
@@ -32,17 +43,19 @@ export function unresolvedImportFinding(error: unknown, root: string): Finding |
   const referrer = stringField(error, 'referrer');
   const at = referrer === undefined ? undefined : posixRelative(root, referrer);
   const where = at ?? 'an app module';
-  const pkg = installablePackage(specifier);
+  const named = installablePackage(specifier);
+  // Installed, and missing only the subpath: `bun add` would exit 0 and change nothing.
+  const installed = named !== undefined && referrer !== undefined && isInstalled(named, referrer);
+  const pkg = installed ? undefined : named;
+  const edit = `grep -nF -- ${quoteArg(specifier)} ${quoteArg(where)}   # the import no file resolves: edit it`;
   return {
     code: IMPORT_UNRESOLVED,
-    cause:
-      pkg === undefined
+    cause: installed
+      ? `${where} imports "${specifier}", and ${String(named)} is installed with no such subpath`
+      : pkg === undefined
         ? `${where} imports "${specifier}", which resolves to no file`
         : `an app module imports ${pkg}, which is not installed`,
-    fix:
-      pkg === undefined
-        ? `grep -n ${quoteArg(specifier)} ${quoteArg(where)}   # the import no file resolves: edit it`
-        : `bun add ${quoteArg(pkg)}`,
+    fix: pkg === undefined ? edit : `bun add ${quoteArg(pkg)}`,
     ...(at === undefined ? {} : { at }),
     meta: { specifier },
   };

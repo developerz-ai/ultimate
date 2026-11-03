@@ -106,16 +106,21 @@ export function extractKeys(
   // catalog as `"…": "⟦…⟧"` (measured 2026-09-05). The mask keeps every newline and every string
   // literal in place, so an index into it is an index into `source` and the positions below hold.
   const stripped = stripComments(source);
+  const properties = options.properties ?? [];
   for (const match of stripped.matchAll(pattern)) record(match[1], match.index ?? 0);
 
-  for (const property of options.properties ?? []) {
+  // Properties are read in CODE only: `stripComments` keeps strings, and a fix line or a docs
+  // example quoting `{ titleKey: 'x' }` is text. The value is still read off `stripped`.
+  const code = properties.length === 0 ? stripped : blankStrings(stripped);
+  for (const property of properties) {
     const marker = property.whenFileContains;
-    if (marker !== undefined && !stripped.includes(marker)) continue;
+    if (marker !== undefined && !code.includes(marker)) continue;
     const name = escapeRegExp(property.name);
     // Not after an identifier char, a `.` or a quote: `subtitleKey`, `a.titleKey`, `'x.titleKey'`.
     const shape = new RegExp(String.raw`(?<![\w$.'"-])${name}\s*:\s*${PROPERTY_VALUE}`, 'g');
     for (const match of stripped.matchAll(shape)) {
-      if (match[2] !== ';') record(match[1], match.index ?? 0);
+      const index = match.index ?? 0;
+      if (match[2] !== ';' && code[index] === stripped[index]) record(match[1], index);
     }
   }
 
@@ -213,6 +218,52 @@ function isIgnored(key: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) =>
     pattern.endsWith('*') ? key.startsWith(pattern.slice(0, -1)) : key === pattern,
   );
+}
+
+const BLANK = '\u0000';
+
+/**
+ * `text` with every string literal's contents replaced by `BLANK`, same length, so an index into it is
+ * an index into `text`. A template's `${…}` is code and stays: a key can be written there.
+ */
+function blankStrings(text: string): string {
+  let out = '';
+  // One entry per open template: the brace depth of its `${…}`, or -1 while in its text.
+  const templates: number[] = [];
+  let quote: string | undefined;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i] ?? '';
+    const top = templates.length - 1;
+    const inTemplateText = quote === undefined && templates[top] === -1;
+    if (quote !== undefined || inTemplateText) {
+      if (char === '\\') {
+        out += BLANK + (text[i + 1] === undefined ? '' : BLANK);
+        i += 1;
+      } else if (quote !== undefined && (char === quote || char === '\n')) {
+        quote = undefined;
+        out += char;
+      } else if (inTemplateText && char === '`') {
+        templates.pop();
+        out += char;
+      } else if (inTemplateText && char === '$' && text[i + 1] === '{') {
+        templates[top] = 0;
+        out += '${';
+        i += 1;
+      } else {
+        out += char === '\n' ? char : BLANK;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') quote = char;
+    else if (char === '`') templates.push(-1);
+    else if (top >= 0 && char === '{') templates[top] = (templates[top] ?? 0) + 1;
+    else if (top >= 0 && char === '}') {
+      const depth = templates[top] ?? 0;
+      templates[top] = depth === 0 ? -1 : depth - 1;
+    }
+    out += char;
+  }
+  return out;
 }
 
 function bySourceOrder(a: DynamicUsage | KeyUsage, b: DynamicUsage | KeyUsage): number {

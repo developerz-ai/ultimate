@@ -87,7 +87,9 @@ describe('migrate', () => {
       fix = (error as { fix: string }).fix;
     }
     expect(fix).not.toContain('$(');
-    expect(fix).toStartWith(`git checkout -- packages/db/migrations/${addPosts.id}.sql`);
+    expect(fix).toStartWith(
+      `git log --format='%h %ad %s' --date=short -- packages/db/migrations/${addPosts.id}.sql`,
+    );
   });
 
   test('an edited applied migration is a conflict, not a silent no-op', () => {

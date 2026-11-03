@@ -52,6 +52,14 @@ describe('what an ignore file must say', () => {
     expect(unignoredContentOf(`${COMPLETE}!**\n`)).toEqual([...CONTENT_IGNORE_LINES]);
     expect(unignoredContentOf(`!docs\n${COMPLETE}`)).toEqual([]);
   });
+
+  test('a glob re-include under any directory undoes the line, wherever it points', () => {
+    expect(unignoredContentOf(`${COMPLETE}!packages/**/*.test.ts\n`)).toEqual(['**/*.test.ts']);
+    expect(unignoredContentOf(`${COMPLETE}!apps/*/x.test.tsx\n`)).toEqual(['**/*.test.tsx']);
+    expect(unignoredContentOf(`${COMPLETE}!docs/mcp/*.md\n`)).toEqual(['docs']);
+    // A glob that cannot reach the class is not a re-include of it.
+    expect(unignoredContentOf(`${COMPLETE}!packages/**/*.md\n`)).toEqual([]);
+  });
 });
 
 describe('the finding', () => {

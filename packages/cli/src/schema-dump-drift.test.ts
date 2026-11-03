@@ -246,6 +246,18 @@ describe('the dump against the newest snapshot', () => {
     expect(await check(dumpOf(['id', 'extra']))).toHaveLength(1);
   });
 
+  // Postgres folds an unquoted name to lower case and keeps a quoted one as written.
+  test('an unquoted table name is folded as Postgres folds it; a quoted one is not', async () => {
+    await migration('0001_init', 'create table posts (id text);', ['id']);
+    await migration('0002_by_hand', 'ALTER TABLE POSTS ADD COLUMN extra text;');
+    expect(await check(dumpOf(['id', 'extra']))).toEqual([]);
+    await Bun.write(
+      join(root, MIGRATIONS_DIR, '0002_by_hand.sql'),
+      'alter table public."Posts" add column extra text;\n',
+    );
+    expect(await check(dumpOf(['id', 'extra']))).toHaveLength(1);
+  });
+
   test('no snapshot at all says nothing: the first generation is what writes one', async () => {
     await migration('0001_init', 'create table posts (id text);');
     expect(await check(dumpOf(['id', 'hacked']))).toEqual([]);

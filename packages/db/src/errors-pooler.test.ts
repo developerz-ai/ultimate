@@ -48,7 +48,7 @@ describe('driverError · a pooler refusing libpq options at startup', () => {
 
     expect(error.code).toBe('X_DB_POOLER_OPTIONS_REFUSED');
     expect(error.fix).toContain('-c lock_timeout=');
-    expect(error.fix).toContain("DATABASE_URL's options");
+    expect(error.fix).toContain('from the options of DATABASE_URL');
     expect(error.fix).not.toContain('DATABASE_POOLER=transaction');
   });
 
@@ -59,7 +59,7 @@ describe('driverError · a pooler refusing libpq options at startup', () => {
     );
 
     expect(error.fix).not.toContain('x;rm');
-    expect(error.fix).toContain("DATABASE_URL's options");
+    expect(error.fix).toContain('from the options of DATABASE_URL');
   });
 
   test('another 08P01 stays the server verdict it always was', () => {
@@ -116,5 +116,40 @@ describe('the two pooler refusals built by hand', () => {
     // profile's number, so a long healthy statement is taken for a dead path.
     expect(error.cause).toContain('X_DB_UNAVAILABLE');
     expect(error.cause).toContain('the pool is replaced');
+  });
+});
+
+/**
+ * A `fix:` is pasted into a shell, so each one must parse as one, prose only after `#`. The first
+ * draft printed `DATABASE_POOLER=transaction (session on a session pool)` — a syntax error — and an
+ * `alter role` line whose trailing words were sent as SQL.
+ */
+describe('every pooler fix is a command a shell runs', () => {
+  const parses = (fix: string): number =>
+    Bun.spawnSync(['bash', '-n', '-c', fix], { stderr: 'pipe', timeout: 10_000 }).exitCode;
+  const commandOf = (fix: string): string => fix.split('   #')[0] ?? '';
+  const refused = (parameter: string) =>
+    driverError(
+      'select 1',
+      serverError('08P01', `unsupported startup parameter in options: ${parameter}`),
+    ).fix;
+
+  test.each([
+    ['refused, the framework bound', refused('statement_timeout')],
+    ['refused, the operator option', refused('lock_timeout')],
+    ['bound lost', statementBoundLost('web', []).fix],
+    ['session required', poolerSessionRequired('ROLE=migrate').fix],
+  ])('%s', (_label, fix) => {
+    expect(parses(fix)).toBe(0);
+    // The SQL sits inside psql's own -c, never as words after it.
+    for (const statement of commandOf(fix).matchAll(/-c "([^"]*)"/g)) {
+      expect(statement[1]).toMatch(/^alter role <user> set [a-z_]+ = '[^']*'$/);
+    }
+  });
+
+  test('the switch is an export, then the alter role lines through psql', () => {
+    expect(refused('statement_timeout')).toStartWith(
+      `export DATABASE_POOLER=transaction && psql "$DATABASE_URL" -c "alter role <user> set statement_timeout = '10s'" -c "alter role <user> set idle_in_transaction_session_timeout = '30s'"`,
+    );
   });
 });

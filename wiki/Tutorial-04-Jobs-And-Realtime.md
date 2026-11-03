@@ -214,7 +214,7 @@ bunx x dev --once --port 3100
 |---|---|---|
 | `web` | HTTP: pages, actions, queries | RPS |
 | `sync` | live-query websockets, on `$PORT + 1` | concurrent connections — no sticky sessions |
-| `worker` | the job queue | queue depth |
+| `worker` | the job queue | queue demand: jobs held plus jobs due |
 | `scheduler` | cron dispatch, enqueue only | fixed 1, lease-row leader (`x_scheduler_leader`) |
 | `replicator` | logical replication → change feed | 1 per database; opt in with `--role`, needs a real Postgres with `wal_level=logical` |
 

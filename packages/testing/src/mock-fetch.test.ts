@@ -219,6 +219,24 @@ describe(testName('unit', 'requestLog'), () => {
     expect(requestLog()).toEqual([{ method: 'GET', url: 'not a url', headers: {}, body: null }]);
   });
 
+  test(
+    'a mock answers an open-ended stream without waiting for an end that never comes',
+    async () => {
+      mockFetch(`POST ${VENDOR}`, [new Response(null, { status: 413 })]);
+      const open = (): ReadableStream<Uint8Array> =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('chunk'));
+          },
+        });
+      expect((await fetch(VENDOR, { method: 'POST', body: open() })).status).toBe(413);
+      const request = new Request(VENDOR, { method: 'POST', body: open() });
+      expect((await fetch(request)).status).toBe(413);
+      expect(requestLog().map((call) => call.body)).toEqual([null, null]);
+    },
+    { timeout: 1000 },
+  );
+
   test('a body that cannot be read is logged null, and the refusal stays the seal', async () => {
     const used = new Request(VENDOR, { method: 'POST', body: 'x' });
     await used.text();
@@ -313,6 +331,7 @@ describe(testName('unit', 'requestLog — a call that passes through'), () => {
   /** A stand-in for the real dial: what the seal handed on is the assertion. */
   const passing = async (
     body: (handed: { input: unknown; init: unknown }[]) => Promise<void>,
+    onDial: () => void = () => undefined,
   ): Promise<void> => {
     const handed: { input: unknown; init: unknown }[] = [];
     unsealNetwork();
@@ -320,6 +339,7 @@ describe(testName('unit', 'requestLog — a call that passes through'), () => {
     globalThis.fetch = Object.assign(
       (input: unknown, init: unknown) => {
         handed.push({ input, init });
+        onDial();
         return Promise.resolve(new Response('real'));
       },
       { preconnect: realFetch.preconnect },
@@ -351,6 +371,24 @@ describe(testName('unit', 'requestLog — a call that passes through'), () => {
       expect(await (handed[0]?.input as Request | undefined)?.text()).toBe('in-request');
       expect(requestLog()[0]?.body).toBe('in-request');
     });
+  });
+
+  test('a Request-input stream still open when the call is made is dialled before its end', async () => {
+    let close = (): void => undefined;
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('open'));
+        close = () => controller.close();
+      },
+    });
+    await passing(
+      async (handed) => {
+        await fetch(new Request(VENDOR, { method: 'POST', body: stream }));
+        expect(handed).toHaveLength(1);
+        expect(await (handed[0]?.input as Request | undefined)?.text()).toBe('open');
+      },
+      () => close(),
+    );
   });
 
   test('a stream on its way to a real server is never pulled, so it logs null', async () => {

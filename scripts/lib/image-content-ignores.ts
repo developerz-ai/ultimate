@@ -12,9 +12,9 @@ import type { Finding } from './log';
  * a fixture, and a missing module at boot is a worse failure than a few kilobytes.
  */
 const RULES = [
-  { line: '**/*.test.ts', paths: ['x.test.ts', 'apps/web/x.test.ts'] },
-  { line: '**/*.test.tsx', paths: ['x.test.tsx', 'apps/web/x.test.tsx'] },
-  { line: 'docs', paths: ['docs', 'docs/x.md'] },
+  { line: '**/*.test.ts', within: '**/*.test.ts', paths: ['x.test.ts', 'apps/web/x.test.ts'] },
+  { line: '**/*.test.tsx', within: '**/*.test.tsx', paths: ['x.test.tsx', 'apps/web/x.test.tsx'] },
+  { line: 'docs', within: 'docs/**', paths: ['docs', 'docs/x.md'] },
 ] as const;
 
 export const CONTENT_IGNORE_LINES: readonly string[] = RULES.map((rule) => rule.line);
@@ -25,13 +25,25 @@ export interface ContentGap {
   readonly missing: readonly string[];
 }
 
+/** One path a glob matches: each wildcard filled in, the first of each `{a,b}` taken. */
+const instanceOf = (glob: string): string =>
+  glob
+    .replaceAll(/\{([^,}]*)[^}]*\}/g, '$1')
+    .replaceAll(/\[[^\]]*\]/g, 'x')
+    .replaceAll('**', 'a/b')
+    .replaceAll(/[*?]/g, 'x');
+
 /**
- * Whether a re-include undoes the rule rather than bringing one file back. Docker anchors every
+ * Whether a re-include undoes the rule rather than bringing one file back. A literal path is the
+ * documented escape; a GLOB reaching into the class is not, wherever it points: fixed probes alone
+ * passed `!packages/**\/*.test.ts`, which re-includes every package test. Docker anchors every
  * pattern at the context root, so a leading `/` or `./` changes nothing and is dropped first.
  */
-const undoes = (pattern: string, paths: readonly string[]): boolean => {
-  const glob = new Bun.Glob(pattern.replace(/^\.?\//, ''));
-  return paths.some((path) => glob.match(path));
+const undoes = (pattern: string, rule: (typeof RULES)[number]): boolean => {
+  const anchored = pattern.replace(/^\.?\//, '');
+  const glob = new Bun.Glob(anchored);
+  if (rule.paths.some((path) => glob.match(path))) return true;
+  return /[*?[{]/.test(anchored) && new Bun.Glob(rule.within).match(instanceOf(anchored));
 };
 
 /** Ordered, as Docker reads it: the last line that matches decides. */
@@ -44,7 +56,7 @@ export const unignoredContentOf = (text: string): readonly string[] => {
     let ignored = false;
     for (const line of lines) {
       if (line === rule.line) ignored = true;
-      else if (line.startsWith('!') && undoes(line.slice(1).trim(), rule.paths)) ignored = false;
+      else if (line.startsWith('!') && undoes(line.slice(1).trim(), rule)) ignored = false;
     }
     return !ignored;
   }).map((rule) => rule.line);

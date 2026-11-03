@@ -26,6 +26,13 @@ export const hasStreamBody = (init: RequestInit | undefined): boolean => {
 };
 
 /**
+ * A body with no end the log can wait for: a stream, or a Request's own, which may be one. Its
+ * capture runs beside the call, so a mock that answers 413 at once is not held to the stream's end.
+ */
+export const isOpenEnded = (input: RequestInfo | URL, init: RequestInit | undefined): boolean =>
+  hasStreamBody(init) || (init?.body == null && input instanceof Request && input.body !== null);
+
+/**
  * The call's own request, for reading only: a stream body stays out of it, unlocked. `undefined`
  * when no Request can hold the call, so the refusal the test is owed stays the seal's or the real
  * dial's rather than this module's `TypeError`.

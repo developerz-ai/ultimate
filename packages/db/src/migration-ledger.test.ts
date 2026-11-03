@@ -46,17 +46,25 @@ describe('unit · an edited migration', () => {
   };
 
   // `x db gen "fix initial"` exited 0 and wrote the edit into the dump: the fix made it worse.
-  test('the fix restores the file, and only then names a new migration', () => {
+  // A committed edit: `git checkout -- <file>` restores the same wrong blob. The revisions are listed,
+  // and the one to restore is the one the ledger's checksum names.
+  test('the fix lists the revisions, and names the one applied by its checksum', () => {
     const { code, fix } = refusal('0001_init');
     expect(code).toBe('X_MIGRATION_CONFLICT');
-    expect(fix).toStartWith('git checkout -- packages/db/migrations/0001_init.sql   # ');
+    expect(fix).toStartWith(
+      "git log --format='%h %ad %s' --date=short -- packages/db/migrations/0001_init.sql   # ",
+    );
+    expect(fix).toContain('checksum applied');
+    expect(fix).toContain('git checkout <rev> -- packages/db/migrations/0001_init.sql');
     expect(fix).toContain('never edit an applied migration');
     expect((fix ?? '').split('#')[0]).not.toContain('x db gen');
   });
 
-  test('an id the shell would read restores the directory instead of splicing it', () => {
+  test('an id the shell would read lists the directory instead of splicing it', () => {
     const { fix } = refusal('0001_$(id)');
-    expect(fix).toStartWith('git checkout -- packages/db/migrations   # ');
+    expect(fix).toStartWith(
+      "git log --format='%h %ad %s' --date=short -- packages/db/migrations   # ",
+    );
     expect(fix).not.toContain('$(id)');
   });
 });

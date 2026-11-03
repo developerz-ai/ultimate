@@ -104,6 +104,16 @@ describe('unit · a promise withdrawn is breaking', () => {
     ]);
   });
 
+  // `required` is a set of its own: a schema with no `properties` still promises its names.
+  test('required withdrawn where no properties are declared', () => {
+    expect(
+      only(diffRows('rows', { type: 'object', required: ['id'] }, { type: 'object' })),
+    ).toEqual([['breaking', 'rows.id']]);
+    expect(
+      only(diffRows('rows', { type: 'object' }, { type: 'object', required: ['id'] })),
+    ).toEqual([['additive', 'rows.id']]);
+  });
+
   test('a nested member removed', () => {
     expect(diff(withProperties({ author: { ...ROW.properties.author, properties: {} } }))).toEqual([
       ['breaking', 'rows.author.name'],

@@ -26,10 +26,13 @@ export async function expectedQueues(root: string): Promise<ExpectedQueues> {
 export function openQueue(
   url: string,
   env: Readonly<Record<string, string | undefined>>,
+  statementTimeoutMs: number,
 ): Promise<QueueReader> {
   const client = postgresClient({
     url,
-    profile: { max: 1 },
+    // The server cancels a read past what is left of `--timeout`: the command stops waiting on its
+    // own clock, and this is what stops the database working on a query nobody reads.
+    profile: { max: 1, statementTimeoutMs },
     env,
     applicationName: 'x deploy verify',
   });

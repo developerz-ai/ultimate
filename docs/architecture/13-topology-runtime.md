@@ -239,7 +239,7 @@ the advisory lock had, and the one a plain `insert … on conflict do nothing` w
 |---|---|---|---|
 | `web` | requests/sec, p95 latency | `http.server.request.duration`, `http.server.active_requests` | classic HPA on RPS; latency as the guardrail |
 | `sync` | concurrent connections | `sync.connections.active`, `sync.backpressure.bytes` | scale on connections, **not** CPU — an idle socket costs memory, not cycles |
-| `worker` | queue depth + oldest-ready age | `jobs.queue.depth{queue}`, `jobs.queue.oldest_ready_ms{queue}` | age is the better signal: depth alone hides a stalled pool |
+| `worker` | queue demand (held plus due) + oldest-ready age | `queue_demand{queue}`, `queue_oldest_ready_seconds{queue}` | depth alone (`queue_depth`, ready-only) reads 0 while every job is held; age is the better alert signal: depth alone hides a stalled pool |
 | `scheduler` | none | `scheduler.is_leader` | **fixed 1** + a standby. Never autoscaled |
 | `replicator` | none | `replication.lag_bytes`, `matcher.cpu_ratio` | **1 per database**. Lag is an alert, not a scale-out |
 | `migrate` | none | — | run-once |

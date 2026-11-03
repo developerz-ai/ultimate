@@ -146,7 +146,7 @@ export const queries = queryClient<Api['queries']>({ baseUrl }); // reads
 | Why two clients and not one | actions and queries are two registries (`defineApi`'s `actions:` and `queries:` keys) answering two methods. A read taken off the action client is a name that does not exist on `Api['actions']` — a compile error, which is the point |
 | Types | the read's own `input` and row type. A list read answers `readonly TRow[]`, `limit(1)` included; a `single: true` read answers `TRow` and rejects with `X_NOT_FOUND` when the route 404s |
 | Failures | the server's own code, off `problem+json` — `X_INPUT_INVALID` stays `X_INPUT_INVALID`. A gateway answering HTML, a network fault and a 2xx body that is not JSON are `X_CLIENT_TRANSPORT_FAILED`, the same code an action's client answers. It was `X_RPC_FAILED` until 21.0.0 |
-| Rows are JSON, with their instants revived | what the body parses to, plus every value the server answered as a `Date` handed back as one (`As of 2026-10`, #710): the route names them in `x-ultimate-dates` by path — one entry per column of a list — and `clientTransport` revives exactly those. The body and the OpenAPI document are unchanged; a client that ignores the header reads ISO strings. A query declares no output schema, so the header is how the row type's `Date` stays true |
+| Rows are JSON, with their instants revived | what the body parses to, plus every value the server answered as a `Date` handed back as one (`As of 2026-10`, #710): the route names them in `x-ultimate-dates` by path — one entry per column of a list — and `clientTransport` revives exactly those. The body and the OpenAPI document are unchanged; a client that ignores the header reads ISO strings. A query's rows are never parsed on the way out (a declared `rows:` publishes structure, it parses nothing), so the header is how the row type's `Date` stays true |
 | `then` is not a read | the proxy answers `undefined` for it, so `await queries` resolves to the client instead of fetching `/_x/query/then`. Same rule in `rpc` |
 
 ## A file at a signed URL — `download:`
@@ -230,7 +230,7 @@ A non-live query has none of these constraints — it is just a read.
 
 ## A sealed column never rides on a row
 
-A query declares no output schema, so nothing parses a row on its way out. A `.sealed()` column
+Nothing parses a query's row on its way out: a declared `rows:` is published as the row's structure, never applied to the row. A `.sealed()` column
 stays behind because the repository row does not enumerate it
 ([Sealed columns](Entities-And-Migrations#sealed-columns)), `As of 2026-10`.
 

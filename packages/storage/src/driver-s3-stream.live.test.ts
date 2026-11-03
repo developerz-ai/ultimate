@@ -117,18 +117,23 @@ describe.skipIf(target === undefined)('live · s3 · large objects', () => {
       request: { filename: 'a.png', contentType: 'image/png', size: 10 },
       clock: wallClock,
     });
-    const put = (body: BodyInit): Promise<Response> => fetch(grant.url, { method: 'PUT', body });
-    const longer = await put(new Uint8Array(1000));
-    expect(longer.status).toBe(403);
-    const shorter = await put(new Uint8Array(5));
-    expect(shorter.status).toBe(403);
-    // No declared length at all: a chunked body is not a way around the signed header.
-    const chunked = await put(new Blob([new Uint8Array(1000)]).stream());
-    expect(chunked.status).toBe(403);
-    expect(await disk.exists(grant.key)).toBe(false);
+    // Outside the run's prefix (the key is the grant's), so the sweep in afterAll never sees it.
+    try {
+      const put = (body: BodyInit): Promise<Response> => fetch(grant.url, { method: 'PUT', body });
+      const longer = await put(new Uint8Array(1000));
+      expect(longer.status).toBe(403);
+      const shorter = await put(new Uint8Array(5));
+      expect(shorter.status).toBe(403);
+      // No declared length at all: a chunked body is not a way around the signed header.
+      const chunked = await put(new Blob([new Uint8Array(1000)]).stream());
+      expect(chunked.status).toBe(403);
+      expect(await disk.exists(grant.key)).toBe(false);
 
-    const exact = await put(new Uint8Array(10));
-    expect(exact.status).toBe(200);
-    expect((await disk.stat(grant.key))?.size).toBe(10);
+      const exact = await put(new Uint8Array(10));
+      expect(exact.status).toBe(200);
+      expect((await disk.stat(grant.key))?.size).toBe(10);
+    } finally {
+      await disk.delete(grant.key);
+    }
   });
 });
