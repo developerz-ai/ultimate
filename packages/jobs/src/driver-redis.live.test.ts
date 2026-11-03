@@ -182,10 +182,12 @@ describe.skipIf(url === '')('live · redis · the job driver', () => {
   // namespace. Redis has no `introspect`, so a row is read off its own HASH.
   describe('enqueueMany, as memory and Postgres answer it', () => {
     const prefixes = new WeakMap<JobDriver, string>();
-    const field = (flat: unknown, name: string): string | undefined => {
-      const list = Array.isArray(flat) ? flat.map(String) : [];
-      const at = list.findIndex((value, index) => index % 2 === 0 && value === name);
-      return at === -1 ? undefined : list[at + 1];
+    // `HGETALL` through `Bun.RedisClient` answers an OBJECT (RESP3 map), not the flat field/value
+    // list a Lua script returns — reading it as a list read every row as absent.
+    const field = (reply: unknown, name: string): string | undefined => {
+      if (typeof reply !== 'object' || reply === null || Array.isArray(reply)) return undefined;
+      const value: unknown = Object.getOwnPropertyDescriptor(reply, name)?.value;
+      return value === undefined ? undefined : String(value);
     };
     driverEnqueueManyScenarios('redis', {
       fresh: () => {
