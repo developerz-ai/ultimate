@@ -66,7 +66,7 @@ Baseline, raw minified export-only island cost, this probe: `LineChart` 36,219 B
 - `scripts/ui-barrel-bytes.test.ts`: `HeatStrip`, `LiveIndicator` retained module lists; `liveWindow` adds no chart module. Command `bun test packages/ui/src/components/bar-chart-view.test.ts`.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, three rows.** `ChartPoint.value` widens to `number | null`: a reader of the field must handle `null`. `UI_KEYS` gains keys (`Record<UiKey, string>` stops compiling). Series length mismatch now throws.
 Upgrading: "Handle `null` in any code reading `ChartPoint.value`. Add `ui.chart.*`, `ui.live.*` to a `Record<UiKey, string>`. A negative value now draws below zero. Rows of unequal length are `X_UI_INVALID_VALUE`." The rest is additive; `goodWhen` defaults to today's colours.
 

@@ -52,7 +52,7 @@ No opening animation beyond the existing token durations, which reduced motion c
 - `scripts/ui-barrel-bytes.test.ts`: importing `Select` retains no `searchable-select-*` module.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, one row.** `UI_KEYS` gains keys, so the exported `UiKey` union widens. Upgrading: "Add `ui.select.*` to any `Record<UiKey, string>`." The component is additive; `Combobox` and `Select` change nowhere.
 
 ## Done when

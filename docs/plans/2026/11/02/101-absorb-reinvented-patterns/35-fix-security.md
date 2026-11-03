@@ -42,7 +42,7 @@ Not in [`90-deferred.md`](90-deferred.md) yet: coordinator's file.
 5. `render/src/modes.ts:115` comment states the rule. `wiki/Routes-And-Render-Modes.md:137,215`: a shared document is rendered as nobody; per-visitor means `ssr`.
 
 ## S2, the order
-S2 lands first, in the security release. The `isr` default flip ([`35-fix-isr-default.md`](35-fix-isr-default.md)) lands after, in the next major, and touches only the `query === null` branch of `isrRequestUrl` (`render/src/render-isr-key.ts:35`). Each moves every key once, so two releases mean two re-renders, no conflict.
+S2 lands first. The `isr` default flip ([`35-fix-isr-default.md`](35-fix-isr-default.md)) lands after, in the same major, and touches only the `query === null` branch of `isrRequestUrl` (`render/src/render-isr-key.ts:35`). Together they move every key once.
 
 ## S4 and S7, the head window
 | Question | Answer |

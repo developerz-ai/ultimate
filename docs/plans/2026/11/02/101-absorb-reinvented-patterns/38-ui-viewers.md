@@ -79,7 +79,7 @@ Motion: none. `follow` scroll obeys the reduced-motion rule in `38-ui-lists.md`.
 - `packages/ui/src/tokens/contrast.test.ts`: token classes on the code surface reach AA, every preset.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, one row.** `UI_KEYS` gains keys. Upgrading: "Add `ui.code.*`, `ui.diff.*`, `ui.log.*` to any `Record<UiKey, string>`." The rest is additive.
 
 ## Done when

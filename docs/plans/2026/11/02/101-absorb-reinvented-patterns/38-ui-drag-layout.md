@@ -62,7 +62,7 @@ Reduced motion: the dragged row follows the pointer since that is input, not ani
 - `scripts/ui-barrel-bytes.test.ts`: `SplitPane` retains no `sort-view` module; `Dropzone` no `drag/` module.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, one row.** `UI_KEYS` gains keys. Upgrading: "Add `ui.sort.lift` and siblings, `ui.pane.resize`, to any `Record<UiKey, string>`." The rest is additive.
 
 ## Done when

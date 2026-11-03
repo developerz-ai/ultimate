@@ -67,7 +67,7 @@ Motion: token durations through the `Dialog` sheet; nothing added.
 - `packages/cli/e2e/ui-confirm.e2e.test.ts` (browser): scripting off posts; Enter straight after open does not post; backdrop click stays open; focus returns to the trigger; 390 px. Command `bun test packages/ui/src/hotkeys-view.test.ts`.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, one row.** `UI_KEYS` gains keys. Upgrading: "Add `ui.shortcuts`, `ui.confirm.*` to any `Record<UiKey, string>`. `x doctor` lists `guard-native-confirm` as missing; `x g guard native-confirm` adopts it." Palette matching folds accents: a behaviour widening, in the same note.
 
 ## Done when
