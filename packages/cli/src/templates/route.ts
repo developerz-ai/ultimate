@@ -13,13 +13,11 @@ import { kebab, pascal, titleKey } from './naming';
 export type Surface = 'site' | 'app';
 
 /**
- * `ssr` on `app/`, not `stream`, for the reason `scaffold-app.ts`'s dashboard already states:
- * `stream` sets `needsSuspense`, the framework ships no hole marker, and `defineRoute` therefore
- * throws `X_ROUTE_MODE_INVALID` at import. That is not a failing page — it is a page that registers
- * NO route at all, so every `x g route --surface app` and every `x g resource` scaffolded a URL
- * that was absent from `x routes`, from the manifest and from `budgets`. Ship the mode that works.
+ * `stream` on `app/`: the surface's default (`surfaces.ts`), and a stream is always
+ * `private, no-store` where an ungated `ssr` page may be public. A page with no `<Hole>` pays
+ * nothing for it (`renderStreamHtml`), and the first read an author moves into one streams.
  */
-const RENDER: Record<Surface, string> = { site: 'isr', app: 'ssr' };
+const RENDER: Record<Surface, string> = { site: 'isr', app: 'stream' };
 /**
  * `app` is `'visible'` on a page the generator writes with no island, and that is not an oversight.
  * A declared strategy costs nothing when there is nothing to hydrate — `hydrateRuntime` is emitted

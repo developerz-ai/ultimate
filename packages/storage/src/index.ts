@@ -30,6 +30,8 @@ export {
   uploadExtension,
   uploadName,
 } from './attachment';
+export type { PumpLimit } from './byte-pump';
+export { pumpBounded } from './byte-pump';
 export type {
   ByteLimit,
   CopyOptions,
@@ -53,6 +55,7 @@ export {
   etagOf,
   resolveListLimit,
   sha256Base64,
+  signedByteBound,
   toBytes,
 } from './driver';
 export type { LocalDriverOptions } from './driver-local';
@@ -136,7 +139,6 @@ export type {
   RetentionMode,
 } from './object-lock';
 export { isLocked, ObjectLockedError, RETENTION_MODES } from './object-lock';
-
 export {
   assertSafeKey,
   isSafeKey,
@@ -151,12 +153,14 @@ export {
   orgPrefix,
   scopedKey,
 } from './path';
+export type { PutStreamOptions } from './put-stream';
+export { assertPutStream, streamLimit } from './put-stream';
 /**
  * `get(key, { range })`. A third-party driver screens and clamps through these two, or it is a
  * fourth answer to what a range means.
  */
 export type { ByteRange, GetOptions } from './range';
-export { assertGetOptions, servedRange } from './range';
+export { assertGetOptions, assertStreamRange, servedRange, streamedRange } from './range';
 export type {
   SignedUrlConstraints,
   SignedUrlFailure,

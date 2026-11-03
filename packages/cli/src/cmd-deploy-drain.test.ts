@@ -6,6 +6,7 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 // why: Bun exposes no path-join primitive; Bun.write takes one already joined.
 import { join } from 'node:path';
 import { helmDrainOverrides, readHelmDrainOverrides } from './cmd-deploy-drain';
+import { helmWorkerTargetOverrides } from './cmd-deploy-helm';
 import { processRoot } from './process-root-fixture';
 
 // Inside the package, so the fixture's `@ultimat3/*` imports resolve (gitignored).
@@ -48,6 +49,24 @@ describe('unit · the chart drain budget', () => {
     expect(helmDrainOverrides({ deadlineMs: 30_000 }).join(' ')).not.toContain('workerDeadline');
   });
 
+  test('the retire is the app config, in seconds; 0 sends 0, so an off stays off', () => {
+    expect(helmDrainOverrides({ workerRetireMs: 3_600_000 })).toContain(
+      'roles.worker.retireSeconds=3600',
+    );
+    expect(helmDrainOverrides({ workerRetireMs: 1_500 })).toContain('roles.worker.retireSeconds=2');
+    const off = helmDrainOverrides({ workerRetireMs: 0 });
+    expect(off.slice(0, 2)).toEqual(['--set', 'roles.worker.retireSeconds=0']);
+    expect(helmDrainOverrides({ deadlineMs: 30_000 }).join(' ')).not.toContain('retireSeconds');
+  });
+
+  test('one pod’s maxInFlight is the worker target; undeclared, the chart’s value stands', () => {
+    expect(helmWorkerTargetOverrides(16)).toEqual([
+      '--set',
+      'roles.worker.autoscaling.targetAverageValue=16',
+    ]);
+    expect(helmWorkerTargetOverrides(undefined)).toEqual([]);
+  });
+
   test("a deployed app's drain.deadlineMs is read off its app.config.ts", async () => {
     await rm(ROOT, { recursive: true, force: true });
     await Bun.write(
@@ -57,8 +76,12 @@ describe('unit · the chart drain budget', () => {
     await Bun.write(
       join(ROOT, 'app.config.ts'),
       "import { defineConfig } from '@ultimat3/core';\n" +
-        "export const config = defineConfig({ name: 'deploy-drain-fixture', drain: { deadlineMs: 180_000 } });\n",
+        "export const config = defineConfig({ name: 'deploy-drain-fixture', jobs: { maxInFlight: 16 }, drain: { deadlineMs: 180_000 } });\n",
     );
-    expect(await readHelmDrainOverrides(ROOT)).toContain('drain.deadlineSeconds=180');
+    const overrides = await readHelmDrainOverrides(ROOT);
+    expect(overrides).toContain('drain.deadlineSeconds=180');
+    // Core's default: no chart is left with its own idea of the retire.
+    expect(overrides).toContain('roles.worker.retireSeconds=3600');
+    expect(overrides).toContain('roles.worker.autoscaling.targetAverageValue=16');
   }, 60_000);
 });

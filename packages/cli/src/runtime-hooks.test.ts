@@ -102,7 +102,6 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
     definePermissions(['settings:read'] as const);
     registerRoute({
       file: 'apps/web/app/settings/page.tsx',
-      suspenseBoundaries: 0,
       config: defineRoute({
         render: 'ssr',
         offline: 'network-only',
@@ -129,7 +128,6 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
     definePermissions(['admin:billing:read'] as const);
     registerRoute({
       file: 'apps/web/app/billing/page.tsx',
-      suspenseBoundaries: 0,
       config: defineRoute({
         render: 'ssr',
         offline: 'network-only',

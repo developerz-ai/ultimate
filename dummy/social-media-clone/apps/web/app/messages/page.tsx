@@ -1,7 +1,7 @@
-// The conversation list. `ssr` and not `stream`: `render: 'stream'` needs a `<Suspense>` boundary
-// to stream into, and the pinned solid-js@2.0.0-experimental.16 exports none from its server build
-// (docs/gotchas.md). `hydrate: 'never'` and a 0kb budget say the same thing out loud — there is no
-// DOM renderer in this dependency set, so no page here ships client JS.
+// The conversation list. `ssr`: the threads are one read, and the list is the whole page, so a
+// `<Hole>` would flush only the heading ahead of it. `hydrate: 'never'` and a 0kb budget say the
+// same thing out loud — there is no DOM renderer in this dependency set, so no page here ships
+// client JS.
 //
 // The threads are the route's `load`, resolved once per render inside the request's context and
 // handed to the page as `data`.

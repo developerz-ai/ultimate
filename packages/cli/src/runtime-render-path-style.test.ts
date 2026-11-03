@@ -28,7 +28,6 @@ function registerPages(): void {
   for (const page of PAGES) {
     registerRoute({
       file: page.file,
-      suspenseBoundaries: page.render === 'stream' ? 1 : 0,
       config: defineRoute({
         render: page.render,
         offline: 'network-only',

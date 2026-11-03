@@ -7,6 +7,7 @@ import { posix } from 'node:path';
 import type { IslandCollector, RouteEntry } from '@ultimat3/render';
 import {
   clientBootTags,
+  hydrateRuntime,
   islandCollector,
   islandModuleId,
   islandModuleIds,
@@ -70,4 +71,45 @@ export function bootScript(
     return rendered.has(islandModuleId(src.startsWith('.') ? src : `./${src}`));
   });
   return reaches ? renderHead(clientBootTags(options.sync)) : '';
+}
+
+/** A stream document's boot and hydration scripts: its first flush's, and each hole chunk's. */
+export interface StreamScripts {
+  readonly first: string;
+  /** For a hole's chunk, after its reveal: `''` while nothing it shows can hold an island. */
+  readonly after: (outcome: 'filled' | 'failed') => string;
+}
+
+/**
+ * An inline module waits for parsing to end, and a document with a hole open is still parsing, so
+ * the runtime is `async` while nothing has to run before it. Once a boot is in the document it stays
+ * deferred: the boot must run first (`bootScript`), at the cost a Known-Gaps row states.
+ *
+ * `after` re-runs the whole runtime once any hole recorded an island, rather than comparing against
+ * what the last chunk took: holes record while running and reveal in completion order, so an island
+ * recorded by a hole still open would otherwise be spent on another hole's chunk, before its root is
+ * in the DOM. `each` visits a root once, so an extra run does nothing; every body is already hashed.
+ * A FAILED hole shows its `error` markup, walked at shell time — so counted in `flushed` — yet not in
+ * the DOM until this chunk: it re-runs whenever the page recorded any island at all.
+ */
+export function streamScripts(
+  entry: RouteEntry,
+  islands: IslandCollector,
+  options: DocumentOptions,
+  scope: string | undefined,
+  holes: boolean,
+): StreamScripts {
+  const boot = bootScript(entry, islands, options, scope);
+  const flushed = islands.directives.length;
+  let booted = boot !== '';
+  return {
+    first: `${boot}${hydrateRuntime(islands.directives, { async: holes && !booted })}`,
+    after: (outcome) => {
+      const recorded = islands.directives.length;
+      if (recorded === (outcome === 'failed' ? 0 : flushed)) return '';
+      const late = booted ? '' : bootScript(entry, islands, options, scope);
+      booted = booted || late !== '';
+      return `${late}${hydrateRuntime(islands.directives, { async: !booted })}`;
+    },
+  };
 }

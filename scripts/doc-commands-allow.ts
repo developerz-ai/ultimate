@@ -141,6 +141,18 @@ export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
     why: 'the same table: `x gen <kind>` moved to `x g <kind>`',
   },
   {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x deploy compose',
+    kind: 'absent',
+    why: 'the same table: `x deploy compose` moved to `x deploy --method compose`, refused since deploy took subcommands',
+  },
+  {
+    path: 'wiki/CLI-Reference.md',
+    cites: 'x deploy static',
+    kind: 'absent',
+    why: 'the same table: `x deploy static` moved to `x build --target static`',
+  },
+  {
     path: 'wiki/N-Plus-One-Detection.md',
     cites: 'x serve',
     kind: 'absent',

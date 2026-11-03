@@ -147,6 +147,14 @@ describe('unit · x i18n spec', () => {
   });
 });
 
+/** Every key `seedApp`'s `en` defines, translated: `en` is the reference, so anything less is a gap. */
+const COMPLETE_ES = {
+  greeting: 'Hola',
+  farewell: 'Adios',
+  extra: 'Extra',
+  nav: { home: 'Inicio', about: 'Acerca de' },
+};
+
 describe('unit · x i18n check', () => {
   test('a missing key fails the command with an X_CATALOG_MISSING_KEYS finding on the right file', async () => {
     const appRoot = await seedApp();
@@ -159,11 +167,14 @@ describe('unit · x i18n check', () => {
     const [finding] = result.findings ?? [];
     expect(finding?.code).toBe('X_CATALOG_MISSING_KEYS');
     expect(finding?.at).toBe('packages/i18n/catalogs/es.json');
+    // `farewell` is what source names; `extra` and `nav.about` are what `en` holds alone.
     expect(finding?.cause).toContain('farewell');
+    expect(finding?.cause).toContain('extra');
+    expect(finding?.cause).toContain('nav.about');
     expect(finding?.fix).toBe(
       'x i18n sync es   # writes each key above as ⟦key⟧ — replace every one with the real string',
     );
-    expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 1, locales: 1 }));
+    expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 3, locales: 1 }));
   });
 
   test('with no subcommand, defaults to check', async () => {
@@ -178,7 +189,7 @@ describe('unit · x i18n check', () => {
     const appRoot = await seedApp();
     await Bun.write(
       join(appRoot, 'packages/i18n/catalogs/es.json'),
-      `${JSON.stringify({ greeting: 'Hola', farewell: 'Adios' }, null, 2)}\n`,
+      `${JSON.stringify(COMPLETE_ES, null, 2)}\n`,
     );
     await registerSeededCatalogs(appRoot);
     const result = await i18nCommand.run(contextFor(appRoot, ['check']));
@@ -195,7 +206,7 @@ describe('unit · x i18n check', () => {
     const appRoot = await seedApp({ linked: false });
     await Bun.write(
       join(appRoot, 'packages/i18n/catalogs/es.json'),
-      `${JSON.stringify({ greeting: 'Hola', farewell: 'Adios' }, null, 2)}\n`,
+      `${JSON.stringify(COMPLETE_ES, null, 2)}\n`,
     );
     // Deliberately no `registerSeededCatalogs`: this IS the app issue #249 reported — every key
     // on disk, every key used in source, and `defineCatalogs()` in a module nothing imports.
@@ -212,8 +223,8 @@ describe('unit · x i18n check', () => {
     // `en` IS named by the index this fixture writes, so the cause is the package's own — a call
     // in a module nothing imports — and the fix stays the package's own "move the call" line.
     expect(finding?.fix).toContain('defineCatalogs');
-    // en (5 keys) + es (2 keys), across two locales — every one a `⟦key⟧` on a rendered page.
-    expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 7, locales: 2 }));
+    // en (5 keys) + es (5 keys), across two locales — every one a `⟦key⟧` on a rendered page.
+    expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 10, locales: 2 }));
   });
 });
 
@@ -281,6 +292,26 @@ describe('unit · x i18n sync', () => {
     // Named separately from `added`, because `--json` has to tell a copied translation from a
     // placeholder waiting on a human and the two arrive through the same field.
     expect(data.placeholders).toEqual(['app.new.cta', 'app.new.title']);
+  });
+
+  // `en` is the reference whichever locale an app defaults to, and `X_CATALOG_MISSING_KEYS` tells the
+  // default locale to sync itself over a key `en` holds alone. That sync reads source and the audit,
+  // never another catalog, so the audit has to ask the same question the finding did.
+  test('a default locale that is not en syncs the keys en holds alone', async () => {
+    const appRoot = await seedApp();
+    const index = join(appRoot, 'packages/i18n/src/index.ts');
+    await Bun.write(
+      index,
+      (await Bun.file(index).text()).replace("default: 'en'", "default: 'es'"),
+    );
+
+    const result = await i18nCommand.run(contextFor(appRoot, ['sync', 'es']));
+
+    expect((result.data as { from: string }).from).toBe('es');
+    const after = await readCatalog(join(appRoot, 'packages/i18n/catalogs/es.json'));
+    expect(after['extra']).toBe('⟦extra⟧');
+    expect(after['nav.about']).toBe('⟦nav.about⟧');
+    expect(after['farewell']).toBe('⟦farewell⟧');
   });
 
   test('a seeded key is the loud miss the framework already renders, and lands where it is edited', async () => {

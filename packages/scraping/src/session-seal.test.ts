@@ -90,6 +90,8 @@ function fakeStorage(seed: Readonly<Record<string, string>> = {}): StorageDriver
     },
     stat: unsupported('stat'),
     stream: unsupported('stream'),
+    streamRange: unsupported('streamRange'),
+    putStream: unsupported('putStream'),
     copy: unsupported('copy'),
     exists: unsupported('exists'),
     list: unsupported('list'),

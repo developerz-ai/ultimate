@@ -1,10 +1,12 @@
 // What a helm deploy tells the chart about the drain: `app.config.ts`'s `drain` section — the ONE
 // drain budget since 25.0.0 deleted `http.drainTimeoutMs` — in the seconds `docker/helm` derives
 // each role's terminationGracePeriodSeconds from. Passed on every upgrade, so a raised
-// budget can never ship against a grace period sized for 25 s.
+// budget can never ship against a grace period sized for 25 s, and nor can the retire beside it.
 
 import type { DrainConfig } from '@ultimat3/core';
 import { isUltimateError, READINESS_GRACE_DEFAULT_MS } from '@ultimat3/core';
+import { loadAppConfig } from './app-config-load';
+import { helmWorkerTargetOverrides } from './cmd-deploy-helm';
 import { loadDrainConfig } from './serve-drain';
 
 const seconds = (ms: number): number => Math.ceil(ms / 1000);
@@ -29,6 +31,10 @@ export function helmDrainOverrides(drain: Partial<DrainConfig> | undefined): rea
   if (drain?.workerDeadlineMs !== undefined) {
     out.push('--set', `drain.workerDeadlineSeconds=${seconds(drain.workerDeadlineMs)}`);
   }
+  // Sent at 0 as well: `workerRetireMs: 0` must reach a chart whose default is on.
+  if (drain?.workerRetireMs !== undefined) {
+    out.push('--set', `roles.worker.retireSeconds=${seconds(drain.workerRetireMs)}`);
+  }
   if (drain === undefined) return out;
   const grace = Math.max(drain.readinessGraceMs ?? 0, READINESS_GRACE_DEFAULT_MS);
   out.push('--set', `drain.readinessGraceSeconds=${seconds(grace)}`);
@@ -43,11 +49,13 @@ export function helmDrainOverrides(drain: Partial<DrainConfig> | undefined): rea
  */
 export async function readHelmDrainOverrides(root: string): Promise<readonly string[]> {
   let drain: Partial<DrainConfig> | undefined;
+  let maxInFlight: number | undefined;
   try {
     drain = await loadDrainConfig(root);
+    maxInFlight = (await loadAppConfig(root))?.jobs?.maxInFlight;
   } catch (error) {
     if (!isUltimateError(error) || error.code !== 'X_CONFIG_INVALID') throw error;
     return [];
   }
-  return helmDrainOverrides(drain);
+  return [...helmDrainOverrides(drain), ...helmWorkerTargetOverrides(maxInFlight)];
 }

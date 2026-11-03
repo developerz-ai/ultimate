@@ -62,7 +62,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the jobs statements that bind
   // claim is what the test is about: this statement raised 22P02 on every call, so a worker against
   // a real Postgres never claimed anything and every job sat in the queue forever.
   test('SQL_CLAIM executes — the loop every ROLE=worker container runs', async () => {
-    expect(SQL_CLAIM).toContain('any($1::text[])');
+    expect(SQL_CLAIM).toContain('unnest($1::text[])');
     expect(SQL_CLAIM).toContain('any($5::text[])');
     const rows = await executor?.query(SQL_CLAIM, [[...QUEUES], 1, `w-${RUN}`, 30_000, []]);
     expect(rows).toEqual([]);

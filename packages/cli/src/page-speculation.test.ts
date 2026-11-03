@@ -36,7 +36,6 @@ interface PageOptions {
 function page(file: string, render: RenderMode, options: PageOptions = {}): void {
   registerRoute({
     file,
-    suspenseBoundaries: render === 'stream' ? 1 : 0,
     config: defineRoute({
       render,
       offline: options.offline ?? (render === 'static' ? 'precache' : 'runtime'),

@@ -24,7 +24,6 @@ interface Fixture {
 function register(fixture: Fixture): void {
   const input: RegisterRouteInput<Ctx> = {
     file: fixture.file,
-    suspenseBoundaries: 0,
     config: defineRoute<Ctx>({
       render: fixture.render ?? 'static',
       offline: 'network-only',

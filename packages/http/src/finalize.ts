@@ -31,6 +31,7 @@ const lastResort = (): Response =>
       code: 'X_INTERNAL',
       cause: 'the error renderer itself failed, so nothing of the original error survives here',
       fix: 'grep the logs for pipeline.problem_failed — it carries the renderer failure this reply could not',
+      retry: 'terminal',
     }),
     {
       status: 500,

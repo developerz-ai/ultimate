@@ -1,13 +1,11 @@
 // Every file `x g` emits, put through the repo's OWN biome — the same rules the `lint` step of
-// `x verify` runs. `x g` hand-wraps its output rather than formatting it, so a generated file is
-// formatter-clean by construction and nothing proved the construction was right (#127).
+// `x verify` runs. The templates hand-wrap their output, so a generated file is formatter-clean by
+// construction and nothing proved the construction was right (#127).
 //
-// A build error rather than a runtime format, and the numbers are why: `biome check --write
-// --stdin-file-path` costs ~239ms per file, and one `x g resource` emits 24 ts/tsx files — 5.7s
-// added to a command that is currently instant. Batching to one subprocess is fast enough, but it
-// puts a formatter INSIDE `x g`, where a version skew or an unhappy app config turns "write eight
-// files" into a failure the author cannot act on. The defect is introduced HERE, when a template
-// is edited; catching it here costs one subprocess, once, and nothing at all on a user's machine.
+// A build error AND a format at run time, for different defects. `x g` runs the app's own Biome over
+// what it wrote (`generate-format-written.ts`), best effort: that catches the line a name no fixture
+// picks would wrap. This catches a template edited wrong, here, on the day it is edited, and on any
+// machine whose app has no binary or no config to run it with.
 
 import { afterAll, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises'; // why: Bun has no mkdtemp and no recursive remove.

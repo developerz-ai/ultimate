@@ -6,7 +6,6 @@
 import {
   type Clock,
   finiteCount,
-  NotImplementedError,
   type Page,
   pageOf,
   type ResolveEnvironmentOptions,
@@ -30,6 +29,7 @@ import {
   type StorageObject,
   type StorageRead,
   sha256Base64,
+  signedByteBound,
   toBytes,
 } from './driver';
 import {
@@ -40,12 +40,14 @@ import {
   readSidecar,
 } from './driver-local-read';
 import { lockOfSidecar, type Sidecar, sidecarLock } from './driver-local-sidecar';
+import { putLocalStream } from './driver-local-stream';
 import {
   commitObject,
   inTurnOfBoth,
   type KeyedQueue,
   keyedQueue,
   pendingPathOf,
+  refuseUnsupportedPut,
   sidecarPathOf,
 } from './driver-local-write';
 import { checksumMismatch, deleteFailed, getTooLarge, listFailed, objectNotFound } from './errors';
@@ -58,7 +60,15 @@ import {
   requestedLock,
 } from './object-lock';
 import { assertSafeKey, META_DIR } from './path';
-import { assertGetOptions, type GetOptions, servedRange } from './range';
+import { assertPutStream, type PutStreamOptions } from './put-stream';
+import {
+  assertGetOptions,
+  assertStreamRange,
+  type ByteRange,
+  type GetOptions,
+  servedRange,
+  streamedRange,
+} from './range';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import { resolveSigningSecret } from './signing-secret';
@@ -106,21 +116,6 @@ export interface LocalDriverOptions {
    * `keyedQueue()`; a test passes one it also holds, to park a key deterministically.
    */
   readonly queue?: KeyedQueue | undefined;
-}
-
-/**
- * A POSIX file is not encrypted at rest by this driver, and recording the request in the sidecar
- * would answer a security review with a field the disk never honoured. Refused on the DEV disk
- * too, and deliberately: a `put()` that succeeds locally and throws in production is a gap an app
- * meets on the worst day, and both drivers refusing is one rule instead of two.
- */
-function refuseUnsupportedPut(putOptions?: PutOptions): void {
-  if (putOptions?.serverSideEncryption === undefined) return;
-  throw new NotImplementedError({
-    cause:
-      'server-side encryption on the local driver (it writes plain files under one root) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule, or a LUKS/FileVault volume under root',
-    fix: 'put(key, body)',
-  });
 }
 
 /** `ENOENT` is the one delete failure that means "already in the desired state". */
@@ -260,6 +255,22 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       };
     },
 
+    async putStream(
+      key: string,
+      body: ReadableStream<Uint8Array>,
+      streamOptions: PutStreamOptions,
+    ): Promise<StorageObject> {
+      const safe = assertSafeKey(key);
+      const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
+      const input = { root, key: safe, disk: registered, body, maxBytes, clock };
+      return putLocalStream(input, streamOptions, (then) =>
+        oneAtATime(safe, async () => {
+          await refuseOverwrite(safe, 'overwrite');
+          await then();
+        }),
+      );
+    },
+
     async stat(key: string): Promise<StorageObject | undefined> {
       const entry = await measured(assertSafeKey(key));
       return entry && { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE };
@@ -302,6 +313,15 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       const file = Bun.file(filePath(safe));
       if (!(await file.exists())) throw objectNotFound(registered, safe);
       return file.stream();
+    },
+
+    async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
+      const safe = assertSafeKey(key);
+      assertStreamRange(DRIVER_NAME, range);
+      const file = Bun.file(filePath(safe));
+      if (!(await file.exists())) throw objectNotFound(registered, safe);
+      const [first, last] = streamedRange(DRIVER_NAME, safe, range, file.size);
+      return file.slice(first, last + 1).stream();
     },
 
     /** A real file copy — `Bun.write` from a `BunFile` never routes the bytes through the heap. */
@@ -443,7 +463,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         key: assertSafeKey(key),
         method: urlOptions?.method,
         expiresInMs: urlOptions?.expiresInMs,
-        maxBytes: urlOptions?.maxBytes,
+        maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
         contentType: urlOptions?.contentType,
         baseUrl,
         clock,

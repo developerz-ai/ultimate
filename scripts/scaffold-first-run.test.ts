@@ -12,6 +12,7 @@ import {
   firstRunPlan,
   generatorName,
   runFirstRun,
+  SOLO_SLICE_FILES,
   stepFinding,
   verdict,
 } from './scaffold-first-run';
@@ -64,9 +65,35 @@ describe('firstRunPlan', () => {
   // what makes a fourteenth generator covered the day it lands.
   test('invokes every generator the CLI registry declares, exactly once', () => {
     const invoked = firstRunPlan()
-      .filter((step) => step.args[0] === 'g')
+      .filter((step) => step.name === `g ${step.args[1]}`)
       .map((step) => step.args[1]);
     expect([...invoked].sort()).toEqual([...GENERATORS].sort());
+  });
+
+  // A read never creates its table (`X_FEATURE_REQUIRED`), so each needs a slice to read, and one
+  // named before the step that writes it would be the sweep's own red.
+  test('a read runs into the resource slice, after the step that writes it', () => {
+    const names = firstRunPlan().map((step) => step.name);
+    for (const kind of ['query', 'backfill']) {
+      const step = firstRunPlan().find((one) => one.name === `g ${kind}`);
+      expect(step?.args).toContain('--feature');
+      expect(step?.args).toContain(generatorName('resource'));
+      expect(names.indexOf('g resource')).toBeGreaterThanOrEqual(0);
+      expect(names.indexOf('g resource')).toBeLessThan(names.indexOf(`g ${kind}`));
+    }
+  });
+
+  // D1 and D11: the two shapes a bare `g <kind>` never reaches, gated by the check after this sweep.
+  test('an action and a mutator go into an author-policy slice and a single-tenant one', () => {
+    const named = firstRunPlan().map((step) => step.name);
+    for (const kind of ['action', 'mutator']) {
+      expect(named).toContain(`g ${kind} --feature smoke-resource`);
+      expect(named).toContain(`g ${kind} --feature smoke-solo`);
+    }
+    const entity = SOLO_SLICE_FILES['apps/web/app/smoke-solo/entity.ts'] ?? '';
+    expect(entity).toContain("entity('smoke_solos'");
+    expect(entity).not.toContain('orgId');
+    expect(entity).not.toContain('tenant:');
   });
 
   /**

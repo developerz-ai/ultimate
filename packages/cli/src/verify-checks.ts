@@ -25,7 +25,9 @@ import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract'
 import { guardFindings } from './guards';
 import { catalogFindings } from './i18n-registration';
 import { isrQueryAdvice } from './isr-query-advice';
+import { readJobBudgetFindings } from './job-budget';
 import { unregisteredJobFindings } from './job-registration';
+import { LINT_ARGV, lintOutcome } from './lint-findings';
 import { liveRouteFindings } from './live-routes';
 import { withLoadFindings, withoutLoadFindings } from './load-findings';
 import {
@@ -84,12 +86,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // the colour rule is `packages/ui/src/tokens/tokens.test.ts`, and rides on the `unit` step.
     summary: 'biome: format, no any, no default exports, no unused imports',
     async run(ctx) {
-      const result = await ctx.runner(['bunx', 'biome', 'check', '.'], { cwd: ctx.root });
-      return fromExec(result, {
-        code: 'X_LINT_FAILED',
-        cause: 'biome reported problems',
-        fix: 'bunx biome check --write .',
-      });
+      return lintOutcome(await ctx.runner(LINT_ARGV, { cwd: ctx.root }));
     },
   },
   {
@@ -369,6 +366,7 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...(existsSync(join(ctx.root, APP_CONFIG_FILE))
           ? [
               ...(await unregisteredJobFindings(ctx.root)),
+              ...(await readJobBudgetFindings(ctx.root)),
               ...(await unknownToolGateFindings(ctx.root)),
             ]
           : []),

@@ -162,7 +162,7 @@ failed write.
 **Promotion is where a direct upload is measured.** `policy` is required: the object's size is read
 with the driver's `stat()` (required on `StorageDriver`; no bytes move) and one over
 `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, left under `pending/` for the sweep. On an s3 disk this
-is the first thing that measures the upload at all — a provider presign carries no size. A retry
+is a second measurement: a grant's URL signs the size, but one an app signed itself may not. A retry
 whose source is already gone and whose destination is there answers the destination, so a row
 write that rolled back after the move does not turn into `X_STORAGE_NOT_FOUND`.
 

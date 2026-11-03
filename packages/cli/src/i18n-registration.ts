@@ -261,7 +261,9 @@ export function withPlaceholdersMissing(
   const locales = report.locales.map((audit) => {
     const catalog = catalogs[audit.locale] ?? {};
     const known = new Set(audit.missing);
-    const placeheld = report.used.filter(
+    // `required`, not `used`: `x i18n sync` seeds a reference-only key as a marker too, and a marker
+    // that closed the finding would put `⟦…⟧` on the page under a green gate.
+    const placeheld = report.required.filter(
       (key) => !known.has(key) && answersWithPlaceholder(catalog, key),
     );
     if (placeheld.length === 0) return audit;

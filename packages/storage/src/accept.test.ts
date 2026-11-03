@@ -85,7 +85,7 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-const putGrant = (size?: number): ReturnType<typeof grantUpload> =>
+const putGrant = (size = IMAGES.maxBytes): ReturnType<typeof grantUpload> =>
   grantUpload({
     disk,
     orgId: ORG,
@@ -95,7 +95,7 @@ const putGrant = (size?: number): ReturnType<typeof grantUpload> =>
     request: {
       filename: 'holiday.PNG',
       contentType: 'image/png',
-      ...(size === undefined ? {} : { size }),
+      size,
     },
   });
 

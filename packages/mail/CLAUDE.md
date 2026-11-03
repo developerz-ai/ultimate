@@ -233,6 +233,7 @@
 - The SNS test key and its X.509 certificate are generated per run (`delivery-event-fixture.ts`);
   no private key is committed. The DER was checked once against openssl (`openssl verify`, and
   `openssl x509 -pubkey` gave the SPKI `x509-spki.ts` extracts).
+- **`send()` refuses on the renderer's record, never on the bytes** (`X_MAIL_KEY_MISSING`, terminal, before the transform). A `⟦` may be user data. `recordingTranslator` (`@ultimat3/i18n`) selects through `selectMessageKey`, the selector `t()` uses, because `has()` says yes for a plural family read without a `count`, where `t()` renders `⟦key⟧`. A catalog value that is a marker is a miss: it is what `x i18n sync` seeds, so the refusal's fix must not turn it into a delivery. Templates get the recording `t` too. `renderMessage` drops `misses` (previews show the brackets); nothing on `MailMessage` carries them.
 
 ## Commands
 

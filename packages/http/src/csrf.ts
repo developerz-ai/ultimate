@@ -5,7 +5,7 @@
 // went through. `setRedirect` exists so those form posts work without JS, which makes them a
 // first-class surface here rather than a legacy one.
 
-import { peerAddressClass, proveSameOrigin } from '@ultimat3/core';
+import { peerAddressClass, proveSameOrigin, renderFixShellArg } from '@ultimat3/core';
 import type { CorsConfig } from './cors';
 import { originListed } from './cors';
 import { HttpError } from './errors';
@@ -99,13 +99,14 @@ export const selfOrigin = (url: URL, https: boolean): string =>
 export const csrfBlocked = (
   pathname: string,
   reason: string,
-  ip: string | null = null,
+  ip: string | null,
+  origin: string,
 ): HttpError =>
   ip !== null && peerAddressClass(ip) === 'loopback'
     ? new HttpError({
         code: 'X_CSRF_BLOCKED',
         cause: `${pathname} refused a write it could not show came from this app: ${reason}`,
-        fix: "curl -H 'sec-fetch-site: same-origin' -X POST http://localhost:3000/the-path-above   # a local client proves same-origin the way a browser does; the session cookie still decides who is calling",
+        fix: `curl -H 'sec-fetch-site: same-origin' -X POST ${renderFixShellArg(`${origin}${pathname}`, "'<the url of this request>'")}   # a local client proves same-origin the way a browser does; the session cookie still decides who is calling`,
       })
     : new HttpError({
         code: 'X_CSRF_BLOCKED',

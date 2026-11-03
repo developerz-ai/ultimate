@@ -19,7 +19,6 @@ const register = (render: RenderMode): void => {
   loadStylesheet(`/srv/demo/apps/web/${surface}/${render}/page.module.scss`, '.x{color:red}');
   registerRoute<{ url: string; params: Record<string, string> }>({
     file: `apps/web/${surface}/${render}/page.tsx`,
-    suspenseBoundaries: render === 'stream' ? 1 : 0,
     config: defineRoute<{ url: string; params: Record<string, string> }>({
       render,
       offline: 'network-only',

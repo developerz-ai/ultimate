@@ -1,6 +1,7 @@
-// `x g resource <name>`'s page: the plural route a slice is reached at. It READS — `load` calls the
-// slice's own query as the request's actor — renders the rows through the slice's list component
-// inside `AsyncRegion` (ready, empty, failed), and mounts the slice's form island. `x g route`
+// `x g resource <name>`'s page: the plural route a slice is reached at. It READS — a `<Hole>` calls
+// the slice's own query as the request's actor, after the shell left — renders the rows through the
+// slice's list component inside `AsyncRegion` (ready, empty, failed), and mounts the slice's form
+// island. `x g route`
 // writes a page with a heading and nothing to read; a resource has rows and a form, and a page
 // that showed neither was a slice nobody could reach without wiring it by hand.
 
@@ -36,11 +37,12 @@ const i18nImports = (module: string | undefined): readonly string[] =>
     ? ["import { currentLocale, t } from '@ultimat3/i18n';"]
     : [catalogImport(module), "import { currentLocale } from '@ultimat3/i18n';"];
 
-/** `const load = … => rowsState(() => <read>(input()));`, as Biome prints it at any name length. */
-const loadLine = (read: string): string => {
-  const head = 'const load = (): Promise<PageData> =>';
-  const body = `rowsState(() => ${read}(input()));`;
-  return `${head} ${body}`.length <= LINE_WIDTH ? `${head} ${body}` : `${head}\n  ${body}`;
+/** The read in `rows()`, as Biome prints it at any name length. */
+const stateLine = (read: string): string => {
+  const line = `  const state = await rowsState(() => ${read}(input()));`;
+  return line.length <= LINE_WIDTH
+    ? line
+    : `  const state = await rowsState(() =>\n    ${read}(input()),\n  );`;
 };
 
 export interface ResourcePageOptions {
@@ -59,6 +61,7 @@ const pageSource = (options: ResourcePageOptions): string => {
   const { feature } = options;
   const path = feature.pluralKebab;
   const list = `${feature.camel}List`;
+  const translator = options.catalogModule === undefined ? '' : '\n  const t = useT();\n';
   const open = options.shell
     ? '<Shell>\n      <div class={styles.page}>'
     : '<main class={styles.page}>';
@@ -69,16 +72,17 @@ const pageSource = (options: ResourcePageOptions): string => {
       .split('\n')
       .map((line) => (line === '' ? line : `${indent}${line}`))
       .join('\n');
-  return `// /${path}: the org's ${feature.pluralKebab}, newest first, and the form that adds one. \`load\`
-// reads through the slice's own query, so the policy, the tenancy and the order are the query's;
-// the form is the slice's island, the one module of this page a browser downloads.
+  return `// /${path}: the org's ${feature.pluralKebab}, newest first, and the form that adds one. The rows are
+// read inside a \`<Hole>\`, through the slice's own query, so the shell and the form are on screen
+// before the read answers; the policy, the tenancy and the order are the query's. The form is the
+// slice's island, the one module of this page a browser downloads.
 
 ${sortedImports([
   ...i18nImports(options.catalogModule),
   "import { derivePath } from '@ultimat3/action';",
   "import type { AsyncState } from '@ultimat3/core';",
   "import type { KnownPermission } from '@ultimat3/policy';",
-  "import { defineRoute, island } from '@ultimat3/render';",
+  "import { defineRoute, Hole, island } from '@ultimat3/render';",
   "import { AsyncRegion, EmptyState, PageHeader, Section, Skeleton } from '@ultimat3/ui';",
 ])}
 ${options.shell ? "import { Shell } from '../../shared/shell';\n" : ''}import type { ${feature.pascal} } from '../${feature.kebab}/entity';
@@ -94,7 +98,7 @@ const CURRENCY = 'USD';
 
 type Row = ${feature.pascal};
 
-/** What \`load\` answers: the read's outcome as DATA, so the page renders each of its states. */
+/** The read's outcome as DATA, so the region renders each of its states. */
 export type PageData = AsyncState<readonly Row[]>;
 
 /**
@@ -112,7 +116,18 @@ export async function rowsState(read: () => Promise<readonly Row[]>): Promise<Pa
 /** No org: the query reads the ACTOR's, so a read can only ever be for the caller's own org. */
 const input = () => ({ limit: PAGE_ROWS });
 
-${loadLine(list)}
+/** The list, once it is read. A thunk of the \`<Hole>\`: it starts after the first flush. */
+async function rows() {${translator}
+${stateLine(list)}
+  return (
+    <AsyncRegion
+      state={state}
+      reserve={{ lines: 3 }}
+      empty={() => <EmptyState title={t('app.${feature.kebab}.empty')} />}
+      ready={(found) => <${feature.pascal}List rows={found} />}
+    />
+  );
+}
 
 // Declared ABOVE \`defineRoute\`: the route drains the islands declared before it. Named by
 // SPECIFIER, never imported — a string has no import edge, so the page's bundle graph stays the
@@ -123,7 +138,7 @@ const ${feature.pascal}Form = island({
 });
 
 export const config = defineRoute({
-  render: 'ssr',
+  render: 'stream',
   hydrate: 'visible',
   offline: 'runtime',
   // An org's rows are not public: a route with no policy registers \`auth: 'public'\` and its
@@ -133,18 +148,13 @@ export const config = defineRoute({
   // \`visible\` runtime. why: the form is Solid, @ultimat3/ui's Form/Input/Button and the transport.
   // A raise states its own measured bytes and why here, in the same diff (\`X_BUDGET_EXCEEDED\`).
   budget: { js: '${RESOURCE_PAGE_BUDGET}' },
-  load,
   meta: ({ t }) => ({
     title: t('${titleKey(path)}'),
     description: t('${titleKey(path).replace('.title', '.description')}'),
   }),
 });
 
-export interface PageProps {
-  readonly data: PageData;
-}
-
-export function Page(props: PageProps) {${options.catalogModule === undefined ? '' : '\n  const t = useT();\n'}
+export function Page() {${options.catalogModule === undefined ? '' : '\n  const t = useT();\n'}
   return (
     ${open}
 ${inner(`<PageHeader title={t('${titleKey(path)}')} />
@@ -164,12 +174,7 @@ ${inner(`<PageHeader title={t('${titleKey(path)}')} />
     <Skeleton lines={3} />
   </${feature.pascal}Form>
 </Section>
-<AsyncRegion
-  state={props.data}
-  reserve={{ lines: 3 }}
-  empty={() => <EmptyState title={t('app.${feature.kebab}.empty')} />}
-  ready={(rows) => <${feature.pascal}List rows={rows} />}
-/>`)}
+<Hole fallback={<Skeleton lines={3} />}>{rows}</Hole>`)}
 ${close}
   );
 }
@@ -182,9 +187,9 @@ const OTHER_ORG = '00000000-0000-4000-8000-000000000009';
 const pageTest = (options: ResourcePageOptions): string => {
   const { feature } = options;
   const t = options.catalogModule === undefined ? '' : '\n  const t = useT();';
-  return `// /${feature.pluralKebab}, rendered as a request renders it: \`load\` reads the actor's org through the
-// slice's query — the in-memory driver under test — and the page shows the rows, the empty state
-// or the refusal, with the form island beside them in every one.
+  return `// /${feature.pluralKebab}, rendered as a request renders it, with the \`<Hole>\` awaited in line: the
+// read names the actor's org through the slice's query — the in-memory driver under test — and the
+// page shows the rows, the empty state or the refusal, with the form island beside them in each.
 ${sortedImports([
   catalogImport(options.catalogModule),
   `import { driver } from '${options.dbModule}';`,
@@ -224,7 +229,7 @@ unitTest('the page lists the org’s rows, newest first, beside the form', async
   clock.advance(1000);
   await store('newer');
   const view = await renderRoute(page, { url, actor: member });
-  expect(view.data.status).toBe('ready');
+  expect(view.text).toContain('newer');
   expect(view.text.indexOf('newer')).toBeLessThan(view.text.indexOf('older'));
   // The form is the one island, and it wakes when it is visible.
   expect(view.islands.map((island) => island.strategy)).toEqual(['visible']);
@@ -233,30 +238,29 @@ unitTest('the page lists the org’s rows, newest first, beside the form', async
 
 unitTest('an org with no rows reads the empty state, not an empty list', async () => {${t}
   const view = await renderRoute(page, { url, actor: member });
-  expect(view.data).toEqual({ status: 'ready', data: [] });
   expect(view.text).toContain(t('app.${feature.kebab}.empty'));
   expect(view.meta.title).toBe(t('${titleKey(feature.pluralKebab)}'));
 });
 
-unitTest('a member of another org reads none of this org’s rows', async () => {
+unitTest('a member of another org reads none of this org’s rows', async () => {${t}
   await store('ours');
   // The same page, the same URL: which org it reads is the actor's, never a parameter.
   const outsider = testActor('outsider', { orgId: otherOrg, permissions: [read] }).actor;
   const view = await renderRoute(page, { url, actor: outsider });
-  expect(view.data).toEqual({ status: 'ready', data: [] });
+  expect(view.text).not.toContain('ours');
+  expect(view.text).toContain(t('app.${feature.kebab}.empty'));
 });
 
 unitTest('a caller the read refuses sees the refusal, and the page around it', async () => {
   // In the org, without the grant: the query's policy refuses before any row is read.
   const stranger = testActor('stranger', { orgId }).actor;
   const view = await renderRoute(page, { url, actor: stranger });
-  expect(view.data.status).toBe('failed');
   expect(view.html).toContain('X_FORBIDDEN');
   expect(view.islands).toHaveLength(1);
 });
 
 unitTest('it is gated, rendered per request, and budgeted', () => {
-  expect(page.config.render).toBe('ssr');
+  expect(page.config.render).toBe('stream');
   expect(page.config.policy?.permission).toBe(read);
   expect(page.config.offline).toBe('runtime');
   expect(page.config.budget.js).toBe('${RESOURCE_PAGE_BUDGET}');

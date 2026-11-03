@@ -301,6 +301,14 @@
           "requestId": {
             "type": "string"
           },
+          "retry": {
+            "enum": [
+              "terminal",
+              "retryable",
+              "retry-after"
+            ],
+            "type": "string"
+          },
           "status": {
             "type": "integer"
           },

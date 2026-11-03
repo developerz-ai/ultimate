@@ -18,6 +18,8 @@ import {
   dbExecutor,
   pgliteClient,
   pgliteDataDir,
+  poolerFromEnv,
+  poolerSessionRequired,
   poolMaxFromEnv,
   postgresClient,
   setDbClient,
@@ -111,7 +113,7 @@ export function startDb(services: DevServices, env: ReplicaEnv): StartedDb {
           dataDir: pgliteDataDir(binding.url),
           extensions: () => appExtensions(services.root),
         })
-      : postgresClient({ url: binding.url, profile });
+      : postgresClient({ url: binding.url, profile, env });
   const attached = attachReplica(client, replicaUrlFor(binding, env), profile);
   setDbClient(attached.client);
   return { client, replica: attached.replica };
@@ -268,6 +270,15 @@ export async function startQueue(
    */
   schema: SchemaMode = 'ensure',
 ): Promise<RunningQueue> {
+  // `x db migrate` runs as whatever ROLE the shell has, so `postgresClient`'s role check cannot see
+  // it: what needs the session is the step that takes the migration lock, whichever role asked.
+  if (
+    schema === 'apply' &&
+    services.db.mode !== 'embedded' &&
+    poolerFromEnv(env) === 'transaction'
+  ) {
+    throw poolerSessionRequired('a step that applies migrations');
+  }
   const { client: db, replica } = startDb(services, env);
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database

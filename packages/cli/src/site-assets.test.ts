@@ -131,6 +131,7 @@ describe('the served surface', () => {
       expect(response.headers.get('content-type')).toBe(type);
       expect(response.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
       expect(response.headers.get('accept-ranges')).toBe('bytes');
+      expect(response.headers.get('content-length')).toBe(String(table.resolve(path).bytes));
     }
   });
 

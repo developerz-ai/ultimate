@@ -44,7 +44,7 @@ there is one environment, and it hides the object a reviewer needs to see.
 |---|---|---|---|
 | `web` | Deployment + Service + Ingress | HPA on request rate | `/readyz` readiness, `/healthz` liveness on `:3000` |
 | `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
-| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue depth, an `External` metric | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
+| `worker` | Deployment + a **headless** Service (no ClusterIP — it exists so a ServiceMonitor can select the `metrics` port) | HPA on queue demand (`queue_demand`, held plus due), an `External` metric | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
 | `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, readiness on `/readyz`, both `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
 | `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, readiness on `/readyz?deep=1`, both `:9090` |
@@ -251,6 +251,22 @@ spec:
     syncOptions: [CreateNamespace=true, ServerSideApply=true]
 ```
 
+### Did the roll land
+
+A controller's `Synced` and `Healthy` say the objects applied and the pods are Ready. Neither says the new build answers or that a worker claims a queue. As the last CI step, or a post-sync hook:
+
+```bash
+DATABASE_URL=… x deploy verify --url https://<host> --build "$BUILD_ID" --window 60s --timeout 10m --json
+```
+
+| Failure | Reads as |
+|---|---|
+| `X_DEPLOY_BUILD_MISMATCH` | the roll never reached the load balancer; `meta.byBuild` names what answered |
+| `X_DEPLOY_UNSTABLE` | old and new still mixed, or new pods failing readiness |
+| `X_DEPLOY_QUEUE_UNSERVED` | every pod Ready and no worker of this build claims the queue; `meta.builds` names the old pods holding it |
+
+It samples through the load balancer, so it reports samples, never each pod. Unset `DATABASE_URL`: the queues report `graded: false`. A scale-to-zero worker pool: `--idle-ok <queue>`. `As of 30.0.0`
+
 ### Image promotion, and the trap under it
 
 CI builds and pushes; it holds **no cluster credential**. The handoff is image-only. A controller in
@@ -297,9 +313,9 @@ This repo's `docker/helm/` sets all of this. The chart `x new` writes sets the s
 | `allowPrivilegeEscalation` | `false` | — |
 | `capabilities.drop` | `[ALL]` | but see below |
 | `seccompProfile` | `RuntimeDefault` | — |
-| `terminationGracePeriodSeconds` | derived per role: `45` web/sync, `35` worker/scheduler/replicator, plus `roles.worker.retireSeconds` on the worker | preStop (5s, web/sync on 1.30+) + the readiness grace (`drain.readinessGraceSeconds`, web/sync only) + the worker's retire (`roles.worker.retireSeconds`, worker only) + the drain budget (`drain.deadlineSeconds` for every role but the worker; the worker's is `drain.workerDeadlineSeconds` when > 0, else `drain.deadlineSeconds`) + `drain.teardownMarginSeconds` (10s). Never set it by hand: `x deploy --method helm` passes those chart values from the app's own `drain` config (`deadlineMs` — every role's drain budget, web included, since 25.0.0 deleted `configureHttp`'s `drainTimeoutMs`; `workerDeadlineMs` — `ROLE=worker`'s in its place, up to a day, since 26.0.0; and `readinessGraceMs`, in seconds), so a raised budget raises its roles' grace with it. The `container` CI job refuses a value below 35 |
+| `terminationGracePeriodSeconds` | derived per role: `45` web/sync, `35` scheduler/replicator, `3635` worker: its `35` plus `roles.worker.retireSeconds` | preStop (5s, web/sync on 1.30+) + the readiness grace (`drain.readinessGraceSeconds`, web/sync only) + the worker's retire (`roles.worker.retireSeconds`, worker only) + the drain budget (`drain.deadlineSeconds` for every role but the worker; the worker's is `drain.workerDeadlineSeconds` when > 0, else `drain.deadlineSeconds`) + `drain.teardownMarginSeconds` (10s). Never set it by hand: `x deploy --method helm` passes those chart values from the app's own `drain` config (`deadlineMs` — every role's drain budget, web included, since 25.0.0 deleted `configureHttp`'s `drainTimeoutMs`; `workerDeadlineMs` — `ROLE=worker`'s in its place, up to a day, since 26.0.0; and `readinessGraceMs`, in seconds), so a raised budget raises its roles' grace with it. The `container` CI job refuses a value below 35 |
 | `minReadySeconds` | `10` | a new pod must stay Ready this long before the rollout counts it and terminates an old one, so a role that passes its first probe and crashes seconds later never replaces a working pod. `maxUnavailable: 0`, `maxSurge: 1` on every rolling role |
-| `roles.worker.retireSeconds` | `0` — off | the worker's opt-in retire (`As of 25.0.0`). Above 0, the worker gets a `preStop` that sends PID 1 SIGUSR2 and waits for it to exit: it claims nothing more, finishes every held job however long it runs, aborts nothing, logs `jobs.worker.retiring` / `jobs.worker.retired`, drains and exits 0 (`packages/cli/src/serve-retire.ts`). Set it to the longest a held job may run — for a job whose side effect may happen at most once and may outlast `drain.deadlineSeconds`; the seconds are added to the worker's grace period, which the kubelet counts the `preStop` against. Both charts, this repo's and the one `x new` writes ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
+| `roles.worker.retireSeconds` | `3600` — on (`As of 30.0.0`), `0` off | the worker's retire, set by `x deploy --method helm` from `drain.workerRetireMs`. Above 0, the worker gets a `preStop` that sends PID 1 SIGUSR2 and waits for it to exit, for at most those seconds: it claims nothing more, finishes every held job however long it runs, aborts nothing, logs `jobs.worker.retiring` / `jobs.worker.retired`, drains and exits 0 (`packages/cli/src/serve-retire.ts`). The value is the longest a held job may run before the SIGTERM and its drain; the seconds are added to the worker's grace period, which the kubelet counts the `preStop` against. Both charts, this repo's and the one `x new` writes ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |
 | `lifecycle.preStop.sleep` | `5`s, on Kubernetes 1.30+ only | holds SIGTERM while endpoints converge. The chart's floor is 1.27 and the field does not exist below 1.30, so it renders only where the API server knows it; below that the framework's readiness grace covers the same race |
 | `startupProbe` | 30 × 5s | sized for an image with **no prebuilt store**, where a `web` pod runs Babel over every island and Sass over every stylesheet before its HTTP listener opens (4.2–4.8 s and 8–9 CPU-seconds on the demo app, `As of 2026-10-01`) — a liveness probe counting from container start restarts a pod that is merely booting. An image built from the scaffolded Dockerfile carries the store (`RUN … build --target prebuilt`) and is ready in 1.6–1.7 s; one that does not logs `X_IMAGE_NOT_PREBUILT` on every boot. The metrics listener opens first on every role, and the background roles build nothing either way |
 | `ULTIMATE_CURSOR_SECRET` | in the release's Secret | a boot outside `development`/`test` on the development cursor key the framework ships is refused (`X_CURSOR_SECRET_DEV`) |

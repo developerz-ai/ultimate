@@ -1,17 +1,25 @@
 /**
  * `stream` — the default for `app/` pages. A genuinely static shell is flushed on the
- * first tick; every `<Suspense>` boundary becomes a hole that is filled out of order, in
+ * first tick; every `<Hole>` becomes a slot that is filled out of order, in
  * completion order, as its data resolves.
  *
  * Why the shell is free here: Solid compiles templates to DOM operations and tracks
  * updates with signals, so there is no VDOM tree to replay and no hydration pass over the
  * shell. A resolved hole patches the exact nodes bound to it; the surrounding markup is
  * never re-executed. In a VDOM framework a streamed shell still pays to hydrate the whole
- * tree, which buys TTFB but not TBT — here it buys both, so a `<Suspense>` boundary that
+ * tree, which buys TTFB but not TBT — here it buys both, so a `<Hole>` that
  * contains no interactive island costs literally zero JS.
  */
 
-import { BUILD_ID_HEADER, escapeHtml, finiteCount, logger, renderThrowable } from '@ultimat3/core';
+import {
+  BUILD_ID_HEADER,
+  escapeHtml,
+  finiteCount,
+  logger,
+  renderThrowable,
+  reportError,
+  UltimateError,
+} from '@ultimat3/core';
 import { finiteStatus } from './finite-status';
 import type { RenderResult } from './route';
 import { REVEAL_BODY, REVEAL_CALL } from './stream-scripts';
@@ -19,8 +27,15 @@ import { REVEAL_BODY, REVEAL_CALL } from './stream-scripts';
 export interface StreamHole {
   /** Stable within a response; becomes the DOM id, so keep it short. */
   readonly id: string;
-  /** Rendered synchronously into the first flush (the `<Suspense fallback>`). */
+  /** Rendered synchronously into the first flush (`<Hole fallback>`). */
   readonly fallback: string;
+  /** This hole's own markup when it rejects or misses its deadline (`<Hole error>`). */
+  readonly error?: string;
+  /**
+   * Scripts for the chunk, after its `$X()`: asked once `resolve` answered, so it can see what the
+   * hole's render recorded (a hole's island needs a runtime the first flush could not know of).
+   */
+  readonly after?: (outcome: 'filled' | 'failed') => string;
   /**
    * `signal` aborts when the response is cancelled — a client that disconnected mid-stream. A
    * hole that ignores it still finishes; it just finishes into a document nobody reads.
@@ -62,12 +77,12 @@ export function holeMarker(id: string, fallback: string): string {
  */
 export const REVEAL_SCRIPT = `<script>${REVEAL_BODY}</script>`;
 
-export function revealChunk(id: string, html: string): string {
+export function revealChunk(id: string, html: string, after = ''): string {
   // The id reaches markup ONLY through `escapeHtml` — never a script — so a quote in it
   // cannot close anything, and no per-hole body exists for a CSP to fail to list.
   return (
     `<template data-x-hole="${escapeHtml(holeId(id))}">${html}</template>` +
-    `<script>${REVEAL_CALL}</script>`
+    `<script>${REVEAL_CALL}</script>${after}`
   );
 }
 
@@ -90,7 +105,21 @@ export interface StreamOptions {
    * its own timeout, never the default, because "forever" is not a deadline anyone chose.
    */
   readonly holeTimeoutMs?: number | null;
+  /**
+   * While a hole is open, an empty comment every this many ms. Nothing else is written while a hole
+   * waits, and Bun closes a socket idle for `idleTimeout` — `@ultimat3/http` derives it from
+   * `requestTimeoutMs` (+2 s), so a 1 s deadline cut a 6 s hole at 3 s with no `</html>`. A write
+   * resets Bun's idle timer (measured, Bun 1.4.4); clamping the hole deadline instead would cut a
+   * legitimately slow hole, and render cannot see the socket's timeout to clamp to.
+   */
+  readonly keepAliveMs?: number;
 }
+
+/** Under the shortest `idleTimeout` `@ultimat3/http` derives: `ceil(requestTimeoutMs / 1000) + 2` ≥ 3 s. */
+export const DEFAULT_STREAM_KEEPALIVE_MS = 1_000;
+
+/** The keep-alive write: a comment, inert wherever the parser is between two chunks. */
+export const STREAM_KEEPALIVE_CHUNK = '<!---->';
 
 /**
  * `null` is the declared "this hole owns its own timeout" opt-out; every other value is a
@@ -117,6 +146,27 @@ const startHole = (hole: StreamHole, signal: AbortSignal): Promise<string> => {
   }
 };
 
+/** A hole's `after`, which is app-shaped code too: a throw there costs the scripts, never the reveal. */
+const afterOf = (hole: StreamHole, outcome: 'filled' | 'failed'): string => {
+  try {
+    return hole.after?.(outcome) ?? '';
+  } catch (error) {
+    logger.warn('render.stream.hole_after_failed', {
+      hole: hole.id,
+      error: renderThrowable(error),
+    });
+    return '';
+  }
+};
+
+/** What a monitor hears when a hole misses its deadline: the visitor got the error markup. */
+const holeDeadlineMissed = (id: string, timeoutMs: number): UltimateError =>
+  new UltimateError({
+    code: 'X_TIMEOUT',
+    cause: `stream hole ${id} did not settle within ${timeoutMs} ms, so its error markup was shown`,
+    fix: 'fetch(url, { signal: AbortSignal.timeout(5_000) }) — bound the read under the <Hole>',
+  });
+
 /**
  * Flush order is completion order, not declaration order — a fast hole never waits behind
  * a slow one. The stream closes only after every hole has settled, so a rejected boundary
@@ -135,6 +185,12 @@ export function renderStreamHtml(
   // is `setTimeout(fn, 0)`, so every hole would miss a deadline nobody set and the document would
   // be all fallbacks. `null` is the declared opt-out; there is no spelling that means "immediately".
   const timeoutMs = declaredTimeoutMs(options.holeTimeoutMs);
+  const keepAliveMs = finiteCount(
+    'renderStreamHtml',
+    'keepAliveMs',
+    options.keepAliveMs ?? DEFAULT_STREAM_KEEPALIVE_MS,
+    1,
+  );
   /**
    * The response's own lifetime. A client that disconnects mid-stream cancels the stream, and
    * both halves of that have to be honoured: nothing more may be enqueued — `settle`'s
@@ -144,6 +200,7 @@ export function renderStreamHtml(
    */
   const holes = new AbortController();
   let closed = false;
+  let keepAlive: ReturnType<typeof setInterval> | undefined;
 
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -157,6 +214,7 @@ export function renderStreamHtml(
       const close = (): void => {
         if (closed) return;
         closed = true;
+        clearInterval(keepAlive);
         controller.close();
       };
 
@@ -169,6 +227,9 @@ export function renderStreamHtml(
         close();
         return;
       }
+
+      keepAlive = setInterval(() => write(STREAM_KEEPALIVE_CHUNK), keepAliveMs);
+      keepAlive.unref?.();
 
       const settle = (): void => {
         pending -= 1;
@@ -183,46 +244,65 @@ export function renderStreamHtml(
         // its rejection, or its deadline. A late resolve after the deadline writes nothing —
         // the placeholder it would fill was replaced by the fallback and the document is closed.
         let revealed = false;
-        const reveal = (html: string): void => {
+        // The hole's own lifetime: the response's, cut short by its deadline. The document closes
+        // only once every hole settled or missed its deadline, so nothing is left to stop at close,
+        // and a hole that finished keeps an un-aborted signal (`render-stream.test.ts` pins it).
+        const own = new AbortController();
+        const signal = AbortSignal.any([holes.signal, own.signal]);
+        const reveal = (html: string, after = ''): void => {
           if (revealed) return;
           revealed = true;
           if (timer !== undefined) clearTimeout(timer);
-          write(revealChunk(hole.id, html));
+          write(revealChunk(hole.id, html, after));
           settle();
         };
+        const failed = (): string => hole.error ?? errorFallback(hole.id);
         const timer =
           timeoutMs === null
             ? undefined
             : setTimeout(() => {
                 logger.warn('render.stream.hole_deadline', { hole: hole.id, timeoutMs });
-                reveal(errorFallback(hole.id));
+                const missed = holeDeadlineMissed(hole.id, timeoutMs);
+                // A client that left is nobody's fault: the abort below stopped the work on purpose.
+                if (!signal.aborted) reportError(missed, { source: 'http' });
+                own.abort(missed);
+                // `after` on every path: the error markup may carry an island of its own.
+                reveal(failed(), afterOf(hole, 'failed'));
               }, timeoutMs);
         // A response nobody is reading must not hold the process open until its deadline.
         timer?.unref?.();
 
-        void startHole(hole, holes.signal).then(
-          (html) => {
-            reveal(html);
-          },
-          (error: unknown) => {
-            // `renderThrowable`, never `.message`/`String()`: the value is whatever the hole threw,
-            // and a read that raises here skips the `reveal` below — the hole never fills and the
-            // response is held to its deadline for a failure that was already handled.
-            // A FIELD, never the message: `logger` redacts fields and never `msg`, so a hole's
-            // failure text interpolated into the message reached the log past every redactor.
-            logger.warn('render.stream.hole_rejected', {
-              hole: hole.id,
-              error: renderThrowable(error),
-            });
-            reveal(errorFallback(hole.id));
-          },
-        );
+        // `after` inside the chain: a throw there is this hole's failure, never an unhandled
+        // rejection that holds the document to its deadline.
+        void startHole(hole, signal)
+          // Asked only for a reveal that will write: a hole past its deadline already answered.
+          .then((html) => ({ html, after: revealed || closed ? '' : afterOf(hole, 'filled') }))
+          .then(
+            ({ html, after }) => {
+              reveal(html, after);
+            },
+            (error: unknown) => {
+              // `renderThrowable`, never `.message`/`String()`: the value is whatever the hole threw,
+              // and a read that raises here skips the `reveal` below — the hole never fills and the
+              // response is held to its deadline for a failure that was already handled.
+              // A FIELD, never the message: `logger` redacts fields and never `msg`, so a hole's
+              // failure text interpolated into the message reached the log past every redactor.
+              logger.warn('render.stream.hole_rejected', {
+                hole: hole.id,
+                error: renderThrowable(error),
+              });
+              // Aborted means its deadline or the client already answered for it.
+              if (!signal.aborted) reportError(error, { source: 'http' });
+              reveal(failed(), afterOf(hole, 'failed'));
+            },
+          );
       }
     },
 
     /** The client went away. Stop enqueueing, and stop the work that was going to be enqueued. */
     cancel(reason: unknown) {
       closed = true;
+      clearInterval(keepAlive);
       holes.abort(reason);
     },
   });

@@ -1,4 +1,4 @@
-// Single responsibility: the worker's queue metrics — `queue_depth` and the two gauges beside it —
+// Single responsibility: the worker's queue metrics — `queue_depth` and the gauges beside it —
 // republished on their own interval. Split from `worker.ts` at the file-size ceiling; nothing here
 // closes over the claim loop, only over the driver, the clock and the worker's id.
 
@@ -7,6 +7,7 @@ import { logger, recordQueueDepth, renderThrowable } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { JobDriver } from './driver';
 import { recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
+import { createDemandGauge } from './worker-queue-demand';
 
 /**
  * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
@@ -15,6 +16,13 @@ import { recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
  * same number sixty times.
  */
 const QUEUE_DEPTH_INTERVAL_MS = 15_000;
+
+/** One publishing round, and what a worker calls the moment it stops serving. */
+export interface QueueDepthPublisher {
+  (): Promise<void>;
+  /** A draining worker's `queue_demand` goes to zero (`worker-queue-demand.ts`). */
+  retractDemand(): void;
+}
 
 /**
  * This package's ONE metrics call site: the `queue_depth` series `docker/helm`'s worker HPA
@@ -34,18 +42,20 @@ export function createQueueDepthPublisher(input: {
   readonly driver: JobDriver;
   readonly clock: Clock | undefined;
   readonly workerId: string;
-}): () => Promise<void> {
+}): QueueDepthPublisher {
+  const demand = createDemandGauge(input.driver);
   let publishedAt = Number.NEGATIVE_INFINITY;
   // The queues the last successful round published. A gauge keeps the last value it was given and
   // `stats()` lists a queue only while it holds a row it counts, so a queue that drained to `done`
   // would read its final backlog forever — and hold the HPA scaled out — unless it is zeroed on the
   // round it drops out. Bounded by the queue names, and replaced each round.
   let published: ReadonlySet<string> = new Set();
-  return async (): Promise<void> => {
+  const publish = async (): Promise<void> => {
     const now = nowMs(input.clock);
     if (now - publishedAt < QUEUE_DEPTH_INTERVAL_MS) return;
     publishedAt = now;
     try {
+      const fence = demand.fence();
       const stats = await input.driver.stats();
       const reported = new Set(stats.map((stat) => stat.queue));
       for (const queue of published) {
@@ -64,6 +74,7 @@ export function createQueueDepthPublisher(input: {
         recordQueueOldestReady(stat.queue, stat.oldestReadyMs);
         recordQueueDeadJobs(stat.queue, stat.dead);
       }
+      await demand.publish(stats, fence);
     } catch (error) {
       // Instrumentation never costs a tick: a queue that cannot be measured must still be worked.
       logger.warn('jobs.worker.depth-failed', {
@@ -72,4 +83,5 @@ export function createQueueDepthPublisher(input: {
       });
     }
   };
+  return Object.assign(publish, { retractDemand: demand.retract });
 }

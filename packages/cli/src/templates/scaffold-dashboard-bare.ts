@@ -203,7 +203,7 @@ afterAll(clearRoutes);
 
 unitTest('the dashboard is gated, renders per request, and hydrates one island', async () => {
   const view = await renderRoute(page, { url });
-  expect(page.config.render).toBe('ssr');
+  expect(page.config.render).toBe('stream');
   expect(page.config.policy?.permission).toBe('dashboard:read');
   expect(page.config.offline).toBe('runtime');
   expect(page.config.budget.js).toBe('60kb');
@@ -230,7 +230,7 @@ unitTest('the table is the route table: path, surface and render mode per route'
   expect([...row.matchAll(/([^>]*)<\\/td>/g)].map((cell) => cell[1])).toEqual([
     '/dashboard',
     'app',
-    'ssr',
+    'stream',
   ]);
   expect(view.text).toContain(t('app.dashboard.routesCaption'));
   expect(view.meta.title).toBe(t('app.dashboard.title'));

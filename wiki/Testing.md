@@ -92,6 +92,28 @@ X_TEST_NETWORK_SEALED: unmocked network call
   fix:   mockFetch('https://api.stripe.com/v1/charges', () => new Response('{}')) — or allowHost('api.stripe.com') if it must be real
 ```
 
+`mockFetch(match, answer)` holds what a retry test needs in one registration:
+
+```ts
+import { expect, mockFetch, requestLog } from '@ultimat3/testing';
+
+declare function charge(): Promise<void>; // yours: the code under test
+
+mockFetch('POST https://api.vendor.test/charge', [
+  new Response('busy', { status: 503 }),
+  new Response('{"id":"ch_1"}'),
+]);
+await charge();
+expect(requestLog()).toHaveLength(2);
+const [first, second] = requestLog();
+expect(second?.headers['authorization']).toBe(first?.headers['authorization']);
+expect(second?.body).toBe(first?.body);
+```
+
+- `match`: an exact URL, a prefix ending in `*`, or a RegExp, every verb. A string may name one verb first, `'POST https://…'`. An address-literal URL carrying a `host` header also matches a route on that name, so a pinned dial answers the mock of its host.
+- `answer`: a handler, or a list of `Response | Error` answered in order with the last repeated. An `Error` is thrown. An empty list is `X_INVARIANT`.
+- `requestLog()`: `{ method, url, headers, body }[]`, in call order, refused calls and socket dials included, unredacted. Header names are lowercase. `body` is UTF-8 text or `null`; a `ReadableStream` on its way to a real server is never read and logs `null`. A stream body or a `Request`'s own is captured beside the call, never ahead of the answer: it is in the entry once it ends, `null` until then.
+
 Locale and zone are declared per test when the behavior under test depends on them — see [Timezones and dates](Timezones-And-Dates) and [I18n](I18n).
 
 ## The six test types
@@ -485,6 +507,7 @@ The loop's fifth statement is what rejects, so the failing line is the loop's ow
 | What | Rule |
 |---|---|
 | **The unit of work is the test** | not the request. A `posts.findById(id)` loop in a unit test has no request anywhere, and that is the loop worth catching |
+| **Both drivers report** | `memoryRepo` reports one event per repository operation under Postgres' own `entity.op`, with no SQL text, `As of 2026-11-02`, so the loop fails on the driver unit tests run on. Stricter in one place: Postgres serves a sibling lookup off a page it already read (`jit-preload.ts`), and memory counts it |
 | **The threshold is the dev one** | 5 statements of one shape, `N_PLUS_ONE_THRESHOLD` from `@ultimat3/entity`. A loop that fails a test and a loop that warns in `x dev` are the same loop |
 | **The fix is the schema's** | the same `nPlusOne()` error `x dev` renders, so the `fix:` names the `preload()` your `references()` columns already spell |
 | **Once per shape** | a body that catches the error gets one failure, not one per statement after it — and `shapes()` still reports the whole loop |
@@ -587,7 +610,7 @@ coverage floor counts that suite alone, so a body only a typed suite reaches is 
 |---|---|---|
 | `x g action` | input parse; the handler through `.as(actor, input)` — the refusal first, then what it answers | `contract`: the action contract, the foreign-org denial, the OpenAPI operation |
 | `x g mutator` | the same, plus `local()` against `memoryLocalTx()`, applied twice | `contract` |
-| `x g query` | the SQL's bound, total order and direction; the read through `.as()` — no grant refused, an empty org reads empty, stored rows read back newest first and never another org's | `--live`: the declaration in `.live.test.ts` |
+| `x g query` | the SQL's bound, total order and direction; the read through `.as()` — no grant refused, an empty org reads empty, stored rows read back newest first and never another org's, the read costing one `statements` count however many rows it answers | `--live`: the declaration in `.live.test.ts` |
 | `x g job` · `x g task` | the body under `runJobs`: which steps one run takes, what it answers, and how it ends | `job`: key, tenant, retry policy, enqueue dedupe |
 | `x g backfill` | one whole pass over rows in two tenants; the projection replayed | `job`: durable name, dedupe |
 | `x g route` | the page rendered (`renderRoute`): heading, metadata, mode, budget, islands | `e2e`: the offline fallback |
@@ -751,7 +774,7 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `seo` | an indexable `site/` route with no title, or no description a search result can render |
 | `i18n` | a key missing from a locale's catalog, or a catalog no module ever registered |
 | `policy` | a permission this app grants or requires that it does not declare. Skipped — never passed — in a repo with no `app.config.ts` |
-| `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces, or `AGENTS.md` is missing or over its byte cap |
+| `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces, `AGENTS.md` is missing or over its byte cap, or a job's `timeout` outlasts the worker's budget (`X_JOB_OUTLASTS_DRAIN`) |
 | `roadmap` | framework repo only — a milestone missing its status marker, or a shipped milestone missing an artifact its own row names |
 
 Any failure fails the gate; flakes are failures.

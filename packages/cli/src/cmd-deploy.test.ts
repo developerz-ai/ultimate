@@ -321,6 +321,8 @@ describe('unit · x deploy --method helm runs the chart the scaffold writes', ()
         '--set',
         'drain.deadlineSeconds=25',
         '--set',
+        'roles.worker.retireSeconds=3600',
+        '--set',
         'drain.readinessGraceSeconds=5',
       ],
     ]);

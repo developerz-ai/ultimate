@@ -102,6 +102,8 @@ throw new UltimateError({
 
 Full anatomy: [`04-error-contract.md`](04-error-contract.md).
 
+A false `fix:` found in the wild adds a row to `packages/cli/src/fix-truth.test.ts`, in the diff that repairs it. A row breaks a scaffold, asserts the code and **executes the printed line**; exit 0 with the failure still present is a red `unit` step. Opt-in: `fix-command.ts` proves every fix names a real command, this proves a few help. Most need a database, a deploy or a secret.
+
 ## Cross-cutting concerns
 
 These four are the framework's promise. **Three of the eight rules below remain conventions, not

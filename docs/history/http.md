@@ -805,3 +805,59 @@ Verbatim from [`packages/http/CLAUDE.md`](../../packages/http/CLAUDE.md), which 
   and requires `trustedProxyHops`. `x-forwarded-proto` (HSTS) and Envoy XFCC (`peer-identity.ts`) ride
   it; `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared (appending to
   XFF is no promise of stripping a client-sent cert header), and is never an actor.
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/http/CLAUDE.md`](../../packages/http/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### Rules — configuration
+
+- **Every numeric knob `defineHttpConfig` resolves is screened** (`port`, `bodyLimitBytes`,
+  `requestTimeoutMs`, `maxInflight`, `trustedProxyHops`) → `X_CONFIG_INVALID`
+  (borrowed). `requestTimeoutMs` tops out at `MAX_TIMER_MS` (2^31−1): past it a timer arms ~1 ms.
+  `buildId: null` is a declaration (`=== undefined`, never `??`); `hostname` never reads `HOSTNAME`. Helpers carry `Finite` (`assertFiniteCount`, `assertFiniteKeyCap`,
+  `assertFiniteBodyLimit`) so `bun run finite-bounds` sees them; `webhook-verify.ts` and
+  `rate-limit.ts` screen their own. **The floor is per option**: `requestTimeoutMs: 0` and
+  `maxInflight: 0` are "off"; `trustedProxyHops` floors at 1. `resolveTrustedProxyHops` owns both
+  refusals (`X_TRUST_PROXY_UNSET`, `X_CONFIG_INVALID`), with no `?? 0` behind it.
+
+
+### Rules — errors and the problem document
+
+- **A browser failing `auth: 'required'` is redirected; an agent gets the problem document**
+  (`auth-redirect.ts`, in `error-map` before the overlay). `config.signInPath` is `null` until named.
+  `nextAfterSignIn` is the ONE `?next=` reader: same-origin paths only, decoded ONCE (by the
+  caller's parser, never again here — `%26` stays `%26`), any C0/DEL refused, non-ASCII
+  percent-encoded for `Location`, re-parsed against an unreachable origin, never throws. It
+  returns the RESOLVED path (never the raw string) and refuses one starting `//`; `locationFor`
+  never emits a same-origin pathname starting `//` (`/.//…` instead).
+
+
+### Rules — the context
+
+- **A shared document renders in `withAnonymousRequest(ctx, url, fn)`** (`context.ts`): `withChildContext`'s
+  rebuilt services under the request's own fields (a service never shadows one), the anonymous actor,
+  the caller's narrowed `url`, the default zone, NO inbound headers (an empty set, never a deny-list),
+  `ip`/`peer`/`clientBuildId`/`authz`/`rateLimit`/`readBody` empty. A new visitor-derived slot on
+  `RequestContext` is cleared there. Not a bare `withChildContext`, where `setRedirect` is `X_NO_REQUEST`;
+  not a spread of `ctx`, whose services know the visitor. The redirect slot is `scope`'s.
+
+
+### Rules — the pipeline
+
+- **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's
+  `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never
+  lengthened. `ctx.signal` is the deadline OR the caller going away (`AbortSignal.any` with
+  `Request.signal`); `expired` is the timer's alone. `deadlineAt` is published as core's
+  `ctx.deadlineAt` (`traceHeaders()` sends it on). `deadline.clear()` in the `finally`. **A handler
+  outliving its 504 is held in core's in-flight count** (`beginWork()`, `pipeline-inflight.test.ts`).
+
+
+### Rules — rate limiting
+
+- **A failed `auth: 'required'` is metered in the `auth` stage** (`spendUnauthenticated`,
+  `rate-limit-stage.ts`): `defaultBucket` under `unauthenticated|ip:<address>`, not route-scoped,
+  spent only on failure — the 401 leaves before `rate-limit`. Covers the bearer mount's bad tokens.
+  Spent, it REFUSES the address before `authenticate()` (`refuseExhaustedAddress`, via the store's
+  read-only `peek` — never a take: that was an upsert per signed-in page),
+  a valid credential included; no `ctx.ip`, no gate. Signed-in callers behind that NAT wait too.

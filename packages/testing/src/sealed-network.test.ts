@@ -3,7 +3,7 @@ import { markListening, resetListeners } from '@ultimat3/core';
 import {
   allowHost,
   mockJson,
-  requestedUrls,
+  requestLog,
   resetNetwork,
   sealNetwork,
   setNetworkState,
@@ -82,7 +82,10 @@ describe(testName('unit', 'sealed network'), () => {
     mockJson('https://a.example.com/2', {});
     await fetch('https://a.example.com/1');
     await fetch('https://a.example.com/2');
-    expect(requestedUrls()).toEqual(['https://a.example.com/1', 'https://a.example.com/2']);
+    expect(requestLog().map((call) => call.url)).toEqual([
+      'https://a.example.com/1',
+      'https://a.example.com/2',
+    ]);
   });
 
   test('a global or sticky regexp mock matches EVERY call, not every other one', async () => {
@@ -125,7 +128,9 @@ describe(testName('unit', 'sealed network — sockets, not only fetch'), () => {
     // A socket has no mock: the repair is the transport the code under test already takes.
     expect(refusal?.fix).not.toContain('mockFetch');
     expect(refusal?.fix).toContain('inject the transport');
-    expect(requestedUrls()).toEqual(['ws://example.invalid']);
+    expect(requestLog()).toEqual([
+      { method: 'WEBSOCKET', url: 'ws://example.invalid', headers: {}, body: null },
+    ]);
   });
 
   test('Bun.connect to a host nobody allowed rejects X_TEST_NETWORK_SEALED', async () => {
@@ -138,6 +143,9 @@ describe(testName('unit', 'sealed network — sockets, not only fetch'), () => {
     expect(refusal?.cause).toContain('CONNECT tcp://example.invalid:443');
     expect(refusal?.fix).not.toContain('mockFetch');
     expect(refusal?.fix).toContain("allowHost('example.invalid:443')");
+    expect(requestLog()).toEqual([
+      { method: 'CONNECT', url: 'tcp://example.invalid:443', headers: {}, body: null },
+    ]);
   });
 
   test('offline closes sockets too, with the offline code rather than the seal', async () => {

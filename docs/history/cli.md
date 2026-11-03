@@ -1649,3 +1649,109 @@ Verbatim from [`packages/cli/CLAUDE.md`](../../packages/cli/CLAUDE.md), which ke
 | Files | Rule |
 |---|---|
 | `role-load.ts` / `document-graph.ts` / `serve-web.ts` | a role imports what it runs: `ROLE_LOADS` (declared over `Role`) — `worker`/`scheduler` import the API index and every module reaching no `.tsx`/stylesheet, verified against `x.manifest.json`'s jobs and tasks (`X_ROLE_LOAD_INCOMPLETE` imports everything); `serve-web.ts` is the web surface, behind `await import()`. `scanAppModules(root, { track: false })` is the container's scan — no reload graph, no error-code walk. Per-role module pins and `NEVER_AT_BOOT`: `serve-graph.test.ts` |
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/cli/CLAUDE.md`](../../packages/cli/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### Introspection and tools
+
+| | |
+|---|---|
+| `cmd-upgrade.ts` / `upgrade-root.ts` / `upgrade-plan.ts` / `upgrade-pins.ts` / `upgrade-bun-floor.ts` / `upgrade-registry.ts` / `upgrade-gate.ts` / `upgrade-report.ts` | `x upgrade`: one major per run; declares no `requiresApp` (`upgrade-root.ts`), and with no app runs the root's `typecheck`/`test` scripts and says so in `data.proof`. `upgrade-plan.ts` is pure and holds every hop refusal; the gate is spawned from the CLI the hop installed and its answers read as foreign documents, since it can be many majors older. Nothing lazy-loads: `bun install` replaces this package under the running process when the app's own CLI ran it |
+
+### Boot (`x dev`, the container)
+
+| | |
+|---|---|
+| `app-config-load.ts` | the ONE reader of an app's `app.config.ts`: `loadAppConfig(root)` — the `config` export through core's `defineConfig`, so validated and default-merged; `undefined` with no file; no `config` object is `X_CONFIG_INVALID`. Every boot fact (`app-auth.ts`, `theme-boot.ts`, `site-config.ts`, `pwa-artifacts.ts`, …) reads a section off it, and `startServices` loads it once. An `import(` of the config module anywhere else is `X_CONFIG_IMPORT_OUTSIDE_LOADER` (`scripts/lib/config-import.ts`) |
+
+### Boot (`x dev`, the container)
+
+| | |
+|---|---|
+| `framework-schema-apply.ts` / `framework-schema-stamp.ts` | the framework tables: `ROLE=migrate`, `x dev` and every CLI command APPLY them in one transaction behind `MIGRATION_LOCK_KEY` (`pg_advisory_xact_lock`) with a bounded `lock_timeout`, then stamp the build on `x_jobs`' table comment; a serving role on an external database runs no DDL and VERIFIES the stamp (`X_FRAMEWORK_SCHEMA_UNAPPLIED`, a major skew is a warning). A comment, never a table: a new framework table moves every app's schema dump |
+
+### Introspection and tools
+
+| | |
+|---|---|
+| `cmd-auth.ts` / `cmd-auth-spec.ts` / `doctor-auth.ts` | `x auth seal-mfa`: the one-shot that seals plaintext `x_users.mfa_secret` through auth's `sealMfaSecrets` (compare-and-set per row; `{ sealed, alreadySealed, skipped }`), over `startQueue`'s client, `open` injectable. `doctor-auth.ts` is the deploy-time half: unsealed secrets and retired framework tables (`RETIRED_TABLE_FIXES`, a `Map` holding a whole literal per table), asked of an external `DATABASE_URL` only |
+
+### Gate steps (`x verify`)
+
+| | |
+|---|---|
+| `templates/scaffold-guards.ts` | `SHIPPED` — the one list of shipped guards: `x new` writes all, `x g guard <name>` writes one, `doctor-guards.ts` lists the ones an app lacks (a listing, never a finding). A new one is a `templates/guard-<name>.ts` + a row + `guard-<name>.test.ts`; `scaffold-guards-style.test.ts` holds embedded scales to `@ultimat3/ui`, the framework's own sheets to the rules, and both tracked apps byte-equal to the templates |
+
+### Gate steps (`x verify`)
+
+| | |
+|---|---|
+| `verify-deadline.ts` / `verify-stalled.ts` / `verify-progress.ts` | a step past its deadline is `X_VERIFY_STEP_TIMEOUT`: its children carry `ULTIMATE_VERIFY_STEP` and are killed by that tag; the finding names the test file `bun test` had not finished (`at`, `meta.inFlight`) and its `fix:` runs that file; any render streams step lines + a heartbeat to stderr. A `fix:` names `ctx.command` — `bun run verify` at the framework root |
+
+### Gate steps (`x verify`)
+
+| | |
+|---|---|
+| `db-rolling.ts` / `doctor-rolling.ts` | `drift`'s fifth rail: what the previous release trips over (`X_MIGRATION_ROLLING_UNSAFE`, `@ultimat3/db`'s classifier), for migrations after `rollingSince` in `x.verify.json` (`x new` writes `"0"`). Unset is silent, never a red `drift` on an existing app; `x doctor` prints one line naming the id, a reminder and never a finding. `--rolling-unsafe` writes `-- rolling-unsafe: true` |
+
+### Gate steps (`x verify`)
+
+| | |
+|---|---|
+| `workspace-checks.ts` / `test-only-shipped.ts` / `workspace-graph.ts` / `tsconfig-references.ts` / `publish-closure.ts` | `package-shape`, `filesize`. A published package's `files` negates `*.test.ts` and `*-fixture.ts`, and no entry point (`exports`, `bin`) may reach a `-fixture.ts` — `X_PACKAGE_SHAPE` names the file to rename; a `src/` module only tests import must be `*-fixture.ts` (`X_PACKAGE_TEST_ONLY_SHIPPED`) |
+
+### Generators (`x g`, `x new`)
+
+| | |
+|---|---|
+| `templates/` | every emitted file; `scaffold-*.ts` for `x new`, one file per generator otherwise. `templates/emitted-contract.test.ts` holds every emitted string to the scaffold's own Biome format and lint, its imports to what the scaffold installs, and its `fix:` lines to the error contract — run it after touching a template: `bun test packages/cli/src/templates/emitted-contract.test.ts` |
+
+### Boot (`x dev`, the container)
+
+| | |
+|---|---|
+| `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`); the hand-off forwards SIGTERM/SIGHUP at once and a SIGINT only if the child is still running after a 1 s grace (a terminal Ctrl-C already reached it), and exits with the child's code |
+
+### Boot (`x dev`, the container)
+
+| | |
+|---|---|
+| `serve.ts` / `serve-boot.ts` / `serve-entry.ts` / `serve-env.ts` | the production entry: roles from `ROLE`, bindings from env, `ROLE=migrate` = `x db migrate`. `serve-boot.ts` (services + roles) is ONE `await import()` in `serveApp`, so `migrate` loads neither. OTLP starts before the app is imported, so its flush is the last `close` hook |
+
+### Rules
+
+| | |
+|---|---|
+| Registry | `registry.ts`: every declaration static (`cmd-<name>-spec.ts`), every body `await import()`ed when that command runs. A command body is never imported to answer the parser or `x help` — `registry-lazy.test.ts`. A spec's constants live in the spec file or a leaf module, never in the body |
+
+### Gate steps (`x verify`)
+
+| | |
+|---|---|
+| `schema-dump-drift.ts` | also the dump-vs-newest-snapshot rail, no database (`X_DB_DRIFT`). `drift`'s fourth rail, the only one that boots a database: committed `packages/db/schema/` vs a scratch replay, and that dump loaded back (`X_SCHEMA_DUMP_DRIFT`) |
+
+### Gate steps (`x verify`)
+
+| | |
+|---|---|
+| `app-agents-md.ts` / `app-env.ts` / `app-openapi.ts` / `app-manifest.ts` | `manifest` and `contract-diff`. `framework-env.ts` is the ONE list of framework-required deploy secrets `.env.example`, `x env check` and `x doctor` read |
+
+### Rules
+
+| | |
+|---|---|
+| Entry | `src/bin.ts` — argv, stdout, exit code only. `local-cli.ts` re-executes the app's own `node_modules/@ultimat3/cli` when a global `x` is a different realpath: a second `@ultimat3/entity` instance is an empty registry |
+
+### Rules
+
+| | |
+|---|---|
+| Strings | rendered output through `messages.ts` (missing key renders `⟦key⟧`). NOT in the catalog: `CommandSpec` summaries and usage, `Finding.cause` / `fix`, fixed-width table headers |
+
+### Rules
+
+| | |
+|---|---|
+| Public API | `src/index.ts`, explicit re-exports only. Every name there is a semver promise; a name nothing outside this package reads is not exported (22.0.0 pruned 236) |

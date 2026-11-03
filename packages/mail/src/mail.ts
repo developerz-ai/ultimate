@@ -4,12 +4,13 @@
 // piece of context that a background send cannot recover after the fact.
 
 import { assert, DEFAULT_TIME_ZONE, tryUseContext } from '@ultimat3/core';
+import type { TranslationMiss } from '@ultimat3/i18n';
 import { jobDriver, jobsFacade } from '@ultimat3/jobs';
 import { parse, type StandardSchemaV1, t } from '@ultimat3/schema';
 import type { MailTemplate } from './blocks';
 import { envelopeRecipients, type MailMessage, mailDriver, type SendResult } from './driver';
 import { assertRecipientAddress } from './envelope-address';
-import { localeMissing, mailDuplicate, templateUnknown } from './errors';
+import { localeMissing, mailDuplicate, mailKeyMissing, templateUnknown } from './errors';
 import { assertHeaderSafe } from './header-safety';
 import { mailIdempotencyKey } from './idempotency';
 import { sendMailJob } from './job';
@@ -115,6 +116,14 @@ export function renderMessage<I>(
   data: I,
   options: SendOptions,
 ): MailMessage {
+  return renderChecked(mail, data, options).message;
+}
+
+function renderChecked<I>(
+  mail: MailDefinition<I>,
+  data: I,
+  options: SendOptions,
+): { readonly message: MailMessage; readonly misses: readonly TranslationMiss[] } {
   assertLocale(mail.id, options.locale);
   if (registry.get(mail.id) === undefined) throw templateUnknown(mail.id, registeredMailIds());
 
@@ -165,7 +174,7 @@ export function renderMessage<I>(
   for (const address of [...envelopeRecipients(message), ...replyTo]) {
     assertRecipientAddress('recipient', address);
   }
-  return message;
+  return { message, misses: rendered.misses };
 }
 
 /**
@@ -178,9 +187,13 @@ export async function send<I>(
   data: I,
   options: SendOptions,
 ): Promise<SendResult> {
+  const { message: rendered, misses } = renderChecked(mail, data, options);
+  // Here and not in `renderMessage`: a preview should show the miss, and a customer never should.
+  // A mail is the one surface where a loud miss cannot be taken back.
+  if (misses.length > 0) throw mailKeyMissing(mail.id, options.locale, misses);
   // Transform BEFORE the key: the key, the queue row and every retry carry the transformed bytes,
   // and the job never re-runs the hook. Not in `renderMessage`, which previews call.
-  const message = await applyMailTransform(renderMessage(mail, data, options));
+  const message = await applyMailTransform(rendered);
   const key = mailIdempotencyKey(message);
 
   if (options.sync === true || jobDriver() === undefined) {

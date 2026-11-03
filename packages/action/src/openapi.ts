@@ -7,6 +7,7 @@
  * registry, and nothing here reads the clock, the environment or a random source.
  */
 
+import { ERROR_RETRY_KINDS } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { operationTagOf, toOpenApiOperation } from './http';
 import { servedActionRoute } from './http-path';
@@ -95,6 +96,8 @@ const PROBLEM_SCHEMA: JsonSchemaObject = {
     cause: { type: 'string' },
     fix: { type: 'string' },
     docs: { type: 'string', format: 'uri' },
+    // The class a client maps to an exception. On every document, hidden 5xx included.
+    retry: { type: 'string', enum: [...ERROR_RETRY_KINDS] },
     requestId: { type: 'string' },
     // Absent when the failure produced none — never `[]`, which would claim "validated clean".
     issues: {

@@ -37,6 +37,7 @@ await withTransaction(async (tx) => {
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
 | `withReplicaReads()` / `replicaScope()` | `As of 2026-08-24`: the scope inside which a plain read may be served by a replica — until it writes, after which every read in it is the primary's. No scope open, nothing routes |
+| `poolerFromEnv()` / `POOLER_ENV` / `PoolerMode` / `POOLER_WAIT_MS` / `statementBound()` / `lostStatementBound()` / `StatementBound` / `poolerSessionRequired()` | `As of 2026-11-03`: a connection pooler in the path (`pooler.ts`), and the two bounds as the session reads them. [Pool sizing by role](#pool-sizing-by-role) |
 | `replicatedClient()` / `ReplicaStats` / `REPLICA_URL_ENV` | `As of 2026-08-24`: one `DbClient` over a primary and a standby. `baseClient()` builds one when `DATABASE_REPLICA_URL` is set and the single-pool client when it is not |
 | `INDEX_METHODS` / `IndexMethod` / `indexMethodOf()` / `indexMethodSql()` / `declaredMethod()` / `isIndexMethod()` | `As of 2026-08-24`: an index's access method — `btree` or `gin`, closed. Absent is `btree`, the live side is read open (whatever `pg_am` said), and the DDL literal is re-derived from the set rather than spliced from the input |
 | `isPlainRead()` | `As of 2026-08-24`: whether a statement may leave the primary. An allow-list — everything it cannot vouch for is the primary's |
@@ -444,13 +445,45 @@ one role that has to outlive it. Before this, `set` replaced the whole value and
 with a non-zero timeout, so a `search_path` survived on `migrate` and vanished on `web` — the role
 that runs the migrations and the role that serves the traffic reading different schemas.
 
+**`DATABASE_POOLER=session|transaction` names a pooler in the path** (`As of 2026-11-02`):
+`postgresClient({ env })` reads it, with `ROLE` and, absent a `url`, `DATABASE_URL`, from that one
+environment (`process.env` when absent); `client.pooler` is the answer everything after asks.
+Behind a pooler the unanswered-statement deadline grows by `poolerWaitMs` (default
+`POOLER_WAIT_MS`, 120 s, PgBouncer's `query_wait_timeout`): the server's bound starts only once
+the pooler assigns a backend, so a saturated pooler is not a dead path. Set, neither bound is sent as `options`, the operator's own
+stay and an empty one is not emitted; the bounds become `alter role`
+([`docs/ops/04-datastores.md`](../../docs/ops/04-datastores.md#pooling-and-the-trap-under-it)).
+`statementBound(client)` reads both as the session does, `{ applied, expected }` per setting, in ms.
+
+**`idleInTransactionMs`** (`As of 2026-11-02`) is sent as `idle_in_transaction_session_timeout`
+beside the statement bound: `web`, `sync` 30 s, `worker`, `scheduler` 120 s, `migrate`, `replicator`
+0. Past it the server closes the transaction, `X_DB_STATEMENT_FAILED` with `sqlState: '25P03'`.
+
 **`DATABASE_POOL_MAX` overrides `max`** (`As of 2026-08`), and it is the only pool knob an operator
 can turn without shipping an image — 400 `web` pods × the frozen `max: 20` is 8,000 backends. A
 value that is not a positive integer refuses at boot rather than falling back.
 
-**`acquireTimeoutMs` bounds `reserve()`**, because queueing turns exhaustion into a hang: `/readyz`'s
-`select 1` joins the same queue, the kubelet kills the pod, and the replacement inherits the same
-saturated database. 0 waits, which is what a run-once role wants.
+**`acquireTimeoutMs` bounds a plain statement and `reserve()` alike** (`As of 2026-11-02`, for the
+statement), because queueing turns exhaustion into a hang: `/readyz`'s `select 1` joins the same
+queue, the kubelet kills the pod, and the replacement inherits the same saturated database. 0 waits,
+which is what a run-once role wants. `max` is one count in front of `Bun.SQL`, FIFO: a statement holds
+a slot until it settles, a pin until it is released, and a statement on a pin takes none.
+
+**A statement nobody answers replaces the pool** (`As of 2026-11-02`). `statement_timeout` is the
+server's, so it cannot fire when the server or the path is gone, and the kernel's retransmit window is
+about 15 minutes. A plain statement unanswered past `statementTimeoutMs` + 5 s is `X_DB_UNAVAILABLE`,
+its cause naming the bound and the statement; an autocommit write may have landed. The old pool closes
+in the background (`db.pool.retired`, at error), the next statement opens a new one, a statement still
+queued moves to it unsent, and a `LISTEN` is dialled again, `onListening` firing as on any re-dial.
+`statementTimeoutMs: 0` has no deadline. A statement on a pin is never rejected on its own: `SET LOCAL`
+can raise its bound. It is counted, and when pins fill every slot each with a statement past the bound,
+the next refused acquire replaces the pool and asks the new one; an idle pin or a busy pool stays. A
+pin dies with its pool. `X_DB_UNAVAILABLE` is unclassified for retry, so a job worker re-runs the
+attempt: a write that landed runs again, at least once, as every job. `reserve()`'s two waits share one
+`acquireTimeoutMs`. The cost is one unref'd 1 s
+timer per pool while statements are in flight, and a set insert and delete per statement: measured
+2026-11-02 on Postgres, 20,000 sends a side, `max: 4`, p50 216-268 µs against 227-258 µs before, inside
+the noise.
 
 **`lockTimeoutMs` bounds a *wait*, never the work.** `alter table … add column` takes `ACCESS
 EXCLUSIVE`; a long `SELECT` holding `ACCESS SHARE` makes it queue, and Postgres' lock queue is FIFO,
@@ -605,16 +638,19 @@ job the moment Postgres fails over.
 | `X_DB_STATEMENT_TIMEOUT` | `57014` — the statement ran past `statement_timeout` |
 | `X_DB_LOCK_TIMEOUT` | `55P03` — it waited past `lock_timeout` for a lock it never got; `migrate()` raises it only once `lockRetries` are spent |
 | `X_MIGRATION_ROLLING_UNSAFE` | a drop or rename the previous release would still read, from `x db gen`, the `drift` rail past `rollingSince`, or `migrate()` with a retire and its drop both pending in production |
-| `X_DB_POOL_EXHAUSTED` | `53300` / `53200`, or `reserve()` past `acquireTimeoutMs` |
+| `X_DB_POOL_EXHAUSTED` | `53300` / `53200`, or a statement or `reserve()` past `acquireTimeoutMs` |
 | `X_DB_DRIFT` | live schema differs from migrations |
-| `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch — never for rows that are all newer than the build (a rollback) |
+| `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch — never for rows that are all newer than the build (a rollback). A mismatch's fix restores the file: `git log -- packages/db/migrations/<id>.sql`, then `git checkout <rev> -- …` the revision whose checksum the ledger names, then `x db gen "<change>"` |
 | `X_MIGRATE_CONCURRENT` | another migrator still held the lock when the wait ran out |
 | `X_MIGRATION_IRREVERSIBLE` | generated `down` would lose data |
 | `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |
 | `X_BRANCH_EXISTS` | branch database already exists (or is the connected one) |
 | `X_SCHEMA_DUMP_DRIFT` | the committed schema dump is not what the migrations produce, or does not load back |
 | `X_NOT_IMPLEMENTED` | branching an in-memory PGlite — a copy needs a directory |
-| `X_ENV_MISSING` | core's — `DATABASE_POOL_MAX` is set to something that is not a positive integer |
+| `X_ENV_MISSING` | core's — `DATABASE_POOL_MAX` is set to something that is not a positive integer, or `DATABASE_POOLER` to something that is neither `session` nor `transaction` |
+| `X_DB_POOLER_OPTIONS_REFUSED` | `08P01` with `unsupported startup parameter`: a pooler refused the libpq `options`. `DATABASE_POOLER`, then `alter role` |
+| `X_DB_POOLER_SESSION_REQUIRED` | `migrate` or `replicator` under `DATABASE_POOLER=transaction`, before a socket |
+| `X_DB_STATEMENT_BOUND_LOST` | a report, never thrown by a statement: `lostStatementBound(statementBound(client), role, pooler)` |
 
 ```bash
 x db migrate --json

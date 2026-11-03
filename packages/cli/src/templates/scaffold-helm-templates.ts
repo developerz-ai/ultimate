@@ -169,7 +169,7 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
     periodSeconds: 15
     failureThreshold: 4
   {{- /*
-  The worker's retire, opt-in: roles.worker.retireSeconds > 0. The preStop sends PID 1 SIGUSR2 —
+  The worker's retire, on by default: roles.worker.retireSeconds > 0. The preStop sends PID 1 SIGUSR2 —
   the framework's retire: stop claiming, finish every held job however long it takes, abort
   nothing, then drain and exit 0 — and waits until PID 1 is gone, so the SIGTERM that follows finds
   nothing left to cut off. It re-sends the signal every 5 s while it waits: PID 1 has no default
@@ -185,7 +185,7 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
         command:
           - bun
           - -e
-          - "process.kill(1, 'SIGUSR2'); for (let n = 1; ; n++) { try { process.kill(1, n % 5 === 0 ? 'SIGUSR2' : 0); } catch { break; } await Bun.sleep(1000); }"
+          - "process.kill(1, 'SIGUSR2'); const end = Date.now() + {{ int $cfg.retireSeconds }} * 1000; for (let n = 1; Date.now() < end; n++) { try { process.kill(1, n % 5 === 0 ? 'SIGUSR2' : 0); } catch { break; } await Bun.sleep(1000); }"
   {{- end }}
   {{- end }}
   resources: {{- toYaml $cfg.resources | nindent 4 }}
@@ -196,7 +196,7 @@ nobody bound. Derived here rather than stated twice in values.yaml, where the tw
 
 {{/*
 A role's terminationGracePeriodSeconds, in the order the kubelet's budget is spent: the preStop
-sleep (web and sync, 1.30+), the worker's opt-in retire (roles.worker.retireSeconds), the
+sleep (web and sync, 1.30+), the worker's retire (roles.worker.retireSeconds), the
 readiness grace (web and sync — every other role drains with none), the drain budget (app.config.ts drain.deadlineMs, every role;
 the worker's is drain.workerDeadlineSeconds instead when > 0, from drain.workerDeadlineMs) and the teardown margin.
 Defaults: 45s web/sync (40s below 1.30), 35s the rest. x deploy --method helm sets
@@ -408,7 +408,7 @@ holds at minReplicas, which is why these are opt-in rather than a default nobody
 
 autoscaling.type says whose number it is. Pods (the default) is a per-pod series — rps, open
 sockets — averaged across pods. External is ONE series for the whole role, divided by the replica
-count: queue_depth is that shape, because every worker publishes the same global backlog, and read
+count: queue_demand is that shape, because every serving worker publishes the same number, and read
 as Pods it asked for N times the workers the queue needed. Any other type fails the render.
 */}}
 {{- range $role, $cfg := .Values.roles }}
@@ -430,7 +430,7 @@ spec:
   maxReplicas: {{ $cfg.autoscaling.maxReplicas }}
   {{- $type := default "Pods" $cfg.autoscaling.type }}
   {{- if not (has $type (list "Pods" "External")) }}
-  {{- fail (printf "roles.%s.autoscaling.type is %q — set it to Pods (a per-pod series) or External (one series for the whole role, e.g. queue_depth)" $role $type) }}
+  {{- fail (printf "roles.%s.autoscaling.type is %q — set it to Pods (a per-pod series) or External (one series for the whole role, e.g. queue_demand)" $role $type) }}
   {{- end }}
   metrics:
     {{- if eq $type "External" }}

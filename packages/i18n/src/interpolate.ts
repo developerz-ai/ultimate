@@ -103,6 +103,23 @@ export function selectPluralKey(
   return key;
 }
 
+/**
+ * The catalog entry one `t(key, vars)` reads. The ONE selection: `t()` and `recordingTranslator`
+ * both call it, so a new selecting var is added here and neither can answer differently.
+ */
+export function selectMessageKey(
+  key: string,
+  vars: InterpolationVars | undefined,
+  locale: string,
+  has: (candidate: string) => boolean,
+): string {
+  const count = vars?.['count'];
+  if (typeof count === 'number' && Number.isFinite(count)) {
+    return selectPluralKey(key, count, locale, has);
+  }
+  return key;
+}
+
 /** All suffixed variants of `key` a locale could legitimately define. */
 export function pluralVariantsOf(key: string): string[] {
   return [`${key}_plural`, ...PLURAL_CATEGORIES.map((category) => `${key}_${category}`)];

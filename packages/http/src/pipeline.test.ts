@@ -137,6 +137,7 @@ describe('stage order', () => {
       'cache-headers',
       'error-map',
       'response',
+      'compress',
     ]);
   });
 

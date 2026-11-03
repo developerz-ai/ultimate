@@ -69,6 +69,8 @@ const capture = (): Captured => {
     stat: unsupported('stat'),
     delete: unsupported('delete'),
     stream: unsupported('stream'),
+    streamRange: unsupported('streamRange'),
+    putStream: unsupported('putStream'),
     copy: unsupported('copy'),
     exists: unsupported('exists'),
     list: unsupported('list'),

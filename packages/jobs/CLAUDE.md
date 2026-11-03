@@ -28,12 +28,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   idempotency_key)`** — the index, the conflict target (spelling the index EXPRESSION exactly) and the
   live-row lookup agree, pinned by a test; `driver-memory.ts` mirrors it. The DDL drops both
   superseded indexes.
-- **JOBS DECLARE THEIR TENANT, and `executeJob` INSTALLS the context — do not re-litigate.**
-  `tenant` is REQUIRED (`(input) => input.orgId` or `'none'`; `X_JOB_TENANT_REQUIRED` backstop).
-  `executeJob` puts the derived org on the ctx's actor (`jobRunActor`, org only) and runs the body in
-  `runWithContext`; `'none'` STRIPS the org (fail-closed).
-  `tenantFor` is a METHOD on `JobHandle` (variance). The queue row's `tenantId` stays the ENQUEUER's
-  (the limiter's bucket). `tenancy-cross-surface.test.ts` asserts HTTP and job verdicts are EQUAL.
+- **JOBS DECLARE THEIR TENANT, and `executeJob` INSTALLS the context — do not re-litigate.** `tenant` is REQUIRED (`(input) => input.orgId` or `'none'`; `X_JOB_TENANT_REQUIRED` backstop). Full rule: `docs/history/jobs.md`.
 - **`enqueuedBy` is ATTRIBUTION, never authority** — do not re-litigate. A job acting FOR a user takes
   the user's id in its input and re-authorises it in the body.
 - `tz` is NON-OPTIONAL in `TaskDefinition`, validated by `@ultimat3/time`'s `isValidTimeZone`. A task
@@ -45,11 +40,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 ## Rules — the driver and SQL
 
-- **`SQL_JOBS_TABLE` is the ONE install point** for every durable table (`x_jobs`, `x_job_*`, `x_backfills`,
-  `x_outbox`, `x_scheduler_*`). A NEW table is also a name in
-  `packages/cli/src/framework-schema.ts`. A shipped table grows by `alter table ... add column if
-  not exists`. Its comments carry NO apostrophes and NO semicolons (it splits on `;`; `driver-pg-sql.test.ts` checks
-  quote parity).
+- **`SQL_JOBS_TABLE` is the ONE install point** for every durable table (`x_jobs`, `x_job_*`, `x_backfills`, `x_outbox`, `x_scheduler_*`). Full rule: `docs/history/jobs.md`.
 - **`claim({ queues: [] })` is REFUSED by every driver** (`assertClaimQueues`,
   `X_JOB_CLAIM_QUEUES_EMPTY`); the memory driver's reads are `async` so a refusal rejects on both.
 - **`ack`, `nack`, `heartbeat` and `recordProgress` are FENCED on `state = 'running'` AND the
@@ -68,10 +59,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - Drivers: the six `JobDriver` methods plus optional `introspect`, `backfills`, `leases`; new
   capabilities go behind the interface. **`redisJobDriver`** (`@ultimat3/jobs/redis`, off the
   barrel) is one Lua script per operation: a semantic change lands in memory, pg AND the scripts.
-- Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm`
-  (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Pinned in
-  `type-pins.ts`. A `waitForEvent` stores the RAW payload and parses it by its required `schema` on
-  a hit and a replay (`X_JOB_EVENT_INVALID`). All time is epoch ms (`nowMs()`, `clock.ts`).
+- **`demand` is the seventh method, required.** `redisJobDriver` counts every running row: it keeps no worker registry, so no claimer is known to drain. **A draining worker's `queue_demand` goes to 0** (`stopAccepting`): `max by (queue)` would read a frozen value over every live worker's. `queue_depth` keeps its last value.
+- **The claim SEEKS** (`SQL_CLAIM`): one ordered scan per open queue for due rows (`x_jobs_claim_idx`, predicate word for word) and one for lapsed leases (`x_jobs_depth_idx`), then an outer `order by run_at limit`. `driver-pg-claim.live.test.ts` refuses a sort under `LockRows`. Dropped rows stay locked to the transaction's end: correct only because a claim autocommits.
+- Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm` (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Full rule: `docs/history/jobs.md`.
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
 
 ## Rules — numbers and limits
@@ -82,10 +72,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`job.concurrency` is enforced by `JobDriver.leases`** (one row per held slot in `x_job_leases`);
   `limits.ts` is the per-process fast path. No lease store + a declared `concurrency` makes `start()`
   throw `X_JOB_CONCURRENCY_UNENFORCEABLE`.
-- **`concurrency` is resolved ONCE** (`concurrency.ts`): a number, or `{ key, limit, whenBusy }` per
-  key. The handle carries `concurrency` (the limit), `whenBusy` (set exactly when keyed) and
-  `concurrencyKeyFor()` — a METHOD. Lease key `job-key:<encoded name>:<key>`; plain `job:<name>`.
-  A bad cap is `X_JOB_DECLARATION_INVALID`.
+- **`concurrency` is resolved ONCE** (`concurrency.ts`): a number, or `{ key, limit, whenBusy }` per key. Full rule: `docs/history/jobs.md`.
 - **`whenBusy: 'fail'` refuses only on EVIDENCE another run holds the key** (`LeaseStore.holders`,
   required): a run meets its own leftover slot. The refusal is `nack({ fail, countsAsAttempt:
   false })` → `failed`, outcome `refused` (`worker-key-busy.ts`), never `executeJob`.
@@ -164,21 +151,14 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   on `x_jobs`. A paused TASK keeps its watermark, so resume is its own `catchUp`.
 - **An occurrence fires in ONE statement** (`SchedulerState.fire`, `SQL_SCHEDULER_FIRE`): the
   watermark is the fence, jobs insert only `where exists (select 1 from moved)`.
-- **`progress()` is throttled in `progress.ts`** and flushed before every settle. **`onSettled`
-  (`settled.ts`) is the ONE ending hook** — `completed`, `dead-lettered`, `dropped`, `refused` —
-  AFTER a settle that LANDED, in the body's tenant scope, `ON_SETTLED_ATTEMPTS` tries, never
-  rethrown, at most once across a crash. Never for a cancel, a retry or a suspension. Runs in
-  `runToCompletion`, under `run.scope` and `onSettledTimeout`, 30 s (`settled-signal.test.ts`).
+- **`progress()` is throttled in `progress.ts`** and flushed before every settle. Full rule: `docs/history/jobs.md`.
 - **Failed for good + `deadLetter: false` is DROPPED**: `nack({ fail })`, outcome `dropped`.
 
 ## Rules — idle cost and the wake
 
 Long form: `docs/history/jobs.md`, "the cross-process wake".
 
-- **An idle round touches no store.** The scheduler keeps each watermark and its next occurrence in
-  memory while it leads (`known`), trusts a lease for `LeaderElection.renewEveryMs`, reads the pause
-  table only when a task is DUE, and folds counters every `COUNTER_ROLLUP_INTERVAL_MS`. What makes
-  the trust safe is the fire statement's watermark fence, never the lease.
+- **An idle round touches no store.** Full rule: `docs/history/jobs.md`.
 - **The worker and the relay back off** (`idle-backoff.ts`): floor → doubling → the ceiling, 2 s, or
   5 s while `wakeIsLive()`. An idle worker pass is ONE claim over every queue with a free slot.
 - **The poll is the guarantee, the wake an optimisation.** `startQueueWake` holds one `LISTEN`
@@ -300,6 +280,9 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
 | `errors-tenant.ts` | `JobTenantMismatchError` |
 | `errors-steps.ts` | `StepOutputUnserializableError`, `JobEventInvalidError` |
+| `worker-queue-demand.ts` | the `queue_demand` gauge: `driver.demand()`, skipped when `stats()` shows no work, retracted to 0 at the drain |
+| `driver-pg-demand-sql.ts` | `QUEUE_DEMAND_ROWS` and `SQL_QUEUE_DEMAND`; the scaler fixture's `SQL_SCALER_DEMAND` reads the same predicate |
+| `driver-pg-claim-sql.ts` | `SQL_CLAIM` and why it seeks; re-exported from `driver-pg-sql.ts` |
 
 Commands: `bun test packages/jobs` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:
 history, "Moved 2026-10-01 — test harnesses".

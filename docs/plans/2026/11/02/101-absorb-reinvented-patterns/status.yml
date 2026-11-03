@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 13
-current_focus: "wave 2: sweeps 7, 7b, 8"
+percent: 25
+current_focus: "wave 3"
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -90,48 +90,48 @@ slices:
   - file: 29-data-pg-unanswered.md
     tier: 1
     sweep: "7"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 29-data-pg-pooler.md
     tier: 1
     sweep: "7"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 30-perf-jobs-claim-relay.md
     tier: 3
     sweep: "7"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 50
   - file: 19-cli-deploy-verify.md
     tier: 3
     sweep: "7b"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 33-ops-worker-roll.md
     tier: 0
     sweep: "7b"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 07-render-stream-hole.md
     tier: 4
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 08-testing-mock-fetch.md
     tier: 5
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 36-dx-false-fixes.md
     tier: 1
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 36-dx-generators.md
     tier: 2
     sweep: "8"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 42-adopt-stability.md
     tier: 5
     sweep: "9"
@@ -180,33 +180,33 @@ slices:
   - file: 26-api-wire-fixes.md
     tier: 0
     sweep: "11"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 26-api-read-contract.md
     tier: 3
     sweep: "11"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 24-web-i18n-mail-keys.md
     tier: 1
     sweep: "11"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 25-pkg-storage-streams.md
     tier: 1
     sweep: "11"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 28-assets-compression.md
     tier: 2
     sweep: "11"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 28-assets-image-contents.md
     tier: 5
     sweep: "11"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 09-core-define-error.md
     tier: 0
     sweep: "12"
@@ -594,4 +594,4 @@ slices:
     percent: 0
 evidence: []
 notes: "Slices stay numbered by area; execution order is by sweep. 90-deferred.md is not a slice and has no row."
-last_updated: 2026-11-02
+last_updated: 2026-11-03

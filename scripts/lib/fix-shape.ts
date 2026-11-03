@@ -23,6 +23,7 @@ const RUNNABLE: ReadonlySet<string> = new Set([
   'pg_dump',
   'pg_restore',
   'echo',
+  'printf',
   'env',
   'tar',
   'ln',

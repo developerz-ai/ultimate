@@ -47,7 +47,7 @@ describe('a lease that lapses on the final attempt is buried by the claim, in bo
     // `attempt` is the attempts a row has HAD: at `max_attempts` there is no next one.
     expect(isFinalAttempt({ attempts: 3 }, 3)).toBe(true);
     expect(isFinalAttempt({ attempts: 3 }, 2)).toBe(false);
-    expect(SQL_CLAIM).toContain("(state = 'running' and attempt >= max_attempts) as exhausted");
+    expect(SQL_CLAIM).toContain('attempt >= max_attempts as exhausted');
     // Only a row the pick LOCKED is buried, and only one it did not bury is claimed.
     expect(SQL_CLAIM).toContain('where j.id = p.id and p.exhausted');
     expect(SQL_CLAIM).toContain('where j.id = p.id and not p.exhausted');

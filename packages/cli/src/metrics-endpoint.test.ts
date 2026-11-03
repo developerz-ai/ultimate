@@ -138,7 +138,7 @@ describe('the scrape endpoint', () => {
     const taken = Number(new URL(endpoint?.url ?? 'http://localhost:0').port);
     expect(taken).toBeGreaterThan(0);
 
-    const refusal = new MetricsPortInUseError({ port: taken });
+    const refusal = new MetricsPortInUseError({ port: taken, dev: true });
     expect(refusal).toBeInstanceOf(MetricsPortInUseError);
     expect(refusal).toMatchObject({ code: 'X_PORT_IN_USE' });
     expect(refusal.cause).toContain(String(taken));
@@ -151,8 +151,10 @@ describe('the scrape endpoint', () => {
   // top of the range names 65536, which is not a port — so the one instruction the reader is
   // given fails. The neighbour below is a port; the one above does not exist.
   test('the port the fix names is one that exists, at the top of the range too', () => {
-    expect(new MetricsPortInUseError({ port: 3000 }).fix).toContain('METRICS_PORT=3001 ');
-    const top = new MetricsPortInUseError({ port: PORT_RANGE.max });
+    expect(new MetricsPortInUseError({ port: 3000, dev: true }).fix).toContain(
+      'METRICS_PORT=3001 ',
+    );
+    const top = new MetricsPortInUseError({ port: PORT_RANGE.max, dev: true });
     expect(top.fix).toContain(`METRICS_PORT=${PORT_RANGE.max - 1} `);
     expect(top.fix).not.toContain(String(PORT_RANGE.max + 1));
   });
@@ -261,8 +263,22 @@ describe('a scrape port that is not a number', () => {
 
 // Plan 101 sweep 1c: the port is a number this file computed, screened all the same so the
 // fix-shell-arg guard reads the line as screened rather than trusting a sentence about it.
-test('the port-in-use fix is the neighbouring port, as a plain argument', () => {
-  expect(new MetricsPortInUseError({ port: 9090 }).fix).toBe(
+test('the port-in-use fix is the neighbouring port, as a plain argument, in dev', () => {
+  expect(new MetricsPortInUseError({ port: 9090, dev: true }).fix).toBe(
     `METRICS_PORT=${String(neighbouringPort(9090))} x dev --json`,
   );
+});
+
+// A container's entry is `bun apps/web/server.ts`: `x dev` runs nothing there, and a deployed
+// scrape target must not move on its own. The refusal stays and says where the knob lives.
+test('a deployed boot is told the role environment, never x dev', () => {
+  const { fix } = new MetricsPortInUseError({ port: 9090, dev: false });
+  expect(fix).toBe(
+    "set METRICS_PORT=<free port> in this role's environment, one per role on a host",
+  );
+  expect(() =>
+    bindScrapePort(9090, 'refuse', () => {
+      throw Object.assign(new Error('in use'), { code: 'EADDRINUSE' });
+    }),
+  ).toThrow(expect.objectContaining({ fix }));
 });

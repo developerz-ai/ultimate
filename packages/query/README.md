@@ -122,6 +122,13 @@ or with a schema no `entity()` branded (a `t.object` look-alike, a `.pick()`ed p
 is the bare rows, byte-identical to before. `rows:` exists because a read's `sql:` names its table
 as a STRING, so nothing else carries a schema the envelope could be derived from.
 
+**Any introspectable `rows:` is also the published row** (`As of 2026-11`), entity or not:
+`openapi.json` and a mount's document print its members inline in the list, the page envelope and
+the single answer, and `x.manifest.json` carries the same wire schema, so `x verify` refuses a
+member removed, retyped or made optional without a major. One narrowing, `toWireOutputSchema`, the
+one the MCP tool's `outputSchema` uses. No `rows:`, or one that cannot be introspected: the bytes
+it had (`items: {}`).
+
 ### Flight control — `clientFlight`, opt-in
 
 A typed read is one dispatch and nothing else until a `flight` is installed. With one, N concurrent
@@ -205,7 +212,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `client.ts` | the typed read client (browser-safe) |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
 | `page-controls.ts` | `_first` / `_after` — the two search-string keys that page the route, split out and judged at the wire against `@ultimat3/entity`'s `MAX_PAGE_SIZE` |
-| `openapi.ts` | the read half of `openapi.json` — one `GET` path item per registered query |
+| `openapi.ts` | the read half of `openapi.json` — one `GET` path item per registered query, publishing a declared `rows:` |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
 | `pagination.ts` | `paginate()` — keyset pages over core's cursor codec |
@@ -712,9 +719,9 @@ export const runRecording = query({
 | Policy | evaluated at MINT, exactly as for a rows read: actor half, the declared `rateLimit:`, the parse, the predicate. A refusal is the policy's own 401/403 |
 | The token | `seal()`ed (`@ultimat3/core`, AES-256-GCM under the app master key, purpose `ultimate.query.download:<name>`) claims: the query, `fingerprint()` of the PARSED input, the expiry on `ctx.now()`, the minting actor minus `facts`. The ACTOR is ciphertext — no id, role or grant readable; the query's path and its input are plain in the URL, as on any read |
 | The serve | the seal first (forged, truncated, another query's, a retired key → `X_QUERY_DOWNLOAD_TOKEN_INVALID`, 403), then the expiry (`X_QUERY_DOWNLOAD_TOKEN_EXPIRED`, 410), then the URL's input re-parsed against the bound fingerprint (edited → 403). `handle` runs as the MINTING actor; the policy is not re-run — it decided at mint, with `facts` the token cannot carry |
-| `handle`'s answer | `{ body: Uint8Array \| Blob \| ReadableStream, contentType, filename, disposition?: 'attachment' \| 'inline', size? }` — bytes, never base64. Anything else is a 500 (`X_INVARIANT`) naming the fix |
+| `handle`'s answer | `{ body: Uint8Array \| Blob \| ReadableStream, contentType, filename, disposition?: 'attachment' \| 'inline', size? }`, or `body: (range?) => BodyInit` (`DownloadBodyOpener`) with `size` required — bytes, never base64. Anything else is a 500 (`X_INVARIANT`) naming the fix |
 | Headers | `content-type`, `content-disposition` (`attachment` default; ASCII `filename` + exact `filename*=UTF-8''…`), `x-content-type-options: nosniff`, `content-security-policy: default-src 'none'; img-src 'self'; media-src 'self'; sandbox`, `referrer-policy: no-referrer`, `cache-control: no-store`; `content-length` only when the size is known — a `Uint8Array`, a `Blob`, or a stream with `size` |
-| `Range:` | one `bytes=` window, 206 + `content-range`; past the end 416. A `Uint8Array`/`Blob` always (a `Blob` slices lazily); a `ReadableStream` only with `size`, else `accept-ranges: none` and the whole body |
+| `Range:` | one `bytes=` window, 206 + `content-range`; past the end 416. A `Uint8Array`/`Blob` always (a `Blob` slices lazily); a `ReadableStream` only with `size`, else `accept-ranges: none` and the whole body; the function form is handed the window, so `(range) => disk.streamRange(key, [range.start, range.end])` reads nothing before it, and a 304 or a 416 opens nothing |
 | Rows | `.live()`, `.page()`, `.as()`, `sourceFor`, `explain`, an MCP tool: `X_QUERY_DOWNLOAD_ONLY`. `describeSql` lists it with `sql: null` |
 | Audit | `audit: true` records the MINT — the decision of who may read what. A serve, and every `Range:` a player sends, is not a second read |
 | Manifest / OpenAPI | `download: true` on the `QueryFact` (rows ↔ download is breaking); one GET with `_token`, `200` as JSON or `application/octet-stream`, `206`, `410`, `416` |

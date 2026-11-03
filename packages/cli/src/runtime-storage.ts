@@ -16,7 +16,7 @@ import type {
   Route,
   UltimateRequest,
 } from '@ultimat3/http';
-import { asCtx, byteWindow, objectResponse, unauthenticated } from '@ultimat3/http';
+import { asCtx, objectResponse, unauthenticated } from '@ultimat3/http';
 import type { KnownPermission } from '@ultimat3/policy';
 import {
   can,
@@ -177,8 +177,8 @@ export async function assertVariantCurrent(
  *
  * A STREAM of the bytes, never a buffer: `get()` holds the whole object in memory and refuses past
  * the disk's `maxGetBytes`, so a large upload was a pod's worth of heap or `X_STORAGE_TOO_LARGE`,
- * and a video's `bytes=0-` probe is the whole object, which only a stream holds. The content type
- * is the STORED one and the validator the driver's own content hash: inventing a cache key here
+ * and a video's `bytes=0-` probe is the whole object, which only a stream holds. A `Range:` is
+ * `streamRange`, so a seek late in the file costs its window. The content type is the STORED one and the validator the driver's own content hash: inventing a cache key here
  * would be a second identity for one object.
  */
 export async function readStorageObject(
@@ -195,7 +195,7 @@ export async function readStorageObject(
   return {
     object,
     open: async (range) =>
-      range === undefined ? driver.stream(key) : byteWindow(await driver.stream(key), range),
+      range === undefined ? driver.stream(key) : driver.streamRange(key, [range.start, range.end]),
   };
 }
 

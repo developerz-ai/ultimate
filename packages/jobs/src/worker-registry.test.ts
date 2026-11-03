@@ -4,8 +4,11 @@
 // for a whole TTL.
 
 import { describe, expect, test } from 'bun:test';
+import { ctxOf } from '@ultimat3/core';
 import type { JobDriver } from './driver';
+import { memoryJobDriver } from './driver-memory';
 import type { WorkerAnnouncement } from './introspection';
+import { jobWorker } from './worker';
 import { startWorkerRegistry } from './worker-registry';
 
 /** A registry whose announce is on the wire until the test lets it land. */
@@ -96,5 +99,28 @@ describe('a worker that stops is not listed', () => {
     } as unknown as JobDriver;
     await start(driver).stop();
     expect(order).toEqual(['forget']);
+  });
+});
+
+describe('a worker names its build', () => {
+  const context = () => ctxOf({ role: 'worker', buildId: 'b-7' });
+  const base = { queues: ['default'], context, drainOnShutdown: false } as const;
+
+  test('jobWorker({ build }) reaches the row the registry announces', async () => {
+    const driver = memoryJobDriver();
+    const worker = jobWorker({ ...base, driver, workerId: 'w-built', build: 'b-7' });
+    worker.start();
+    const rows = await driver.introspect?.workers();
+    await worker.stop();
+    expect(rows?.map((row) => [row.id, row.build])).toEqual([['w-built', 'b-7']]);
+  });
+
+  test('a worker told no build announces none', async () => {
+    const driver = memoryJobDriver();
+    const worker = jobWorker({ ...base, driver, workerId: 'w-bare' });
+    worker.start();
+    const rows = await driver.introspect?.workers();
+    await worker.stop();
+    expect(rows?.map((row) => 'build' in row)).toEqual([false]);
   });
 });

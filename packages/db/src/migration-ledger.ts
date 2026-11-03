@@ -3,14 +3,17 @@
 // Split from `migrate.ts`, which keeps the lock, the apply loop and the rollback; `migrate.ts`
 // re-exports every name here, so its public surface is unchanged.
 
+import { isFixShellSafe } from '@ultimat3/core';
 import type { DbClient } from './client';
 import type { SchemaDescription } from './introspect';
 import { migrationConflict } from './migration-errors';
-import { migrationNameArg } from './primary-key';
 import { raw, sql } from './sql';
 import { SQLSTATE, sqlState } from './sqlstate';
 
 export const LEDGER_TABLE = 'x_migrations';
+
+/** Where `x new` puts an app's migrations: this package reads rows, the CLI reads the directory. */
+const APP_MIGRATIONS_DIR = 'packages/db/migrations';
 
 export interface Migration {
   /** Sort key and primary key. `20260726120000_add_publish_at`. */
@@ -122,10 +125,23 @@ export function auditLedger(
     if (checksum === row.checksum) continue;
     throw migrationConflict(
       `migration "${row.id}" was applied with checksum ${row.checksum} but now hashes ${checksum}`,
-      `x db gen ${migrationNameArg(`fix ${migration.name}`)}   # never edit an applied migration, add a new one`,
+      editedMigrationFix(row.id, row.checksum),
     );
   }
 }
+
+/**
+ * Restore first. `x db gen` was this line, and it exits 0 and writes the edited SQL into the schema
+ * dump, with `drift` green over it. `git checkout -- <file>` was the next, and a COMMITTED edit
+ * restores the same wrong blob, so the line lists the file's revisions and the ledger's checksum
+ * names the one applied. The id is a file name and the checksum a ledger value: either one the
+ * shell would read is left out (the directory, then the cause) rather than spliced.
+ */
+const editedMigrationFix = (id: string, checksum: string): string => {
+  const path = isFixShellSafe(id) ? `${APP_MIGRATIONS_DIR}/${id}.sql` : APP_MIGRATIONS_DIR;
+  const applied = isFixShellSafe(checksum) ? `checksum ${checksum}` : 'the checksum in the cause';
+  return `git log --format='%h %ad %s' --date=short -- ${path}   # restore the revision applied with ${applied}: git checkout <rev> -- ${path} and never edit an applied migration; then x db gen "<change>"`;
+};
 
 /**
  * The migration id is the DATABASE's own text — whoever can write a ledger row picks what lands in

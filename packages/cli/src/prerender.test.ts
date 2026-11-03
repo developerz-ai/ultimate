@@ -131,7 +131,6 @@ describe('x build --target static', () => {
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config: streamRoute,
-      suspenseBoundaries: 1,
     });
     expect(
       routeEntries()
@@ -229,7 +228,6 @@ describe('x build --target static', () => {
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config: streamRoute,
-      suspenseBoundaries: 1,
     });
     const out = join(ROOT, 'static');
     const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
@@ -307,7 +305,6 @@ describe('x build --target static', () => {
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config: streamRoute,
-      suspenseBoundaries: 1,
     });
     const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
     expect(report.pages).toEqual([]);
@@ -367,7 +364,6 @@ describe('the static build says what it emitted and what it did not', () => {
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config: streamRoute,
-      suspenseBoundaries: 1,
     });
     registerRoute({ file: 'apps/web/site/posts/[id]/page.tsx', config: dynamicStaticRoute });
 
@@ -398,7 +394,6 @@ describe('the static build says what it emitted and what it did not', () => {
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config: streamRoute,
-      suspenseBoundaries: 1,
     });
     const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
     const by = new Map(report.skipped.map((route) => [route.route, route]));

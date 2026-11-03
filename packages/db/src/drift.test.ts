@@ -31,12 +31,14 @@ describe('drift', () => {
     const error = thrown as { code: string; cause: string; fix: string; format(): string };
     expect(error.code).toBe('X_DB_DRIFT');
     expect(error.cause).toBe('table "posts" has column "publish_at" not present in any migration');
-    expect(error.fix).toBe('x db gen "add publish_at"');
+    expect(error.fix).toBe(
+      'x db gen "add publish_at"   # declare publish_at on its entity first, or this writes nothing; no entity should hold it: restore the edited migration, then x db reset',
+    );
     expect(error.format()).toBe(
       [
         'X_DB_DRIFT: schema differs from migrations',
         '  cause: table "posts" has column "publish_at" not present in any migration',
-        '  fix:   x db gen "add publish_at"',
+        '  fix:   x db gen "add publish_at"   # declare publish_at on its entity first, or this writes nothing; no entity should hold it: restore the edited migration, then x db reset',
       ].join('\n'),
     );
   });
@@ -165,7 +167,7 @@ describe('drift', () => {
       table: 'posts',
       column: 'publish_at',
       cause: 'table "posts" has column "publish_at" not present in any migration',
-      fix: 'x db gen "add publish_at"',
+      fix: 'x db gen "add publish_at"   # declare publish_at on its entity first, or this writes nothing; no entity should hold it: restore the edited migration, then x db reset',
     });
     expect(error.toJSON().meta).toEqual({
       kind: 'unexpected-column',

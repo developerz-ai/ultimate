@@ -27,6 +27,10 @@ export const SQLSTATE = Object.freeze({
   queryCanceled: '57014',
   /** `lock_not_available` — what `lock_timeout` raises while a DDL statement queues. */
   lockNotAvailable: '55P03',
+  /** `protocol_violation` — a pooler refusing a startup parameter says it in this class. */
+  protocolViolation: '08P01',
+  /** `idle_in_transaction_session_timeout` — the server closed a transaction nobody was using. */
+  idleInTransactionTimeout: '25P03',
   tooManyConnections: '53300',
   outOfMemory: '53200',
 } as const);

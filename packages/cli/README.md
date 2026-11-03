@@ -18,7 +18,8 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x mcp serve` | `@ultimat3/mcp`'s 18 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate | the `--json` report names the wiki section, the guards that differ and what the gate still says ([fields](../../wiki/CLI-Reference.md#x-upgrade)); `bunx @ultimat3/cli@latest upgrade` in an app that predates it; pins with no `app.config.ts` still hop, and `data.proof` says what checked them |
 | `x doctor` | environment, ports, drift, PWA prerequisites, `APP_URL` | every finding carries a fix command; probes the port `x dev` binds ([which one](../../wiki/CLI-Reference.md#x-doctor)); the framework's deploy secrets only where the machine names `staging`/`production` |
-| `x deploy` | container deploy plan | compose or helm; zero platform primitives |
+| `x deploy` | container deploy plan | compose or helm; zero platform primitives. Helm carries `drain.*`, `drain.workerRetireMs` as `roles.worker.retireSeconds`, and `jobs.maxInFlight` as the worker's `targetAverageValue` |
+| `x deploy verify` | production serves this build, holds it, and a worker of it claims every queue | samples `/readyz` through the load balancer, grades `x_job_workers` when `DATABASE_URL` is set; no platform API |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
 | `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `show <name>`, straight off the registries |
 | `x tasks list\|show` | cron tasks | timezone and next run, off `registeredTasks()` |
@@ -173,6 +174,7 @@ that name where there is one (`x new` writes all seventeen), the blank template 
 | `app-manifest.ts` | `x.manifest.json`, projected by `@ultimat3/manifest` |
 | `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
+| `package-boundaries.ts` | `boundaries`: a file under `packages/` importing `apps/` at runtime is `X_BOUNDARY_PACKAGE_TO_APP`; `packages/db/src/` may read an entity module |
 | `app-transport.ts` / `browser-transport.ts` | one browser transport, on `boundaries` in every app: a raw `fetch(`, `new WebSocket(` or `new XMLHttpRequest(` in an island's closure is `X_BROWSER_TRANSPORT_BYPASS`; a server barrel there is `X_BROWSER_SERVER_BARREL` |
 | `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
 | `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it. `ROLE`, `PORT` and `HOST` are read from `env`; `role`, `port` and `hostname` on `ServeOptions` override each. `ROLE=worker` also retires on SIGUSR2 (`serve-retire.ts`, 25.0.0): stop claiming, finish every held job, abort nothing, drain, exit 0 — what the chart's opt-in `roles.worker.retireSeconds` `preStop` sends; core's `isRetiring()` is true from the signal on, and a SIGTERM mid-retire drains on `drain.workerDeadlineMs` when declared (`lifecycleForRole`); a no-op on Windows ([Deployment](../../wiki/Deployment.md#retiring-a-worker-before-sigterm)) |

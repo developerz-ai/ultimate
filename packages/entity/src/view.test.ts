@@ -191,8 +191,13 @@ describe('$view()', () => {
       expect((error as { code?: string }).code).toBe('X_INVARIANT_VIOLATED');
       expect(String((error as { cause?: string }).cause)).toContain("$view(['nope'])");
       expect(String((error as { cause?: string }).cause)).toContain('title');
-      // The fix names the entity, not the view, so the command is one an agent can run.
-      expect(String((error as { fix?: string }).fix)).toContain('x entities show view_test_posts');
+      // `x entities show` loads the app, and this very throw is what stops the load: that fix
+      // re-failed with this finding. The edit is the fix, and the columns are on its line.
+      const fix = String((error as { fix?: string }).fix);
+      expect(fix).not.toContain('x entities show');
+      expect(fix).toContain('# edit the call on view_test_posts');
+      expect(fix).toContain('pick from: ');
+      expect(fix).toContain('title');
     }
   });
 });

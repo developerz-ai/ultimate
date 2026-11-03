@@ -39,16 +39,16 @@ export const config = defineRoute({
 An authed page needs fresh data and fast first paint. `ssr` gives freshness and a slow TTFB (the whole page waits for the slowest query). `spa` gives instant shell and a spinner farm plus no HTML for anything. `stream` gives both halves: shell now, data as it resolves.
 
 ```tsx
-export default function Dashboard() {
+export function Page() {
   return (
     <Layout>
       <Header />                                {/* in the first flush */}
-      <Suspense fallback={<StatsSkeleton />}>
-        <Stats />                               {/* streamed when the query resolves */}
-      </Suspense>
-      <Suspense fallback={<FeedSkeleton />}>
-        <Feed />                                {/* independent hole, independent flush */}
-      </Suspense>
+      <Hole fallback={<StatsSkeleton />} error={<StatsUnavailable />}>
+        {readStats}                             {/* streamed when the query resolves */}
+      </Hole>
+      <Hole fallback={<FeedSkeleton />}>
+        {readFeed}                              {/* independent hole, independent flush */}
+      </Hole>
     </Layout>
   );
 }
@@ -60,7 +60,7 @@ Solid's fine-grained reactivity is what makes this cheap:
 |---|---|
 | No VDOM | streamed HTML is patched into place; nothing re-renders to reconcile |
 | Signals, not component re-execution | a resolved hole updates the exact DOM nodes bound to it |
-| **No hydration pass over the shell** | the static shell costs 0 hydration work — a `<Suspense>` boundary hydrates only its own island, only when its `hydrate` timing fires |
+| **No hydration pass over the shell** | the static shell costs 0 hydration work — a `<Hole>` hydrates only its own island, only when its `hydrate` timing fires |
 | Compile-time templates | the shell's JS is markup-shaped, not a component tree to replay |
 
 In a VDOM framework a streaming shell still pays for hydrating the whole tree, which is why streaming there buys TTFB but not TBT. Here it buys both.

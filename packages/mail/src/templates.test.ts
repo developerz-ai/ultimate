@@ -120,3 +120,11 @@ test('dates are formatted in the requested zone, never the server zone', () => {
   expect(alert?.rendered.text).toContain('11:30');
   expect(alert?.rendered.text).toContain('203.0.113.7');
 });
+
+// `send()` refuses on this record, so a framework mail with a slot its template never wires up would
+// be a refused password reset in every locale, `en` included.
+test('every framework mail in the shipped catalog renders with no miss on record', () => {
+  for (const entry of CASES) {
+    expect({ id: entry.id, misses: entry.rendered.misses }).toEqual({ id: entry.id, misses: [] });
+  }
+});

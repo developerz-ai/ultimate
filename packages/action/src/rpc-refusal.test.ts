@@ -10,6 +10,7 @@ import { rm } from 'node:fs/promises';
 // why: Bun ships no path API; the entry is written INSIDE the package so `@ultimat3/*` resolves
 // through the workspace exactly as an island's import does.
 import { join } from 'node:path';
+import { rpc } from './client';
 
 /** Gitignored repo-wide; one directory per process so concurrent runs never delete each other. */
 const FIXTURE_DIR = join(import.meta.dir, '..', '.tmp', `rpc-refusal-${process.pid}`);
@@ -79,4 +80,47 @@ describe('an rpc island refused by the HTTP layer, with no http module in its ch
     expect(refused.retry).toBe('retry-after');
     expect(delayMs).toBe(2_000);
   }, 60_000);
+});
+
+describe('rpc reads the request id off a refusal', () => {
+  const refusal = async (body: Record<string, unknown>): Promise<{ meta?: unknown }> => {
+    const fetch = async (): Promise<Response> =>
+      new Response(JSON.stringify({ code: 'X_STATE_CONFLICT', cause: 'c', fix: 'f', ...body }), {
+        status: 409,
+        headers: { 'content-type': 'application/problem+json' },
+      });
+    const client = rpc<Record<string, never>>({ baseUrl: 'https://app.test', fetch }) as Record<
+      string,
+      unknown
+    >;
+    const createCase = client['createCase'] as (input: object) => Promise<unknown>;
+    return (await createCase({}).catch((error: unknown) => error)) as { meta?: unknown };
+  };
+
+  test('the root member lands on meta beside what the client owns', async () => {
+    const { meta } = await refusal({ requestId: 'req-123' });
+    expect(meta).toEqual({
+      origin: 'remote',
+      action: 'createCase',
+      status: 409,
+      requestId: 'req-123',
+    });
+  });
+
+  test('a body meta.requestId loses to the root member', async () => {
+    const { meta } = await refusal({ requestId: 'req-123', meta: { requestId: 'spoof' } });
+    expect(meta).toMatchObject({ requestId: 'req-123' });
+  });
+
+  test('a body meta.requestId is no stand-in for a missing root member', async () => {
+    const { meta } = await refusal({ meta: { requestId: 'spoof' } });
+    expect(meta).not.toHaveProperty('requestId');
+  });
+
+  test('an oversized or non-string root member is dropped', async () => {
+    for (const requestId of ['r'.repeat(128), '', 42, null]) {
+      const { meta } = await refusal({ requestId, meta: { requestId: 'spoof' } });
+      expect(meta).not.toHaveProperty('requestId');
+    }
+  });
 });

@@ -205,10 +205,14 @@ describe('unit · x doctor', () => {
     const cursor = findings.find((finding) => finding.code === 'X_CURSOR_SECRET_DEV');
     expect(cursor?.cause).toContain('forge a page position');
     // Pinned verbatim: this string is copied into a shell, so a paraphrase of it is a broken fix.
-    expect(cursor?.fix).toBe('export ULTIMATE_CURSOR_SECRET="$(openssl rand -hex 32)"');
+    expect(cursor?.fix).toBe(
+      "openssl rand -hex 32   # put the output in this deploy's secret store as ULTIMATE_CURSOR_SECRET; this machine: ULTIMATE_ENV=development x env check",
+    );
     const storage = findings.find((finding) => finding.code === 'X_STORAGE_SECRET_DEV');
     expect(storage?.cause).toContain('uploadPolicy');
-    expect(storage?.fix).toBe('export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"');
+    expect(storage?.fix).toBe(
+      "openssl rand -hex 32   # put the output in this deploy's secret store as STORAGE_SIGNING_SECRET; this machine: ULTIMATE_ENV=development x env check",
+    );
   });
 
   test('a probe owing nothing reports nothing', async () => {

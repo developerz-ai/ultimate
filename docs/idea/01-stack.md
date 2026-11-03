@@ -57,7 +57,7 @@ Costs, stated plainly: no native-addon packages, and long-running-process maturi
 | Multi-runtime (Node/Deno/workerd) | Bun only |
 | Multi-ORM | no ORM at all — one hand-written Postgres driver |
 | Tailwind / CSS-in-JS / a second CSS system | SCSS modules + tokens |
-| React Server Components | Solid `stream` render mode + `<Suspense>` |
+| React Server Components | Solid `stream` render mode + `<Hole>` |
 | A plugin API before v1 | fork the blessed path; extension points earn their way in |
 | Vendor edge functions, KV, image loaders | containers + our cache tiers + standard CDN headers |
 | ESLint + Prettier | Biome (one binary, one config) |

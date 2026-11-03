@@ -61,6 +61,8 @@ describe('surface stylesheets over HTTP', () => {
     // Content-addressed, so the bytes behind the URL can never change — and the document that
     // links it is `private, no-store`, which is exactly why the CSS had to leave it.
     expect(sheet.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+    const css = await sheet.clone().arrayBuffer();
+    expect(sheet.headers.get('content-length')).toBe(String(css.byteLength));
     expect(await sheet.text()).toContain('color:red');
   });
 

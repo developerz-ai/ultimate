@@ -144,6 +144,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   'remote'`), only for an `X_SCREAMING_SNAKE` code. It never synthesizes a docs URL: the server's
   `http(s)` `docs`/`type` (as an ordered pair), else this build's registered link, else
   `ERROR_DOCS_URL`.
+  `meta.requestId` is the document's root member, through core's `withRequestId` (`rpc-refusal.test.ts`). `REPLAYED_HEADER` is core's; `http.ts` imports it, the barrel no longer re-exports it.
 - **Both clients inject `traceparent`** before the caller's headers; an incomplete span sends nothing.
 - `serializeOpenApi` output is byte-stable: sorted keys, sorted registry, no clock. `client.ts` stays
   free of server imports.
@@ -153,19 +154,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   payloads.
 - **`tagKeys` is `@ultimat3/cache`'s and `toBucket` is `@ultimat3/http`'s** (imported, never
   re-exported; `toBucket` raises `X_RATE_LIMIT_INVALID`). Never restore a local copy.
-- **`rateLimit:` is spent ONCE, inside `invoke`** (`rate-limit-gate.ts`), so HTTP, MCP, the agent
-  tool and `.job()` share one bucket; `surface: 'server'` spends nothing. `toRoute` sets
-  `rateLimitedBy: 'handler'` and NO `meta.rateLimit`/`rateLimitBucket` — the stage spends neither
-  the action's bucket (the old HTTP-only point) nor `default`. Key `action:<name>|<subject>`.
-  HTTP gets `RateLimit-*` via `onRateLimit` → http's `publishRateLimit`. The store is
-  `@ultimat3/http`'s installed one, adopted by the boot on every role. Spent after
-  `guardActionBeforeInput`, BEFORE the parse and `def.row()` (an input/row-denied flood is refused). A key
-  the idempotency store holds spends nothing (replay); a reservation `withIdempotency` CREATES that
-  the peek did not pay for spends in `beforeRun`, released on refusal. A job run is charged to its
-  org, else `job:unattributed`. A surface's `clientAddress` is inherited by nested `invoke`s
-  (`withCallerAddress`); a `'job'` invoke opens a fresh frame (`withJobFrame`) so no visitor's
-  address follows work into the worker, and calls nested in it are the job's.
-  `rate-limit-surfaces.test.ts`. The computed rate must be finite and `limit` at least one token.
+- **`rateLimit:` is spent ONCE, inside `invoke`** (`rate-limit-gate.ts`), so HTTP, MCP, the agent tool and `.job()` share one bucket; `surface: 'server'` spends nothing. Full rule: `docs/history/action.md`.
 - **`deprecated:` is a compat WINDOW** — headers on every response including failures, a
   `rel="successor-version"` link via `derivePath`, `deprecated: true` in OpenAPI,
   `deprecated_calls_total`. Rendered ONCE at projection (`X_ACTION_DEPRECATION_INVALID` at mount).
@@ -194,10 +183,10 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `bun build --target=browser --minify`, one entry importing from `@ultimat3/action` — **the ONE
   table for these figures** (`packages/core/CLAUDE.md` points here):
 
-  | Entry | `As of 2026-10-01` |
+  | Entry | `As of 2026-11-02`, one entry over the working tree |
   |---|---|
-  | `rpc` | 19,671 B (+181 B for the document's path-style stamp) |
-  | `rpc` + core's `clientFlight` | 25,954 B |
+  | `rpc` | 22,423 B (+183 B over this branch's HEAD, 22,240 B, wave 2 edits included) |
+  | `rpc` + core's `clientFlight` | 30,891 B (+184 B over 30,707 B) |
 
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
   titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
@@ -259,7 +248,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   `DbTx.onCommit`'s own answer, as entity's row observer does. `cache-gate-tx.test.ts` (PGlite).
 - **The OpenAPI contract assertion reads the registry-wide document** and compares `operationId`
   — one built from the action alone could not fail. **`Problem` is `toProblem`'s members**, no
-  `code` pattern (`openapi-problem.test.ts`).
+  `code` pattern (`openapi-problem.test.ts`), checked both ways; `retry` is an enum of core's `ERROR_RETRY_KINDS`.
 - **The policy contract test asserts `ActionDeniedError` and sends valid input** (`sampleInput` from
   the input IR). Only `X_INPUT_INVALID` (and `X_AUDIT_SINK_MISSING`, the one refusal before the parse)
   becomes `X_CONTRACT_DRIFT`; everything else keeps its own code; a non-`UltimateError` is rethrown.

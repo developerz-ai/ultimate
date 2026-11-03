@@ -16,6 +16,8 @@ export interface WorkerRegistryOptions {
   readonly workerId: string;
   /** Where this worker runs. A pod name under an orchestrator; `HOSTNAME` when nothing says. */
   readonly host: string | undefined;
+  /** The build this process runs, stamped on its row. Absent: the row names none. */
+  readonly build?: string | undefined;
   readonly queues: readonly string[];
   /** Slots across every queue served. */
   readonly concurrency: number;
@@ -32,7 +34,7 @@ export interface WorkerRegistration {
   /**
    * The worker stopped claiming and only finishes what it holds: every announce from now on says
    * `draining`, and one goes out NOW rather than at the next heartbeat (a third of the visibility
-   * window later) — the row is what a queue-depth autoscaler leaves held jobs out by. Idempotent in
+   * window later) — the row is what a queue-demand autoscaler leaves held jobs out by. Idempotent in
    * effect (the row keeps its first `draining_at`). Never rejects.
    */
   draining(): Promise<void>;
@@ -69,6 +71,7 @@ export function startWorkerRegistry(options: WorkerRegistryOptions): WorkerRegis
           concurrency: options.concurrency,
           inFlight: options.inFlight().slice(0, MAX_WORKER_IN_FLIGHT),
           ...(draining ? { draining: true } : {}),
+          ...(options.build === undefined ? {} : { build: options.build }),
         },
         options.ttlMs,
       )

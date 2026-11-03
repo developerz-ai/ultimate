@@ -168,7 +168,7 @@ describe('the pool and lock errors', () => {
     const error = poolMaxInvalid('twenty');
 
     expect(error.code).toBe('X_ENV_MISSING');
-    expect(error.cause).toContain('"twenty"');
+    expect(error.cause).toContain('a string of 6 characters');
     expect(error.fix).toStartWith('DATABASE_POOL_MAX=');
   });
 

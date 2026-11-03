@@ -45,8 +45,11 @@ export const DEV_CURSOR_SECRET = 'ultimate-dev-cursor-secret';
  */
 export const CURSOR_SECRET_KEY = 'ULTIMATE_CURSOR_SECRET';
 
-/** The one fix for `X_CURSOR_SECRET_DEV`, wherever it is reported — the boot and the CLI. */
-export const CURSOR_SECRET_FIX = `export ${CURSOR_SECRET_KEY}="$(openssl rand -hex 32)"`;
+/**
+ * The one fix for `X_CURSOR_SECRET_DEV`, wherever it is reported — the boot and the CLI. No
+ * `export`: it is gone on an agent's next shell call, and it never reaches a deployed process.
+ */
+export const CURSOR_SECRET_FIX = `openssl rand -hex 32   # put the output in this deploy's secret store as ${CURSOR_SECRET_KEY}; this machine: ULTIMATE_ENV=development x env check`;
 
 /** `configureCursorSigning`'s value, when an app has called it. `undefined` means "read the env". */
 let configured: string | undefined;

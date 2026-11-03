@@ -4,10 +4,16 @@
 // so there is no second projection of an action to drift from the first. What the mount adds is
 // the credential (only the bearer token authenticates here; a session cookie reaches nothing), the
 // cut (a primitive outside the caller's scopes answers 404, the way MCP answers an unknown tool),
-// and a per-token allowance with `RateLimit-*` and `Retry-After`.
+// and a per-token allowance with `RateLimit-*` and `Retry-After`, which replaces `default`.
 
 import type { Actor, Clock } from '@ultimat3/core';
-import { ACTION_PATH_PREFIX, QUERY_PATH_PREFIX, systemClock } from '@ultimat3/core';
+import {
+  ACTION_PATH_PREFIX,
+  QUERY_PATH_PREFIX,
+  successorLink,
+  successorPathOf,
+  systemClock,
+} from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bearerMountInvalid, routeNotFound } from './errors';
 import type { RateLimitDecision, RateLimitStore } from './rate-limit';
@@ -58,7 +64,11 @@ export interface BearerMountInput {
    */
   readonly scopes: Readonly<Record<string, readonly string[]>>;
   readonly resolveToken: BearerResolver;
-  /** Requests per window per TOKEN (keyed by a hash of the token itself, never the user). */
+  /**
+   * Requests per window per TOKEN (keyed by a hash of the token itself, never the user). Declared,
+   * it REPLACES the `default` bucket on the mount's routes, which would otherwise cap it at 120 a
+   * minute; absent, `default` stands. A route's own `meta.rateLimit` and the tenant allowance stay.
+   */
   readonly rateLimit?: BearerMountRateLimit | undefined;
   /** Where the per-token buckets live. Defaults to per-process memory; a fleet passes a shared one. */
   readonly rateLimitStore?: RateLimitStore | undefined;
@@ -147,7 +157,7 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
   const clock = input.clock ?? systemClock;
   // The caller each request resolved to, keyed by ITS context — never a module-level slot two
   // concurrent requests could share.
-  const callers = new WeakMap<RequestContext, { caller: BearerCaller; key: string }>();
+  const callers = new WeakMap<RequestContext, { caller: BearerCaller }>();
 
   // One authenticator per mounted route, closed over ITS scope, so the cut is decided in the `auth`
   // stage — before `body` and `authz`. Decided in the handler, an out-of-scope token was answered
@@ -171,14 +181,15 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
       }
       // Hidden, never forbidden: a 403 would confirm the primitive exists to a token that was
       // not issued for it — the enumeration MCP's catalog refuses the same way.
-      // And never free: the refusal spends the token's allowance as a served call does (which the
-      // handler charges, once, so the two paths never both spend) — else a token walks the cut
-      // unmetered, and `RateLimit-*` on one 404 but not another tells hidden from unknown.
+      // And never free: every resolved token pays HERE, once, in scope or not. The handler spent
+      // it once, so a body the `body` stage refused or a policy `authz` denied went unmetered.
+      // Out of scope, a token walking the cut would go unmetered too, and `RateLimit-*` on one
+      // 404 but not another would tell hidden from unknown.
+      await spend(tokenKey(token), ctx);
       if (scope === null || !caller.scopes.has(scope)) {
-        await spend(tokenKey(token), ctx);
         throw routeNotFound(ctx.method, ctx.url.pathname);
       }
-      callers.set(ctx, { caller, key: tokenKey(token) });
+      callers.set(ctx, { caller });
       return caller.actor;
     };
 
@@ -200,6 +211,8 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
 
   const mounted: Route[] = [];
   const seen = new Map<string, string>();
+  // Filled by the loop below, read per request: the whole cut, by the path `/api` serves it at.
+  const cut: Cut = new Map();
   for (const [name, scope] of [...scopeOf.entries()].sort(([a], [b]) => (a < b ? -1 : 1))) {
     for (const route of byName.get(name) ?? []) {
       const path = mountedPath(prefix, route.path);
@@ -209,10 +222,20 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
         throw bearerMountInvalid(prefix, `${name} and ${owner} would both be served at ${slot}`);
       }
       seen.set(slot, name);
+      cut.set(route.path, (cut.get(route.path) ?? new Set<string>()).add(scope));
       mounted.push({
         method: route.method,
         path,
-        meta: { ...route.meta, auth: 'required', authenticate: authenticatorOf(scope) },
+        meta: {
+          ...route.meta,
+          auth: 'required',
+          authenticate: authenticatorOf(scope),
+          // The authenticator spends the allowance, so the stage spends no `default` beside it: a
+          // mount declaring 12,000 a minute was capped at 120 per route, silently.
+          ...(bucket !== undefined && route.meta.rateLimit === undefined
+            ? { rateLimitedBy: 'handler' as const }
+            : {}),
+        },
         handler: async (request: UltimateRequest, ctx: RequestContext) => {
           const resolved = callers.get(ctx);
           // The authenticator already answered an out-of-scope token; this is the fail-closed
@@ -220,14 +243,44 @@ export function bearerMount(input: BearerMountInput): readonly Route[] {
           if (resolved === undefined || !resolved.caller.scopes.has(scope)) {
             throw routeNotFound(ctx.method, ctx.url.pathname);
           }
-          await spend(resolved.key, ctx);
-          return await route.handler(request, ctx);
+          try {
+            return await route.handler(request, ctx);
+          } finally {
+            // A `finally`: a deprecated route that refuses still announces its retirement.
+            followableSuccessor(ctx.headers, prefix, cut, resolved.caller.scopes);
+          }
         },
       });
     }
   }
   return [...mounted, ...opaquePrefix(prefix, authenticatorOf(null))];
 }
+
+/** The mount's cut: a route's `/api` path → the scopes that reach it. */
+type Cut = Map<string, Set<string>>;
+
+/**
+ * A successor link the route rendered names the `/api` door, which refuses a bearer caller. In the
+ * cut, under a scope this token holds, it becomes the mounted path. Otherwise it goes: the caller
+ * cannot follow it, and naming a primitive outside its scopes confirms what the cut answers 404
+ * for. Any other `Link` is the handler's own and is not this mount's to touch.
+ */
+const followableSuccessor = (
+  headers: Headers,
+  prefix: string,
+  cut: Cut,
+  held: ReadonlySet<string>,
+): void => {
+  const link = headers.get('link');
+  const served = link === null ? undefined : successorPathOf(link);
+  if (served === undefined) return;
+  const reaching = cut.get(served);
+  if (reaching !== undefined && [...reaching].some((scope) => held.has(scope))) {
+    headers.set('link', successorLink(mountedPath(prefix, served)));
+  } else {
+    headers.delete('link');
+  }
+};
 
 /** Every method a client can send. HEAD is GET's (`router.ts`'s `routeFor`), never its own route. */
 const CATCH_ALL_METHODS = HTTP_METHODS.filter((method) => method !== 'HEAD');

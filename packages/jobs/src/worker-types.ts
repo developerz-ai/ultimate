@@ -50,6 +50,8 @@ export interface WorkerOptions {
   readonly workerId?: string;
   /** Where this worker runs, for the registry. Default `HOSTNAME`, which a pod sets to its name. */
   readonly host?: string;
+  /** The build this process runs, for the registry: what `x deploy verify` grades a queue by. */
+  readonly build?: string;
   /** Default true. Registers a SIGTERM drain via `onShutdown`. */
   readonly drainOnShutdown?: boolean;
 }

@@ -16,6 +16,7 @@ import type { ManifestChange } from './diff-change';
 import { diffNamedSet } from './diff-change';
 import { diffChannels } from './diff-channels';
 import { diffEntities } from './diff-entities';
+import { diffMounts } from './diff-mounts';
 import { diffActions, diffQueries } from './diff-operations';
 import { diffErrorCodes, diffPolicies } from './diff-registries';
 import { diffRoutes } from './diff-routes';
@@ -52,6 +53,8 @@ export function diffManifest(before: Manifest, after: Manifest): ManifestDiff {
   changes.push(...diffChannels(before.channels ?? [], after.channels ?? []));
   // The same `?? []`, for the same reason: no `admin` key is a file older than the section.
   changes.push(...diffAdmins(before.admin ?? [], after.admin ?? []));
+  // The same `?? []`, and on the `after` side too: the key is absent there when the last mount left.
+  changes.push(...diffMounts(before.mounts ?? [], after.mounts ?? []));
   changes.push(...diffRoutes(before.routes, after.routes));
   changes.push(...diffJobs(before.jobs, after.jobs));
   changes.push(...diffTasks(before.tasks, after.tasks));

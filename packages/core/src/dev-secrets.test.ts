@@ -123,7 +123,9 @@ describe('the boot refusal names the key and the one fix', () => {
   test('its fix is CURSOR_SECRET_FIX, and both are built from CURSOR_SECRET_KEY', () => {
     const error = new CursorSecretDevError();
     expect(error.fix).toBe(CURSOR_SECRET_FIX);
-    expect(CURSOR_SECRET_FIX).toBe(`export ${CURSOR_SECRET_KEY}="$(openssl rand -hex 32)"`);
+    expect(CURSOR_SECRET_FIX).toBe(
+      `openssl rand -hex 32   # put the output in this deploy's secret store as ${CURSOR_SECRET_KEY}; this machine: ULTIMATE_ENV=development x env check`,
+    );
     expect(error.cause).toContain(CURSOR_SECRET_KEY);
   });
 });

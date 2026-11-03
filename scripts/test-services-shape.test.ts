@@ -154,6 +154,18 @@ describe('unit · test services · in RAM, without durability, silent', () => {
     expect(service('postgres-tls').command).toContain('ssl=on');
   });
 
+  // What `pooler.live.test.ts` proves is the STOCK config: a bare URL refused at startup. Naming
+  // `statement_timeout` in the ignore list turns that into a silent `statement_timeout = 0`.
+  test('the pooler is in transaction mode, in front of the suites server, ignoring no bound', () => {
+    const environment = service('pooler').environment ?? {};
+
+    expect(service('pooler').image).toStartWith('edoburu/pgbouncer:');
+    expect(environment['POOL_MODE']).toBe('transaction');
+    expect(environment['DB_HOST']).toBe('postgres');
+    expect(environment['IGNORE_STARTUP_PARAMETERS']).toBeUndefined();
+    expect(urls.get('TEST_POOLER_URL')?.username).toBe(environment['DB_USER'] ?? '');
+  });
+
   test('Redis keeps no snapshot and no append-only file', () => {
     const command = (service('redis').command ?? []).join(' ');
     expect(command).toContain('--save  --appendonly no');

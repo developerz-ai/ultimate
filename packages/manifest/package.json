@@ -37,6 +37,7 @@
     "@ultimat3/entity": "29.4.0",
     "@ultimat3/jobs": "29.4.0",
     "@ultimat3/query": "29.4.0",
-    "@ultimat3/realtime": "29.4.0"
+    "@ultimat3/realtime": "29.4.0",
+    "@ultimat3/schema": "29.4.0"
   }
 }

@@ -367,9 +367,39 @@ core's `markListening()`, so a test may call its own `handle.url()` on a kernel-
 the seal fully on. Unsealing (`ULTIMATE_TEST_ALLOW_NET=1`) stays reserved for a deliberate live
 integration — never for a socket test.
 
+**One registration answers a retry test** — `mockFetch(match, answer)`, `mockJson` inherits the match:
+
+```ts
+import { expect, mockFetch, requestLog } from '@ultimat3/testing';
+
+declare function charge(): Promise<void>; // yours: the code under test
+declare const BEARER: string;
+
+mockFetch('POST https://api.vendor.test/charge', [
+  new Response('busy', { status: 503 }),
+  new TypeError('connection reset'),
+  new Response('{"id":"ch_1"}'),
+]);
+await charge();
+expect(requestLog().map((call) => call.headers['authorization'])).toEqual([BEARER, BEARER, BEARER]);
+```
+
+| Argument | Takes |
+|---|---|
+| `match` | an exact URL, a prefix ending in `*`, or a RegExp: every verb. A string may name one verb first (`'POST https://…'`) |
+| `answer` | a handler, or a list of `Response \| Error` answered in order: the last repeats, each `Response` is cloned, an `Error` is thrown. An empty list is `X_INVARIANT` |
+
+| Rule | Detail |
+|---|---|
+| `requestLog()` | `{ method, url, headers, body }[]`, in call order, refused calls included, unredacted, process-local. Header names are lowercase; `body` is UTF-8 text or `null`. `resetNetwork` clears it, `captureNetwork` carries it |
+| A body is read from a clone | so a handler and the real call still get theirs. A `ReadableStream` on its way to a real server is never read and logs `null`: reading it would take its backpressure away |
+| Never ahead of the answer | a stream body or a `Request`'s own is captured beside the call, so a mock answering 413 at once is not held to the stream's end: it is in the entry once it ends, `null` until then |
+| A socket dial | logs `method: 'WEBSOCKET'` or `'CONNECT'`, empty `headers`, `body: null` |
+| A pinned dial | an address-literal URL carrying a `host` header also matches a route on that name: `mockFetch('https://vendor.test/a', …)` answers `https://203.0.113.9/a` with `host: vendor.test`. The log keeps the URL dialled |
+
 **Three dials are sealed, and only three** — `fetch`, `new WebSocket(url)` and `Bun.connect({ hostname,
 port })`, behind one gate: one allow-list (`allowHost('host[:port]')`), one offline state, one
-`requestedUrls()` record. As of 2026-10:
+`requestLog()` record. As of 2026-11:
 
 | Dial | Refused with | Passes through |
 |---|---|---|

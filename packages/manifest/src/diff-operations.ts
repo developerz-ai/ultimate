@@ -6,6 +6,7 @@ import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
 import { diffInput } from './diff-input';
 import { diffRateLimit } from './diff-rate-limit';
+import { diffRows } from './diff-rows';
 import type { ActionFact, QueryFact } from './schema';
 
 /** Any fact that names the permissions it requires — an action, a query, a channel. */
@@ -120,6 +121,21 @@ export function diffQueries(
     // none, and a side with nothing on it is no evidence of a change (`diff-routes.ts`'s rule).
     if (query.input !== undefined && next.input !== undefined) {
       changes.push(...diffInput(`${path}.input`, query.input, next.input, 'input schema changed'));
+    }
+    // `rows` on `before` proves its writer knew the field, and `after` is always this build, so a
+    // row gone from `after` is the published 200 falling back to `items: {}`: breaking, no version
+    // needed. Absent on `before` is ambiguous (older file, or newly declared) and only widens.
+    // Members, never `canonicalJson`: see `diff-rows.ts`.
+    if (query.rows !== undefined && next.rows !== undefined) {
+      changes.push(...diffRows(`${path}.rows`, query.rows, next.rows));
+    } else if (query.rows !== undefined) {
+      changes.push({
+        kind: 'breaking',
+        path: `${path}.rows`,
+        detail: 'row no longer published; the 200 is untyped',
+      });
+    } else if (next.rows !== undefined) {
+      changes.push({ kind: 'additive', path: `${path}.rows`, detail: 'row published' });
     }
     if (query.policy !== next.policy) {
       changes.push({

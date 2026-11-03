@@ -612,3 +612,31 @@ Verbatim from [`packages/core/CLAUDE.md`](../../packages/core/CLAUDE.md), which 
   WHOLE drain's; `DEFAULT_DEADLINE_MS` (25 s) always applies; it is real monotonic time
   (`systemClock`), never the injected `clock`. `drainDeadlineMs()` is the one decision point.
   `settleWithin` attaches a rejection handler unconditionally.
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/core/CLAUDE.md`](../../packages/core/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### Lifecycle and readiness
+
+- Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **defaulting to
+  `terminal`**. `registerErrorRetry()` is the one registration path and refuses to reclassify a
+  core code. Two readers: `retryFor(code)` (what to do, fails closed) and
+  `declaredErrorRetry(code)` (what was declared, `undefined` otherwise) — a caller deciding whether
+  to STOP work in flight (`@ultimat3/jobs`' executor) reads the second. An instance `retry` on an
+  unregistered code reads as unclassified.
+
+- `markReady()` means **bound**; readiness means **usable** — `registerReadinessCheck(name, check)`.
+  `/readyz` is ready when the state is `ready` AND every check passes. `HealthReport.registered` is
+  the count (an empty registry is still `ready`, deliberately). `readinessChecks()` builds through
+  `Object.fromEntries` (a check named `__proto__`). Checks are **synchronous**; liveness ignores
+  them. The registration returns its unregister; `readinessCheckCount()` is the leak probe.
+
+
+### Metrics, tracing, reporting
+
+- `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport
+  (`error-reporter-sentry.ts`, optional export). `reportError` never throws, never awaits. Callers:
+  `@ultimat3/http` `stages.ts` (`status >= 500`), `@ultimat3/jobs` `execute.ts`, `@ultimat3/realtime`
+  `sync-node.ts` and `sync-upgrade.ts`, `@ultimat3/flags` `runtime.ts`. `configureErrorReporting({
+  release })` takes the build id `serve.ts` computed. Trace and span resolve as a PAIR.

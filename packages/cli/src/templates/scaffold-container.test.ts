@@ -156,6 +156,45 @@ describe('unit · no secret reaches the image the scaffold builds', () => {
   });
 });
 
+// `COPY . .` sits above `x build --target prebuilt`, the slowest line in the file, so a byte nothing
+// in the image reads still costs a Babel and Sass run the day somebody edits it.
+describe('unit · what no boot reads stays out of the layer', () => {
+  const ignoreFile = (): string => fileAt('docker/Dockerfile.dockerignore');
+
+  test('a test, at any depth and in either extension, is ignored', () => {
+    for (const path of [
+      'production-env.test.ts',
+      'apps/web/app/posts/entity.test.ts',
+      'apps/web/e2e/smoke.e2e.test.ts',
+      'apps/web/app/page.test.tsx',
+      'packages/db/src/plan.contract.test.ts',
+    ]) {
+      expect([path, ignored(ignoreFile(), path)]).toEqual([path, true]);
+    }
+  });
+
+  test('the root docs/ is ignored, a package’s directory of that name is not', () => {
+    expect(ignored(ignoreFile(), 'docs/gotchas.md')).toBe(true);
+    // Anchored on purpose: a package may read this at run time, and a missing file at boot is a
+    // worse failure than a few kilobytes.
+    expect(ignored(ignoreFile(), 'packages/kb/docs/index.md')).toBe(false);
+  });
+
+  test('a fixture and a source file beside a test still reach the image', () => {
+    // Non-test source can import a fixture, and that is a module that fails to load at boot.
+    for (const path of ['apps/web/e2e/fixtures/users.fixture.ts', 'apps/web/app/testing.ts']) {
+      expect([path, ignored(ignoreFile(), path)]).toEqual([path, false]);
+    }
+  });
+
+  test('the README names the re-include, and it does what the README says', () => {
+    expect(fileAt('docker/README.md')).toContain('`!docs/<path>`');
+    const reincluded = `${ignoreFile()}!docs/mcp/tools.md\n`;
+    expect(ignored(reincluded, 'docs/mcp/tools.md')).toBe(false);
+    expect(ignored(reincluded, 'docs/gotchas.md')).toBe(true);
+  });
+});
+
 // `x deploy --method helm` runs `helm upgrade --install app <root>/docker/helm`, and until this
 // existed the chart was in NO npm tarball — `packages/cli`'s `files:` ships `src` and nothing else
 // — so the refusal's own fix, "copy docker/helm from the framework repo", named a repository an

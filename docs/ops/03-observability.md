@@ -29,7 +29,8 @@ exactly one emitter:
 | `http_requests_total` | counter | `method`, `route` (PATTERN), `status` (CLASS) | the HTTP pipeline, once per request, error paths included |
 | `http_request_duration_seconds` | histogram | same three | same call |
 | `connections` | gauge | none | the sync node's socket table, `+1`/`-1` |
-| `queue_depth` | gauge | `queue` | the worker, throttled to one read per 15s. The queue's GLOBAL backlog: every worker publishes the same number, so aggregate with `max`, never `sum` |
+| `queue_depth` | gauge | `queue` | the worker, throttled to one read per 15s. The queue's GLOBAL backlog: every worker publishes the same number, so aggregate with `max`, never `sum`. The backlog alert's series; the worker no longer scales on it |
+| `queue_demand` | gauge | `queue` | the worker, beside `queue_depth`, and only when `stats()` shows work: running on a serving worker plus due rows on an unpaused queue. What the worker HPA reads. Every serving worker publishes the same number and a draining one 0, so aggregate with `max by (queue)`, never `sum` |
 | `jobs_total` | counter | `queue`, `outcome` (`ok`\|`failed`\|`dead`) | the worker's outcome path |
 | `job_leases_lost_total` | counter | `queue` | the worker's lease heartbeat, once per job whose window lapsed |
 | `queue_oldest_ready_seconds` | gauge | `queue` | the worker, beside `queue_depth` — how long the oldest waiting job has waited (`packages/jobs/src/metrics.ts`) |
@@ -69,14 +70,16 @@ much memory your monitoring stack allocates.
 
 **Read this before enabling autoscaling.** [`docker/helm/values.yaml`](../../docker/helm/values.yaml)
 declares per-role HPAs targeting custom metrics named `rps` and `connections` (type `Pods`) and
-`queue_depth` (type `External`: every worker pod publishes the same global backlog, so the adapter
-must expose it deduplicated — `max(queue_depth)`, never `sum` — and the HPA divides it by the
-replica count; read as a `Pods` metric it asked for N times the workers the queue needed). Either
+`queue_demand` (type `External`: every serving worker publishes the same number, so the adapter
+must expose it deduplicated — `max by (queue) (queue_demand)`, never `sum` — and the HPA divides it
+by the replica count, so set `targetAverageValue` to one pod's `jobs.maxInFlight`, as `x deploy`
+does when it is declared; read as a `Pods` metric it asked for N times the workers the queue needed). Either
 type needs an emitter, a scrape **and** a custom metrics adapter that turns the
 scraped series into the metric name the HPA asks for. The chart now ships the first two —
 container port `metrics` on every serving role, a Service that publishes it, and a `ServiceMonitor`
 behind `serviceMonitor.enabled` — but **not** the adapter, and `rps` in particular is a rate the
 adapter has to derive (`rate(http_requests_total[1m])`); no process emits a series with that name.
+The two adapter rules are that and `max by (queue) (queue_demand)`.
 Until prometheus-adapter (or equivalent) is installed and configured, those HPAs still read
 `<unknown>`. Either wire the adapter first, or set `roles.<role>.autoscaling.enabled: false` and
 pin `replicas`.

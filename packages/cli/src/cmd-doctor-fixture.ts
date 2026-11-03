@@ -4,6 +4,7 @@
 import { REQUIRED_BUN } from './app-root';
 import type { DoctorProbe } from './cmd-doctor';
 import { runDoctor } from './cmd-doctor';
+import { NO_POOLER_FACT } from './doctor-pooler';
 
 export const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   bunVersion: REQUIRED_BUN,
@@ -31,6 +32,8 @@ export const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   sealedKeys: async () => ({ columns: [], keys: undefined }),
   // A database with nothing left over from an upgrade.
   authStorage: async () => ({ unsealedMfaSecrets: 0, retiredTables: [] }),
+  // Embedded, or a session whose bound is the role's: nothing to say.
+  pooler: async () => NO_POOLER_FACT,
   ...over,
 });
 

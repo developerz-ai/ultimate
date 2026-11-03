@@ -24,6 +24,7 @@ import { lockKeyInput } from './lock-key';
 import { undoingBatch } from './memory-batch';
 import { memoryLocks } from './memory-lock';
 import { compareByKind, matchesPredicate } from './memory-match';
+import { observedMemoryRepo } from './memory-observed';
 import { type MemoryTables, sameTenantJudge } from './memory-same-tenant';
 import { afterCursor } from './memory-seek';
 import { uniqueClash, uniqueViolation } from './memory-unique';
@@ -486,10 +487,10 @@ export const memoryRepo = <Row>(
   };
   // The memory driver seals too: it stores what Postgres would, so a test that passes here is not
   // passing over plaintext production never holds. Append-only outermost, in both drivers: a
-  // refused rewrite seals nothing and sends nothing.
+  // refused rewrite seals nothing and sends nothing, and so reports nothing.
   return appendOnlyRepo<Row, MemoryRepo<Row>>(
     entity,
-    sealedRepo<Row, MemoryRepo<Row>>(entity, repo),
+    sealedRepo<Row, MemoryRepo<Row>>(entity, observedMemoryRepo(entity.$name, repo)),
   );
 };
 

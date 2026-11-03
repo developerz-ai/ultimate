@@ -88,4 +88,10 @@ export const TIER_1_ERROR_STATUS = {
   X_DB_TRANSACTION_CLOSED: 500,
   // @ultimat3/storage — the object changed while it was being promoted
   X_STORAGE_OBJECT_CHANGED: 409,
+  // @ultimat3/db — the connection pooler refused the libpq options a pool connects with
+  X_DB_POOLER_OPTIONS_REFUSED: 503,
+  // @ultimat3/storage — an upload grant was asked for without the size of the file
+  X_STORAGE_UPLOAD_SIZE_UNDECLARED: 422,
+  // @ultimat3/storage — a write was sent and its answer lost, and the disk could not say whether it landed
+  X_STORAGE_WRITE_OUTCOME_UNKNOWN: 500,
 } satisfies Readonly<Record<string, number>>;

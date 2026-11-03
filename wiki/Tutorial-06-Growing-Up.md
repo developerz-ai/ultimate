@@ -85,7 +85,7 @@ Three things turn on at this rung, all by env, none by a code path:
 
 **Do not enable `replicator` until live queries are in use.** The chart ships it `enabled: false` for that reason.
 
-Per-role HPAs target `rps`, `connections` and `queue_depth` — CPU is a lagging proxy for all three serving roles. Every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` emit the series. The chart still cannot scrape them: no role declares a metrics container port and no scrape target ships, so an HPA sits at `<unknown>` until you add both plus a custom metrics adapter.
+Per-role HPAs target `rps`, `connections` and `queue_demand` — CPU is a lagging proxy for all three serving roles. Every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` emit the series. The chart still cannot scrape them: no role declares a metrics container port and no scrape target ships, so an HPA sits at `<unknown>` until you add both plus a custom metrics adapter.
 
 ## Rung 3 → 4: three separable moves
 

@@ -3,6 +3,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { defineConfig } from './config';
+import { WORKER_RETIRE_DEFAULT_MS } from './drain-deadline';
 import { isUltimateError } from './errors';
 
 const refusal = (run: () => unknown): string => {
@@ -149,6 +150,27 @@ describe('drain.workerDeadlineMs', () => {
       expect(cause).toContain('drain.workerDeadlineMs');
     },
   );
+});
+
+describe('drain.workerRetireMs', () => {
+  test('on by default, an hour: a deploy waits out a held job', () => {
+    expect(defineConfig({ name: 'app' }).drain.workerRetireMs).toBe(WORKER_RETIRE_DEFAULT_MS);
+    expect(WORKER_RETIRE_DEFAULT_MS).toBe(3_600_000);
+  });
+
+  test('0 turns it off, and a day is the most it may be', () => {
+    const at = (workerRetireMs: number): number =>
+      defineConfig({ name: 'app', drain: { workerRetireMs } }).drain.workerRetireMs;
+    expect(at(0)).toBe(0);
+    expect(at(86_400_000)).toBe(86_400_000);
+  });
+
+  test.each([Number.NaN, -1, 1.5, 86_400_001, '2h'])('%p is refused, naming the key', (value) => {
+    const cause = refusal(() =>
+      defineConfig({ name: 'app', drain: { workerRetireMs: value as number } }),
+    );
+    expect(cause).toContain('drain.workerRetireMs');
+  });
 });
 
 describe('drain.deadlineMs', () => {

@@ -95,8 +95,14 @@
  * parity splits `memory-{batch,lock,same-tenant,seek,transactor}.ts`; `cache/src/tier-leading.ts`;
  * expand-contract and migration safety `db/src/{retired,rolling,rolling-errors,same-tenant,
  * transaction-guard,migrate-lock-retry}.ts`; `core/src/json-storable.ts`.
+ * raised 692 → 706, measured 706 (2026-11-03, plan 101 wave 2): the pooled-Postgres profile
+ * `db/src/{pooler,pooler-fix,pool-gate,pool-listeners,pool-pins,pool-retire,pool-sweep,
+ * pool-timer}.ts` (a transaction pooler's bounds, and a pinned or wedged connection retired);
+ * the claim by queue demand `jobs/src/{worker-queue-demand,driver-pg-claim-sql,
+ * driver-pg-demand-sql}.ts`; `http/src/{compress,compress-read}.ts` (a compressed answer, and a
+ * compressed body read bounded); `entity/src/memory-observed.ts`.
  */
-export const MIGRATE_CEILING = 692;
+export const MIGRATE_CEILING = 706;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -234,8 +240,13 @@ export const MIGRATE_CEILING = 692;
  * raised 989 → 1018, measured 1018 (2026-11-02, plan 101 wave 1): `MIGRATE_CEILING`'s 26, and
  * `storage/src/{errors-sniff,driver-s3-copy}.ts` (a promoted object is re-sniffed and copied) and
  * `render/src/head-attributes.ts`, which every role reaches through the storage and render barrels.
+ * raised 1018 → 1047, measured 1047 (2026-11-03, plan 101 wave 2): `MIGRATE_CEILING`'s 14; the
+ * streamed upload `storage/src/{byte-pump,put-stream,errors-stream,multipart,driver-local-stream,
+ * driver-s3-presign,driver-s3-put-stream,driver-s3-settle,driver-s3-sse,driver-s3-multipart}.ts`;
+ * `render/src/hole.ts` (`<Hole>`, on the render barrel); `cli/src/{runtime-s3-path-style,
+ * runtime-statement-bound,app-load-unresolved,output-findings}.ts`.
  */
-export const SERVING_ROLE_CEILING = 1018;
+export const SERVING_ROLE_CEILING = 1047;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -357,5 +368,7 @@ export const SERVING_ROLE_CEILING = 1018;
  * raised 1121 → 1149, measured 1149 (2026-11-02, plan 101 wave 1): the modules named on
  * `SERVING_ROLE_CEILING` for it and `cli/src/runtime-render-document.ts`, the document split out of
  * `runtime-render.ts` for the web role, less what earlier raises left as slack.
+ * raised 1149 → 1179, measured 1179 (2026-11-03, plan 101 wave 2): the 29 named on
+ * `SERVING_ROLE_CEILING` for it and `cli/src/stream-hole-scope.ts`, a `<Hole>`'s request scope.
  */
-export const WEB_ROLE_CEILING = 1149;
+export const WEB_ROLE_CEILING = 1179;

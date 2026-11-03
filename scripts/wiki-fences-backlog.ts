@@ -127,7 +127,6 @@ export const WIKI_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   'Resource-Management: using connection = await client.reserve();': 1,
   'Routes-And-Render-Modes: <Image src={post.cover} alt={post.title} sizes="(max-width: 700px) 100vw, 700px" priority />': 1,
   'Routes-And-Render-Modes: export const config = defineRoute({': 2,
-  'Routes-And-Render-Modes: export default function Dashboard() {': 1,
   "Routes-And-Render-Modes: import { defineRoute, withStatus } from '@ultimat3/render';": 1,
   "Routes-And-Render-Modes: import { setRedirect } from '@ultimat3/http';": 1,
   'Routes-And-Render-Modes: meta: ({ post }) => ({ /* ... */ ld: ld.Article(post) })': 1,

@@ -99,6 +99,41 @@ describe('problemError — the stated delay', () => {
   });
 });
 
+describe('problemError — the request id', () => {
+  test('carries the document root member on meta', () => {
+    expect(problemError(409, refusal({ requestId: 'req-123' }), URL).meta?.['requestId']).toBe(
+      'req-123',
+    );
+  });
+
+  test('a server meta key cannot stand in for it, or beat it', () => {
+    const spoofed = { meta: { requestId: 'spoof', kept: 1 } };
+    const both = problemError(409, refusal({ ...spoofed, requestId: 'req-123' }), URL);
+    expect(both.meta?.['requestId']).toBe('req-123');
+    expect(both.meta?.['kept']).toBe(1);
+    expect(problemError(409, refusal(spoofed), URL).meta).not.toHaveProperty('requestId');
+  });
+
+  test('anything but a non-empty string under 128 chars is absent', () => {
+    expect(
+      problemError(409, refusal({ requestId: 'r'.repeat(127) }), URL).meta?.['requestId'],
+    ).toBe('r'.repeat(127));
+    for (const requestId of ['', 'r'.repeat(128), 42, null, { id: 'x' }, ['x']]) {
+      const spoofed = { meta: { requestId: 'spoof' }, requestId };
+      expect(problemError(409, refusal(spoofed), URL).meta).not.toHaveProperty('requestId');
+    }
+  });
+
+  test('the transport carries it on an answer it decoded itself', async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response(refusal({ requestId: 'req-9' }), { status: 409 });
+    const error = await clientTransport({ method: 'GET', url: URL, fetchImpl }).catch(
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toMatchObject({ meta: { requestId: 'req-9', origin: 'remote' } });
+  });
+});
+
 describe('problemError — a delay only the header may state', () => {
   // The framework's server never puts `retryAfterSeconds` in a problem body: `registerProblemMeta`
   // refuses framework codes, and whenever an error carries the key `@ultimat3/http` writes the

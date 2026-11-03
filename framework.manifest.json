@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2b3581299404fa50cbcfff7ce6cb04c2289b7b69143c7e246e8d9a05ae93ae67",
+  "buildId": "70e79fbdd05fc2f35c47e6d3fb3bbf367440bf569d2614ee72d4be0609ca9822",
   "tiers": {
     "0": [
       "core",
@@ -505,6 +505,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_APP_IMPORT_UNRESOLVED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_APP_NAME_EMPTY",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -631,6 +636,11 @@
     },
     {
       "code": "X_BOUNDARY_APP_TO_API",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_BOUNDARY_PACKAGE_TO_APP",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1135,6 +1145,16 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_DB_POOLER_OPTIONS_REFUSED",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_DB_POOLER_SESSION_REQUIRED",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_DB_SCHEMA_STALE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -1156,6 +1176,11 @@
     },
     {
       "code": "X_DB_SIBLING_SCOPE_TIMEOUT",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_DB_STATEMENT_BOUND_LOST",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
     },
@@ -1245,7 +1270,27 @@
       "at": "scripts/dependency-allowlist.ts"
     },
     {
+      "code": "X_DEPLOY_BUILD_MISMATCH",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEPLOY_BUILD_UNSTAMPED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_DEPLOY_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEPLOY_QUEUE_UNSERVED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEPLOY_UNSTABLE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1675,6 +1720,11 @@
       "at": "scripts/factory-names.ts"
     },
     {
+      "code": "X_FEATURE_REQUIRED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_FEATURE_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1980,6 +2030,11 @@
       "at": "packages/action/src/error-titles.ts"
     },
     {
+      "code": "X_IMAGE_CONTENT_UNIGNORED",
+      "owner": "scripts",
+      "at": "scripts/lib/image-content-ignores.ts"
+    },
+    {
       "code": "X_IMAGE_DECODE_FAILED",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -2153,6 +2208,11 @@
       "code": "X_JOB_ON_SETTLED_FAILED",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_OUTLASTS_DRAIN",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_JOB_PAGE_INVALID",
@@ -2346,6 +2406,11 @@
     },
     {
       "code": "X_MAIL_HEADER_INVALID",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
+      "code": "X_MAIL_KEY_MISSING",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
     },
@@ -3188,6 +3253,11 @@
       "code": "X_QUERY_SINGLE_INVALID",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_SLICE_ENTITY",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_QUERY_SUBSCRIBES_DRIFT",
@@ -4320,6 +4390,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_UPLOAD_SIZE_UNDECLARED",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_URL_EXPIRED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
@@ -4333,6 +4408,16 @@
       "code": "X_STORAGE_URL_UNVERIFIABLE",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_WRITE_OUTCOME_UNKNOWN",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STREAM_ALREADY_FLUSHED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_STYLES_GLOBAL_MISSING",

@@ -8,10 +8,8 @@ import {
   type Clock,
   finiteCount,
   isUltimateError,
-  NotImplementedError,
   type Page,
   pageOf,
-  renderFixLiteral,
   renderFixShellArg,
   systemClock,
 } from '@ultimat3/core';
@@ -33,12 +31,16 @@ import {
   toBytes,
 } from './driver';
 import { isAbsentObject } from './driver-s3-absent';
-import { buildClient, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
+import { buildClient, dated, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
 import { signedCopy } from './driver-s3-copy';
 import { needsSignedPut, readObjectLock, signedPut } from './driver-s3-lock';
+import { s3SignedUrl } from './driver-s3-presign';
+import { putS3Stream } from './driver-s3-put-stream';
 import { readS3Range } from './driver-s3-range';
 import { regionMismatch } from './driver-s3-region';
+import { settleLostPut } from './driver-s3-settle';
 import type { S3FetchLike } from './driver-s3-signed';
+import { refuseUnsupportedPut } from './driver-s3-sse';
 import {
   checksumMismatch,
   deleteFailed,
@@ -52,8 +54,14 @@ import {
 import { objectChanged } from './errors-promote';
 import { assertObjectLockOptions, type ObjectLock } from './object-lock';
 import { assertSafeKey } from './path';
-import { assertGetOptions, type GetOptions } from './range';
-import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
+import { assertPutStream, type PutStreamOptions } from './put-stream';
+import {
+  assertGetOptions,
+  assertStreamRange,
+  type ByteRange,
+  type GetOptions,
+  streamedRange,
+} from './range';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 's3';
@@ -95,42 +103,11 @@ export interface S3DriverOptions {
    */
   readonly maxPutBytes?: number | undefined;
   /**
-   * Ceiling on ONE `get()`, because `get()` buffers the whole object — and on this disk nothing
-   * bounds what a presigned PUT stored (`SignedUrlOptions.maxBytes`). Defaults to `maxPutBytes`;
-   * an object past it is read with `stream()`.
+   * Ceiling on ONE `get()`, because `get()` buffers the whole object — and a URL signed with no
+   * `contentLength` bounds nothing it stored. Defaults to `maxPutBytes`; an object past it is read
+   * with `stream()`.
    */
   readonly maxGetBytes?: number | undefined;
-}
-
-/**
- * A missing `LastModified` is ABSENT, never `new Date(0)`: epoch 0 is older than every window, so
- * `sweepOrphans` deleted an upload on the strength of a field the provider never sent.
- */
-const dated = (value: string | Date | undefined): { readonly lastModified?: Date } =>
-  value === undefined ? {} : { lastModified: value instanceof Date ? value : new Date(value) };
-
-/**
- * Everything `put()` may be handed that this driver cannot honour, refused before a byte moves.
- * A typed refusal at the call site is the whole point: `serverSideEncryption` exists on
- * `PutOptions` so that "this disk cannot prove per-object encryption" is something an engineer
- * meets while writing the call, not while answering a security review.
- */
-function refuseUnsupportedPut(bucket: string, putOptions?: PutOptions): void {
-  const sse = putOptions?.serverSideEncryption;
-  if (sse === undefined) return;
-  // The key id is the caller's own option, spliced into single-quoted JSON: `renderFixLiteral`
-  // escapes the `"` and `\` JSON needs, and a `'` — the one byte live inside single quotes — makes
-  // it the placeholder rather than ending the argument (plan 101 row S12).
-  const keyId = sse.kmsKeyId?.includes("'") === false ? sse.kmsKeyId : undefined;
-  const bucketArg = renderFixShellArg(bucket, "'<bucket>'");
-  throw new NotImplementedError({
-    cause:
-      'per-object server-side encryption on the s3 driver (Bun.S3Client exposes acl, storageClass and type, and nothing for x-amz-server-side-encryption) is not implemented by this driver — set it bucket-wide with the command in fix, then drop serverSideEncryption from put()',
-    fix:
-      sse.algorithm === 'aws:kms'
-        ? `aws s3api put-bucket-encryption --bucket ${bucketArg} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"aws:kms","KMSMasterKeyID":${renderFixLiteral(keyId, '"<key-arn>"')}},"BucketKeyEnabled":true}]}'`
-        : `aws s3api put-bucket-encryption --bucket ${bucketArg} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]}'`,
-  });
 }
 
 export function s3Driver(options: S3DriverOptions): StorageDriver {
@@ -219,6 +196,11 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     };
   };
 
+  /** The HEAD a lost write's answer is settled against, and the `.catch` of a single PUT. */
+  const statOf = async (key: string) => ((await present(key)) ? statObject(key) : undefined);
+  const lostPut = (key: string, bytes: Uint8Array, attributes: PutOptions | undefined) =>
+    settleLostPut(statOf, { driver: DRIVER_NAME, key, bytes, attributes }, refusedWrite(key));
+
   return {
     name: DRIVER_NAME,
     registerAs(name: string): void {
@@ -243,7 +225,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       if (putOptions !== undefined && needsSignedPut(putOptions)) {
         // Off the Bun client only for what it cannot send: `S3File.write` takes a type, an ACL and
         // a storage class and no header. One request either way — never a PUT then a second call.
-        const refusal = await signedPut(options, safe, bytes, putOptions).catch(refusedWrite(safe));
+        const refusal = await signedPut(options, safe, bytes, putOptions).catch(
+          lostPut(safe, bytes, putOptions),
+        );
         if (refusal !== undefined) refusedWrite(safe)(refusal);
         // Stored — the PUT succeeded with them — so reported, as the local disk reports its own.
         return {
@@ -257,8 +241,35 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       await conn()
         .file(safe)
         .write(bytes, { type: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE })
-        .catch(refusedWrite(safe));
+        .catch(lostPut(safe, bytes, putOptions));
       return statObject(safe);
+    },
+
+    async putStream(
+      key: string,
+      body: ReadableStream<Uint8Array>,
+      streamOptions: PutStreamOptions,
+    ): Promise<StorageObject> {
+      const safe = assertSafeKey(key);
+      const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
+      await putS3Stream(options, {
+        key: safe,
+        body,
+        options: streamOptions,
+        maxBytes,
+        driver: DRIVER_NAME,
+        refused: refusedWrite(safe),
+        stat: statOf,
+      }).catch(refusedWrite(safe));
+      return {
+        ...(await statObject(safe)),
+        ...(streamOptions.cacheControl === undefined
+          ? {}
+          : { cacheControl: streamOptions.cacheControl }),
+        ...(streamOptions.metadata === undefined
+          ? {}
+          : { metadata: { ...streamOptions.metadata } }),
+      };
     },
 
     async stat(key: string): Promise<StorageObject | undefined> {
@@ -306,6 +317,20 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       const file = conn().file(safe);
       if (!(await present(safe))) throw objectNotFound(diskName, safe);
       return file.stream();
+    },
+
+    async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
+      const safe = assertSafeKey(key);
+      assertStreamRange(DRIVER_NAME, range);
+      if (!(await present(safe))) throw objectNotFound(diskName, safe);
+      // The HEAD first: past the end, Bun's slice raises from inside the stream, after a caller has
+      // already answered 206. Refused here it is still a status.
+      const { size } = await statObject(safe);
+      const [first, last] = streamedRange(DRIVER_NAME, safe, range, size);
+      return conn()
+        .file(safe)
+        .slice(first, last + 1)
+        .stream();
     },
 
     /**
@@ -435,30 +460,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       );
     },
 
-    /**
-     * Provider presigning. The signature binds method and expiry, and signs `host` alone: `type`
-     * becomes `response-content-type`, which governs a GET, so a PUT's `Content-Type` is unsigned.
-     * Neither a size nor a type is bound; `promoteAttachment` measures and sniffs the object.
-     */
+    /** Both presigners, one rule: `driver-s3-presign.ts`. */
     async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
-      // Screened with the SAME function `buildSignedUrl` applies on the local disk — one
-      // finite-bound path for both presigners, never a private copy per package: `Math.ceil(NaN /
-      // 1000)` is `NaN`, so `X-Amz-Expires=NaN` went to AWS and the app got a 403 on a link it
-      // believed it had just minted. `=== undefined` rather than `??`, so an explicit `null` is
-      // refused instead of silently taking the default.
-      const expiresInMs = finiteCount(
-        'the s3 driver',
-        'expiresInMs',
-        urlOptions?.expiresInMs === undefined ? DEFAULT_SIGNED_URL_TTL_MS : urlOptions.expiresInMs,
-        1,
-      );
-      return conn()
-        .file(assertSafeKey(key))
-        .presign({
-          method: urlOptions?.method ?? 'GET',
-          expiresIn: Math.ceil(expiresInMs / 1000),
-          ...(urlOptions?.contentType === undefined ? {} : { type: urlOptions.contentType }),
-        });
+      return s3SignedUrl(options, (safe) => conn().file(safe), key, urlOptions);
     },
   };
 }

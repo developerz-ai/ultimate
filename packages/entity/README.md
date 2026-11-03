@@ -988,6 +988,12 @@ deliberate, and a production process pays the one branch the observer seam costs
 one number both detectors read *is* here — `N_PLUS_ONE_THRESHOLD` (5), next to the codes whose `fix`
 it triggers, so a loop that fails a test and a loop that warns in dev are the same loop.
 
+**Both drivers report**, `As of 2026-11-02`. `memoryRepo` sends no statement, so it reports one event
+per repository operation through `statementObserver()`, under the pair `postgresRepo` names
+(`posts.findById`) and with no SQL text. A microtask's point lookups in one request are one event, as
+`coalesce.ts` makes them one statement. Postgres also serves a sibling lookup off a page it already
+read (`jit-preload.ts`); memory has no such page, so it counts that lookup and is the stricter driver.
+
 ## Tenancy is a guard
 
 `tenant: 'orgId'` on the entity names the column outright. Omit it and it is inferred — a

@@ -10,6 +10,7 @@ import type { AttachmentTarget } from './attachment';
 import { attachmentKey, pendingKey, quarantineKey, uploadName } from './attachment';
 import type { StorageDriver } from './driver';
 import { contentTypeNotAllowed, tooLarge } from './errors';
+import { uploadSizeUndeclared } from './errors-stream';
 import { DEFAULT_SIGNED_URL_TTL_MS } from './signed-url';
 import type { UploadPolicy } from './upload';
 import { normalizeContentType, uploadPolicy } from './upload';
@@ -19,10 +20,11 @@ export interface UploadRequest {
   readonly filename: string;
   readonly contentType: string;
   /**
-   * Optional, and never trusted: it only buys the client an early refusal. The bytes are counted
-   * again by `acceptSignedUpload`, which is the authority, so a lie here changes nothing.
+   * The file's size in bytes. Required, because it is what the URL binds: an s3 disk signs it as the
+   * exact `Content-Length`, and the local disks sign it as the ceiling `acceptSignedUpload` counts
+   * against. A lie here shrinks the client's own upload; it cannot pass the policy's `maxBytes`.
    */
-  readonly size?: number | undefined;
+  readonly size: number;
 }
 
 export interface UploadGrant {
@@ -32,6 +34,7 @@ export interface UploadGrant {
   readonly method: 'PUT';
   /** Normalised. The client MUST send exactly this as `Content-Type` or the accept refuses. */
   readonly contentType: string;
+  /** What the URL accepts: the declared `size`, already held to the policy. */
   readonly maxBytes: number;
   /** Epoch ms. The grant's own view of the window; the signature is what actually enforces it. */
   readonly expiresAt: number;
@@ -59,10 +62,10 @@ export interface GrantUploadInput {
 
 /**
  * Refuses before it signs. A URL only exists for a request the policy already accepted, so an
- * over-limit or disallowed upload costs one round trip instead of a full transfer. On a disk that
- * signs its own URLs the signature then carries the same two constraints, so the client cannot
- * widen either. A provider's presigned PUT binds method and expiry only: there, an honest client
- * sends what it was granted, and `promoteAttachment` is what holds a dishonest one to it.
+ * over-limit or disallowed upload costs one round trip instead of a full transfer. The signature
+ * then carries the size on every disk, so the client cannot widen it: at the provider's PUT on s3
+ * (403 on any other length), and at `acceptSignedUpload` on the local disks. The content type is
+ * signed only on a disk that signs its own URLs; on s3, `promoteAttachment` sniffs it.
  */
 export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant> {
   const policy = input.policy ?? uploadPolicy();
@@ -80,9 +83,9 @@ export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant>
     throw contentTypeNotAllowed(key, declared, policy.allowedContentTypes);
   }
   const size = input.request.size;
-  if (size !== undefined && Number.isSafeInteger(size) && size > policy.maxBytes) {
-    throw tooLarge(key, size, policy.maxBytes);
-  }
+  // Off the wire, so the type promises nothing here. An empty file has nothing to upload.
+  if (!Number.isSafeInteger(size) || size < 1) throw uploadSizeUndeclared(key, size);
+  if (size > policy.maxBytes) throw tooLarge(key, size, policy.maxBytes);
 
   // Refused here as well as in the presigner one call down: `expiresAt: now + NaN` is `NaN` in the
   // grant this function RETURNS, and the message a caller can act on names `grantUpload`'s
@@ -97,7 +100,8 @@ export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant>
   );
   const url = await input.disk.signedUrl(key, {
     method: 'PUT',
-    maxBytes: policy.maxBytes,
+    maxBytes: size,
+    contentLength: size,
     contentType: declared,
     expiresInMs,
   });
@@ -106,7 +110,7 @@ export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant>
     url,
     method: 'PUT',
     contentType: declared,
-    maxBytes: policy.maxBytes,
+    maxBytes: size,
     expiresAt: clock.now().getTime() + expiresInMs,
   };
 }

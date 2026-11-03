@@ -63,7 +63,7 @@ const grant = (): ReturnType<typeof grantUpload> =>
     policy: IMAGES,
     clock,
     uploadId: () => 'upload-1',
-    request: { filename: 'holiday.png', contentType: 'image/png' },
+    request: { filename: 'holiday.png', contentType: 'image/png', size: 1024 },
   });
 
 describe('a disk verifies what it signed, without surrendering the secret', () => {
@@ -142,7 +142,7 @@ describe('a disk verifies what it signed, without surrendering the secret', () =
       policy: IMAGES,
       clock: bootClock,
       uploadId: () => 'upload-3',
-      request: { filename: 'holiday.png', contentType: 'image/png' },
+      request: { filename: 'holiday.png', contentType: 'image/png', size: 1024 },
     });
 
     const late = frozenClock(START);
@@ -206,7 +206,7 @@ describe('what a mounted route actually holds', () => {
         policy: IMAGES,
         clock,
         uploadId: () => 'upload-2',
-        request: { filename: 'holiday.png', contentType: 'image/png' },
+        request: { filename: 'holiday.png', contentType: 'image/png', size: 1024 },
       });
 
       // Everything below is reachable from `{ params, headers, body }` and the registry.

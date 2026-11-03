@@ -89,6 +89,7 @@ export type {
   JobRecord,
   JobState,
   NackOptions,
+  QueueDemand,
   QueueStats,
   SettleBy,
 } from './driver';
@@ -252,8 +253,10 @@ export type {
 export { concurrencyLimiter, NO_TENANT, tenantKeyFrom } from './limits';
 export {
   queueDeadJobs,
+  queueDemand,
   queueOldestReady,
   recordQueueDeadJobs,
+  recordQueueDemand,
   recordQueueOldestReady,
 } from './metrics';
 export type {
@@ -388,3 +391,5 @@ export type { MemoryWebhookLedger, WebhookAttempt, WebhookLedger } from './webho
 export { DEFAULT_MAX_WEBHOOK_ATTEMPTS, memoryWebhookLedger } from './webhook-ledger';
 export type { Worker, WorkerOptions, WorkerStats } from './worker';
 export { jobWorker } from './worker';
+export type { CutoffTimes } from './worker-drain-cutoff';
+export { cutoffTimes, DRAIN_CANCEL_MARGIN_MS } from './worker-drain-cutoff';

@@ -23,6 +23,7 @@ import {
   textOf,
 } from './driver-s3-fixture';
 import type { ByteRange } from './range';
+import { streamedRange } from './range';
 
 const KEY = 'org/org-1/log.ndjson';
 const TEXT = '0123456789';
@@ -58,6 +59,13 @@ beforeEach(() => seeded());
 
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
+});
+
+describe('streamedRange', () => {
+  test('clamps the last byte, as a Content-Range must report it', () => {
+    expect(streamedRange('local', 'k', [7, 1_000_000], 10)).toEqual([7, 9]);
+    expect(streamedRange('local', 'k', [0, 3], 10)).toEqual([0, 3]);
+  });
 });
 
 describe('get(key, { range }) — inclusive first and last byte', () => {

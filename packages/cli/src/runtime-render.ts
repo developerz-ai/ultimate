@@ -25,7 +25,6 @@ import {
 import type { RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
 import {
   documentCarriesScope,
-  hydrateRuntime,
   routeDataFor,
   routeEntries,
   routeFor,
@@ -34,6 +33,7 @@ import {
 import type { IsrController } from '@ultimat3/render/server';
 import {
   contentHash,
+  holeSink,
   renderSsr,
   ssrHeaders,
   staticHeaders,
@@ -44,7 +44,7 @@ import {
   navigationMetaOf,
   principalRelocation,
 } from './page-navigation';
-import { bootScript, collectorFor } from './route-islands';
+import { collectorFor, streamScripts } from './route-islands';
 import { addressedUrl } from './runtime-address';
 import { attachedIsr } from './runtime-isr';
 import { isrOutcome } from './runtime-isr-outcome';
@@ -52,6 +52,7 @@ import type { DevRouteData, RenderOptions } from './runtime-render-document';
 import { documentFrom, headFor, lang, routeBody, stylesFor } from './runtime-render-document';
 import type { StaticResult } from './static-document';
 import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
+import { enterHole } from './stream-hole-scope';
 
 export type { DocumentOptions, IslandResolver } from './document-options';
 
@@ -135,17 +136,18 @@ async function resultFor(
       return { status, headers: staticHeaders(contentHash(body), options.buildId), body };
     }
     case 'stream': {
-      // The shell IS the component: nothing can yet mark a subtree as a hole, and Solid's
-      // `Suspense` cannot be the missing piece — it calls `getContextId()`, which throws outside a
-      // Solid renderer. Until a hole marker of the framework's own exists, the first flush carries
-      // the whole body — correct output, no streaming benefit.
+      // Everything outside a `<Hole>` is the first flush; every hole fills after it, in the
+      // request's context, in completion order. `status` and any redirect were decided by `load`
+      // above: a hole starts after the headers left, so its failure is its own error markup.
       // A stream is always `private, no-store` (`streamResult`), so it always carries the scope.
       const scope = documentScope(entry, options.buildId, ctx.actor);
       const islands = collectorFor(entry, options, scope);
+      const sink = holeSink({ enter: enterHole });
       const [head, shell] = await Promise.all([
         headFor(entry, request, data, options, scope),
-        routeBody(entry, request, data, islands),
+        routeBody(entry, request, data, islands, sink),
       ]);
+      const scripts = streamScripts(entry, islands, options, scope, sink.holes.length > 0);
       return withScope(
         streamResult(
           {
@@ -153,8 +155,8 @@ async function resultFor(
             // The runtime rides the first flush, with the shell it boots. A later chunk would leave
             // the window between flush one and the close with inert islands and no listeners on
             // them — the first-click-lost failure `interaction` replay exists for.
-            shell: `${shell}${bootScript(entry, islands, options, scope)}${hydrateRuntime(islands.directives)}`,
-            holes: [],
+            shell: `${shell}${scripts.first}`,
+            holes: sink.holes.map((hole) => ({ ...hole, after: scripts.after })),
           },
           { buildId: options.buildId },
           status,

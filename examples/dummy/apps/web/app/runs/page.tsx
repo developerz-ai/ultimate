@@ -5,8 +5,8 @@
  * over once a browser has booted it.
  *
  * `render: 'ssr'`: the one read here is the connection list, resolved in `load` through the typed
- * query client before the document is written — nothing on this page is a promise to stream, and
- * `stream` with no `<Suspense>` is `X_ROUTE_MODE_INVALID`. A route never touches the database.
+ * query client before the document is written — nothing on this page waits long enough to be a
+ * `<Hole>`. A route never touches the database.
  */
 
 import { useT } from '@postly/i18n';
@@ -110,7 +110,11 @@ export const config = defineRoute({
   // measured: 185502 B (x build --target static) — why: bounded page record store (no leak) —
   // raised 180kb → 181.5kb (29.3.2): a joined channel keeps the rows it adopted until it is
   // dropped, and a per-type cap bounds one joined for hours; page boot 76,906 → 78,198 B (+1,292).
-  budget: { js: '181.5kb' },
+  // measured: 186157 B (x build --target static) — why: a remote error carries the server's
+  // `requestId` (core's `withRequestId`, in both the page boot and the console's own action
+  // decoder) and the read client's `url()` — raised 181.5kb → 182kb (30.0.0): page boot
+  // 78,198 → 78,468 B (+270), the run-console island + inline runtime +421.
+  budget: { js: '182kb' },
   load: () => memberQueries.runConnections({ orgId: useActor().orgId }),
   meta: ({ t }) => ({ title: t('app.runs.metaTitle'), robots: { index: false } }),
 });

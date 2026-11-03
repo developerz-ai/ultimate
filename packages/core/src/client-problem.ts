@@ -76,7 +76,10 @@ export function problemError(
     retry: retryForStatus(code, status, retryAfterSeconds),
     // The server's declared keys FIRST, so the ones this decoder owns win a collision.
     meta: withStatedDelay(
-      { ...serverMeta(body['meta'], body['issues']), origin: 'remote', status, url },
+      withRequestId(
+        { ...serverMeta(body['meta'], body['issues']), origin: 'remote', status, url },
+        body['requestId'],
+      ),
       retryAfterSeconds,
     ),
     ...(docs === undefined ? {} : { docs }),
@@ -98,6 +101,27 @@ export function withStatedDelay(
   // Object rest copies own keys with CreateDataProperty, so a parsed `__proto__` stays a plain key.
   const { retryAfterSeconds: _fromTheBody, ...kept } = meta;
   return retryAfterSeconds === undefined ? kept : { ...kept, retryAfterSeconds };
+}
+
+/** A longer `requestId` is not an id the server minted, and it would ride into every report. */
+const MAX_REQUEST_ID_LENGTH = 127;
+
+/**
+ * A remote error's `meta` with the document's ROOT `requestId`, and only that: one copied off the
+ * body's `meta` is dropped first, so a key a server declared cannot pose as the id support is
+ * given. Absent unless it is a non-empty string this long at most. The rule for both decoders.
+ */
+export function withRequestId(
+  meta: Readonly<Record<string, unknown>>,
+  requestId: unknown,
+): Record<string, unknown> {
+  // Object rest copies own keys with CreateDataProperty, so a parsed `__proto__` stays a plain key.
+  const { requestId: _fromTheMeta, ...kept } = meta;
+  const carried =
+    typeof requestId === 'string' &&
+    requestId.length > 0 &&
+    requestId.length <= MAX_REQUEST_ID_LENGTH;
+  return carried ? { ...kept, requestId } : kept;
 }
 
 /**

@@ -729,3 +729,23 @@ Verbatim from [`packages/action/CLAUDE.md`](../../packages/action/CLAUDE.md), wh
   and adds NO default of its own. `ClientOptions.pathStyle` is for a caller with no document; a
   wrong one is answered `X_CONTRACT_DRIFT` (404) by `explainActionPathMiss`, never
   `X_ROUTE_NOT_FOUND`. A pinned action and a path under the SERVED style are never explained.
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/action/CLAUDE.md`](../../packages/action/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### Invariants — the wire
+
+- **`rateLimit:` is spent ONCE, inside `invoke`** (`rate-limit-gate.ts`), so HTTP, MCP, the agent
+  tool and `.job()` share one bucket; `surface: 'server'` spends nothing. `toRoute` sets
+  `rateLimitedBy: 'handler'` and NO `meta.rateLimit`/`rateLimitBucket` — the stage spends neither
+  the action's bucket (the old HTTP-only point) nor `default`. Key `action:<name>|<subject>`.
+  HTTP gets `RateLimit-*` via `onRateLimit` → http's `publishRateLimit`. The store is
+  `@ultimat3/http`'s installed one, adopted by the boot on every role. Spent after
+  `guardActionBeforeInput`, BEFORE the parse and `def.row()` (an input/row-denied flood is refused). A key
+  the idempotency store holds spends nothing (replay); a reservation `withIdempotency` CREATES that
+  the peek did not pay for spends in `beforeRun`, released on refusal. A job run is charged to its
+  org, else `job:unattributed`. A surface's `clientAddress` is inherited by nested `invoke`s
+  (`withCallerAddress`); a `'job'` invoke opens a fresh frame (`withJobFrame`) so no visitor's
+  address follows work into the worker, and calls nested in it are the job's.
+  `rate-limit-surfaces.test.ts`. The computed rate must be finite and `limit` at least one token.

@@ -56,6 +56,70 @@ export interface FirstRunStep {
 export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/g, '-')}`;
 
 /**
+ * `x g query` and `x g backfill` read a table and never create one (`X_FEATURE_REQUIRED`), so both
+ * run into the slice `x g resource` wrote: first in `GENERATORS`, which a test here holds.
+ */
+const READ_A_SLICE: ReadonlySet<string> = new Set(['query', 'backfill']);
+const RESOURCE_SLICE = generatorName('resource');
+const SOLO_SLICE = 'smoke-solo';
+
+/**
+ * A slice single-tenant by the edit `x g entity`'s own comment describes, written by hand because no
+ * generator writes one: no `tenant`, no `orgId`. What `SECOND_SHAPES` generates into it must hold
+ * no `orgId` and still gate, so the `bun run check` after this sweep is what proves it.
+ */
+export const SOLO_SLICE_FILES: Readonly<Record<string, string>> = {
+  [`apps/web/app/${SOLO_SLICE}/entity.ts`]: `// A table with no tenant, so \`x g action\` and \`x g mutator\` read this file and write no org.
+import { entity, text, uuid } from '@ultimat3/entity';
+
+export const smokeSolo = entity('smoke_solos', {
+  columns: { id: uuid().primaryKey(), title: text({ max: 200 }) },
+});
+
+export type SmokeSolo = typeof smokeSolo.$row;
+`,
+  [`apps/web/app/${SOLO_SLICE}/entity.test.ts`]: `// The table names no tenant: what the generators read.
+import { expect, unitTest } from '@ultimat3/testing';
+import { smokeSolo } from './entity';
+
+unitTest('smokeSolo is not tenant-scoped', () => {
+  expect(smokeSolo.$tenantColumn).toBeNull();
+});
+`,
+  [`apps/web/app/${SOLO_SLICE}/repo.test.ts`]: `// The one export: the app's coverage floor counts every source file a sweep plants.
+import { expect, unitTest } from '@ultimat3/testing';
+import { smokeSoloCount } from './repo';
+
+unitTest('smokeSoloCount answers', () => {
+  expect(smokeSoloCount()).toBe(0);
+});
+`,
+  [`apps/web/app/${SOLO_SLICE}/repo.ts`]: `// No \`byId\`: the generated body reads no row, so this slice needs no typed handle to gate.
+export const smokeSoloCount = (): number => 0;
+`,
+};
+
+/**
+ * The shapes a bare \`g <kind>\` never reaches, each a generated file the \`lint\` and \`typecheck\`
+ * after this sweep refuse if a template breaks it. Into the resource's slice: its \`policy.ts\` is on
+ * disk by then and reads as an author's, so the contract test must hold no constant it leaves
+ * unread. Into the single-tenant slice: no org anywhere.
+ */
+const SECOND_SHAPES: readonly FirstRunStep[] = (['action', 'mutator'] as const).flatMap((kind) =>
+  [RESOURCE_SLICE, SOLO_SLICE].map((slice) => ({
+    name: `g ${kind} --feature ${slice}`,
+    args: ['g', kind, `${generatorName(kind)}-${slice}`, '--feature', slice, '--json'],
+  })),
+);
+
+/** The hand-written half of `SECOND_SHAPES`, on disk before the first step runs. */
+export const plantHandWrittenSlices = async (dir: string): Promise<void> => {
+  for (const [path, contents] of Object.entries(SOLO_SLICE_FILES)) {
+    await Bun.write(resolve(dir, path), contents);
+  }
+};
+
+/**
  * The generators are projected from `GENERATORS`, never a hand-written list: the defect was four of
  * thirteen, so a sample would likely have missed it — and a fourteenth generator is covered the day
  * it lands rather than the day someone remembers this file.
@@ -79,8 +143,15 @@ export const generatorName = (kind: string): string => `smoke-${kind.replace(/:/
 export const firstRunPlan = (): readonly FirstRunStep[] => [
   ...GENERATORS.map((kind) => ({
     name: `g ${kind}`,
-    args: ['g', kind, generatorName(kind), '--json'],
+    args: [
+      'g',
+      kind,
+      generatorName(kind),
+      ...(READ_A_SLICE.has(kind) ? ['--feature', RESOURCE_SLICE] : []),
+      '--json',
+    ],
   })),
+  ...SECOND_SHAPES,
   { name: 'db gen generated', args: ['db', 'gen', 'generated', '--json'] },
 ];
 
@@ -201,6 +272,7 @@ if (import.meta.main) {
     );
   }
   const steps = firstRunPlan();
+  await plantHandWrittenSlices(dir);
   const outcomes = await runFirstRun(dir, steps, run);
   const findings = firstRunFindings(dir, outcomes);
   report(

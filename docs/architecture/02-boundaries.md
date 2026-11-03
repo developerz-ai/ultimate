@@ -34,7 +34,7 @@ core's error machinery would make tier 0 a cycle.
 
 ## Generated-app rules — `packages/cli/src/app-boundaries.ts`
 
-Six, each with its own code (`BOUNDARY_CODES`, `As of 2026-10`). `x verify` reports them as findings and `x fix boundary` re-reports the
+Seven, each with its own code (`BOUNDARY_CODES`, `As of 2026-11`). `x verify` reports them as findings and `x fix boundary` re-reports the
 same violation as a cut, off one rule → code table.
 
 | Rule id | Code | Forbids | Prevents concretely |
@@ -45,6 +45,7 @@ same violation as a cut, off one rule → code table.
 | `surface-imports-surface` | `X_BOUNDARY_SURFACE_IMPORT` | every other surface crossing `SURFACE_SPECS` does not allow — `api/ → site/`, `site/ → api/`, `app/ → site/` (`classify`, `packages/render/src/surfaces.ts`) | a surface table whose `mayImport` lists were read by nothing, so those crossings classified as no violation |
 | route → db | `X_BOUNDARY_ROUTE_TO_DB` | `page.tsx` / `layout.tsx` / `route.ts` importing `@ultimat3/db`, a `*/db` or `packages/db/` specifier, `drizzle-orm`, or a slice's `repo` module under any source extension (`./repo`, `../posts/repo`, `repo/index`, `./repo.ts`, and the emitted-JS spellings `./repo.js` / `.mjs` / `.cjs` — `isRepoSpecifier`; `report` and `repository` are names, not repos); the cause names the repo hop | N+1 queries in a `<head>` computation, SQL no policy guards, a route that cannot be unit-tested |
 | service → http | `X_BOUNDARY_SERVICE_TO_HTTP` | `service.ts` importing `@ultimat3/http` or a `*/http` specifier | a service that only works inside a request — so the identical logic gets re-implemented in a job |
+| package → app | `X_BOUNDARY_PACKAGE_TO_APP` | a file under `packages/` importing `apps/` at runtime, relative or by workspace name (`package-boundaries.ts`). `import type` is allowed, and `packages/db/src/` may read an entity module: that is the typed handle `x g entity` writes | a shared package silently depending on one app. No per-package tiers: an app's `packages/` layout is its own |
 
 **Four rules this page claimed and no checker implements**, `As of 2026-10`: `component-holds-logic`,
 `cross-feature-repo`, `site-emits-js`, `raw-img`. Three it once listed here ship as guards in every

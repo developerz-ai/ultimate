@@ -93,7 +93,12 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
     name: 'response',
     phase: 'finalize',
-    why: 'last: a redirect answered to a client-router request becomes 204 + x-ultimate-location (the router follows it once, never fetch), then CORS, security headers, server-timing and the accumulated context headers are merged onto whatever the stages produced',
+    why: 'after every stage that decides a header: a redirect answered to a client-router request becomes 204 + x-ultimate-location (the router follows it once, never fetch), then CORS, security headers, server-timing and the accumulated context headers are merged onto whatever the stages produced',
+  },
+  {
+    name: 'compress',
+    phase: 'finalize',
+    why: 'last: it reads the final cache-control, so a private answer can never be coded (BREACH), and rebuilds the response with every header already on it. Only a public text answer with a declared length is ever read, so no other response pays for this stage',
   },
 ];
 

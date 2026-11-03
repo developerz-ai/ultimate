@@ -169,3 +169,19 @@ Verbatim from [`packages/render/CLAUDE.md`](../../packages/render/CLAUDE.md), wh
 | Files | Rule |
 |---|---|
 | Client navigation | `navigation*.ts` — soft navigation over server-rendered documents, NOT a mode: the router renders nothing, it swaps the document the route already rendered. Rules are pure (`navigation-rules.ts`: `linkVerdict`, `formVerdict`, `responseVerdict`, `mayPrefetch`) and unit-tested; the DOM half (`navigation-swap.ts`, `navigation.ts`) is proven in Chrome by `packages/cli/e2e/client-navigation-*.e2e.test.ts`. `./navigation` (`navigation-entry.ts`) is the script the CLI builds; importing it starts it, and a document without `ultimate-navigation` is never intercepted. Route-presented modals (`navigation: 'modal'`): the hash grammar and verdicts are pure (`navigation-modal-rules.ts`), the `<dialog>` is `navigation-modal.ts`, styled by `@ultimat3/ui`'s `global.scss` under `NAVIGATION_MODAL_ATTRIBUTE` (pinned by `navigation-modal-style.test.ts` — render never imports ui), proven by `client-navigation-modal.e2e.test.ts`. |
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/render/CLAUDE.md`](../../packages/render/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### @ultimat3/render — boundary
+
+| | |
+|---|---|
+| The ISR key | `isrKey(url, locale, origin?)` — the path in http's `canonicalPath` spelling (no base path), the locale in the reserved `__x_locale` parameter, the request's origin in `__x_origin` when the app declares none, the sorted DECLARED query (`isrRequestUrl`; undeclared is none). A key no route owns is never stored. The locale is REQUIRED. The time zone is deliberately not a dimension. `toResult` emits `vary: accept-language`, and `surrogate-key`/`cache-tag` from `@ultimat3/cache`'s `surrogateKeys()` over the route's `revalidateTags` — kept only while the response stays shared: http's `applyCacheHeaders` strips both on a rewrite to `private`/`no-store`. `registry.ts`'s `assertPurgeableTags` screens the tags at registration (`X_ROUTE_MODE_INVALID`); the rest of the shared key is `@ultimat3/http`'s `cache-headers` stage. File and mounted routes are both screened |
+
+### @ultimat3/render — boundary
+
+| | |
+|---|---|
+| Router ↔ the page's lifecycle | `navigation-scroll.ts` owns `scrollRestoration = 'manual'` and RESTORES the entry's saved offset at start, before its first save (a reload, or Back after a full load); `navigation-tabs.ts` owns the `BroadcastChannel`, closed on `pagehide` (it blocks the back/forward cache), reopened and the cache emptied on a persisted `pageshow`. A sheet `loadStylesheets` appends is `owned` at once, so an aborted navigation's sheets are retired by the next swap. A view transition is tracked by identity: an older one finishing never clears the running one. |

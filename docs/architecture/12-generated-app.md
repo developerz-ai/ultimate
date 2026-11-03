@@ -99,8 +99,8 @@ Feature-sliced, not layer-sliced. One folder per feature; each file one job.
 apps/web/app/<feature>/
   entity.ts  repo.ts  service.ts  policy.ts  errors.ts  ui.tsx  ui.module.scss
   actions/<verb>-<feature>.ts    one action or mutator per file
-  live/<name>.ts                 one subscribable query per file (`x g query --live`)
-  queries/<name>.ts              one plain query per file (`x g query`)
+  live/<name>.ts                 one subscribable query per file (`x g query --feature <slice> --live`)
+  queries/<name>.ts              one plain query per file (`x g query --feature <slice>`)
   jobs/<verb>-<feature>.ts       one job per file
   tasks/<name>.ts                one cron trigger per file (`x g task`)
   ui/<feature>-card.tsx          the feature's components
@@ -243,9 +243,9 @@ imports, through `sliceFoundation(target, needs)`
 | Generator | Files into a bare slice | Its own | `needs` |
 |---|---|---|---|
 | `x g action`, `x g mutator` | 9 | 3 — the declaration, `<name>.test.ts` and `<name>.contract.test.ts` | `entity`, `policy`, `errors` |
-| `x g query`, `x g query --live` | 7 | 2 | `entity`, `policy` |
+| `x g query --feature <slice>`, with `--live` | refused with no `entity.ts`: `X_FEATURE_REQUIRED` | 2 | `entity`, `policy`: what the slice lacks, never `entity.ts` itself |
 | `x g job` | 5 | 2 | `entity` |
-| `x g backfill` | 5 | 2 | `entity` |
+| `x g backfill --feature <slice>` | refused with no `entity.ts`: `X_FEATURE_REQUIRED` | 2 | `entity`: what the slice lacks, never `entity.ts` itself |
 | `x g task` | 7 | 4 — the task and the job it enqueues | `entity` |
 
 **Named per generator, never one fixed set.** A job has no request behind it and evaluates no

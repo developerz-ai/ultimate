@@ -6,7 +6,7 @@
 // green, because the one thing that would have caught it — `/out/app --version` — ran on the BUILD
 // stage, which is not what ships. `docker build` runs on no PR, so nothing stops either recurring.
 //
-// THREE RULES over EVERY Dockerfile in the tree, derived from files, none needing a stale table:
+// FOUR RULES over EVERY Dockerfile in the tree, derived from files, none needing a stale table:
 //   libc     whatever the runtime COPYs its artifact from — a stage by name or index, or an
 //            external image, and RECURSIVELY whatever that stage copied in (alpine build ->
 //            debian assemble -> distroless still ships a musl binary) — must link the libc family
@@ -26,6 +26,9 @@
 //            enforced it. A generated app's ignore file is written by
 //            `packages/cli/src/templates/scaffold-container.ts`, which no root here can read, so
 //            that copy is held to the same line by `scaffold-container.test.ts`.
+//   content  every `*.dockerignore` drops tests and the root `docs/`: no boot reads them, and an
+//            edit to one reran `x build --target prebuilt` below `COPY . .`. No test read a tracked
+//            app's ignore file, so one losing a line went unnoticed. `lib/image-content-ignores.ts`.
 //
 // What is deliberately NOT here: the Dockerfile's own claim that the runtime's Debian GENERATION
 // must equal the build base's. It is true (glibc is backward but not forward compatible), and
@@ -38,6 +41,7 @@
 import { renderFixShellArg, renderThrowable, SECRETS_KEY_FILE } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import { baseImageOf, copySources, parseDockerfile, producersOf } from './lib/dockerfile-stages';
+import { checkContentIgnores, contentGapFindingFor } from './lib/image-content-ignores';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -335,7 +339,7 @@ export async function imageGaps(root: string): Promise<readonly ImageGap[]> {
   return (await readDockerfiles(root)).flatMap((one) => checkImage(one.text, one.file));
 }
 
-/** All three rules over one read of the tree. */
+/** All four rules over one read of the tree. */
 async function imageContract(root: string) {
   const dockerfiles = await readDockerfiles(root);
   const ignores = await ignoreFilesOf(root);
@@ -346,6 +350,7 @@ async function imageContract(root: string) {
       .filter((one) => !ignoreCandidates(one.file).some((path) => present.has(path)))
       .map((one) => unignoredFinding(one.file)),
     ...checkIgnores(ignores).map(ignoreGapFindingFor),
+    ...checkContentIgnores(ignores).map(contentGapFindingFor),
   ];
   return { dockerfiles, ignores, findings };
 }
@@ -360,7 +365,7 @@ if (import.meta.main) {
   const green =
     dockerfiles.length === 0
       ? 'no Dockerfile in this tree, so it builds no image and there is nothing to check'
-      : `${dockerfiles.length} Dockerfile(s): each ships one libc family and proves its entrypoint in the stage that ships it; ${ignores.length} ignore file(s) keep ${SECRETS_KEY_FILE} out of every build context`;
+      : `${dockerfiles.length} Dockerfile(s): each ships one libc family and proves its entrypoint in the stage that ships it; ${ignores.length} ignore file(s) keep ${SECRETS_KEY_FILE}, tests and root docs out of every build context`;
   report(
     {
       ok: findings.length === 0,

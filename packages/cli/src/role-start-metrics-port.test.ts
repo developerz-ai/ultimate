@@ -80,9 +80,9 @@ describe('unit · the scrape port is apart from the role ports', () => {
 
 test('unit · the fix names 9090, or a port past every role port when a role holds 9090', () => {
   const web = { role: 'web', port: 3000 };
-  expect(new MetricsPortSharedError({ port: 3000, with: web, reserved: [web] }).fix).toContain(
-    'METRICS_PORT=9090 ',
-  );
+  expect(
+    new MetricsPortSharedError({ port: 3000, with: web, reserved: [web], dev: true }).fix,
+  ).toContain('METRICS_PORT=9090 ');
   const held = [
     { role: 'web', port: 9090 },
     { role: 'sync', port: 9091 },
@@ -91,6 +91,7 @@ test('unit · the fix names 9090, or a port past every role port when a role hol
     port: 9090,
     with: { role: 'web', port: 9090 },
     reserved: held,
+    dev: true,
   }).fix;
   expect(fix).toContain('METRICS_PORT=9092 ');
 });
@@ -124,7 +125,8 @@ test('unit · x dev with no METRICS_PORT (`free`) takes a free scrape port besid
 test('unit · the fix never names a port a role holds, at the top of the range too', () => {
   const web = { role: 'web', port: 65_534 };
   const held = [web, { role: 'sync', port: 65_535 }, { role: 'other', port: 9090 }];
-  const fix = new MetricsPortSharedError({ port: 65_534, with: web, reserved: held }).fix;
+  const fix = new MetricsPortSharedError({ port: 65_534, with: web, reserved: held, dev: true })
+    .fix;
   const named = Number(/METRICS_PORT=(\d+)/.exec(fix)?.[1]);
   expect(named).toBeGreaterThan(0);
   expect(named).toBeLessThanOrEqual(65_535);

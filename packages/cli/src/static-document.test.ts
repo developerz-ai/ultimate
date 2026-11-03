@@ -22,7 +22,6 @@ function page(
 ): void {
   registerRoute({
     file,
-    suspenseBoundaries: render === 'stream' ? 1 : 0,
     config: defineRoute({
       render,
       offline: render === 'static' ? 'precache' : 'network-only',
@@ -70,6 +69,8 @@ describe('a static page, revalidated', () => {
     expect(await again.text()).toBe('');
     expect(again.headers.get('etag')).toBe(etag);
     expect(again.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    // The tag a gzipped answer carries, `compress` having weakened it, comes back spelled so.
+    expect((await get(server, '/precios', { 'if-none-match': `W/${etag}` })).status).toBe(304);
     // A weak comparison and a list both match (RFC 9110 §13.1.2).
     expect((await get(server, '/precios', { 'if-none-match': `"other", W/${etag}` })).status).toBe(
       304,

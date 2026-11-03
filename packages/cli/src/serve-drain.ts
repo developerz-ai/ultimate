@@ -13,6 +13,7 @@ export async function loadDrainConfig(root: string): Promise<Partial<DrainConfig
         readinessGraceMs: drain.readinessGraceMs,
         deadlineMs: drain.deadlineMs,
         workerDeadlineMs: drain.workerDeadlineMs,
+        workerRetireMs: drain.workerRetireMs,
       };
 }
 

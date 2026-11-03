@@ -94,7 +94,7 @@ An operator running this stack in production sizes one 6-vCPU / 12-GiB host to h
 
 ## Rung 3 — Kubernetes, NATS, the change feed
 
-The chart is per-role Deployments with per-role HPAs, because CPU is a lagging proxy for all three serving roles: `web` on RPS, `sync` on connections per pod, `worker` on queue depth ([`docker/helm/values.yaml`](../../docker/helm/values.yaml)).
+The chart is per-role Deployments with per-role HPAs, because CPU is a lagging proxy for all three serving roles: `web` on RPS, `sync` on connections per pod, `worker` on queue demand, held plus due ([`docker/helm/values.yaml`](../../docker/helm/values.yaml)).
 
 What actually turns on at this rung:
 
@@ -200,7 +200,7 @@ Not a supported target. No test in this repo runs against YugabyteDB, and no dia
 | `create extension vector` + `using hnsw (embedding vector_cosine_ops)` | same file | works from v2025.1. `USING hnsw` is remapped to the distributed `ybhnsw` access method ([docs](https://docs.yugabyte.com/stable/additional-features/pg-extensions/extension-pgvector/)) |
 | `gen_random_uuid()` on uuid primary keys | `db/generate.ts` | works, and is the *right* default here — a monotonic sequence PK hot-spots one tablet. The framework picked the distributed-friendly default already |
 | `on conflict (idempotency_key) where … do nothing` against a partial unique index | `jobs/driver-pg-sql.ts` `SQL_ENQUEUE` | **unverified.** Test before trusting |
-| `x_jobs_claim_idx on (queue, run_at)` + `order by run_at` | `jobs/driver-pg-sql.ts` | **works, but hotspots.** A monotonic range index concentrates every claim on one tablet. Yugabyte's own job-queue guidance is a `bucket smallint default floor(random()*4)` prefix column plus a 4-branch `UNION ALL` view to spread it ([docs](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/)) |
+| `x_jobs_claim_idx on (queue, run_at)` + `order by run_at`, one seek per queue (`cross join lateral`, `for update skip locked` inside) | `jobs/driver-pg-claim-sql.ts` | **works, but hotspots.** A monotonic range index concentrates every claim on one tablet. Yugabyte's own job-queue guidance is a `bucket smallint default floor(random()*4)` prefix column plus a 4-branch `UNION ALL` view to spread it ([docs](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/)) |
 | each migration's `up` run inside a transaction | `db/migrate.ts` | **not available.** v2026.1's release notes *disable* transactional DDL and table locks; the feature exists behind `ysql_yb_ddl_transaction_block_enabled` with "weaker isolation guarantees than PostgreSQL," and [#1404](https://github.com/yugabyte/yugabyte-db/issues/1404) is open since 2019. A migration that fails halfway does not roll back |
 | `truncate` in a migration | app-authored SQL | not transactional on Yugabyte, and cannot be rolled back |
 | `information_schema` + `pg_class` / `pg_index` / `pg_attribute` introspection | `db/introspect.ts` | **unverified.** The database half of drift detection rides on it — `checkDrift()`, run inside `x db migrate` and `ROLE=migrate`. `db` has no drift subcommand at all — the source half is the `drift` **step** of `x verify`, and it opens no database |
@@ -347,7 +347,7 @@ Two rules underneath all of them:
 | 50k sockets, forced restart, p50 54.0s to the first patch on the reconnected socket | **measured** — one node, in-process transport, `scripts/bench/results/50k-restart.json`. Reachability; it cannot see a lost patch |
 | channel patches delivered across a forced restart, no client observing a gap | **measured at 10k, not at 50k** — 1,666,882 received, 0 observed sequence gaps, a lower bound on loss, `scripts/bench/results/10k-restart-seq.json` |
 | Compose prod topology | **true, and emitted by `x new`** — `web` and `sync` at `replicas: 1` because each publishes a host port; `worker` scales freely |
-| A Helm chart with per-role HPAs | **true, and emitted by `x new`** since 4.0.0 — the worker's `queue_depth` is an `External` metric, because every worker publishes the same global backlog |
+| A Helm chart with per-role HPAs | **true, and emitted by `x new`** since 4.0.0 — the worker's `queue_demand` is an `External` metric, because every serving worker publishes the same fleet-wide number |
 | tracing with `traceparent` across HTTP → job → live query | **true**, and exportable — `otlpSpanExporter()` over OTLP/HTTP JSON, batched and chained; no-op remains the default |
 | a metric API, a `MetricExporter` seam, Prometheus text | **true** — `packages/core/src/metrics.ts`, new in 1.1.0 |
 | `/metrics` served, and HPA signals emitted by the app | **shipped** — every role on `METRICS_PORT`, three call sites, a `metrics` containerPort and Service port in the chart, and an opt-in ServiceMonitor |

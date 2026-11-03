@@ -12,7 +12,7 @@ import {
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
 import { defineHttpConfig, httpServer } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
-import { t } from '@ultimat3/schema';
+import { t, toWireOutputSchema } from '@ultimat3/schema';
 import { toQueryRoute } from './http';
 import { toQueryOpenApiOperation } from './openapi';
 import type { AnyQuery } from './query';
@@ -130,7 +130,20 @@ describe('the record envelope in the OpenAPI document', () => {
     const ok = okOf(feed(stored, true));
 
     // The envelope IS the body — no `oneOf` over "sometimes" — and it is core's description.
-    expect(bodyOf(ok)).toEqual(recordEnvelopeSchema({ oneOf: armsOf(okOf(feed(stored, false))) }));
+    const body = bodyOf(ok) as { properties: { data: Record<string, unknown> } };
+    const { data } = body.properties;
+    expect(bodyOf(ok)).toEqual(recordEnvelopeSchema(data));
+    // Under `data`, the bare read's two arms exactly, with the entity's row where `items: {}` was.
+    const row = toWireOutputSchema(Post.$schema);
+    expect(row).toBeDefined();
+    const [bare, page] = armsOf(okOf(feed(stored, false))) as [
+      Record<string, unknown>,
+      { properties: Record<string, unknown> },
+    ];
+    expect(data['oneOf']).toEqual([
+      { ...bare, items: row },
+      { ...page, properties: { ...page.properties, rows: { type: 'array', items: row } } },
+    ]);
     expect(ok['headers']).toEqual(RECORDS_OPENAPI_HEADER);
   });
 

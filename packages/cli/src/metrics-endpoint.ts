@@ -38,6 +38,13 @@ import { quoteArg } from './shell-quote';
 export const DEFAULT_METRICS_PORT = 9090;
 
 /**
+ * A container's entry is `bun apps/web/server.ts`, so `x dev` is no instruction there, and the
+ * refusal itself stays: a deployed scrape target must not move on its own.
+ */
+const DEPLOYED_PORT_FIX =
+  "set METRICS_PORT=<free port> in this role's environment, one per role on a host";
+
+/**
  * `X_PORT_IN_USE` is the code the CLI already registers for "this dev port is taken", and the
  * scrape port is one — a synonym here would be a second code for one condition. The fix moves the
  * port rather than naming a process to kill, because `METRICS_PORT` is the one knob both `x dev`
@@ -47,11 +54,13 @@ export const DEFAULT_METRICS_PORT = 9090;
  * that is 65536, and an instruction that cannot run is the failure this code exists to end.
  */
 export class MetricsPortInUseError extends UltimateError {
-  constructor(input: { port: number }) {
+  constructor(input: { port: number; dev: boolean }) {
     super({
       code: 'X_PORT_IN_USE',
       cause: `the metrics port ${input.port} is already bound, so no role could open its scrape listener`,
-      fix: `METRICS_PORT=${quoteArg(String(neighbouringPort(input.port)))} x dev --json`,
+      fix: input.dev
+        ? `METRICS_PORT=${quoteArg(String(neighbouringPort(input.port)))} x dev --json`
+        : DEPLOYED_PORT_FIX,
     });
   }
 }
@@ -100,12 +109,17 @@ export function portApartFrom(reserved: readonly RolePort[], preferred: number):
 }
 
 export class MetricsPortSharedError extends UltimateError {
-  constructor(input: { port: number; with: RolePort; reserved: readonly RolePort[] }) {
+  constructor(input: {
+    port: number;
+    with: RolePort;
+    reserved: readonly RolePort[];
+    dev: boolean;
+  }) {
     const apart = portApartFrom(input.reserved, DEFAULT_METRICS_PORT);
     super({
       code: 'X_PORT_IN_USE',
       cause: `the metrics port ${input.port} is this process's ${input.with.role} port ${input.with.port}, so two listeners would answer on one number`,
-      fix: `METRICS_PORT=${quoteArg(String(apart))} x dev --json`,
+      fix: input.dev ? `METRICS_PORT=${quoteArg(String(apart))} x dev --json` : DEPLOYED_PORT_FIX,
     });
   }
 }
@@ -131,6 +145,8 @@ export interface MetricsEndpointOptions {
    * A host that opens the listener itself and names none is labelled `unknown`.
    */
   readonly role?: string;
+  /** Is this `x dev`? It picks the refusal's fix: a container has no `x dev` to rerun. Absent: no. */
+  readonly dev?: boolean;
   /**
    * What a taken port means. `refuse` (the default, and every container's): `X_PORT_IN_USE` —
    * Prometheus is configured against the declared port, so listening anywhere else is a scrape
@@ -164,12 +180,13 @@ export function bindScrapePort<T>(
   port: number,
   whenTaken: 'refuse' | 'free',
   bind: (port: number) => T,
+  dev = false,
 ): T {
   try {
     return bind(port);
   } catch (error) {
     if (!isAddressInUse(error)) throw error;
-    if (whenTaken === 'refuse' || port === 0) throw new MetricsPortInUseError({ port });
+    if (whenTaken === 'refuse' || port === 0) throw new MetricsPortInUseError({ port, dev });
     logger.warn('ultimate metrics port taken', {
       port,
       cause: `the metrics port ${String(port)} is already bound — another x dev, or a Prometheus — so this process listens on a free one`,
@@ -231,6 +248,7 @@ export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): Metr
       port: asked,
       with: shared,
       reserved: options.reserved ?? [],
+      dev: options.dev === true,
     });
   }
   const port = shared === undefined ? asked : 0;

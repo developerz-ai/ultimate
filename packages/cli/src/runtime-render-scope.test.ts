@@ -33,7 +33,6 @@ const SCOPE_META = new RegExp(`<meta name="${CLIENT_SCOPE_META}" content="([^"]*
 function register(file: string, render: RenderMode, gated: boolean): void {
   registerRoute({
     file,
-    suspenseBoundaries: render === 'stream' ? 1 : 0,
     config: defineRoute({
       render,
       offline: 'network-only',
@@ -175,8 +174,6 @@ describe('unit · the page boot rides with the scope AND a realtime island', () 
   const page = (render: RenderMode, gated: boolean, body: () => unknown): void => {
     registerRoute({
       file: 'apps/web/app/settings/page.tsx',
-      // A stream must declare a boundary; the count is all the registry checks.
-      suspenseBoundaries: render === 'stream' ? 1 : 0,
       config: defineRoute({
         render,
         offline: 'network-only',

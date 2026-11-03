@@ -15,10 +15,14 @@ import type { PoolProfile } from './pool-profile';
  * The losing reservation is released, never dropped: the pool hands out a connection whenever one
  * frees, deadline or no deadline, and a pin nobody holds is a connection nobody gets back. That is
  * the whole reason this is not a bare `Promise.race`.
+ *
+ * `leftMs` is what the caller's wait left of the ONE budget, and the timer runs on it; the refusal
+ * still names `acquireTimeoutMs`, the budget the operator configured and the wait it describes.
  */
 export async function reserveWithin(
   pool: Pick<BunSqlDriver, 'reserve'>,
   profile: PoolProfile,
+  leftMs: number = profile.acquireTimeoutMs,
 ): Promise<BunSqlReserved> {
   const budget = profile.acquireTimeoutMs;
   if (budget <= 0) return pool.reserve();
@@ -29,10 +33,13 @@ export async function reserveWithin(
     return await Promise.race([
       pending,
       new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          expired = true;
-          reject(poolAcquireTimeout(budget, profile.max));
-        }, budget);
+        timer = setTimeout(
+          () => {
+            expired = true;
+            reject(poolAcquireTimeout(budget, profile.max));
+          },
+          Math.max(1, leftMs),
+        );
         // The deadline must not be what keeps a finished process alive.
         timer.unref?.();
       }),

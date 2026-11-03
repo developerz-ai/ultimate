@@ -3,7 +3,9 @@
 // output (axiom 4). The human renderer owns the canonical 3-line error format.
 
 import { ERROR_DOCS_URL, renderThrowable, singleLine, stringField } from '@ultimat3/core';
+import { unresolvedImportFinding } from './app-load-unresolved';
 import { msg } from './messages';
+import { causeWithCount, findingsForReader, type ReaderOptions } from './output-findings';
 import type { TestCounts } from './test-counts';
 
 /** One shard's share of one step's corpus — what `x verify merge` checks the parts against. */
@@ -164,6 +166,9 @@ export function findingFrom(value: unknown): Finding {
     const docs = stringField(value, 'docs');
     return docs === undefined ? { code, cause, fix } : { code, cause, fix, docs };
   }
+  // An import that will not resolve, on a path outside the app scan: `bun add`, not `x doctor`.
+  const unresolved = unresolvedImportFinding(value, process.cwd());
+  if (unresolved !== undefined) return unresolved;
   // This is the LAST renderer between a thrown value and the terminal: a hostile `toString`, a
   // throwing `message` getter or a trapped `instanceof` here loses the whole report, not one line
   // of it. `renderThrowable` is total on all three.
@@ -263,13 +268,19 @@ const why = (step: StepResult): string => {
 const showsOutput = (step: StepResult, verbose: boolean): boolean =>
   step.output !== undefined && step.output.length > 0 && (verbose || !step.ok);
 
-export function renderHuman(result: CommandResult, verbose = false): string {
+export function renderHuman(
+  result: CommandResult,
+  verbose = false,
+  reader: ReaderOptions = {},
+): string {
   const out: string[] = [];
   for (const step of result.steps ?? []) {
     out.push(
       `  ${mark(step)} ${step.name.padEnd(18)} ${step.durationMs}ms${width(step)}${why(step)}`,
     );
-    for (const finding of step.findings) out.push(renderFinding(finding, '      '));
+    for (const finding of findingsForReader(step.findings, reader)) {
+      out.push(renderFinding({ ...finding, cause: causeWithCount(finding) }, '      '));
+    }
     // Escaped like every other line text reaches fd 1 through: a warning names a file path. A
     // green terminal run shows the count, not the list: `filesize`'s band alone is ~150 lines,
     // and a wall of advice on every run is read by nobody. `--json` always carries the list.
@@ -298,19 +309,25 @@ export function renderHuman(result: CommandResult, verbose = false): string {
   // comment retitled the window and cleared the screen, and a newline in one entry printed a
   // second line a reader — or the agent this command exists for — takes for the renderer's own.
   for (const line of result.lines ?? []) out.push(singleLine(line));
-  for (const finding of result.findings ?? []) out.push(renderFinding(finding, '  '));
+  for (const finding of findingsForReader(result.findings ?? [], reader)) {
+    out.push(renderFinding({ ...finding, cause: causeWithCount(finding) }, '  '));
+  }
   // The summary is foreign too: `cli.shot.threw` interpolates a page's own error message.
   out.push(`${result.ok ? '✓' : '✗'} ${singleLine(result.summary)}`);
   return out.join('\n');
 }
 
-export function renderJson(result: CommandResult, verbose = false): string {
+export function renderJson(
+  result: CommandResult,
+  verbose = false,
+  reader: ReaderOptions = {},
+): string {
   const steps = (result.steps ?? []).map((step) => ({
     name: step.name,
     ok: step.ok,
     durationMs: step.durationMs,
     skipped: step.skipped === true,
-    findings: step.findings,
+    findings: findingsForReader(step.findings, reader),
     // Never gated on `ok` or `--verbose`, unlike `output` below: see `StepResult.warnings`.
     ...(step.warnings === undefined || step.warnings.length === 0
       ? {}
@@ -348,14 +365,21 @@ export function renderJson(result: CommandResult, verbose = false): string {
     command: result.command,
     summary: result.summary,
     ...(result.steps === undefined ? {} : { steps }),
-    ...(result.findings === undefined ? {} : { findings: result.findings }),
+    ...(result.findings === undefined
+      ? {}
+      : { findings: findingsForReader(result.findings, reader) }),
     ...(result.data === undefined ? {} : { data: result.data }),
   };
   return JSON.stringify(payload);
 }
 
-export function render(result: CommandResult, json: boolean, verbose = false): string {
-  return json ? renderJson(result, verbose) : renderHuman(result, verbose);
+export function render(
+  result: CommandResult,
+  json: boolean,
+  verbose = false,
+  reader: ReaderOptions = {},
+): string {
+  return json ? renderJson(result, verbose, reader) : renderHuman(result, verbose, reader);
 }
 
 export function exitCodeFor(result: CommandResult): number {

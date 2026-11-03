@@ -288,6 +288,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
         // `x dev` is one process running several roles: its `process_info` says which.
         role: selected.join('+'),
         whenTaken: whenMetricsPortTaken(binding.dev, options.env),
+        dev: binding.dev,
         reserved: rolePorts(options.port, selected),
       });
     started.push(async () => metrics.stop());
@@ -323,6 +324,7 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     const worker = selected.includes('worker')
       ? jobWorker({
           driver: options.runtime.jobs,
+          build: options.buildId,
           context: () => ctxOf({ role: 'worker', buildId: options.buildId }),
           ...workerOptionsFor(options.runtime.workerConfig),
         })

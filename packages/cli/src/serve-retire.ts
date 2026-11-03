@@ -62,12 +62,18 @@ export function armWorkerRetire(options: WorkerRetireOptions = {}): WorkerRetire
     const worker = await adopted;
     try {
       if (worker !== null) {
-        const before = await worker.stats();
-        logger.info('jobs.worker.retiring', {
-          signal: RETIRE_SIGNAL,
-          workerId: before.workerId,
-          inFlight: before.inFlight,
-        });
+        // The log line alone reads stats: a db blip here must not skip the stop, or the drain
+        // below is a plain SIGTERM drain and cuts at the budget a job meant to outlast.
+        try {
+          const before = await worker.stats();
+          logger.info('jobs.worker.retiring', {
+            signal: RETIRE_SIGNAL,
+            workerId: before.workerId,
+            inFlight: before.inFlight,
+          });
+        } catch (error) {
+          logger.warn('jobs.worker.retire-stats-failed', { error: renderThrowable(error) });
+        }
         await worker.stop(RETIRE_SIGNAL);
         const after = await worker.stats();
         logger.info('jobs.worker.retired', {

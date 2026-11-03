@@ -43,6 +43,12 @@ export const namedDeployed = (env: EnvTable): boolean => {
   return environment === 'staging' || environment === 'production';
 };
 
+/** Does `env` name no environment? The boot then reads it as production, and `x env check` says so. */
+export const namesNoEnvironment = (env: EnvTable): boolean =>
+  // Core's reading, twice: only a table that names nothing answers with whichever fallback it got.
+  tryResolveEnvironment({ env, fallback: 'production' }) !==
+  tryResolveEnvironment({ env, fallback: 'development' });
+
 /**
  * What the app's `app.config.ts` decides about which framework keys it owes — read by the caller,
  * which has the root (`appSecretFacts`). `x doctor` asks of no config and passes `NO_APP_FACTS`.
@@ -99,7 +105,7 @@ export const FRAMEWORK_SECRETS: readonly FrameworkSecret[] = [
     why: 'Signs upload grants on the embedded disk. Unset, every role refuses to boot (X_ENV_MISSING).',
     condition: 'Not read when S3_ENDPOINT and S3_BUCKET select object storage.',
     cause: `${STORAGE_SIGNING_SECRET_KEY} is unset or holds the shipped development key, so a local-disk deploy would accept forged upload grants that override its own uploadPolicy`,
-    fix: `export ${STORAGE_SIGNING_SECRET_KEY}="$(openssl rand -hex 32)"`,
+    fix: `openssl rand -hex 32   # put the output in this deploy's secret store as ${STORAGE_SIGNING_SECRET_KEY}; this machine: ULTIMATE_ENV=development x env check`,
     // The boot's own storage choice (`runtime-bindings.ts`), never restated. NOT "the app declares
     // no storage": the boot builds its disk before any app module loads, and an app reaches it
     // through a bare `disk()` with no `defineStorage` of its own

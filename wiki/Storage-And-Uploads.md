@@ -40,6 +40,9 @@ mounted at one). Point the app at it with `S3_ENDPOINT=http://127.0.0.1:9000`, `
 `S3_FORCE_PATH_STYLE=1` and the key pair the file ships. That file chooses a server for development
 only — production is whichever S3-compatible endpoint you run.
 
+`S3_FORCE_PATH_STYLE` is `1` (on) or `0` (off); unset or blank is off. Anything else refuses the boot
+with `X_CONFIG_INVALID`, because `true` used to read as off and send every request to `<bucket>.<host>`.
+
 `S3_REGION` is the region requests are signed for. Unset, they are signed for `auto`: what R2 wants
 and what the dev gateway is started with. An endpoint that expects another region refuses the
 first write, list or delete with `X_CONFIG_INVALID`, and the fix line names the value to set.
@@ -64,6 +67,33 @@ an object refused whole is readable a page at a time.
 **A sealed object is not range-readable.** `seal()` writes one AES-256-GCM envelope whose tag
 covers every byte, and there is no chunked form of it: a slice neither opens nor means anything.
 Page a sealed log by sealing each page as its own object; range-read plain objects.
+
+## A large object — `streamRange` and `putStream`
+
+```ts
+import { disk } from '@ultimat3/storage';
+
+declare const key: string, first: number, last: number, contentType: string;
+declare const request: Request & { body: ReadableStream<Uint8Array> };
+
+export const window = await disk('media').streamRange(key, [first, last]);
+export const object = await disk('media').putStream(key, request.body, {
+  maxBytes: 2e9,
+  contentType,
+});
+```
+
+| Call | Rule |
+|---|---|
+| `streamRange(key, [first, last])` | inclusive and clamped, as `get`'s range. No byte before `first` is read and there is no ceiling, because nothing is buffered. A `first` past the end is `X_STORAGE_RANGE_UNSATISFIABLE`, whose fix is `stat(key)`. `/_storage` serves `Range:` through it |
+| `putStream(key, stream, { maxBytes, contentType?, cacheControl?, metadata? })` | past the required `maxBytes` the write is abandoned (`X_STORAGE_TOO_LARGE`), the source cancelled and the key left as it was. Ignores `maxPutBytes`, which bounds what `put()` buffers |
+| Not taken by `putStream` | `checksum`, `retention`, `legalHold`, `serverSideEncryption`: each needs the bytes before the object exists. A type error, and `X_INVARIANT` for an untyped caller. Use `put()` |
+| s3, on the wire | a body under one part is one signed PUT; past it a multipart upload, sent one part at a time, so a part (5 MiB, or `maxBytes / 10000` if larger) is what the process holds. Nothing exists at the key until the Complete; every other exit aborts the upload |
+| local | staged under `.meta/.tmp/` and renamed through `put()`'s commit steps. Measured: 1 GiB over a 1 MiB `maxPutBytes` grew RSS by 3 MiB (`As of 2026-11-02`) |
+| memory | a `Map` holds bytes: the contract and the refusals, not the memory profile |
+
+Both are required `StorageDriver` methods, so a driver lacking one is a compile error. A third-party
+driver reuses `assertPutStream`, `pumpBounded`, `streamLimit`, `assertStreamRange` and `streamedRange`.
 
 ## Keys are refused, never sanitised
 
@@ -100,10 +130,17 @@ every local disk signs with the one `STORAGE_SIGNING_SECRET`, and the base path
 `image/avif`, `image/heic`, `video/quicktime`, `audio/mp4` and `video/mp4` each pass when the
 policy allows them; `audio/x-m4a` and `video/x-m4v` are read as `audio/mp4` and `video/mp4`.
 
-**On an s3 disk the grant's `maxBytes` is measured later, not at the PUT.** A provider presign
-carries no size, so the browser's PUT is unbounded there. `promoteAttachment` is where it is
-measured, and `get()` refuses an object over the disk's `maxGetBytes` (default: its `maxPutBytes`,
-10 MB) with `X_STORAGE_TOO_LARGE` — read anything larger with `stream()`.
+**The grant binds the size at the PUT, on every disk** (`As of 2026-11-02`). `request.size` is
+required: a grant with no whole byte count of at least 1 is `X_STORAGE_UPLOAD_SIZE_UNDECLARED`, and
+`uploadFile` sends the file's own. An s3 disk signs it as the exact `Content-Length`, so the provider
+answers any other length, a chunked body included, with 403 `SignatureDoesNotMatch` and stores
+nothing. The local disks sign it as the ceiling `acceptSignedUpload` counts against, so a shorter body
+passes there and not on s3. `grant.maxBytes` is that declared size. A bare
+`disk.signedUrl(key, { method: 'PUT' })` on s3 still binds nothing; with a `maxBytes` and no
+`contentLength` it is refused rather than ignored. Proven on the test stack's gateway. A provider
+that skips SigV4's signed-header check is the one thing that would unbind it, so
+`promoteAttachment` still measures. `get()` refuses an object over the disk's `maxGetBytes` (default:
+its `maxPutBytes`, 10 MB) with `X_STORAGE_TOO_LARGE`; read anything larger with `stream()`.
 
 The local disk signs with `STORAGE_SIGNING_SECRET`. The shipped development secret is accepted
 **only** in `development` or `test`; a process that names no environment is treated as production
@@ -244,7 +281,7 @@ bytes stay on the disk, and a variant minted before revisions (`hero.png@w640.we
 and stays readable by its own key. Delete the source and its variants, and report `failed`.
 
 **Promotion also reads the object** (`As of 2026-11-02`). A presigned PUT on an s3 disk signs `host`
-alone, so the uploader chose the stored type and the bytes. `promoteAttachment` reads the first
+and the size, so the uploader chose the stored type and the bytes. `promoteAttachment` reads the first
 `SNIFF_WINDOW_BYTES` (64 KiB) with one ranged read and judges them by the rule the upload path uses
 (`validateStoredHead`); a contradiction is `X_STORAGE_TYPE_REJECTED`, and the key stays pending.
 

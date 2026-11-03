@@ -70,6 +70,9 @@ describe('serviceWorkerRoutes', () => {
     const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
     const ctx = requestContext({ url, method: 'GET', role: 'web', config });
     const response = await route.handler(new UltimateRequest(new Request(url), ctx), ctx);
+    expect(response.headers.get('content-length')).toBe(
+      String((await response.clone().arrayBuffer()).byteLength),
+    );
 
     // A cached `sw.js` is a worker that cannot be replaced: the browser re-fetches it to decide
     // whether an update exists, and an intermediary answering the old bytes pins every client to

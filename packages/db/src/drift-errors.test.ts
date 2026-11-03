@@ -8,10 +8,12 @@ import { dbDrift } from './drift-errors';
 import { unexpectedColumn } from './drift-findings';
 
 describe('dbDrift', () => {
-  test('a benign column renders the literal the docs quote, byte for byte', () => {
-    // Roughly ten pages across `packages/cli`, `packages/core`, `wiki/` and `docs/` quote this
-    // exact string. The screen lives on the refusal branch alone precisely so none of them moves.
-    expect(dbDrift('posts', 'publish_at').fix).toBe('x db gen "add publish_at"');
+  test('a benign column leads with the command the docs quote, and says when it does nothing', () => {
+    // Pages across `packages/cli`, `packages/core`, `wiki/` and `docs/` quote the command, so it
+    // stays first. The tail is plan 101's: a column no entity declares is an empty diff.
+    expect(dbDrift('posts', 'publish_at').fix).toBe(
+      'x db gen "add publish_at"   # declare publish_at on its entity first, or this writes nothing; no entity should hold it: restore the edited migration, then x db reset',
+    );
     expect(dbDrift('posts', 'publish_at').cause).toBe(
       'table "posts" has column "publish_at" not present in any migration',
     );

@@ -43,6 +43,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `download-http.ts` | the download route: mint JSON without `_token`, the file with it (`content-disposition`, and `Range:` by http's `objectResponse`; only `bodyOf` slices a body) |
 | `download-errors.ts` | the four `X_QUERY_DOWNLOAD_*` classes (titles in `errors.ts`) |
 | `search-string.ts` | `searchOf`: the input as a search string — the client's request and a minted URL, one encoding |
+| `openapi.ts` | the read half of `openapi.json`; a declared `rows:` is published inline through `toWireOutputSchema`, today's bytes otherwise |
 
 ## Invariants — the read path
 
@@ -117,6 +118,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A live read keyed on a sealed column is refused at subscribe** (`assertNoSealedKey`, called by
   `toLiveQuery`): a change row carries none, so the window would be read once and never patched.
   The refusal names the column, never the filter's value.
+- **The document's row and the MCP tool's are one narrowing** (`toWireOutputSchema`, `As of 2026-11`). Inline, never a component: the CLI merges only `paths`. Structure only: rows are never re-parsed, so a bound or a closed object is a promise nothing enforces. `openapi.test.ts`, `sealed-egress.test.ts`.
 
 ## Invariants — download
 
@@ -131,6 +133,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   an expired forgery is a forgery. `X_SEAL_KEY_MISSING` stays a 500 (the server's fault).
 - **`audit: true` records the mint, `rateLimit:` spends at the mint** — a player's `Range:` GETs
   are one admitted read.
+- `download-http.ts`: a function `body` is handed the window by `objectResponse`, with `size` required by type and by `assertFile`.
 
 ## Invariants — audit
 

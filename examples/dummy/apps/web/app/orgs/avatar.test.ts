@@ -83,7 +83,7 @@ describe('the upload grant', () => {
     // The filename survives as a lower-cased extension and in no other form.
     expect(grant.key).not.toContain('holiday');
     expect(grant.method).toBe('PUT');
-    expect(grant.maxBytes).toBe(avatarUploadPolicy.maxBytes);
+    expect(grant.maxBytes).toBe(request.size);
     expect(grant.expiresAt).toBeGreaterThan(clock.now().getTime());
   });
 
@@ -100,7 +100,7 @@ describe('the upload grant', () => {
     if (!verified.ok) return;
     expect(verified.constraints.key).toBe(grant.key);
     expect(verified.constraints.method).toBe('PUT');
-    expect(verified.constraints.maxBytes).toBe(avatarUploadPolicy.maxBytes);
+    expect(verified.constraints.maxBytes).toBe(request.size);
     expect(verified.constraints.contentType).toBe('image/png');
   });
 

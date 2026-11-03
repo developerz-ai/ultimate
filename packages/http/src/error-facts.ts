@@ -2,8 +2,10 @@
 // document and the three lines the terminal and the overlay print. Split off `error-map.ts` at the
 // 500-line ceiling — that file answers "what status is this code", one closed table, and this one
 // answers "what does a reader see", which is three audiences and one opacity rule.
+import type { ErrorRetry } from '@ultimat3/core';
 import {
   ERROR_DOCS_URL,
+  errorRetry,
   FRAMEWORK_CODE,
   failureStack,
   hasPublicCause,
@@ -241,7 +243,20 @@ function metaOf(error: unknown, code: string): ProblemMeta | undefined {
  */
 export const problemTypeFor = (code: string): string => `urn:ultimate:error:${singleLine(code)}`;
 
-/** RFC-9457 problem document. `code`/`cause`/`fix`/`docs` are our extensions. */
+/**
+ * Core's `errorRetry`, total, for `retryAfterOf`'s reason: `retry` is a getter read on a value this
+ * package did not build, in the frame that decides what the caller sees. Refusing to be read is
+ * `terminal`, which is what the same value's unclassified failure answers.
+ */
+const retryOf = (error: unknown): ErrorRetry => {
+  try {
+    return errorRetry(error);
+  } catch {
+    return 'terminal';
+  }
+};
+
+/** RFC-9457 problem document. `code`/`cause`/`fix`/`docs`/`retry` are our extensions. */
 export interface ProblemDocument {
   readonly type: string;
   readonly title: string;
@@ -252,6 +267,11 @@ export interface ProblemDocument {
   readonly cause: string;
   readonly fix: string;
   readonly docs: string;
+  /**
+   * May the same call be sent again: core's class, the one a thrown `UltimateError` carries. On
+   * every document, hidden ones included: it says what to do, never what happened.
+   */
+  readonly retry: ErrorRetry;
   readonly requestId: string | undefined;
   /**
    * The rejections, addressed by path, for a failure that produced them. TOP-LEVEL and not an
@@ -351,6 +371,7 @@ export const toProblem = (
         ? facts.fix
         : (facts.callerFix ?? (hidden ? explainFix(facts.code) : facts.fix)),
     docs: facts.docs,
+    retry: retryOf(error),
     requestId: meta.requestId,
     ...(issues === undefined ? {} : { issues }),
     ...(carried === undefined ? {} : { meta: carried }),

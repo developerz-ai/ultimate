@@ -10,6 +10,13 @@ import { DbError } from './errors';
 import { shellInertIdentifier } from './sql';
 
 /**
+ * What a `x db gen` fix owes after its `#`. It diffs entities against the newest snapshot, so a column
+ * only a migration holds is an empty diff: exit 0, the finding still there. Both ways out are named.
+ */
+export const undeclaredColumnNext = (column: string): string =>
+  `declare ${column} on its entity first, or this writes nothing; no entity should hold it: restore the edited migration, then x db reset`;
+
+/**
  * The contract's pinned wording, and the ONE definition of it: `@ultimat3/entity` carried a second
  * `dbDrift()` held in step by a comment and a test, deleted `As of 2026-10-02`. Drift is this
  * package's to raise.
@@ -28,9 +35,7 @@ export const dbDrift = (tableName: string, columnName: string): DbError =>
     cause: `table "${tableName}" has column "${columnName}" not present in any migration`,
     fix:
       shellInertIdentifier(columnName) === null
-        ? 'x db gen "add the column named in this error"   # its name carries a backtick, a ' +
-          'dollar sign, a quote, a backslash or whitespace, so it is in the cause and not in ' +
-          'this command'
-        : `x db gen "add ${columnName}"`,
+        ? `x db gen "add the column named in this error"   # its name carries shell syntax, so it is in the cause and not in this command; ${undeclaredColumnNext('it')}`
+        : `x db gen "add ${columnName}"   # ${undeclaredColumnNext(columnName)}`,
     meta: { table: tableName, column: columnName },
   });

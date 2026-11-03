@@ -108,7 +108,6 @@ export function jobWorker(options: WorkerOptions): Worker {
   let stopping: Promise<void> | undefined;
   const tally = createWorkerTally();
   let registration: WorkerRegistration | undefined;
-  /** `queue_depth` and its two siblings, republished on their own interval (`worker-queue-depth.ts`). */
   const publishQueueDepth = createQueueDepthPublisher({
     driver: options.driver,
     clock: options.clock,
@@ -133,7 +132,6 @@ export function jobWorker(options: WorkerOptions): Worker {
       ...(options.events === undefined ? {} : { events: options.events }),
     });
 
-  /** The drain's one question: may this worker still take work off the queue? */
   const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
 
   /**
@@ -333,6 +331,7 @@ export function jobWorker(options: WorkerOptions): Worker {
     state = 'draining';
     loop.stop();
     void registration?.draining(); // the row says so NOW: a scaler stops counting what it holds
+    publishQueueDepth.retractDemand(); // the loop just stopped: nothing would refresh this gauge
     if (shutdown === undefined) return;
     budget.bind(shutdown.deadlineAt);
     if (cutoff !== undefined) return;
@@ -450,6 +449,7 @@ export function jobWorker(options: WorkerOptions): Worker {
         driver: options.driver,
         workerId,
         host: options.host,
+        build: options.build,
         queues,
         concurrency: Math.min(slots, cap.max ?? slots),
         inFlight: () => inFlight.ids(),

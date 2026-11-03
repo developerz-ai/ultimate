@@ -147,7 +147,7 @@ describe('unit · what a deployed process would refuse', () => {
       const fix =
         secret.code === 'X_PWA_VAPID_KEY_MISSING'
           ? 'x vapid create'
-          : `export ${secret.key}="$(openssl rand -hex 32)"`;
+          : `openssl rand -hex 32   # put the output in this deploy's secret store as ${secret.key}; this machine: ULTIMATE_ENV=development x env check`;
       expect(secret.fix).toBe(fix);
     }
   });

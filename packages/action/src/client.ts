@@ -223,6 +223,7 @@ function toUltimateError(
     // is dropped rather than repaired, and `cause` below still carries every rejection in it.
     issues: issuesFromWire(body['issues']),
     meta: metaFromWire(body['meta']),
+    requestId: body['requestId'],
     cause: stringOr(body['cause'] ?? body['detail'], `${name} failed with ${status}`),
     fix: stringOr(body['fix'], `x actions show ${name} --json`),
     // RFC-9457's `type` IS a documentation URI, so a server that sends no `docs` extension has

@@ -223,24 +223,46 @@ describe('put refuses what its disk cannot honour', () => {
   });
 });
 
-describe('a signed PUT carries maxBytes on one disk and cannot on the other', () => {
-  test('local signs the ceiling into the URL; the s3 presign is handed no size at all', async () => {
-    // KNOWN DIVERGENCE, and the one with teeth. `grantUpload` passes `maxBytes: policy.maxBytes`
-    // to every driver (`grant.ts`), and the local disk puts it inside the signature so
-    // `acceptSignedUpload` can refuse a widened one. S3 has no header for a size and Bun's
-    // `presign` takes method, expiry and type — so on the production disk the client PUTs straight
-    // into the bucket and NOTHING between the grant and the object enforces the ceiling.
-    //
-    // Refusing `maxBytes` in the s3 driver is not the fix and this test is where that is recorded:
-    // `grantUpload` always supplies it, so a refusal would break every s3 upload grant in every
-    // app. What the ceiling needs is an accept path or a bucket rule, neither of which is a driver.
-    const url = await local.signedUrl(KEY, { method: 'PUT', maxBytes: 1024 });
-    expect(new URL(url, 'https://x.test').searchParams.get(SIGNED_URL_PARAMS.maxBytes)).toBe(
-      '1024',
-    );
+describe('a signed PUT binds its size on both disks, in the form each disk can', () => {
+  test('s3 signs content-length, the local disk signs it as a ceiling', async () => {
+    // KNOWN DIVERGENCE. S3 recomputes the signature from the header the request carries, so its URL
+    // lands exactly this many bytes (403 otherwise, `driver-s3.live.test.ts`); the local disk counts
+    // what arrives against a signed ceiling, so a shorter body passes there and not on s3.
+    const url = await local.signedUrl(KEY, { method: 'PUT', maxBytes: 1024, contentLength: 10 });
+    expect(new URL(url, 'https://x.test').searchParams.get(SIGNED_URL_PARAMS.maxBytes)).toBe('10');
 
-    const presigned = await s3.signedUrl(KEY, { method: 'PUT', maxBytes: 1024 });
-    expect(presigned).not.toContain('1024');
-    expect(fake.presignCalls.at(-1)?.options).toEqual({ method: 'PUT', expiresIn: 900 });
+    const signing = s3Driver({ bucket: 'b', client: fake, env: FAKE_ENV, clock });
+    const presigned = new URL(
+      await signing.signedUrl(KEY, { method: 'PUT', maxBytes: 1024, contentLength: 10 }),
+    );
+    expect(presigned.searchParams.get('X-Amz-SignedHeaders')).toBe('content-length;host');
+    expect(presigned.searchParams.get('X-Amz-Expires')).toBe('900');
+    // Off Bun's presign, which has no option for a signed header.
+    expect(fake.presignCalls).toEqual([]);
+  });
+
+  test('a ceiling s3 could not hold is refused rather than ignored', async () => {
+    // The URL this used to mint bound nothing, and every grant on the production disk was one.
+    const refused = await catchError(() => s3.signedUrl(KEY, { method: 'PUT', maxBytes: 1024 }));
+    expect(codeOf(refused)).toBe('X_STORAGE_UPLOAD_SIZE_UNDECLARED');
+    // A URL naming no number claims none: an app's own PUT, and a read.
+    await s3.signedUrl(KEY, { method: 'PUT' });
+    await s3.signedUrl(KEY);
+    expect(fake.presignCalls.map((call) => call.options.method)).toEqual(['PUT', 'GET']);
+  });
+
+  test('a contentLength that contradicts its own call is refused on both', async () => {
+    const signing = s3Driver({ bucket: 'b', client: fake, env: FAKE_ENV, clock });
+    for (const disk of [local, signing]) {
+      for (const options of [
+        { method: 'PUT', contentLength: 11, maxBytes: 10 },
+        { method: 'GET', contentLength: 10 },
+        { contentLength: 10 },
+        { method: 'PUT', contentLength: Number.NaN },
+        { method: 'PUT', contentLength: -1 },
+      ] as const) {
+        expect(anyCodeOf(await catchError(() => disk.signedUrl(KEY, options)))).toBe('X_INVARIANT');
+      }
+    }
   });
 });

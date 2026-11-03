@@ -194,13 +194,15 @@ in values.yaml, where the two numbers would drift.
     periodSeconds: 15
     failureThreshold: 4
   {{- /*
-  The worker's retire, opt-in: `roles.worker.retireSeconds` > 0. The preStop sends PID 1 SIGUSR2 —
+  The worker's retire, on by default: `roles.worker.retireSeconds` > 0. The preStop sends PID 1 SIGUSR2 —
   the framework's retire (packages/cli/src/serve-retire.ts): stop claiming, finish every held job
   however long it takes, abort nothing, then drain and exit 0 — and waits until PID 1 is gone, so
   the SIGTERM that follows finds nothing left to cut off. `bun -e`, never `kill`/`sleep`: bun is the
   one binary every app image is guaranteed to carry (it is the ENTRYPOINT, exec form, so it IS
   PID 1). The kubelet counts the preStop against the grace period, so `retireSeconds` is added to
-  it (`ultimate.terminationGracePeriodSeconds`) and is the longest a retire may take.
+  it (`ultimate.terminationGracePeriodSeconds`) and is the longest a retire may take: the wait ends
+  there, so the SIGTERM still has the drain budget to cut off and hand back in. A preStop that
+  outlives the grace leaves the kubelet 2 s and then SIGKILL, and the run with its lease unreturned.
   */}}
   {{- if and (eq $role "worker") (gt (int $cfg.retireSeconds) 0) }}
   lifecycle:
@@ -209,7 +211,7 @@ in values.yaml, where the two numbers would drift.
         command:
           - bun
           - -e
-          - "process.kill(1, 'SIGUSR2'); for (let n = 1; ; n++) { try { process.kill(1, n % 5 === 0 ? 'SIGUSR2' : 0); } catch { break; } await Bun.sleep(1000); }"
+          - "process.kill(1, 'SIGUSR2'); const end = Date.now() + {{ int $cfg.retireSeconds }} * 1000; for (let n = 1; Date.now() < end; n++) { try { process.kill(1, n % 5 === 0 ? 'SIGUSR2' : 0); } catch { break; } await Bun.sleep(1000); }"
   {{- end }}
   {{- end }}
   resources: {{- toYaml $cfg.resources | nindent 4 }}
@@ -227,13 +229,14 @@ order it is spent.
   readiness grace        `drain.readinessGraceSeconds` — /readyz at 503 with the listener open.
                          Web and sync only: every other role drains with NO grace
                          (`lifecycleForRole`, packages/cli/src/serve-boot.ts)
-  worker retire          `roles.worker.retireSeconds` — the opt-in SIGUSR2 preStop; worker only, 0 off
+  worker retire          `roles.worker.retireSeconds` — the SIGUSR2 preStop; worker only, 0 off
   drain budget           `drain.deadlineSeconds` — app.config.ts `drain.deadlineMs`, every role;
                          the worker's is `drain.workerDeadlineSeconds` instead when > 0
                          (app.config.ts `drain.workerDeadlineMs`, up to a day)
   teardown margin        `drain.teardownMarginSeconds` — the release after the drain, and headroom
 
-Defaults: web/sync 5 + 5 + 25 + 10 = 45 (40 below 1.30), worker/scheduler/replicator 25 + 10 = 35.
+Defaults: web/sync 5 + 5 + 25 + 10 = 45 (40 below 1.30), scheduler/replicator 25 + 10 = 35, worker
+3600 + 25 + 10 = 3635.
 A role nothing routes to used to get web's 45 and a raised budget got nothing: one literal for five
 roles, sized for none of them once `drain.deadlineMs` moved.
 */}}

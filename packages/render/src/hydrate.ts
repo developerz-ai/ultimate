@@ -295,14 +295,27 @@ export const HYDRATE_RUNTIME_BODIES: readonly string[] = [false, true].flatMap((
   ),
 );
 
+export interface HydrateRuntimeOptions {
+  /**
+   * Run as soon as the script is parsed. An inline module is otherwise deferred until parsing ends,
+   * and a document with a `<Hole>` open is still parsing: its shell's islands would stay dead until
+   * the slowest hole closes. The body, so its CSP hash, is the same either way.
+   */
+  readonly async?: boolean;
+}
+
 /**
  * Emit only the runtime the page's islands actually use. A page of `never` islands gets
  * the empty string — an unused strategy must not cost a byte.
  */
-export function hydrateRuntime(directives: readonly IslandDirective[]): string {
+export function hydrateRuntime(
+  directives: readonly IslandDirective[],
+  options: HydrateRuntimeOptions = {},
+): string {
   const needed = requiredStrategies(directives);
   if (needed.size === 0) return '';
-  return `<script type="module">${runtimeBody(needed, holds(directives))}</script>`;
+  const tag = options.async === true ? '<script type="module" async>' : '<script type="module">';
+  return `${tag}${runtimeBody(needed, holds(directives))}</script>`;
 }
 
 /** Rough emitted size of the hydration runtime for a page, for the budget check. */

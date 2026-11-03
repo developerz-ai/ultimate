@@ -44,12 +44,22 @@ describe('unit · the resource page', () => {
     expect(page).toMatch(/\/\/ measured: [\d,]+ B .*\n.*why:/);
   });
 
-  test('the load line breaks after the arrow, as Biome does, once the name makes it too wide', () => {
+  test('the read lives in a thunk of a <Hole>, on stream, and nothing is left in load', () => {
+    const page = pageOf('widget', true);
+    expect(page).toContain("render: 'stream',");
+    expect(page).toContain('<Hole fallback={<Skeleton lines={3} />}>{rows}</Hole>');
+    expect(page).not.toMatch(/^\s*load[,:]/m);
+    expect(page).not.toContain('props.data');
+  });
+
+  test('the read line breaks as Biome does, once the name makes it too wide', () => {
     expect(pageOf('widget', true)).toContain(
-      'const load = (): Promise<PageData> => rowsState(() => widgetList(input()));',
+      '  const state = await rowsState(() => widgetList(input()));',
     );
-    const long = pageOf('quarterly-subscription-invoice-reconciliation-line', true);
-    expect(long).toContain('const load = (): Promise<PageData> =>\n  rowsState(() =>');
+    const long = pageOf('quarterly-subscription-invoice-reconciliation-line-item', true);
+    expect(long).toContain(
+      '  const state = await rowsState(() =>\n    quarterlySubscriptionInvoiceReconciliationLineItemList(input()),\n  );',
+    );
   });
 });
 

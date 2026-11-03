@@ -5,8 +5,10 @@
 
 import type { Clock, Page } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
+import { pumpBounded } from './byte-pump';
 import { putTooLarge } from './errors';
 import type { ObjectLock, ObjectLockOptions } from './object-lock';
+import type { PutStreamOptions } from './put-stream';
 import type { ByteRange, GetOptions } from './range';
 import type { SignedUrlVerification } from './signed-url';
 
@@ -99,17 +101,18 @@ export interface SignedUrlOptions {
   readonly method?: SignedUrlMethod | undefined;
   readonly expiresInMs?: number | undefined;
   /**
-   * Ceiling on a `PUT`, and **the one option whose enforcement is the driver's, not the caller's**.
-   *
-   * `localDriver` signs it into the URL, so `acceptSignedUpload` refuses a client that widens it.
-   * `s3Driver` CANNOT: S3 has no request header for a size and Bun's `presign` binds method and
-   * expiry only — so the client PUTs straight into the bucket and nothing between
-   * the grant and the object enforces this number. It is not refused there, because `grantUpload`
-   * supplies it on every grant and refusing would break every s3 upload an app mints; the ceiling
-   * a bucket-backed disk actually gets is a bucket rule or a post-upload check on `object.size`.
-   * `driver-parity.test.ts` pins both halves so neither moves alone.
+   * Ceiling on a `PUT`. `localDriver` signs it into the URL, so `acceptSignedUpload` refuses a client
+   * that widens it. A provider's URL has no ceiling to sign, so `s3Driver` refuses it without
+   * `contentLength` (`X_STORAGE_UPLOAD_SIZE_UNDECLARED`) rather than mint a URL that ignores it.
    */
   readonly maxBytes?: number | undefined;
+  /**
+   * The exact size of a `PUT`, inside the signature. On `s3Driver` the URL then signs
+   * `content-length`, so the provider refuses any other length, a chunked body with none included
+   * (403 `SignatureDoesNotMatch`). The local disks hold it as a ceiling (`x-max`): they count what
+   * arrives, so a shorter body passes there and not on s3. `driver-parity.test.ts` pins both.
+   */
+  readonly contentLength?: number | undefined;
   readonly contentType?: string | undefined;
 }
 
@@ -139,6 +142,16 @@ export interface StorageDriver {
   registerAs?(diskName: string): void;
   put(key: string, body: StorageBody, options?: PutOptions): Promise<StorageObject>;
   /**
+   * A body of any length, without buffering it: counted against the call's required `maxBytes`, and
+   * past it the write is abandoned with the key as it was (`X_STORAGE_TOO_LARGE`). Takes no
+   * `checksum`, retention or legal hold, which need the bytes before the object exists.
+   */
+  putStream(
+    key: string,
+    stream: ReadableStream<Uint8Array>,
+    options: PutStreamOptions,
+  ): Promise<StorageObject>;
+  /**
    * What a read would say about the object, WITHOUT its bytes — `undefined` when nothing is there.
    * `promoteAttachment` decides on `stat().size`, because a presigned PUT lands on the disk
    * unmeasured and `get()` is the one call that must not be how its size is learned. Required: a
@@ -154,6 +167,12 @@ export interface StorageDriver {
   get(key: string, options?: GetOptions): Promise<StorageRead>;
   /** Bytes without buffering — the only safe path for anything over a few MB. */
   stream(key: string): Promise<ReadableStream<Uint8Array>>;
+  /**
+   * The bytes `[first, last]` (inclusive, clamped, as `get`'s range) with none before them read, so
+   * a seek late in a film costs its window. `X_STORAGE_RANGE_UNSATISFIABLE` past the end. A method and
+   * not an option on `stream`, which a third-party driver would ignore and serve the wrong bytes.
+   */
+  streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>>;
   /**
    * Bytes from one key to another without them passing through this process. Idempotent in the
    * destination and non-destructive in the source: the caller deletes the source afterwards if
@@ -257,6 +276,36 @@ export function assertPutOptions(driver: string, options: PutOptions | undefined
   );
 }
 
+/**
+ * The number a signed URL holds, screened on every disk: `contentLength` when there is one, since it
+ * is the tighter fact, and a `contentLength` past `maxBytes` or on anything but a `PUT` is a call
+ * that contradicts itself.
+ */
+export function signedByteBound(
+  driver: string,
+  options: SignedUrlOptions | undefined,
+): number | undefined {
+  const length = options?.contentLength;
+  if (length === undefined) return options?.maxBytes;
+  const maxBytes = options?.maxBytes;
+  assert(
+    Number.isSafeInteger(length) && length >= 0,
+    `signedUrl() on the ${driver} disk was given a contentLength that is not a whole byte count`,
+    "signedUrl(key, { method: 'PUT', contentLength: file.size })",
+  );
+  assert(
+    options?.method === 'PUT',
+    `signedUrl() on the ${driver} disk was given a contentLength on a read, which has no body to bind`,
+    "signedUrl(key, { method: 'PUT', contentLength: file.size })",
+  );
+  assert(
+    maxBytes === undefined || length <= maxBytes,
+    `signedUrl() on the ${driver} disk was given a contentLength of ${length}B past its maxBytes of ${String(maxBytes)}B`,
+    "signedUrl(key, { method: 'PUT', contentLength: file.size })   # at or under maxBytes",
+  );
+  return length;
+}
+
 /** A `prefix` or a `cursor` that is not a string reached `startsWith` and `<=` as whatever it was. */
 export function assertListOptions(options: ListOptions | undefined): void {
   for (const name of ['prefix', 'cursor'] as const) {
@@ -315,31 +364,13 @@ async function readBounded(
   body: ReadableStream<Uint8Array>,
   limit: ByteLimit,
 ): Promise<Uint8Array> {
-  const reader = body.getReader();
   const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const next = await reader.read();
-      if (next.done) break;
-      total += next.value.byteLength;
-      if (total > limit.maxBytes) {
-        throw putTooLarge(limit.driver, limit.key, total, limit.maxBytes);
-      }
-      chunks.push(next.value);
-    }
-  } finally {
-    // Cancel rather than merely release: a refused body must stop arriving, not keep filling a
-    // socket buffer nobody will read. Already-closed streams answer this with a no-op.
-    await reader.cancel().catch(() => undefined);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
+  const { driver, key, maxBytes } = limit;
+  const refuse = (total: number): Error => putTooLarge(driver, key, total, maxBytes);
+  await pumpBounded(body, { driver, maxBytes, refuse }, (chunk) => {
+    chunks.push(chunk);
+  });
+  return new Uint8Array(Bun.concatArrayBuffers(chunks));
 }
 
 /** base64 SHA-256 — the wire form for `PutOptions.checksum` and `ValidatedUpload.checksum`. */

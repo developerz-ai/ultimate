@@ -9,6 +9,7 @@ import {
   type Clock,
   ConfigInvalidError,
   EnvMissingError,
+  presignAwsUrl,
   signAwsRequest,
   systemClock,
 } from '@ultimat3/core';
@@ -51,10 +52,12 @@ export interface S3Refusal {
 }
 
 export interface S3SignedRequest {
-  readonly method: 'GET' | 'PUT';
+  readonly method: 'GET' | 'PUT' | 'POST' | 'DELETE';
   readonly key: string;
   /** A sub-resource such as `retention` — sent and signed as `?retention=`. */
   readonly subresource?: string | undefined;
+  /** Query parameters of a multipart call, signed. An empty value is sent as `uploads=`. */
+  readonly query?: Readonly<Record<string, string>> | undefined;
   readonly headers?: Readonly<Record<string, string>> | undefined;
   readonly body?: Uint8Array | undefined;
 }
@@ -120,6 +123,54 @@ export function resolveS3Target(options: S3WireOptions): S3Target {
     ...(region === undefined ? {} : { region }),
     ...(sessionToken === undefined ? {} : { sessionToken }),
   };
+}
+
+/**
+ * A PUT URL that signs its `content-length`, which is what `Bun.S3Client.presign` has no option for.
+ * The provider recomputes the signature from the header the browser really sent, so the only body
+ * this URL lands is one of exactly `contentLength` bytes. A browser sets that header itself.
+ */
+export async function presignBoundPut(
+  options: S3WireOptions,
+  key: string,
+  contentLength: number,
+  expiresInSeconds: number,
+): Promise<string> {
+  const presigned = await presignAwsUrl({
+    method: 'PUT',
+    url: s3ObjectUrl(options, key),
+    expiresInSeconds,
+    headers: { 'content-length': String(contentLength) },
+    credentials: s3Credentials(options),
+    region: signingRegion(options),
+    service: 's3',
+    clock: options.clock ?? systemClock,
+  });
+  return presigned.url;
+}
+
+/** The labels between `s3.` and `.amazonaws.com` of an AWS host: its region, or none. */
+const AWS_HOST = /(?:^|\.)s3\.(?:(.+)\.)?amazonaws\.com$/i;
+const REGION = /^[a-z0-9-]{1,64}$/;
+
+/**
+ * The region a request is signed for, as `Bun.S3Client` derives it, measured on Bun 1.4.4 so the
+ * disk's two transports sign alike: a region set wins; no endpoint is AWS's `us-east-1`; an AWS host
+ * `s3.<region>.amazonaws.com` is that region, bare `s3.amazonaws.com` is `us-east-1`; any other host
+ * is `auto` (R2, a gateway). One deviation: Bun reads `s3.dualstack.<region>` as the whole
+ * `dualstack.<region>`, which is no region, and this reads the region.
+ */
+export function signingRegion(options: S3WireOptions): string {
+  const { region, endpoint } = resolveS3Target(options);
+  if (region !== undefined) return region;
+  if (endpoint === undefined) return 'us-east-1';
+  const host = URL.canParse(endpoint) ? new URL(endpoint).hostname : '';
+  const match = AWS_HOST.exec(host);
+  if (match === null) return 'auto';
+  const named = match[1];
+  if (named === undefined) return 'us-east-1';
+  const last = named.split('.').at(-1) ?? '';
+  return REGION.test(named) ? named : REGION.test(last) ? last : 'auto';
 }
 
 /** Read lazily, at the first signed request — importing or constructing the disk reads nothing. */
@@ -189,6 +240,9 @@ export async function sendSigned(
   }
   const url = s3ObjectUrl(options, request.key);
   if (request.subresource !== undefined) url.search = `${request.subresource}=`;
+  for (const [name, value] of Object.entries(request.query ?? {})) {
+    url.searchParams.set(name, value);
+  }
   const signed = await signAwsRequest({
     method: request.method,
     url,
@@ -197,7 +251,7 @@ export async function sendSigned(
     // refuse a body that changed in flight; a read has none.
     payload: { body: request.body ?? new Uint8Array() },
     credentials: s3Credentials(options),
-    region: resolveS3Target(options).region ?? 'auto',
+    region: signingRegion(options),
     service: 's3',
     clock: options.clock ?? systemClock,
   });

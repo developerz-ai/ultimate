@@ -41,9 +41,9 @@ Note that `action` declarations still live inside the feature slice (`app/post/a
 x g resource post --admin
 ```
 
-Generates schema, entity, repo, service, policy, actions, live query, job stub, components, the form island, the `posts` page, i18n keys, admin screens, MCP entries, and the tests beside each. The page is reachable as written: its `load` reads the list through the slice's query as the request's actor, `AsyncRegion` renders ready, empty and refused, and the form island posts to `createPost`. `x g` ends by printing what the new table owes (`x db gen`, `x db migrate`) and the build that weighs the page against its budget. Everything below is *editing* generated files — not creating them.
+Generates schema, entity, repo, service, policy, actions, live query, job stub, components, the form island, the `posts` page, i18n keys, admin screens, MCP entries, and the tests beside each. The page is reachable as written: a `<Hole>` reads the list through the slice's query as the request's actor after the shell is flushed, `AsyncRegion` renders ready, empty and refused, and the form island posts to `createPost`. `x g` ends by printing what the new table owes (`x db gen`, `x db migrate`) and the build that weighs the page against its budget. Everything below is *editing* generated files — not creating them.
 
-`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`. That directory form is the one layout: a second primitive is a second file, and a primitive module beside its directory (`actions.ts` with `actions/`) is `X_LAYOUT_SIBLING_MODULE` ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). `x g resource <name>` takes no `--feature`: the name is the slice (`X_CLI_BAD_FLAG`).
+`x g` writes one primitive per file: `actions/<verb>-post.ts`, `live/<name>.ts`, `queries/<name>.ts`, `jobs/<verb>-post.ts`, `tasks/<name>.ts`. That directory form is the one layout: a second primitive is a second file, and a primitive module beside its directory (`actions.ts` with `actions/`) is `X_LAYOUT_SIBLING_MODULE` ([Project layout](../../wiki/Project-Layout.md#feature-slicing-inside-a-surface) names the filenames that ARE enforced). `x g resource <name>` takes no `--feature`: the name is the slice (`X_CLI_BAD_FLAG`). `x g query <name> --feature <slice>` and `x g backfill <name> --feature <slice>` read a table the slice already declares and never create one: no `entity.ts` to read is `X_FEATURE_REQUIRED`.
 
 ## 2. Entity + invariants
 
@@ -301,7 +301,7 @@ consumer takes the last line.
 | `X_DB_DRIFT` from `x verify` | source drift: an entity was edited and no migration recorded it | `x db gen "describe the change"` |
 | `X_DB_DRIFT` from `x db migrate` | live-catalog drift: the database that just migrated still disagrees with the ledger | `x verify --json` |
 | `X_FORBIDDEN` in a test | the policy is right and the fixture actor is wrong, or vice versa | `x policy explain <subject> --json` |
-| `X_CATALOG_MISSING_KEYS` | a key used in source is missing from a locale's catalog | `x i18n sync <locale>` |
+| `X_CATALOG_MISSING_KEYS` | a locale's catalog lacks a key it owes: one source names through `t()`, one only a mail or a push names, or one the `en` catalog defines | `x i18n sync <locale>` |
 | `X_BUDGET_EXCEEDED` | a route got heavier; `data.cause` names the import | `x routes --json` to see the chain, then move the heavy import behind `hydrate: 'interaction'` |
 | `X_MATCHER_UNSUPPORTED` | a `live: true` read the incremental matcher cannot evaluate | set `live: false` and poll, or reshape the query to equality filters + `orderBy` + `limit` |
 | `X_IDEMPOTENCY_REQUIRED` | job declared without a key | add `idempotencyKey: (input) => \`<job>:${input.id}\`` to the job definition |

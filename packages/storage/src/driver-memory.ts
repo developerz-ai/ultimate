@@ -9,11 +9,13 @@
 import {
   type Clock,
   finiteCount,
+  isUltimateError,
   NotImplementedError,
   type Page,
   pageOf,
   systemClock,
 } from '@ultimat3/core';
+import { pumpBounded } from './byte-pump';
 import {
   assertListOptions,
   assertPutOptions,
@@ -30,11 +32,12 @@ import {
   type StorageObject,
   type StorageRead,
   sha256Base64,
+  signedByteBound,
   toBytes,
 } from './driver';
 import type { LocalDriverOptions } from './driver-local';
 import { keyInTheWay } from './driver-memory-conflict';
-import { checksumMismatch, getTooLarge, keyConflict, objectNotFound } from './errors';
+import { checksumMismatch, getTooLarge, keyConflict, objectNotFound, putFailed } from './errors';
 import { objectChanged } from './errors-promote';
 import {
   assertObjectLockOptions,
@@ -44,7 +47,15 @@ import {
   requestedLock,
 } from './object-lock';
 import { assertSafeKey } from './path';
-import { assertGetOptions, type GetOptions, servedRange } from './range';
+import { assertPutStream, type PutStreamOptions, streamLimit } from './put-stream';
+import {
+  assertGetOptions,
+  assertStreamRange,
+  type ByteRange,
+  type GetOptions,
+  servedRange,
+  streamedRange,
+} from './range';
 import type { SignedUrlVerification } from './signed-url';
 import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import { resolveSigningSecret } from './signing-secret';
@@ -123,6 +134,29 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
     if (blocking !== undefined) throw keyConflict(registered, key, blocking);
   };
 
+  /** Both writes end here, with no await between the checks and the write. */
+  const commit = (safe: string, bytes: Uint8Array, putOptions?: PutOptions): StorageObject => {
+    const object: StorageObject = {
+      key: safe,
+      size: bytes.byteLength,
+      contentType: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE,
+      etag: etagOf(bytes),
+      lastModified: clock.now(),
+      ...(putOptions?.cacheControl === undefined ? {} : { cacheControl: putOptions.cacheControl }),
+      ...(putOptions?.metadata === undefined ? {} : { metadata: putOptions.metadata }),
+    };
+    // Checked AFTER the body is read: the map is the queue the local disk needs a `keyedQueue` for.
+    refuseConflict(safe);
+    refuseOverwrite(safe, 'overwrite');
+    // A copy in, as a file write is: the caller's buffer and metadata are the caller's to reuse.
+    stored.set(safe, {
+      bytes: bytes.slice(),
+      object: snapshot(object),
+      lock: requestedLock(putOptions),
+    });
+    return snapshot(object);
+  };
+
   const found = (key: string): Stored => {
     const hit = stored.get(key);
     if (hit === undefined) throw objectNotFound(registered, key);
@@ -164,28 +198,32 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
         const actual = sha256Base64(bytes);
         if (claimed !== actual) throw checksumMismatch(safe, claimed, actual);
       }
-      const object: StorageObject = {
-        key: safe,
-        size: bytes.byteLength,
-        contentType: putOptions?.contentType ?? DEFAULT_CONTENT_TYPE,
-        etag: etagOf(bytes),
-        lastModified: clock.now(),
-        ...(putOptions?.cacheControl === undefined
-          ? {}
-          : { cacheControl: putOptions.cacheControl }),
-        ...(putOptions?.metadata === undefined ? {} : { metadata: putOptions.metadata }),
-      };
-      // Checked AFTER the body is read, with no await between check and write: the map is the
-      // queue the local disk needs a `keyedQueue` for.
-      refuseConflict(safe);
+      return commit(safe, bytes, putOptions);
+    },
+
+    /** A `Map` holds bytes, so "unbuffered" has no meaning here. The contract is the rest of it. */
+    async putStream(
+      key: string,
+      body: ReadableStream<Uint8Array>,
+      streamOptions: PutStreamOptions,
+    ): Promise<StorageObject> {
+      const safe = assertSafeKey(key);
+      const maxBytes = assertPutStream(DRIVER_NAME, body, streamOptions);
       refuseOverwrite(safe, 'overwrite');
-      // A copy in, as a file write is: the caller's buffer and metadata are the caller's to reuse.
-      stored.set(safe, {
-        bytes: bytes.slice(),
-        object: snapshot(object),
-        lock: requestedLock(putOptions),
+      const chunks: Uint8Array[] = [];
+      const limit = streamLimit(DRIVER_NAME, safe, maxBytes);
+      await pumpBounded(body, limit, (chunk) => {
+        chunks.push(chunk);
+      }).catch((error: unknown) => {
+        if (isUltimateError(error)) throw error;
+        throw putFailed(
+          registered,
+          safe,
+          error,
+          'await disk.putStream(key, stream, { maxBytes })   # with a fresh stream',
+        );
       });
-      return snapshot(object);
+      return commit(safe, new Uint8Array(Bun.concatArrayBuffers(chunks)), streamOptions);
     },
 
     async stat(key: string): Promise<StorageObject | undefined> {
@@ -213,6 +251,14 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
     async stream(key: string): Promise<ReadableStream<Uint8Array>> {
       const hit = found(assertSafeKey(key));
       return new Blob([hit.bytes.slice()]).stream();
+    },
+
+    async streamRange(key: string, range: ByteRange): Promise<ReadableStream<Uint8Array>> {
+      const safe = assertSafeKey(key);
+      assertStreamRange(DRIVER_NAME, range);
+      const hit = found(safe);
+      const [first, last] = streamedRange(DRIVER_NAME, safe, range, hit.bytes.byteLength);
+      return new Blob([hit.bytes.slice(first, last + 1)]).stream();
     },
 
     async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
@@ -275,7 +321,7 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
         key: assertSafeKey(key),
         method: urlOptions?.method,
         expiresInMs: urlOptions?.expiresInMs,
-        maxBytes: urlOptions?.maxBytes,
+        maxBytes: signedByteBound(DRIVER_NAME, urlOptions),
         contentType: urlOptions?.contentType,
         baseUrl,
         clock,

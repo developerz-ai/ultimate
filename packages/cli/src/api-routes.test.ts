@@ -129,7 +129,6 @@ describe('pagePostRoutes — defineRoute({ post })', () => {
         meta: () => ({ title: 'Baja' }),
         post,
       }),
-      suspenseBoundaries: 0,
     });
 
   test("binds POST at the page's own path to the named action", () => {

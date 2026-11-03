@@ -110,7 +110,6 @@ describe('the route DSL surface', () => {
       file: 'site/posts/page.tsx',
       path: '/posts',
       surface: 'site',
-      suspenseBoundaries: 0,
     } as const;
     expect(codeOf(() => assertModeInvariants(hydrating, ctx))).toBe('X_ROUTE_MODE_INVALID');
     const budgeted = defineRoute({ ...hydrating, budget: { js: '40kb' } });

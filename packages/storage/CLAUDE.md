@@ -38,7 +38,11 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 
 | File | Owns |
 |---|---|
-| `driver.ts` | `StorageDriver` contract (9 methods; `registerAs`/`verifySigned`/`retentionOf` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
+| `driver.ts` | `StorageDriver` contract (11 methods; `registerAs`/`verifySigned`/`retentionOf` optional), `assertPutOptions`, + bounded `toBytes`/`sha256Base64`/`etagOf` |
+| `byte-pump.ts` / `put-stream.ts` | the one counting read, `put()`'s and `putStream`'s; the `putStream` screen and limit |
+| `multipart.ts` / `driver-s3-multipart.ts` / `driver-s3-put-stream.ts` | part arithmetic; the four signed calls; the pump |
+| `driver-local-stream.ts` / `driver-s3-sse.ts` / `errors-stream.ts` | the staged local stream; the s3 SSE refusal; the stream codes |
+| `driver-s3-settle.ts` | a lost Complete/PUT answer, settled by a stat (size + S3's etag of the bytes sent: MD5, or MD5-of-part-MD5s `-N`), then for multipart by an abort (204 = was open, nothing stored; 404 = completed, stat again). Neither settles: `X_STORAGE_WRITE_OUTCOME_UNKNOWN`, never `X_STORAGE_PUT_FAILED`. Plain `put()` settles the same way (`settleLostPut`); `isAnswered` (coded, or Bun's `S3Error`) is what counts as the provider answering |
 | `range.ts` | `get(key, { range })`: screen + `servedRange` (`errors-range.ts`); s3's one-GET read is `driver-s3-range.ts` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
 | `driver-local-write.ts` | the local WRITE: staged under `.meta/.tmp/`, renamed marker → sidecar → bytes, `X_STORAGE_KEY_CONFLICT` / `X_STORAGE_PUT_FAILED`, the per-key queue |
@@ -134,14 +138,8 @@ Gotchas:
   S3 accepts both (delete marker, new version; the locked version stays). Pinned divergence: one
   version per key. A pair in doubt never unlocks. `NoSuchObjectLockConfiguration` is a 404.
 - **A live suite signs on a wall clock** (`performance`): `Date` is frozen → `RequestTimeTooSkewed`.
-- **`signedUrl({ maxBytes })` is signed on `local` and unenforceable on `s3`, and the s3 driver may
-  NOT refuse it.** `grantUpload` passes `maxBytes: policy.maxBytes` on every grant, so a refusal
-  would break every s3 upload an app mints. S3 has no request header for a size and Bun's `presign`
-  binds method and expiry only (it signs `host` alone; `driver-s3.test.ts` pins it) — so on the
-  production disk the client PUTs straight into the bucket and nothing between the grant and the
-  object holds the ceiling or the type. That belongs to a bucket rule or `promoteAttachment`,
-  neither of which is a driver's; `SignedUrlOptions` says so and `driver-parity.test.ts` pins both
-  halves.
+- **A grant binds its size on every disk** (`As of 2026-11-02`). `grantUpload` requires `request.size` and passes `contentLength`; `s3Driver` signs `content-length` through core's `presignAwsUrl`, because Bun's presign signs `host` alone, so any other length is a 403 (`driver-s3.live.test.ts`). Local and memory hold it as the `x-max` ceiling, so a shorter body passes there: `driver-parity.test.ts` pins it. `maxBytes` with no `contentLength` on s3 is `X_STORAGE_UPLOAD_SIZE_UNDECLARED`. The content type stays unsigned.
+- **`putStream` on s3 is signed multipart, never `S3File.writer()`.** Measured on Bun 1.4.4: `end(error)` COMPLETES the upload, so an overrun would replace the object, and the writer cannot send `x-amz-meta-*`. One part at a time; every exit but the Complete aborts; a Complete can fail with 200 and an `<Error>` body.
 - **`promoteAttachment` sniffs a head window** (`validateStoredHead`, 64 KiB), then ties it to the
   copy: `ifMatch`, then size and etag. Never refuse on etag alone: SSE-KMS mints one per copy.
 - **`/media`'s variant key names its source's revision and format.** No `revision`: the old key.
@@ -178,17 +176,7 @@ Gotchas:
   `assertSafeKey`, so it holds for S3 too — a key valid on one driver and refused on another is two
   key rules, and the reservation folds case — see above. The `list()` skip is not a second line of
   defence but the only one: the glob yields the sidecar tree.
-- **`localDriver` refuses to construct outside development without a usable signing secret**
-  (`X_ENV_MISSING`, borrowed from core). Usable means neither the `signingSecret` option nor
-  `STORAGE_SIGNING_SECRET` is missing, empty **or** the published `DEV_SIGNING_SECRET` — pasting
-  the literal into `app.config.ts` configures nothing, so it is refused exactly as its absence is.
-  `DEV_SIGNING_SECRET` is published in this repo, and `acceptSignedUpload` trusts a signed URL's
-  constraints over the app's `uploadPolicy` — so the fallback is a universal grant to mint any
-  `PUT`. Refused at construction, not at the first `signedUrl()`: a process that cannot sign safely
-  must not finish booting. The cause names the environment `resolveEnvironment()` resolved, which
-  may be `NODE_ENV`'s, never a variable the process did not set. `usesDevStorageSecret()` is the
-  `x doctor` predicate, mirroring core's `usesDevCursorSecret()`; it reads the env var, so a disk
-  handed an explicit `signingSecret` is outside its question.
+- **`localDriver` refuses to construct outside development without a usable signing secret** (`X_ENV_MISSING`, borrowed from core). Full rule: `docs/history/storage.md`.
 - **`localDriver({ env })` and `usesDevStorageSecret({ env })` are ONE question about ONE table**:
   the secret, `isLocal()` and the refusal's environment all read `options.env ?? process.env`, so
   the boot's guard and the constructor it guards cannot answer from two tables.
@@ -237,19 +225,7 @@ Gotchas:
 - `acceptSignedUpload` refuses a URL signed with **no** content type (`unconstrained`). `grantUpload`
   always sets one, so such a URL is hand-rolled, and trusting the uploader's header instead is the
   only other option.
-- **The signed base is the disk's REGISTERED name, and it is stated once — on the driver.**
-  `defineStorage` tells each driver its registration key (`StorageDriver.registerAs`), the driver
-  rebases its URLs onto `signedUrlBaseFor(diskName)`, and `accept.ts` reads `disk.signedUrlBase`
-  rather than deriving a second one. Both halves used to derive it from `disk.name` — the DRIVER
-  kind — so they agreed with each other and disagreed with the mounted `/_storage/:disk/*key`
-  route, which resolves the segment through the registry: a disk registered as `uploads` minted
-  `/_storage/local/...` and 404'd its own signatures. Latent only because every disk in this repo
-  happens to be named `local`. An explicit `baseUrl` on `localDriver` outranks the registration
-  (the operator saying where the route is mounted); an unregistered driver still mints under
-  `local`. One driver instance under two disk names is refused at `defineStorage`
-  (`X_CONFIG_INVALID`) — it could only mint under one of them. `@ultimat3/cli`'s
-  `STORAGE_BASE_PATH` is a third statement of the mount prefix and should import
-  `DEFAULT_SIGNED_URL_BASE` instead.
+- **The signed base is the disk's REGISTERED name, and it is stated once — on the driver.** Full rule: `docs/history/storage.md`.
 - **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, exactly as `runtime-storage.ts` does.**
   `isWithinOrg` alone refused every un-scoped key, so an app's own `brand/logo.png` was unreachable
   through a URL it had just signed. `isTenantScoped` is case-INSENSITIVE and `isWithinOrg` is not:

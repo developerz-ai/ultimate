@@ -5,13 +5,29 @@
 // why: Bun has no `rename` and no `mkdir` — `Bun.write` creates parents and replaces in place,
 // which is exactly the non-atomic write this file exists to stop. Delete both the day Bun ships them.
 import { mkdir, rename } from 'node:fs/promises';
-import { renderFixShellArg, stringField } from '@ultimat3/core';
+import { NotImplementedError, renderFixShellArg, stringField } from '@ultimat3/core';
+import type { PutOptions } from './driver';
 import type { Sidecar } from './driver-local-sidecar';
 import { isStorageError, keyConflict, putFailed } from './errors';
 import { META_DIR } from './path';
 
+/**
+ * A POSIX file is not encrypted at rest by this driver, and recording the request in the sidecar
+ * would answer a security review with a field the disk never honoured. Refused on the DEV disk
+ * too, and deliberately: a `put()` that succeeds locally and throws in production is a gap an app
+ * meets on the worst day, and both drivers refusing is one rule instead of two.
+ */
+export function refuseUnsupportedPut(putOptions?: PutOptions): void {
+  if (putOptions?.serverSideEncryption === undefined) return;
+  throw new NotImplementedError({
+    cause:
+      'server-side encryption on the local driver (it writes plain files under one root) is not implemented by this driver — drop serverSideEncryption from put() and encrypt the disk itself: an s3Driver over a bucket with a default KMS rule, or a LUKS/FileVault volume under root',
+    fix: 'put(key, body)',
+  });
+}
+
 /** Inside `.meta/`, so the listing's one filter already keeps a staged file out of the keys. */
-const STAGING_DIR = `${META_DIR}/.tmp`;
+export const STAGING_DIR = `${META_DIR}/.tmp`;
 
 export const sidecarPathOf = (key: string): string => `${META_DIR}/${key}.json`;
 /** Beside the sidecar, and never one itself: a sidecar's name ends in `.json`. */
@@ -79,8 +95,11 @@ export interface ObjectWrite {
   readonly key: string;
   /** The name the disk was REGISTERED under — what a refusal's `disk('…')` call must name. */
   readonly disk: string;
-  /** A `BunFile` is a `Blob`: a copy hands the source file over and no byte crosses the heap. */
-  readonly body: Uint8Array | Blob;
+  /**
+   * A `BunFile` is a `Blob`: a copy hands the source file over and no byte crosses the heap. A
+   * `stagedAt` is a file `putStream` already wrote under `STAGING_DIR`, renamed rather than copied.
+   */
+  readonly body: Uint8Array | Blob | { readonly stagedAt: string };
   /** `etag` MUST be the body's own: it is what the pending marker announces. */
   readonly sidecar: Sidecar;
 }
@@ -127,7 +146,11 @@ async function commit(write: ObjectWrite, steps: WriteSteps): Promise<void> {
     });
   };
   try {
-    await Bun.write(`${staged}.object`, write.body);
+    if (write.body instanceof Uint8Array || write.body instanceof Blob) {
+      await Bun.write(`${staged}.object`, write.body);
+    } else {
+      await rename(write.body.stagedAt, `${staged}.object`);
+    }
     await Bun.write(`${staged}.sidecar`, JSON.stringify(write.sidecar));
     await Bun.write(`${staged}.pending`, write.sidecar.etag);
     await settle('pending', pendingPath);

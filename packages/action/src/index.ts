@@ -116,7 +116,6 @@ export {
 export type { OpenApiOperation } from './http';
 export {
   operationTagOf,
-  REPLAYED_HEADER,
   toOpenApiOperation,
   toPostBinding,
   toRoute,

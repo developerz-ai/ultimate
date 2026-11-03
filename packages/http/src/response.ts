@@ -14,22 +14,46 @@ const withDefaults = (init: HeaderSource, defaults: Record<string, string>): Hea
   return headers;
 };
 
-export const jsonResponse = <T>(body: T, init?: ResponseInit): Response =>
-  new Response(JSON.stringify(body), {
+/** RFC 9110: these carry no content, so a `content-length` on one is a false statement. */
+const CONTENTLESS_STATUS: ReadonlySet<number> = new Set([204, 205, 304]);
+
+/**
+ * The length is the BYTES this body encodes to, declared because `new Response(string)` declares
+ * nothing and the `compress` stage never reads what it cannot bound. `stream` has none to declare.
+ * `string | undefined`: `JSON.stringify` answers `undefined` for a value it cannot render.
+ */
+const declaredLength = (body: string | undefined, init?: ResponseInit): Record<string, string> =>
+  body === undefined || (init?.status !== undefined && CONTENTLESS_STATUS.has(init.status))
+    ? {}
+    : { 'content-length': String(Buffer.byteLength(body)) };
+
+export const jsonResponse = <T>(body: T, init?: ResponseInit): Response => {
+  const text: string | undefined = JSON.stringify(body);
+  return new Response(text, {
     ...init,
-    headers: withDefaults(init, { 'content-type': 'application/json; charset=utf-8' }),
+    headers: withDefaults(init, {
+      'content-type': 'application/json; charset=utf-8',
+      ...declaredLength(text, init),
+    }),
   });
+};
 
 export const textResponse = (body: string, init?: ResponseInit): Response =>
   new Response(body, {
     ...init,
-    headers: withDefaults(init, { 'content-type': 'text/plain; charset=utf-8' }),
+    headers: withDefaults(init, {
+      'content-type': 'text/plain; charset=utf-8',
+      ...declaredLength(body, init),
+    }),
   });
 
 export const html = (markup: string, init?: ResponseInit): Response =>
   new Response(markup, {
     ...init,
-    headers: withDefaults(init, { 'content-type': 'text/html; charset=utf-8' }),
+    headers: withDefaults(init, {
+      'content-type': 'text/html; charset=utf-8',
+      ...declaredLength(markup, init),
+    }),
   });
 
 /**

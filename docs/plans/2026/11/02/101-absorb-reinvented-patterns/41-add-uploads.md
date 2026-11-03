@@ -8,10 +8,10 @@
 **Lifecycle.** `sweepOrphans` covers pending uploads only (`storage/src/attachment.ts:187`). Exports, temp renders and quarantined files have no expiry, a local disk has no bucket rule at all, and abandoned multipart parts bill silently forever. Bucket rules stay the operator's (axiom 7); a sweep that works on every disk is mechanism. The window is the app's, required at the call.
 
 ## Files to change
-- `packages/core/src/aws-sigv4.ts` — `presignAwsUrl({ method, url, expiresInSeconds, credentials, region, service })`: query-signing, sharing `canonicalQuery` (`:143`).
-- `packages/storage/src/multipart.ts` (new) — the optional capability, session types, part-size arithmetic.
+- `packages/core/src/aws-sigv4.ts` — adopt `presignAwsUrl` (shipped `As of 2026-11-03` by [`25-pkg-storage-streams.md`](25-pkg-storage-streams.md), query signing with signed headers): every part URL signs `content-length` as the part's exact size, as a single grant already does, so a part cannot be stored at any other length.
+- `packages/storage/src/multipart.ts` (exists: `MIN_PART_BYTES`, `MAX_PARTS`, `partBytesFor`) — add the optional capability and session types beside the part-size arithmetic `putStream` already uses; never a second copy.
 - `packages/storage/src/driver.ts:135` — `StorageDriver.multipart?: MultipartCapability`, optional so a third-party driver still compiles.
-- `packages/storage/src/driver-s3-multipart.ts` (new) — create, sign part, list parts, complete, abort over `driver-s3-signed.ts`.
+- `packages/storage/src/driver-s3-multipart.ts` (exists: `createS3Upload`, `uploadS3Part`, `completeS3Upload`, `abortS3Upload`, `putStream`'s four signed calls) — add sign part and list parts beside them, and reuse create, complete and abort as they are.
 - `packages/storage/src/driver-local-multipart.ts` (new), `driver-memory-multipart.ts` (new) — same contract, so dev and tests behave as production. Parts go through `signedUrlBase` (`driver.ts:124`).
 - `packages/storage/src/driver-parity.test.ts` — the multipart row.
 - `packages/storage/src/grant.ts` — `grantMultipart`.

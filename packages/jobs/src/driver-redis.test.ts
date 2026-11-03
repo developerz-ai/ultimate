@@ -10,6 +10,7 @@ import { redisJobDriver } from './driver-redis';
 import {
   REDIS_ACK,
   REDIS_CLAIM,
+  REDIS_DEMAND,
   REDIS_ENQUEUE,
   REDIS_HEARTBEAT,
   REDIS_NACK,
@@ -24,6 +25,7 @@ const SCRIPTS = new Map<string, string>([
   [REDIS_NACK, 'nack'],
   [REDIS_HEARTBEAT, 'heartbeat'],
   [REDIS_STATS, 'stats'],
+  [REDIS_DEMAND, 'demand'],
   [REDIS_STEP_PUT_FENCED, 'step-put'],
 ]);
 
@@ -224,6 +226,23 @@ describe('redisJobDriver', () => {
       ['nack', 'j1', 'w1', '2', String(AT), 'ready', String(AT + 500), '1', '1', 'boom', 'at x'],
       ['nack', 'j1', 'w1', '2', String(AT), 'suspended', String(AT), '0', '0', '', ''],
       ['heartbeat', 'j1', '', '', String(AT + 1_000)],
+    ]);
+  });
+
+  test('demand binds the clock and reads one row per queue, sorted by code unit', async () => {
+    const { client, sent } = recording({
+      demand: [
+        ['b', 3],
+        ['B', '1'],
+      ],
+    });
+    const driver = redisJobDriver({ client, clock: clock() });
+    expect(await driver.demand()).toEqual([
+      { queue: 'B', demand: 1 },
+      { queue: 'b', demand: 3 },
+    ]);
+    expect(sent).toEqual([
+      { command: 'demand', args: ['{x:jobs}:queues', '{x:jobs}', String(AT)] },
     ]);
   });
 

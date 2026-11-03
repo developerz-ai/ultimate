@@ -109,7 +109,7 @@ Deployment artifacts are part of the scaffold — an app is deployable the momen
 | `apps/web/server.ts` | the production entry: `runRole({ root, env: Bun.env })`. Also `--target binary`'s entry |
 | `apps/web/prerender.ts` | `--target static`'s entry |
 | `docker/Dockerfile` | `--target docker`'s entry. Defaults `ROLE=web`, `PORT=3000`, health-checks `/readyz` |
-| `docker/Dockerfile.dockerignore` | **this exact name** — not a root `.dockerignore` |
+| `docker/Dockerfile.dockerignore` | **this exact name** — not a root `.dockerignore`. Drops `*.test.ts`, `*.test.tsx` and the root `docs/`; an app serving a file from `docs/` re-includes it with `!docs/<path>` |
 | `docker/docker-compose.prod.yml` | one service per role: migrate, web, sync, worker, scheduler |
 | `docker/docker-compose.dev.yml` | parity checks only; `x dev` needs none of it |
 | `docker/helm/` | the chart, 8 files — `Chart.yaml`, `values.yaml` and 6 templates (`_helpers.tpl`, `deployments`, `service`, `migrate-job`, `ingress`, `hpa`). Written `As of 2026-08-19`, which is what makes `x deploy --method helm` work in a scaffold |
@@ -308,7 +308,7 @@ is a word (`a-z`, `0-9`, `-`, `_`) or `[param]` / `[...rest]`; `..`, `.` and emp
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | the write plan, nothing written: **every file the run would touch** — the ones it creates (a slice module already on disk is skipped, not listed) and, `As of 27.6.2`, the ones it EDITS outside the slice (role map, typed handle, API index, manifests, catalogs, the i18n index), in the order the run lists them. `--json`: `data.files` is that list, `data.edits` the subset that already exists, `data.refreshes` the committed contracts (`x.manifest.json`, `openapi.json`) a real run re-projects. `ok: false` with every finding the real run would report — an existing file, an API-index binding already held, a grant or a handle entry it cannot place |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **33 files** (35 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **33 files** (35 with `--admin`; `--live` is refused — a resource already ships a live query, and the flag belongs to `x g query`: `X_CLI_BAD_FLAG`, fix `x g query <name>-feed --feature <name> --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>`, then `x db gen "create <table>"`, then `x db migrate`, then `x build --target static && x verify --only budgets` — the four commands the run prints, in that order (`data.next` under `--json`). **The plural route is reachable as written**, `As of 2026-10-01`: its `load` reads the list through the slice's query as the request's actor (no org in the URL), `AsyncRegion` renders ready, empty and refused, the form island is mounted, and the route declares `policy: { permission: '<name>:read' }`. Its `budget.js` is MEASURED on `x new`'s app (58,522 B, Bun 1.4.0) and carries the `measured:` / `why:` comment `bun run budget-raises` reads; an app that charges more to every document — `navigation: { client: [...] }` adds its router — is over it on the printed build, and the raise is that edit. The page sits in `apps/web/shared/shell.tsx` when the app has one. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). **`x g query` and `x g backfill` read a table and never create one**, `As of 2026-11-02`: both name a slice holding an `entity.ts`, by `--feature <slice>` or by a name that is one, and neither finding it is `X_FEATURE_REQUIRED`, zero files written, its fix the closest slice's `--feature` line or `x g resource <name>`. `x g resource` and `x g entity` are what create a table. Every generator produces code that passes `x verify` unmodified, and writes it through the app's own Biome when the app has one: `node_modules/.bin/biome` over the TypeScript files that run created, best effort, never a failed `x g`. A slice whose `entity.ts` declares another table under its name gets no foundation from `x g action`/`x g mutator`, and `x g query` there is `X_QUERY_SLICE_ENTITY`. Errors: `X_GENERATE_CONFLICT`, `X_DB_HANDLE_UNREGISTERED`, `X_FEATURE_UNKNOWN`, `X_FEATURE_REQUIRED`, `X_QUERY_SLICE_ENTITY`.
 
 **A name the templates would mangle is `X_CLI_BAD_FLAG` before anything is planned**, each with a `fix:` that runs: a reserved word or a leading digit; a letter outside ASCII (`Über` → `x g entity uber` — it was dropped to `ber`); an already-plural `resource`/`entity` name (`posts` → `x g resource post` — it became `entity('postses')`); and a name whose type spelling an emitted file also uses as a global or local type (`promise`, `omit`, `partial`, `row` → `x g resource promise-resource`).
 
@@ -355,10 +355,10 @@ lands in `apps/admin/app/admin/pages/` without `--at` — beside the declaration
 
 | Generator | Files into a **bare** slice | Its own | Slice modules it plants |
 |---|---|---|---|
-| `x g action` · `x g mutator` | 5 | 3 — the declaration, a unit test and a `.contract.test.ts` | `policy.ts` + `policy.test.ts`; `errors.ts` only into a slice that has an entity |
-| `x g query` (± `--live`) | 8 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` + `repo.test.ts`, `policy.ts` + `policy.test.ts` |
+| `x g action` · `x g mutator` | 5 | 3 — the declaration, a unit test and a `.contract.test.ts` | `policy.ts` + `policy.test.ts`; `errors.ts` only when its body reads a row: a slice with an entity whose repo exports `byId` |
+| `x g query --feature <slice>` (± `--live`) | refused: no `entity.ts` is `X_FEATURE_REQUIRED` | 2 | what the slice lacks of `repo.ts` + `repo.test.ts`, `policy.ts` + `policy.test.ts`; never `entity.ts` |
 | `x g job` | 2 | 2 | none — a slice with no entity gets the neutral body, never an invented table |
-| `x g backfill` | 6 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` + `repo.test.ts` |
+| `x g backfill --feature <slice>` | refused: no `entity.ts` is `X_FEATURE_REQUIRED` | 2 | what the slice lacks of `repo.ts` + `repo.test.ts`; never `entity.ts` |
 | `x g task` | 4 | 4 — the task **and** the job it enqueues | none |
 | `x g entity` · `x g policy` | 5 · 2 | all of them — `x g entity` counts the catalog it merges its admin labels into | it *is* the slice module |
 
@@ -368,7 +368,7 @@ lands in `apps/admin/app/admin/pages/` without `--at` — beside the declaration
 
 **`x g action` and `x g mutator` complete nothing a slice's author wrote.** A module already on disk gets no companion from them — no `entity.test.ts`, `repo.test.ts` or `policy.test.ts`, no admin catalog labels — because those assert the shape `x g resource` writes, not the one that is there. A `repo.ts` with no `byId` gets the lookup-free body. And a hand-written `policy.ts` that does not export what the generated file imports (`can<Feature>Write`; for an action also `<feature>Tag`) is refused before anything is written: `X_SLICE_POLICY_INCOMPLETE`, naming the file and the missing exports. A destructured export counts, one level of relative `export * from` is followed, and a barrel that cannot be followed (a package) is never refused. Into such a slice the generated unit test grants what the policy grants — the one permission of a literal `can('<perm>')` — and when that cannot be read it makes no handler assertion and says so in a comment; the contract test makes no foreign-org assertion against a policy it did not write. `As of 2026-10`.
 
-**Every generated entity is tenant-scoped, and there is no `--no-tenant` flag**, `As of 2026-09-05` — decided rather than omitted. `orgId` is not one generator's: `x g action`, `x g query`, `x g policy` and `x g job` all decide on it too, so a flag on `x g entity` alone would leave `x g resource` emitting an action over a column its entity no longer has. A single-tenant app makes the edit per slice, and the emitted `entity.ts` names it in the comment above `tenant: 'orgId'`: delete that line and the `orgId: uuid()` column, drop `'orgId'` from `indexes`, let `entity.test.ts` expect `$tenantColumn` null and `orgScoped` false, and drop `orgId` from `repo.test.ts`'s draft along with its last two tests. `repo.ts` needs no edit: it names no org.
+**Every generated entity is tenant-scoped, and there is no `--no-tenant` flag**, `As of 2026-09-05` — decided rather than omitted. `orgId` is not one generator's: `x g action`, `x g query`, `x g policy` and `x g job` all decide on it too, so a flag on `x g entity` alone would leave `x g resource` emitting an action over a column its entity no longer has. A single-tenant app makes the edit per slice, and the emitted `entity.ts` names it in the comment above `tenant: 'orgId'`: delete that line and the `orgId: uuid()` column, drop `'orgId'` from `indexes`, let `entity.test.ts` expect `$tenantColumn` null and `orgScoped` false, and drop `orgId` from `repo.test.ts`'s draft along with its last two tests, and let `policy.ts`'s write rule stop reading `input.orgId`. `repo.ts` needs no edit: it names no org. From then on `x g action` and `x g mutator` read the slice as `x g job` does, `As of 2026-11-02`: no `orgId` in the input, either test or a policy they plant. A `policy.ts` still deciding on `input.orgId` keeps it in the input, because the action compiles against the rule it imports and that file is the author's.
 
 **The filename carries the test's type**, `As of 2026-08-19` — `x verify` selects a suite by it, so a generated test that landed in a plain `*.test.ts` ran under `unit` and `x test contract` answered `X_TEST_NO_FILES`:
 
@@ -505,6 +505,12 @@ green. A foreign key is
 emitted as `alter table … add constraint` **after** every table statement, never as a `references`
 clause inside `create table`, so the order entities happen to register in cannot make a migration
 unappliable.
+
+**A rendered `fix:` names `bunx x` where `node_modules/.bin/x` exists** (`As of 2026-11-02`, both renderers, after `&&` too; a `#` tail and quoted text stay as written). `x` need not be on `PATH`. Identical findings collapse to one, with `meta.count` and `meta.reportedAt`.
+
+**`x env check` over a table naming no environment** reads it as production, as the boot does, and its summary says `checked as production: no ULTIMATE_ENV named`. `x doctor` asks about this machine and stays quiet on that shell. On this machine: `ULTIMATE_ENV=development x env check`.
+
+**The schema dump against the newest snapshot** (`As of 2026-11-02`, `drift`, no database) is `X_DB_DRIFT`: a column in `packages/db/schema/04_tables/<t>.sql` no snapshot records means an applied migration was edited and regenerated. A table hand-written SQL names is exempt.
 
 **`X_DB_DRIFT` has two detectors, and each answers what the other cannot.** `x verify`'s `drift`
 step hashes the loaded entity **registry** plus the bytes of every non-test file under
@@ -803,6 +809,35 @@ Errors: `X_DEPLOY_FAILED` (a step exited non-zero — its `fix:` is that step's 
 DNS-1123 label, or a flag `deploy` does not declare), `X_CONFIG_INVALID` (`--method helm` with no
 `--release` and an `app.config.ts` whose `name` is not a helm release name),
 `X_CLI_UNKNOWN_COMMAND`, `X_CLI_UNEXPECTED`.
+
+### x deploy verify
+
+Does production serve this build, does it hold, and does a worker of this build claim every queue. A GitOps roll never runs `x deploy`; this runs in either case. HTTP and Postgres only. `As of 30.0.0`
+
+```bash
+x deploy verify --url <origin> [--build <id>] [--window 60s] [--interval 5s] [--timeout 10m] [--idle-ok <queue,…>] [--json]
+```
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--url` | string | required | a bare `http(s)` origin; a path, query or credentials are refused |
+| `--build` | string | `x.manifest.json`'s `buildId` | the id that must answer: `BUILD_ID`, or whatever CI stamped |
+| `--window` | string | `60s` | how long consecutive good samples must span. `0`: answered once |
+| `--interval` | string | `5s` | the gap between samples |
+| `--timeout` | string | `10m` | the whole wait, window and queues together |
+| `--idle-ok` | string | none | queues exempt while their depth (due + running) is 0: a scale-to-zero pool |
+
+| Stage | Rule |
+|---|---|
+| sample | `GET <origin>/readyz` on a new connection each, `cache-control: no-cache`, redirects refused. Good: 2xx, `x-ultimate-build` equals the build, and no `Age` above 0 (a CDN copy is not the fleet) |
+| window | wait for the first good sample, then `--window` of consecutive good ones. A bad sample restarts it, and since the first good one fewer than one sample in `ceil(window / interval)` may be bad: a fleet stuck with old pods stays red |
+| coverage | samples through the load balancer, reported as samples. **Never a claim about each pod** |
+| queues | after the window, when `DATABASE_URL` is set. Expected: `jobs.queues` plus every registered job's queue. Served: a row not draining, of this build. Re-read until served or `--timeout`; a failed read keeps the last grade, and none landing is `X_DB_UNAVAILABLE` |
+| no `DATABASE_URL` | `queues.graded: false` and the summary says so. Never the embedded database, never counted as a pass |
+
+`--json` `data`: `{ build, samples: { total, good, byBuild, byStatus, share, cached }, windowMs, queues: { graded, served, unserved: [{ queue, builds, depth }], idle } }`. `byStatus` counts a sample nothing answered as `unreachable`. `builds` names what the workers claiming that queue run (`unknown` for a row from before 30.0.0), so a stalled roll reads as one.
+
+Errors: `X_DEPLOY_BUILD_MISMATCH` (no sample carried the build), `X_DEPLOY_BUILD_UNSTAMPED` (2xx with no header, and no build ever named), `X_DEPLOY_UNSTABLE` (the build answered, the window never closed), `X_DEPLOY_QUEUE_UNSERVED` (one finding per queue), `X_CLI_BAD_FLAG`.
 
 `X_MIGRATE_CONCURRENT` **is thrown**, `As of 2026-08`. `ROLE=migrate` takes the migration lock by a
 **bounded** `pg_try_advisory_lock` poll on one pinned session — one try per 500ms against a 60s

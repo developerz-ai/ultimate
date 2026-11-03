@@ -104,6 +104,17 @@ export function helmUpgradeArgs(
   ];
 }
 
+/**
+ * One worker pod's capacity is what an AverageValue target on `queue_demand` must be: the HPA asks
+ * for `ceil(demand / target)` pods, so a target above `jobs.maxInFlight` leaves demand no pod can
+ * hold. Undeclared, the chart's value stands: nothing here knows the size of a pod.
+ */
+export function helmWorkerTargetOverrides(maxInFlight: number | undefined): readonly string[] {
+  return maxInFlight === undefined
+    ? []
+    : ['--set', `roles.worker.autoscaling.targetAverageValue=${maxInFlight}`];
+}
+
 /** What `--json` reports about the rollout helm waited on. */
 export interface Rollout {
   readonly release: string;

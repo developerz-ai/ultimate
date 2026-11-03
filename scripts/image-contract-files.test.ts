@@ -16,6 +16,7 @@ import {
   SECRET_IGNORE_PATTERN,
   SKIPPED_DIRS,
 } from './image-contract';
+import { CONTENT_IGNORE_LINES } from './lib/image-content-ignores';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 
@@ -42,7 +43,7 @@ const GOOD = [
   '',
 ].join('\n');
 
-const IGNORE = `**/.env\n${SECRET_IGNORE_PATTERN}\n`;
+const IGNORE = `**/.env\n${SECRET_IGNORE_PATTERN}\n${CONTENT_IGNORE_LINES.join('\n')}\n`;
 
 describe('every Dockerfile in the tree is read', () => {
   test('a broken Dockerfile outside docker/ is a finding that names it', async () => {
@@ -98,6 +99,19 @@ describe('a Dockerfile with no ignore file', () => {
     const root = await tree({ 'docker/Dockerfile': GOOD, 'docker/sub/.dockerignore': IGNORE });
     const codes = (await imageContractFindings(root)).map((one) => one.code);
     expect(codes).toEqual(['X_IMAGE_SECRET_UNIGNORED']);
+  });
+});
+
+describe('an ignore file that lets a test or the root docs through', () => {
+  test('is a finding on the gate path, naming the file and each missing line', async () => {
+    const file = 'docker/Dockerfile.dockerignore';
+    const root = await tree({
+      'docker/Dockerfile': GOOD,
+      [file]: `${SECRET_IGNORE_PATTERN}\n**/*.test.ts\n`,
+    });
+    const found = await imageContractFindings(root);
+    expect(found.map((one) => [one.code, one.at])).toEqual([['X_IMAGE_CONTENT_UNIGNORED', file]]);
+    expect(found[0]?.fix).toContain("'**/*.test.tsx' 'docs'");
   });
 });
 

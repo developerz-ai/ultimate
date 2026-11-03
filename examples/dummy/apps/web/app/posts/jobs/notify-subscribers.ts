@@ -35,7 +35,7 @@ export const notifySubscribers = job({
       const found = await ctx.posts.inOrg(toOrgId(input.orgId), toPostId(input.postId));
       if (found === null) throw new PostNotFound(input.postId);
       // What the mail reads: a step persists a small plain view, and answers it as JSON.
-      return { id: found.id, authorName: found.authorName };
+      return { id: found.id, authorName: found.authorName, title: found.title };
     });
 
     // No channel announcement here, by decision: `org-posts` carries RECORDS, derived from the
@@ -60,7 +60,12 @@ export const notifySubscribers = job({
       await step.run(`send:${member.id}`, () =>
         send(
           postPublished,
-          { post, member, org: org.name },
+          {
+            post: { id: post.id, authorName: post.authorName },
+            member,
+            org: org.name,
+            title: post.title,
+          },
           { to: member.email, locale: member.locale },
         ),
       );

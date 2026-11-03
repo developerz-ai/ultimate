@@ -6,6 +6,7 @@
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver } from './driver';
+import { memoryJobDriver } from './driver-memory';
 import { postgresJobDriver } from './driver-pg';
 import { embeddedPg } from './embedded-pg-fixture';
 import { COUNTER_TIERS } from './introspection';
@@ -90,6 +91,37 @@ describe('the operator surface on the pg driver', () => {
     expect(rows).toEqual([]);
     // Both loops are stopped for the suite's sake; neither stop is what removed the rows.
     await Promise.all([alive.stop(), killed.stop()]);
+  });
+
+  // Both drivers, in one test file, because the column is the fact: `x deploy verify` grades a
+  // queue by this field, so a driver that drops it reads every worker as the wrong build.
+  describe.each([
+    ['pg', () => harness.driver()],
+    ['memory', () => Promise.resolve(memoryJobDriver())],
+  ] as const)('the build a worker announced, on %s', (_name, open) => {
+    const announced = {
+      host: 'pod-1',
+      startedAt: 1_000,
+      queues: ['default'],
+      concurrency: 1,
+      inFlight: [],
+    };
+
+    test('it round-trips, and survives the next announce', async () => {
+      const operator = operatorOf(await open());
+      await operator.announceWorker({ ...announced, id: 'worker-new', build: 'b-2' }, 60_000);
+      await operator.announceWorker({ ...announced, id: 'worker-new', build: 'b-3' }, 60_000);
+      expect((await operator.workers()).map((worker) => worker.build)).toEqual(['b-3']);
+    });
+
+    test('a row announced without one reads absent, never null', async () => {
+      const operator = operatorOf(await open());
+      await operator.announceWorker({ ...announced, id: 'worker-old' }, 60_000);
+      const rows = await operator.workers();
+      // The row first: a driver that dropped the announcement would read "no build" vacuously.
+      expect(rows.map((row) => row.id)).toEqual(['worker-old']);
+      expect('build' in (rows[0] ?? {})).toBe(false);
+    });
   });
 
   test('pg: the fold moves old one-minute buckets into five-minute ones, and keeps the sum', async () => {

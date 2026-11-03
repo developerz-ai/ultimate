@@ -72,6 +72,8 @@ export {
   themeScriptBody,
 } from './head';
 export { seoRenderers } from './head-seo';
+export type { HoleNode, HoleProps } from './hole';
+export { Hole } from './hole';
 export type { IslandDirective } from './hydrate';
 export {
   emitIslandAttributes,

@@ -8,6 +8,7 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive.
 import { join } from 'node:path';
+import { checkImportRules } from './app-boundaries';
 import { REQUIRED_BUN } from './app-root';
 import { generateCommand } from './cmd-generate';
 import type { CommandContext } from './command';
@@ -64,6 +65,31 @@ describe('unit · x g conflict fix reproduces the invocation, every flag include
 });
 
 describe('unit · x g --feature never invents the slice it names', () => {
+  // D4: the boundary fix, run. `x g query shoplist` wrote an entity and a table; with the slice
+  // the import resolved into, it writes one query and nothing else.
+  test('X_BOUNDARY_ROUTE_TO_DB, its printed fix: a query in the slice, no entity', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'x-generate-boundary-fix-'));
+    try {
+      await Bun.write(join(root, 'app.config.ts'), 'export default {};\n');
+      await Bun.write(join(root, 'apps/web/app/post/entity.ts'), 'export const posts = {};\n');
+      const fix =
+        checkImportRules([
+          {
+            path: 'apps/web/app/shoplist/page.tsx',
+            source: "import * as r from '../post/repo';",
+          },
+        ])[0]?.fix ?? '';
+      // `ok` stays false in this fixture, over a roles file it does not have: the files are the claim.
+      const ran = await generateCommand.run(contextFor(argvOf(fix), root));
+      const written = (ran.data as { files: readonly string[] }).files;
+      expect(written).toContain('apps/web/app/post/queries/shoplist.ts');
+      expect(written.filter((path) => path.endsWith('/entity.ts'))).toEqual([]);
+      expect(await readdir(join(root, 'apps/web/app'))).toEqual(['post']);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('a feature with no directory is X_FEATURE_UNKNOWN, and nothing is written', async () => {
     const root = await mkdtemp(join(tmpdir(), 'x-generate-feature-'));
     try {

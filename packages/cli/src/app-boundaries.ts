@@ -35,6 +35,8 @@ export const BOUNDARY_CODES = [
   'X_BOUNDARY_ROUTE_TO_DB',
   'X_BOUNDARY_SERVICE_TO_HTTP',
   'X_BOUNDARY_SURFACE_IMPORT',
+  // `package-boundaries.ts`'s: it reads `packages/`, which this module's surface graph never holds.
+  'X_BOUNDARY_PACKAGE_TO_APP',
 ] as const;
 
 export type BoundaryCode = (typeof BOUNDARY_CODES)[number];
@@ -192,6 +194,32 @@ const generate = (kind: 'query' | 'action', path: string, then: string): string 
   return `x g ${kind} ${named}   # ${then} ${commentSafe(path)}`;
 };
 
+/** The slice a route's import lands in, or `undefined` for a package like `@acme/db`. */
+const sliceOfImport = (path: string, specifier: string): string | undefined => {
+  // Resolved already where `scan` knew the file, and still relative where it did not.
+  const target = specifier.startsWith('.') ? normalize(join(dirname(path), specifier)) : specifier;
+  const [, surface, slice, rest] = /^apps\/[^/]+\/([^/]+)\/([^/]+)\/(.+)$/.exec(target) ?? [];
+  return surface !== undefined && SURFACE_NAMES.has(surface) && rest !== undefined
+    ? slice
+    : undefined;
+};
+
+/**
+ * A read through a database import. Into a slice, the query belongs there: without `--feature` a
+ * singular name wrote 14 files, a new entity and a table nobody asked for. A route named for its
+ * slice takes `<slice>-read`, since a query named as the entity collides with its import. With no
+ * slice to read, a new one is what the fix has to name.
+ */
+const routeToDbFix = (path: string, specifier: string): string => {
+  const then = `then call it from ${commentSafe(path)}`;
+  const subject = subjectOf(path);
+  const named = subject === undefined ? '<name>' : quoteArg(subject);
+  const slice = sliceOfImport(path, specifier);
+  if (slice === undefined) return `x g resource ${named}   # ${then}`;
+  const query = subject === slice || subject === `${slice}s` ? quoteArg(`${slice}-read`) : named;
+  return `x g query ${query} --feature ${quoteArg(slice)}   # ${then}`;
+};
+
 /**
  * Both fixes are one runnable line, with the rest of the instruction behind a `#` — a fix a
  * caller has to edit before it runs is prose, and prose is what "errors are instructions" bans.
@@ -204,7 +232,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
         findings.push({
           code: 'X_BOUNDARY_ROUTE_TO_DB',
           cause: `route imports the database ("${specifier}")${isRepoSpecifier(specifier) ? ', through a repo' : ''} — routes call actions and queries`,
-          fix: generate('query', file.path, 'then call it from'),
+          fix: routeToDbFix(file.path, specifier),
           docs: ERROR_DOCS_URL,
           at: file.path,
         });

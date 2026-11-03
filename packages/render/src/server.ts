@@ -38,8 +38,8 @@ export {
 } from './module-loader';
 export { enumeratePrerenderEntries } from './prerender-enumerate';
 // ---- the render pipeline: one entry point per mode ----------------------------------------------
-export type { RenderHtmlOptions } from './render-html';
-export { ROOT_ELEMENT_ID, renderComponent, renderToHtml } from './render-html';
+export type { HoleEnter, HoleSink, HoleSinkOptions, RenderHtmlOptions } from './render-html';
+export { holeSink, ROOT_ELEMENT_ID, renderComponent, renderToHtml } from './render-html';
 export {
   DEFAULT_ISR_REGENERATE_DEADLINE_MS,
   invalidateAndRevalidate,
@@ -80,11 +80,13 @@ export type { StreamHole, StreamOptions, StreamPlan } from './render-stream';
 export {
   collectStream,
   DEFAULT_HOLE_TIMEOUT_MS,
+  DEFAULT_STREAM_KEEPALIVE_MS,
   holeId,
   holeMarker,
   REVEAL_SCRIPT,
   renderStreamHtml,
   revealChunk,
+  STREAM_KEEPALIVE_CHUNK,
   streamResult,
 } from './render-stream';
 // ---- the Sass compile cache: where it lives, and how often this process ran Sass instead --------

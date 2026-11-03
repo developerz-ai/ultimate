@@ -305,6 +305,7 @@ export { memoryLocalTx } from './local-tx';
 export type { VisibleOptions } from './matcher-visible';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
+export type { MockHandler, MockRoute } from './mock-route';
 // `isolateEntityRegistry` is deliberately NOT here — it is `@ultimat3/testing/registry-isolation`.
 // This barrel is what a `packages/core` test imports for `expect` alone, and a static re-export
 // evaluates the module it names: that one would load `@ultimat3/entity` and its process-global
@@ -319,9 +320,10 @@ export { captureProcessRegistries, restoreProcessRegistries } from './registry-s
 // functions, so a tier-0 test importing this barrel for `expect` still loads no renderer.
 export type { RenderedRoute, RenderedView, RouteModule, RouteRequest } from './render-view';
 export { renderRoute, renderView } from './render-view';
+export type { LoggedRequest } from './request-log';
 export type { DatabaseSnapshot } from './reusable-database';
 export { restoreDatabase, reusableDatabase, snapshotDatabase } from './reusable-database';
-export type { MockRoute, NetworkSnapshot, NetworkState } from './sealed-network';
+export type { NetworkSnapshot, NetworkState } from './sealed-network';
 // `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
 // called it directly would bypass the `network` fixture's disposal and leave the whole process
 // offline for every file after it. The fixture is the way to go offline — there is no second one.
@@ -332,7 +334,7 @@ export {
   mockFetch,
   mockJson,
   networkState,
-  requestedUrls,
+  requestLog,
   resetNetwork,
   restoreCapturedNetwork,
   sealNetwork,

@@ -289,7 +289,7 @@ describe('s3Driver', () => {
     });
 
     // Bun's real presigner, offline. `type` is a response parameter, and only a GET reads it.
-    test('a presigned PUT signs `host` alone, so it binds neither type nor size', async () => {
+    test('a presigned PUT with no size signs `host` alone, so it binds neither', async () => {
       const client = new Bun.S3Client({
         accessKeyId: 'key',
         secretAccessKey: 'secret',
@@ -301,12 +301,10 @@ describe('s3Driver', () => {
         await driver.signedUrl('org/org-1/j.png', {
           method: 'PUT',
           contentType: 'image/png',
-          maxBytes: 1024,
         }),
       );
       expect(signed.searchParams.get('X-Amz-SignedHeaders')).toBe('host');
       expect(signed.searchParams.get('response-content-type')).toBe('image/png');
-      expect(signed.search).not.toContain('1024');
     });
 
     /**

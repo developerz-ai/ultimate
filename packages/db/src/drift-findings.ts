@@ -4,6 +4,7 @@
 // side's spelling, never the catalog's — which is Postgres' rewriting.
 
 import { psqlCommand } from './dependent-view';
+import { undeclaredColumnNext } from './drift-errors';
 import { addForeignKey, dropForeignKey, onDeleteRule, validateConstraint } from './foreign-key';
 import type { CheckDescription, ForeignKeyDescription } from './introspect';
 import type { Migration } from './migrate';
@@ -122,10 +123,8 @@ export function unexpectedColumn(table: string, column: string): DriftDifference
     cause: `table "${table}" has column "${column}" not present in any migration`,
     fix:
       shellInertIdentifier(column) === null
-        ? 'x db gen "add the undeclared column"   # the live column name carries a backtick, a ' +
-          'dollar sign, a quote, a backslash or whitespace, so it is in the cause and not in ' +
-          'this command'
-        : `x db gen "add ${column}"`,
+        ? `x db gen "add the undeclared column"   # the live column name carries shell syntax, so it is in the cause and not in this command; ${undeclaredColumnNext('it')}`
+        : `x db gen "add ${column}"   # ${undeclaredColumnNext(column)}`,
   };
 }
 

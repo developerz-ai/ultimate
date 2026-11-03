@@ -1,8 +1,7 @@
 // Every route the generators write, put through the two checks the framework runs on a real one.
-// A `defineRoute` that throws at import registers NO route: `x g route --surface app` emitted
-// `render: 'stream'`, which `assertModeInvariants` refuses without a <Suspense> boundary, so every
-// generated app route was absent from `x routes`, from `x.manifest.json` and from `budgets` — a
-// scaffolded URL that 404s, reported by nothing.
+// A `defineRoute` that throws at import registers NO route: every generated app route would be
+// absent from `x routes`, from `x.manifest.json` and from `budgets` — a scaffolded URL that 404s,
+// reported by nothing.
 
 import { describe, expect, test } from 'bun:test';
 import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
@@ -67,13 +66,11 @@ const check = (route: EmittedRoute): void => {
     ...(ttl === undefined ? {} : { revalidate: { ttl } }),
     ...(permission === undefined ? {} : { policy: { permission } }),
   });
-  // What the build counts off the module's JSX. `stream` needs at least one, and this is the half
-  // `assertModeShape` cannot see — which is exactly why it is the half that shipped broken.
+  // The half `assertModeShape` cannot see: the file's surface against its render mode.
   assertModeInvariants(config, {
     file: route.path,
     path: `/${route.path}`,
     surface: route.surface,
-    suspenseBoundaries: route.source.split('<Suspense').length - 1,
   });
 };
 
@@ -93,6 +90,13 @@ describe('unit · every generated route is one the framework will register', () 
    * emitted per island DIRECTIVE, so a page with none ships `''` whatever it declared. If that ever
    * stops holding, every scaffolded app pays for an island it does not have, on its first page.
    */
+  test('app/ generates the surface default: the mode with holes, private by construction', () => {
+    const app = emittedRoutes().filter((route) => route.surface === 'app');
+    expect(app.length).toBeGreaterThan(0);
+    for (const route of app)
+      expect(`${route.path}: ${declared(route.source, 'render')}`).toBe(`${route.path}: stream`);
+  });
+
   test('a generated hydrate strategy on an island-free page costs no bytes', () => {
     const declaring = emittedRoutes().filter((route) => /\bhydrate: '(?!never)/.test(route.source));
     // Or this checks nothing: `never` pages are not the subject and would pass vacuously.

@@ -29,6 +29,11 @@ export const fixtureQuery = (name: string, policy: string, permissions = [policy
   live: true,
   subscribes: ['posts'],
   cacheTags: ['post'],
+  rows: {
+    type: 'object',
+    required: ['id'],
+    properties: { id: { type: 'string' } },
+  },
 });
 
 /**
@@ -67,6 +72,7 @@ export const FIXTURE: ManifestSources = {
   ],
   actions: [fixtureAction('publishPost', 'post:publish')],
   queries: [fixtureQuery('feed', 'feed:read')],
+  mounts: [{ prefix: '/v1', scopes: { 'feed:read': ['feed'] } }],
   jobs: [
     {
       name: 'sendMail',

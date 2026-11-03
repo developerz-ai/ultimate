@@ -13,8 +13,7 @@
 // source. `X_MIGRATION_DESTRUCTIVE` and `X_TENANCY_CROSS_DENIED` are the same tier, the same shape
 // and one grep apart, and only a human knows the first is a CLI-time refusal and the second is a
 // request a user just made. Every `src/index.ts` re-exports everything, so no import graph
-// separates them either — the classification is recorded, as `expectedRed` in
-// `scripts/lib/gated-apps.ts` records the tracked apps' gate steps.
+// separates them either — the classification is recorded, as `expectedRed` is (`gated-apps.ts`).
 
 type Pins = Readonly<Record<string, readonly string[]>>;
 
@@ -54,6 +53,8 @@ export const OFF_SOCKET: Pins = {
     'X_MIGRATION_APPEND_ONLY_BACKFILL',
     'X_MIGRATION_CONCURRENT_IN_TRANSACTION',
     'X_MIGRATION_ROLLING_UNSAFE',
+    'X_DB_POOLER_SESSION_REQUIRED',
+    'X_DB_STATEMENT_BOUND_LOST',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],
@@ -130,7 +131,7 @@ export const OFF_SOCKET: Pins = {
     'X_REALTIME_PRODUCER_CONFLICT',
   ],
   // tier 4 — a mail declared twice, at registration.
-  mail: ['X_MAIL_DUPLICATE'],
+  mail: ['X_MAIL_DUPLICATE', 'X_MAIL_KEY_MISSING'],
   // tier 4 — build-time only: the manifest emitter and the `AGENTS.md` rules, all on `x verify`.
   manifest: [
     'X_AGENTS_MD_MISSING',

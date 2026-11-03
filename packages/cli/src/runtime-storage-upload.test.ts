@@ -75,7 +75,11 @@ const grantFor = (contentType: string, maxBytes = 1024): Promise<UploadGrant> =>
     disk: storage.disk('uploads'),
     orgId: 'org-1',
     policy: uploadPolicy({ maxBytes, allowedContentTypes: [contentType] }),
-    request: { filename: contentType === 'application/pdf' ? 'a.pdf' : 'a.png', contentType },
+    request: {
+      filename: contentType === 'application/pdf' ? 'a.pdf' : 'a.png',
+      contentType,
+      size: maxBytes,
+    },
   });
 
 beforeEach(() => {

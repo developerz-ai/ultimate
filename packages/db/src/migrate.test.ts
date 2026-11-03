@@ -75,8 +75,9 @@ describe('migrate', () => {
     expect(client.texts.some((text) => text.includes('pg_advisory_unlock'))).toBe(true);
   });
 
-  // Plan 101 row S12: a migration's name is read off a file on disk and echoed into `x db gen "…"`.
-  test('a conflict screens the migration name it echoes into x db gen', () => {
+  // Plan 101 row S12: what is read off a file on disk never reaches the line. The name no longer
+  // travels at all: the fix restores the file, and only an id that is shell-inert names it.
+  test('a conflict echoes nothing hostile from the migration it names', () => {
     const hostile: Migration = { ...addPosts, name: 'create $(touch pwned)' };
     const edited: Migration = { ...hostile, up: 'create table "posts" ("id" uuid, "x" text);' };
     let fix = '';
@@ -86,13 +87,9 @@ describe('migrate', () => {
       fix = (error as { fix: string }).fix;
     }
     expect(fix).not.toContain('$(');
-    expect(fix).toStartWith('x db gen "<a migration name>"');
-    // And an ordinary name still travels.
-    try {
-      auditLedger([ledgerRow()], [{ ...addPosts, up: 'select 1;' }], '1.5.0');
-    } catch (error) {
-      expect((error as { fix: string }).fix).toStartWith('x db gen "fix create posts"');
-    }
+    expect(fix).toStartWith(
+      `git log --format='%h %ad %s' --date=short -- packages/db/migrations/${addPosts.id}.sql`,
+    );
   });
 
   test('an edited applied migration is a conflict, not a silent no-op', () => {

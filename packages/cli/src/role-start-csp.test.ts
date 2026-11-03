@@ -48,7 +48,6 @@ describe('the CSP the web role sends admits the styles it serves', () => {
   const page = (): void => {
     registerRoute({
       file: 'apps/web/site/page.tsx',
-      suspenseBoundaries: 0,
       config: defineRoute<{ url: string; params: Record<string, string> }>({
         render: 'static',
         offline: 'network-only',

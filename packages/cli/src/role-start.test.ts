@@ -50,6 +50,22 @@ afterAll(async () => {
 });
 
 describe('unit · x dev --role', () => {
+  // `x deploy verify` grades a queue by this row: a worker that named no build reads as a stalled
+  // roll on every deploy.
+  test('a worker role stamps the build it serves on its registry row', async () => {
+    const runtime = fakeRuntime();
+    running = await startRoles({
+      roles: selectRoles('worker'),
+      port: 0,
+      buildId: 'b-stamped',
+      runtime,
+      env: {},
+      routes: [],
+    });
+    const rows = await runtime.jobs.introspect?.workers();
+    expect(rows?.map((row) => row.build)).toEqual(['b-stamped']);
+  });
+
   test('no flag runs every dev role', () => {
     expect(selectRoles(undefined)).toEqual(DEV_ROLES);
     expect(selectRoles('')).toEqual(DEV_ROLES);

@@ -49,7 +49,7 @@ const CHANNELS = [JOBS_WAKE_CHANNEL, OUTBOX_WAKE_CHANNEL] as const;
 type Channel = (typeof CHANNELS)[number];
 
 const UNVERIFIED_FIX =
-  'point DATABASE_URL at Postgres itself or at a SESSION-pooling proxy (PgBouncer pool_mode = session) for the worker role — a transaction-pooling proxy delivers no notification. Nothing is lost meanwhile: jobs start on the poll, at most idlePollMaxMs late';
+  'point DATABASE_URL at Postgres itself or at a SESSION-pooling proxy (PgBouncer pool_mode = session) for the worker role, and unset DATABASE_POOLER for that role — a transaction-pooling proxy delivers no notification. Nothing is lost meanwhile: jobs start on the poll, at most idlePollMaxMs late';
 
 const armTimer = (run: () => void, delayMs: number): (() => void) => {
   const timer = setTimeout(run, delayMs);

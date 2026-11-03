@@ -54,6 +54,7 @@ export type {
   JobFact,
   JsonValue,
   Manifest,
+  MountFact,
   PolicyFact,
   QueryFact,
   RateLimitFact,

@@ -70,7 +70,7 @@ describe('which imports count as reading live rows', () => {
 describe('a route that can never receive a row', () => {
   test('is refused when the hook is in the page itself', async () => {
     await write(PAGE, "import { useConnection } from '@ultimat3/realtime';\nexport const x = 1;");
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
 
     const gaps = await liveRouteGaps(ROOT, routeEntries());
     expect(gaps.map((gap) => gap.route)).toEqual(['/feed']);
@@ -90,7 +90,7 @@ describe('a route that can never receive a row', () => {
       'apps/web/app/feed/hooks.ts',
       "import { useQuery } from '@ultimat3/realtime';\nexport const useLiveFeed = useQuery;",
     );
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
 
     const gaps = await liveRouteGaps(ROOT, routeEntries());
     expect(gaps).toHaveLength(1);
@@ -103,7 +103,6 @@ describe('a route that can never receive a row', () => {
     island({ src: './feed.island.tsx' });
     registerRoute({
       file: PAGE,
-      suspenseBoundaries: 1,
       config: defineRoute({
         render: 'stream',
         // Declared and never woken. `X_ISLAND_NOT_HYDRATED` catches this only at RENDER, and only
@@ -129,7 +128,7 @@ describe('a route that can', () => {
       "import { useQuery } from '@ultimat3/realtime';\nexport const useLiveFeed = useQuery;\n",
     );
     island({ src: './feed.island.tsx' });
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
     expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
   });
 
@@ -144,14 +143,14 @@ describe('a route that can', () => {
       "import { useQuery } from '@ultimat3/realtime';\nexport const useLiveFeed = useQuery;\n",
     );
     island({ src: './feed.island.tsx' });
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
     expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
   });
 
   test('reads no live hook at all, however many modules it imports', async () => {
     await write(PAGE, "import { Layout } from '../layout';\nexport const x = Layout;");
     await write('apps/web/app/layout.tsx', "export const Layout = () => 'x';");
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
     expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
   });
 
@@ -159,7 +158,7 @@ describe('a route that can', () => {
     await write(PAGE, "import { a } from './a';\nexport const x = a;");
     await write('apps/web/app/feed/a.ts', "import { b } from './b';\nexport const a = b;");
     await write('apps/web/app/feed/b.ts', "import { a } from './a';\nexport const b = a;");
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
     expect(await liveRouteGaps(ROOT, routeEntries())).toEqual([]);
   });
 });
@@ -177,7 +176,7 @@ describe('a module that never runs in a browser', () => {
     );
     await write('apps/web/app/feed/feed.island.tsx', 'export const mount = () => undefined;\n');
     island({ src: './feed.island.tsx' });
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
 
     const gaps = await liveRouteGaps(ROOT, routeEntries());
     expect(gaps.map((gap) => [gap.at, gap.hook])).toEqual([
@@ -194,8 +193,8 @@ describe('a module that never runs in a browser', () => {
     await write('apps/web/app/update-banner.tsx', banner);
     await write(PAGE, "import { B } from '../update-banner';\nexport const x = B;");
     await write(other, "import { B } from '../update-banner';\nexport const x = B;");
-    registerRoute({ file: PAGE, config: streamRoute(), suspenseBoundaries: 1 });
-    registerRoute({ file: other, config: streamRoute(), suspenseBoundaries: 1 });
+    registerRoute({ file: PAGE, config: streamRoute() });
+    registerRoute({ file: other, config: streamRoute() });
 
     expect((await liveRouteGaps(ROOT, routeEntries())).map((gap) => gap.at)).toEqual([
       'apps/web/app/update-banner.tsx',

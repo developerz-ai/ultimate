@@ -344,6 +344,9 @@ const stepLine = (env: Readonly<Record<string, string>>, command: readonly strin
 export const deployCommand: CliCommand = {
   spec: deploySpec,
   async run(ctx: CommandContext): Promise<CommandResult> {
+    if (ctx.args.subcommand === 'verify') {
+      return (await import('./cmd-deploy-verify')).runDeployVerify(ctx);
+    }
     const root = requireAppRoot('deploy', ctx.cwd).dir;
     const image = flagString(ctx.args, 'image') ?? 'ultimate-app:dev';
     // No "is there a chart?" branch. It threw X_NOT_IMPLEMENTED — "this build does not implement

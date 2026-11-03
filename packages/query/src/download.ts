@@ -13,6 +13,7 @@
 
 import type { Ctx, Deprecation } from '@ultimat3/core';
 import { queryPath, useContext } from '@ultimat3/core';
+import type { RequestedRange } from '@ultimat3/http';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { DownloadUrl, QueryCallOptions, QueryClientOptions } from './client';
 import { downloadClientFor } from './client';
@@ -40,21 +41,39 @@ export const MAX_DOWNLOAD_TTL_MS = 3_600_000;
 const TOKEN_IS_THE_GRANT =
   'a download token is sealed only by url(), after this query admitted the minting actor; the token is that decision';
 
-/** What `handle` answers. Bytes, never a base64 string — that is the +33 % this exists to remove. */
-export interface DownloadFile {
-  /**
-   * A `Uint8Array` or a `Blob` (a `Bun.file`, a slice) is range-served from its own length; a
-   * `ReadableStream` is range-served only with `size`, else whole with `accept-ranges: none`.
-   */
-  readonly body: Uint8Array | Blob | ReadableStream<Uint8Array>;
+interface DownloadFileHead {
   readonly contentType: string;
   /** The name a browser saves it under — `content-disposition`'s `filename` and `filename*`. */
   readonly filename: string;
   /** `attachment` (default) saves it; `inline` lets a tab render it. `<video>` ignores both. */
   readonly disposition?: 'attachment' | 'inline' | undefined;
-  /** The stream's length in bytes. Ignored for a `Uint8Array` or a `Blob`, which know theirs. */
-  readonly size?: number | undefined;
 }
+
+/**
+ * Opens the bytes asked for: the window with a `Range:`, the whole file with none, and not at all
+ * for a 304 or a 416. So a stored object's seek reads only its window, with no `storage` edge here:
+ * `(range) => range === undefined ? disk.stream(key) : disk.streamRange(key, [range.start, range.end])`.
+ */
+export type DownloadBodyOpener = (range?: RequestedRange) => BodyInit | Promise<BodyInit>;
+
+/** What `handle` answers. Bytes, never a base64 string — that is the +33 % this exists to remove. */
+export type DownloadFile =
+  | (DownloadFileHead & {
+      /**
+       * A `Uint8Array` or a `Blob` (a `Bun.file`, a slice) is range-served from its own length; a
+       * `ReadableStream` is range-served only with `size`, else whole with `accept-ranges: none`,
+       * and a window of one has read and dropped everything before it.
+       */
+      readonly body: Uint8Array | Blob | ReadableStream<Uint8Array>;
+      /** The stream's length in bytes. Ignored for a `Uint8Array` or a `Blob`, which know theirs. */
+      readonly size?: number | undefined;
+    })
+  | (DownloadFileHead & {
+      /** The disk's own window. A sealed object cannot take it: an AES-GCM envelope opens whole. */
+      readonly body: DownloadBodyOpener;
+      /** Required: it is what a `Range:` is judged against before anything is opened. */
+      readonly size: number;
+    });
 
 export interface DownloadArgs<TInput extends StandardSchemaV1> {
   readonly input: InferOutput<TInput>;

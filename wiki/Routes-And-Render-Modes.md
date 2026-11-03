@@ -68,7 +68,7 @@ Validation runs at **module evaluation**. `defineRoute` checks the shape and the
 | `offline` present and a known strategy | `defineRoute` | `X_ROUTE_OFFLINE_MISSING` |
 | `meta` is a function | `defineRoute` | `X_ROUTE_META_MISSING` |
 | mode-local: known `render` and `hydrate`; `static` with a `policy` or a `revalidate`; `isr` with a `policy` or with no trigger; `ssr` with a `prerender`; `cache` on any mode but `ssr`, or a `public`/`immutable` `cache` on a gated route | `defineRoute` | `X_ROUTE_MODE_INVALID` |
-| surface-dependent: mode allowed on the surface; `site/` hydration without `budget.js`; `stream` with no `<Suspense>`; `prerender` on a non-prerenderable mode | `registerRoute` | `X_ROUTE_MODE_INVALID` |
+| surface-dependent: mode allowed on the surface; `site/` hydration without `budget.js`; `prerender` on a non-prerenderable mode | `registerRoute` | `X_ROUTE_MODE_INVALID` |
 | the config came from `defineRoute` and not straight from the author | `registerRoute` | `X_ROUTE_UNNORMALIZED` |
 | two files claiming one URL | `registerRoute` | `X_ROUTE_DUPLICATE` |
 
@@ -246,26 +246,36 @@ Order inside one bust: read tiers (farthest first) → this origin's ISR pages �
 
 ## Why `stream` is the app default
 
-**Status, `As of 2026-09-05`: the design below is not what a generator emits.** `x g route`
-and `x new`'s dashboard both write `render: 'ssr'` on `app/`, deliberately: `stream` requires at
-least one `<Suspense>` boundary (`X_ROUTE_MODE_INVALID` without it), and the server JSX factory
-ships no hole marker yet — Solid's `<Suspense>` throws outside a Solid renderer. A page that
-declares `stream` today registers only with a boundary count it can prove, so the mode is
-available and the scaffold does not write it. Async data needs no boundary: `await` it in `load`.
-
 An authed page needs fresh data and fast first paint. `ssr` gives freshness and a slow TTFB — the whole page waits for the slowest query. `stream` gives both halves: shell now, data as it resolves. A page whose body belongs in the browser declares an `island({ src })`, budgeted in real bytes; there is no client-side-only mode and no client router.
 
+`x g route`, `x g resource` and `x new`'s dashboard write `render: 'stream'` on `app/`. A `stream` page with no hole registers and pays nothing: it is one flush.
+
 ```tsx
-export default function Dashboard() {
+import { Hole } from '@ultimat3/render';
+import type { JSX } from 'solid-js';
+
+// Yours: the components and the two reads.
+type View = (props: { children?: JSX.Element; rows?: readonly unknown[] }) => JSX.Element;
+declare const Layout: View, Header: View, Stats: View, Feed: View;
+declare const StatsSkeleton: View, StatsUnavailable: View, FeedSkeleton: View;
+declare const statsQuery: (input: object) => Promise<readonly unknown[]>;
+declare const feedQuery: (input: object) => Promise<readonly unknown[]>;
+
+// A thunk: it starts after the first flush, in the request's context. `useContext()`, `useT()` and
+// the actor all work in it. A promise written straight into the JSX has started already.
+const readStats = async () => <Stats rows={await statsQuery({})} />;
+const readFeed = async () => <Feed rows={await feedQuery({})} />;
+
+export function Page() {
   return (
     <Layout>
       <Header />                                {/* in the first flush */}
-      <Suspense fallback={<StatsSkeleton />}>
-        <Stats />                               {/* streamed when the query resolves */}
-      </Suspense>
-      <Suspense fallback={<FeedSkeleton />}>
-        <Feed />                                {/* independent hole, independent flush */}
-      </Suspense>
+      <Hole fallback={<StatsSkeleton />} error={<StatsUnavailable />}>
+        {readStats}                             {/* streamed when the query resolves */}
+      </Hole>
+      <Hole fallback={<FeedSkeleton />}>
+        {readFeed}                              {/* independent hole, independent flush */}
+      </Hole>
     </Layout>
   );
 }
@@ -277,10 +287,29 @@ Solid's fine-grained reactivity is what makes this cheap:
 |---|---|
 | No VDOM | streamed HTML is patched into place; nothing re-renders to reconcile |
 | Signals, not component re-execution | a resolved hole updates the exact DOM nodes bound to it |
-| **No hydration pass over the shell** | the static shell costs 0 hydration work — a `<Suspense>` boundary hydrates only its own island, only when its `hydrate` timing fires |
+| **No hydration pass over the shell** | the static shell costs 0 hydration work — a `<Hole>` hydrates only its own island, only when its `hydrate` timing fires |
 | Compile-time templates | the shell's JS is markup-shaped, not a component tree to replay |
 
 In a VDOM framework a streaming shell still pays for hydrating the whole tree, which is why streaming there buys TTFB but not TBT. Here it buys both.
+
+### What a hole does
+
+| Fact | Rule |
+|---|---|
+| `fallback` | markup in the first flush. Rendered at shell time; it is not weighed by `budgets`, so keep islands out of it |
+| `error` | shown when the hole's children throw or miss the 15 s deadline (`DEFAULT_HOLE_TIMEOUT_MS`). Rendered at shell time. Omitted: an empty hidden element. Either way the document closes, `render.stream.hole_rejected` or `render.stream.hole_deadline` is logged and the error monitor hears it |
+| Other modes, a test, `budgets` | no second flush exists, so `<Hole>` is its children, awaited inline, and a throw is the render's throw. `renderRoute` shows the filled page, and a hole's island is weighed |
+| Nested | the inner hole renders inline inside the outer one: the set of holes is fixed at the first flush |
+| Status, redirects, cookies | decided before the first flush. `withStatus`, `setRedirect` and `setCookie` stay `load`'s: inside a hole the last two are `X_STREAM_ALREADY_FLUSHED`, shown as the hole's error markup and reported. A throw in a hole is its error markup |
+| Cancellation | `useContext().signal` inside a hole is the hole's own: aborted at its deadline and when the client leaves. Pass it on: `fetch(url, { signal: useContext().signal })` |
+| A long wait | an empty comment every second while a hole is open keeps the socket's idle timer (`requestTimeoutMs` + 2 s) from cutting the stream |
+| Async component | `X_ROUTE_ASYNC_PAGE` applies to `Page`, never to what renders under a hole |
+| A hole's island | hydrates from its chunk: the chunk carries the hydration runtime after its reveal, and the realtime boot if this is the first island that needs it |
+| A shell island while a hole is open | live: the runtime is `<script type="module" async>`, so it does not wait for parsing to end. With a realtime boot in the document it stays deferred ([Known gaps](Known-Gaps)) |
+| Client router | a soft visit reads the whole answer before it swaps ([Known gaps](Known-Gaps)); every reveal still runs |
+| CSP | every chunk's inline script is a body `inlineScriptSources()` already hashes |
+
+Solid's own boundary component is not this: it throws outside a Solid renderer, and the server JSX factory is inert by design.
 
 Independent holes each resolve their own [queries](Queries-And-Live-Queries); the tier-1 request memo means three holes reading the same query hit Postgres once.
 

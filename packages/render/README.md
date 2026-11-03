@@ -34,6 +34,43 @@ cross-linked in. `enumeratePrerender()` answers params, `enumeratePrerenderEntri
 A key outside the three, a `lastmod` that is neither a string nor a `Date`, or `locales` that is
 not a list of names is `X_PRERENDER_FAILED`, naming the route file.
 
+## `<Hole>`: a subtree that arrives after the first flush
+
+`Hole` (from `@ultimat3/render`) marks what a `stream` page does not wait for. Its children are a
+thunk or an async component, started after the shell left, in the request's context.
+
+```tsx
+import { Hole } from '@ultimat3/render';
+import { Skeleton } from '@ultimat3/ui';
+import type { JSX } from 'solid-js';
+
+// Yours: the components and the read.
+type View = (props: { rows?: readonly unknown[] }) => JSX.Element;
+declare const Stats: View, StatsUnavailable: View;
+declare const statsQuery: (input: object) => Promise<readonly unknown[]>;
+
+const readStats = async () => <Stats rows={await statsQuery({})} />;
+
+export function Page() {
+  return <Hole fallback={<Skeleton lines={3} />} error={<StatsUnavailable />}>{readStats}</Hole>;
+}
+```
+
+| Case | What happens |
+|---|---|
+| `stream` | `fallback` is in the first flush; holes fill in completion order; the document closes when the last one settles |
+| `ssr`, `static`, `isr`, a test, `budgets` | one flush, so the hole is its children, inline. A hole's island is weighed; a throw is the render's |
+| nested | inline inside the outer hole |
+| a throw, or the 15 s deadline | `error`'s markup (default: hidden, empty), a log line, and `reportError(source: 'http')` |
+| status, redirect | `load`'s: decided before the flush. Under the CLI a `setCookie()`/`setRedirect()` inside a hole is `X_STREAM_ALREADY_FLUSHED`, the hole's error markup |
+| cancellation | each hole's `resolve` gets its own signal: aborted at its deadline (`X_TIMEOUT`) and on a disconnect; the CLI makes it the ambient `useContext().signal` |
+| an idle socket | while a hole is open, `<!---->` every `keepAliveMs` (`DEFAULT_STREAM_KEEPALIVE_MS`, 1 s): a write resets Bun's `idleTimeout` |
+
+`holeSink({ enter? })` from `@ultimat3/render/server` is the walk's sink (`renderToHtml(tree, { holes })`),
+for a host assembling its own stream; `enter(signal, run)` is the host's scope for a hole's children.
+`StreamHole` gains `error?` and `after?(outcome)` (asked on every reveal, failed ones too);
+`hydrateRuntime(directives, { async: true })` is the runtime for a document still parsing.
+
 ## `load` is the one server-side data seam
 
 Optional, and the only way a page gets data. It runs **once per render** and the result is handed
@@ -177,7 +214,6 @@ island imports them from **`@ultimat3/render/client`**, never the barrel — see
 | `ssr` | cannot be prerendered | `X_ROUTE_MODE_INVALID` |
 | any but `ssr` | declares no `cache` — `static`/`isr` headers are the mode, a `stream` is always `private, no-store` | `X_ROUTE_MODE_INVALID` |
 | gated (`policy`) | its `cache` is never `public`/`immutable` — one actor's document in a shared cache | `X_ROUTE_MODE_INVALID` |
-| `stream` | at least one `<Suspense>` boundary | `X_ROUTE_MODE_INVALID` |
 
 Plus surface rules: `site/` allows `static | isr | ssr`, `app/` allows `stream | ssr`, and a `site/` route that opts into hydration without a `budget.js`
 is a build error.

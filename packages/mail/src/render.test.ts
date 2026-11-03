@@ -54,6 +54,48 @@ function codeOf(fn: () => unknown): string {
   }
 }
 
+test('a complete render misses nothing, and a hole is reported without being hidden', () => {
+  const payload = { name: 'Ada', url: 'https://x.test' };
+  expect(renderMail(normalMail, payload, options).misses).toEqual([]);
+
+  const rendered = renderMail({ ...normalMail, subject: 'test.render.absent' }, payload, options);
+  expect(rendered.misses).toEqual([{ key: 'test.render.absent', slot: undefined }]);
+  expect(rendered.subject).toBe('\u27E6test.render.absent\u27E7');
+});
+
+test('an optional footer or preheader a locale lacks is no miss: the render never asked for it', () => {
+  const rendered = renderMail(
+    normalMail,
+    { name: 'Ada', url: 'https://x.test' },
+    {
+      locale: 'tlh',
+      tz: 'UTC',
+    },
+  );
+  const keys = rendered.misses.map((miss) => miss.key);
+  expect(keys).not.toContain('mail.footer.legal');
+  expect(keys).not.toContain('mail.test-render.preheader');
+  expect(keys).toContain('test.render.subject');
+});
+
+test('a plural with a count resolves through the locale, and a slot the count fills is no miss', () => {
+  const plural: RenderableMail<Payload> = {
+    ...normalMail,
+    template: () => [
+      blocks.paragraph('test.render.items', { count: 3 }),
+      blocks.paragraph('test.render.items', { count: 3, of: 9 }),
+    ],
+  };
+  registerCatalog(
+    'en',
+    loadCatalog({
+      test: { render: { items_one: '{count} item', items_other: '{count} of {of}' } },
+    }),
+  );
+  const rendered = renderMail(plural, { name: 'Ada', url: 'https://x.test' }, options);
+  expect(rendered.misses).toEqual([{ key: 'test.render.items', slot: 'of' }]);
+});
+
 test('a template with no text blocks throws X_MAIL_TEXT_MISSING', () => {
   const payload = { name: 'Ada', url: 'https://x.test' };
   expect(codeOf(() => renderMail(textlessMail, payload, options))).toBe('X_MAIL_TEXT_MISSING');

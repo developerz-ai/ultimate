@@ -33,8 +33,6 @@ export interface ModeSpec {
   readonly prerenderable: boolean;
   /** Does the mode need a revalidation trigger (tags or TTL)? */
   readonly needsRevalidate: boolean;
-  /** Does the mode need at least one `<Suspense>` boundary to mean anything? */
-  readonly needsSuspense: boolean;
   readonly description: string;
 }
 
@@ -46,7 +44,6 @@ export const MODE_SPECS = Object.freeze<Record<RenderMode, ModeSpec>>({
     perRequestState: false,
     prerenderable: true,
     needsRevalidate: false,
-    needsSuspense: false,
     description: 'built once, served as a file',
   },
   isr: {
@@ -54,7 +51,6 @@ export const MODE_SPECS = Object.freeze<Record<RenderMode, ModeSpec>>({
     perRequestState: false,
     prerenderable: true,
     needsRevalidate: true,
-    needsSuspense: false,
     description: 'static + background regen on tag/TTL',
   },
   ssr: {
@@ -62,7 +58,6 @@ export const MODE_SPECS = Object.freeze<Record<RenderMode, ModeSpec>>({
     perRequestState: true,
     prerenderable: false,
     needsRevalidate: false,
-    needsSuspense: false,
     description: 'per-request full render',
   },
   stream: {
@@ -70,7 +65,6 @@ export const MODE_SPECS = Object.freeze<Record<RenderMode, ModeSpec>>({
     perRequestState: true,
     prerenderable: false,
     needsRevalidate: false,
-    needsSuspense: true,
     description: 'static shell flushed instantly, holes streamed',
   },
 });
@@ -182,8 +176,6 @@ export interface ModeCheckContext {
   readonly file: string;
   readonly path: string;
   readonly surface: RouteSurface;
-  /** Counted from the route module's JSX by the build. `stream` needs at least one. */
-  readonly suspenseBoundaries: number;
 }
 
 /** Checks that need the surrounding module and surface. Called by `registerRoute`. */
@@ -215,15 +207,6 @@ export function assertModeInvariants(config: RouteShape, ctx: ModeCheckContext):
       `${ctx.file} is in site/ (0kb JS baseline) and opts into hydrate: '${config.hydrate}' ` +
         'without a JS budget',
       `add budget: { js: '10kb' } to ${ctx.file} — hydration on site/ is explicit and budgeted`,
-    );
-  }
-
-  if (config.render === 'stream' && ctx.suspenseBoundaries < 1) {
-    throw new RouteModeInvalidError(
-      `${ctx.file} declares render: 'stream' but has no <Suspense> boundary, so there is ` +
-        'nothing to stream — the whole page waits like ssr',
-      `wrap the data-dependent part of ${ctx.file} in <Suspense fallback={…}> ` +
-        "or change render to 'ssr'",
     );
   }
 

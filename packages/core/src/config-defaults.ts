@@ -8,7 +8,7 @@ import {
   JOBS_DONE_RETENTION_MS_DEFAULT,
   JOBS_OUTBOX_RETENTION_MS_DEFAULT,
 } from './config-jobs';
-import { DRAIN_DEADLINE_DEFAULT_MS } from './drain-deadline';
+import { DRAIN_DEADLINE_DEFAULT_MS, WORKER_RETIRE_DEFAULT_MS } from './drain-deadline';
 import { defaultReadinessGraceMs } from './lifecycle-grace';
 import { ROLES } from './roles';
 
@@ -60,6 +60,7 @@ export function configDefaults(name: string): Omit<AppConfig, Sectioned> {
       deadlineMs: DRAIN_DEADLINE_DEFAULT_MS,
       // Unset: the worker drains on `deadlineMs`, like every role.
       workerDeadlineMs: undefined,
+      workerRetireMs: WORKER_RETIRE_DEFAULT_MS,
     },
     health: { readiness: 'dependencies' },
   };

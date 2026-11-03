@@ -157,6 +157,38 @@ services:
       timeout: 3s
       retries: 30
 
+  # A connection pooler in its STOCK transaction mode, between the suites and `postgres`, because the
+  # failure it stands for is its stock config: `ignore_startup_parameters` does not name
+  # `statement_timeout`, so a bare `DATABASE_URL` is refused at startup with `08P01`. Adding the
+  # parameter there would hide what `pooler.live.test.ts` proves. `auth_query` over the server's
+  # own `pg_shadow`, so a role a suite creates logs in with no line in a userlist. The tmpfs holds
+  # the config the image's entrypoint writes on start, and the one thing this service keeps.
+  pooler:
+    <<: *silent
+    image: edoburu/pgbouncer:v1.26.1-p0@sha256:488422e38cff912895d0d65d8963fcd306e6ac589a724398b6eb8e294e94d624
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_USER: ultimate
+      DB_PASSWORD: ultimate
+      AUTH_TYPE: scram-sha-256
+      AUTH_USER: ultimate
+      AUTH_QUERY: select usename, passwd from pg_shadow where usename = $$1
+      POOL_MODE: transaction
+      LOG_CONNECTIONS: 0
+      LOG_DISCONNECTIONS: 0
+      LOG_POOLER_ERRORS: 0
+      LOG_STATS: 0
+    tmpfs: ['/etc/pgbouncer:uid=70,gid=70']
+    ports: ['127.0.0.1:6432:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ultimate -h 127.0.0.1 -p 5432']
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
   # The shared cache tier's two Lua scripts are the only thing a real Redis answers differently
   # from a fake. No snapshot, no append-only file, and a log level that prints nothing.
   redis:

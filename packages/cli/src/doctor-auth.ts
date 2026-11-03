@@ -69,9 +69,18 @@ export function authStorageFindings(fact: AuthStorageFact): readonly Finding[] {
  * PGlite and takes the single-writer lock the next command needs. A server that does not answer
  * is `database()`'s finding to make, so every failure here is "nothing to report".
  */
-export async function authStorageProbe(url: string | undefined): Promise<AuthStorageFact> {
+export async function authStorageProbe(
+  url: string | undefined,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Promise<AuthStorageFact> {
   if (url === undefined || url.trim() === '') return NO_AUTH_STORAGE_FACT;
-  const client = postgresClient({ url, applicationName: 'x-doctor' });
+  let client: ReturnType<typeof postgresClient>;
+  try {
+    client = postgresClient({ url, env, applicationName: 'x-doctor' });
+  } catch {
+    // `poolerProbe`'s finding: a refused `DATABASE_POOLER` or role, said once.
+    return NO_AUTH_STORAGE_FACT;
+  }
   try {
     const present = async (table: string): Promise<boolean> => {
       const rows = await client.query<{ readonly present: boolean }>(

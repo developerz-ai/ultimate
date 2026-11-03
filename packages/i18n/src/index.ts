@@ -85,6 +85,7 @@ export {
   pluralCategory,
   pluralKeyCandidates,
   pluralVariantsOf,
+  selectMessageKey,
   selectPluralKey,
 } from './interpolate';
 export {
@@ -104,6 +105,11 @@ export {
   parseAcceptLanguage,
   SUPPORTED_LOCALES,
 } from './locales';
+export {
+  type RecordingTranslator,
+  recordingTranslator,
+  type TranslationMiss,
+} from './recording-translator';
 export {
   assertCatalogsRegistered,
   type CatalogRegistrationGap,

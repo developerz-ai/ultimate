@@ -144,6 +144,12 @@ export interface WorkerAnnouncement {
    * what it holds. Absent: serving.
    */
   readonly draining?: boolean;
+  /**
+   * The build this process runs: `BUILD_ID`, the id `x-ultimate-build` answers with. Optional so a
+   * custom driver still compiles, and absent on a row a worker from before 30.0.0 wrote. What
+   * `x deploy verify` tells a stalled worker roll by: the old pods still claim the queue.
+   */
+  readonly build?: string;
 }
 
 export interface WorkerRecord extends WorkerAnnouncement {
@@ -151,7 +157,7 @@ export interface WorkerRecord extends WorkerAnnouncement {
   readonly heartbeatAt: number;
   /**
    * Epoch ms of the FIRST announcement that said `draining` — kept by every later one. Absent while
-   * the worker serves. What `SQL_SCALER_DEPTH` excludes a worker's held jobs by.
+   * the worker serves. What `SQL_SCALER_DEMAND` excludes a worker's held jobs by.
    */
   readonly drainingAt?: number;
 }

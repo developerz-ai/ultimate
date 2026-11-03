@@ -57,7 +57,14 @@ export function assertSameOrigin(request: UltimateRequest): void {
     listed: () => false,
     listName: 'no list — /_x admits its own origin only',
   });
-  if (!verdict.ok) throw csrfBlocked(request.pathname, verdict.reason, request.ctx.ip);
+  if (!verdict.ok) {
+    throw csrfBlocked(
+      request.pathname,
+      verdict.reason,
+      request.ctx.ip,
+      selfOrigin(request.url, request.ctx.https),
+    );
+  }
 }
 
 /** The SQL panel's one input, from a form or a JSON body — `request.body` parses either. */

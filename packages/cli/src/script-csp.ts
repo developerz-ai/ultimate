@@ -16,7 +16,7 @@ import { HYDRATE_RUNTIME_BODIES, STREAM_REVEAL_BODIES } from '@ultimat3/render';
  * which `theme-boot.ts` derives from the same string it inlines.
  */
 export function inlineScriptSources(extra: readonly string[] = []): readonly string[] {
-  // The stream reveal too: a `render: 'stream'` page swaps each Suspense boundary in with a
+  // The stream reveal too: a `render: 'stream'` page swaps each `<Hole>` in with a
   // constant inline `$X()` call, and unhashed it is blocked under the enforced policy.
   const bodies = [...HYDRATE_RUNTIME_BODIES, ...STREAM_REVEAL_BODIES];
   return [...new Set([...bodies.map(cspHashSource), ...extra])].sort();

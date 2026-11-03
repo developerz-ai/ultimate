@@ -2,7 +2,12 @@
 // instant, a refusal as data rather than a throw, and the one counter both primitives feed.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { recordDeprecatedCall, renderDeprecation } from './deprecation';
+import {
+  recordDeprecatedCall,
+  renderDeprecation,
+  successorLink,
+  successorPathOf,
+} from './deprecation';
 import { collectMetrics, resetMetrics } from './metrics';
 
 afterEach(() => {
@@ -59,5 +64,20 @@ describe('recordDeprecatedCall', () => {
       { attributes: { primitive: 'action', name: 'listOrders' }, value: 2 },
       { attributes: { primitive: 'query', name: 'listOrders' }, value: 1 },
     ]);
+  });
+});
+
+describe('the successor link, read back', () => {
+  test('is what renderDeprecation wrote', () => {
+    const rendered = renderDeprecation({ since: SINCE, sunset: SINCE }, '/api/next');
+    if (!rendered.ok) return expect.unreachable('a real date');
+    expect(rendered.headers['link']).toBe(successorLink('/api/next'));
+    expect(successorPathOf(successorLink('/api/next'))).toBe('/api/next');
+  });
+
+  test('a link of another relation, or not a link, is no successor', () => {
+    expect(successorPathOf('</api/x?page=2>; rel="next"')).toBeUndefined();
+    expect(successorPathOf('</a>; rel="successor-version", </b>; rel="next"')).toBeUndefined();
+    expect(successorPathOf('')).toBeUndefined();
   });
 });

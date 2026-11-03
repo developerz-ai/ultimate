@@ -49,6 +49,11 @@ above could be set from an app at all — `cors.origins` was `[]` in every deplo
 every cross-origin browser call, permanently. `AppConfig` has never carried an `http` key and does
 not gain one: `@ultimat3/core` is tier 0 and cannot hold this package's types.
 
+`cors.allowHeaders` and `cors.exposeHeaders` default to what the typed clients send and read, off
+core's constants (`idempotency-key`, `x-request-timeout-ms`, `traceparent`; `x-ultimate-records`,
+`x-ultimate-dates`, `x-ultimate-replayed`, `ratelimit-*`, `deprecation`, `sunset`, `link`), so
+listing an origin is the whole declaration. A list of the app's own replaces the default whole.
+
 `AppHttpConfig` is `Omit<HttpConfigInput, BootOwnedHttpKey>` — `port`, `hostname`, `dev`,
 `buildId`, `signInPath`, `trustProxy`, `trustedProxyHops` and `rateLimit.scope` are the boot's, and
 writing one here is a **type error** rather than a value silently overwritten at the next boot.
@@ -60,11 +65,11 @@ something.
 
 ```
 request-id → admit → trace → context → locale → auth → rate-limit → csrf → body → authz
-           → handler → cache-headers → (error-map) → response
+           → handler → cache-headers → (error-map) → response → compress
 ```
 
 Exported as `PIPELINE_STAGES`, each entry carrying a `why`. `pipeline.test.ts`
-asserts the order; `/_x` renders it. Ordering rules worth restating:
+asserts the order. Ordering rules worth restating:
 
 | Rule | Reason |
 |---|---|
@@ -116,6 +121,7 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | `buildId: null` | skew detection off, whatever `BUILD_ID` says; `hostname` never defaults from `HOSTNAME` (the container id under Docker) |
 | an `x-forwarded-client-cert` value in quotes | unescaped ONCE, after the pairs are split — `Subject="O=Acme; Inc,CN=svc-one"` is that whole subject, not `O=Acme` |
 | a request past `maxInflight` (1000) | `X_OVERLOADED` (503) + `retry-after`, shed in the `admit` stage before any work |
+| a public text answer, 1 KiB to 256 KiB, with a declared length | gzip on the wire, from the last stage (`compress`), `vary: accept-encoding` and a weak `etag`. A private answer, a signed-in one that is not `immutable`, `no-transform`, a range or an undeclared length stays identity and unread. HEAD carries GET's coded headers. `html`, `textResponse`, `jsonResponse` declare their bytes; `stream` never does. Exported: `isCompressibleType(contentType)`, `COMPRESS_MIN_BYTES`, `COMPRESS_MAX_BYTES` |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
 rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
@@ -319,6 +325,8 @@ exactly three things. Apps declare it through `defineApi({ http: { mounts } })` 
 | a primitive outside the token's `scopes` | 404 `X_ROUTE_NOT_FOUND`, identical to an unknown path — MCP's hidden-tool rule |
 | per-token allowance | `RateLimit-Limit/-Remaining/-Reset` on every answer, 429 + `Retry-After` past it; keyed by a SHA-256 of the token |
 | paths | `/api/<x>` → `<prefix>/<x>`, `/_x/query/<x>` → `GET <prefix>/<x>` (`mountedPath`) |
+| `rateLimit` declared | spent once per request in the mount's authenticator, before `body` and `authz`, so a 422 or a 403 pays too; it REPLACES `default` on the mount's routes (`rateLimitedBy: 'handler'`); a route's own `meta.rateLimit` and the tenant allowance still apply. Not declared: `default` stands |
+| `Link: rel="successor-version"` | the mounted path when the successor is in the cut and this token holds its scope, success or refusal; otherwise removed. Any other `Link` is the handler's |
 
 `RouteMeta.authenticate` is the mechanism: a route that states one is reached only through it.
 
@@ -492,6 +500,11 @@ export const choosePreferences = action({
 
 One `factsOf()` feeds three renderings — terminal, `application/problem+json`, dev
 overlay — so the `code`/`cause`/`fix` strings can never diverge.
+
+Every problem document carries `retry` (`terminal`, `retryable` or `retry-after`, core's
+`errorRetry`) at its root, a 401 and a scope 404 included. A hidden 5xx answers the class and
+nothing else about the failure. It is what a client maps to an exception, so no app carries a
+middleware to add it.
 
 A problem document's `type` and `docs` answer different questions and are two different
 values. `type` is `problemTypeFor(code)` — `urn:ultimate:error:X_BODY_INVALID`, the RFC-9457

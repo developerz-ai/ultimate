@@ -10,13 +10,13 @@
  * branch and stayed there, at 200, with `x verify` green. `X_LIVE_ROUTE_NO_ISLAND` is now the
  * build error that says so.
  *
- * `render: 'stream'` — the `app/` default — for the activity count, which IS a promise. The rows
- * are not a hole `<Suspense>` could fill: nothing on the server has them.
+ * `render: 'stream'` — the `app/` default — for the activity count, a read the shell does not wait
+ * for: it is the `<Hole>` below. The rows are not a hole: nothing on the server has them.
  */
 
 import { useT } from '@postly/i18n';
 import type { KnownPermission } from '@ultimat3/policy';
-import { defineRoute, island } from '@ultimat3/render';
+import { defineRoute, Hole, island } from '@ultimat3/render';
 import { Skeleton, Text, uiCatalog } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../../shared/actor';
@@ -148,16 +148,24 @@ export const config = defineRoute({
   // measured: 171600 B (x build --target static) — why: the typed read client's `url()`, how a
   // `query({ download })` mints its signed URL — raised 167.5kb → 167.6kb: page boot 78,198 →
   // 78,326 B (+128), the one method every read's client carries and a download's type exposes.
-  budget: { js: '167.6kb' },
-  /** The badge's count is a read, so it is resolved here — the only place this page fetches. */
-  load: () => memberQueries.feedActivity({ orgId: useActor().orgId }),
+  // measured: 171757 B (x build --target static) — why: a remote error carries the server's
+  // `requestId` (core's `withRequestId`, in the transport the page boot holds) — raised 167.6kb →
+  // 168kb (30.0.0): page boot 78,326 → 78,468 B (+142), island + inline runtime +51.
+  budget: { js: '168kb' },
   meta: ({ t }) => ({ title: t('app.feed.metaTitle'), robots: { index: false } }),
 });
 
-/** The rows the read answered: one synthetic row per org, or none before the first post. */
-type FeedActivity = Awaited<ReturnType<typeof memberQueries.feedActivity>>;
+/**
+ * The badge's count: the only place this page fetches, and it starts after the first flush. The
+ * read answers one synthetic row per org, or none before the first post.
+ */
+async function activityLine(): Promise<string> {
+  const t = useT();
+  const rows = await memberQueries.feedActivity({ orgId: useActor().orgId });
+  return t('app.feed.activity', { count: rows[0]?.publishedCount ?? 0 });
+}
 
-export function Page(props: { readonly data: FeedActivity }): JSX.Element {
+export function Page(): JSX.Element {
   const t = useT();
   const actor = useActor();
   const viewer = useViewer();
@@ -167,7 +175,7 @@ export function Page(props: { readonly data: FeedActivity }): JSX.Element {
       <header class={styles.header}>
         <h1>{t('app.feed.heading', { org: actor.org.name })}</h1>
         <Text tone="muted" class={styles.activity}>
-          {t('app.feed.activity', { count: props.data[0]?.publishedCount ?? 0 })}
+          <Hole fallback={<Skeleton lines={1} />}>{activityLine}</Hole>
         </Text>
         <a class={styles.new} href="/posts/new">
           {t('app.feed.newPost')}

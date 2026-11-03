@@ -1381,3 +1381,55 @@ Verbatim from [`packages/jobs/CLAUDE.md`](../../packages/jobs/CLAUDE.md), which 
   **`handle` is AT LEAST ONCE** — never invert; a REPLAYED batch writes no ledger row. `tenant: 'none'`
   is the only cross-tenant scope (`backfill-scope.ts`). `x_backfills` is what was SWEPT, keyed by RUN;
   only `completed` blocks. The throttle is spent INSIDE the batch's `step.run`.
+
+## Moved out 2026-11-03 (plan 101 wave 2, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/jobs/CLAUDE.md`](../../packages/jobs/CLAUDE.md), which keeps each rule's first sentence and points here.
+
+### Rules — registration and declarations
+
+- **JOBS DECLARE THEIR TENANT, and `executeJob` INSTALLS the context — do not re-litigate.**
+  `tenant` is REQUIRED (`(input) => input.orgId` or `'none'`; `X_JOB_TENANT_REQUIRED` backstop).
+  `executeJob` puts the derived org on the ctx's actor (`jobRunActor`, org only) and runs the body in
+  `runWithContext`; `'none'` STRIPS the org (fail-closed).
+  `tenantFor` is a METHOD on `JobHandle` (variance). The queue row's `tenantId` stays the ENQUEUER's
+  (the limiter's bucket). `tenancy-cross-surface.test.ts` asserts HTTP and job verdicts are EQUAL.
+
+
+### Rules — the operator surface
+
+- **`progress()` is throttled in `progress.ts`** and flushed before every settle. **`onSettled`
+  (`settled.ts`) is the ONE ending hook** — `completed`, `dead-lettered`, `dropped`, `refused` —
+  AFTER a settle that LANDED, in the body's tenant scope, `ON_SETTLED_ATTEMPTS` tries, never
+  rethrown, at most once across a crash. Never for a cancel, a retry or a suspension. Runs in
+  `runToCompletion`, under `run.scope` and `onSettledTimeout`, 30 s (`settled-signal.test.ts`).
+
+
+### Rules — the driver and SQL
+
+- **`SQL_JOBS_TABLE` is the ONE install point** for every durable table (`x_jobs`, `x_job_*`, `x_backfills`,
+  `x_outbox`, `x_scheduler_*`). A NEW table is also a name in
+  `packages/cli/src/framework-schema.ts`. A shipped table grows by `alter table ... add column if
+  not exists`. Its comments carry NO apostrophes and NO semicolons (it splits on `;`; `driver-pg-sql.test.ts` checks
+  quote parity).
+
+- Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm`
+  (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Pinned in
+  `type-pins.ts`. A `waitForEvent` stores the RAW payload and parses it by its required `schema` on
+  a hit and a replay (`X_JOB_EVENT_INVALID`). All time is epoch ms (`nowMs()`, `clock.ts`).
+
+
+### Rules — idle cost and the wake
+
+- **An idle round touches no store.** The scheduler keeps each watermark and its next occurrence in
+  memory while it leads (`known`), trusts a lease for `LeaderElection.renewEveryMs`, reads the pause
+  table only when a task is DUE, and folds counters every `COUNTER_ROLLUP_INTERVAL_MS`. What makes
+  the trust safe is the fire statement's watermark fence, never the lease.
+
+
+### Rules — numbers and limits
+
+- **`concurrency` is resolved ONCE** (`concurrency.ts`): a number, or `{ key, limit, whenBusy }` per
+  key. The handle carries `concurrency` (the limit), `whenBusy` (set exactly when keyed) and
+  `concurrencyKeyFor()` — a METHOD. Lease key `job-key:<encoded name>:<key>`; plain `job:<name>`.
+  A bad cap is `X_JOB_DECLARATION_INVALID`.

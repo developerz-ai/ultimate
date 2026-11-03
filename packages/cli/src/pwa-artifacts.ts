@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import type { PwaColors, PwaOfflineConfig } from '@ultimat3/core';
 import { escapeHtml, localeSegment, pushWired } from '@ultimat3/core';
 import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders } from '@ultimat3/http';
+import { applyCacheHeaders, textResponse } from '@ultimat3/http';
 import { appLocaleSet } from '@ultimat3/i18n/app-catalogs';
 import {
   appleTouchLinks,
@@ -262,7 +262,8 @@ export const pwaManifestRoute = (artifacts: PwaArtifacts): Route => ({
   },
   handler: async (_request: UltimateRequest, ctx: RequestContext): Promise<Response> =>
     applyCacheHeaders(
-      new Response(manifestIn(artifacts.manifests, ctx.locale)?.body ?? artifacts.body, {
+      // `textResponse` for the length it declares: `compress` reads nothing undeclared.
+      textResponse(manifestIn(artifacts.manifests, ctx.locale)?.body ?? artifacts.body, {
         headers: { 'content-type': 'application/manifest+json; charset=utf-8' },
       }),
       MANIFEST_CACHE,

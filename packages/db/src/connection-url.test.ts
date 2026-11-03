@@ -61,6 +61,50 @@ describe('unit · connectionUrl', () => {
   });
 });
 
+describe('unit · connectionUrl bounds', () => {
+  const OPTIONS = '?options=-c+statement_timeout%3D10000+-c+idle_in_transaction_session_timeout%3D';
+  const BASE = 'postgres://app@db.internal:5432/app';
+
+  test.each([
+    ['web', 10_000, 30_000],
+    ['sync', 10_000, 30_000],
+    ['worker', 120_000, 120_000],
+    ['scheduler', 15_000, 120_000],
+    ['migrate', 0, 0],
+    ['replicator', 0, 0],
+  ] as const)('%s with no pooler sends both bounds, byte for byte', (role, statement, idle) => {
+    expect(connectionUrl({ url: BASE }, poolProfileFor(role))).toBe(
+      `${BASE}?options=-c+statement_timeout%3D${statement}+-c+idle_in_transaction_session_timeout%3D${idle}&application_name=ultimate`,
+    );
+  });
+
+  test.each(['session', 'transaction'] as const)(
+    '%s carries neither bound and no empty options',
+    (pooler) => {
+      expect(connectionUrl({ url: BASE, pooler }, PROFILE)).toBe(
+        `${BASE}?application_name=ultimate`,
+      );
+    },
+  );
+
+  test('a pooler keeps what the operator wrote in options', () => {
+    const built = connectionUrl(
+      { url: `${BASE}?options=-c+search_path%3Dapp`, pooler: 'transaction' },
+      PROFILE,
+    );
+
+    expect(built).toBe(`${BASE}?options=-c+search_path%3Dapp&application_name=ultimate`);
+  });
+
+  test('with no pooler the operator keeps theirs and the bounds join it', () => {
+    const built = connectionUrl({ url: `${BASE}?options=-c+search_path%3Dapp` }, PROFILE);
+
+    expect(built).toBe(
+      `${BASE}${OPTIONS.replace('?options=', '?options=-c+search_path%3Dapp+')}30000&application_name=ultimate`,
+    );
+  });
+});
+
 /**
  * `new URL()` accepts a scheme-less connection string — `db.internal:5432/app` parses with
  * `db.internal:` as the SCHEME — so the value reached `Bun.SQL`, which read it as a Postgres url
