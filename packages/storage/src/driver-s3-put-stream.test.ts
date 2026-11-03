@@ -145,6 +145,36 @@ describe('putStream on the s3 wire', () => {
   });
 });
 
+describe('answers with nothing to go on', () => {
+  test('a Create with no UploadId and a part with no ETag are refused writes, and open nothing', async () => {
+    fake.createAnswersNoId = true;
+    const noId = await catchError(() =>
+      disk.putStream(KEY, chunksOf(6, MIB), { maxBytes: 64 * MIB }),
+    );
+    expect(anyCode(noId)).toBe('X_STORAGE_PUT_FAILED');
+    expect((noId as { cause: string }).cause).toContain('CreateMultipartUpload');
+
+    fake.createAnswersNoId = false;
+    fake.partAnswersNoEtag = true;
+    const noEtag = await catchError(() =>
+      disk.putStream(KEY, chunksOf(6, MIB), { maxBytes: 64 * MIB }),
+    );
+    expect(anyCode(noEtag)).toBe('X_STORAGE_PUT_FAILED');
+    expect((noEtag as { cause: string }).cause).toContain('UploadPart');
+    expect(fake.openUploads()).toEqual([]);
+    expect(fake.store.has(KEY)).toBe(false);
+  });
+
+  test('a refusal this process coded before the PUT is not settled as a lost answer', async () => {
+    const keyless = s3Driver({ bucket: 'b', client: fake, fetch: fake.fetch, env: {} });
+    const refused = await catchError(() =>
+      keyless.putStream(KEY, chunksOf(1, 1024), { maxBytes: 64 * MIB }),
+    );
+    expect(anyCode(refused)).toBe('X_ENV_MISSING');
+    expect(fake.signedCalls).toEqual([]);
+  });
+});
+
 describe('partBytesFor', () => {
   test('never under the protocol floor, and 10,000 parts always cover maxBytes', () => {
     expect(partBytesFor(1)).toBe(5 * MIB);

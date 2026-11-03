@@ -129,8 +129,12 @@ export class FakeS3Client implements S3ClientLike {
     | 'put-after'
     | 'write-before'
     | 'write-after'
+    | 'abort-before'
     | undefined;
   afterLostAnswer: (() => void) | undefined;
+  /** A Create answered with no `<UploadId>`, a part with no `ETag`: answers with nothing to go on. */
+  createAnswersNoId = false;
+  partAnswersNoEtag = false;
   /** Multipart uploads opened and neither completed nor aborted: what would go on billing. */
   private readonly uploads = new Map<
     string,
@@ -164,7 +168,9 @@ export class FakeS3Client implements S3ClientLike {
             parsed.search === '' &&
             init.headers['x-amz-copy-source'] === undefined
           ? 'put'
-          : undefined;
+          : init.method === 'DELETE' && parsed.searchParams.has('uploadId')
+            ? 'abort'
+            : undefined;
     const lost = this.loseAnswerOf;
     if (kind !== undefined && lost?.startsWith(kind) === true) {
       this.loseAnswerOf = undefined;
@@ -257,6 +263,7 @@ export class FakeS3Client implements S3ClientLike {
     };
     if (init.method === 'POST' && url.searchParams.has('uploads')) {
       if (this.failCreateWith !== undefined) return refusal(this.failCreateWith);
+      if (this.createAnswersNoId) return new Response('<InitiateMultipartUploadResult/>');
       const uploadId = `upload-${this.uploads.size + 1}`;
       this.uploads.set(uploadId, { key, type: init.headers['content-type'], parts: new Map() });
       this.headersOf.set(key, init.headers);
@@ -274,6 +281,7 @@ export class FakeS3Client implements S3ClientLike {
     }
     if (init.method === 'PUT') {
       if (this.failPartWith !== undefined) return refusal(this.failPartWith);
+      if (this.partAnswersNoEtag) return new Response(null, { status: 200 });
       const number = Number(url.searchParams.get('partNumber'));
       upload.parts.set(number, init.body ?? new Uint8Array());
       return new Response(null, {

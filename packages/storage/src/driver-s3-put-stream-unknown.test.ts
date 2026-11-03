@@ -65,6 +65,18 @@ describe('a multipart Complete whose answer never arrives', () => {
     expect((refused as { fix: string }).fix).toContain('stat(');
   });
 
+  test('an abort whose answer is lost too cannot settle it, and is not reported as a refusal', async () => {
+    fake.loseAnswerOf = 'complete-after';
+    fake.afterLostAnswer = () => {
+      fake.store.set(KEY, { bytes: bytesOf('someone else') });
+      fake.loseAnswerOf = 'abort-before';
+    };
+    const refused = await catchError(() =>
+      disk.putStream(KEY, chunksOf(12, MIB), { maxBytes: 64 * MIB }),
+    );
+    expect(anyCode(refused)).toBe('X_STORAGE_WRITE_OUTCOME_UNKNOWN');
+  });
+
   test('a stat that is itself refused cannot settle it either', async () => {
     fake.loseAnswerOf = 'complete-after';
     fake.afterLostAnswer = () => {

@@ -3,6 +3,7 @@
 // imports the app's module graph or a database driver.
 
 import { dbExecutor, postgresClient } from '@ultimat3/db';
+import type { JobDriver } from '@ultimat3/jobs';
 import { postgresJobDriver, registeredJobs } from '@ultimat3/jobs';
 import { loadAppConfig } from './app-config-load';
 import { loadApp } from './app-load';
@@ -33,10 +34,17 @@ export function openQueue(
     applicationName: 'x deploy verify',
   });
   const driver = postgresJobDriver({ executor: dbExecutor(() => client) });
-  return Promise.resolve({
+  return Promise.resolve(queueReaderOf(driver, () => client.close()));
+}
+
+/**
+ * Any driver as the grade's reader. A driver with no registry lists no worker, and one with no
+ * `demand()` lists no work: the grade then reads every queue unserved, never served by default.
+ */
+export function queueReaderOf(driver: JobDriver, close: () => Promise<void>): QueueReader {
+  return {
     workers: async () => (await driver.introspect?.workers()) ?? [],
-    // The pg driver always has it; the fallback is the interface's own reading for one without.
     demand: async () => (await driver.demand?.()) ?? [],
-    close: () => client.close(),
-  });
+    close,
+  };
 }
