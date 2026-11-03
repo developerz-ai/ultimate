@@ -2,11 +2,11 @@
 // three headers a delivery carries, and the parse of the one header a receiver reads back.
 //
 // It lives HERE for the reason `timing-safe-equal.ts` does, in that file's own words: two packages
-// need the identical guarantee and cannot share it any other way. `@ultimat3/jobs` (tier 3) signs
-// a delivery and its boundary forbids `@ultimat3/http`; `@ultimat3/http` (tier 2) verifies one and
-// may not reach tier 3. Neither is the other's dependency, so the one copy lives at the tier both
-// can reach. Before this module the spelling was stated twice and held together by a hex literal
-// asserted in two test files — which works and is not a single source of truth.
+// need the identical guarantee. `@ultimat3/jobs` (tier 3) signs a delivery; `@ultimat3/http`
+// (tier 2) verifies one and may not reach tier 3. `jobs` may import `http` (it does, for
+// `webhookReceiver()`'s route), but a sender's format is not the receiver's policy, so the format
+// sits below both and neither re-declares it. Before this module the spelling was stated twice and
+// held together by a hex literal asserted in two test files — not a single source of truth.
 //
 // FORMAT and never POLICY. What counts as fresh, how large a body may be, and which status a
 // refusal answers with are the receiver's questions and stay in `@ultimat3/http`.

@@ -1,6 +1,7 @@
 // Single responsibility: the refusal a `job()` declaration earns when it lacks a field every job
-// declares. Its own module because `errors.ts` sits at the size ceiling; the CODE is registered
-// there, beside every other jobs code, and only the constructor lives here.
+// declares. Its own module because `errors.ts` sits at the size ceiling; the CODE is registered in
+// `error-codes.ts`, beside every other jobs code; the constructor and the read that finds the
+// missing fields live here.
 
 import { UltimateError } from '@ultimat3/core';
 
@@ -31,4 +32,16 @@ export class JobDeclarationInvalidError extends UltimateError {
       meta: { job: input.job, missing: [...input.missing] },
     });
   }
+}
+
+/** The required fields a definition lacks, in declaration order. Read off the value, not the type. */
+export function missingJobFields(definition: object): string[] {
+  const loose = definition as unknown as Readonly<Record<string, unknown>>;
+  const missing: string[] = [];
+  if (typeof loose['input'] !== 'object' || loose['input'] === null) missing.push('input');
+  if (typeof loose['idempotencyKey'] !== 'function') missing.push('idempotencyKey');
+  if (loose['tenant'] === undefined) missing.push('tenant');
+  if (typeof loose['retry'] !== 'object' || loose['retry'] === null) missing.push('retry');
+  if (typeof loose['run'] !== 'function') missing.push('run');
+  return missing;
 }

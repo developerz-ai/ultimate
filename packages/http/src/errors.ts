@@ -422,12 +422,22 @@ export const requestTimedOut = (method: string, pathname: string, timeoutMs: num
  * that arrived, never the secret, and never the body — because a `cause` reaches both the caller
  * and the log store, and a credential in either is a leak wearing a diagnostic's clothes.
  */
-export const webhookSignatureInvalid = (pathname: string, reason: string): HttpError =>
+export const webhookSignatureInvalid = (
+  pathname: string,
+  reason: string,
+  via: WebhookVerifier = 'verifyWebhookSignature',
+): HttpError =>
   new HttpError({
     code: 'X_WEBHOOK_SIGNATURE_INVALID',
     cause: `${pathname} refused an inbound webhook: ${reason}`,
-    fix: 'sign the delivery with the secret this endpoint was registered under, or re-read the secret from your sender dashboard and pass it as verifyWebhookSignature(request, { secret })',
+    fix:
+      via === 'verifyBodyHmac'
+        ? 'verifyBodyHmac({ bytes, secret, given, encoding, prefix }) — compare encoding and prefix with the vendor docs, sign over the exact bytes the vendor names, and re-read the secret from the vendor dashboard'
+        : 'sign the delivery with the secret this endpoint was registered under, or re-read the secret from your sender dashboard and pass it as verifyWebhookSignature(request, { secret })',
   });
+
+/** The two inbound checks, named so a refusal's `fix:` is the call its caller made. */
+export type WebhookVerifier = 'verifyWebhookSignature' | 'verifyBodyHmac';
 
 /**
  * Signed correctly, and outside the replay window. Its own code because the repair is a different
@@ -452,10 +462,16 @@ export const webhookSignatureStale = (
  * repair is the route's configuration and nothing a sender does can fix it. `shape` is `typeof`
  * or "an empty string" — never the value, which is a credential when it is one.
  */
-export const webhookSecretMissing = (shape: string): HttpError =>
+export const webhookSecretMissing = (
+  shape: string,
+  via: WebhookVerifier = 'verifyWebhookSignature',
+): HttpError =>
   new HttpError({
     code: 'X_CONFIG_INVALID',
-    cause: `verifyWebhookSignature was given ${shape} as its secret, and a mac under an empty key is one anyone can compute — every forged delivery would verify`,
-    fix: "verifyWebhookSignature(request, { secret: process.env.WEBHOOK_SECRET ?? '' }) in the api/ route receiving it, with WEBHOOK_SECRET set in the deployment environment to the signing secret the sender shows for this endpoint — an unset variable is then refused here rather than verified against",
+    cause: `${via} was given ${shape} as its secret, and a mac under an empty key is one anyone can compute — every forged delivery would verify`,
+    fix:
+      via === 'verifyBodyHmac'
+        ? "verifyBodyHmac({ bytes, secret: process.env.VENDOR_WEBHOOK_SECRET ?? '', given, encoding }) in the receiver's verify, with VENDOR_WEBHOOK_SECRET set on the web role to the signing secret the vendor shows — an unset variable is then refused here rather than verified against"
+        : "verifyWebhookSignature(request, { secret: process.env.WEBHOOK_SECRET ?? '' }) in the receiver's verify, with WEBHOOK_SECRET set in the deployment environment to the signing secret the sender shows for this endpoint — an unset variable is then refused here rather than verified against",
     meta: { option: 'webhook secret' },
   });

@@ -6,7 +6,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import { text, uuid } from './columns';
 import { entity } from './entity';
-import { ENTITY_ERROR_CODES } from './errors';
+import { ENTITY_ERROR_CODES, nPlusOneWrite } from './errors';
 import { nPlusOne, preloadsFor } from './n-plus-one';
 import { clearRegistry } from './registry';
 import { relationMap } from './relations';
@@ -197,6 +197,31 @@ describe('a write loop, fixed by the bulk form of the same call', () => {
     expect(fix).toContain('db.n1_posts.insertAll(rows)');
     expect(fix).toContain('db.n1_posts.updateWhere(filter, patch)');
     expect(write('n1_posts', undefined).fix).toBe(fix);
+  });
+
+  // A job enqueue is a write the queue's own statement sends, so the loop is `x_outbox` or
+  // `x_jobs` text — and `insertAll` is a call no enqueuer can make. The batch is the HANDLE's.
+  test('an enqueue in a loop names handle.enqueueMany, for the outbox and the queue alike', () => {
+    for (const subject of [
+      'with staged as (\n  insert into x_outbox\n    (id, job) values ($1, $2)',
+      'with inserted as (\n  insert into x_jobs\n    (id, name) select $1::uuid',
+    ]) {
+      const error = nPlusOne({ kind: 'write', subject, count: 9 });
+      expect(error.code).toBe('X_N_PLUS_ONE_WRITE');
+      // The cause is the SQL form's, word for word: the subject repeated, one write per row.
+      expect(error.cause).toBe(nPlusOneWrite(subject, 9, { form: 'sql' }).cause);
+      expect(error.fix).toStartWith('handle.enqueueMany(inputs)');
+      expect(error.fix).not.toContain('insert … values');
+    }
+  });
+
+  test('a table merely NAMED like the queue is still hand-written SQL', () => {
+    const fix = nPlusOne({
+      kind: 'write',
+      subject: 'insert into x_jobs_archive (id) values ($1)',
+      count: 9,
+    }).fix;
+    expect(fix).toContain('insert … values');
   });
 
   test('hand-written SQL names the statement and the suppression, never a chain', () => {

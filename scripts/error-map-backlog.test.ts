@@ -11,6 +11,7 @@ import {
   UNDECIDED,
 } from './error-map-backlog';
 import { BASE_REF, baseRef, textAt } from './lib/base-ref';
+import { UNDECIDED_FILE } from './lib/error-map-undecided';
 import { tableDeclaration } from './lib/pin-tables';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 
@@ -75,9 +76,15 @@ describe('UNDECIDED only shrinks, code by code', () => {
     async () => {
       const root = repoRoot();
       expect(await baseRef(root)).toBe(BASE_REF);
-      const then = await textAt(root, BASE_REF, 'scripts/error-map-backlog.ts');
+      // The literal moved to its own file in plan 101; a base from before the split still holds
+      // it in the backlog file, so the old path is the fallback, never a second source.
+      const then =
+        (await textAt(root, BASE_REF, UNDECIDED_FILE)) ??
+        (await textAt(root, BASE_REF, 'scripts/error-map-backlog.ts'));
       if (then === undefined)
-        expect.unreachable(`scripts/error-map-backlog.ts is not at ${BASE_REF}`);
+        expect.unreachable(
+          `neither ${UNDECIDED_FILE} nor scripts/error-map-backlog.ts is at ${BASE_REF}`,
+        );
       const base = undecidedIn(then);
       // Non-vacuity: the base literal was found and read.
       expect(base.size).toBeGreaterThan(0);
@@ -107,10 +114,13 @@ describe('two lists, one meaning each', () => {
     }
   });
 
-  test('OFF_SOCKET is the first literal in the file — the one --off-socket writes', async () => {
+  test('OFF_SOCKET is the literal in the file --off-socket writes, and UNDECIDED is not', async () => {
+    // `offSocketPinIn` falls back to `backlogPinIn` for a code already in the text, so the
+    // shrink-only list must never share the file the generator writes into.
     const text = await Bun.file(new URL('./error-map-backlog.ts', import.meta.url)).text();
-    const off = text.indexOf('export const OFF_SOCKET');
-    expect(off).toBeGreaterThan(-1);
-    expect(off).toBeLessThan(text.indexOf('export const UNDECIDED'));
+    expect(text.indexOf('export const OFF_SOCKET')).toBeGreaterThan(-1);
+    expect(text).not.toContain('export const UNDECIDED');
+    const undecided = await Bun.file(new URL(`../${UNDECIDED_FILE}`, import.meta.url)).text();
+    expect(undecided).toContain('export const UNDECIDED');
   });
 });

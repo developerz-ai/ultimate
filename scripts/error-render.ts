@@ -304,6 +304,8 @@ const LOCAL_DUCK_RENDERER =
 /** The names in this file that render an `unknown` by duck-typing it. */
 export function localDuckRenderers(code: string): ReadonlySet<string> {
   const names = new Set<string>();
+  // Both alternatives need `instanceof`: most files have none, and the regex was 16% of the step.
+  if (!code.includes('instanceof')) return names;
   for (const match of code.matchAll(LOCAL_DUCK_RENDERER)) {
     const name = match[1] ?? match[2];
     if (name !== undefined) names.add(name);

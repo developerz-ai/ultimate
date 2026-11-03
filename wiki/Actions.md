@@ -32,7 +32,7 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `mcp.visibleTo` | `readonly string[]` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
 | `rateLimit` | `{ limit: number; windowMs: number }` | no | spent **inside `invoke`**, so the HTTP route, the MCP tool, the in-app agent's tool call and `.job()` draw on ONE bucket — the third call to a `limit: 2` action is `X_RATE_LIMITED` whichever surface it came through; a direct in-process call spends nothing. Keyed actor → org → IP; counted in `@ultimat3/http`'s installed store (`installRateLimitStore()`, filled by the boot on every role with the same instance `httpServer({ rateLimitStore })` holds). Over HTTP the refusal is `429` + `Retry-After` and `RateLimit-*`, and the route is not also capped by the `default` bucket; the same `toBucket` conversion feeds `openapi.json`, so the published numbers are the enforced ones. `/mcp` additionally buckets by verb class (`MCP_RATE_LIMITS`, read 120/min, write 20/min per token) |
 | `idempotent` | `boolean` | no — **required `true` on a `mutator`** | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument. Inside a transaction the Postgres store settles the record with the write's own `COMMIT`, so a rollback never leaves a `settled` record behind. A field core redacts by name (`apiKey`, `password`, `*Token`…) or a `Secret` is stored as `[redacted]`, and the replay of such an answer is `X_IDEMPOTENT_REPLAY_REDACTED` |
-| `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a vendor holds (`'/api/webhooks/wompi'`). Static, lowercase, no params, never `/_x` (`X_ACTION_HTTP_PATH_INVALID`) |
+| `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a caller already holds (`'/api/uploads/signed'`). Static, lowercase, no params, never `/_x` (`X_ACTION_HTTP_PATH_INVALID`). An inbound webhook is not this door: it is `webhookReceiver()` ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks)) |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
 
 **`.sensitive()` on an input field** — `cardPan: t.string.sensitive()` — means sent in, never
@@ -113,13 +113,13 @@ Rejected by that rule: an MCP-specific permission table, a "trusted tool" mode, 
 ## `action` must never
 
 - read the request object, headers, or cookies directly — actor and tenant come from `ctx`.
-  One exception is a sender whose credential is a **signature over the raw body**. Amazon SNS
-  posts `text/plain`, and a payment gateway signs a header over the bytes. The action gets the
-  body parsed (a `text/*` body as a decoded string), and `useRequestBodyBytes()` from
-  `@ultimat3/http` returns the exact bytes that body was parsed from. The read is the same
-  size-capped and cached one, so reading both costs one read. The policy stays
-  `allow('public')`, and the signature check in `handle` authenticates the sender. Off HTTP (a
-  job, MCP) it is `X_NO_REQUEST`
+  One exception is a caller whose credential is a **signature over the raw body** — a signed
+  upload. `useRequestBodyBytes()` from `@ultimat3/http` returns the exact bytes the body was
+  parsed from (the same size-capped, cached read). Off HTTP (a job, MCP) it is `X_NO_REQUEST`.
+  A vendor's **webhook** never comes through an action: the input schema answers 400/422 before
+  the signature is checked, and `application/xml`, `application/octet-stream` or no content type
+  is `X_BODY_INVALID` with the handler never reached. The one door is `webhookReceiver()`
+  ([Jobs and workflows](Jobs-And-Workflows#inbound-webhooks))
 - render, redirect, or return HTML
 - perform its own authorization inside `handle` — that belongs in `policy`
 - do slow work inline — enqueue a `job`

@@ -1,7 +1,7 @@
 // Single responsibility: the refusals `job.concurrency` earns — a cap mis-declared, a key that
 // cannot name a lease, a key already holding its limit, and a driver that cannot hold the cap.
-// Its own module because `errors.ts` sits at the size ceiling; the CODES are registered there,
-// beside every other jobs code.
+// Its own module because `errors.ts` sits at the size ceiling; the CODES are registered in
+// `error-codes.ts`, beside every other jobs code.
 
 import { isFixShellSafe, renderCauseValue, renderFixShellArg, UltimateError } from '@ultimat3/core';
 

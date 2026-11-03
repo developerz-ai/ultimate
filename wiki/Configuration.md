@@ -652,7 +652,7 @@ picked — it never sits beside it. The type is `RuntimeOverrides` (`packages/cl
 | `rateLimitStore` | the Postgres store the boot installs over its own pool. The store's scope decides `rateLimit.scope`; a `'process'` store is legal and warned about — every limit then applies once per replica |
 | `isrStore` | the per-process memory store for regenerated ISR pages (one per replica, so a purge tag reaches one of them) |
 | `middleware` | nothing — prepended to the request pipeline, outermost first |
-| `routes` | nothing — plain HTTP routes at paths no primitive projects to (an OAuth token endpoint, a feed with its own content type), mounted after the framework's routes and before the pages, through the whole pipeline |
+| `routes` | nothing — plain HTTP routes at paths no primitive projects to (an OAuth token endpoint, a feed with its own content type; every declared `webhookReceiver()`'s are mounted beside them without a line here), mounted after the framework's routes and before the pages, through the whole pipeline |
 | `images` | `builtinImageDriver`, the `/media/*` transform |
 | `syncAuthenticate` | the adapter over the app's own `configureAuthenticator()` that authenticates a `sync` socket |
 

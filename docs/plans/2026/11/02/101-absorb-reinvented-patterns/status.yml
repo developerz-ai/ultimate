@@ -4,8 +4,8 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 39
-current_focus: "wave 3"
+percent: 44
+current_focus: "wave 4"
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -100,8 +100,8 @@ slices:
   - file: 30-perf-jobs-claim-relay.md
     tier: 3
     sweep: "7"
-    status: in_progress
-    percent: 50
+    status: complete
+    percent: 100
   - file: 19-cli-deploy-verify.md
     tier: 3
     sweep: "7b"
@@ -245,28 +245,29 @@ slices:
   - file: 13-jobs-bulk-and-rate.md
     tier: 2
     sweep: "14"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 14-jobs-inbound-webhooks.md
     tier: 2
     sweep: "14"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 15-jobs-recipes.md
     tier: 3
     sweep: "14"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 16-jobs-import-rows.md
     tier: 0
     sweep: "14"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 30-perf-gate.md
     tier: 0
     sweep: "14"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 50
+    note: "the errors step is done (masks memoised: 31.6-35.1 s user CPU to 16.5-16.9 s). Coverage slicing is not shipped: Bun's lcov counts functions unnamed, so a union of slices under-reads function coverage by 2-4 points"
   - file: 20-cli-db-diagnostics.md
     tier: 1
     sweep: "15"

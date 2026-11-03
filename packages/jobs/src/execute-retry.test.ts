@@ -305,7 +305,7 @@ describe('retry-after retries at the time the responder named', () => {
 
 describe('this package classifies its own codes, and the executor acts on them', () => {
   // Not a synthetic code: a duplicate step name is a defect in the handler that replays
-  // identically forever, so `errors.ts` registers `X_STEP_DUPLICATE` as terminal and the run ends
+  // identically forever, so `error-codes.ts` registers `X_STEP_DUPLICATE` as terminal and the run ends
   // on the attempt it happened. Proven through the real step runner, not a hand-built error.
   test('a duplicate step name dead-letters on the first attempt', async () => {
     resetJobs();

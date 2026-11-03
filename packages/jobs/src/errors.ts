@@ -1,174 +1,8 @@
-// The X_* codes owned by @ultimat3/jobs. Every one names the command or code change that
-// fixes it — a job failure an agent cannot act on is a job failure that gets retried forever.
-import { registerErrorCodes, registerErrorRetry, UltimateError } from '@ultimat3/core';
-
-/** Codes this package declares and owns. */
-export const JOB_OWNED_ERROR_CODES = [
-  'X_JOB_DUPLICATE',
-  'X_STEP_DUPLICATE',
-  'X_JOB_TIMEOUT',
-  'X_JOB_MAX_ATTEMPTS',
-  'X_DRIVER_UNAVAILABLE',
-  'X_IDEMPOTENCY_REQUIRED',
-  'X_JOB_TENANT_REQUIRED',
-  'X_JOB_CONCURRENCY_UNENFORCEABLE',
-  'X_JOB_LEASE_LOST',
-  'X_JOB_SLOT_LOST',
-  'X_JOB_NOT_CANCELLABLE',
-  'X_OUTBOX_NO_TX',
-  'X_BACKFILL_PENDING',
-  'X_BACKFILL_APPLIED',
-  'X_BACKFILL_ENVIRONMENT',
-  'X_BACKFILL_MIGRATION_PENDING',
-  'X_BACKFILL_RUNNING',
-  'X_BACKFILL_STALLED',
-  'X_BACKFILL_UNKNOWN',
-  'X_JOB_ROW_STATUS_UNKNOWN',
-  'X_ACTION_JOB_UNBRIDGED',
-  'X_JOB_CLAIM_QUEUES_EMPTY',
-  'X_WEBHOOK_ENDPOINT_UNKNOWN',
-  'X_WEBHOOK_ENDPOINT_INVALID',
-  'X_WEBHOOK_ENDPOINT_DISABLED',
-  'X_WEBHOOK_EVENT_UNKNOWN',
-  'X_WEBHOOK_EVENT_INVALID',
-  'X_WEBHOOK_DELIVERY_FAILED',
-  'X_WEBHOOK_DELIVERY_THROTTLED',
-  'X_WEBHOOK_DELIVERY_REJECTED',
-  'X_EXPORT_ROW_INVALID',
-  'X_EXPORT_PART_TOO_LARGE',
-  'X_JOB_DECLARATION_INVALID',
-  'X_JOB_NOT_REQUEUEABLE',
-  'X_JOB_KEY_BUSY',
-  'X_JOB_NOT_REMOVABLE',
-  'X_JOB_NOT_PROMOTABLE',
-  'X_JOB_PAGE_INVALID',
-  'X_JOB_ON_SETTLED_FAILED',
-  'X_JOB_NOT_FOUND',
-  'X_JOB_TENANT_MISMATCH',
-  'X_STEP_OUTPUT_UNSERIALIZABLE',
-  'X_JOB_EVENT_INVALID',
-] as const;
-
-/**
- * `X_NOT_IMPLEMENTED`, `X_ABORTED` and `X_DRAINING` are `@ultimat3/core`'s. The first is thrown as
- * core's own `NotImplementedError` (`inspect.ts`), the other two by
- * `JobAbortedError` and `JobDrainedError` below; jobs keeps no title for any of the three, because the copy this file used to hold was a second title that nothing would have failed
- * on once core's changed. Listed here all the same, so `JobErrorCode` can name every code a job
- * can see — `X_DRAINING` was thrown for a day before it was, and the type said it could not be.
- */
-export const JOB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ABORTED', 'X_DRAINING'] as const;
-
-/** Every code jobs can throw: the ones it owns plus the ones it borrows. */
-export const JOB_ERROR_CODES = [...JOB_OWNED_ERROR_CODES, ...JOB_BORROWED_ERROR_CODES] as const;
-
-export type JobOwnedErrorCode = (typeof JOB_OWNED_ERROR_CODES)[number];
-export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
-
-export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
-  X_JOB_DUPLICATE: 'a live key already has a job',
-  X_STEP_DUPLICATE: 'two step.run calls share a name',
-  X_JOB_TIMEOUT: 'a job exceeded its wall-clock limit',
-  X_JOB_MAX_ATTEMPTS: 'the job exhausted its retries',
-  X_DRIVER_UNAVAILABLE: 'the queue driver is unreachable',
-  X_IDEMPOTENCY_REQUIRED: 'the job has no idempotencyKey',
-  X_JOB_TENANT_REQUIRED: 'the job declares no tenant',
-  X_JOB_CONCURRENCY_UNENFORCEABLE: 'job.concurrency is declared and cannot be enforced',
-  X_JOB_LEASE_LOST: 'the queue took this job back mid-run',
-  X_JOB_SLOT_LOST: 'the fleet concurrency slot was taken by another worker',
-  X_JOB_NOT_CANCELLABLE: 'the job cannot be cancelled',
-  X_OUTBOX_NO_TX: 'enqueue outside a transaction',
-  X_BACKFILL_PENDING: 'a declared backfill has never completed',
-  X_BACKFILL_APPLIED: 'the ledger already holds a completed pass',
-  X_BACKFILL_ENVIRONMENT: 'the backfill is not declared for this environment',
-  X_BACKFILL_MIGRATION_PENDING: 'the migration this backfill requires is not applied',
-  X_BACKFILL_RUNNING: 'a pass under this name is already live',
-  X_BACKFILL_STALLED: 'the sweep ended with rows its own count still matches',
-  X_BACKFILL_UNKNOWN: 'no declaration carries this backfill name',
-  X_JOB_ROW_STATUS_UNKNOWN: 'a queue row carries a status this build does not know',
-  X_ACTION_JOB_UNBRIDGED: 'an action projection was registered as a job',
-  X_JOB_CLAIM_QUEUES_EMPTY: 'a claim named no queue, and the drivers do not agree what that means',
-  X_WEBHOOK_ENDPOINT_UNKNOWN: 'no endpoint carries this id',
-  X_WEBHOOK_ENDPOINT_INVALID: 'the endpoint cannot be delivered to as declared',
-  X_WEBHOOK_ENDPOINT_DISABLED: 'the endpoint takes no deliveries',
-  X_WEBHOOK_EVENT_UNKNOWN: 'no event carries this id',
-  X_WEBHOOK_EVENT_INVALID: 'the event cannot be signed as declared',
-  X_WEBHOOK_DELIVERY_FAILED: 'the endpoint did not accept the delivery',
-  X_WEBHOOK_DELIVERY_THROTTLED: 'the endpoint asked for the delivery later, and said when',
-  X_WEBHOOK_DELIVERY_REJECTED: 'the endpoint refused the delivery in a way a retry cannot change',
-  X_EXPORT_ROW_INVALID: 'row() answered something the declared columns do not carry',
-  X_EXPORT_PART_TOO_LARGE: 'one page encoded to more bytes than a part may hold',
-  X_JOB_DECLARATION_INVALID: 'the job declaration is missing or mis-declares a field',
-  X_JOB_NOT_REQUEUEABLE: 'the job is still live and cannot be requeued',
-  X_JOB_KEY_BUSY: 'the concurrency key already holds its limit of runs',
-  X_JOB_NOT_REMOVABLE: 'the job is running and cannot be removed',
-  X_JOB_NOT_PROMOTABLE: 'the job is not waiting on its run time',
-  X_JOB_PAGE_INVALID: 'a job list page was asked for outside its bounds',
-  X_JOB_ON_SETTLED_FAILED: 'the onSettled hook failed after the run was settled',
-  X_JOB_NOT_FOUND: 'the queue holds no job with this id',
-  X_JOB_TENANT_MISMATCH: "a job's payload names an org other than the tenant it runs under",
-  X_STEP_OUTPUT_UNSERIALIZABLE: 'a step returned a value JSON cannot hold',
-  X_JOB_EVENT_INVALID: 'a waited event failed its schema',
-};
-
-// One unconditional call, so a second package claiming one of jobs' codes throws
-// X_ERROR_CODE_DUPLICATE instead of losing silently to whichever module imported first.
-registerErrorCodes(
-  Object.fromEntries(Object.entries(JOB_ERROR_TITLES).map(([code, title]) => [code, { title }])),
-);
-
-/**
- * The codes of this package's that can be thrown INSIDE a job body, classified — `executeJob`
- * reads this, so a `terminal` one dead-letters on the attempt it happened instead of spending the
- * whole policy on an answer that cannot change. Same rule every package uses: retryable means the
- * same code, run again, has a real chance of a different answer.
- *
- * Two are deliberately absent. `X_JOB_LEASE_LOST` and `X_JOB_SLOT_LOST` mean the row is somebody
- * else's now, so this attempt's verdict is not this attempt's to give: dead-lettering would settle
- * a job another worker is running. They keep the attempt-count path, which ends in the queue
- * re-delivering — the honest outcome for "we stopped owning it".
- */
-registerErrorRetry({
-  X_JOB_TIMEOUT: 'retryable',
-  X_DRIVER_UNAVAILABLE: 'retryable',
-  // A second `step.run` under one name is a defect in the handler, replayed identically forever.
-  X_STEP_DUPLICATE: 'terminal',
-  // A sweep whose source ran dry while its own count still matches rows: the next attempt resumes
-  // at the cursor that just ran dry and diverges again.
-  X_BACKFILL_STALLED: 'terminal',
-  X_BACKFILL_ENVIRONMENT: 'terminal',
-  X_BACKFILL_APPLIED: 'terminal',
-  // The one retryable webhook code, and the reason the split exists at all: a 5xx, a 429 or a
-  // connection that never opened is the same request landing later, which is what the job's retry
-  // policy is for.
-  X_WEBHOOK_DELIVERY_FAILED: 'retryable',
-  // `retry-after` and not `retryable`: the receiver NAMED a delay, so `statedDelayMs` reads
-  // `meta.retryAfterSeconds` and the nack waits that long (clamped by the policy's `maxDelay`)
-  // instead of guessing a curve against an answer it was already given.
-  X_WEBHOOK_DELIVERY_THROTTLED: 'retry-after',
-  // The rest are `terminal` and every one is LISTED rather than left to the default, because
-  // `classifyThrown` reads an unregistered code carrying `terminal` as UNCLASSIFIED — which spends
-  // a delivery's whole retry policy re-proving that a 404 endpoint is still a 404.
-  X_WEBHOOK_DELIVERY_REJECTED: 'terminal',
-  X_WEBHOOK_ENDPOINT_UNKNOWN: 'terminal',
-  X_WEBHOOK_ENDPOINT_INVALID: 'terminal',
-  X_WEBHOOK_ENDPOINT_DISABLED: 'terminal',
-  X_WEBHOOK_EVENT_UNKNOWN: 'terminal',
-  X_WEBHOOK_EVENT_INVALID: 'terminal',
-  // Both export codes are refusals of the DECLARATION and not of the data: the same `row()` over
-  // the same page answers the same way on every attempt, so an unclassified reading would spend
-  // the whole retry policy proving it.
-  X_EXPORT_ROW_INVALID: 'terminal',
-  X_EXPORT_PART_TOO_LARGE: 'terminal',
-  // The worker settles a busy key itself; listed so a body that RETHROWS one it was handed stops.
-  X_JOB_KEY_BUSY: 'terminal',
-  // The payload names the wrong org, or none its tenant can run under — a fact about the ROW, so
-  // every attempt and every `x jobs retry` is refused identically: the repair is a new enqueue.
-  X_JOB_TENANT_MISMATCH: 'terminal',
-  // The same value is refused on attempt five; the step's side effect has already happened.
-  X_STEP_OUTPUT_UNSERIALIZABLE: 'terminal',
-  // The stored event is the same on every attempt: the repair is the publisher or the schema.
-  X_JOB_EVENT_INVALID: 'terminal',
-});
+// The error classes @ultimat3/jobs throws. Every one names the command or code change that fixes
+// it — a job failure an agent cannot act on is a job failure that gets retried forever. The codes,
+// their titles and their registration are `./error-codes`, imported here for that side effect.
+import { UltimateError } from '@ultimat3/core';
+import './error-codes';
 
 // No `docs:` on any class below, here or in `backfill-errors.ts`. `UltimateError` fills it from
 // `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL` — one page for every
@@ -456,6 +290,22 @@ export class CancelUnsupportedError extends UltimateError {
       code: 'X_JOB_NOT_CANCELLABLE',
       cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
       fix: 'call setJobDriver(postgresJobDriver()) at boot — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
+    });
+  }
+}
+
+/**
+ * `enqueueMany` handed more inputs than one call takes. Refused before any key is derived or any
+ * row is written, so nothing of the batch lands: a list that size is a table, and a table is a
+ * `backfill()` that pages it, not one call holding every row in memory.
+ */
+export class JobEnqueueBatchTooLargeError extends UltimateError {
+  constructor(input: { job: string; count: number; max: number }) {
+    super({
+      code: 'X_JOB_ENQUEUE_BATCH_TOO_LARGE',
+      cause: `${input.job}.enqueueMany was handed ${input.count} inputs, past the ${input.max} one call may stage`,
+      fix: `await handle.enqueueMany(inputs.slice(i, i + ${input.max})) for i = 0, ${input.max}, … with handle = ${input.job} — or page the source with backfill() from @ultimat3/jobs`,
+      meta: { job: input.job, count: input.count, max: input.max },
     });
   }
 }

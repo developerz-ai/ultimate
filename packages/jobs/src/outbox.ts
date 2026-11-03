@@ -24,21 +24,18 @@
 // test and `x dev` must enqueue with nothing wired — but it is a fallback, not the guarantee.
 
 import type { Clock } from '@ultimat3/core';
-import {
-  currentSpanContext,
-  describeValue,
-  traceparent,
-  UltimateError,
-  uuidV7,
-} from '@ultimat3/core';
+import { uuidV7 } from '@ultimat3/core';
 import { refuseAbandoned } from '@ultimat3/db';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
-import { DEFAULT_QUEUE, jobDriver } from './driver';
+import { jobDriver } from './driver';
+import { ambientTraceparent, directRequest, namedRunId, stagedRecord } from './enqueue-record';
 import { signalEnqueued, signalStaged } from './enqueue-signal';
 import { DriverUnavailableError, OutboxNoTxError } from './errors';
 import type { JobHandle } from './job';
+import type { EnqueueManyOptions } from './job-enqueue-many';
+import { enqueueMany } from './job-enqueue-many';
 import { resolveClaimLeaseMs } from './outbox-lease';
 
 export interface OutboxRecord {
@@ -68,6 +65,11 @@ export interface OutboxRecord {
 export interface OutboxStore {
   /** Write inside `tx`. Nothing is visible to the relay until that tx commits. */
   stage(tx: Tx, record: OutboxRecord): Promise<void>;
+  /**
+   * Stage every record in ONE write, in order — `enqueueMany`'s chunk. OPTIONAL, like `release`:
+   * absent, the facade calls `stage` once per record, which is correct and slower.
+   */
+  stageMany?(tx: Tx, records: readonly OutboxRecord[]): Promise<void>;
   /** Called by the tx runner after COMMIT. */
   commit(tx: Tx): Promise<readonly OutboxRecord[]>;
   /** Called by the tx runner after ROLLBACK. Staged rows vanish with the transaction. */
@@ -89,6 +91,11 @@ export interface OutboxStore {
   release?(ids: readonly string[], claimant?: string): Promise<void>;
   /** `claimant` fences the same way, and here it is worse to miss: this retires the row. */
   markPublished(id: string, at: number, claimant?: string): Promise<void>;
+  /**
+   * `markPublished` for a whole published batch in one write, under the same fence. OPTIONAL: the
+   * relay publishes a batch through `JobDriver.enqueueMany` only when the store has this too.
+   */
+  markPublishedMany?(ids: readonly string[], at: number, claimant?: string): Promise<void>;
   pendingCount(): Promise<number>;
 }
 
@@ -155,6 +162,12 @@ export function memoryOutboxStore(options: MemoryOutboxStoreOptions = {}): Memor
       staged.set(key(tx), bucket);
       return Promise.resolve();
     },
+    stageMany(tx, records) {
+      const bucket = staged.get(key(tx)) ?? [];
+      bucket.push(...records);
+      staged.set(key(tx), bucket);
+      return Promise.resolve();
+    },
     commit(tx) {
       const bucket = staged.get(key(tx)) ?? [];
       staged.delete(key(tx));
@@ -197,6 +210,14 @@ export function memoryOutboxStore(options: MemoryOutboxStoreOptions = {}): Memor
       claims.delete(id);
       return Promise.resolve();
     },
+    markPublishedMany(ids, _at, claimant) {
+      for (const id of ids) {
+        if (!owns(id, claimant)) continue;
+        committed.delete(id);
+        claims.delete(id);
+      }
+      return Promise.resolve();
+    },
     pendingCount() {
       let count = 0;
       for (const record of committed.values()) {
@@ -229,43 +250,6 @@ export interface EnqueueOptions {
   readonly runId?: string;
 }
 
-/**
- * The W3C `traceparent` of the span this enqueue is happening inside, or `undefined` outside a
- * trace. This is the ONE place the link is minted: `docs/idea/04-jobs.md` promises a job trace
- * linked to the enqueuing request, and before this there was no field to carry the link, so a
- * checkout's `chargeCard` opened a fresh root two seconds later with nothing pointing back.
- *
- * A context recovered from a `Ctx` has an empty `spanId` (`currentSpanContext`), which renders as
- * an all-zero parent that every collector rejects — so that case carries no header rather than a
- * malformed one, and the job opens a root as it did before.
- */
-function ambientTraceparent(): string | undefined {
-  const context = currentSpanContext();
-  if (context === undefined || context.spanId === '') return undefined;
-  return traceparent(context);
-}
-
-/** What Postgres prints for a `uuid`, and so the only spelling both drivers store identically. */
-const RUN_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/**
- * `EnqueueOptions.runId`, refused HERE when it is not a uuid — the one screen both enqueue paths
- * read. `run_id` is a `uuid` column: the memory driver took any string, Postgres raised a raw
- * `22P02`, and on the staged path that was the caller's whole transaction failing at the outbox
- * insert. Any version, lowercase: an uppercase one would come back from Postgres re-spelled.
- */
-function namedRunId(job: string, runId: unknown): string | undefined {
-  if (runId === undefined) return undefined;
-  if (typeof runId === 'string' && RUN_ID_SHAPE.test(runId)) return runId;
-  throw new UltimateError({
-    code: 'X_ID_INVALID',
-    // `describeValue`, never the value: what arrives here wrong is as often a key as a typo.
-    cause: `enqueue of job "${job}" was given runId ${describeValue(runId)}, and a run id is a lowercase uuid (8-4-4-4-12 hex) — the queue stores it in a uuid column`,
-    fix: "pass { runId: uuidV7() } to enqueue(), with import { uuidV7 } from '@ultimat3/core'",
-    meta: { job, option: 'runId' },
-  });
-}
-
 export interface OutboxDeps {
   readonly store: OutboxStore;
   readonly driver: JobDriver;
@@ -283,24 +267,13 @@ export async function enqueueInTx<I>(
   options: EnqueueOptions = {},
 ): Promise<OutboxRecord> {
   const runId = namedRunId(handle.name, options.runId);
-  const at = nowMs(deps.clock);
-  const trace = options.traceparent ?? ambientTraceparent();
-  const record: OutboxRecord = {
+  const record = stagedRecord(handle, input, options, {
     id: uuidV7(),
     runId: runId ?? uuidV7(),
-    job: handle.name,
-    queue: options.queue ?? handle.queue ?? DEFAULT_QUEUE,
-    input,
     idempotencyKey: handle.idempotencyKeyFor(input),
-    maxAttempts: handle.retry.attempts,
-    runAt: options.runAt ?? at,
-    stagedAt: at,
-    ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
-    // Stamped at STAGE time and not at publish time: the relay runs after commit, in its own
-    // timer, with no request span in scope — a trace read there would be nobody's.
-    ...(trace === undefined ? {} : { traceparent: trace }),
-    ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
-  };
+    at: nowMs(deps.clock),
+    trace: options.traceparent ?? ambientTraceparent(),
+  });
   await deps.store.stage(tx, record);
   // Wakes a relay in THIS process that has backed off; a relay elsewhere polls on its own.
   signalStaged();
@@ -313,6 +286,12 @@ export interface JobsFacade {
    * a job, or a script — the transactional behaviour is the framework's problem, not yours.
    */
   enqueue<I>(handle: JobHandle<I>, input: I, options?: EnqueueOptions): Promise<EnqueueResult>;
+  /** Many of one job, one statement per chunk, answered in input order (`job-enqueue-many.ts`). */
+  enqueueMany<I>(
+    handle: JobHandle<I>,
+    inputs: readonly I[],
+    options?: EnqueueManyOptions,
+  ): Promise<readonly EnqueueResult[]>;
 }
 
 export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefined): JobsFacade {
@@ -337,18 +316,14 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
         }
         const runId = namedRunId(handle.name, options.runId);
         const trace = options.traceparent ?? ambientTraceparent();
-        const result = await deps.driver.enqueue({
-          name: handle.name,
-          queue: options.queue ?? handle.queue,
-          input,
-          idempotencyKey: handle.idempotencyKeyFor(input),
-          maxAttempts: handle.retry.attempts,
-          runAt: options.runAt ?? nowMs(deps.clock),
-          ...(runId === undefined ? {} : { runId }),
-          ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
-          ...(trace === undefined ? {} : { traceparent: trace }),
-          ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
-        });
+        const result = await deps.driver.enqueue(
+          directRequest(handle, input, options, {
+            idempotencyKey: handle.idempotencyKeyFor(input),
+            at: nowMs(deps.clock),
+            trace,
+            ...(runId === undefined ? {} : { runId }),
+          }),
+        );
         // A worker in this process that has backed off starts its next pass now.
         signalEnqueued(options.queue ?? handle.queue);
         return result;
@@ -360,6 +335,10 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       // is the one thing only the publish can know — a staged enqueue whose idempotency key a
       // LIVE job holds creates nothing, and these ids then name no row.
       return { id: record.id, runId: record.runId, deduped: false };
+    },
+    enqueueMany<I>(handle: JobHandle<I>, inputs: readonly I[], options: EnqueueManyOptions = {}) {
+      const tx = options.outbox === false ? undefined : currentTx();
+      return enqueueMany(deps, tx, handle, inputs, options);
     },
   };
 }

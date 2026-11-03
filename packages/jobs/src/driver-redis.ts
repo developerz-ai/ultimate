@@ -27,6 +27,7 @@ import type {
 import {
   assertClaimBounds,
   assertClaimQueues,
+  assertEnqueueMany,
   DEFAULT_QUEUE,
   isJobState,
   nackState,
@@ -36,6 +37,7 @@ import {
   REDIS_CLAIM,
   REDIS_DEMAND,
   REDIS_ENQUEUE,
+  REDIS_ENQUEUE_MANY,
   REDIS_HEARTBEAT,
   REDIS_NACK,
   REDIS_STATS,
@@ -136,6 +138,31 @@ function toRecord(fields: ReadonlyMap<string, string>): JobRecord {
 const namespaceField = (request: EnqueueRequest): string =>
   JSON.stringify([request.name, request.tenantId ?? '', request.idempotencyKey]);
 
+/** One request as `ENQUEUE_ONE` reads it: `ENQUEUE_ARITY` fields, in its order. */
+function enqueueArgs(request: EnqueueRequest, runId: string, at: number): (string | number)[] {
+  return [
+    request.id ?? uuidV7(),
+    request.name,
+    request.queue || DEFAULT_QUEUE,
+    JSON.stringify(request.input ?? null),
+    request.idempotencyKey,
+    runId,
+    request.maxAttempts,
+    request.runAt ?? at,
+    at,
+    request.tenantId ?? '',
+    request.traceparent ?? '',
+    request.enqueuedBy ?? '',
+    namespaceField(request),
+  ];
+}
+
+/** The `{ outcome, id, runId }` triple at `at` in a reply, as the result `enqueue` answers. */
+function answerOf(reply: readonly unknown[], at: number, runId: string): EnqueueResult {
+  const [outcome, id, heldRunId] = reply.slice(at, at + 3).map(String);
+  return { id: id ?? '', runId: heldRunId ?? runId, deduped: outcome !== 'created' };
+}
+
 export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
   const client = resolveClient(options.client);
   const clock = options.clock ?? systemClock;
@@ -154,33 +181,31 @@ export function redisJobDriver(options: RedisJobDriverOptions = {}): JobDriver {
     steps: redisStepStore({ ns, run, client }),
 
     async enqueue(request): Promise<EnqueueResult> {
-      const at = nowMs(clock);
       const runId = request.runId ?? uuidV7();
-      const [outcome, id, heldRunId] = list(
-        await run(REDIS_ENQUEUE, [
-          request.id ?? uuidV7(),
-          request.name,
-          request.queue || DEFAULT_QUEUE,
-          JSON.stringify(request.input ?? null),
-          request.idempotencyKey,
-          runId,
-          request.maxAttempts,
-          request.runAt ?? at,
-          at,
-          request.tenantId ?? '',
-          request.traceparent ?? '',
-          request.enqueuedBy ?? '',
-          namespaceField(request),
-        ]),
-      ).map(String);
-      if (outcome === 'deduped' && request.onConflict === 'error') {
+      const reply = list(await run(REDIS_ENQUEUE, enqueueArgs(request, runId, nowMs(clock))));
+      const answer = answerOf(reply, 0, runId);
+      if (reply[0] === 'deduped' && request.onConflict === 'error') {
         throw new JobDuplicateError({
           job: request.name,
           idempotencyKey: request.idempotencyKey,
-          existingId: id ?? '',
+          existingId: answer.id,
         });
       }
-      return { id: id ?? '', runId: heldRunId ?? runId, deduped: outcome !== 'created' };
+      return answer;
+    },
+
+    // ONE script for the batch (`REDIS_ENQUEUE_MANY`), the body `enqueue` runs once per request:
+    // atomic on the server, and a key twice in it meets its own first request.
+    async enqueueMany(requests): Promise<readonly EnqueueResult[]> {
+      assertEnqueueMany('redis', requests);
+      if (requests.length === 0) return [];
+      const at = nowMs(clock);
+      const runIds = requests.map((request) => request.runId ?? uuidV7());
+      const args = requests.flatMap((request, index) =>
+        enqueueArgs(request, runIds[index] ?? uuidV7(), at),
+      );
+      const reply = list(await run(REDIS_ENQUEUE_MANY, args));
+      return runIds.map((runId, index) => answerOf(reply, index * 3, runId));
     },
 
     async claim(claimOptions): Promise<readonly ClaimedJob[]> {

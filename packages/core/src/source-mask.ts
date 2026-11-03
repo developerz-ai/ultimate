@@ -147,8 +147,42 @@ function blankRegions(text: string, strings: boolean): string {
   return out.join('');
 }
 
+/**
+ * Held units per memo — key plus answer, twice the input — past which it is dropped whole: about
+ * 190 MB of RSS. Measured 2026-11-03 on the `errors` step, user CPU / RSS: no memo 32.2 s /
+ * 0.7 GB; 32M 21.9 s, too small for the step's working set; 64M 16.5-16.9 s / 0.89-1.15 GB;
+ * 128M 15.8 s / 1.14 GB.
+ */
+export const MASK_MEMO_CAP = 64 * 1024 * 1024;
+
+/**
+ * `mask` memoised on its input text. Every guard of the `errors` step re-masked every file: 74,031
+ * masks for 11,298 distinct inputs, 42% of its CPU. Cleared whole and not LRU, because a guard
+ * walks every file in order and an LRU smaller than the corpus misses on every call.
+ */
+export function memoText(
+  mask: (text: string) => string,
+  cap = MASK_MEMO_CAP,
+): (text: string) => string {
+  const memo = new Map<string, string>();
+  let held = 0;
+  return (text) => {
+    const known = memo.get(text);
+    if (known !== undefined) return known;
+    const out = mask(text);
+    // Key and answer are both held: twice the input, about 2.9 B of RSS per unit measured.
+    if (held + 2 * text.length > cap) {
+      memo.clear();
+      held = 0;
+    }
+    memo.set(text, out);
+    held += 2 * text.length;
+    return out;
+  };
+}
+
 /** Comments gone, string literals intact — what a scan for declared codes or `t()` keys reads. */
-export const stripComments = (text: string): string => blankRegions(text, false);
+export const stripComments = memoText((text) => blankRegions(text, false));
 
 /** Comments and string contents gone, delimiters kept — what a scan for code structure reads. */
-export const maskLiterals = (text: string): string => blankRegions(text, true);
+export const maskLiterals = memoText((text) => blankRegions(text, true));

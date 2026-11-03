@@ -107,4 +107,8 @@ export const TIER_3_ERROR_STATUS = {
   X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE: 500,
   // @ultimat3/action — a keyed run passed its hard ceiling
   X_IDEMPOTENCY_RUN_CEILING: 504,
+  // @ultimat3/jobs — an inbound webhook could not be queued, so it was not acknowledged
+  X_WEBHOOK_RECEIVER_UNAVAILABLE: 503,
+  // @ultimat3/jobs — the event id a webhook receiver verified is not one it can key a job by
+  X_WEBHOOK_EVENT_ID_INVALID: 422,
 } satisfies Readonly<Record<string, number>>;

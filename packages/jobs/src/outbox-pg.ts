@@ -16,9 +16,11 @@ import { nowMs } from './clock';
 import {
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,
+  SQL_OUTBOX_MARK_PUBLISHED_MANY,
   SQL_OUTBOX_PENDING_COUNT,
   SQL_OUTBOX_RELEASE,
   SQL_OUTBOX_STAGE,
+  SQL_OUTBOX_STAGE_MANY,
 } from './driver-pg-sql';
 import type { OutboxRecord, OutboxStore } from './outbox';
 import { resolveClaimLeaseMs } from './outbox-lease';
@@ -124,6 +126,29 @@ export function postgresOutboxStore(options: PostgresOutboxStoreOptions): Outbox
       staged.set(key(tx), bucket);
     },
 
+    /** `enqueueMany`'s chunk: one statement on the same connection `stage` writes on. */
+    async stageMany(tx, records) {
+      if (records.length === 0) return;
+      const rows = records.map((record) => ({
+        id: record.id,
+        runId: record.runId,
+        job: record.job,
+        queue: record.queue,
+        input: record.input ?? null,
+        idempotencyKey: record.idempotencyKey,
+        maxAttempts: record.maxAttempts,
+        runAt: record.runAt,
+        stagedAt: record.stagedAt,
+        tenantId: record.tenantId,
+        traceparent: record.traceparent,
+        enqueuedBy: record.enqueuedBy,
+      }));
+      await options.txExecutor(tx).query(SQL_OUTBOX_STAGE_MANY, [JSON.stringify(rows)]);
+      const bucket = staged.get(key(tx)) ?? [];
+      bucket.push(...records);
+      staged.set(key(tx), bucket);
+    },
+
     /**
      * Nothing to do but report. The rows became visible when Postgres committed them — there is
      * no second write here, and that absence IS the guarantee: a commit hook that had to run
@@ -174,6 +199,16 @@ export function postgresOutboxStore(options: PostgresOutboxStoreOptions): Outbox
     async markPublished(id, at, claimant) {
       await options.executor.query(SQL_OUTBOX_MARK_PUBLISHED, [
         id,
+        at || nowMs(options.clock),
+        claimant ?? relayId,
+      ]);
+    },
+
+    /** The relay's batch mark: one statement, `markPublished`'s fence on every row. */
+    async markPublishedMany(ids, at, claimant) {
+      if (ids.length === 0) return;
+      await options.executor.query(SQL_OUTBOX_MARK_PUBLISHED_MANY, [
+        ids,
         at || nowMs(options.clock),
         claimant ?? relayId,
       ]);

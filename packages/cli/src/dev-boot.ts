@@ -26,6 +26,7 @@ import { watchTree } from './dev-watch-tree';
 import { buildIslands } from './island-bundle';
 import { FRAME_STYLE } from './island-harness';
 import type { Finding } from './output';
+import { plainRoutes } from './plain-routes';
 import type { RunningRoles } from './role-start';
 import { DEV_ROLES, startRoles } from './role-start';
 import type { DevServices } from './runtime-bindings';
@@ -220,7 +221,7 @@ async function bootDev(
     islands: () => state.islands,
     realtime: runtime.realtime,
     rateLimitStore: appRuntime?.rateLimitStore ?? runtime.rateLimitStore,
-    appRoutes: appRuntime?.routes,
+    appRoutes: plainRoutes(appRuntime?.routes),
     images: appRuntime?.images,
   });
 

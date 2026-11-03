@@ -7,7 +7,8 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - May import: `core`, `schema`, `entity`, `policy`, `cache`, `time` — and `db`, for
   `expectedQueryLoop` (`steps.ts` declares the per-step write one-per-step to the N+1 detector),
   `outsideTransaction` (`execute.ts`) and `refuseAbandoned` (`outbox.ts`). No client is ever taken
-  from it. Never `http`, `render`, `ui`.
+  from it. Never `render`, `ui`. `http` only from `webhook-receiver*.ts`, for the route
+  (`Route`/`Bucket` types, `DEFAULT_WEBHOOK_BODY_LIMIT`, `HttpError`, `jsonResponse`).
 - Consumers: `action` (`<job>.enqueue`, via the ambient jobs facade), `cli`, `mcp`, `admin`.
 - External deps: none. Postgres access goes through the injected `PgExecutor` (`@ultimat3/core`'s,
   re-exported from `index.ts`).
@@ -54,9 +55,17 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`cancel` is fenced on `LIVE_STATES`.** **`requeue`** refuses (`X_JOB_NOT_FOUND`, not requeueable,
   duplicate), then ONE statement. **`enqueue` inserts twice at most.** **`BulkResult.remaining` is
   what a second call would move.**
+- **`enqueueMany` is one statement per `ENQUEUE_CHUNK` (1,000)** (`job-enqueue-many.ts`;
+  `SQL_ENQUEUE_MANY`: `SQL_ENQUEUE`'s conflict target and id fence, one wake per queue); skipped rows
+  are answered by ONE `SQL_ENQUEUE_MANY_RESOLVE`, a row neither answers goes back through `enqueue`.
+  **`JobDriver.enqueueMany` is REQUIRED** and opens with `assertEnqueueMany` (no `onConflict:
+  'error'` in a batch, `X_INVARIANT`); Redis's `REDIS_ENQUEUE_MANY` shares `enqueue_one` with
+  `REDIS_ENQUEUE`. `OutboxStore.stageMany`/`markPublishedMany` are OPTIONAL: absent, a loop. Every
+  refusal precedes the first write; `refuseAbandoned()` before every direct chunk. `runAt` crosses
+  as `numeric` then `bigint`: a fractional ms rounds, never a `22P02`.
 - **No read returns a WHOLE row** — `driver-pg-sql.test.ts` scans every production file here
   (discovered, comments stripped) for `select *`/`returning *`.
-- Drivers: the six `JobDriver` methods plus optional `introspect`, `backfills`, `leases`; new
+- Drivers: the `JobDriver` methods plus optional `introspect`, `backfills`, `leases`; new
   capabilities go behind the interface. **`redisJobDriver`** (`@ultimat3/jobs/redis`, off the
   barrel) is one Lua script per operation: a semantic change lands in memory, pg AND the scripts.
 - **`demand` is the seventh method, required.** `redisJobDriver` counts every running row: it keeps no worker registry, so no claimer is known to drain. **A draining worker's `queue_demand` goes to 0** (`stopAccepting`): `max by (queue)` would read a frozen value over every live worker's. `queue_depth` keeps its last value.
@@ -82,8 +91,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 
 ## Rules — the worker and the scheduler
 
-- **One enqueue implementation**: `jobsFacade()`; the only other `driver.enqueue` sites are the outbox
-  relay and the scheduler. `handle.as(actor, input)` QUEUES; `executeJob` is the one execution path.
+- **One enqueue implementation**: `jobsFacade()` owns `enqueue` AND `enqueueMany`, over the row
+  builders in `enqueue-record.ts`, which the relay shares; the only other `driver.enqueue` sites are
+  the outbox relay and the scheduler. `handle.as(actor, input)` QUEUES; `executeJob` is the one execution path.
 - The scheduler's key is occurrence-scoped (`task:occurrenceMs:jobKey`); `task.enqueue()` uses the
   job's plain key.
 - **TWO shutdown hooks per worker, one per PHASE**: `accept` is `stopAccepting()` (flip state, clear
@@ -133,49 +143,11 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`x jobs cancel` binds to `cancelJob(driver, id, reason?)`, which refuses** a finished job or a
   driver with no `cancel` (`X_JOB_NOT_CANCELLABLE`).
 
-## Rules — the operator surface
+## Rules — the operator surface; idle cost and the wake
 
-- **Every operator capability is a member of `JobIntrospection`** (`introspection.ts`), implemented
-  by BOTH drivers, bounds as constants beside it; `operator-surface*-fixture.ts` is their parity
-  suite (memory + real pg).
-- **A settle answers whether it landed**; a miss is `jobs.settle.unowned`, not a throw.
-- **The counter moves in the SETTLING statement** (`driver-pg-settle-sql.ts`): one-minute bucket per
-  job name; `nackOutcome()` decides what a nack adds (a shed, a suspension, a drain: nothing).
-  The scheduler leader folds tiers (`rollupCounters`), at most once a bucket.
-- **`list()` is KEYSET** (`after: jobCursor(lastRow)`, newest first by `(created_at, id)`); the pg
-  seek reads the cursor row's own `created_at` — the cursor's ms is rounded. A page past
-  `MAX_JOB_PAGE` or a foreign cursor is `X_JOB_PAGE_INVALID`, never a bare invariant.
-- **`taskFires()` is the last occurrence that DISPATCHED**, never the watermark (arming and skipping
-  move that): `SQL_SCHEDULER_FIRE` writes it, `fireThroughDriver` calls `recordTaskFire`.
-- **A pause is a ROW the claim reads** (`x_job_pauses`, `not exists` in `SQL_CLAIM`), never a column
-  on `x_jobs`. A paused TASK keeps its watermark, so resume is its own `catchUp`.
-- **An occurrence fires in ONE statement** (`SchedulerState.fire`, `SQL_SCHEDULER_FIRE`): the
-  watermark is the fence, jobs insert only `where exists (select 1 from moved)`.
-- **`progress()` is throttled in `progress.ts`** and flushed before every settle. Full rule: `docs/history/jobs.md`.
-- **Failed for good + `deadLetter: false` is DROPPED**: `nack({ fail })`, outcome `dropped`.
-
-## Rules — idle cost and the wake
-
-Long form: `docs/history/jobs.md`, "the cross-process wake".
-
-- **An idle round touches no store.** Full rule: `docs/history/jobs.md`.
-- **The worker and the relay back off** (`idle-backoff.ts`): floor → doubling → the ceiling, 2 s, or
-  5 s while `wakeIsLive()`. An idle worker pass is ONE claim over every queue with a free slot.
-- **The poll is the guarantee, the wake an optimisation.** `startQueueWake` holds one `LISTEN`
-  session and raises `enqueue-signal.ts`'s two signals; it is live only once a probe has crossed
-  BOTH channels, and un-proven on every re-dial — a transaction-pooling proxy resolves a `LISTEN`
-  and delivers nothing.
-- **A statement decides whether it notifies** (`driver-pg-wake-sql.ts`): once per queue per
-  `WAKE_SLOT_MS` for an enqueue, never behind an unclaimed row for a stage. Every notifying commit
-  serialises behind ONE Postgres lock: never notify unconditionally. Payload: the queue name.
-- **A wake resets the backoff**: the floor passes after it find the row a slot silenced.
-- **The claim loop is ONE chain** (`worker-loop.ts`): a wake on a pass in flight sets `again`; a
-  freed slot and a due retry (`JobExecution.resumeAt`) `kick` one pass, no reset.
-- **`idle-cost.test.ts` / `queue-wake.test.ts` count statements per idle minute** — scheduler 6,
-  worker and relay 30 with no wake, 12 with. Raising one is a regression.
-- **The event bus has ONE clock**: `postgresEventBus` takes no `clock`; `EventLookup.now()` is
-  REQUIRED, stamps a NEW wait, and calls the TIMEOUT (asked once the runner thinks time is up).
-  `purgeExpired()` is awaited and counted; `eventsPurgeTarget(bus)` is its `PurgeTarget`.
+Moved whole to `docs/history/jobs.md`, "Moved out 2026-11-03 (plan 101 wave 4a)": every operator
+verb is a `JobIntrospection` member on BOTH drivers; an idle round touches no store, and the poll is
+the guarantee, the wake an optimisation.
 
 ## Rules — the outbox
 
@@ -189,6 +161,9 @@ Long form: `docs/history/jobs.md`, "Moved 2026-10-01 — the outbox".
 - **A staged row's id IS its job's id, and its `runId` is allocated at stage** (`x_outbox.run_id`),
   so a staged enqueue answers real ids. `SQL_ENQUEUE` inserts nothing under an id that names a
   row — a repeated publish is `deduped`, live or finished (`outbox-run-id.test.ts`).
+- **The relay publishes a batch in two statements** (`publishBatch`): `driver.enqueueMany`, then
+  `markPublishedMany` when the store has it; any failure drops that batch to the row loop, which
+  keeps the order. `RELAY_BATCH_SIZE` (500) is measured in its doc comment.
 
 ## Rules — factories over `job()`
 
@@ -201,6 +176,14 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 - **`purge()`** is the one caller of every `purgeExpired()`: one table per `step.run`, one clock
   reading per pass, duplicate names refused.
 - **`exportRows()`**: one object per PAGE, named by page index; NO cross-tenant escape.
+- **`importRows()`**: one step per PAGE, checkpointed at the BYTE OFFSET, no carry between steps;
+  `pageBytes` > `maxRecordBytes` is refused at declaration. `handle` is AT LEAST ONCE per page. The
+  error report never carries the refused value. NO cross-tenant escape.
+- **`webhookReceiver()`**: a plain `Route` read under `maxBytes` (core's `readWithinLimit`, never
+  `bodyBytes()`); `verify` runs before any parse and answers `{ eventId, payload }` from verified
+  data; the id is bounded (`WEBHOOK_EVENT_ID_PATTERN`, 422); the enqueue is `outbox: false` before
+  the ack (503 otherwise); the payload is stored `.sensitive()`, never re-verified.
+  `webhookReceiverRoutes()` is what the boots mount.
 - **`webhook()`**: ONE event to ONE endpoint, no steps; each attempt but a CANCELLED one recorded
   before the throw; `ledger.isDisabled` gates the socket. **The wire format is core's.** An org
   tenant reads `orgId` OFF THE INPUT; none, or not the run's org: TERMINAL `X_JOB_TENANT_MISMATCH`.
@@ -220,7 +203,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `backfill-pending.ts` | declared minus completed, per environment: the alarm `--pending` reads |
 | `backfill-rate.ts` | the `rate` throttle: batches/sec as an interval, and the cancellable wait |
 | `backfill-inspect.ts` | the ledger projected for `x db backfill`, `x jobs`, `/_x` and MCP |
-| `backfill-errors.ts` | the seven `X_BACKFILL_*` classes; the codes stay declared in `errors.ts` |
+| `backfill-errors.ts` | the seven `X_BACKFILL_*` classes; the codes stay declared in `error-codes.ts` |
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements; an `action-job` projection is `X_ACTION_JOB_UNBRIDGED` |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
@@ -233,7 +216,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |
 | `concurrency.ts` | `job.concurrency` as declared, resolved once: `KeyedConcurrency`, `WhenBusy`, the declaration and key refusals |
-| `errors-concurrency.ts` | every concurrency refusal's class; codes stay in `errors.ts` |
+| `errors-concurrency.ts` | every concurrency refusal's class; codes stay in `error-codes.ts` |
 | `worker-key-busy.ts` | one run refused by its key: settled `failed`, body never run |
 | `metrics.ts` | `queue_oldest_ready_seconds` and `queue_dead_jobs`, the two alertable gauges |
 | `scheduler-pg.ts` | `postgresSchedulerState` (the durable watermark, the atomic fire) + `postgresLeaseLeader` |
@@ -283,6 +266,11 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `worker-queue-demand.ts` | the `queue_demand` gauge: `driver.demand()`, skipped when `stats()` shows no work, retracted to 0 at the drain |
 | `driver-pg-demand-sql.ts` | `QUEUE_DEMAND_ROWS` and `SQL_QUEUE_DEMAND`; the scaler fixture's `SQL_SCALER_DEMAND` reads the same predicate |
 | `driver-pg-claim-sql.ts` | `SQL_CLAIM` and why it seeks; re-exported from `driver-pg-sql.ts` |
+| `error-codes.ts` / `errors.ts` | codes, titles, their registration (`new-error-code` writes here) / the classes |
+| `job-enqueue-many.ts` / `enqueue-record.ts` / `driver-pg-enqueue-many.ts` | `enqueueMany`, `MAX_ENQUEUE_BATCH`, `ENQUEUE_CHUNK`; one enqueue's row, every path; `SQL_ENQUEUE_MANY` + resolve |
+| `import.ts` / `import-pass.ts` | `importRows()`: the declaration; one pass, its byte-offset checkpoints, the error report |
+| `import-format.ts` / `import-source.ts` / `import-errors.ts` | record boundaries on bytes; the `ImportSource` seam; the `X_IMPORT_*` classes |
+| `webhook-receiver.ts` / `-route.ts` / `-types.ts` / `-errors.ts` | `webhookReceiver()` and `webhookReceiverRoutes`; the route; `ReceivedEvent`, `WebhookInbound`; its three refusals |
 
 Commands: `bun test packages/jobs` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:
 history, "Moved 2026-10-01 — test harnesses".

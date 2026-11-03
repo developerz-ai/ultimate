@@ -193,6 +193,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   digits-only; `:` is refused in id and topic; the comparison is `timingSafeEqual`
   (`bun run secret-compare`). **An empty `secret` is `X_CONFIG_INVALID`.**
   **The FORMAT is core's** (`packages/core/src/webhook-signature.ts`) — never re-declared here.
+- **`verifyWebhookSignature` and `verifyBodyHmac` share ONE secret screen** (`assertWebhookSecrets`)
+  and one pair of refusals (`webhookSecretMissing`, `webhookSignatureInvalid`), each naming its caller.
 - Tests must not touch the network — the preload seals `fetch`. Socket tests live in `e2e/` (`bun test
   packages/http/e2e`), sealed; `start()` calls core's `markListening()`. Never unseal.
 
@@ -231,6 +233,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a browser must carry, signed in or not |
 | `webhook-verify.ts` | the INBOUND webhook: the canonical string, the constant-time mac check and the replay window. The outbound half is `webhook()` in `@ultimat3/jobs`, which this package can never import |
+| `webhook-hmac.ts` | `verifyBodyHmac`: a vendor's HMAC-SHA256 over named bytes, UTF-8 secret, rotation list, constant-time; answers `{ bytes, text }` |
 | `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only. It negotiates nothing; the cookie is read by core's `readCookie`, imported, never re-exported |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 | `rate-limit-stage.ts` | what the pipeline spends and when: the `rate-limit` stage's list of keys, and the address-keyed allowance the `auth` stage spends for a failed credential |

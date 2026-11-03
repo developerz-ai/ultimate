@@ -108,8 +108,15 @@
  * `error-fingerprint.ts`; `core/src/error-status-declared.ts` (`defineError`'s status rows);
  * `.sensitive()` and the schema rules `schema/src/{sensitive,schema-rules,record-schema}.ts`;
  * `entity/src/view-issue.ts` — 17 new files, and 3 existing modules they newly reach.
+ * raised 726 → 738, measured 738 (2026-11-03, plan 101 wave 4a): 12 new files, all on the jobs
+ * barrel `framework-schema.ts` and `runtime-queue.ts` already evaluate whole — `enqueueMany`
+ * (`jobs/src/{job-enqueue-many,enqueue-record,driver-pg-enqueue-many}.ts`), the code registry
+ * split out of `errors.ts` at its ceiling (`error-codes.ts`), `importRows()`
+ * (`import,import-pass,import-format,import-source,import-errors`) and `webhookReceiver()`
+ * (`webhook-receiver,webhook-receiver-route,webhook-receiver-errors`). No existing module newly
+ * reached: `@ultimat3/http`, the one new package edge, was already in this graph whole.
  */
-export const MIGRATE_CEILING = 726;
+export const MIGRATE_CEILING = 738;
 
 /**
  * measured: 796 — the 558 above plus what `serve-boot.ts` adds: the services and the roles.
@@ -254,8 +261,9 @@ export const MIGRATE_CEILING = 726;
  * runtime-statement-bound,app-load-unresolved,output-findings}.ts`.
  * raised 1047 → 1068, measured 1068 (2026-11-03, plan 101 wave 3): `MIGRATE_CEILING`'s 20, and
  * `core/src/render-node.ts` (the node brands, split out so `render` reads them from a leaf).
+ * raised 1068 → 1080, measured 1080 (2026-11-03, plan 101 wave 4a): `MIGRATE_CEILING`'s 12.
  */
-export const SERVING_ROLE_CEILING = 1068;
+export const SERVING_ROLE_CEILING = 1080;
 
 /**
  * measured: 888 — the 796 above plus the 92 `serve-web.ts` adds (41 CLI, 36 MCP, 15 PWA).
@@ -381,5 +389,8 @@ export const SERVING_ROLE_CEILING = 1068;
  * `SERVING_ROLE_CEILING` for it and `cli/src/stream-hole-scope.ts`, a `<Hole>`'s request scope.
  * raised 1179 → 1200, measured 1200 (2026-11-03, plan 101 wave 3): the 21 named on
  * `SERVING_ROLE_CEILING` for it; the web role adds no new module of its own.
+ * raised 1200 → 1213, measured 1213 (2026-11-03, plan 101 wave 4a): `SERVING_ROLE_CEILING`'s 12,
+ * and `cli/src/plain-routes.ts` — `runtime.routes` plus every declared `webhookReceiver()`'s, the
+ * one list both boots mount and `x routes` prints.
  */
-export const WEB_ROLE_CEILING = 1200;
+export const WEB_ROLE_CEILING = 1213;

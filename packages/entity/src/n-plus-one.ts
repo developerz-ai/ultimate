@@ -5,7 +5,8 @@
 // Nothing here counts anything. A ledger elsewhere decides that a shape repeated; this turns that
 // verdict into the one error the surfaces render.
 
-import type { EntityError, PreloadCandidate } from './errors';
+import { EntityError } from './entity-error';
+import type { PreloadCandidate } from './errors';
 import { nPlusOneQuery, nPlusOneWrite } from './errors';
 import type { RelationKind } from './relations';
 import { relationMap } from './relations';
@@ -106,17 +107,34 @@ const readLoop = (loop: StatementLoop): EntityError => {
 };
 
 /**
+ * A write into the job queue's own tables — `@ultimat3/jobs`' outbox stage or its enqueue. The loop
+ * is a loop of `handle.enqueue`, the statement is the queue's and not the app's, and `insertAll` is a
+ * call no enqueuer can make: the batch is the handle's. Read off the statement text, the subject a
+ * hand-written statement carries; a word boundary, so `x_jobs_archive` is still the app's SQL.
+ */
+const QUEUE_INSERT = /\binsert\s+into\s+x_(?:outbox|jobs)\b(?!_)/i;
+
+const writeLoop = (loop: StatementLoop): EntityError => {
+  if (loop.entity === undefined && QUEUE_INSERT.test(loop.subject)) {
+    return new EntityError({
+      code: 'X_N_PLUS_ONE_WRITE',
+      cause: nPlusOneWrite(loop.subject, loop.count, { form: 'sql' }).cause,
+      fix: "handle.enqueueMany(inputs)   # one statement per 1,000 jobs, staged in the same transaction — or expectedQueryLoop('<why one enqueue per row is optimal>', fn) when the loop is deliberate",
+    });
+  }
+  return nPlusOneWrite(
+    loop.subject,
+    loop.count,
+    loop.entity === undefined
+      ? { form: 'sql' }
+      : { form: 'bulk', entity: loop.entity, op: loop.op },
+  );
+};
+
+/**
  * One repeated shape, as the error every surface renders. One entry point and not two, because the
  * caller already knows which of the two codes it holds and a second decision here is a second place
  * for the read and the write halves to disagree about what a loop is.
  */
 export const nPlusOne = (loop: StatementLoop): EntityError =>
-  loop.kind === 'read'
-    ? readLoop(loop)
-    : nPlusOneWrite(
-        loop.subject,
-        loop.count,
-        loop.entity === undefined
-          ? { form: 'sql' }
-          : { form: 'bulk', entity: loop.entity, op: loop.op },
-      );
+  loop.kind === 'read' ? readLoop(loop) : writeLoop(loop);

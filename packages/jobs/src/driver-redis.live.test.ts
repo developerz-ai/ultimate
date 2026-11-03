@@ -7,6 +7,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import type { FrozenClock } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
 import type { JobDriver, StepStore } from '.';
+import { isJobState } from './driver';
+import { driverEnqueueManyScenarios } from './driver-enqueue-many-fixture';
 import { memoryJobDriver } from './driver-memory';
 import { redisJobDriver } from './driver-redis';
 
@@ -170,9 +172,44 @@ describe.skipIf(url === '')('live · redis · the job driver', () => {
 
   afterAll(async () => {
     if (client === undefined) return;
-    const found: unknown = await client.send('KEYS', [`{${prefix}}:*`]);
+    // `{prefix*`: the batch scenarios' own namespaces too, each `<prefix>-many-<uuid>`.
+    const found: unknown = await client.send('KEYS', [`{${prefix}*`]);
     for (const key of Array.isArray(found) ? found : []) await client.send('DEL', [String(key)]);
     client.close();
+  });
+
+  // The batch scenarios every driver answers (`driver-enqueue-many-fixture.ts`), each on a fresh
+  // namespace. Redis has no `introspect`, so a row is read off its own HASH.
+  describe('enqueueMany, as memory and Postgres answer it', () => {
+    const prefixes = new WeakMap<JobDriver, string>();
+    const field = (flat: unknown, name: string): string | undefined => {
+      const list = Array.isArray(flat) ? flat.map(String) : [];
+      const at = list.findIndex((value, index) => index % 2 === 0 && value === name);
+      return at === -1 ? undefined : list[at + 1];
+    };
+    driverEnqueueManyScenarios('redis', {
+      fresh: () => {
+        const own = `${prefix}-many-${crypto.randomUUID()}`;
+        const driver = redisJobDriver({ ...on, prefix: own });
+        prefixes.set(driver, own);
+        return Promise.resolve(driver);
+      },
+      now: () => Promise.resolve(Date.now()),
+      row: async (driver, id) => {
+        const flat = await client?.send('HGETALL', [`{${prefixes.get(driver)}}:job:${id}`]);
+        const state = field(flat, 'state');
+        if (state === undefined || !isJobState(state)) return undefined;
+        return {
+          input: JSON.parse(field(flat, 'input') ?? 'null') as unknown,
+          state,
+          runAt: Number(field(flat, 'runAt')),
+        };
+      },
+      count: async (driver) => {
+        const found = await client?.send('KEYS', [`{${prefixes.get(driver)}}:job:*`]);
+        return Array.isArray(found) ? found.length : Number.NaN;
+      },
+    });
   });
 
   test('answers every queue operation as the memory driver does', async () => {

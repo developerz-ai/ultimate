@@ -142,8 +142,9 @@ export function factoriesIn(
     for (const match of source.matchAll(pattern)) {
       const name = match[1] as string;
       // The head of the return type, and only when the whole type is it: `getBackfill` answers
-      // `JobHandle<BackfillInput> | undefined`, which is a registry lookup and not a factory.
-      const head = /^([A-Za-z_$][\w$]*)\s*<[\s\S]*>$/.exec((match[3] as string).trim())?.[1];
+      // `JobHandle<BackfillInput> | undefined`, which is a registry lookup and not a factory. Type
+      // arguments optional: `webhookReceiver()` answers the bare `WebhookReceiver`.
+      const head = /^([A-Za-z_$][\w$]*)\s*(?:<[\s\S]*>)?$/.exec((match[3] as string).trim())?.[1];
       const kind = head === undefined ? undefined : kinds.get(head);
       if (kind === undefined || CONSTRUCTORS.has(name)) continue;
       found.push({ factory: name, pkg: `@ultimat3/${pkg}`, kind, at: path });
@@ -206,8 +207,10 @@ describe('unit · every primitive factory in the tree has a row in PRIMITIVE_FAC
       '@ultimat3/ai.llm:action',
       '@ultimat3/jobs.backfill:job',
       '@ultimat3/jobs.exportRows:job',
+      '@ultimat3/jobs.importRows:job',
       '@ultimat3/jobs.purge:job',
       '@ultimat3/jobs.webhook:job',
+      '@ultimat3/jobs.webhookReceiver:job',
       '@ultimat3/mcp.mcpConfirmations:action',
       '@ultimat3/notify.notifier:job',
       '@ultimat3/pwa.pushSubscribe:action',

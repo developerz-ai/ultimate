@@ -8,10 +8,12 @@ import { LEASE_LAPSED_FINAL_ATTEMPT } from './driver';
 import type { RedisSender } from './driver-redis';
 import { redisJobDriver } from './driver-redis';
 import {
+  ENQUEUE_ARITY,
   REDIS_ACK,
   REDIS_CLAIM,
   REDIS_DEMAND,
   REDIS_ENQUEUE,
+  REDIS_ENQUEUE_MANY,
   REDIS_HEARTBEAT,
   REDIS_NACK,
   REDIS_STATS,
@@ -20,6 +22,7 @@ import {
 
 const SCRIPTS = new Map<string, string>([
   [REDIS_ENQUEUE, 'enqueue'],
+  [REDIS_ENQUEUE_MANY, 'enqueue-many'],
   [REDIS_CLAIM, 'claim'],
   [REDIS_ACK, 'ack'],
   [REDIS_NACK, 'nack'],
@@ -128,6 +131,75 @@ describe('redisJobDriver', () => {
     await expect(driver.enqueue({ ...request, onConflict: 'error' })).rejects.toMatchObject({
       code: 'X_JOB_DUPLICATE',
     });
+  });
+
+  test('enqueueMany is ONE script, each request bound as enqueue binds it, answered in order', async () => {
+    const { client, sent } = recording({
+      'enqueue-many': ['created', 'j1', 'r1', 'deduped', 'j1', 'r1', 'published', 'j3', 'r3'],
+    });
+    const driver = redisJobDriver({ client, clock: clock(), prefix: 'app' });
+    const request = (id: string, key: string) => ({
+      id,
+      runId: `run-${id}`,
+      name: 'mail.send',
+      queue: 'mail',
+      input: { key },
+      idempotencyKey: key,
+      maxAttempts: 2,
+    });
+    const answers = await driver.enqueueMany([
+      request('j1', 'a'),
+      request('j2', 'a'),
+      request('j3', 'c'),
+    ]);
+    expect(answers).toEqual([
+      { id: 'j1', runId: 'r1', deduped: false },
+      { id: 'j1', runId: 'r1', deduped: true },
+      { id: 'j3', runId: 'r3', deduped: true },
+    ]);
+    expect(sent.map((call) => call.command)).toEqual(['enqueue-many']);
+    const [, , ...fields] = sent[0]?.args ?? [];
+    expect(fields).toHaveLength(3 * ENQUEUE_ARITY);
+    // The second request's fields start where the first's end, in `enqueue`'s order.
+    expect(fields.slice(ENQUEUE_ARITY, ENQUEUE_ARITY + 3)).toEqual(['j2', 'mail.send', 'mail']);
+    expect(fields.at(-1)).toBe('["mail.send","","c"]');
+  });
+
+  test('the single enqueue binds exactly ENQUEUE_ARITY fields, the batch stride', async () => {
+    const { client, sent } = recording({ enqueue: ['created', 'j1', 'r1'] });
+    const driver = redisJobDriver({ client, clock: clock() });
+    await driver.enqueue({
+      name: 'n',
+      queue: 'q',
+      input: null,
+      idempotencyKey: 'k',
+      maxAttempts: 1,
+    });
+    expect(sent[0]?.args).toHaveLength(2 + ENQUEUE_ARITY);
+  });
+
+  test("enqueueMany sends nothing for an empty batch and refuses onConflict: 'error'", async () => {
+    const { client, sent } = recording({});
+    const driver = redisJobDriver({ client, clock: clock() });
+    expect(await driver.enqueueMany([])).toEqual([]);
+    const refused = driver.enqueueMany([
+      {
+        name: 'n',
+        queue: 'q',
+        input: null,
+        idempotencyKey: 'k',
+        maxAttempts: 1,
+        onConflict: 'error',
+      },
+    ]);
+    await expect(refused).rejects.toMatchObject({ code: 'X_INVARIANT' });
+    expect(sent).toEqual([]);
+  });
+
+  test('both enqueue scripts run the one enqueue body', () => {
+    expect(REDIS_ENQUEUE).toContain('local function enqueue_one(P, a, o)');
+    expect(REDIS_ENQUEUE_MANY).toContain('local function enqueue_one(P, a, o)');
+    expect(REDIS_ENQUEUE_MANY).toContain(`for o = 2, #ARGV, ${ENQUEUE_ARITY} do`);
   });
 
   test('claim reads claimed and buried rows apart, and reports the buried once', async () => {

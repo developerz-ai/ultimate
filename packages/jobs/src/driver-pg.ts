@@ -31,6 +31,7 @@ import {
   REQUEUEABLE_STATES,
 } from './driver';
 import { SQL_QUEUE_DEMAND } from './driver-pg-demand-sql';
+import { pgEnqueueMany } from './driver-pg-enqueue-many';
 import { pgOperator } from './driver-pg-operator';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
@@ -257,7 +258,7 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
     },
   };
 
-  return {
+  const driver: JobDriver = {
     name: 'pg',
     steps: postgresStepStore(exec),
     backfills: postgresBackfillLedger(exec),
@@ -329,6 +330,10 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
         fix: 'x db migrate',
       });
     },
+
+    // One statement for the batch (`driver-pg-enqueue-many.ts`); `enqueue` for a row whose holder
+    // settled between that statement and the read behind it.
+    enqueueMany: (requests) => pgEnqueueMany(exec, clock, requests, (one) => driver.enqueue(one)),
 
     async claim(claimOptions: ClaimOptions): Promise<readonly ClaimedJob[]> {
       assertClaimQueues('pg', claimOptions);
@@ -435,6 +440,7 @@ export function postgresJobDriver(options: PostgresJobDriverOptions = {}): JobDr
       }));
     },
   };
+  return driver;
 }
 
 /**

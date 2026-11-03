@@ -1,13 +1,12 @@
 // The outbound half of the wire format, pinned against the ONE literal the inbound half also
 // asserts.
 //
-// `WEBHOOK_VECTOR` is the CROSS-PACKAGE pin. `@ultimat3/http` verifies this format and neither
-// package may import the other — this one's boundary forbids `http`, and http (tier 2) may not
-// reach tier 3 — so a round trip cannot be written as one test in either tree. What can be
-// written is one vector, twice: `packages/http/src/webhook-verify.test.ts` carries the same five
-// values and the same hex and asserts that a request built from them VERIFIES, this file asserts
-// that signing them PRODUCES them. Either side changing the canonical string turns its own file
-// red, which is the property a round trip would have bought.
+// `WEBHOOK_VECTOR` is the CROSS-PACKAGE pin. `@ultimat3/http` verifies this format, and http
+// (tier 2) may not reach tier 3, so the vector is stated in both trees rather than shared. What
+// can be written is one vector, twice: `packages/http/src/webhook-verify.test.ts` carries the same
+// five values and the same hex and asserts that a request built from them VERIFIES, this file
+// asserts that signing them PRODUCES them. Either side changing the canonical string turns its
+// own file red, which is the property a round trip would have bought.
 
 import { describe, expect, test } from 'bun:test';
 import type { WebhookSigningInput } from '@ultimat3/core';

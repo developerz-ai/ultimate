@@ -65,16 +65,24 @@ async function rig(options: { park: boolean }): Promise<Rig> {
     arrived = resolve;
   });
   let parked = options.park;
+  const enqueue = async (request: EnqueueRequest): Promise<EnqueueResult> => {
+    arrived();
+    if (parked) {
+      parked = false;
+      await gate;
+    }
+    accepted.push(request.idempotencyKey);
+    return base.enqueue(request);
+  };
+  // The relay publishes a batch through `enqueueMany`; it parks on the same first row the row
+  // loop would, so the pass in flight is the same pass either way.
   const driver: JobDriver = {
     ...base,
-    async enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
-      arrived();
-      if (parked) {
-        parked = false;
-        await gate;
-      }
-      accepted.push(request.idempotencyKey);
-      return base.enqueue(request);
+    enqueue,
+    async enqueueMany(requests) {
+      const results: EnqueueResult[] = [];
+      for (const request of requests) results.push(await enqueue(request));
+      return results;
     },
   };
 

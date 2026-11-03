@@ -71,24 +71,13 @@ export interface CoveragePin {
  *
  * `scripts` joined the gate on 2026-10-01 as one more unit, measured for the first time.
  *
- * `jobs` was pinned on 2026-10-27 by the runtime, not by a change: Bun 1.4.4 counts fewer functions
- * under `--coverage` and the uncovered ones stay, so its function ratio fell under the target.
+ * `jobs` was pinned on 2026-10-27 by the runtime (Bun 1.4.4 counts fewer functions under
+ * `--coverage`) and unpinned on 2026-11-03 by tests: 98.56% / 95.29%.
  *
  * A new entry here is a regression that someone chose not to fix yet, and it needs the reason
  * written in `why`. Re-measure with `bun run scripts/coverage-gate.ts --all --json`.
  */
 export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
-  jobs: {
-    lines: 98,
-    funcs: 94,
-    why:
-      'Bun 1.4.4, 2026-10-27, no test or source changed: 98.47% / 95.46% on 1.4.3, 98.15% / ' +
-      '94.59% on 1.4.4. 1.4.4 stops counting some functions under --coverage (lcov FNF over ' +
-      'packages/jobs/src falls, FNH falls by the same amount, the uncovered ones stay), so the ' +
-      "ratio drops. What is uncovered is the pg drivers' fixtures (driver-answers-fixture.ts, " +
-      'driver-lifecycle-fixture.ts) that only the live suites reach. Deleted when they are ' +
-      'covered without a live service.',
-  },
   scripts: {
     lines: 83,
     funcs: 89,

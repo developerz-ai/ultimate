@@ -30,40 +30,70 @@ redis.call('ZREM', P .. ':run:' .. queue, id)
 `;
 
 /**
- * `ARGV`: namespace, id, name, queue, input, idempotency key, runId, maxAttempts, runAt, now,
- * tenant, traceparent, enqueuedBy, namespace field. Answers `{ outcome, id, runId }`: `published`
- * when the caller-allocated id already names a row (`SQL_ENQUEUE`'s `not exists`), `deduped` when
- * a live row holds the key, `created` otherwise.
+ * One enqueue, as a Lua function both enqueue scripts call, so the single and the batch insert are
+ * ONE body. `a[o]` onwards, `ENQUEUE_ARITY` fields: id, name, queue, input, idempotency key,
+ * runId, maxAttempts, runAt, now, tenant, traceparent, enqueuedBy, namespace field. Answers
+ * `{ outcome, id, runId }`: `published` when the caller-allocated id already names a row
+ * (`SQL_ENQUEUE`'s `not exists`), `deduped` when a live row holds the key, `created` otherwise.
  */
-export const REDIS_ENQUEUE = `
+const ENQUEUE_ONE = `
 ${LIVE}
-local P = ARGV[1]
-local id = ARGV[2]
-local job = P .. ':job:' .. id
-if redis.call('EXISTS', job) == 1 then
-  return { 'published', id, redis.call('HGET', job, 'runId') }
+local function enqueue_one(P, a, o)
+  local id = a[o]
+  local job = P .. ':job:' .. id
+  if redis.call('EXISTS', job) == 1 then
+    return { 'published', id, redis.call('HGET', job, 'runId') }
+  end
+  local nk = a[o + 12]
+  local holder = redis.call('HGET', P .. ':idem', nk)
+  if holder then
+    local row = redis.call('HMGET', P .. ':job:' .. holder, 'state', 'runId')
+    if row[1] and LIVE[row[1]] then return { 'deduped', holder, row[2] } end
+  end
+  local now = tonumber(a[o + 8])
+  local runAt = tonumber(a[o + 7])
+  local state = 'ready'
+  if runAt > now then state = 'delayed' end
+  local queue = a[o + 2]
+  redis.call('HSET', job,
+    'id', id, 'name', a[o + 1], 'queue', queue, 'input', a[o + 3], 'idempotencyKey', a[o + 4],
+    'runId', a[o + 5], 'attempt', '0', 'maxAttempts', a[o + 6], 'state', state,
+    'runAt', a[o + 7], 'createdAt', a[o + 8], 'updatedAt', a[o + 8], 'claim', '0', 'nk', nk)
+  if a[o + 9] ~= '' then redis.call('HSET', job, 'tenantId', a[o + 9]) end
+  if a[o + 10] ~= '' then redis.call('HSET', job, 'traceparent', a[o + 10]) end
+  if a[o + 11] ~= '' then redis.call('HSET', job, 'enqueuedBy', a[o + 11]) end
+  redis.call('ZADD', P .. ':wait:' .. queue, runAt, id)
+  redis.call('SADD', P .. ':queues', queue)
+  redis.call('HSET', P .. ':idem', nk, id)
+  return { 'created', id, a[o + 5] }
 end
-local nk = ARGV[14]
-local holder = redis.call('HGET', P .. ':idem', nk)
-if holder then
-  local row = redis.call('HMGET', P .. ':job:' .. holder, 'state', 'runId')
-  if row[1] and LIVE[row[1]] then return { 'deduped', holder, row[2] } end
+`;
+
+/** Fields one request binds, after the namespace — what `ENQUEUE_ONE` reads from `a[o]` on. */
+export const ENQUEUE_ARITY = 13;
+
+/** `SQL_ENQUEUE`. `ARGV`: namespace, then one request's `ENQUEUE_ARITY` fields. */
+export const REDIS_ENQUEUE = `
+${ENQUEUE_ONE}
+return enqueue_one(ARGV[1], ARGV, 2)
+`.trim();
+
+/**
+ * `SQL_ENQUEUE_MANY`: every request in ONE script, so the batch is atomic on the server and a key
+ * twice in it is one job — the second request meets the first's `idem` entry. `ARGV`: namespace,
+ * then `ENQUEUE_ARITY` fields per request, in request order. Answers the three fields
+ * `enqueue_one` answers, per request, flat and in order.
+ */
+export const REDIS_ENQUEUE_MANY = `
+${ENQUEUE_ONE}
+local out = {}
+for o = 2, #ARGV, ${ENQUEUE_ARITY} do
+  local answer = enqueue_one(ARGV[1], ARGV, o)
+  table.insert(out, answer[1])
+  table.insert(out, answer[2])
+  table.insert(out, answer[3])
 end
-local now = tonumber(ARGV[10])
-local runAt = tonumber(ARGV[9])
-local state = 'ready'
-if runAt > now then state = 'delayed' end
-redis.call('HSET', job,
-  'id', id, 'name', ARGV[3], 'queue', ARGV[4], 'input', ARGV[5], 'idempotencyKey', ARGV[6],
-  'runId', ARGV[7], 'attempt', '0', 'maxAttempts', ARGV[8], 'state', state, 'runAt', ARGV[9],
-  'createdAt', ARGV[10], 'updatedAt', ARGV[10], 'claim', '0', 'nk', nk)
-if ARGV[11] ~= '' then redis.call('HSET', job, 'tenantId', ARGV[11]) end
-if ARGV[12] ~= '' then redis.call('HSET', job, 'traceparent', ARGV[12]) end
-if ARGV[13] ~= '' then redis.call('HSET', job, 'enqueuedBy', ARGV[13]) end
-redis.call('ZADD', P .. ':wait:' .. ARGV[4], runAt, id)
-redis.call('SADD', P .. ':queues', ARGV[4])
-redis.call('HSET', P .. ':idem', nk, id)
-return { 'created', id, ARGV[7] }
+return out
 `.trim();
 
 /**

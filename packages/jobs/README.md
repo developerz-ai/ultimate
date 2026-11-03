@@ -38,6 +38,7 @@ nightlyDigest.describe();                         // { kind: 'task', cron, tz, j
 | Member | On | Behaviour |
 |---|---|---|
 | `enqueue(input, options?)` | `JobHandle` | queues through `jobsFacade()`; joins the caller's `tx` when the outbox is installed. Answers `{ id, runId, deduped }` — the job's own ids on every path, staged or direct. `options.runId` names the run instead of having one minted |
+| `enqueueMany(inputs, options?)` | `JobHandle` | many of one job: one round trip per 1,000 inputs (a statement on Postgres, a script on Redis) on the same path `enqueue` takes, answered in input order. At most `MAX_ENQUEUE_BATCH` (10,000, else `X_JOB_ENQUEUE_BATCH_TOO_LARGE`); `EnqueueManyOptions` is `EnqueueOptions` without `runId`. A loop of `enqueue` is `X_N_PLUS_ONE_WRITE`, whose fix names this call. `JobDriver.enqueueMany` is required of every driver (it opens with `assertEnqueueMany`: `onConflict: 'error'` is refused in a batch); `OutboxStore.stageMany` / `markPublishedMany` are optional: absent, the facade and the relay loop |
 | `as(actor, input, options?)` | `JobHandle` | enqueue on behalf of an actor — fills `tenantId` from `actor.orgId` so per-tenant limits apply |
 | `describe()` | `JobHandle` | the `JobDescriptor` the manifest, `/_x` and MCP read |
 | `entries()` | `TaskHandle` | the declared `[job, input]` pairs |
@@ -518,6 +519,69 @@ exports/<orgId>/<exportId>/manifest.json
 this package holds no storage dependency, and taking one so a queue could name a disk would put the
 object store on tier 3's import graph.
 
+## Importing a large file is a job too
+
+`importRows()` is `exportRows()`'s twin: a factory over `job()` that reads one object from storage
+a page at a time, through the app's schema, into the app's `handle`. It exists because
+`parse(await disk.get(key))` holds the whole upload, and a retried job re-applies every row from
+zero. Which columns mean what, and who may import, stay the app's.
+
+```ts
+import { importRows, t } from '@ultimat3/jobs';
+import { disk } from '@ultimat3/storage';
+
+interface Order {
+  readonly id: string;
+  readonly orgId: string;
+  readonly total: number;
+}
+
+// The app's own table: `handle` takes whatever `db.orders.upsertAll(…)` answers.
+declare const db: {
+  readonly orders: {
+    upsertAll(rows: readonly Order[], args: { onConflict: readonly string[] }): Promise<unknown>;
+  };
+};
+
+export const importOrders = importRows({
+  name: 'orders.import',
+  input: t.object({ orgId: t.uuid, key: t.string }),
+  tenant: ({ orgId }) => orgId,
+  source: () => disk('imports'), // a thunk; a StorageDriver IS an ImportSource
+  key: ({ key }) => key,
+  format: 'csv',
+  columns: ['id', 'total'],
+  schema: t.object({ id: t.uuid, total: t.number.int() }),
+  handle: ({ rows, input }) =>
+    db.orders.upsertAll(rows.map((row) => ({ ...row, orgId: input.orgId })), {
+      onConflict: ['orgId', 'id'],
+    }),
+  errors: { sink: () => disk('imports'), prefix: ({ orgId }) => `imports/${orgId}/errors` },
+});
+```
+
+| Rule | Why |
+|---|---|
+| one step per page; its output `{ offset, line, rows, rejected, errorPart, header }` is the checkpoint | a killed attempt resumes at the byte offset. Never the rows: a step's output is retained for the whole run |
+| no carry between steps | bytes after the last complete record are re-read by the next page; a record boundary is found on BYTES (`0x0A` outside `"`), which no UTF-8 sequence contains |
+| `handle` runs at least once per page | `upsertAll` is the idempotent spelling, as for `backfill()` |
+| `pageBytes` (1 MiB) must exceed `maxRecordBytes` (64 KiB) | so every window holds a whole record; past `maxRecordBytes` is `X_IMPORT_RECORD_TOO_LARGE` |
+| a page uses its whole `pageBytes` read, handed to `handle` `batch` (500) records at a time | bytes read are O(file) and steps about file ÷ `pageBytes`, while one call is still one bounded statement. Measured: a 10 MB file of `a\n` rows is 10 reads, 10,000,004 bytes and 10 page steps |
+| csv: header = `columns`, any order; empty cell `null`, quoted `""` the empty string; cells coerced as an HTTP form is (`coerceInput`) | `X_IMPORT_HEADER_MISMATCH` names missing and undeclared |
+| ndjson: a key outside `columns` refuses the row | `record.undeclared`, naming the key |
+| a refused row is `{ line, field, code }` in `<prefix>/<runId>/errors-NNNNN.ndjson` (`importErrorKey`); the result's `errorPrefix` names it, so a re-import never mixes runs | the code is a format rule (`IMPORT_REJECTIONS`) or the schema's `rule`; **never the value** |
+| past `maxRowErrors` (1,000) the run fails `X_IMPORT_TOO_MANY_ERRORS` | the `batch` that crossed it unhandled, its report written; `0` stops at the first bad batch |
+| the report is `{ rows, rejected, parts, bytes, errorPrefix }` | bounded, for `x jobs show` |
+| a csv with no first line — empty, a BOM, blank lines — is `X_IMPORT_HEADER_MISMATCH` | zero rows from a file that never named its columns is not a success |
+| a header mismatch prints the DECLARED names whole and the file's as a count plus five escaped, cut names | a header cell is file content: raw, it forges a log line or prompts the agent reading `x jobs show` |
+| `tenant: 'none'` gets no cross-tenant escape | a scoped write in `handle` fails closed with `X_TENANCY_ACTOR_ORG_REQUIRED` |
+| no formula guard is undone | an import cannot know a leading `'` was the exporter's |
+
+Measured `As of 2026-11-03` (`pageBytes` 1 MiB, `batch` 5,000): a 200 MB csv imported with the
+heap up 42 MB, a 20 MB one with it up 24 MB — a page and the garbage behind it, not the file.
+`ImportSource` is a seam for `ExportSink`'s reason; `scripts/export-sink.test.ts` compiles
+`StorageDriver` into both. `memoryImportSource()` is the test source.
+
 ## Outbound webhooks are jobs too
 
 `webhook()` is a factory over `job()` and delivers **one event to one endpoint**. Retry with
@@ -605,6 +669,51 @@ writes no ledger row. Without one, the only bound is `configureLifecycle({ deadl
 default: past it the worker logs `jobs.worker.drain-abandoned` and exits, and the row comes back
 only when its lease lapses, as a COUNTED attempt the receiver may already have processed.
 `timeout: '10s'` against the default budget ends every drained delivery inside it.
+
+## Inbound webhooks are jobs too
+
+`webhookReceiver()` is the twin of `webhook()`: a factory over `job()` plus the plain `Route` that
+feeds it. The route reads the exact bytes under `maxBytes`, asks your `verify`, enqueues the
+payload it answered with `outbox: false`, and only then answers `200 { ok: true, eventId,
+deduped }`. `handle` is the job's body and receives that payload, already verified. **No vendor
+verifier ships**: `verify` is a plain function, `verifyBodyHmac` from `@ultimat3/http` the one
+helper. **Declaring it is its registration**: list it in `defineApi({ jobs })`, and both boots mount
+its routes (`webhookReceiverRoutes()`), with no `runtime.ts` line.
+
+```ts
+import { verifyBodyHmac } from '@ultimat3/http';
+import { webhookReceiver } from '@ultimat3/jobs';
+
+export const vendorEvents = webhookReceiver({
+  name: 'vendor.events',
+  path: '/hooks/vendor/:account',
+  tenant: 'none',
+  verify: (inbound) => {
+    const { text } = verifyBodyHmac({
+      bytes: inbound.bytes,
+      secret: Bun.env['VENDOR_SECRET'] ?? '',
+      given: inbound.headers.get('x-vendor-signature'),
+      encoding: 'hex',
+    });
+    // The id from the SIGNED bytes: an unsigned header would replay one signature forever.
+    const id = /"id":"([^"]{1,256})"/.exec(text ?? '')?.[1] ?? '';
+    return { eventId: id, payload: { text } };
+  },
+  handle: async ({ eventId, payload }) => ({ eventId, payload }),
+});
+```
+
+| Rule | Why |
+|---|---|
+| nothing is parsed before `verify`, and no content type is required | a schema that answers first turns a vendor's shape change into a refusal, and XML, `octet-stream` or no type would never reach the check |
+| `verify` answers `{ eventId, payload }` after the mac check, and `handle` receives the payload | a retry an hour later must not re-verify against a 5-minute window; what the queue holds was verified once, at the door |
+| `eventId` comes from verified data, 1–256 printable ASCII characters | it is the dedupe key, so an unsigned one replays a captured signature under fresh ids. Anything else is `X_WEBHOOK_EVENT_ID_INVALID` (422), never echoed, never a 5xx a vendor retries forever |
+| the ack follows the durable row | `outbox: false`: the row is written, not staged behind a commit. An enqueue failure is 503 + `Retry-After` (`X_WEBHOOK_RECEIVER_UNAVAILABLE`), so the vendor redelivers |
+| dedupe is the live window | a live redelivery answers `deduped: true`. After the job settles, `handle` runs again: at least once, and the seen-set is your table — a claim before the enqueue would lose the event if the enqueue failed |
+| the payload is JSON, `.sensitive()` | `x jobs show` prints `[redacted]`. It stays until `jobs.doneRetentionMs` / `deadRetentionMs` |
+| `verify` may answer `{ answer: Response }`, and `handshake` mounts `GET` | a subscription confirm or a challenge is the vendor's protocol; nothing queues |
+| `.routes()` is set on the job handle in place, never on a copy | `isJobHandle` proves the object `job()` built, so `defineApi({ jobs })` registers it like any job |
+| the path is absolute and outside `/api` and `/_x` | `X_WEBHOOK_RECEIVER_INVALID` at declaration, beside a missing `verify`/`handle` or a bad `maxBytes` |
 
 ## The deadline cancels
 

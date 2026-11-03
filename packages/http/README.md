@@ -354,8 +354,9 @@ mechanism. It is a plain function and not a pipeline stage, because the secret i
 and only the route knows which one applies.
 
 ```ts
-// apps/web/webhooks/partner.ts — mounted as a plain HTTP route through the `routes` runtime
-// override (apps/web/runtime.ts); `api/` holds no route file
+// The check alone. Mounted, it is the `verify` of a `webhookReceiver()` from @ultimat3/jobs —
+// verify(inbound) { return verifyWebhookSignature(inbound.request(), { secret }) } — which
+// queues durably before it acks; a hand-mounted route like this one acks before anything is kept.
 import { verifyWebhookSignature } from '@ultimat3/http';
 
 declare const env: { readonly PARTNER_WEBHOOK_SECRET: string };   // the app's defineEnv() result
@@ -395,6 +396,36 @@ wire format — the canonical string, `WEBHOOK_ID_HEADER`, `WEBHOOK_SIGNATURE_HE
 `WEBHOOK_TOPIC_HEADER`, `WEBHOOK_SIGNATURE_VERSION` — is `@ultimat3/core`'s
 (`webhook-signature.ts`), and a receiver imports the names from there: 25.0.0 dropped this
 package's re-exports of them, and of `escapeHtml` and `readCookie` (`X_HELPER_COPY`).
+
+### A vendor's hmac: `verifyBodyHmac`
+
+Every other sender signs its own way, so no vendor verifier ships. `verifyBodyHmac` is the one
+shared step: HMAC-SHA256 under a UTF-8 secret over the bytes you name, compared in constant time,
+under any secret of a rotation list. Which bytes (`body`, `${t}.${body}`) and which header are the
+vendor's, and yours to pass. A secret the vendor hands out encoded (Svix's base64 `whsec_`) is not
+this helper's: the mail receivers decode their own. It answers `{ bytes, text }` — read the event
+id from `text`, never from an unsigned header.
+
+```ts
+import { verifyBodyHmac } from '@ultimat3/http';
+
+declare const bytes: Uint8Array;            // the exact body — `webhookReceiver`'s inbound.bytes
+declare const headers: Headers;
+
+const { text } = verifyBodyHmac({
+  bytes,
+  secret: [Bun.env['VENDOR_SECRET'] ?? '', Bun.env['VENDOR_SECRET_PREVIOUS'] ?? ''],
+  given: headers.get('x-hub-signature-256'),
+  encoding: 'hex',                          // or 'base64'
+  prefix: 'sha256=',                        // compared, never stripped
+});
+```
+
+| Answer | When |
+|---|---|
+| `{ bytes, text }` | one secret's mac, behind `prefix`, equals `given`; `text` is `null` when the bytes are not UTF-8 |
+| `X_WEBHOOK_SIGNATURE_INVALID` (401) | no signature, or none matches. The cause names the encoding, the prefix and the secret count — never a mac, a secret or a byte |
+| `X_CONFIG_INVALID` | an empty or unset secret, an empty list, or one empty entry in it |
 
 ## The exact body bytes
 

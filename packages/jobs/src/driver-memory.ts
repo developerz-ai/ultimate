@@ -25,6 +25,7 @@ import type {
 import {
   assertClaimBounds,
   assertClaimQueues,
+  assertEnqueueMany,
   DEFAULT_QUEUE,
   LEASE_LAPSED_FINAL_ATTEMPT,
   LIVE_STATES,
@@ -220,7 +221,7 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
     },
   };
 
-  return {
+  const driver: MemoryJobDriver = {
     name: 'memory',
     steps,
     backfills,
@@ -274,6 +275,15 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       };
       jobs.set(record.id, record);
       return { id: record.id, runId: record.runId, deduped: false };
+    },
+
+    // A loop of this driver's own `enqueue`, which IS its semantics: in order, so a second request
+    // under a key the first just took is `deduped`, as one `SQL_ENQUEUE_MANY` statement answers.
+    async enqueueMany(requests: readonly EnqueueRequest[]): Promise<readonly EnqueueResult[]> {
+      assertEnqueueMany('memory', requests);
+      const results: EnqueueResult[] = [];
+      for (const request of requests) results.push(await driver.enqueue(request));
+      return results;
     },
 
     // `async`, so an empty queue list REJECTS here exactly as it does on the pg driver: a
@@ -459,4 +469,5 @@ export function memoryJobDriver(options: MemoryJobDriverOptions = {}): MemoryJob
       return Promise.resolve();
     },
   };
+  return driver;
 }

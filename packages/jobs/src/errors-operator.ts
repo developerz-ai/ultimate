@@ -1,7 +1,7 @@
 // Single responsibility: the refusals the operator surface gives — a job that cannot be removed
 // or promoted, a page it cannot answer — and the one failure it only ever reports, a settled
 // run's `onSettled` hook. Its own
-// module because `errors.ts` sits at the size ceiling; the codes are registered there.
+// module because `errors.ts` sits at the size ceiling; the codes are registered in `error-codes.ts`.
 
 import { isFixShellSafe, renderFixShellArg, renderThrowable, UltimateError } from '@ultimat3/core';
 

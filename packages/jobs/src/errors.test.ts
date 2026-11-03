@@ -9,7 +9,11 @@ import {
   JOB_ERROR_CODES,
   JOB_ERROR_TITLES,
   JOB_OWNED_ERROR_CODES,
+} from './error-codes';
+import {
+  CancelUnsupportedError,
   JobDuplicateError,
+  JobMaxAttemptsError,
   StepDuplicateError,
 } from './errors';
 
@@ -63,5 +67,26 @@ describe('job error titles', () => {
       expect(error.docs).not.toContain(error.code);
       expect(error.docs).not.toContain('ultimate.dev');
     }
+  });
+});
+
+describe('the two refusals only an operator verb meets', () => {
+  test('retries spent name the retry command for that job id', () => {
+    const error = new JobMaxAttemptsError({
+      job: 'sendDigest',
+      jobId: 'j-7',
+      attempts: 3,
+      lastError: 'smtp 421',
+    });
+    expect(error.code).toBe('X_JOB_MAX_ATTEMPTS');
+    expect(error.cause).toBe('job "sendDigest" failed 3 times, last error: smtp 421');
+    expect(error.fix).toBe('x jobs retry j-7');
+  });
+
+  test('a driver with no cancel names the driver and the one that has it', () => {
+    const error = new CancelUnsupportedError({ driver: 'redis' });
+    expect(error.code).toBe('X_JOB_NOT_CANCELLABLE');
+    expect(error.cause).toContain('"redis"');
+    expect(error.fix).toContain('setJobDriver(postgresJobDriver())');
   });
 });

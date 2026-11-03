@@ -11,7 +11,7 @@
 // the one package that can never test it. Same shape as `scripts/browser-barrel.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import type { ExportSink } from '@ultimat3/jobs';
+import type { ExportSink, ImportSource } from '@ultimat3/jobs';
 import type { StorageDriver } from '@ultimat3/storage';
 
 describe('the ExportSink seam', () => {
@@ -43,5 +43,28 @@ describe('the ExportSink seam', () => {
     };
     await sink.put('exports/o/part-00000.csv', new Uint8Array([1, 2, 3]));
     expect(written).toEqual([{ key: 'exports/o/part-00000.csv', bytes: 3 }]);
+  });
+});
+
+// The inbound twin: `importRows({ source: () => disk('imports') })` is documented the same way, so
+// the same assignment is compiled here rather than asserted in a comment.
+describe('the ImportSource seam', () => {
+  test('a StorageDriver is assignable to an ImportSource', () => {
+    const driver = undefined as unknown as StorageDriver;
+    const source: ImportSource = driver;
+    expect(source).toBe(driver);
+  });
+
+  test('a ranged read is the only read the seam can ask for', async () => {
+    const asked: (readonly [number, number])[] = [];
+    const source: ImportSource = {
+      stat: async () => ({ size: 10 }),
+      get: async (_key, { range }) => {
+        asked.push(range);
+        return { bytes: new Uint8Array(range[1] - range[0] + 1) };
+      },
+    };
+    expect((await source.get('imports/o/a.csv', { range: [2, 5] })).bytes.byteLength).toBe(4);
+    expect(asked).toEqual([[2, 5]]);
   });
 });

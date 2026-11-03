@@ -1433,3 +1433,52 @@ Verbatim from [`packages/jobs/CLAUDE.md`](../../packages/jobs/CLAUDE.md), which 
   key. The handle carries `concurrency` (the limit), `whenBusy` (set exactly when keyed) and
   `concurrencyKeyFor()` — a METHOD. Lease key `job-key:<encoded name>:<key>`; plain `job:<name>`.
   A bad cap is `X_JOB_DECLARATION_INVALID`.
+
+## Moved out 2026-11-03 (plan 101 wave 4a, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/jobs/CLAUDE.md`](../../packages/jobs/CLAUDE.md), which keeps a one-paragraph
+pointer to both sections, to make room for `enqueueMany`, `importRows()` and `webhookReceiver()`.
+
+### Rules — the operator surface
+
+- **Every operator capability is a member of `JobIntrospection`** (`introspection.ts`), implemented
+  by BOTH drivers, bounds as constants beside it; `operator-surface*-fixture.ts` is their parity
+  suite (memory + real pg).
+- **A settle answers whether it landed**; a miss is `jobs.settle.unowned`, not a throw.
+- **The counter moves in the SETTLING statement** (`driver-pg-settle-sql.ts`): one-minute bucket per
+  job name; `nackOutcome()` decides what a nack adds (a shed, a suspension, a drain: nothing).
+  The scheduler leader folds tiers (`rollupCounters`), at most once a bucket.
+- **`list()` is KEYSET** (`after: jobCursor(lastRow)`, newest first by `(created_at, id)`); the pg
+  seek reads the cursor row's own `created_at` — the cursor's ms is rounded. A page past
+  `MAX_JOB_PAGE` or a foreign cursor is `X_JOB_PAGE_INVALID`, never a bare invariant.
+- **`taskFires()` is the last occurrence that DISPATCHED**, never the watermark (arming and skipping
+  move that): `SQL_SCHEDULER_FIRE` writes it, `fireThroughDriver` calls `recordTaskFire`.
+- **A pause is a ROW the claim reads** (`x_job_pauses`, `not exists` in `SQL_CLAIM`), never a column
+  on `x_jobs`. A paused TASK keeps its watermark, so resume is its own `catchUp`.
+- **An occurrence fires in ONE statement** (`SchedulerState.fire`, `SQL_SCHEDULER_FIRE`): the
+  watermark is the fence, jobs insert only `where exists (select 1 from moved)`.
+- **`progress()` is throttled in `progress.ts`** and flushed before every settle. Full rule: `docs/history/jobs.md`.
+- **Failed for good + `deadLetter: false` is DROPPED**: `nack({ fail })`, outcome `dropped`.
+
+### Rules — idle cost and the wake
+
+Long form: `docs/history/jobs.md`, "the cross-process wake".
+
+- **An idle round touches no store.** Full rule: `docs/history/jobs.md`.
+- **The worker and the relay back off** (`idle-backoff.ts`): floor → doubling → the ceiling, 2 s, or
+  5 s while `wakeIsLive()`. An idle worker pass is ONE claim over every queue with a free slot.
+- **The poll is the guarantee, the wake an optimisation.** `startQueueWake` holds one `LISTEN`
+  session and raises `enqueue-signal.ts`'s two signals; it is live only once a probe has crossed
+  BOTH channels, and un-proven on every re-dial — a transaction-pooling proxy resolves a `LISTEN`
+  and delivers nothing.
+- **A statement decides whether it notifies** (`driver-pg-wake-sql.ts`): once per queue per
+  `WAKE_SLOT_MS` for an enqueue, never behind an unclaimed row for a stage. Every notifying commit
+  serialises behind ONE Postgres lock: never notify unconditionally. Payload: the queue name.
+- **A wake resets the backoff**: the floor passes after it find the row a slot silenced.
+- **The claim loop is ONE chain** (`worker-loop.ts`): a wake on a pass in flight sets `again`; a
+  freed slot and a due retry (`JobExecution.resumeAt`) `kick` one pass, no reset.
+- **`idle-cost.test.ts` / `queue-wake.test.ts` count statements per idle minute** — scheduler 6,
+  worker and relay 30 with no wake, 12 with. Raising one is a regression.
+- **The event bus has ONE clock**: `postgresEventBus` takes no `clock`; `EventLookup.now()` is
+  REQUIRED, stamps a NEW wait, and calls the TIMEOUT (asked once the runner thinks time is up).
+  `purgeExpired()` is awaited and counted; `eventsPurgeTarget(bus)` is its `PurgeTarget`.
