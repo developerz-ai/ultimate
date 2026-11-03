@@ -15,6 +15,7 @@ import {
   namesFromEnv,
   privateNameFindings,
   privateNameReport,
+  REQUIRED_ENV,
   SKIP_NOTE,
   scanPrivateNames,
   tokenMatch,
@@ -53,7 +54,7 @@ async function tree(
 const run = (root: string, ...raw: [string | undefined] | []) =>
   privateNameReport(root, { [ENV_NAME]: raw.length === 0 ? NAMES : raw[0] });
 
-/** A push to main on Actions: the one run where a missing secret is a red, never a skip. */
+/** A push to main on Actions. Not a trigger on its own: a unit job runs there with no secret. */
 const MAIN_PUSH = {
   GITHUB_ACTIONS: 'true',
   GITHUB_EVENT_NAME: 'push',
@@ -165,10 +166,10 @@ describe('private-names · unset is a skip, never a scan', () => {
     expect(logged).toEqual([SKIP_NOTE]);
   });
 
-  test('a push to main with the secret missing is red, never a skip', async () => {
+  test('the required flag with the secret missing is red, never a skip', async () => {
     const root = await tree({ 'a.md': 'fine\n' });
     for (const raw of [undefined, '', ' \n']) {
-      const result = await privateNameReport(root, { ...MAIN_PUSH, [ENV_NAME]: raw });
+      const result = await privateNameReport(root, { [REQUIRED_ENV]: '1', [ENV_NAME]: raw });
       expect(result.ok).toBe(false);
       expect(result.findings?.map((finding) => finding.code)).toEqual(['X_PRIVATE_NAMES_UNSET']);
       expect(result.summary).not.toBe(SKIP_NOTE);
@@ -176,9 +177,11 @@ describe('private-names · unset is a skip, never a scan', () => {
   });
 
   test.each([
+    ['a push to main without the flag (the unit job)', MAIN_PUSH],
     ['a pull request', { ...MAIN_PUSH, GITHUB_EVENT_NAME: 'pull_request' }],
-    ['a push to another branch', { ...MAIN_PUSH, GITHUB_REF: 'refs/heads/feat/x' }],
     ['a local run', {}],
+    ['the flag set to anything but 1', { [REQUIRED_ENV]: '0' }],
+    ['the flag empty', { [REQUIRED_ENV]: '' }],
   ])('%s with the secret missing still skips', async (_label, env) => {
     const root = await tree({ 'a.md': 'quimtel\n' });
     const result = await privateNameReport(root, { ...env, [ENV_NAME]: '' });

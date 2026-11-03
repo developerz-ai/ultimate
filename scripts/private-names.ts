@@ -9,9 +9,11 @@
 //
 // UNSET IS A SKIP, and says so: a fork's pull request cannot read the secret and receives an empty
 // string. The skip note and the "checked" line never appear together, so a skip cannot read as a
-// scan. The one exception is a push to main on Actions, where the secret always exists: missing
-// there, the guard would pass forever while scanning nothing, so it is red. Untracked files git does
-// not ignore are scanned too, so a new page is caught before its commit. CHANGELOG.md,
+// scan. The one exception is EXPLICIT: with ULTIMATE_PRIVATE_NAMES_REQUIRED=1, which ci.yml sets
+// beside the secret on the step that runs `boundaries` on a push to main, an empty secret is red,
+// since the guard would otherwise pass forever while scanning nothing. Never inferred from the
+// event: a unit job on the same push runs this guard with no secret and must skip. Untracked files
+// git does not ignore are scanned too, so a new page is caught before its commit. CHANGELOG.md,
 // docs/history/ and docs/plans/ are records and are not scanned.
 //
 //   bun run private-names  ·  bun run scripts/private-names.ts [--json]
@@ -29,6 +31,9 @@ const SCRIPT = 'private-names';
 
 /** The one variable the names are read from. */
 export const ENV_NAME = 'ULTIMATE_PRIVATE_NAMES';
+
+/** Set to `1` on the one CI step that must scan: there an empty secret is red, not a skip. */
+export const REQUIRED_ENV = 'ULTIMATE_PRIVATE_NAMES_REQUIRED';
 
 export const SKIP_NOTE = `private-names: skipped, ${ENV_NAME} is unset`;
 
@@ -148,21 +153,18 @@ export async function scanPrivateNames(
 const LOCATE = (position: number): string => `git ${LIST_FILES.join(' ')} | sed -n '${position}p'`;
 
 /**
- * A push to main on Actions: the secret is set on this repository, so its absence there is a
- * misconfiguration, never a fork. A pull request (a fork's reads it empty) and a local run skip.
+ * The step that set REQUIRED_ENV to `1` handed the secret in beside it, so its absence there is a
+ * misconfiguration. Anything else, the event included, is a skip: a unit job reaches this guard on a
+ * push to main with no secret, and a fork's pull request reads the secret empty.
  */
 export function namesRequired(env: Readonly<Record<string, string | undefined>>): boolean {
-  return (
-    env['GITHUB_ACTIONS'] === 'true' &&
-    env['GITHUB_EVENT_NAME'] === 'push' &&
-    env['GITHUB_REF'] === 'refs/heads/main'
-  );
+  return env[REQUIRED_ENV] === '1';
 }
 
 const UNSET_FINDING: Finding = {
   code: 'X_PRIVATE_NAMES_UNSET',
   at: '.github/workflows/ci.yml',
-  cause: `a push to main ran with ${ENV_NAME} empty, so the private-name guard would scan nothing and pass; on main the secret must arrive`,
+  cause: `${REQUIRED_ENV}=1 and ${ENV_NAME} is empty, so the private-name guard would scan nothing and pass; the step that requires the names must receive the secret`,
   fix: `gh secret set ULTIMATE_PRIVATE_NAMES   # an admin, pasting the off-tree list (one name per line) at its prompt; then re-run the workflow`,
 };
 
@@ -206,7 +208,7 @@ export async function privateNameReport(
     return {
       ok: false,
       script: SCRIPT,
-      summary: `private-names: ${ENV_NAME} is unset on a push to main`,
+      summary: `private-names: ${ENV_NAME} is unset and ${REQUIRED_ENV}=1`,
       findings: [UNSET_FINDING],
     };
   }
