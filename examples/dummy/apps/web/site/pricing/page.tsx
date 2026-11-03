@@ -113,8 +113,12 @@ export const config = defineRoute({
    * `x build --target static`), against 24,576. why: +59 B in the inline runtime — `catchUp` lets
    * go of a press after a mount it did not flush (a held island's first click ran twice, #506); the
    * other +223 B is the contact island's growth from the rest of sweep 9, measured here.
+   * raised 24kb → 25kb (plan 101 wave 1). measured: 24,729 B (2026-11-02;
+   * `x build --target static`), against 24,576. why: the contact form's `rpc` titles every action
+   * refusal off `action/src/error-titles.ts`, and the two new codes' titles
+   * (`X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE`, `X_IDEMPOTENCY_RUN_CEILING`) are the bytes that crossed it.
    */
-  budget: { js: '24kb' },
+  budget: { js: '25kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

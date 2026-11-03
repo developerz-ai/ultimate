@@ -145,6 +145,7 @@ describe('unit · @ultimat3/notify retry classification', () => {
       'X_NOTIFY_FANOUT_TOO_WIDE',
       'X_NOTIFY_STORE_MISSING',
       'X_NOTIFY_DELIVERY_FAILED',
+      'X_NOTIFY_DELIVERY_HELD',
     ];
     const declarationTime = [
       'X_NOTIFY_CHANNELS_EMPTY',

@@ -376,10 +376,10 @@ async function callbackHandler(
   const clear = hasOAuthProvider(segment) ? [clearHandshakeCookie(segment)] : [];
   try {
     const provider = assertEnabled(auth, segment);
-    // Asked here purely so a provider with no credentials answers 404 on THIS leg too: the
-    // exchange below resolves them again from the same two sources. One oracle, closed on both
-    // halves — a 404 on start and a 500 on callback is the same enumeration one request later.
-    credentialsFor(provider, options);
+    // A provider with no credentials answers 404 on THIS leg too: one oracle, closed on both halves
+    // — a 404 on start and a 500 on callback is the same enumeration one request later. And the
+    // answer is what the exchange uses, or `options.env` would answer the start leg alone.
+    const credentials = credentialsFor(provider, options);
     const url = new URL(request.url);
     assertNoProviderError(url, provider);
     const result: LoginResult = await completeOAuthLogin(auth, {
@@ -388,7 +388,7 @@ async function callbackHandler(
         state: url.searchParams.get('state') ?? '',
         code: url.searchParams.get('code') ?? '',
       },
-      ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
+      credentials,
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.resolveGrants === undefined ? {} : { resolveGrants: options.resolveGrants }),

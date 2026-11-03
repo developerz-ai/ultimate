@@ -16,16 +16,22 @@ import { unlocalizedPath } from '@ultimat3/i18n';
 export const ISR_LOCALE_PARAM = '__x_locale';
 
 /**
+ * The reserved parameter a request's origin rides in when the app declares none, a parameter for
+ * the same reason: canonical and `og:url` are absolute against that origin, so a foreign `Host` is
+ * its own entry and never names itself in the page a later visitor is answered. Beside the locale,
+ * as `static-document.ts`'s memo keys. `RESERVED_QUERY_PREFIX` stops a route declaring it.
+ */
+export const ISR_ORIGIN_PARAM = '__x_origin';
+
+/**
  * The URL an `isr` route is rendered FOR: the request's, keeping only the query parameters the
  * route declared in `revalidate.query`, one value each, in sorted order.
  *
- * Undeclared (`null`), the key carries the whole query, so `/blog?x=1`, `/blog?x=2`, … are each a
- * miss, a render and a stored entry: any visitor can make an `isr` route render on demand and push
- * real pages out of the bounded store, and `utm_*` / `fbclid` / `gclid` split one page into as
- * many entries as there are campaigns — each of which a withdrawal then has to reach. An `isr`
- * document is a shared artifact, so what it may vary on is the route's to declare, never the
- * visitor's to choose. `null` is kept only because flipping it changes what a page that reads an
- * undeclared parameter renders, and that waits for a major; `query: []` is the safe declaration.
+ * Undeclared (`null`) is none, the same as `query: []`. An `isr` document is a shared artifact, so
+ * what it may vary on is the route's to declare, never the visitor's to choose: a key carrying the
+ * whole query made `/blog?x=1`, `/blog?x=2`, … each a miss, a render and a stored entry, so any
+ * visitor could make a route render on demand and push real pages out of the bounded store, and
+ * `utm_*` / `fbclid` / `gclid` split one page into as many entries as there are campaigns.
  *
  * The SAME narrowed URL is what `load`, `meta` and the page are given (`data.url`, `props.query`),
  * so a parameter that is not in the key cannot change the document stored under it. Nothing is
@@ -33,9 +39,8 @@ export const ISR_LOCALE_PARAM = '__x_locale';
  * A repeated parameter keeps its FIRST value — `?p=1&p=2` and `?p=1&p=3` are one entry, not two.
  */
 export function isrRequestUrl(url: URL, query: readonly string[] | null): URL {
-  if (query === null) return url;
   const kept = new URLSearchParams();
-  for (const name of [...new Set(query)].sort()) {
+  for (const name of [...new Set(query ?? [])].sort()) {
     const value = url.searchParams.get(name);
     if (value !== null) kept.set(name, value);
   }
@@ -46,8 +51,8 @@ export function isrRequestUrl(url: URL, query: readonly string[] | null): URL {
 }
 
 /**
- * The request's parameter names the route did not declare: what `isrRequestUrl` drops — or, for a
- * route that declared nothing (`null`), what a visitor just used to mint a stored page.
+ * The request's parameter names the route did not declare (`null` declares none): what
+ * `isrRequestUrl` drops.
  */
 export function undeclaredQuery(url: URL, query: readonly string[] | null): readonly string[] {
   const declared = new Set(query ?? []);
@@ -75,10 +80,16 @@ export function undeclaredQuery(url: URL, query: readonly string[] | null): read
  * visitor 1 — for the whole TTL, and with `s-maxage` telling the CDN to do the same. The time zone
  * is deliberately NOT a dimension: it is unbounded where a locale set is declared, and an `isr`
  * page is a shared artifact, so a date on one belongs in an explicit zone the page itself names.
+ *
+ * `origin` is the caller's when the app declares no public origin, so the document's absolute URLs
+ * are the request's own (`ISR_ORIGIN_PARAM`). Added here, after `isrRequestUrl` narrowed, so neither
+ * `revalidate.query` nor its default can drop it; omitted, the request cannot supply it either.
  */
-export function isrKey(url: URL, locale: string): string {
+export function isrKey(url: URL, locale: string, origin?: string): string {
   const params = new URLSearchParams(url.search);
   params.set(ISR_LOCALE_PARAM, locale);
+  if (origin === undefined) params.delete(ISR_ORIGIN_PARAM);
+  else params.set(ISR_ORIGIN_PARAM, origin);
   params.sort();
   return `${canonicalPath(url.pathname)}?${params.toString()}`;
 }

@@ -96,8 +96,10 @@ export {
   IdempotencyConflictError,
   IdempotencyKeyInvalidError,
   IdempotencyNotSharedError,
+  IdempotencyOutputUnserializableError,
   IdempotencyReplayedFailureError,
   IdempotencyReservationLostError,
+  IdempotencyRunCeilingError,
   IdempotencyStatusUnknownError,
   IdempotentReplayRedactedError,
   InputInvalidError,
@@ -144,6 +146,7 @@ export {
   DEFAULT_IDEMPOTENCY_CONFIG,
   getIdempotencyStore,
   IDEMPOTENCY_STATUSES,
+  idempotencyCeilingMs,
   idempotencyConfig,
   isIdempotencyStatus,
   resetIdempotency,
@@ -216,6 +219,20 @@ export {
   resetActions,
 } from './registry';
 export { requestDeadlineMs } from './request-deadline';
+/**
+ * What a named tool passes on its way to `invoke`, on either tool surface. `@ultimat3/mcp`'s
+ * `mcpConfirmations` registers one and `@ultimat3/ai`'s adapter reads it: one tier down from both.
+ */
+export type { ToolGate, ToolGateCall } from './tool-gate';
+export {
+  admitActionCaller,
+  asCallerContext,
+  gatedToolNames,
+  knownToolNames,
+  noteToolNames,
+  registerToolGate,
+  toolGateFor,
+} from './tool-gate';
 /**
  * A mutator FACTORY, never a ninth primitive: `transition()` returns a `mutator`, so a move through
  * a state machine inherits the route, the OpenAPI operation, the typed client, the MCP tool, the job

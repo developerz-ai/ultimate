@@ -157,6 +157,7 @@ describe('concurrent index steps · the real embedded database', () => {
       name: 'drop the uniques',
       now: new Date('2026-10-31T12:00:00.000Z'),
       allowDestructive: true,
+      rollingUnsafe: true,
     });
     expect(contract.followUp).toBeDefined();
     const all = [...migrations, ...files(contract)];

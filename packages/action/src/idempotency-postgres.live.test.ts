@@ -4,7 +4,13 @@
 // to reclaim. Skips unless `TEST_DATABASE_URL` is set.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
+import {
+  ctxOf,
+  probeDatabaseName,
+  runWithContext,
+  sweepProbeDatabases,
+  UltimateError,
+} from '@ultimat3/core';
 import type { PostgresClient } from '@ultimat3/db';
 import { dbExecutor, postgresClient, raw, sql, withTransaction } from '@ultimat3/db';
 import { withIdempotency } from './idempotency';
@@ -51,6 +57,46 @@ describe.skipIf(!hasPostgres)('live · postgres · idempotency settles in the ha
 
   beforeEach(async () => {
     await harness.reset();
+  });
+
+  test('past the deadline with a reservation made: COMMIT lands, settled, and the replay answers', async () => {
+    const controller = new AbortController();
+    const timedOut = new UltimateError({
+      code: 'X_TIMEOUT',
+      cause: 'past the deadline',
+      fix: 'raise it',
+    });
+    await runWithContext(ctxOf({ signal: controller.signal }), () =>
+      harness.charge(KEY, 'ch_1', {
+        during: async () => controller.abort(timedOut),
+      }),
+    );
+    expect(await harness.statusOf(KEY)).toBe('settled');
+    expect(await harness.charges()).toEqual(['ch_1']);
+    expect(await harness.charge(KEY, 'ch_2')).toEqual({
+      value: { charged: 'ch_1' },
+      replayed: true,
+    });
+  });
+
+  test('past the deadline with no key: the same body rolls back', async () => {
+    const controller = new AbortController();
+    const timedOut = new UltimateError({
+      code: 'X_TIMEOUT',
+      cause: 'past the deadline',
+      fix: 'raise it',
+    });
+    const outcome = await runWithContext(ctxOf({ signal: controller.signal }), () =>
+      withTransaction(
+        async (tx) => {
+          await tx.execute(sql`insert into tx_charges (id) values ('unkeyed')`);
+          controller.abort(timedOut);
+        },
+        { client },
+      ),
+    ).catch((error: unknown) => error);
+    expect(outcome).toBe(timedOut);
+    expect(await harness.charges()).toEqual([]);
   });
 
   test('a transaction that commits settles with it, and the retry replays one write', async () => {

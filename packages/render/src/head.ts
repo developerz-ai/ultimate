@@ -12,7 +12,8 @@ import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
 // The raw-text escapers are `html.ts`'s and the text/attribute table is core's `escapeHtml` — a
 // second one is how a character ends up missing.
-import { escapeJsonContent, escapeRawTextContent, isAttributeName } from './html';
+import { headAttributes } from './head-attributes';
+import { escapeJsonContent, escapeRawTextContent } from './html';
 
 export type HeadTagKind = 'title' | 'base' | 'meta' | 'link' | 'script' | 'style';
 
@@ -114,15 +115,9 @@ export function renderHead(tags: readonly HeadTag[]): string {
 }
 
 function renderTag(tag: HeadTag): string {
-  // The NAME is emitted verbatim before the `=` and is escaped nowhere, so a key carrying a space
-  // carries a whole second attribute with it — an app spreading a row into `attrs` put a live
-  // event handler in `<head>`. Same predicate `attributePair` uses, never a second copy.
-  const attrs = Object.entries(tag.attrs ?? {})
-    .filter(([name]) => isAttributeName(name))
-    .map(([name, value]) =>
-      value === true ? ` ${name}` : ` ${name}="${escapeHtml(String(value))}"`,
-    )
-    .join('');
+  // `attributePair`, the package's one attribute rule: an app spreading a row into `attrs` reaches
+  // this sink exactly as it reaches a JSX spread. A second copy printed `onload` and `javascript:`.
+  const attrs = headAttributes(tag);
   if (VOID_KINDS.has(tag.kind)) return `<${tag.kind}${attrs}>`;
   const raw = tag.content ?? '';
   return `<${tag.kind}${attrs}>${contentOf(tag, raw)}</${tag.kind}>`;

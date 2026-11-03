@@ -42,6 +42,9 @@ export const ACTION_ERROR_TITLES: Readonly<Record<string, string>> = {
   X_IDEMPOTENCY_RESERVATION_LOST:
     "an idempotent action's reservation was taken over before its transaction could settle it",
   X_IDEMPOTENT_REPLAY_REDACTED: 'an idempotent replay would return a field redacted at rest',
+  X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE:
+    "an idempotent action's answer cannot be stored as JSON, so no retry could replay it",
+  X_IDEMPOTENCY_RUN_CEILING: 'a keyed run passed its hard ceiling',
 };
 
 // One unconditional call: a presence guard would turn "another package claims one of these codes"

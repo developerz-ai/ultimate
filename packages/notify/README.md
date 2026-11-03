@@ -133,6 +133,13 @@ setNotifyStores({
 | `inbox` | **none** — `X_NOTIFY_STORE_MISSING` | a message written to nowhere is worse than a refusal |
 | `digest` | **none** — `X_NOTIFY_STORE_MISSING` | same. `memoryDigestStore()` for one process; `postgresDigestStore({ executor })` keeps a window across a restart and gives two replicas ONE window (a partial unique index on the open one), so exactly one run owns its flush |
 
+**One attempt owns a delivery.** `claim` answers `owned`, `sent` or `held`: a live `sending` row
+is held for `reclaimAfterMs` (`DEFAULT_DELIVERY_RECLAIM_MS`, 5 min; set it longer than your slowest
+send, on either ledger). A second attempt beside it sends nothing and raises `X_NOTIFY_DELIVERY_HELD`,
+and the job retries once the window has passed. `settle(claim, status, at, claimId)` answers `false`
+and changes nothing for an attempt that no longer owns the row. An app's own `DeliveryLedger`
+implements both.
+
 `executor` is a structural `{ query(sql, params) }` — `@ultimat3/db`'s `dbExecutor()` is the
 framework's own. `Bun.sql` does **not** satisfy it.
 
@@ -310,3 +317,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 Tier 4. May import tiers 0-3 — enforced by `bun run boundaries`. Its real imports are `core`,
 `schema`, `time` and `jobs`, so tier 4 is its floor. See [`CLAUDE.md`](./CLAUDE.md).
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+| Name | What |
+|---|---|
+| `DeliveryClaimAnswer` | what `DeliveryLedger.claim` answers: `{ outcome: 'owned', claimId }`, `{ outcome: 'sent' }` or `{ outcome: 'held', retryAfterMs }` |

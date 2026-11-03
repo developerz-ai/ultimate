@@ -3,7 +3,7 @@
 // the transactional outbox is only atomic because `currentTx()` finds this store. Nesting maps
 // to SAVEPOINTs, so an inner failure never silently aborts the outer unit of work.
 
-import { assert, asyncContext, finiteCount, nanoid } from '@ultimat3/core';
+import { assert, finiteCount, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { DbError, serializationExhausted } from './errors';
 import { createTurnQueue, type TurnQueue } from './pglite-turns';
@@ -13,9 +13,10 @@ import { raw, type SqlFragment } from './sql';
 import { isRetryableState, sqlState } from './sqlstate';
 import { serializationRetryDelayMs } from './transaction-backoff';
 import { commitUnknown, siblingScopeTimeout, transactionAborted } from './transaction-errors';
+import { refuseAbandoned, refuseIfFinished, storage, type TxMark } from './transaction-guard';
 import { beginStatement, type DbTx, type TransactionOptions } from './transaction-options';
 
-interface TxState {
+export interface TxState {
   readonly tx: DbTx;
   readonly connection: DbClient;
   readonly undos: (() => void)[];
@@ -37,6 +38,12 @@ interface TxState {
   readonly live: { value: boolean };
   /** Whether the SERVER has aborted the transaction — shared by reference, like `live`. */
   readonly abort: TxAbort;
+  /**
+   * The root must reach its COMMIT even if this scope is abandoned: `completeTransaction()` set it,
+   * so statements and COMMIT skip the abandonment check. Shared by reference across nesting like
+   * `live`, and new per attempt: a retry starts unmarked.
+   */
+  readonly completing: { value: boolean };
   /**
    * One CHILD scope at a time, per scope. Savepoints are a stack on the server: two siblings opened
    * under `Promise.all` interleaved `SAVEPOINT x_sp_1, SAVEPOINT x_sp_2`, and `RELEASE x_sp_1`
@@ -68,12 +75,6 @@ function noteFailure(abort: TxAbort, error: unknown): void {
   abort.first = error;
 }
 
-// Core's one lazy seam, never a construction here: a module-scope `new` threw at EVALUATION in a
-// browser bundle, where the bundler stubs `node:async_hooks` to `{}`, and took every importer of
-// `@ultimat3/db` with it. `get()` still answers `undefined` outside a scope, so the server pays
-// nothing for the deferral.
-const storage = asyncContext<TxState>('a database transaction');
-
 /** The open transaction, or `undefined` outside one. `@ultimat3/jobs` calls this per enqueue. */
 export function currentTx(): DbTx | undefined {
   return storage.get()?.tx;
@@ -96,8 +97,8 @@ export function outsideTransaction<R>(fn: () => R): R {
  * store survives the scope. The one reader is `pglite.ts`'s `run()`, where the answer decides
  * whether a statement may skip the single session's turn queue; skipping it on a *closed*
  * transaction is how a straggler landed inside whichever unit of work held the connection next.
- * `currentTx()` deliberately still answers with the dead handle: its statements go through the
- * reservation, whose own `held` fence already re-queues them.
+ * `currentTx()` deliberately still answers with the dead handle: its statements refuse
+ * (`X_DB_TRANSACTION_CLOSED`, `makeTx`), so nothing a straggler sends reaches any connection.
  *
  * The CONNECTION, never a boolean: "is any transaction open" let an autocommit statement on
  * client A, issued inside a transaction on client B, skip A's queue and run inside A's own open
@@ -113,7 +114,7 @@ export function liveTxConnection(): DbClient | undefined {
  * — a promise chain `fn` forgot to await, still inside the store after the scope closed — runs at
  * once after a COMMIT and is dropped after a ROLLBACK, rather than waiting on a list nobody reads.
  */
-type TxOutcome = { value: 'open' | 'committed' | 'rolled-back' | 'unknown' };
+type TxOutcome = { value: 'open' | 'ending' | 'committed' | 'rolled-back' | 'unknown' };
 
 /** One statement on the scope's connection, its refusal remembered before the caller can drop it. */
 async function watched<T>(abort: TxAbort, sent: Promise<T>): Promise<T> {
@@ -133,19 +134,29 @@ function makeTx(
   origin: DbClient,
   outcome: TxOutcome,
   abort: TxAbort,
+  completing: TxMark,
 ): DbTx {
+  // `async` so a refusal rejects like the statement would have, and it sends synchronously, in
+  // call order. Never on `outer.connection` or the `ROLLBACK`s: those are how the scope ends.
+  const guarded = async <T>(send: () => Promise<T>): Promise<T> => {
+    refuseIfFinished(id, outcome.value);
+    refuseAbandoned(completing);
+    return watched(abort, send());
+  };
   return {
     id,
     origin,
-    query: <T>(fragment: SqlFragment) => watched(abort, connection.query<T>(fragment)),
-    one: <T>(fragment: SqlFragment) => watched(abort, connection.one<T>(fragment)),
-    execute: (fragment: SqlFragment) => watched(abort, connection.execute(fragment)),
+    query: <T>(fragment: SqlFragment) => guarded(() => connection.query<T>(fragment)),
+    one: <T>(fragment: SqlFragment) => guarded(() => connection.one<T>(fragment)),
+    execute: (fragment: SqlFragment) => guarded(() => connection.execute(fragment)),
     onRollback: (undo: () => void) => {
       undos.push(undo);
     },
     onCommit: (effect: () => void) => {
-      if (outcome.value === 'committed') runCommits([effect]);
-      else if (outcome.value === 'open') commits.push(effect);
+      // Off the straggler's dead store: the effect is after the COMMIT, so `db()` in it is the pool.
+      if (outcome.value === 'committed') storage.exit(() => runCommits([effect]));
+      // 'ending' too: an in-flight COMMIT runs this list once answered, a ROLLBACK never does.
+      else if (outcome.value === 'open' || outcome.value === 'ending') commits.push(effect);
     },
   };
 }
@@ -180,12 +191,16 @@ async function runNested<T>(
   fn: (tx: DbTx) => Promise<T>,
   waitMs: number,
 ): Promise<T> {
+  refuseIfFinished(outer.tx.id, outer.outcome.value);
+  refuseAbandoned(outer.completing);
   // Held to the end of this function, on every exit: the next sibling's SAVEPOINT is sent only
   // after this scope's RELEASE or ROLLBACK TO has been answered. Under a deadline, because a body
   // awaiting a sibling queued behind it is a cycle (`sibling-turn.ts`).
   using _turn = await siblingTurn(outer.children, waitMs, () =>
     siblingScopeTimeout(outer.tx.id, outer.holder.value, waitMs),
   );
+  // Again: the wait is how a sibling outlives the root, and the pin below is no longer this scope's.
+  refuseIfFinished(outer.tx.id, outer.outcome.value);
   const { abort } = outer;
   // Named, rather than left to the SAVEPOINT below to fail with `25P02`: the statement that broke
   // the transaction is the one the caller caught, and it is the only one worth reading.
@@ -203,6 +218,7 @@ async function runNested<T>(
     outer.tx.origin,
     outer.outcome,
     abort,
+    outer.completing,
   );
   // `SAVEPOINT` and `RELEASE` are deliberately uncaught: a savepoint that was never taken means
   // this scope never opened, and a release that failed means its work is not durable in the outer
@@ -213,6 +229,7 @@ async function runNested<T>(
     const children = createTurnQueue();
     const scope: TxState = { ...outer, tx, undos, commits, children, holder: { value: undefined } };
     const result = await storage.run(scope, () => fn(tx));
+    refuseIfFinished(outer.tx.id, outer.outcome.value);
     // The body swallowed a failed statement. RELEASE would answer `25P02`; the scope is rolled
     // back below instead, which is the one thing that makes the OUTER transaction usable again.
     if (abort.value) throw transactionAborted(abort.first);
@@ -227,9 +244,12 @@ async function runNested<T>(
     // The caller still needs the error that caused the rollback, never the rollback's own — but a
     // `ROLLBACK TO` that failed is no longer forgotten. The scope's work was NOT undone, so the
     // root is marked aborted and its COMMIT refuses: committing would store the writes of a scope
-    // that just told its caller they were rolled back.
+    // that just told its caller they were rolled back. Sent only into an open root: the pin of a
+    // finished one is back in the pool, and the root's own end already undid this savepoint.
     try {
-      await outer.connection.execute(raw(`ROLLBACK TO SAVEPOINT ${name}`));
+      if (outer.outcome.value === 'open') {
+        await outer.connection.execute(raw(`ROLLBACK TO SAVEPOINT ${name}`));
+      }
       // Whatever broke the transaction happened after this savepoint — the SAVEPOINT itself was
       // accepted — so the server has undone it and statements are accepted again.
       abort.value = false;
@@ -249,6 +269,8 @@ async function runNested<T>(
  * connection whose transaction is already gone.
  */
 async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOptions): Promise<T> {
+  // Before the pin, and before `markScopeWrote`: a scope already abandoned opens nothing.
+  refuseAbandoned();
   const client = options.client ?? baseClient();
   // A transaction is assumed to write unless it said otherwise, so every read AFTER it in the same
   // `withReplicaReads` scope is the primary's. The pin below already keeps the transaction's own
@@ -269,7 +291,17 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
   const commits: (() => void)[] = [];
   const outcome: TxOutcome = { value: 'open' };
   const abort: TxAbort = { value: false, first: undefined };
-  const tx = makeTx(`tx_${nanoid(12)}`, connection, undos, commits, client, outcome, abort);
+  const completing = { value: false };
+  const tx = makeTx(
+    `tx_${nanoid(12)}`,
+    connection,
+    undos,
+    commits,
+    client,
+    outcome,
+    abort,
+    completing,
+  );
   // Each attempt gets its own state, and therefore its own `live` — a retry re-runs `fn` against a
   // transaction that is genuinely new, so the abandoned attempt's stragglers must read as closed.
   const state: TxState = {
@@ -281,6 +313,7 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     savepoints: { value: 0 },
     live: { value: true },
     abort,
+    completing,
     children: createTurnQueue(),
     holder: { value: undefined },
   };
@@ -293,7 +326,13 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     // Refused before the COMMIT is sent: the server would answer it `ROLLBACK` with no error. The
     // funnels read that tag too (`commit-tag.ts`), for an abort this scope's handle never saw.
     if (abort.value) throw transactionAborted(abort.first);
+    // Abandoned between the last statement and here: the `catch` rolls back. A marked root's COMMIT
+    // is what makes its keyed replay answer success, so it goes through.
+    refuseAbandoned(completing);
     commitSent = true;
+    // Before the COMMIT is on the wire: a straggler sent now would run after it on this connection,
+    // outside any transaction. The ROLLBACK's window below is the same hole.
+    outcome.value = 'ending';
     await connection.execute(raw('COMMIT'));
     // After COMMIT answered, and outside the `catch` below: a failing effect must never be read as
     // a failed transaction and trigger a ROLLBACK of work the server already made durable.
@@ -303,6 +342,7 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     return result;
   } catch (error) {
     if (committed) throw error;
+    outcome.value = 'ending';
     // Best-effort: the caller needs the original failure, never the rollback's. A BEGIN that
     // itself failed opened nothing, so this ROLLBACK is a no-op the server answers with a notice.
     await connection.execute(raw('ROLLBACK')).catch(() => undefined);
@@ -322,6 +362,16 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     // still be sent direct at a connection this scope no longer owns.
     state.live.value = false;
   }
+}
+
+/**
+ * Marks the open root as one that must reach its COMMIT even if its scope is abandoned while it
+ * runs, and a no-op outside one. `withIdempotency` calls it straight after a reservation it created:
+ * the settle rides that COMMIT and the replay answers from it, so one mark decides both.
+ */
+export function completeTransaction(): void {
+  const state = storage.get();
+  if (state?.live.value === true) state.completing.value = true;
 }
 
 export async function withTransaction<T>(

@@ -7,5 +7,6 @@ create table "x_notify_deliveries" (
   "channel" text not null,
   "status" text default 'sending'::text not null,
   "attempts" integer default 1 not null,
-  "at" timestamp with time zone default now() not null
+  "at" timestamp with time zone default now() not null,
+  "claim_id" uuid
 );

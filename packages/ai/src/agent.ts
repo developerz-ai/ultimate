@@ -21,7 +21,7 @@
  */
 
 import type { Action } from '@ultimat3/action';
-import { action } from '@ultimat3/action';
+import { action, noteToolNames } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
 import { throwIfAborted, withSpan } from '@ultimat3/core';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
@@ -96,6 +96,9 @@ export function agent<
       tools: unexposed.map(toolLabel),
     });
   }
+  // An in-process tool is in no registry: the `manifest` step reads this to tell a gate on one from
+  // a gate on a typo. An action beside this one may have no name yet, and its registry answers it.
+  noteToolNames(def.tools.map((tool) => tool.name).filter((name) => name !== ''));
   const bounds = screenBounds(def);
   // What every run is held under; a run's `limits()` may only lower it (`narrowCeilings`).
   const declared = { bounds, deadlineMs: def.deadlineMs, budget: def.budget };

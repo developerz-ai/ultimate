@@ -7,8 +7,8 @@ import { type Clock, systemClock, timingSafeEqual, uuidV7 } from '@ultimat3/core
 import { t } from '@ultimat3/schema';
 import type { AuthAdapter, AuthSession, AuthUser } from './adapter';
 import { normaliseEmail } from './email';
-import { mfaRequiredUnenforceable, sessionUnknown } from './errors';
-import { installedAuthLimiter } from './limiter-install';
+import { mfaRequiredUnenforceable, sessionUnknown, totpReplayGuardInvalid } from './errors';
+import { installedAuthLimiter, installedTotpReplay } from './limiter-install';
 import { openLoginAttempt } from './login-attempt';
 import { type HandleDirectory, loginIdentity } from './login-identity';
 import { memoryTotpReplayGuard, type TotpReplayGuard } from './mfa';
@@ -149,9 +149,9 @@ export interface AuthConfigInput {
   readonly orgLimiter?: AuthLimiter | undefined;
   readonly mfa?: Partial<AuthMfaPolicy> | undefined;
   /**
-   * Which TOTP steps have been spent, read and written by `completeMfa`. Omitted means
-   * `memoryTotpReplayGuard()` — one process' worth of memory, so a code is single-use per replica;
-   * a fleet that needs it single-use everywhere passes a shared guard with the same two methods.
+   * Which TOTP steps have been spent, claimed by `completeMfa`. Omitted means the guard the host
+   * installed (`configureTotpReplay`; a framework boot's is `postgresTotpReplayGuard`), then
+   * `memoryTotpReplayGuard()` — one process' worth of memory, so a code is single-use per replica.
    */
   readonly totpReplay?: TotpReplayGuard | undefined;
   /**
@@ -228,6 +228,11 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const declaredMfa: { readonly required?: unknown } = config.mfa ?? {};
   if (declaredMfa.required === true) throw mfaRequiredUnenforceable();
   const mfa: AuthMfaPolicy = { issuer: config.mfa?.issuer ?? DEFAULT_MFA_ISSUER, required: false };
+  const totpReplay = config.totpReplay ?? installedTotpReplay() ?? memoryTotpReplayGuard();
+  // Unreachable from TypeScript and reachable from a guard written before `claim`, which would
+  // otherwise be found at the first second factor, as a TypeError, on a production sign-in.
+  const declaredReplay: { readonly claim?: unknown } = totpReplay;
+  if (typeof declaredReplay.claim !== 'function') throw totpReplayGuardInvalid();
   return Object.freeze({
     adapter: config.adapter,
     clock,
@@ -240,7 +245,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
     orgRateLimit: orgLimiter.policy,
     orgLimiter,
     mfa,
-    totpReplay: config.totpReplay ?? memoryTotpReplayGuard(),
+    totpReplay,
     // BREAKING (majors only): the default is `[]`, never the live registry.
     //
     // It was `oauthProviderIds()`, so `defineAuth({ providers })`'s own documented purpose — the

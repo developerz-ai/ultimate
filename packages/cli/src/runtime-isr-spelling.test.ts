@@ -77,7 +77,7 @@ function serving(basePath = '/'): Served {
   const { isr, release } = attachedIsr({ buildId: BUILD_ID });
   releases.push(release);
   const server = httpServer({
-    routes: appRoutes({ buildId: BUILD_ID, isr }),
+    routes: appRoutes({ buildId: BUILD_ID, isr, origin: 'http://dev.test' }),
     role: 'web',
     config: defineHttpConfig({
       dev: true,

@@ -460,6 +460,26 @@ export const mcp = defineAppMcp({ include: 'exposed', confirmations: confirmRefu
 | who may view and decide | policy `can(permission, check)`. An agent never may, whatever it holds (`X_FORBIDDEN`). The default `check` is the asking org: `row !== null && row.orgId === (actor.orgId ?? null)` — another tenant's row and an unknown id are one `X_FORBIDDEN`. Crossing tenants is an explicit `check`; with one that admits a missing row, an unknown id is `X_MCP_CONFIRMATION_UNKNOWN` |
 | agent repeats the SAME call | approved: it runs once, through the tool's own `handle` — the action's full policy still decides it. Rejected: `X_MCP_CONFIRMATION_REJECTED`, audited as a denial. Past expiry: `X_MCP_CONFIRMATION_EXPIRED`. Each outcome is delivered once; the next identical call asks again |
 
+**One list, both surfaces.** Calling `mcpConfirmations` also registers its gate by tool name
+(`registerToolGate`, `@ultimat3/action`), so the same tool waits for a person from
+`agent({ tools })` in `@ultimat3/ai`, with no option on the agent to forget. Its arguments are
+validated against the tool's published schema first, so one digest covers both; what the schema
+refuses is `X_INPUT_INVALID` and opens no row. An approval binds actor, tool and digest, not
+surface. Two `mcpConfirmations` on one tool stay legal: each server keeps its own, and **in-app the
+first registered answers** (a later one for that name is a no-op). A server handed no
+`confirmations`, or handed one for other tools, asks the registered gate per call on every tool it
+serves, so forgetting the option is no way around the list. A gated name no exposed action, exposed
+query, MCP tool or in-process tool answers to holds nothing, so it is
+`X_MCP_CONFIRMATION_TOOL_UNKNOWN` at the `manifest` step. A worker holds a gate only if it
+imports the module declaring it, which is `X_ROLE_LOAD_INCOMPLETE` at the `manifest` step otherwise.
+
+The gate binds a tool's **name**, never what it reaches: `inProcessTool({ name: 'refundNow', execute:
+() => invoke(refundOrder, …) })` is not gated by `refundOrder`'s row, so list `refundNow` in `tools`.
+
+**Never set `mcp: { expose: true }` on the decision action.** It declares none, which is what makes
+`agent({ tools: [decide] })` `X_AGENT_TOOL_UNEXPOSED`. The policy's agent refusal does not reach an
+in-app agent, whose actor is the user: exposing the decision action hands that agent its own approval.
+
 Bound to the asking actor, the tool and the input digest: other arguments, or another agent, ride
 no one's approval. The digest is keyed because the row stores it — an unkeyed hash of `{ accountNumber }` is
 brute-forced from a database read. The open row is found by equality on it, key id included, so

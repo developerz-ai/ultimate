@@ -301,6 +301,11 @@ a `jwksUri` — Google and every discovered provider do; GitHub issues no id tok
 exemption trusts every hop the response crossed (a TLS-inspecting proxy, a bad DNS answer); a
 signature trusts only the provider. A bad signature is `X_OAUTH_TOKEN_INVALID` (400) and no session.
 
+**An IdP outage does not end every login.** A failed refresh leaves a key already held answering for
+one more hour past its TTL (`JWKS_STALE_IF_ERROR_MS`), logged `auth.jwks.stale_served`; past it,
+`X_OAUTH_EXCHANGE_FAILED`. No fetch runs within 30 s of a failed one (`JWKS_FAILURE_COOLDOWN_MS`),
+so a forged `kid` costs no request during an outage. Both are constants, not options.
+
 | Where | Option | Default |
 |---|---|---|
 | `exchangeOAuthCode(handshake, callback, { keys })` | `keys?: IdTokenKeys` | the provider's key set, else `'token-endpoint-tls'` |
@@ -419,7 +424,10 @@ every enrolled user's second factor.
 |---|---|
 | `enrolTotp(auth, { account, issuer?, secret? })` | `{ secret, uri, digits, periodSeconds }` — `issuer` omitted is `auth.mfa.issuer`, `secret` omitted mints one |
 | `verifyTotp({ secret, code, at, drift?, usedSteps? })` | `{ ok, step }`. `step` is the window the code belonged to, `null` on no match |
-| `memoryTotpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
+| `TotpReplayGuard` | one atomic method, `claim(subject, step, at): Promise<boolean>`: `true` the first time, `false` for a replay. A store that cannot answer rejects: a down database is a fault, never a wrong code |
+| `memoryTotpReplayGuard(drift?, maxSubjects?)` | the in-process guard, `{ claim, isUsed, size }`; `isUsed` is for a test. The default only where no host installed one |
+| `postgresTotpReplayGuard({ executor })` | the shared guard: `x_totp_steps` (`SQL_TOTP_REPLAY_TABLE`), one `insert … on conflict do nothing` per claim, `purgeExpired(nowMs)` for the sweep. A framework boot installs it |
+| `configureTotpReplay(() => guard)` / `resetTotpReplay()` | the host's install point, beside `configureAuthLimiters`. Precedence: `defineAuth({ totpReplay })` → the installed factory → memory |
 | `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
 | `recoveryCodeHash(code)` | what a code is stored and looked up as — dashes, spaces and case removed first. `auth.adapter.consumeRecoveryCode(userId, hash)` removes it in ONE statement and answers whether it was there, so two requests carrying one code cannot both redeem it |
 | `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code. `totpCode` throws `X_MFA_SECRET_INVALID` on a secret that decodes to zero bytes |
@@ -499,8 +507,11 @@ export const secondFactor = (challenge: string, code: string, ip: string) =>
 A code guess is reserved before it is compared, so six digits are worth `maxAttempts` tries per
 window. Repeating the first leg does not buy them back: a proven password with a second factor
 still owed clears nothing — `completeMfa` is what clears the account's window. A spent step is
-refused through `auth.totpReplay` (`defineAuth({ totpReplay })`, in-process by default). No route
-ships.
+claimed through `auth.totpReplay`, once the code has verified, so a wrong guess never writes and a
+lost claim is the same refusal. A booted process holds `postgresTotpReplayGuard`, so a code is good
+once across every replica; with no host, the default is one process' memory. A guard that rejects is
+a fault: it propagates, and the guess is not counted. `defineAuth` refuses a `totpReplay` with no
+`claim` (`X_CONFIG_INVALID`). No route ships.
 
 `code` is either the six digits or a **recovery code**: anything that is not six digits is hashed
 and consumed through the adapter, metered exactly as a wrong digit string is, and gone after one
@@ -932,3 +943,13 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | Class | Code | Declared in |
 |---|---|---|
 | `AuthError` | any `AuthErrorCode` — `AUTH_ERROR_CODES` | `src/errors.ts` |
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+| Name | What |
+|---|---|
+| `PostgresTotpReplayGuard` | the `TotpReplayGuard` `postgresTotpReplayGuard` returns |
+| `PostgresTotpReplayGuardOptions` | what `postgresTotpReplayGuard` takes |
+| `TotpReplayFactory` | `() => TotpReplayGuard`: what `configureTotpReplay` takes |

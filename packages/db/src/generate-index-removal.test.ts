@@ -215,6 +215,7 @@ describe('generateMigration · a recorded index the entities no longer declare',
       name: 'drop slug',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     expect(migration.up).not.toContain('drop index');
@@ -228,6 +229,7 @@ describe('generateMigration · a recorded index the entities no longer declare',
       name: 'drop posts',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     expect(migration.up).toBe('drop table "posts";');

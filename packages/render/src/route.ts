@@ -78,8 +78,7 @@ export interface RevalidateConfig {
    * The query parameters this page varies on. ONLY these are part of the stored page's key and
    * of the `url` / `query` that `load`, `meta` and the page are given; every other parameter is
    * dropped before either, so `?utm_source=…` is the same stored page and no visitor can mint one.
-   * `[]` is "none", and what most pages want. OMITTED, the key is the whole query string — any
-   * visitor can then mint stored pages (`x verify` says so) — until the next major makes it `[]`.
+   * OMITTED is `[]`, none: list every parameter the page reads (`x verify` warns on one it can see).
    */
   readonly query?: readonly string[];
 }

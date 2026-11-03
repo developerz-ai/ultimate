@@ -148,6 +148,19 @@ export class FakeS3Client implements S3ClientLike {
     if (init.method === 'PUT') {
       if (this.failWriteWith !== undefined) return asXml(this.failWriteWith);
       const headers = init.headers;
+      const copied = headers['x-amz-copy-source'];
+      if (copied !== undefined) {
+        const from = decodeURIComponent(copied).split('/').slice(2).join('/');
+        const source = this.store.get(from);
+        if (source === undefined) {
+          return xmlError('NoSuchKey', 'The specified key does not exist.', 404);
+        }
+        if (fakeEtagOf(source) !== headers['x-amz-copy-source-if-match']) {
+          return xmlError('PreconditionFailed', 'At least one precondition failed', 412);
+        }
+        this.store.set(key, { ...source, bytes: source.bytes.slice() });
+        return new Response('<CopyObjectResult></CopyObjectResult>');
+      }
       this.store.set(key, { bytes: init.body ?? new Uint8Array(), type: headers['content-type'] });
       this.headersOf.set(key, headers);
       this.locks.set(key, {

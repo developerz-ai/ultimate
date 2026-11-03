@@ -12,6 +12,7 @@ import {
   isNonTransactional,
 } from './concurrent-index';
 import { refuseDependentViews } from './dependent-view';
+import { type LockRetryPolicy, withLockRetry } from './migrate-lock-retry';
 import { migrationConcurrentInTransaction } from './migration-errors';
 import { raw, sql } from './sql';
 import { statementsOf } from './statement-split';
@@ -25,6 +26,8 @@ export interface MigrationStep {
   readonly script: string;
   /** `SET LOCAL lock_timeout` — every transaction, and no concurrent statement. `0` sets none. */
   readonly lockTimeoutMs: number;
+  /** What a `lock_timeout` firing is worth (`migrate-lock-retry.ts`). Absent is no second attempt. */
+  readonly lockRetry?: Omit<LockRetryPolicy, 'lockTimeoutMs'> | undefined;
   /** The ledger write, on the client the statements ran on — after the last of them succeeded. */
   readonly record: (client: DbClient) => Promise<void>;
 }
@@ -113,6 +116,14 @@ const BARE_CLUSTER = /^\s*cluster(?:\s+verbose)?\s*;?\s*$/i;
 const withoutLeadingComments = (statement: string): string =>
   statement.replace(/^(?:\s*--[^\n]*(?:\n|$))+/, '');
 
+/** The one retry wrap, whichever unit the step's kind makes safe to send again. */
+const retrying = (step: MigrationStep, attempt: () => Promise<void>): Promise<void> =>
+  withLockRetry(
+    step.id,
+    { ...(step.lockRetry ?? { retries: 0 }), lockTimeoutMs: step.lockTimeoutMs },
+    attempt,
+  );
+
 async function applyOutsideTransaction(session: DbClient, step: MigrationStep): Promise<void> {
   await refuseDependentViews(session, step.script);
   for (const statement of statementsOf(step.script)) {
@@ -127,12 +138,16 @@ async function applyOutsideTransaction(session: DbClient, step: MigrationStep): 
       await session.execute(raw(statement));
       continue;
     }
-    await withTransaction(
-      async (tx) => {
-        await setLockTimeout(tx, step.lockTimeoutMs);
-        await tx.execute(raw(statement));
-      },
-      { client: session },
+    // This statement and no earlier one: what already ran stays run. From the top would re-swap
+    // every validated key to `not valid` and scan it again, and repeat a hand-written first line.
+    await retrying(step, () =>
+      withTransaction(
+        async (tx) => {
+          await setLockTimeout(tx, step.lockTimeoutMs);
+          await tx.execute(raw(statement));
+        },
+        { client: session },
+      ),
     );
   }
   await step.record(session);
@@ -147,18 +162,21 @@ export async function applyMigrationStep(session: DbClient, step: MigrationStep)
   if (refused !== undefined) {
     throw migrationConcurrentInTransaction(step.id, refused);
   }
-  await withTransaction(
-    async (tx) => {
-      await setLockTimeout(tx, step.lockTimeoutMs);
-      // Before the first statement, never after the failure: a view compiled against a column
-      // this script retypes is `0A000` from the server with the view named only in a DETAIL field
-      // nothing prints (`dependent-view.ts`).
-      await refuseDependentViews(tx, step.script);
-      await applyScript(tx, step.script);
-      await step.record(tx);
-    },
-    // The lock's own session: a migration applied on another connection is not covered by the
-    // lock at all, and on `ROLE=migrate` there is no other connection to apply it on.
-    { client: session },
+  // Whole: the failed attempt rolled back, so nothing it did is left to repeat.
+  await retrying(step, () =>
+    withTransaction(
+      async (tx) => {
+        await setLockTimeout(tx, step.lockTimeoutMs);
+        // Before the first statement, never after the failure: a view compiled against a column
+        // this script retypes is `0A000` from the server with the view named only in a DETAIL field
+        // nothing prints (`dependent-view.ts`).
+        await refuseDependentViews(tx, step.script);
+        await applyScript(tx, step.script);
+        await step.record(tx);
+      },
+      // The lock's own session: a migration applied on another connection is not covered by the
+      // lock at all, and on `ROLE=migrate` there is no other connection to apply it on.
+      { client: session },
+    ),
   );
 }

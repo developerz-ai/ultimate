@@ -16,6 +16,7 @@ import {
   missingForeignKey,
   missingIndex,
   missingTable,
+  notValidConstraint,
   unexpectedColumn,
   unexpectedTable,
   unknownSchema,
@@ -187,6 +188,25 @@ function compareChecks(live: TableDescription, expected: TableDescription): Drif
 }
 
 /**
+ * A declared constraint the catalog holds but never validated. Only the declared side, as everywhere
+ * here: a hand-written `NOT VALID` no snapshot records is the app's decision. Foreign keys are read
+ * by where they point, the identity `compareForeignKeys` uses, so a name the catalog holds and the
+ * snapshot does not still counts.
+ */
+function compareValidated(live: TableDescription, expected: TableDescription): DriftDifference[] {
+  const unvalidated = new Set(live.notValidNames ?? []);
+  if (unvalidated.size === 0) return [];
+  const declared = new Set((expected.checks ?? []).map((check) => check.name));
+  const pointed = new Set(expected.foreignKeys.map(foreignKeyTarget));
+  for (const key of live.foreignKeys) {
+    if (pointed.has(foreignKeyTarget(key))) declared.add(key.name);
+  }
+  return [...unvalidated]
+    .filter((name) => declared.has(name))
+    .map((name) => notValidConstraint(live.schema, live.name, name));
+}
+
+/**
  * The two key lists, compared in ORDER. The comment that used to stand here said a key on one side
  * only "is a difference the key comparison owns" — and no key comparison existed, so a table
  * re-keyed by hand, or one whose key no migration ever produced, read `ok: true`.
@@ -228,6 +248,7 @@ function compareTable(live: TableDescription, expected: TableDescription): Drift
   differences.push(...compareIndexes(live, expected));
   differences.push(...compareChecks(live, expected));
   differences.push(...compareForeignKeys(live, expected));
+  differences.push(...compareValidated(live, expected));
   differences.push(...compareAppendOnly(live, expected));
   return differences;
 }

@@ -582,3 +582,33 @@ code is the one way to have it honoured.
   deletion of `Ctx`'s string index signature.
 - **The whole `./page` subpath measured 16,975 B** (`As of 2026-10-05`, `page-bundle.test.ts`);
   `rpc`'s figure is in `packages/action/CLAUDE.md`, `queryClient`'s in `packages/query/CLAUDE.md`.
+
+## 2026-11-02 — a finished scope refuses writes (plan 101, slice 02)
+
+`abandonment()` answers the ambient signal's reason when it was aborted with a branded one, the same object; a client hang-up is Bun's uncoded `AbortError`, so `undefined`. `runToCompletion(fn)` gives a fresh signal and no deadline through `withChildContext`'s own build (`derivedContext`), so managed services rebuild over it.
+
+Moved out of `CLAUDE.md` at its ceiling: `timing-safe-equal.ts` is the one constant-time comparison (`auth`, `storage`). `format-bytes.ts` is one `formatBytes(bytes)`, 1024-base, `b|kb|mb|gb`, for byte counts in error messages; not `@ultimat3/ui`'s locale-formatted decimal one. Unmechanised: review catches a third.
+
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/core/CLAUDE.md`](../../packages/core/CLAUDE.md), which keeps the rule in one line.
+
+### Invariants
+
+- **`seal.ts` adds no variable for the CURRENT key** — `findMasterKey()`, the same call
+  `installSecrets()` makes. Retired keys are `ULTIMATE_SECRETS_RETIRED_KEYS`, written into
+  `secrets.enc.json` by `x secrets rotate`; the ring memo is keyed by its source strings, never by
+  time. Constants, `parseMasterKey`, `masterKeyId`, `importKey` and the base64 codec are
+  `secrets.ts`'s — no second set. `seal-errors.ts` runs nothing at import: its titles are in
+  `CORE_CODE_TITLES` and its retry class in `CORE_ERROR_RETRY`, so it is no `sideEffects` anchor.
+  The wire form `x1.<keyId>.<iv>.<ciphertext+tag>` and the AAD string are persisted data: a change
+  is `x2`, never an edit.
+
+### Lifecycle and readiness
+
+- **The drain deadline is enforced**: `runPhase` races each hook against the time left before
+  `deadlineAt` (`lifecycle-deadline.ts`'s `settleWithin`) and ABANDONS an overrun, logging it
+  (`X_SHUTDOWN_TIMEOUT`, whose `fix:` names `configureLifecycle({ deadlineMs })`). The budget is the
+  WHOLE drain's; `DEFAULT_DEADLINE_MS` (25 s) always applies; it is real monotonic time
+  (`systemClock`), never the injected `clock`. `drainDeadlineMs()` is the one decision point.
+  `settleWithin` attaches a rejection handler unconditionally.

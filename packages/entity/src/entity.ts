@@ -9,7 +9,8 @@ import { assertAppendOnlyColumns } from './append-only';
 import { entityNow } from './clock';
 import { assertTableName, bindColumn, columnName, moneyColumns } from './column';
 import { newId } from './columns';
-import { describeEntity, describeReferences } from './describe';
+import { assertNotRetired, describeEntity, describeReferences } from './describe';
+import { parseEntityPatch } from './entity-patch';
 import { invariantViolated } from './errors';
 import type { InvariantColumns, Resolve } from './expr';
 import { invariantColumns } from './expr';
@@ -80,6 +81,14 @@ export interface EntityInit<C extends ColumnMap> {
    * refuses the same in raw SQL. A soft-delete, `onUpdateNow()` or state-machine column is refused.
    */
   readonly appendOnly?: boolean;
+  /**
+   * Physical columns the previous release still reads and this one does not: a rolling deploy's
+   * first half of a column drop. Delete the column from `columns` and name it here, so it leaves
+   * the row type, the projection and every insert while `x db gen` writes a marker and keeps it.
+   * Remove it from this list in the next release, and `x db gen --allow-destructive` drops it. A
+   * name, not a chain on the column: a column here has no builder left to chain from.
+   */
+  readonly retired?: readonly string[];
 }
 
 /**
@@ -125,6 +134,8 @@ export interface EntityCore<Row = unknown, C extends ColumnMap = ColumnMap> {
   $tagFor(id: string): string;
   /** Fills declared defaults, then validates every column. Throws on a bad value. */
   $parse(value: unknown): Row;
+  /** `$parse` for the columns a patch names: no default fills an absent one. `entity-patch.ts`. */
+  $parsePatch<Patch>(patch: Patch): Patch;
   /**
    * `const PostView = posts.$view(['id', 'title'])` — the projection an action names as its
    * `output`. An unknown key is a compile error, and a declaration error for a JS caller.
@@ -169,15 +180,19 @@ export const entity = <const C extends ColumnMap>(
 ): Entity<RowOf<C>, C> => {
   type Row = RowOf<C>;
   const entries: readonly (readonly [string, AnyColumn])[] = Object.entries(init.columns);
-  for (const [property, column] of entries) bindColumn(column, name, property);
+  // Resolved before the bindings, because a binding carries the tenant's PHYSICAL column: a
+  // `references()` on another entity reads it through this column's binding at describe time.
+  const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
+  const tenantMeta = tenantColumn === null ? undefined : init.columns[tenantColumn]?.$meta;
+  const tenant = tenantMeta === undefined ? null : columnName(tenantColumn ?? '', tenantMeta);
 
   // Both branches. The declared table was checked and the fallback — which is every entity that
   // does not rename its table — was not, so an entity NAME closed the identifier in the same way a
   // column name could: `entity('t" (x int); drop table u; --')` emitted that `drop table` verbatim.
   const table = assertTableName(name, init.table ?? name);
+  for (const [property, column] of entries) bindColumn(column, name, property, tenant, table);
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
-  const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
   const appendOnly = init.appendOnly === true;
   if (appendOnly) assertAppendOnlyColumns(name, entries, SOFT_DELETE_COLUMN);
 
@@ -353,7 +368,9 @@ export const entity = <const C extends ColumnMap>(
       tenantColumn,
       search,
       appendOnly,
+      retired: init.retired,
     });
+  assertNotRetired(name, entries, init.retired);
   const references = (): readonly ReferenceDescription[] => describeReferences(name, entries);
 
   const parse = (value: unknown): Row => {
@@ -443,6 +460,7 @@ export const entity = <const C extends ColumnMap>(
     },
     $tagFor: (id) => `${cacheTag}:${id}`,
     $parse: parse,
+    $parsePatch: (patch) => parseEntityPatch(name, init.columns, patch),
     $view: <K extends keyof Row & string>(keys: readonly K[]) => {
       // Before the view exists: a view is an `output`, and a sealed column is in none.
       const named = keys.find((key) => sealedKeys.has(key));

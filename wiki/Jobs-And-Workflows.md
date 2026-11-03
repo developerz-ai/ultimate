@@ -72,9 +72,9 @@ External brokers are not exempted: the outbox table stays the transactional reco
 
 | API | Semantics |
 |---|---|
-| `step.run(name, fn)` | executes `fn` once ever. Result persisted under `(jobId, name)`. On replay, returns the stored result without calling `fn`. `fn` receives an `AbortSignal` — this step's ceiling and the run's cancellation, whichever fires first |
+| `step.run(name, fn)` | executes `fn` once ever. Result persisted under `(jobId, name)`. On replay, returns the stored result without calling `fn`. **It answers what it stored, on the first run too**, and its type says so (`StepOutput<T>`, the JSON form): a `Date` is a string, so a body writes `new Date(value)` at the read; a miss stored from `undefined` is `null`, so compare `=== null`; a `bigint` or a cycle is `X_STEP_OUTPUT_UNSERIALIZABLE`, terminal. Return a cursor or a small plain view, not a page of rows. `fn` receives an `AbortSignal` — this step's ceiling and the run's cancellation, whichever fires first |
 | `step.sleep(duration)` | persists a wake time, releases the worker, and the job resumes in a fresh process. No held connection, no timer in memory. `'3d'` is safe |
-| `step.waitForEvent(name, event, { match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the event payload, or `undefined` on a timeout. "After the wait began" is read off the event bus's own clock — the database's, on the stored bus — so a worker whose clock runs ahead still sees an event published a moment later |
+| `step.waitForEvent(name, event, { schema, match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the payload parsed by the required `schema`, or `undefined` on a timeout. A payload the schema refuses is `X_JOB_EVENT_INVALID`, terminal, on a hit or a replay. `publishEvent` inside a transaction commits and rolls back with it. "After the wait began" is read off the event bus's own clock — the database's, on the stored bus — so a worker whose clock runs ahead still sees an event published a moment later |
 
 **The step is the retry unit, not the job.** A failure in `nudge` re-enters `run`, replays `provision` and `welcome-email` from storage in microseconds, and retries only `nudge`. That is why an onboarding flow can retry on day 3 without re-provisioning or re-emailing.
 
@@ -99,6 +99,8 @@ run: async ({ input, ctx, step }) => {
 ```
 
 `ctx.signal` is the same seam an [action](Actions) reads, composed with the caller's own — there is nothing jobs-specific to learn, and a job whose caller went away is cancelled for that reason too.
+
+**A cancelled body writes nothing** (`As of 2026-11-02`). Once `ctx.signal` is aborted with a coded reason (`X_ABORTED`, `X_DRAINING`, `X_JOB_TIMEOUT`, `X_JOB_SLOT_LOST`, `X_JOB_LEASE_LOST`), a transaction, an entity write and an `enqueue` rethrow that reason. The step record stays fenced as before and a drained step still lands. Wrap work that must land in `runToCompletion(fn)`.
 
 **SIGTERM fires it too** (`As of 2026-09-07`). The moment the process starts draining, the worker aborts `ctx.signal` on every job it holds with `X_DRAINING` — naming the worker and the signal — and then gives the body the drain's budget to unwind in. A body that stops is **interrupted**, not failed: the job goes straight back to the ready bucket with the attempt uncounted, so `attempts: 1` survives a rollout and the worker replacing this one claims it at once. The verdict is read off the signal, not off whatever the body threw, so an app's own error for a child the shutdown killed is an interruption too. A body that ignores the signal is waited on to the deadline and abandoned there, as before; a manual `worker.stop()` aborts nothing and waits for its work — until a SIGTERM lands on it, at which point the teardown already waiting adopts the shutdown's deadline and every held job hears the abort.
 
@@ -157,7 +159,7 @@ export const syncCrm = job({
 | a **`retry-after`** thrown code | the responder's `meta.retryAfterSeconds` replaces the delay, clamped by `maxDelay` — never the attempt count | same |
 | attempts exhausted | moves to dead-letter with the full step trace | `x jobs retry <id>` replays from the failed step |
 
-A job over a tenant, queue or global cap, or over a `'wait'` concurrency cap, is **deferred, never dropped** — it stays queued with a later `runAt`. `whenBusy: 'fail'` is the one declared exception.
+A job over a tenant, queue or global cap, or over a `'wait'` concurrency cap, is **deferred, never dropped** — it stays queued with a later `runAt`. `whenBusy: 'fail'` is the one declared exception. `'wait'` holds the cap and states no order: a later enqueue can start first.
 
 ### One run per key
 
@@ -206,7 +208,7 @@ Every operator capability is a member of `JobIntrospection` (`driver.introspect`
 | who is working | `workers()` — id, host, started, queues, slots, in-flight job ids, last heartbeat | a row expires one visibility timeout after its last heartbeat: a killed worker leaves by expiry |
 | history | `counters({ job, sinceMs })`, `counterTotals(sinceMs)` — `done`, `retried`, `failed`, `dead`, `durationMs` | `COUNTER_TIERS`: 1-minute buckets for 24 h, 5-minute for 7 d, 1-hour for 30 d |
 | progress | `run({ progress })` → `progress(done, total, note?)`, on the row and in `x jobs show` | one write a second per run at most, and always the last before the run settles |
-| how a run ended | `job({ onSettled })` — `completed` (with what `run` returned), `dead-lettered`, `dropped` or `refused`; after the row is settled, under the job's tenant, three tries of its own | at most once across a crash; a hook that keeps failing is `X_JOB_ON_SETTLED_FAILED`, logged and reported, and the row is untouched. A cancel is not a settlement: whoever cancels is the observer |
+| how a run ended | `job({ onSettled })` — `completed` (with what `run` returned), `dead-lettered`, `dropped` or `refused`; after the row is settled, under the job's tenant, three tries of its own, on a live `ctx.signal` under `onSettledTimeout` (30 s by default): its `fetch` and its writes land | at most once across a crash; a hook that keeps failing is `X_JOB_ON_SETTLED_FAILED`, logged and reported, and the row is untouched. A cancel is not a settlement: whoever cancels is the observer |
 
 ```ts
 export const syncAccount = job({
@@ -240,7 +242,7 @@ export const syncAccount = job({
 | `refused` | `whenBusy: 'fail'` over a busy key. The body never ran; `code` is `X_JOB_KEY_BUSY` |
 | never called for | a retry, a suspension, a drain, a row cancelled or removed by a caller, a settle that did not land |
 | delivery | **at most once** per ending — a worker killed between the settle and the hook never runs it. What must be recorded for certain is written by the body, inside a `step.run` |
-| failure | three tries back to back, then `X_JOB_ON_SETTLED_FAILED`. The job's outcome never changes |
+| failure | three tries back to back, all inside one `onSettledTimeout` (30 s by default), which aborts `ctx.signal` with `X_JOB_TIMEOUT` and gives the worker its slot back; then `X_JOB_ON_SETTLED_FAILED`. The job's outcome never changes |
 
 | Fact | Detail |
 |---|---|

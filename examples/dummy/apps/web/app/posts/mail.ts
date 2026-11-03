@@ -7,16 +7,18 @@
 
 import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
 import { MemberView } from '../orgs/entity';
-import { PostView } from './entity';
 
 /**
  * `org` is the org's NAME, and it is a top-level string rather than a field reached for through
  * `member`: `{org}` is a name slot, a UUID in it is what this field exists to prevent, and the
  * SUBJECT interpolates from the payload's own top level — `renderMail` reads scalars there and
  * nowhere else, so a name nested one level deeper renders as `⟦org⟧` in the inbox.
+ *
+ * `post` is what the template reads: this payload crosses a `step.run`, which answers JSON, and a
+ * post row's `Date`s would be strings by the time they got here.
  */
 export const PostPublishedData = t.object({
-  post: PostView,
+  post: t.object({ id: t.uuid, authorName: t.string }),
   member: MemberView,
   org: t.string,
 });

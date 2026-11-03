@@ -148,7 +148,11 @@ describe('retypeDependents', () => {
 describe('moveDependentsAside', () => {
   test('the drop goes in up BEFORE the caller pushes its ALTER, and the restore in down', () => {
     const plan = { up: [] as string[], down: [] as string[] };
-    const moved = { indexes: new Set<string>(), checks: new Set<string>() };
+    const moved = {
+      indexes: new Set<string>(),
+      checks: new Set<string>(),
+      defaults: new Set<string>(),
+    };
     moveDependentsAside(
       table({
         indexes: [index('posts_feed_idx', ['org_id'], "status = 'published'", { order: 'desc' })],
@@ -173,7 +177,11 @@ describe('moveDependentsAside', () => {
 
   test('nothing dependent means nothing pushed — a retype pays for this rule only when it must', () => {
     const plan = { up: [] as string[], down: [] as string[] };
-    const moved = { indexes: new Set<string>(), checks: new Set<string>() };
+    const moved = {
+      indexes: new Set<string>(),
+      checks: new Set<string>(),
+      defaults: new Set<string>(),
+    };
     moveDependentsAside(
       table({ indexes: [index('posts_status_idx', ['status'], null)] }),
       'status',

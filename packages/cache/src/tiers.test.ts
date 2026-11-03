@@ -4,7 +4,7 @@
 // are the four things pinned.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { CACHE_TIERS, type Clock } from '@ultimat3/core';
+import { CACHE_TIERS, type Clock, ctxOf, runWithContext } from '@ultimat3/core';
 import { lruTier } from './lru';
 import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
@@ -438,5 +438,34 @@ describe('read-through promotion carries the entry, not the caller options', () 
 
     expect(await stack.read('k', () => Promise.resolve('loaded'), { ttlMs: 300_000 })).toBe('v');
     expect(writes).toEqual([{ ttlMs: 300_000, tags: [] }]);
+  });
+});
+
+describe('a reader who joined a load its leader abandoned', () => {
+  test("gets the value from its own load: one closed tab is not every reader's failure", async () => {
+    const stack = cacheStack([lruTier({ maxBytes: 1_000_000 })]);
+    const leaderTab = new AbortController();
+    const joinerTab = new AbortController();
+    const leaderLoad = Promise.withResolvers<string>();
+    const reading = Promise.withResolvers<void>();
+
+    const leader = runWithContext(ctxOf({ signal: leaderTab.signal }), () =>
+      stack.read('abort:feed', () => {
+        reading.resolve();
+        return leaderLoad.promise;
+      }),
+    );
+    await reading.promise;
+    const joiner = runWithContext(ctxOf({ signal: joinerTab.signal }), () =>
+      stack.read('abort:feed', async () => 'value'),
+    );
+    // The joiner walks the ladder before it joins, and a miss in the LRU is more than one tick.
+    await Bun.sleep(0);
+    leaderTab.abort();
+    leaderLoad.reject(new DOMException('the tab closed', 'AbortError'));
+
+    await expect(leader).rejects.toThrow('the tab closed');
+    expect(await joiner).toBe('value');
+    expect(joinerTab.signal.aborted).toBe(false);
   });
 });

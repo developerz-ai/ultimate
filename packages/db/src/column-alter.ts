@@ -26,6 +26,47 @@ function screened(column: string, expression: string): string {
   return expression;
 }
 
+/** What the column should hold as a default: one this generator cannot render stays as it is. */
+export function wantedDefault(
+  column: ColumnDescriptionLike,
+  recorded: ColumnDescription,
+): string | null {
+  return hasUnrenderedDefault(column) ? recorded.default : defaultExpression(column);
+}
+
+/**
+ * The ALTER of a retype, with the column's default out of its way. Postgres converts a default with
+ * the column and refuses when no assignment cast exists (`42804`), whatever the new default is, so
+ * it is dropped first and set after: a type change is the one move that has to span the default.
+ * `down` is reversed at assembly, so what it pushes here runs last to first: drop the new default,
+ * retype back, restore the old one. With no default on either side, this is the bare ALTER.
+ */
+export function retypeOverDefault(
+  table: string,
+  column: ColumnDescriptionLike,
+  recorded: ColumnDescription,
+  plan: Plan,
+  up: string,
+  down: string,
+): void {
+  const alter = `alter table ${identifier(table).text} alter column ${identifier(column.column).text}`;
+  const drop = `${alter} drop default;`;
+  const set = (expression: string): string =>
+    `${alter} set default ${screened(column.column, expression)};`;
+  const wanted = wantedDefault(column, recorded);
+  const held = recorded.default;
+  if (held !== null) {
+    plan.up.push(drop);
+    plan.down.push(set(held));
+  }
+  plan.up.push(up);
+  plan.down.push(down);
+  if (wanted !== null) {
+    plan.up.push(set(wanted));
+    plan.down.push(drop);
+  }
+}
+
 /**
  * `set default` / `drop default` and `drop not null`, each with its reverse in `down` — the shape
  * `redefineIndex` (`index-ddl.ts`) gives a moved index. Becoming NOT NULL is deliberately NOT a
@@ -45,7 +86,7 @@ export function alterColumnInPlace(
 ): void {
   const { table } = entity;
   const alter = `alter table ${identifier(table).text} alter column ${identifier(column.column).text}`;
-  const wanted = hasUnrenderedDefault(column) ? recorded.default : defaultExpression(column);
+  const wanted = wantedDefault(column, recorded);
   const held = recorded.default;
   if (wanted !== held) {
     const set = (expression: string | null): string =>

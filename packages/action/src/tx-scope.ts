@@ -6,7 +6,10 @@
 
 // Type-only: `idempotency-postgres.ts` imports this module, and a runtime edge would be a cycle.
 import type { PgExecutor } from '@ultimat3/core';
-import { currentTx, liveTxConnection } from '@ultimat3/db';
+import { completeTransaction, currentTx, liveTxConnection } from '@ultimat3/db';
+
+/** The mark a keyed run puts on the open root: its COMMIT carries the settle, abort or no abort. */
+export const carrySettleOnCommit = (): void => completeTransaction();
 
 /** The half of a transaction a deferred effect needs. `@ultimat3/db`'s `DbTx` satisfies it. */
 export interface CommitScope {

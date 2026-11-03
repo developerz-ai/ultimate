@@ -33,6 +33,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_KEY_UNSHARED',
   'X_STORAGE_ALREADY_PROMOTED',
   'X_STORAGE_RANGE_UNSATISFIABLE',
+  'X_STORAGE_OBJECT_CHANGED',
 ] as const;
 
 /**
@@ -76,6 +77,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_KEY_UNSHARED: 'object key is outside every tenant and every shared prefix',
   X_STORAGE_ALREADY_PROMOTED: 'the upload was already promoted onto its row',
   X_STORAGE_RANGE_UNSATISFIABLE: 'the requested byte range starts past the end of the object',
+  X_STORAGE_OBJECT_CHANGED: 'the object changed while it was being promoted',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws

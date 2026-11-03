@@ -22,6 +22,7 @@ import { defOf } from './invoke';
 import { jsonSchemaOf } from './json-schema';
 import type { ActionPath } from './naming';
 import { seatedActions } from './registry-store';
+import { clearToolGates } from './tool-gate';
 
 const registry = seatedActions;
 
@@ -159,6 +160,7 @@ export function resetActions(): void {
   paths.clear();
   resetActionPathStyle();
   resetApiDeclaration();
+  clearToolGates();
 }
 
 function byName(a: readonly [string, AnyAction], b: readonly [string, AnyAction]): number {

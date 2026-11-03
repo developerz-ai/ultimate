@@ -9,11 +9,10 @@ import { assert, queryPath, useContext } from '@ultimat3/core';
 import type { RateLimitDecision, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import {
   byteWindow,
-  contentRangeOf,
   jsonResponse,
-  parseByteRange,
+  type ObjectRequest,
+  objectResponse,
   publishRateLimit,
-  RANGE_UNSATISFIABLE,
   type RequestedRange,
 } from '@ultimat3/http';
 import { policyCapability } from '@ultimat3/policy';
@@ -56,7 +55,7 @@ export function toDownloadRoute(
       return jsonResponse(minted);
     }
     const file = await serveDownloadFile(target, input, token, { surface: 'http' });
-    return fileResponse(file, request.header('range'));
+    return fileResponse(request, file);
   };
 
   const meta: RouteMeta = {
@@ -192,35 +191,38 @@ function bodyOf(file: DownloadFile, range?: RequestedRange): BodyInit {
   return range === undefined ? body : byteWindow(body, range);
 }
 
-/** Status, headers and body for one file and the request's `Range:`, if it named one we serve. */
-export function fileResponse(file: DownloadFile, rangeHeader: string | null): Response {
+/**
+ * Status, headers and body for one file and the request's `Range:`, by `objectResponse`'s rules.
+ * The headers are the file's own and stand in for its sandbox rule. A file of unknown size has no
+ * window to serve, so it answers whole; there is no etag on a file either, so no 304.
+ */
+export async function fileResponse(request: ObjectRequest, file: DownloadFile): Promise<Response> {
   assertFile(file);
-  const headers = new Headers({
-    'content-type': file.contentType,
+  const own = {
     'content-disposition': contentDisposition(file),
     'x-content-type-options': 'nosniff',
     // Loads nothing but itself, in an opaque origin with no script — and names no URL on the way
     // out: the one this file is served at is a bearer grant until it expires.
     'content-security-policy': DOWNLOAD_CSP,
     'referrer-policy': 'no-referrer',
-  });
+  };
   const size = sizeOf(file);
   if (size === undefined) {
-    headers.set('accept-ranges', 'none');
-    return new Response(bodyOf(file), { headers });
+    return new Response(bodyOf(file), {
+      headers: { 'content-type': file.contentType, 'accept-ranges': 'none', ...own },
+    });
   }
-  headers.set('accept-ranges', 'bytes');
-  const range = parseByteRange(rangeHeader, size);
-  if (range === RANGE_UNSATISFIABLE) {
-    if (file.body instanceof ReadableStream) void file.body.cancel().catch(() => undefined);
-    headers.set('content-range', `bytes */${String(size)}`);
-    return new Response(null, { status: 416, headers });
+  const response = await objectResponse(
+    request,
+    {
+      object: { contentType: file.contentType, size },
+      open: (range) => bodyOf(file, range),
+    },
+    { headers: own },
+  );
+  // Nothing opened it, and nothing else will read it: a stream the handler started is let go.
+  if (response.status === 416 && file.body instanceof ReadableStream) {
+    void file.body.cancel().catch(() => undefined);
   }
-  if (range === undefined) {
-    headers.set('content-length', String(size));
-    return new Response(bodyOf(file), { headers });
-  }
-  headers.set('content-range', contentRangeOf(range, size));
-  headers.set('content-length', String(range.end - range.start + 1));
-  return new Response(bodyOf(file, range), { status: 206, headers });
+  return response;
 }

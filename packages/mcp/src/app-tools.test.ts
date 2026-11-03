@@ -169,7 +169,7 @@ describe('tools as a named record', () => {
     expect(() => defineAppMcp({ tools })).toThrow('X_MCP_TOOL_UNSAFE');
   });
 
-  test('the ready-McpTool array form still works, untouched', async () => {
+  test('the ready-McpTool array form still works, its declaration untouched', async () => {
     const ready: AnyMcpTool = {
       name: 'ping',
       description: 'pong',
@@ -179,7 +179,9 @@ describe('tools as a named record', () => {
 
     const mcp = defineAppMcp({ tools: [ready] });
 
-    expect(mcp.tools).toEqual([ready]);
+    // All but `handle`, which asks the gate registered for its name at call time.
+    const { handle: _ready, ...declared } = ready;
+    expect(mcp.tools.map(({ handle: _projected, ...rest }) => rest)).toEqual([declared]);
     expect(textOf(await byName(mcp.tools, 'ping').handle({}, caller(owner)))).toBe('"pong"');
   });
 });

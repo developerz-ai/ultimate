@@ -7,6 +7,7 @@
 // implements too and which nothing about storing rows in a `Map` belongs in.
 
 import { pageOf } from '@ultimat3/core';
+import { refuseAbandoned } from '@ultimat3/db';
 import { aggregateColumnOf } from './aggregate';
 import { foldAggregate } from './aggregate-fold';
 import { appendOnlyRepo } from './append-only';
@@ -15,15 +16,20 @@ import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
 import { entityNow } from './clock';
 import { narrowRow } from './columns';
 import { countsFrom, groupColumnOf } from './count-by';
-import { cursorFor, kindOf, seekFrom, valueAt } from './cursor';
+import { cursorFor, kindOf, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { invariantViolated, notFound } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
+import { lockKeyInput } from './lock-key';
+import { undoingBatch } from './memory-batch';
+import { memoryLocks } from './memory-lock';
 import { compareByKind, matchesPredicate } from './memory-match';
+import { type MemoryTables, sameTenantJudge } from './memory-same-tenant';
+import { afterCursor } from './memory-seek';
 import { uniqueClash, uniqueViolation } from './memory-unique';
 import { judgeUpdate, mergedRow } from './memory-update';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
-import type { FindManyArgs, MemoryRepo, RepoOptions, Transactor, Tx } from './repo';
+import type { FindManyArgs, MemoryRepo, RepoOptions } from './repo';
 import { sealedFields } from './sealed';
 import { sealedRepo } from './sealed-repo';
 import type { QueryPlan } from './tenancy';
@@ -33,43 +39,6 @@ import type { RowWrite } from './types';
 const field = (row: unknown, property: string): unknown =>
   typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[property] : undefined;
 
-/** Lexicographic over the sort keys, direction applied. `> 0` means "after the cursor". */
-const compareToSeek = <Row>(
-  entity: EntityCore<Row>,
-  plan: QueryPlan,
-  row: unknown,
-  seek: readonly unknown[],
-): number => {
-  for (const [index, entry] of plan.orderBy.entries()) {
-    // The COLUMN's kind, not the value's: the seek was revived from the same kind (`cursor.ts`),
-    // so a `bigint` column compares its stored decimal string against a revived `BigInt` as one
-    // number instead of as two pieces of text.
-    const order = compareByKind(
-      kindOf(entity, entry.column),
-      valueAt(row, entry.column),
-      seek[index],
-    );
-    if (order !== 0) return entry.direction === 'desc' ? -order : order;
-  }
-  return 0;
-};
-
-/**
- * Where the next page starts. By sort position, not by the previous row's id: that row may have
- * been deleted between the two requests, and an id that is no longer there would restart
- * pagination at the top instead of continuing it.
- */
-const afterCursor = <Row>(
-  entity: EntityCore<Row>,
-  plan: QueryPlan,
-  found: readonly Row[],
-): number => {
-  const seek = seekFrom(entity, plan);
-  if (seek === undefined) return 0;
-  const start = found.findIndex((row) => compareToSeek(entity, plan, row, seek) > 0);
-  return start === -1 ? found.length : start;
-};
-
 /**
  * The default driver: correct semantics, no database. `x dev` uses it before the first
  * migration and tests use it everywhere. Postgres is the production driver and implements
@@ -78,6 +47,8 @@ const afterCursor = <Row>(
 export const memoryRepo = <Row>(
   entity: EntityCore<Row>,
   seed: readonly Row[] = [],
+  /** The driver's other tables, for a same-tenant reference. Alone, this repository sees itself. */
+  tables: MemoryTables = new Map(),
 ): MemoryRepo<Row> => {
   /**
    * A stored row's key, spelled the way `batch-read.ts` spells an id — because Postgres compares a
@@ -102,6 +73,28 @@ export const memoryRepo = <Row>(
     );
   }
   const rows = new Map<string, Row>(seed.map((row) => [storeKey(row), row]));
+  tables.set(entity.$name, {
+    entity: entity as EntityCore,
+    // By the primary key when that is what is asked, which is nearly every reference.
+    find: (property, value) => {
+      const kind = kindOf(entity, property) ?? '';
+      const soleColumn = entity.$primaryKey.length === 1 ? entity.$primaryKey[0] : undefined;
+      if (soleColumn === property) return rows.get(keyOf(kind, value));
+      for (const row of rows.values()) {
+        if (keyOf(kind, field(row, property)) === keyOf(kind, value)) return row;
+      }
+      return undefined;
+    },
+  });
+  const judgeReferences = sameTenantJudge(entity, tables);
+  const locks = memoryLocks();
+  /** One guard for every write, as `postgresRepo`'s `writing()`: async, so a refusal rejects. */
+  const writing =
+    <A extends unknown[], R>(body: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      refuseAbandoned();
+      return body(...args);
+    };
 
   const rowsOf = (plan: QueryPlan, args: FindManyArgs): Row[] => {
     const visible = (row: Row): boolean =>
@@ -135,6 +128,16 @@ export const memoryRepo = <Row>(
     batch.map((row) => narrowRow<Row>(entity.$columns, row));
 
   /**
+   * Lazy: a batch asks this once a row, and an entity with no unique never iterates it. Re-iterable
+   * and not a generator: `uniqueClash` walks it once per constraint.
+   */
+  const storedExcept = (from: string | undefined): Iterable<Row> => ({
+    *[Symbol.iterator]() {
+      for (const [stored, other] of rows) if (stored !== from) yield other;
+    },
+  });
+
+  /**
    * `from` is the key the row is stored under NOW, or `undefined` for a new row. A new row may not
    * land on a stored key, and a moved one may not land on another row's — Postgres answers both
    * `X_DB_UNIQUE_VIOLATION` — and a moved row leaves its old key, where this map used to keep it.
@@ -155,13 +158,10 @@ export const memoryRepo = <Row>(
     // out of this tenant is refused by the same call that refuses an insert into another one.
     assertRowTenant(entity.$name, entity.$tenantColumn, operation, row);
     entity.$assert(row);
+    judgeReferences(row);
     const key = storeKey(row);
     if (key !== from && rows.has(key)) throw uniqueViolation(entity, `${entity.$table}_pkey`);
-    const clash = uniqueClash(
-      entity,
-      row,
-      [...rows.entries()].filter(([stored]) => stored !== from).map(([, other]) => other),
-    );
+    const clash = uniqueClash(entity, row, storedExcept(from));
     if (clash !== undefined) throw uniqueViolation(entity, clash);
     const moved = from !== undefined && from !== key ? rows.get(from) : undefined;
     const previous = rows.get(key);
@@ -207,8 +207,13 @@ export const memoryRepo = <Row>(
     return current;
   };
 
+  const assertedBound = (rows: number, operation: string): void => {
+    if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, operation, rows);
+  };
+
   // Every method is async: a repository call that fails must reject, never throw
-  // synchronously, or half the call sites would need two error paths.
+  // synchronously, or half the call sites would need two error paths. Every write asks
+  // `refuseAbandoned()` first, as `postgresRepo`'s `writing()` does (`write-abandon.test.ts`).
   const repo: MemoryRepo<Row> = {
     async findById(id, options) {
       const { found } = select(
@@ -230,11 +235,11 @@ export const memoryRepo = <Row>(
       );
     },
 
-    async insert(values, options) {
+    insert: writing(async (values, options) => {
       return write(values, options, 'insert');
-    },
+    }),
 
-    async insertAll(given, options) {
+    insertAll: writing(async (given, options) => {
       // The whole batch is judged before any of it lands: Postgres refuses the statement as one,
       // so a row an invariant rejects — or one naming a tenant this actor may not write — must not
       // leave the rows before it stored here either. `write` re-checks both per row; this loop is
@@ -243,34 +248,43 @@ export const memoryRepo = <Row>(
       // Narrowed FIRST, so what this loop judges is what `write` will store: `$assert` was handed
       // the caller's `bigint` minor unit here and the narrowed `number` one call later.
       const batch = narrowed(given);
+      const earlier = (position: number): Iterable<Row> => ({
+        *[Symbol.iterator]() {
+          yield* rows.values();
+          for (let at = 0; at < position; at += 1) yield batch[at] as Row;
+        },
+      });
       const seen = new Set<string>();
       for (const [position, row] of batch.entries()) {
         assertRowTenant(entity.$name, entity.$tenantColumn, 'insertAll', row);
         entity.$assert(row);
+        judgeReferences(row, batch);
         // Keys too, before any row lands: one duplicate refuses the whole statement in Postgres.
         const key = storeKey(row);
         if (seen.has(key) || rows.has(key)) {
           throw uniqueViolation(entity, `${entity.$table}_pkey`);
         }
         seen.add(key);
-        const clash = uniqueClash(entity, row, [...rows.values(), ...batch.slice(0, position)]);
+        const clash = uniqueClash(entity, row, earlier(position));
         if (clash !== undefined) throw uniqueViolation(entity, clash);
       }
       return batch.map((row) => write(row, options, 'insertAll'));
-    },
+    }),
 
-    async upsertAll(given, args) {
+    upsertAll: writing(async (given, args) => {
       // The INCOMING rows, judged before any of them is matched: under `onMatch: 'nothing'` a
       // colliding row is skipped and never reaches `write()`, so checking only what lands would
       // let a row naming another tenant through whenever it happened to collide. Narrowed first
       // for the reason `insertAll` above is, and before `conflictKeyOf` reads a target too.
       const batch = narrowed(given);
+      // Plan first, then rows: the order `postgresRepo` refuses in, so one bad call has one code.
+      const { onConflict, onMatch = 'update', overwrites } = args;
+      const plan = upsertPlan(entity, batch, onConflict, onMatch, overwrites);
+      const keys = conflictKeys(entity, plan, batch);
       for (const row of batch) {
         assertRowTenant(entity.$name, entity.$tenantColumn, 'upsertAll', row);
         entity.$assert(row);
       }
-      const plan = upsertPlan(entity, batch, args.onConflict, args.onMatch ?? 'update');
-      const keys = conflictKeys(entity, plan, batch);
       // The stored rows under the same key, so "does this collide" is the question the unique
       // index answers in Postgres and not a scan per row. A soft-deleted row still occupies its
       // key here, because the index it would collide with there is not partial either — and a row
@@ -280,83 +294,109 @@ export const memoryRepo = <Row>(
         const key = conflictKeyOf(entity, plan.on, row);
         if (key !== undefined) stored.set(key, row);
       }
-      const written: Row[] = [];
+      // A row that lands is judged before any of them does: the statement refuses as one. One left
+      // alone by `do nothing` wrote nothing, so its reference is checked by nobody on either driver.
       for (const [position, row] of batch.entries()) {
         const key = keys[position];
-        const existing = key === undefined ? undefined : stored.get(key);
-        // `do nothing` writes no row, and `returning *` therefore names none: a skipped row is
-        // absent from the result rather than present and unchanged.
-        if (existing !== undefined && plan.set.length === 0) continue;
-        const merged =
-          existing === undefined
-            ? row
-            : Object.assign(
-                {},
-                existing,
-                Object.fromEntries(plan.set.map((property) => [property, field(row, property)])),
-              );
-        // `UpsertArgs extends RepoOptions`, so the args ARE the options — one bag, and a `tx`
-        // passed to an upsert registers its undo exactly as it does for every other write here.
-        const result = write(
-          merged,
-          args,
-          'upsertAll',
-          existing === undefined ? undefined : storeKey(existing),
-        );
-        // Filed as it lands, so a later row of the same batch collides with an earlier one exactly
-        // as it would with a row the request stored a moment before it.
-        if (key !== undefined) stored.set(key, result);
-        written.push(result);
+        const collides = key !== undefined && stored.has(key);
+        if (!collides || plan.set.length > 0) judgeReferences(row, batch);
       }
+      const written: Row[] = [];
+      // A row colliding on ANOTHER unique takes the rows before it with it, as the statement does.
+      undoingBatch(args.tx, (tx) => {
+        for (const [position, row] of batch.entries()) {
+          const key = keys[position];
+          const existing = key === undefined ? undefined : stored.get(key);
+          // `do nothing` writes no row, and `returning *` therefore names none: a skipped row is
+          // absent from the result rather than present and unchanged.
+          if (existing !== undefined && plan.set.length === 0) continue;
+          const merged =
+            existing === undefined
+              ? row
+              : Object.assign(
+                  {},
+                  existing,
+                  Object.fromEntries(plan.set.map((property) => [property, field(row, property)])),
+                );
+          // `UpsertArgs extends RepoOptions`, so the args ARE the options — one bag, and a `tx`
+          // passed to an upsert registers its undo exactly as it does for every other write here.
+          const result = write(
+            merged,
+            { tx },
+            'upsertAll',
+            existing === undefined ? undefined : storeKey(existing),
+          );
+          // Filed as it lands, so a later row of the same batch collides with an earlier one exactly
+          // as it would with a row the request stored a moment before it.
+          if (key !== undefined) stored.set(key, result);
+          written.push(result);
+        }
+      });
       return written;
-    },
+    }),
 
-    async update(id, patch, options) {
-      const current = addressed(id, options, 'update');
-      return write(mergedRow(entity, current, patch), options, 'update', storeKey(current));
-    },
+    update: writing(async (id, given, options) => {
+      // Here and in `pg-driver.ts`, the one door: a value `insert` refuses, a fragment included.
+      const patch = entity.$parsePatch(given);
+      addressed(id, options, 'update');
+      return locks.turn(`row:${idStoreKey(id, 'update')}`, options?.tx, () => {
+        const current = addressed(id, options, 'update');
+        return write(mergedRow(entity, current, patch), options, 'update', storeKey(current));
+      });
+    }),
 
-    async delete(id, options) {
-      const current = addressed(id, options, 'delete');
-      // Soft delete hides the row without losing it; the column's presence is the switch.
-      if (entity.$softDelete) {
-        write(
-          Object.assign({}, current, { [SOFT_DELETE_COLUMN]: entityNow() }),
-          options,
-          'delete',
-          storeKey(current),
-        );
-        return;
-      }
-      const key = storeKey(current);
-      options?.tx?.onRollback(() => rows.set(key, current));
-      rows.delete(key);
-    },
+    delete: writing(async (id, options) => {
+      addressed(id, options, 'delete');
+      return locks.turn(`row:${idStoreKey(id, 'delete')}`, options?.tx, () => {
+        const current = addressed(id, options, 'delete');
+        // Soft delete hides the row without losing it; the column's presence is the switch.
+        if (entity.$softDelete) {
+          write(
+            Object.assign({}, current, { [SOFT_DELETE_COLUMN]: entityNow() }),
+            options,
+            'delete',
+            storeKey(current),
+          );
+          return;
+        }
+        const key = storeKey(current);
+        options?.tx?.onRollback(() => rows.set(key, current));
+        rows.delete(key);
+      });
+    }),
 
-    async deleteWhere(filter, options) {
+    deleteWhere: writing(async (filter, options) => {
       // `rowsOf` is the read path: the same predicates, the same tenant scoping, and the same
       // soft-delete visibility. A row already stamped is not matched, so a second call cannot
       // move `deletedAt` forward — which is what the Postgres driver's `deleted_at is null`
       // clause says there.
       const doomed = rowsOf(deletePlan(entity, filter, options, 'deleteWhere'), {});
-      for (const row of doomed) {
-        if (entity.$softDelete) {
-          write(
-            Object.assign({}, row, { [SOFT_DELETE_COLUMN]: entityNow() }),
-            options,
-            'deleteWhere',
-            storeKey(row),
-          );
-          continue;
-        }
-        const key = storeKey(row);
-        options?.tx?.onRollback(() => rows.set(key, row));
-        rows.delete(key);
+      // A soft delete is an update, so an app-only rule judges it: bounded as `updateWhere` is, and
+      // one row refused takes the rows before it with it, as the statement does in Postgres.
+      if (entity.$softDelete && hasJsOnlyInvariant(entity.$invariants)) {
+        assertedBound(doomed.length, 'deleteWhere');
       }
+      undoingBatch(options?.tx, (tx) => {
+        for (const row of doomed) {
+          if (entity.$softDelete) {
+            write(
+              Object.assign({}, row, { [SOFT_DELETE_COLUMN]: entityNow() }),
+              { tx },
+              'deleteWhere',
+              storeKey(row),
+            );
+            continue;
+          }
+          const key = storeKey(row);
+          tx.onRollback(() => rows.set(key, row));
+          rows.delete(key);
+        }
+      });
       return doomed.length;
-    },
+    }),
 
-    async updateWhere(filter, patch, options) {
+    updateWhere: writing(async (filter, given, options) => {
+      const patch = entity.$parsePatch(given);
       const plan = updatePlan(entity, filter, patch, options, 'updateWhere');
       // The PATCH, judged whole and before the rows are read — the same call `postgresRepo` makes
       // before its statement exists. Inside the loop below it is judged only where a row was
@@ -374,19 +414,18 @@ export const memoryRepo = <Row>(
       // sweep of twelve million rows was green here and `X_INVARIANT_VIOLATED` there, from one
       // call — a test proving a call production refuses. Before the loop, so a refusal never
       // writes the rows it declined to judge.
-      if (hasJsOnlyInvariant(entity.$invariants) && found.length > MAX_ASSERTED_ROWS) {
-        throw assertedRowsTooMany(entity.$name, 'updateWhere', found.length);
-      }
+      if (hasJsOnlyInvariant(entity.$invariants)) assertedBound(found.length, 'updateWhere');
       // The WHOLE batch is judged before any row of it lands — the same statement Postgres sends,
       // which refuses as one. A row this batch refuses used to leave the rows before it stored:
       // the write was a loop, and the loop stopped half way through. Postgres rolls that
       // statement back; here nothing was written yet, so nothing has to be undone.
       const merged = judgeUpdate(entity, found, patch, untouched(found), storeKey);
+      for (const row of merged) judgeReferences(row);
       for (const [position, row] of merged.entries()) {
         write(row, options, 'updateWhere', storeKey(found[position]));
       }
       return found.length;
-    },
+    }),
 
     async count(args = {}) {
       return select(args, 'count').found.length;
@@ -425,6 +464,21 @@ export const memoryRepo = <Row>(
       return countsFrom(entity, column, 'countBy', [...groups]);
     },
 
+    // Asked before the wait, so another tenant's id never queues behind that tenant's holder, and
+    // again after it, because the row may be gone by then: Postgres re-reads a row it waited for.
+    lock: (id, fn, options) =>
+      writing(async () => {
+        addressed(id, options, 'lock');
+        return locks.run(`row:${idStoreKey(id, 'lock')}`, options?.tx, (tx) =>
+          fn(addressed(id, options, 'lock'), tx),
+        );
+      })(),
+
+    lockKey: (key, fn, options) =>
+      writing(async () =>
+        locks.run(`key:${lockKeyInput(entity, key, options)}`, options?.tx, fn),
+      )(),
+
     reset() {
       rows.clear();
       for (const row of seed) rows.set(storeKey(row), row);
@@ -439,34 +493,5 @@ export const memoryRepo = <Row>(
   );
 };
 
-let txCounter = 0;
-
-/** In-memory transactor: undo closures registered by drivers run on failure. */
-export const memoryTransactor = (): Transactor => ({
-  async run(work) {
-    const undos: (() => void)[] = [];
-    const commits: (() => void)[] = [];
-    txCounter += 1;
-    const tx: Tx = {
-      id: `tx-${txCounter}`,
-      onRollback: (undo) => undos.push(undo),
-      onCommit: (effect) => commits.push(effect),
-    };
-    let result: Awaited<ReturnType<typeof work>>;
-    try {
-      result = await work(tx);
-    } catch (error) {
-      for (const undo of undos.reverse()) undo();
-      throw error;
-    }
-    // After the work succeeded — the memory "commit" — and best-effort, as `@ultimat3/db` runs them.
-    for (const effect of commits) {
-      try {
-        effect();
-      } catch {
-        // an effect is a report about a durable write; it may not fail the write
-      }
-    }
-    return result;
-  },
-});
+/** Moved beside the lock that needs it, and still answered from here for every existing importer. */
+export { memoryTransactor } from './memory-transactor';

@@ -31,7 +31,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **No drain deadline here**: `drain.deadlineMs` is the one budget (core, per role). Key
   `drainTimeoutMs` (deleted 25.0.0) is `X_CONFIG_INVALID` via `refuseDeletedHttpKeys`.
   **`ServerOptions.drain`** passes only `readinessGraceMs`, and only when declared.
-- **`cors.origins: ['*']` with `credentials: true` is `X_CORS_CONFIG_INVALID`.** A refused origin
+- **`cors.origins: ['*']` with `credentials: true`, or `'null'` in the list, is `X_CORS_CONFIG_INVALID`.** A refused origin
   still gets `vary: origin`.
 - **A `security.csp.extend` entry must emit only the directive it names**
   (`X_CSP_DIRECTIVE_INVALID`); `buildCsp` builds through a `Map`.
@@ -52,6 +52,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **A request's registered services are LAZY and bound to the authenticated actor**
   (`request-services.ts`, `installServices: false` + `bindRequestServices`): built on first read,
   rebuilt only if actor, locale or tz changed. `request-services.test.ts`.
+- **A shared document renders in `withAnonymousRequest(ctx, url, fn)`** (`context.ts`): `withChildContext`'s
+  rebuilt services under the request's own fields (a service never shadows one), the anonymous actor,
+  the caller's narrowed `url`, the default zone, NO inbound headers (an empty set, never a deny-list),
+  `ip`/`peer`/`clientBuildId`/`authz`/`rateLimit`/`readBody` empty. A new visitor-derived slot on
+  `RequestContext` is cleared there. Not a bare `withChildContext`, where `setRedirect` is `X_NO_REQUEST`;
+  not a spread of `ctx`, whose services know the visitor. The redirect slot is `scope`'s.
 - **A member's saved locale and zone apply, re-resolved after `auth`**
   (`resolvePreferences`; cookie beats a saved locale, a saved zone beats the cookie).
   `member-preferences.test.ts`.
@@ -64,17 +70,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - **`hooks.authenticate` has one declaration site: `configureAuthenticator()`.** A route may
   REPLACE it with `meta.authenticate` (never run beside it): `bearerMount` sets it so a session
   cookie authenticates nothing on `/v1/*`.
-- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): same
-  handler, policy, idempotency; adds the credential (bearer only, `WWW-Authenticate` on 401), the
-  cut (outside the token's scopes = `X_ROUTE_NOT_FOUND`, the MCP rule), and a per-token bucket
-  keyed by a SHA-256 of the token. Bad prefix / unknown name / double claim:
-  `X_BEARER_MOUNT_INVALID` at construction. **The cut is decided in the `auth` stage** — one
-  authenticator per route, closed over its scope — so an out-of-scope token is 404 before `body`
-  (422) and `authz` (403) could describe the primitive. **The prefix is opaque**: `<prefix>/*rest`
-  for every method (`opaquePrefix`) answers no token / a bad token with the same 401 challenge a
-  served path gives, and a valid token with the same 404 — never 404-vs-401 or a 405 naming methods.
-  That 404 SPENDS the token's allowance (once; a served call is charged in the handler), so a
-  token cannot walk the cut for free.
+- **`bearerMount` re-serves existing `Route`s, never re-projects them** (`bearer-mount.ts`): the cut is decided in the `auth` stage, outside the scopes is `X_ROUTE_NOT_FOUND`, the prefix is opaque, and that 404 spends the token's allowance. Full rule: `docs/history/http.md`.
 - **`hooks.devNotices` is called only inside the `config.dev && wantsOverlay` branch.**
 - **A dev 4xx asks `hooks.errorPage` first; a 5xx is always the overlay** (#492): the app's file
   when it has one, else the overlay. Production asks for every status (`stages-error-page.test.ts`).
@@ -93,14 +89,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   the boot's `csp.extend` of that origin exactly. `security.hsts` merges key by key.
 - **The two inbound ids are read BEFORE the context and the span** (`correlation.ts`, core's
   `parseTraceparent`). `x-request-id` is gated on `trustProxy`; `traceparent` deliberately is not.
-- **Every proxy-supplied header goes through `forwardedElement(header, hops)`** — the entry at
-  `entries.length - hops`, never `[0]`; a short chain trusts nothing. **Except `x-forwarded-proto`**
-  (`forwardedProto`): proxies usually OVERWRITE it, so a list shorter than `hops` reads its first
-  entry (an overwrite erased the client's value; what is left a trusted hop wrote) — HSTS behind
-  two hops. A full-length list is read like an address. `trustProxy` defaults to false
-  and requires `trustedProxyHops`. `x-forwarded-proto` (HSTS) and Envoy XFCC (`peer-identity.ts`) ride
-  it; `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared (appending to
-  XFF is no promise of stripping a client-sent cert header), and is never an actor.
+- **Every proxy-supplied header goes through `forwardedElement(header, hops)`**, the entry at `entries.length - hops`, never `[0]`, except `x-forwarded-proto` (`forwardedProto`). `ctx.peer` is `null` unless trusted AND `trustClientCertHeader` is declared, and is never an actor. Full rule: `docs/history/http.md`.
 - **One deadline per request** (`deadline.ts`): `requestTimeoutMs` (30 s, `0` off; Bun's
   `idleTimeout` derives from it, `idle-timeout.ts`), shortened by `x-request-timeout-ms`, never
   lengthened. `ctx.signal` is the deadline OR the caller going away (`AbortSignal.any` with
@@ -249,6 +238,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `context.ts` | `RequestContext` (core's `Ctx` plus the request's own), composed from `ctxOf`, the single `Ctx` adapter (`asCtx`) and the inbound-header readers |
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `set-cookie.ts` | `setCookie`/`deleteCookie`: one line each onto `ctx.headers` |
+| `object-response.ts` | `objectResponse`, the one answer for an object held elsewhere, structural (no storage import); `notModified`, the one `if-none-match` answer |
+| `stored-object-headers.ts` | inline only for raster images, audio, video; else `attachment` + `sandbox`. Private to `objectResponse` |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor — and the review of a declared one (`reviewedHint`) |
 | `error-log-level.ts` | the level of the `error-map` stage's one line: `error` for 5xx, `warn` for 401/403/429, `info` for the rest |

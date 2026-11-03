@@ -232,5 +232,11 @@ export const sealedRepo = <Row, R extends Repo<Row>>(entity: SealedSource, repo:
       return repo.approximateCount(await readArgs(entity, fields, args, sealKeysOnce()));
     },
   };
+  // Opened before `fn` sees it: a callback is a caller, and `lockKey` hands it no row to open.
+  const inner = repo.lock?.bind(repo);
+  if (inner !== undefined) {
+    sealing.lock = (id, fn, options) =>
+      inner(id, async (row, tx) => fn(await openRow(fields, row, sealKeysOnce()), tx), options);
+  }
   return { ...repo, ...sealing };
 };

@@ -50,6 +50,18 @@ unitTest('insert, update and delete on one table are the same rule', () => {
   );
 });
 
+unitTest('a row locked by its id is the lock call, with or without its tenant', () => {
+  const locks = [
+    'select * from posts where id = ? for update',
+    'select * from posts where id = ? limit 1 for update',
+    'SELECT * FROM posts WHERE org_id = ? AND id = ? FOR UPDATE;',
+  ];
+  for (const sql of locks) expect(handleCallFor(sql)).toBe('db.posts.lock(id, fn)');
+  const source = `const row = sql\`select * from short_links where id = ${hole('id')} for update\`;`;
+  const findings = rawRepoSql(repo(source));
+  expect(findings[0]?.fix).toStartWith('db.shortLinks.lock(id, fn) — ');
+});
+
 // The legitimate lookalikes — the reason the rule can stay switched on. Each is a statement the
 // handle has no word for, and raw SQL in a repo is the right answer for it.
 unitTest('a statement past what the handle says is silent', () => {
@@ -62,6 +74,9 @@ unitTest('a statement past what the handle says is silent', () => {
     'with recent as (select * from posts) select * from recent',
     'update posts set like_count = like_count + 1 where id = ?',
     'insert into likes (post_id, user_id) values (?, ?) on conflict do nothing',
+    'select * from jobs where state = ? for update skip locked',
+    'select * from posts where id = ? for no key update',
+    'select * from posts where org_id = ? for update',
   ];
   for (const sql of silent) expect(handleCallFor(sql)).toBeUndefined();
 });

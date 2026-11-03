@@ -157,13 +157,36 @@ export const supportAgent = agent({
 | A tool that is neither is `X_AGENT_TOOL_UNEXPOSED` **at declaration**, never filtered at the call | a silently dropped tool reads as offered and is not — the worst of both |
 | The tool's name is its **export name, verbatim** | the same name `tools/call`, `scopes:` and `openapi.json` use. No second spelling |
 | The tool's own `policy` decides every call | there is no "LLM permissions" concept, because there is no second authz system |
+| A tool in `mcpConfirmations({ tools })` waits for a person here too | one list, both surfaces, so there is no `agent({ confirmations })` to forget. A prompt-injected in-app agent is the one with the less trusted input → [Confirmation](#a-tool-that-waits-for-a-person) |
 | The tool's own `input:` parses what the model sent | which is what drops an `{ actor: 'admin' }` the model invented, before any handler sees it |
 | A tool failure is a `tool_result` flagged `is_error`, not a crash | a policy denial is an outcome the model should read and react to |
+| A failure's fix is the **caller's** when the error declares one (`callerFix`) | a model is a caller, as an app's MCP client is: `x policy explain` is not a command it can run |
 | A 5xx failure's cause reaches the model only when its code declares it public | the provider keeps every request it is sent; a `X_DB_STATEMENT_FAILED` reads as the code and a fixed sentence — the verdict a production problem document and an MCP client get |
 | An **in-process** tool's own typed refusal reaches the model whole | a tool marked `inProcess: true` is the app's code called by its own agent. An `UltimateError` it throws under a code nobody gave an HTTP status is rendered as `{"error":{"code","cause","fix"}}` (the `callerFix` when it has one) — the model needs exactly that to correct its call. Still withheld: an uncoded throw, a framework 5xx, a code the app registered ≥ 500, a look-alike object; never a stack. `discloseErrors: false` opts out |
 | The actor is **`ctx.actor`**, read once, and nothing the model emits can reach it | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
 
 An unknown tool name answers `unknown tool: <name>` as an error result rather than throwing — the model asked for something it was not offered, which is a turn to correct, not a run to abort.
+
+### A tool that waits for a person
+
+`mcpConfirmations({ tools: ['refundOrder'], … })` gates that name wherever it is called from: over MCP, and from `agent({ tools: [refundOrder] })`. The order is the tool's policy (actor half), then the gate, then `invoke`, so a caller the tool refuses outright opens no row.
+
+No new run outcome and no deferred tool. The call is a `tool_result` flagged `is_error`, `X_MCP_CONFIRMATION_PENDING`, carrying the id and what a caller does next:
+
+1. The model reports the pending confirmation through `output`. Give `output` a field for it.
+2. A person approves through the decision action (`view`, then `approve` with exactly the `arguments` it showed).
+3. A later user turn repeats the call with the same arguments. It consumes the approval and runs once, through the tool's own policy; the next identical call asks again.
+
+| Rule | Why |
+|---|---|
+| An approval binds actor, tool and the digest of the validated, defaulted arguments, not the surface | a repeat spelling a default differently consumes it; other arguments or another actor ride none. An in-app agent's actor is the user and an MCP agent's its own, so the two rarely meet; the same actor on both shares one row |
+| Arguments the published schema refuses open no row: `X_INPUT_INVALID` | refused at the gate, never passed on. The action's own parse drops a key it does not declare, so `{ orderId, invented: 1 }` would otherwise run with nobody asked |
+| The gate binds a **tool's name**, never what the tool reaches | `inProcessTool({ name: 'refundNow', execute: () => invoke(refundOrder, …) })` is not gated by `refundOrder`'s row: list the tool's own name in `tools` |
+| A server handed no `confirmations` still waits: it asks the registered gate per call | forgetting the option is no way around the list. A server's own `confirmations` wins for the names it gates |
+| A gated name no tool answers to is `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at the `manifest` step | `tools: ['refundOrdr']` holds nothing, and the real `refundOrder` would run with nobody asked |
+| Two `mcpConfirmations` on one name: each MCP server keeps its own, and **in-app the first registered answers** | any gated tool still waits for a person in-app. A later one for that name is a no-op, so a person decides through the first registered |
+| The decision action is not a tool: it declares no `mcp.expose`, so `agent({ tools: [decide] })` is `X_AGENT_TOOL_UNEXPOSED` | its `kind === 'agent'` refusal does not stop an in-app agent, whose actor is the user. **Exposing the decision action hands an in-app agent its own approval** |
+| A gate declared only in a module a worker does not load is `X_ROLE_LOAD_INCOMPLETE` at the `manifest` step | an `agentJob()` reads the gate by name, and absent there the call would run ungated. The finding's fix names the import |
 
 ### In-process tools
 
@@ -821,6 +844,7 @@ Full list: [Error codes](Error-Codes).
 
 - `agent()` is a factory over `action()`. A new capability arrives as a factory over an existing primitive, never as a new kind of thing.
 - Tools are real `action()`s, each `mcp: { expose: true }`, each deciding its own calls with its own policy.
+- A tool in `mcpConfirmations({ tools })` waits for a person from an agent exactly as over MCP (`X_MCP_CONFIRMATION_PENDING`).
 - The actor is `ctx.actor`, read once. A model can never name the identity it acts as.
 - Structured output is the forced `respond` tool. There is no JSON mode and no second structured-output path.
 - Tools of one turn run concurrently and are paired positionally; turns are serial.

@@ -3,7 +3,10 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
+  drain,
   exportMetrics,
+  onShutdown,
+  resetLifecycle,
   resetMetrics,
   resetTelemetry,
   shutdownHookCount,
@@ -133,6 +136,41 @@ describe('the release uninstalls the exporters, not only their timers', () => {
       expect(posted.urls).toEqual([]);
     } finally {
       posted.restore();
+    }
+  });
+});
+
+/**
+ * The boot registers the exporter first, and `close` hooks run last-registered first, so the flush
+ * is the last thing the drain does. Before that a worker's teardown span was recorded into an
+ * exporter already shut down, and the window an operator went looking for was lost.
+ */
+describe('a span ended by a later close hook reaches the collector', () => {
+  test('the flush runs after the teardown it is there to explain', async () => {
+    resetLifecycle();
+    const bodies: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      return new Response('', { status: 200 });
+    }) as typeof globalThis.fetch;
+    try {
+      release = startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' });
+      onShutdown(
+        'worker-teardown',
+        async () => {
+          await withSpan('span-from-worker-teardown', async () => 0);
+        },
+        { phase: 'close' },
+      );
+      await withSpan('span-before-drain', async () => 0);
+      await drain('SIGTERM');
+      const exported = bodies.join('');
+      expect(exported).toContain('span-before-drain');
+      expect(exported).toContain('span-from-worker-teardown');
+    } finally {
+      globalThis.fetch = real;
+      resetLifecycle();
     }
   });
 });

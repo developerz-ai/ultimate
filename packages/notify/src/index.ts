@@ -59,6 +59,7 @@ export {
 } from './inbox-pg';
 export type {
   DeliveryClaim,
+  DeliveryClaimAnswer,
   DeliveryLedger,
   DeliveryRecord,
   DeliveryStatus,
@@ -66,6 +67,7 @@ export type {
   MemoryDeliveryLedgerOptions,
 } from './ledger';
 export {
+  DEFAULT_DELIVERY_RECLAIM_MS,
   DELIVERY_STATUSES,
   isDeliveryStatus,
   memoryDeliveryLedger,

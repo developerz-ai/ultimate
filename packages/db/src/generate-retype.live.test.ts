@@ -217,3 +217,119 @@ describe.skipIf(!hasPostgres)('live · postgres · retyping a column a predicate
     expect(await constraintNames()).toEqual([`${TABLE}_publish_coherent_check`]);
   });
 });
+
+/**
+ * A retype over a column that holds a default. Postgres converts the default with the column and
+ * refuses when no assignment cast exists (`42804 default for column … cannot be cast automatically`),
+ * whatever the new default is, so the migration failed on its first apply and the ledger recorded
+ * nothing. Both directions are applied, because `down` retypes across a default too.
+ */
+describe.skipIf(!hasPostgres)('live · postgres · retyping a column holding a default', () => {
+  const DEFAULTED = 'rt_defaulted';
+  let client: PostgresClient;
+
+  const shaped = (
+    kind: string,
+    fallback: Partial<ColumnDescriptionLike> = {},
+  ): EntityDescriptionLike => ({
+    name: 'RtDefaulted',
+    table: DEFAULTED,
+    primaryKey: ['id'],
+    columns: [
+      column('id', { kind: 'uuid', primaryKey: true, notNull: true }),
+      column('rank', { kind, notNull: true, ...fallback }),
+    ],
+    indexes: [],
+    invariants: [],
+  });
+
+  const value = (given: string | number): Partial<ColumnDescriptionLike> => ({
+    hasDefault: true,
+    default: { kind: 'value', value: given },
+  });
+
+  const apply = async (script: string): Promise<void> => {
+    for (const statement of statementsOf(script)) await client.execute(raw(statement));
+  };
+
+  const shape = async (): Promise<{ type: string; fallback: string | null }> => {
+    const rows = await client.query<{ type: string; fallback: string | null }>(
+      raw(
+        `select format_type(a.atttypid, a.atttypmod) as type, ` +
+          `pg_get_expr(d.adbin, d.adrelid) as fallback from pg_attribute a ` +
+          `join pg_class t on t.oid = a.attrelid ` +
+          `left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum ` +
+          `where t.relname = '${DEFAULTED}' and a.attname = 'rank'`,
+      ),
+    );
+    return { type: rows[0]?.type ?? '', fallback: rows[0]?.fallback ?? null };
+  };
+
+  const reset = async (): Promise<void> => {
+    await client.execute(raw(`drop table if exists "${DEFAULTED}" cascade`));
+  };
+
+  beforeAll(() => {
+    client = postgresClient({ url: url ?? '' });
+  });
+
+  afterAll(async () => {
+    await reset();
+    await client.close();
+  });
+
+  const roundTrip = async (
+    before: EntityDescriptionLike,
+    after: EntityDescriptionLike,
+  ): Promise<{
+    up: Awaited<ReturnType<typeof shape>>;
+    down: Awaited<ReturnType<typeof shape>>;
+    rows: readonly string[];
+  }> => {
+    await reset();
+    await apply(generateMigration({ entities: [before], name: 'init', now: at }).up);
+    await client.execute(
+      raw(`insert into "${DEFAULTED}" ("id", "rank") values ('${uuid('1')}', '5')`),
+    );
+    const migration = generateMigration({
+      entities: [after],
+      current: snapshotOf([before]),
+      name: 'retype',
+      now: at,
+    });
+    await apply(migration.up);
+    const up = await shape();
+    await apply(migration.down);
+    const down = await shape();
+    const stored = await client.query<{ rank: string }>(
+      raw(`select "rank"::text as rank from "${DEFAULTED}"`),
+    );
+    return { up, down, rows: stored.map((row) => row.rank) };
+  };
+
+  test('text with a default, to integer with a new one, and back', async () => {
+    const outcome = await roundTrip(shaped('text', value('5')), shaped('integer', value(7)));
+    expect(outcome.up).toEqual({ type: 'integer', fallback: '7' });
+    expect(outcome.down).toEqual({ type: 'text', fallback: "'5'::text" });
+    expect(outcome.rows).toEqual(['5']);
+  });
+
+  test('text with a default, to integer with none, and back', async () => {
+    const outcome = await roundTrip(shaped('text', value('5')), shaped('integer'));
+    expect(outcome.up).toEqual({ type: 'integer', fallback: null });
+    expect(outcome.down).toEqual({ type: 'text', fallback: "'5'::text" });
+    expect(outcome.rows).toEqual(['5']);
+  });
+
+  test('text with a default, to integer stating the same expression, and back', async () => {
+    const outcome = await roundTrip(shaped('text', value('5')), shaped('integer', value('5')));
+    expect(outcome.up).toEqual({ type: 'integer', fallback: '5' });
+    expect(outcome.down).toEqual({ type: 'text', fallback: "'5'::text" });
+  });
+
+  test('integer with no default, to text with one, and back across that default', async () => {
+    const outcome = await roundTrip(shaped('integer'), shaped('text', value('5')));
+    expect(outcome.up).toEqual({ type: 'text', fallback: "'5'::text" });
+    expect(outcome.down).toEqual({ type: 'integer', fallback: null });
+  });
+});

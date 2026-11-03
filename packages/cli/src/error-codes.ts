@@ -237,6 +237,14 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_CATALOG_SLOT_MISMATCH',
   'X_CATALOG_UNTRANSLATED',
   'X_WORKER_QUEUE_UNKNOWN',
+  'X_UPGRADE_DIRTY_TREE',
+  'X_UPGRADE_MIXED_PINS',
+  'X_UPGRADE_HOP_TOO_WIDE',
+  'X_UPGRADE_REGISTRY_UNREACHABLE',
+  'X_UPGRADE_PIN_UNREADABLE',
+  'X_UPGRADE_VERSION_UNPUBLISHED',
+  'X_UPGRADE_INSTALL_FAILED',
+  'X_UPGRADE_GATE_UNREADABLE',
 ] as const;
 
 /**
@@ -430,6 +438,14 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_CATALOG_SLOT_MISMATCH: 'two locales define one key with different interpolation slots',
   X_CATALOG_UNTRANSLATED: "a locale still carries the reference locale's value",
   X_WORKER_QUEUE_UNKNOWN: 'WORKER_QUEUES names a queue no job and no jobs.queues entry declares',
+  X_UPGRADE_DIRTY_TREE: 'x upgrade refused a tree with uncommitted changes',
+  X_UPGRADE_MIXED_PINS: 'x upgrade found two @ultimat3/* versions across the workspaces',
+  X_UPGRADE_HOP_TOO_WIDE: 'x upgrade --to is outside the one hop a run may make',
+  X_UPGRADE_REGISTRY_UNREACHABLE: 'x upgrade could not read the published versions from npm',
+  X_UPGRADE_PIN_UNREADABLE: 'x upgrade found an @ultimat3/* dependency that names no version',
+  X_UPGRADE_VERSION_UNPUBLISHED: 'x upgrade --to names a version npm does not have',
+  X_UPGRADE_INSTALL_FAILED: 'bun install failed after x upgrade wrote the pins',
+  X_UPGRADE_GATE_UNREADABLE: 'the installed x verify answered with no JSON report',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

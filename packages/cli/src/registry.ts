@@ -38,6 +38,7 @@ import { secretsSpec } from './cmd-secrets-spec';
 import { shotSpec } from './cmd-shot-spec';
 import { tasksSpec } from './cmd-tasks-spec';
 import { testSpec } from './cmd-test-spec';
+import { upgradeSpec } from './cmd-upgrade-spec';
 import { vapidSpec } from './cmd-vapid-spec';
 import { verifySpec } from './cmd-verify-spec';
 import type { CliCommand } from './command';
@@ -107,6 +108,7 @@ export const LAZY_COMMANDS: readonly LazyCommand[] = [
   lazy(shotSpec, async () => (await import('./cmd-shot')).shotCommand),
   lazy(prSpec, async () => (await import('./cmd-pr')).prCommand),
   lazy(ciSpec, async () => (await import('./cmd-ci')).ciCommand),
+  lazy(upgradeSpec, async () => (await import('./cmd-upgrade')).upgradeCommand),
 ];
 
 /**

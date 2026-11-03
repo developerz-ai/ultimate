@@ -71,6 +71,14 @@ export function markInvalidated(scope: FenceScope): void {
 }
 
 /**
+ * Moves with every invalidation of any kind. Unchanged means a fence that answered valid at this
+ * reading still does, so a caller asking many times need only walk the marks once per reading.
+ */
+export function fenceGeneration(): number {
+  return generation;
+}
+
+/**
  * Everything, invalidated: every fence sampled before this call answers `false`. For a process
  * that cannot name what it missed (`flushProcessTiers`) — the same "older than the ring remembers:
  * unprovable, so refused" rule, reached on purpose. One refetch per in-flight fill.

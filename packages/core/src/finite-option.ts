@@ -52,3 +52,10 @@ export function finiteCount(
   );
   return value;
 }
+
+/**
+ * The longest delay a timer holds: a signed 32-bit count of milliseconds, about 24.8 days. Past it
+ * `setTimeout` arms ~1 ms, so a "longer" ceiling fires at once. Every timer an option arms clamps or
+ * refuses at this.
+ */
+export const MAX_TIMER_MS = 2_147_483_647;

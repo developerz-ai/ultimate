@@ -260,11 +260,14 @@ async function perform(
   // committed write had not happened. A key the store already holds is a replay (or a duplicate in
   // flight, answered 409); only a key it does not hold spends here. The peek can be stale both
   // ways, so `withIdempotency` meters a reservation it CREATED that this peek did not pay for.
-  const spentEarly =
+  // The same peek serves the row rule below, so an action that needs neither makes no read here.
+  const peeked =
     trace.idempotencyKey === null ||
     store === undefined ||
-    def.rateLimit === undefined ||
-    (await store.get(trace.idempotencyKey)) === undefined;
+    (def.rateLimit === undefined && def.row === undefined)
+      ? undefined
+      : await store.get(trace.idempotencyKey);
+  const spentEarly = def.rateLimit === undefined || peeked === undefined;
   if (spentEarly) await spend();
 
   const input = await validateInput(def.input, raw, name);
@@ -276,39 +279,57 @@ async function perform(
   // because a rule that reads `row` has to decide what `null` means.
   // The SAME `input` object reaches `def.row` here and `def.handle` below, by reference:
   // `transition()` keys what its rule read on it (`transition-observe.ts`, #702).
-  const row = def.row === undefined ? null : ((await def.row({ input, ctx })) ?? null);
-  guardAction(def.policy, { actor: actorOf(ctx), input, row, ctx, action: name }, surface);
+  const judgeRow = async (): Promise<void> => {
+    const row = def.row === undefined ? null : ((await def.row({ input, ctx })) ?? null);
+    guardAction(def.policy, { actor: actorOf(ctx), input, row, ctx, action: name }, surface);
+  };
+  // A finished record is this key's outcome, and the key is this actor's (`idempotency-key.ts`).
+  // The row it decided about may be the row it deleted: a rule asked again judges `null`, and a
+  // committed write answers its own retry with a refusal. So the loader and the rule wait, and
+  // `withIdempotency` answers: the replay, or the conflict for another payload. Who is asking was
+  // already decided, per call, by `guardActionBeforeInput` above: a revoked `can()` is refused
+  // here too. In flight or absent, nothing has been decided yet, so the rule decides.
+  const answered = def.row !== undefined && peeked !== undefined && peeked.status !== 'in-flight';
+  if (!answered) await judgeRow();
 
   // Output parsing sits inside `run` so a replayed idempotent response is the parsed value too —
   // one shape on the wire, first call and every retry. No span of its own: `execute` above holds
   // the one that covers this invocation, and a second here would only re-time its tail.
+  let started = false;
   const run = async (): Promise<unknown> => {
-    const produced = await Promise.resolve(def.handle({ input, ctx }));
+    started = true;
+    // Read here, not closed over: under a key this runs in `runToCompletion`'s scope, and a handler
+    // passing the outer `ctx.signal` onward would fail its vendor call and settle a failure.
+    const produced = await Promise.resolve(def.handle({ input, ctx: useContext() }));
     return validateOutput(def.output, produced, name);
   };
+  // The peek can be stale: a record that lapsed after it leaves this call a FRESH reservation, and
+  // the handler must not run on a rule it skipped. `beforeRun` runs only for a created reservation,
+  // and a refusal there releases it. Spend first, in the order a first call takes them.
+  const beforeRun = async (): Promise<void> => {
+    if (!spentEarly) await spend();
+    if (answered) await judgeRow();
+  };
 
-  let value: unknown;
-  let wrote = true;
-  if (store === undefined || trace.idempotencyKey === null) {
-    value = await run();
-  } else {
+  try {
+    if (store === undefined || trace.idempotencyKey === null) return await run();
     const outcome = await withIdempotency(store, trace.idempotencyKey, input, run, {
-      ...(spentEarly ? {} : { beforeRun: spend }),
+      ...(spentEarly && !answered ? {} : { beforeRun }),
     });
     if (outcome.replayed) options.onReplay?.();
     trace.replayed = outcome.replayed;
-    wrote = !outcome.replayed;
     // A replay is parsed like a first call. The memory store hands back the live value and the
     // postgres store `JSON.parse(JSON.stringify(v))` — a `Date` on the first call and a `string`
     // on every retry served from Postgres — so the output schema is the one answer to its shape.
-    value = outcome.replayed ? validateOutput(def.output, outcome.value, name) : outcome.value;
+    return outcome.replayed ? validateOutput(def.output, outcome.value, name) : outcome.value;
+  } finally {
+    // Only for a handler that actually started, and only through the gate. A replay ran no handler
+    // and changed nothing the first call had not already busted — re-busting per retry re-purges
+    // the CDN and re-queues ISR for a write nobody made. A handler that THREW is busted too: it may
+    // have committed (`withIdempotency` records the same throw for that reason), and skipping the
+    // bust hid that write behind a stale cache for the TTL. The bust is post-COMMIT either way —
+    // invoked inside a transaction, it waits for the root commit and is dropped by a rollback — and
+    // `bustAfterCommit` never throws, so it cannot replace this call's answer or its failure.
+    if (started && def.cache !== undefined) await bustAfterCommit(name, def.cache.invalidates);
   }
-  // Only for a run that actually happened, and only through the gate. A replay ran no handler
-  // and changed nothing the first call had not already busted — re-busting per retry re-purges
-  // the CDN and re-queues ISR for a write nobody made. And the bust is post-COMMIT either way —
-  // invoked inside a transaction, it waits for the root commit and is dropped by a rollback — so
-  // `bustAfterCommit` swallowing its own failure is what keeps a dead cache from turning a
-  // durable write into a failed action.
-  if (wrote && def.cache !== undefined) await bustAfterCommit(name, def.cache.invalidates);
-  return value;
 }

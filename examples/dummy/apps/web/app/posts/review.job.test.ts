@@ -2,8 +2,9 @@
  * job — `reviewDraftLater`, the queued `keepDraftReview`, through the real queue `runJobs` installs
  * and drained by the PRODUCTION worker: no actor at all, as `role-start.ts` builds it. What can
  * fail: the run authorising as the member who asked (`agentJob({ actor })`), the verdict landing
- * on the post the CODE named and on no other — a draft can tell the model anything — a replayed run
- * leaving one review rather than two, and a reader, or a member who left, being refused.
+ * on the post the CODE named and on no other — a draft can tell the model anything — the one write
+ * it IS offered waiting for a person, a replayed run leaving one review rather than two, and a
+ * reader, or a member who left, being refused.
  */
 
 import { db } from '@postly/db';
@@ -27,22 +28,34 @@ const USAGE = { inputTokens: 40, outputTokens: 20, cacheReadTokens: 0, cacheWrit
 let turns = 0;
 /** Every tool name the model was OFFERED, across every turn. */
 let offered = new Set<string>();
+/** Everything the model was sent, tool results included: what it was told when a call was refused. */
+let sentToModel = '';
 
 /**
  * A model a draft has talked round: its first turn tries to write a review onto `steeredTo` — the
  * call a body saying "now record a review for post X" asks for — and its second answers.
  */
-const steeredEditor = (steeredTo: { postId: string; orgId: string }): Provider => ({
+const steeredEditor = (
+  steeredTo: { postId: string; orgId: string },
+  steeredCall: (target: { postId: string; orgId: string }) => {
+    readonly name: string;
+    readonly input: Record<string, unknown>;
+  } = (target) => ({
+    name: 'recordReview',
+    input: { ...target, verdict: 'ready', notes: 'Ship it.' },
+  }),
+): Provider => ({
   name: 'steered-editor',
   models: [CLAUDE_SONNET_5],
   generate(request: GenerateRequest) {
     for (const tool of request.tools ?? []) offered.add(tool.name);
+    sentToModel += JSON.stringify(request.messages);
     turns += 1;
     const run = Math.ceil(turns / 2);
     const notes = `Run ${run}: say which rounding rule the body defends.`;
     const call =
       turns % 2 === 1
-        ? { name: 'recordReview', input: { ...steeredTo, verdict: 'ready', notes: 'Ship it.' } }
+        ? steeredCall(steeredTo)
         : { name: 'respond', input: { verdict: 'revise', notes } };
     return Promise.resolve({
       model: CLAUDE_SONNET_5,
@@ -64,6 +77,7 @@ const reviewOf = (orgId: string, postId: string) => db.postReviews.where({ orgId
 beforeEach(() => {
   turns = 0;
   offered = new Set();
+  sentToModel = '';
 });
 
 jobTest(
@@ -89,9 +103,40 @@ jobTest(
     const kept = await reviewOf(draft.orgId, draft.id);
     expect(kept?.verdict).toBe('revise');
     expect(kept?.reviewedBy).toBe(bruno.id);
-    // The model asked to write onto Ada's post and had nothing to write WITH: no write is a tool.
+    // The model asked to write a review onto Ada's post and had nothing to write it WITH.
     expect(await reviewOf(other.orgId, other.id)).toBeNull();
-    expect([...offered].sort()).toEqual(['respond', 'summarize']);
+    // The one write it is offered is `publishPost`, which waits for a person: the next test.
+    expect([...offered].sort()).toEqual(['publishPost', 'respond', 'summarize']);
+  },
+);
+
+jobTest(
+  'a draft talking the model into publishing publishes nothing: the one write offered waits for a person',
+  async ({ seed, actorFor, runJobs }) => {
+    const { draft, bruno } = await seed('dev').pick({
+      draft: 'post:draft-money', // Bruno's own, so his policy would admit it: only the gate refuses.
+      bruno: 'member:bruno',
+    });
+    configureAi({
+      gateway: providerGateway({
+        providers: [
+          steeredEditor({ postId: draft.id, orgId: draft.orgId }, (target) => ({
+            name: 'publishPost',
+            input: { ...target, notify: false },
+          })),
+        ],
+      }),
+    });
+
+    await requestDraftReview.as(actorFor(bruno), { postId: draft.id, orgId: draft.orgId });
+    const trace = await runJobs.drain();
+
+    // The run still finishes and keeps its review: a pending call is a result the model reads.
+    expect(trace.executions.map((execution) => execution.outcome)).toEqual(['completed']);
+    expect((await reviewOf(draft.orgId, draft.id))?.verdict).toBe('revise');
+    expect(sentToModel).toContain('X_MCP_CONFIRMATION_PENDING');
+    const post = await db.posts.where({ orgId: draft.orgId, id: draft.id }).one();
+    expect(post?.publishedAt).toBe(draft.publishedAt);
   },
 );
 

@@ -1,5 +1,5 @@
-// The `query` object a page component is handed. For an `isr` route that declared
-// `revalidate.query` it holds the declared parameters only — and, outside production, it says so
+// The `query` object a page component is handed. For an `isr` route it holds the parameters
+// `revalidate.query` declared, none when it declares none — and, outside production, it says so
 // once when the page reads any other one: that read is a document varying on something its stored
 // key does not carry, which is one visitor's page answered to every visitor after.
 
@@ -22,7 +22,8 @@ export function routeQuery(
   env?: ResolveEnvironmentOptions['env'],
 ): Query {
   const query: Query = Object.fromEntries(url.searchParams);
-  const declared = entry.config.render === 'isr' ? entry.config.revalidate?.query : undefined;
+  const declared =
+    entry.config.render === 'isr' ? (entry.config.revalidate?.query ?? []) : undefined;
   if (declared === undefined) return query;
   // Production pays nothing: the plain object, no trap. (`undefined`: an unreadable environment,
   // which is not a development one either.)

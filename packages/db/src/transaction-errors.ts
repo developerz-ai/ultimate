@@ -50,6 +50,20 @@ export const siblingScopeTimeout = (
   });
 
 /**
+ * A statement on a handle whose scope is over: an un-awaited promise or the loser of a `Promise.all`
+ * outlived `withTransaction`. It used to fall through the pin's `held` fence to the pool and
+ * autocommit, a row for a unit of work that had rolled back. Terminal: the same call sent again
+ * reaches the same dead handle.
+ */
+export const txClosed = (id: string, outcome: string): DbError =>
+  new DbError({
+    code: 'X_DB_TRANSACTION_CLOSED',
+    cause: `a statement was sent on transaction ${id} after its scope ended (${outcome}): an un-awaited promise, or the loser of a Promise.all, outlived withTransaction, and it was never part of that unit of work`,
+    fix: 'await outsideTransaction(fn)   # for work that must outlive the scope; anything else: await it inside withTransaction(fn)',
+    meta: { tx: id, outcome },
+  });
+
+/**
  * `COMMIT` was sent and rejected with no SQLSTATE — the socket went before the answer did. The
  * transaction is durable or it is not, and nothing on this side can say which, so neither list
  * runs: an `onRollback` undo would revert state the database may have kept, and an `onCommit`

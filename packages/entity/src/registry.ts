@@ -10,6 +10,15 @@ import type { InvariantKind } from './invariants';
 import type { RecordProjection } from './record-projection';
 import type { ColumnDefault, OnDelete } from './types';
 
+/**
+ * A `references()` whose two ends share a tenant: the physical tenant column on each side, which is
+ * what makes the key composite (`(column, key) -> target (targetColumn, its key)`).
+ */
+export interface SameTenantKey {
+  readonly column: string;
+  readonly targetColumn: string;
+}
+
 export interface ColumnDescription {
   readonly property: string;
   readonly column: string;
@@ -46,6 +55,12 @@ export interface ColumnDescription {
    * none, so a description written before this existed reads the same and nothing regenerates.
    */
   readonly default?: ColumnDefault;
+  /**
+   * Present when the key is same-tenant, absent otherwise: `x verify` hashes this projection, and
+   * an entity with no such edge must hash exactly what it hashed before. `null` is `@ultimat3/db`'s
+   * own word for absent, and this package never writes one here.
+   */
+  readonly sameTenant?: SameTenantKey;
 }
 
 /**
@@ -63,10 +78,14 @@ export interface ReferenceDescription {
   readonly nullable: boolean;
   /** The entity referenced. Not necessarily registered — an entity may point outside a set. */
   readonly targetEntity: string;
+  /** Its physical table, what the key names: the entity's name unless `{ table }` was declared. */
+  readonly targetTable: string;
   readonly targetProperty: string;
   readonly targetColumn: string;
   /** What the database does to this row when the target goes. `null` is Postgres' `no action`. */
   readonly onDelete: OnDelete | null;
+  /** `null` is a plain key: an end with no tenant, the tenant column itself, or `crossTenant`. */
+  readonly sameTenant: SameTenantKey | null;
 }
 
 export interface InvariantDescription {
@@ -132,6 +151,8 @@ export interface EntityDescription {
   readonly orgScoped: boolean;
   /** `entity({ appendOnly: true })`; absent on every entity that did not say it. `x db gen` reads it. */
   readonly appendOnly?: true;
+  /** `entity({ retired: [...] })`; physical names, absent when there are none. `x db gen` reads it. */
+  readonly retired?: readonly string[] | undefined;
 }
 
 export interface RegistryEntry {

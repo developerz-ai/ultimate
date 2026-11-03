@@ -50,7 +50,7 @@ export const onboardOrg = job({
 |---|---|
 | `step.run(name, fn)` | executes `fn` once ever. Result persisted under `(jobId, name)`. On replay, returns the stored result without calling `fn` |
 | `step.sleep(duration)` | persists a wake time, releases the worker, and the job resumes in a fresh process. No held connection, no timer in memory. `'3d'` is safe |
-| `step.waitForEvent(name, { match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the event payload or `null` |
+| `step.waitForEvent(name, event, { schema, match, timeout })` | suspends until a matching event arrives (webhook, another action, a user click) or the timeout fires. Returns the payload parsed by the required `schema`, or `undefined` on a timeout |
 
 **The step is the retry unit, not the job.** A failure in `nudge` re-enters `run`, replays `provision` and `welcome-email` from storage in microseconds, and retries only `nudge`. That is why an onboarding flow can retry on day 3 without re-provisioning or re-emailing.
 
@@ -70,6 +70,7 @@ Omitting it is a **compile error**, not a lint warning. Rationale: at-least-once
 | Key uniqueness window | `retentionpolicy` per queue; default 24h after terminal state |
 | Key must be | deterministic from `input` only. No timestamps, no random, no `ctx` |
 | Non-idempotent external call inside a step | wrap with the provider's idempotency header, keyed off `${jobId}:${stepName}` |
+| What a step answers | what it stored, its JSON form, on the first run as on a replay, and its type says so: a replay is never a second shape |
 
 Corollary rule: **durable business state lives in your tables, never only in the queue payload.** A payload is a pointer, not a record. If the queue is drained, replaced, or migrated to another driver, the business must still be reconstructible from Postgres alone. So: `{ orgId }`, not `{ org: {...30 fields} }`.
 

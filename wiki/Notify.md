@@ -58,6 +58,9 @@ message disappears is your decision ([Configuration](Configuration)).
   first entry kept, before any channel runs.
 - A replay does not send twice: the step checkpoint per channel and recipient, and the ledger's
   atomic claim on `(notifier, key, channel, recipient)` taken before the send.
+- Two attempts at once: one sends. The other raises `X_NOTIFY_DELIVERY_HELD` and retries past the
+  holder's `reclaimAfterMs` (5 minutes by default), so a crashed attempt's recipient is still sent to
+  and a late `settle` moves nothing.
 - Entries fire in `wait` order; `if` / `unless` run **after** the wait, on the attempt that delivers.
 
 Codes: `X_NOTIFY_CHANNELS_EMPTY`, `X_NOTIFY_CHANNEL_DUPLICATE`, `X_NOTIFY_DIGEST_UNSUPPORTED`,

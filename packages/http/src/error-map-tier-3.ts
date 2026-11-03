@@ -103,4 +103,8 @@ export const TIER_3_ERROR_STATUS = {
   X_QUERY_DOWNLOAD_TOKEN_INVALID: 403,
   // @ultimat3/query — a download URL is past its expiry
   X_QUERY_DOWNLOAD_TOKEN_EXPIRED: 410,
+  // @ultimat3/action — an idempotent action's answer cannot be stored as JSON, so no retry could replay it
+  X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE: 500,
+  // @ultimat3/action — a keyed run passed its hard ceiling
+  X_IDEMPOTENCY_RUN_CEILING: 504,
 } satisfies Readonly<Record<string, number>>;

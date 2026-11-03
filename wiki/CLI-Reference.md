@@ -57,10 +57,10 @@ x version              # CLI version
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
 | `x docs "<question>"` | framework docs, offline, from `node_modules` | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
+| `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate, the section to read | shipped |
 | `x cache` | tag graph, bust, clear, stats | planned |
 | `x branch` | copy-on-write branch environments | planned |
 | `x status` | connected-client build-ID distribution, role health | planned |
-| `x upgrade` | move every `@ultimat3/*` in lockstep, with codemods | planned |
 | `x logs tail` | structured logs + OTel spans | planned |
 | `x token` | create and grant MCP scopes | planned |
 | `x ai` | eval, cache stats, reindex | planned |
@@ -396,7 +396,7 @@ x db gen "add publish_at" | migrate | reset | studio
 
 | Subcommand | Does | Notes |
 |---|---|---|
-| `gen ["<name>"]` | diff the app's entities against what the migrations declare, write the next migration, then rewrite the schema dump | the message becomes the id's slug; left out it is `change`. **Opens no database of yours** — the diff reads the previous migration's snapshot, and the dump is replayed on a scratch database it boots and discards: the embedded one, restored from a snapshot under `.x/cache` after its first boot, or a real Postgres when a migration creates an extension PGlite cannot link ([the engine rule](Migrations-And-Backfills#extensions-and-the-scratch-database)). **Exit 1 with a migration written** is possible: the dump failed after the migration was generated, the summary and the finding both say so, and the next move is a bare `x db gen`, never the same message again. A bare `x db gen` with nothing to generate rewrites `packages/db/schema/` alone, which makes it `X_SCHEMA_DUMP_DRIFT`'s whole fix. When the app does not load, nothing is compared and the summary says so — *nothing was compared — the app did not load (N finding(s)); fix them, then run x db gen again* — never "no migration needed". `--json`: `data.schemaDump` = `{ directory, status, files, written, removed }`, `status` one of `written`, `unchanged`, `skipped` (no migration yet), `failed` |
+| `gen ["<name>"]` | diff the app's entities against what the migrations declare, write the next migration, then rewrite the schema dump | the message becomes the id's slug; left out it is `change`. **Opens no database of yours** — the diff reads the previous migration's snapshot, and the dump is replayed on a scratch database it boots and discards: the embedded one, restored from a snapshot under `.x/cache` after its first boot, or a real Postgres when a migration creates an extension PGlite cannot link ([the engine rule](Migrations-And-Backfills#extensions-and-the-scratch-database)). **Exit 1 with a migration written** is possible: the dump failed after the migration was generated, the summary and the finding both say so, and the next move is a bare `x db gen`, never the same message again. A bare `x db gen` with nothing to generate rewrites `packages/db/schema/` alone, which makes it `X_SCHEMA_DUMP_DRIFT`'s whole fix. When the app does not load, nothing is compared and the summary says so — *nothing was compared — the app did not load (N finding(s)); fix them, then run x db gen again* — never "no migration needed". `--json`: `data.schemaDump` = `{ directory, status, files, written, removed }`, `status` one of `written`, `unchanged`, `skipped` (no migration yet), `failed`. `--allow-destructive` lets it emit a drop whose `down` cannot restore the rows; `--rolling-unsafe` lets it drop a column never retired, for an app that stops before it starts → [A column drop takes two releases](Migrations-And-Backfills#a-column-drop-takes-two-releases) |
 | `migrate` | apply pending migrations, verify the result, then rewrite the schema dump | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit. Then, `x db migrate` only: the dump is regenerated as `gen` does, and the database is reopened to report any trigger, function, view, type or sequence no migration creates (`unexpected-object`, also `X_DB_DRIFT`). `--json` carries the same `data.schemaDump` |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `seed [<name>]` | apply the app's seeds — every one this environment takes, or the one named | **replayable**: a second run writes nothing and raises nothing, on Postgres as well as in memory. One transaction per seed, so one bad fixture graph cannot roll back the seeds that already landed. `--dry-run` reports what each would write and writes nothing |
@@ -1290,6 +1290,57 @@ x clean [--dry-run] [--json]
 
 Every test leftover the framework knows of, cleared (`As of 27.3.0`): the migrated test-database templates under `.x/test-db`, the whole `.x/cache`, any `.x` folder below the app root, and — with `TEST_DATABASE_URL` set — every probe database whose run is over. `--dry-run` names them and removes nothing; `--json` carries `data.paths` and `data.databases`. Never touched: `.x/pgdata` (the dev database), `.x/storage`, the build output. The test runner sweeps the same set before every run, keeping the newest two of each cache, so `x clean` is for reclaiming the rest by hand. [Testing](Testing#database-state-and-what-a-run-leaves-behind) has the table.
 
+## x upgrade
+
+```bash
+x upgrade [--to <version>] [--dry-run] [--json]
+```
+
+One major per run, so each hop's gate attributes its red to that hop. `As of 30.0.0`.
+
+**An app with no `x upgrade` yet** (below 30.0.0) runs the newest CLI: `bunx @ultimat3/cli@latest upgrade --json`. The only command that does not hand over to an older app CLI ([why](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/README.md#which-x-runs)); the gate still runs from the CLI the hop installs. Needs Bun at the newest release's floor: below it, `X_BUN_VERSION`, `fix: bun upgrade`.
+
+| Step | What | Refused with |
+|---|---|---|
+| 1 | clean tree, git is the only state between runs | `X_UPGRADE_DIRTY_TREE` |
+| 2 | read every workspace's `@ultimat3/*` pins, `overrides` and `resolutions` included | `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_MIXED_PINS` |
+| 3 | `bun pm view @ultimat3/cli versions`: the next major's newest; the last major's newest when no later major exists | `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_BUN_VERSION` |
+| 4 | write exact pins, raise the Bun floor | — |
+| 5 | `bun install` | `X_UPGRADE_INSTALL_FAILED`, `fix:` carries the undo |
+| 6 | the installed CLI: `x manifest`, `x doctor --json`, `x verify --json` | `X_UPGRADE_GATE_UNREADABLE`, as a finding on a red hop |
+
+A dry run refuses exactly what the real run would, then stops before step 4. It never commits; `git diff` is the hop. Under `--json` fd 1 is one document, fd 2 a `{"upgrade":"<stage>"}` line per stage and a heartbeat a minute.
+
+`--to`: an exact release in the next major. Over a mixed set every refusal names the aligning version, the newest release at or above the highest pin: `^6` beside `^19` is told `--to 19.x.y`, it is accepted across any distance, and that report names no section.
+
+| `data` field | Meaning |
+|---|---|
+| `from`, `to` | the lowest version pinned; this hop's target |
+| `next` | what a bare `x upgrade` takes after this hop; `null` when the walk is over |
+| `done` | verify's verdict, and the exit code follows it. `true` when already there, `false` on a dry run |
+| `dryRun` | nothing written, no gate run |
+| `app` | whether the root holds `app.config.ts` |
+| `proof` | what `done` rests on: `verify`, `scripts` or `none` |
+| `section` | `{ title, url }` in [Upgrading](Upgrading); `null` when no major is crossed |
+| `pins[]` | `{ file, name, from, to }` |
+| `bun` | `{ from, to, edited[], manual[] }`. `manual[]`: `{ path, line, text, why }`, a site only you can move, listed on every run |
+| `guards` | `{ reported, missing[], differs[] }` from the hop's own `x doctor`. Offered, never overwritten: `x g guard <name> --force` is yours. `reported: false` is a CLI too old to list them, which is not the same as none |
+| `manifest` | `{ ok, findings[] }`. A failure does not stop the gate |
+| `verify` | `{ ok, summary, failed[], findings[] }`, each finding `{ step?, code, cause, fix, at? }` |
+| `then` | the next thing to do, in a sentence naming the commands |
+
+`null` for `guards`, `manifest` and `verify` means no gate ran: a dry run, already there, or no app.
+
+**Pins and no `app.config.ts`.** Needs no app: the root is the app at or above the cwd, else the nearest manifest holding `@ultimat3/*` pins, or the workspace root claiming it. No such manifest is `X_UPGRADE_PIN_UNREADABLE`; an app below that root is `X_NOT_IN_APP`, with the `cd`. With no app, `x manifest`, `x doctor` and `x verify` cannot run, so the hop runs the `typecheck` and `test` scripts the root declares: `data.scripts[]` is `{ name, ok, code, output }`, `proof` is `scripts`, and the summary says no `x verify` ran. Neither script declared: `proof: none`, `done: false`, red. It checked nothing, so it never claims otherwise.
+
+| Bun site | Edit |
+|---|---|
+| `engines.bun`, `packageManager`, `.bun-version` | raised to the release's `engines.bun`, never lowered. A spelling a text edit would falsify (`1.3.x`, `>=1.3.0 <1.4.0`, `bun@1.3.6+sha512…`, `v1.3.0`) is listed in `manual` |
+| `bun-version:` in YAML | same, quotes kept. An expression (`${{ env.BUN_VERSION }}`) or an x-range is listed in `manual` |
+| `oven/bun:` tag | keeps its suffix and precision: `1.3-alpine` → `1.4-alpine`. A `$VARIABLE` is listed in `manual`, as is a digest whose tag is below the floor or does not state the patch (`1.4-alpine@sha256:…` at a 1.4.4 floor). `1.4.4-alpine@sha256:…` is not |
+
+A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run, as that release's `x verify` does.
+
 ## x affected
 
 ```bash
@@ -1493,14 +1544,13 @@ The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-plann
 | `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` — then the cache panel at `/_x` |
 | `x branch [<name>\|delete <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch list --json` — the database half: `list`, `create <name>`, `delete <name>` |
 | `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
-| `x upgrade [--dry-run]` | move every `@ultimat3/*` in lockstep, run codemods, then `x verify` | `bun update --latest && x verify` |
 | `x logs tail` | structured logs and spans, filterable | `x dev` — then the timeline panel at `/_x` |
 | `x token [create --scopes <s>\|grant <scope>]` | MCP tokens and scopes | `x mcp serve --help` |
 | `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
 | `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x errors explain X_CURRENCY_UNKNOWN --json` — extend it in code: `registerCurrency({ code, exponent, name })` from `@ultimat3/money`, once at boot. Shipped `As of 2026-08`, and it is what this command promised |
 | `x config show` | the resolved configuration, defaults included | `x manifest --json` |
 
-**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x upgrade --dry-run --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
+**Flags reach the same answer**, `As of 2026-10`: `x money add-currency USD --exponent 2` and `x logs tail --follow --json` exit `X_NOT_IMPLEMENTED` with the row's `fix:`, as the bare form does.
 
 ## Names that moved
 

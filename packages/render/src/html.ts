@@ -119,8 +119,7 @@ const REFUSED_ATTRIBUTES: ReadonlySet<string> = new Set(['srcdoc']);
  */
 const ATTRIBUTE_NAME = /^[A-Za-z_:][-A-Za-z0-9_:.]*$/;
 
-/** Exported for `head.ts`, the package's other attribute sink. One predicate, never two. */
-export const isAttributeName = (name: string): boolean => ATTRIBUTE_NAME.test(name);
+const isAttributeName = (name: string): boolean => ATTRIBUTE_NAME.test(name);
 
 const cssProperty = (name: string): string =>
   name.startsWith('--') ? name : name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);

@@ -3,7 +3,7 @@
 // for reasons nobody can reproduce — so the default is "nothing gets out". Three dials are sealed:
 // `fetch` here, `WebSocket` and `Bun.connect` through `sealed-sockets.ts`, all behind one gate.
 
-import { classifyAddress, isSelfOrigin } from '@ultimat3/core';
+import { isSelfOrigin, peerAddressClass } from '@ultimat3/core';
 import { NetworkOfflineError, NetworkRaceError, NetworkSealedError } from './errors';
 import { installSocketSeal } from './sealed-sockets';
 
@@ -70,7 +70,7 @@ const methodOf = (input: RequestInfo | URL, init: RequestInit | undefined): stri
  */
 const isThisMachine = (hostname: string): boolean => {
   if (hostname.toLowerCase() === 'localhost') return true;
-  const kind = classifyAddress(hostname);
+  const kind = peerAddressClass(hostname);
   return kind === 'loopback' || kind === 'unspecified';
 };
 

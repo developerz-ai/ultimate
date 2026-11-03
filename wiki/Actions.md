@@ -46,7 +46,7 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `ctx.locale` / `ctx.tz` | `string` | BCP-47 and IANA. Never format a date without `ctx.tz` |
 | `ctx.clock` / `ctx.now()` | `Clock` / `Date` | frozen and advanceable in tests. Never `Date.now()` |
 | `ctx.logger` | `Logger` | structured, role-tagged, correlated to the span |
-| `ctx.signal` | `AbortSignal` | client disconnect / drain; pass it to long calls |
+| `ctx.signal` | `AbortSignal` | client disconnect / drain / the request deadline; pass it to long calls. A write past the deadline rethrows `X_TIMEOUT` and rolls back; an `idempotent` action called with a key runs to its end instead, on a fresh signal with no deadline, so the retry replays success (`runToCompletion`), under a hard ceiling: twice `requestTimeoutMs` by default (60 s), `configureIdempotency({ scope, ceilingMs })` to change it. Past it the handler is aborted and the key replays `X_IDEMPOTENCY_RUN_CEILING` |
 | `ctx.role` / `ctx.buildId` | `Role` / `string` | which runtime role is executing, and which build |
 
 ## The fluent surface
@@ -160,6 +160,7 @@ export const likePost = mutator({
 | `X_UNAUTHENTICATED` | no session; anonymous actor hit a policy needing one (401) | sign in, or send a valid token |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a different payload, or still in flight | send a fresh `Idempotency-Key`, or retry after the first settles |
 | `X_IDEMPOTENT_REPLAY_REDACTED` | a replay of an answer whose secret-named field (`isRedactedKey`, or a `Secret`) was stored as `[redacted]` — the first call ran, its answer is not kept in plaintext (409) | read the effect with a query; a new `Idempotency-Key` runs the call again |
+| `X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE` | a keyed handler's answer holds a value JSON has no form for (a `bigint`), so no retry could replay it. The handler ran, and a retry replays this refusal | return JSON from `handle`: `String(id)` for a `bigint`, then send a fresh `Idempotency-Key` |
 | `X_IDEMPOTENCY_RESERVATION_LOST` | an idempotent action inside a transaction outlived the request deadline and a retry took its key; its transaction rolls back (409) | resend with the same `Idempotency-Key` |
 | `X_MUTATOR_NOT_IDEMPOTENT` | a `mutator` declared without `idempotent: true` | add `idempotent: true` to the definition |
 | `X_CONTRACT_DRIFT` | client build id ≠ server build id, or a breaking published-contract change | reload the client / bump the action version |

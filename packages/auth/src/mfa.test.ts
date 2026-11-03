@@ -66,14 +66,14 @@ describe('totp', () => {
     expect(stale).toEqual({ ok: false, step: null });
   });
 
-  test('a step that was already spent is rejected as a replay', () => {
+  test('a step that was already spent is rejected as a replay', async () => {
     const step = totpStep(AT);
     const guard = memoryTotpReplayGuard();
     const code = totpCode(SECRET, step);
 
     const first = verifyTotp({ secret: SECRET, code, at: AT });
     expect(first.ok).toBe(true);
-    guard.remember('user-1', step, AT);
+    expect(await guard.claim('user-1', step, AT)).toBe(true);
 
     const replay = verifyTotp({
       secret: SECRET,
@@ -82,8 +82,9 @@ describe('totp', () => {
       usedSteps: new Set([step]),
     });
     expect(replay).toEqual({ ok: false, step });
-    expect(guard.isUsed('user-1', step)).toBe(true);
-    expect(guard.isUsed('user-2', step)).toBe(false);
+    // The answer the sign-in path reads, for this subject and for nobody else.
+    expect(await guard.claim('user-1', step, AT)).toBe(false);
+    expect(await guard.claim('user-2', step, AT)).toBe(true);
   });
 
   /**
@@ -191,28 +192,28 @@ describe('totp', () => {
  * order is asserted here, not just the bound.
  */
 describe('the replay guard table', () => {
-  test('a subject whose every step has left the drift window is forgotten', () => {
+  test('a subject whose every step has left the drift window is forgotten', async () => {
     const guard = memoryTotpReplayGuard();
-    guard.remember('alice', totpStep(AT), AT);
+    await guard.claim('alice', totpStep(AT), AT);
     expect(guard.size).toBe(1);
 
     // Five minutes on: alice's step is far below the floor, so `verifyTotp` can never offer it
     // again and her entry answers exactly as a missing one. Keeping it is pure growth.
     const later = new Date(AT.getTime() + 5 * 60_000);
-    guard.remember('bob', totpStep(later), later);
+    await guard.claim('bob', totpStep(later), later);
     expect(guard.size).toBe(1);
     expect(guard.isUsed('bob', totpStep(later))).toBe(true);
   });
 
-  test('the cap evicts the subject furthest from the live window, never the newest', () => {
+  test('the cap evicts the subject furthest from the live window, never the newest', async () => {
     const guard = memoryTotpReplayGuard(TOTP_DRIFT_STEPS, 4);
     const step = totpStep(AT);
-    for (const subject of ['a', 'b', 'c', 'd']) guard.remember(subject, step, AT);
+    for (const subject of ['a', 'b', 'c', 'd']) await guard.claim(subject, step, AT);
     expect(guard.size).toBe(4);
 
     // One step on, over the cap, and nothing is dead yet — so live state goes, oldest first.
     const next = new Date(AT.getTime() + TOTP_STEP_SECONDS * 1000);
-    guard.remember('e', totpStep(next), next);
+    await guard.claim('e', totpStep(next), next);
 
     expect(guard.size).toBeLessThan(5);
     // The subject who just authenticated is the last one out: evicting them is what would hand
@@ -229,13 +230,13 @@ describe('the replay guard table', () => {
    * way — one silently, one catastrophically. Both fall back to the default now.
    */
   describe('a maxSubjects that is not a positive finite integer', () => {
-    test('Infinity does not disable the bound it was passed as', () => {
+    test('Infinity does not disable the bound it was passed as', async () => {
       const guard = memoryTotpReplayGuard(TOTP_DRIFT_STEPS, Number.POSITIVE_INFINITY);
       const step = totpStep(AT);
       // One past the default, at a single step so nothing is forgotten by drift: the only thing
       // that can hold this table down is the cap.
       for (let index = 0; index <= DEFAULT_MAX_TOTP_SUBJECTS; index += 1) {
-        guard.remember(`subject-${index}`, step, AT);
+        await guard.claim(`subject-${index}`, step, AT);
       }
 
       // `used.size > Infinity` is never true, so this is the exact unbounded map the cap exists
@@ -243,10 +244,10 @@ describe('the replay guard table', () => {
       expect(guard.size).toBeLessThanOrEqual(DEFAULT_MAX_TOTP_SUBJECTS);
     });
 
-    test('NaN does not make the guard forget the code it just accepted', () => {
+    test('NaN does not make the guard forget the code it just accepted', async () => {
       const guard = memoryTotpReplayGuard(TOTP_DRIFT_STEPS, Number.NaN);
       const step = totpStep(AT);
-      guard.remember('alice', step, AT);
+      await guard.claim('alice', step, AT);
 
       // Every comparison against NaN is false, so `used.size <= evictTo` never stops the eviction
       // loop and the sweep empties the table — including the subject who just authenticated.
@@ -255,11 +256,11 @@ describe('the replay guard table', () => {
       expect(guard.size).toBe(1);
     });
 
-    test('zero is a misread config, not an instruction to remember one subject', () => {
+    test('zero is a misread config, not an instruction to remember one subject', async () => {
       const guard = memoryTotpReplayGuard(TOTP_DRIFT_STEPS, 0);
       const step = totpStep(AT);
-      guard.remember('alice', step, AT);
-      guard.remember('bob', step, AT);
+      await guard.claim('alice', step, AT);
+      await guard.claim('bob', step, AT);
 
       // `Math.max(1, 0)` made the table hold exactly one subject, so alice's live step became
       // replayable the moment bob signed in.

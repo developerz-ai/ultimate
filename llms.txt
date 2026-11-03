@@ -176,7 +176,7 @@ Recommendations, not requirements: the framework depends on none of it (axiom 7,
 - `packages/db/schema/`: the app's whole schema as generated SQL, one file per table, framework tables under `framework/`. Read it instead of replaying migrations in your head; never edit it — `x db gen` rewrites it and `X_SCHEMA_DUMP_DRIFT` refuses a hand edit.
 - `x jobs`, `x tasks`, `x routes`, `x actions`, `x queries`, `x entities`, `x policy`, `x manifest`, `x errors explain <CODE>`, `x docs "<question>"`: introspection, all with `--json`.
 - `x build --target docker|binary|static|prebuilt`, `x deploy --image <ref> [--method compose|helm]`, `x doctor`, `x test`, `x env`, `x secrets`, `x i18n`, `x fix`, `x mcp`.
-- Nine commands are registered and labelled planned — [cmd-planned.ts](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/cli/src/cmd-planned.ts). Each exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, never `X_CLI_UNKNOWN_COMMAND`: "not built yet" and "not a command" are different facts. `x upgrade` is one of them, so the upgrade path today is `bun update --latest && x verify` plus the manual edits [wiki/Upgrading.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md) names.
+- Eight commands are registered and labelled planned — [cmd-planned.ts](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/cli/src/cmd-planned.ts). Each exits `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, never `X_CLI_UNKNOWN_COMMAND`: "not built yet" and "not a command" are different facts. `x upgrade` is shipped, one major per run; the manual edits are what [wiki/Upgrading.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md) names.
 
 ## Error codes
 
@@ -253,7 +253,7 @@ The single public documentation surface; there is no separate marketing site. So
 - [Configuration](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Configuration.md): every `app.config.ts` field and every env var.
 - [Deployment](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Deployment.md): one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, the prebuilt island store, `docs/ops/`.
 - [Observability](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Observability.md): counters, gauges, histograms, process and pool gauges, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach.
-- [Upgrading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md): one section per major with every manual edit, the in-flight major as a checklist under `[Unreleased]`, version skew — and that `x upgrade` is planned.
+- [Upgrading](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Upgrading.md): one section per major with every manual edit, the in-flight major as a checklist under `[Unreleased]`, version skew — and how `x upgrade` walks them, one major per run.
 - [Troubleshooting](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Troubleshooting.md): symptom → cause → fix.
 - [Known gaps](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Known-Gaps.md): every defect and unfinished seam in the published release, named.
 - [FAQ](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/FAQ.md): why Bun only, why no GraphQL, is it production ready.

@@ -11,6 +11,7 @@
 // is `42710` on the very next generation — a migration nobody can apply.
 
 import { assert } from '@ultimat3/core';
+import { type ConcurrentPlan, deferValidate } from './concurrent-plan';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import type { CheckDescription, TableDescription } from './introspect';
 import { invariantChecks, isIdentifier, MAX_IDENTIFIER_BYTES } from './invariant-ddl';
@@ -31,6 +32,9 @@ import { statementsOf } from './statement-split';
  * means to correct instead of beside it under a second name.
  */
 const spellColumnCheckName = (table: string, column: string): string => `${table}_${column}_check`;
+
+/** The spelling, for a reader asking about a recorded column (`retired.ts`). Validates nothing. */
+export const columnCheckNameOf = spellColumnCheckName;
 
 /**
  * Whether a RECORDED constraint is one of THIS entity's columns' own CHECKs. Validates nothing and
@@ -131,6 +135,10 @@ export const addCheck = (table: string, check: CheckDescription): string =>
   `alter table ${identifier(table).text} add constraint ${identifier(check.name).text} ` +
   `check (${check.expression});`;
 
+/** `not valid`: new writes are held to it at once, and the scan runs later (`deferValidate`). */
+const addCheckNotValid = (table: string, check: CheckDescription): string =>
+  `${addCheck(table, check).slice(0, -1)} not valid;`;
+
 export const dropCheck = (table: string, name: string): string =>
   `alter table ${identifier(table).text} drop constraint ${identifier(name).text};`;
 
@@ -144,9 +152,13 @@ export const dropCheck = (table: string, name: string): string =>
  * `add constraint` is `42710` on the first, inside `ROLE=migrate`, with the server's words and none
  * of the entity's. `drop constraint if exists` costs a notice on the second and repairs the first.
  */
-const rebuildCheck = (table: string, check: CheckDescription): readonly string[] => [
+const rebuildCheck = (
+  table: string,
+  check: CheckDescription,
+  add: typeof addCheck,
+): readonly string[] => [
   `alter table ${identifier(table).text} drop constraint if exists ${identifier(check.name).text};`,
-  addCheck(table, check),
+  add(table, check),
 ];
 
 /**
@@ -171,6 +183,14 @@ const rebuildCheck = (table: string, check: CheckDescription): readonly string[]
  * `drop constraint` on it a second time is `42704`, and its `down` belongs to the retype that
  * moved it. Keyed by name and not by column because an INVARIANT's check reads a column without
  * being derived from one, which is exactly the constraint `examples/dummy` retypes under.
+ *
+ * `concurrent` is what makes this safe on a live table: a CHECK needs no index, so it can always be
+ * added `not valid` in the transaction, scanning nothing, with its `validate constraint` in the
+ * deferred step. A name that was rebuilt or moved aside stays plain: that column's rewrite already
+ * holds ACCESS EXCLUSIVE, and a window with an unvalidated constraint would buy nothing. Omitted,
+ * every constraint takes the plain form, which is what a caller outside `generateMigration` gets.
+ *
+ * A column `retired` keeps its own check recorded and untouched until the drop takes both.
  */
 export function checkPlan(
   entity: EntityDescriptionLike,
@@ -178,6 +198,7 @@ export function checkPlan(
   plan: { up: string[]; down: string[] },
   rebuilt: ReadonlySet<string> = new Set(),
   predropped: ReadonlySet<string> = new Set(),
+  concurrent?: ConcurrentPlan,
 ): void {
   const recorded = new Map((live.checks ?? []).map((check) => [check.name, check]));
   const present = new Set(live.columns.map((column) => column.name));
@@ -202,22 +223,28 @@ export function checkPlan(
   for (const check of wanted) {
     const gone = dropped.has(check.name) || predropped.has(check.name);
     const held = gone ? undefined : recorded.get(check.name);
+    if (held !== undefined && held.expression === check.expression) continue;
+    const online = concurrent !== undefined && !gone;
+    const add = online ? addCheckNotValid : addCheck;
+    if (online) deferValidate(entity.table, check.name, concurrent);
     if (held === undefined) {
       plan.up.push(
         ...(exposed.has(check.name) && !predropped.has(check.name)
-          ? rebuildCheck(entity.table, check)
-          : [addCheck(entity.table, check)]),
+          ? rebuildCheck(entity.table, check, add)
+          : [add(entity.table, check)]),
       );
       plan.down.push(dropCheck(entity.table, check.name));
       continue;
     }
-    if (held.expression === check.expression) continue;
-    plan.up.push(dropCheck(entity.table, check.name), addCheck(entity.table, check));
+    plan.up.push(dropCheck(entity.table, check.name), add(entity.table, check));
     plan.down.push(addCheck(entity.table, held), dropCheck(entity.table, check.name));
   }
   const declared = new Set(wanted.map((check) => check.name));
+  const retired = new Set(
+    (entity.retired ?? []).map((column) => spellColumnCheckName(entity.table, column)),
+  );
   for (const check of live.checks ?? []) {
-    if (declared.has(check.name) || predropped.has(check.name)) continue;
+    if (declared.has(check.name) || predropped.has(check.name) || retired.has(check.name)) continue;
     plan.up.push(dropCheck(entity.table, check.name));
     plan.down.push(addCheck(entity.table, check));
   }

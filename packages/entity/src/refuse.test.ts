@@ -67,6 +67,7 @@ const UNREACHABLE_SITES = 2;
  */
 const SITES: readonly (readonly [string, () => unknown])[] = [
   ['uuid value', () => uuid().$parse('nope')],
+  ['crossTenant blank reason', () => uuid().references(() => uuid(), { crossTenant: ' ' })],
   ['text value', () => text().$parse(1)],
   ['text max declaration', () => text({ max: 2.5 })],
   ['text past max', () => text({ max: 3 }).$parse('abcdef')],

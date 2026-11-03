@@ -43,12 +43,6 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     fix: 'x doctor --json',
   },
   {
-    name: 'upgrade',
-    summary: 'move every @ultimat3/* in lockstep, with codemods',
-    usage: 'x upgrade [--dry-run] [--json]',
-    fix: 'bun update --latest && x verify',
-  },
-  {
     name: 'logs',
     summary: 'structured logs and OTel spans, filterable',
     usage: 'x logs tail [--json]',

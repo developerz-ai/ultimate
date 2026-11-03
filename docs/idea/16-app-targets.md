@@ -151,7 +151,7 @@ a minor holds — the move would need no major.
 is one new flag shared by the two new targets. Every value still names an **artifact class**, which
 is what kept the enum readable at three.
 
-`x ota`, not `x update` — the planned `x upgrade` moves `@ultimat3/*` versions, and two commands one
+`x ota`, not `x update` — `x upgrade` moves `@ultimat3/*` versions, and two commands one
 character apart is the ambiguity axiom 1 exists to delete.
 
 New codes, each with a fix and a docs page: `X_SCREEN_MISSING`, `X_SCREEN_ORPHANED`,

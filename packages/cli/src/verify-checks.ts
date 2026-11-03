@@ -18,6 +18,7 @@ import { asyncPageFindings } from './async-pages';
 import { appBoundaryFindings } from './boundary-findings';
 import { checkBudgets, readBuildStats } from './budgets';
 import { checkDestructiveMigrations } from './db-destructive';
+import { checkRollingMigrations } from './db-rolling';
 import { checkUngeneratableMigrations } from './db-ungeneratable';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkErrorCodeResolution, checkErrorFixReport } from './error-contract';
@@ -40,6 +41,7 @@ import { checkSchemaDump } from './schema-dump-drift';
 import { scanSiteMeta } from './seo-meta';
 import { quoteArg } from './shell-quote';
 import { readStaticReport } from './static-report';
+import { unknownToolGateFindings } from './tool-gate-names';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
@@ -202,6 +204,9 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         // itself, so CI still needs nothing listening: the committed `packages/db/schema/` against
         // what replaying the migrations produces, and that dump loaded back (`X_SCHEMA_DUMP_DRIFT`).
         ...(await checkSchemaDump(ctx.root, ctx.env ?? Bun.env)),
+        // The fifth: what the previous release would trip over during a roll. Off until the app
+        // sets `rollingSince` in `x.verify.json`, since an applied migration cannot gain a marker.
+        ...(await checkRollingMigrations(ctx.root)),
       ]),
   },
   {
@@ -362,7 +367,10 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...(app ? await withLoadFindings(ctx.root, drift) : drift),
         // An app only: the framework monorepo declares no `defineApi`, so it has no list to be in.
         ...(existsSync(join(ctx.root, APP_CONFIG_FILE))
-          ? await unregisteredJobFindings(ctx.root)
+          ? [
+              ...(await unregisteredJobFindings(ctx.root)),
+              ...(await unknownToolGateFindings(ctx.root)),
+            ]
           : []),
         // What a worker never registers: a declaration beside a component the API index does not
         // import (`verify-role-load.ts`). The boot checks jobs and tasks only, and only at boot.

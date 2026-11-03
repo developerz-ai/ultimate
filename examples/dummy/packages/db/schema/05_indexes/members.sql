@@ -2,6 +2,8 @@
 
 CREATE UNIQUE INDEX members_member_unique_per_org_key ON public.members USING btree (org_id, user_id);
 
+CREATE UNIQUE INDEX members_org_id_id_tenant_key ON public.members USING btree (org_id, id);
+
 CREATE INDEX members_org_id_idx ON public.members USING btree (org_id);
 
 CREATE INDEX members_org_id_role_idx ON public.members USING btree (org_id, role);

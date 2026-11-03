@@ -2,6 +2,8 @@
 
 CREATE INDEX runs_connection_id_idx ON public.runs USING btree (connection_id);
 
+CREATE UNIQUE INDEX runs_org_id_id_tenant_key ON public.runs USING btree (org_id, id);
+
 CREATE INDEX runs_org_id_idx ON public.runs USING btree (org_id);
 
 CREATE INDEX runs_org_id_started_at_idx ON public.runs USING btree (org_id, started_at);

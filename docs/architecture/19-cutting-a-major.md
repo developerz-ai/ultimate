@@ -66,7 +66,7 @@ it. That is the only reason the shape is fixed.
 
 ## Every entry names the edit, because there is no codemod
 
-`x upgrade` exits `X_NOT_IMPLEMENTED` (`packages/cli/src/cmd-planned.ts`, `PLANNED_COMMANDS`) and no
+`x upgrade` moves the pins and the Bun floor, runs the gate and points at the entry; no
 release has ever shipped a codemod. An entry that describes a change without naming the edit is not
 finished — the same rule a `fix:` line already lives under (axiom 4), one file set further out.
 

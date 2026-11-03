@@ -18,6 +18,7 @@ import {
 import {
   assertListOptions,
   assertPutOptions,
+  type CopyOptions,
   DEFAULT_CONTENT_TYPE,
   type ListOptions,
   type PutOptions,
@@ -33,6 +34,7 @@ import {
 } from './driver';
 import { isAbsentObject } from './driver-s3-absent';
 import { buildClient, type S3ClientLike, type S3ListResultLike } from './driver-s3-client';
+import { signedCopy } from './driver-s3-copy';
 import { needsSignedPut, readObjectLock, signedPut } from './driver-s3-lock';
 import { readS3Range } from './driver-s3-range';
 import { regionMismatch } from './driver-s3-region';
@@ -47,6 +49,7 @@ import {
   putFailed,
   readFailed,
 } from './errors';
+import { objectChanged } from './errors-promote';
 import { assertObjectLockOptions, type ObjectLock } from './object-lock';
 import { assertSafeKey } from './path';
 import { assertGetOptions, type GetOptions } from './range';
@@ -312,9 +315,20 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
      * win available today: promoting a 500MB attachment used to be `get()` + `put()`, a full GB
      * resident in the pod. A true server-side copy needs a Bun API that does not exist in 1.3.
      */
-    async copy(from: string, to: string): Promise<StorageObject> {
+    async copy(from: string, to: string, copyOptions?: CopyOptions): Promise<StorageObject> {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
+      // Bun's `write` takes no condition, so a revision-bound copy is the signed CopyObject.
+      if (copyOptions?.ifMatch !== undefined) {
+        const refusal = await signedCopy(options, source, destination, copyOptions.ifMatch).catch(
+          refusedWrite(destination),
+        );
+        if (refusal?.statusCode === 404) throw objectNotFound(diskName, source);
+        if (refusal?.statusCode === 412)
+          throw objectChanged(source, copyOptions.ifMatch, 'another');
+        if (refusal !== undefined) refusedWrite(destination)(refusal);
+        return statObject(destination);
+      }
       const file = conn().file(source);
       if (!(await present(source))) throw objectNotFound(diskName, source);
       const stat = await file.stat().catch(refusedRead(source));
@@ -422,8 +436,9 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     },
 
     /**
-     * Provider presigning. The signature covers method, expiry and content type but NOT
-     * `maxBytes` — S3 has no header for it, so size stays a server-side policy check.
+     * Provider presigning. The signature binds method and expiry, and signs `host` alone: `type`
+     * becomes `response-content-type`, which governs a GET, so a PUT's `Content-Type` is unsigned.
+     * Neither a size nor a type is bound; `promoteAttachment` measures and sniffs the object.
      */
     async signedUrl(key: string, urlOptions?: SignedUrlOptions): Promise<string> {
       // Screened with the SAME function `buildSignedUrl` applies on the local disk — one

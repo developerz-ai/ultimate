@@ -2,6 +2,7 @@
 // still in quarantine, a key that is not a pending upload, and one an earlier call already moved.
 // Their codes are registered with the rest of the package's in `errors.ts`.
 
+import { renderFixLiteral } from '@ultimat3/core';
 import { StorageError } from './errors';
 
 /**
@@ -41,4 +42,17 @@ export const alreadyPromoted = (key: string, attachedKey: string, orgId: string)
     cause: `"${key}" was already promoted to "${attachedKey}" by an earlier call (a retried or doubled confirm), so this call moved nothing`,
     fix: `await disk.stat('${attachedKey}') answers the moved object: answer the row that references that key if one exists, write it with that key if none does, and never delete the key on a failure of your own`,
     meta: { key, attachedKey, orgId },
+  });
+
+/**
+ * The object is no longer the revision that was judged. A presigned PUT stays valid until it
+ * expires, so an uploader can overwrite between the sniff and the copy, and what would land on the
+ * row's key is bytes nothing looked at.
+ */
+export const objectChanged = (key: string, expected: string, actual: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_OBJECT_CHANGED',
+    cause: `"${key}" changed while it was being promoted: it was judged at ${expected} and is now ${actual}`,
+    fix: `promoteAttachment({ disk, key: ${renderFixLiteral(key, "'<pending key>'")}, orgId, target, policy }) once the upload has finished: it reads the object again`,
+    meta: { key, expected, actual },
   });

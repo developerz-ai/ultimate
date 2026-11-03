@@ -64,7 +64,7 @@ export interface QueryEntry {
    * can answer: a definition with no lsn provider returns `''` from every snapshot.
    */
   generation: number;
-  /** The generation of the newest read whose rows are in `rows`. `0` before the first one lands. */
+  /** The newest read settled into `rows`, or discarded as behind them. `0` before the first. */
   applied: number;
   readonly readDeadlineMs: number;
   readonly schedule: Scheduler;
@@ -156,6 +156,10 @@ export async function fillWindow(entry: QueryEntry): Promise<FilledWindow> {
         applyRead(entry, pending, result);
         // A forced read outranks a first one: what it replaced was known to be wrong.
         landed = forced || landed === 'forced' ? 'forced' : first ? 'first' : landed;
+      } else if (isNewestRead(entry, pending)) {
+        // Discarded: the window is already past this answer. Settled all the same, or `applied`
+        // reads as a read still out and no repair ever trusts this window again.
+        entry.applied = pending.generation;
       }
       // A change reached this window while its first read was in flight and could not be folded,
       // so what just landed may predate it: read once more before serving anyone a partial window.

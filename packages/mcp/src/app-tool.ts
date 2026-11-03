@@ -10,14 +10,18 @@
 // tool therefore has no authz of its own — it borrows the action tier's, so a rule change cannot
 // apply to routes and miss tools.
 
-import { guardAction, guardActionBeforeInput, InputInvalidError } from '@ultimat3/action';
+import {
+  asCallerContext,
+  guardAction,
+  guardActionBeforeInput,
+  InputInvalidError,
+} from '@ultimat3/action';
 import type { Ctx, McpEffect } from '@ultimat3/core';
 import { actorOf, useContext } from '@ultimat3/core';
 import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, toValidationIssues, toWireSchema, validateAsync } from '@ultimat3/schema';
-import { asCallerContext } from './caller-context';
 import { McpToolUnsafeError } from './errors';
 import type { ProjectablePrimitive } from './from-action';
 import type { McpRole, McpToolAnnotations } from './registry';

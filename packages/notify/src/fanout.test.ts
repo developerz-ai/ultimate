@@ -232,7 +232,7 @@ describe('unit · fan-out', () => {
     };
     expect((await ledger.find(claim))?.status).toBe('failed');
     // Re-claimable: a failed delivery must not be mistaken for one that already went out.
-    expect(await ledger.claim(claim, new Date())).toBe(true);
+    expect((await ledger.claim(claim, new Date())).outcome).toBe('owned');
   });
 
   test('a channel with no wait fires immediately even when a later one waits an hour', async () => {

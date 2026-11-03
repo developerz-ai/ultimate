@@ -183,10 +183,23 @@ input. The tenant is a fact about the work, so the job declares it.
 
 | Call | Behaviour |
 |---|---|
-| `step.run(name, fn)` | runs once ever; result persisted before the next step starts. `fn` receives an `AbortSignal` |
+| `step.run(name, fn)` | runs once ever; result persisted before the next step starts, and it answers what it persisted: `StepOutput<T>`, the JSON form, on every attempt. `fn` receives an `AbortSignal` |
 | `step.sleep(name, '3d')` | suspends the run, requeues it for the wake time |
 | `step.sleep('3d')` | same, step name derived from the duration |
-| `step.waitForEvent(name, event, { match, timeout })` | suspends until `publishEvent()` matches |
+| `step.waitForEvent(name, event, { schema, match, timeout })` | suspends until `publishEvent()` matches; answers the payload parsed by the required `schema` |
+
+| A step answer | Is |
+|---|---|
+| a `Date`, anything with a `toJSON()` | what that returns: `new Date(value)` at the read, a compile error otherwise |
+| `undefined`, a function or a symbol at the top, or in an array | `null`: compare `=== null` |
+| `undefined` or a function on a member | absent |
+| a `bigint`, a cycle | `X_STEP_OUTPUT_UNSERIALIZABLE`, terminal: `String(id)`, the ids rather than the object graph |
+| a stored event the wait's `schema` refuses | `X_JOB_EVENT_INVALID`, terminal, on a hit or a replay. The error carries the issues, never the payload |
+
+A boot's bus runs on the open transaction's connection (`currentTx() ?? client`, as the outbox):
+`publishEvent` inside a transaction commits and rolls back with it. `published_at` is the
+statement's time, so a wait that begins between that publish and its commit compares later than the
+stamp and never matches; the window is the length of the publishing transaction.
 
 `resetEventBus()` is the test seam beside `resetJobDriver()`: an event is matchable until it
 expires, so on a bus shared by one `bun test` process an answer one test published resumes the
@@ -636,7 +649,7 @@ them, so no `job()` could ask for either):
 |---|---|---|
 | `timeout` | the whole attempt — aborts `ctx.signal`, then fails it | no attempt deadline |
 | `stepTimeout` | ONE `step.run` — aborts that step's signal, then fails the step | no per-step ceiling |
-| `eventPoll` | how long a `step.waitForEvent` parks between polls | 30s |
+| `eventPoll` | how long a `step.waitForEvent` (its `schema` required) parks between polls | 30s |
 
 A zero or negative `stepTimeout` / `eventPoll` is refused at declaration, the way `concurrency: 0`
 is: `withStepTimeout` reads `<= 0` as "no ceiling at all", which is the opposite of what the author
@@ -1319,6 +1332,8 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 |---|---|
 | `X_IDEMPOTENCY_REQUIRED` | job defined without an idempotency key (JS callers) |
 | `X_STEP_DUPLICATE` | two steps share a name in one run |
+| `X_STEP_OUTPUT_UNSERIALIZABLE` | a step returned a value JSON cannot hold |
+| `X_JOB_EVENT_INVALID` | a waited event failed its schema |
 | `X_JOB_DUPLICATE` | enqueue collided with a live key under `onConflict: 'error'`; or two different job/task handles registered under one name |
 | `X_JOB_TIMEOUT` | job or required `waitForEvent` exceeded its timeout |
 | `X_JOB_MAX_ATTEMPTS` | retries exhausted, job dead-lettered |
@@ -1379,11 +1394,13 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `JobRowStatusUnknownError` | `X_JOB_ROW_STATUS_UNKNOWN` | `src/errors.ts` |
 | `JobSlotLostError` | `X_JOB_SLOT_LOST` | `src/errors.ts` |
 | `JobTenantRequiredError` | `X_JOB_TENANT_REQUIRED` | `src/errors.ts` |
+| `JobEventInvalidError` | `X_JOB_EVENT_INVALID` | `src/errors-steps.ts` |
 | `JobTenantMismatchError` | `X_JOB_TENANT_MISMATCH` | `src/errors-tenant.ts` |
 | `JobTimeoutError` | `X_JOB_TIMEOUT` | `src/errors.ts` |
 | `LeaseLostError` | `X_JOB_LEASE_LOST` | `src/errors.ts` |
 | `OutboxNoTxError` | `X_OUTBOX_NO_TX` | `src/errors.ts` |
 | `StepDuplicateError` | `X_STEP_DUPLICATE` | `src/errors.ts` |
+| `StepOutputUnserializableError` | `X_STEP_OUTPUT_UNSERIALIZABLE` | `src/errors-steps.ts` |
 | `WebhookDeliveryFailedError` | `X_WEBHOOK_DELIVERY_FAILED` | `src/webhook-errors.ts` |
 | `WebhookDeliveryRejectedError` | `X_WEBHOOK_DELIVERY_REJECTED` | `src/webhook-errors.ts` |
 | `WebhookDeliveryThrottledError` | `X_WEBHOOK_DELIVERY_THROTTLED` | `src/webhook-errors.ts` |
@@ -1397,3 +1414,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 Tier 3. Imports `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/entity`,
 `@ultimat3/policy`, `@ultimat3/cache`, `@ultimat3/time`. Never HTTP, render or UI.
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+| Name | What |
+|---|---|
+| `ON_SETTLED_TIMEOUT_MS` | 30,000: the `onSettled` ceiling across every try unless the job declares `onSettledTimeout` |

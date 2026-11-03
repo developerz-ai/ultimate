@@ -1350,3 +1350,34 @@ was wrong at `maxInFlight: 1`, where the finish that must pick the next queue le
 reset the first's numbers; they are the sum over the live workers, and a stopped worker leaves it.
 (3) The refill test now runs the real loop backed off past 800 ms, so only the finish's `kick`
 explains a refill inside 300 ms.
+
+## 2026-11-02 — a finished scope refuses writes (plan 101, slice 02)
+
+`jobsFacade().enqueue` asks `refuseAbandoned()` before either path: a direct `driver.enqueue` is a write the transaction guard cannot see. `onSettled` runs in `runToCompletion`, under `run.scope`: the attempt's `finally` aborted the run's signal before the ack, so a completed hook's `fetch` failed and its writes would have too. A hook on a dead host then held its slot for good, so `onSettledTimeout` (`ON_SETTLED_TIMEOUT_MS`, 30 s) is one budget over every try, aborting the hook's `ctx.signal` with `X_JOB_TIMEOUT` through `withStepTimeout`. `db` is now imported for `expectedQueryLoop`, `outsideTransaction` and `refuseAbandoned`.
+
+Moved out of `CLAUDE.md` at its ceiling: worker registry rows expire (`worker-registry.ts`, TTL = visibility timeout) and `stop()` forgets. The memory driver stores a payload's JSON form, as pg binds it (`driver-settle-parity.test.ts`). A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` on purpose.
+
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/jobs/CLAUDE.md`](../../packages/jobs/CLAUDE.md), which keeps the rule in one line.
+
+### Rules — numbers and limits
+
+- **Every numeric knob is refused when not FINITE** — core's `finiteOption()` (a bound) and
+  `finiteCount()` (a count, caller's minimum); `worker-options.ts` is where `jobWorker` reads them.
+  **`bun run finite-bounds` is a floor, never proof**: `concurrencyLimiter`'s five numbers are screened
+  with min 0 (zero is a HARD STOP). **A row count is `finiteCount` (min 0)**; `retry.attempts` is one with min 1.
+
+### Rules — the worker and the scheduler
+
+- **The scheduler runs one dispatch round at a time**; every other `tick()` joins it; `stop()` waits it
+  out before `leader.release()`. Same two-hook rule; an ABANDONED round does not release
+  (`jobs.scheduler.drain-abandoned`). `stillLeading()` is asked every round and before every task,
+  and answers from memory inside `renewEveryMs`.
+
+### Rules — factories over `job()`
+
+- **`backfill()`**: a step persists the CURSOR and a count, never the page; step names are positional;
+  **`handle` is AT LEAST ONCE** — never invert; a REPLAYED batch writes no ledger row. `tenant: 'none'`
+  is the only cross-tenant scope (`backfill-scope.ts`). `x_backfills` is what was SWEPT, keyed by RUN;
+  only `completed` blocks. The throttle is spent INSIDE the batch's `step.run`.

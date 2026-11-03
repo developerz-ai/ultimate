@@ -5,6 +5,7 @@
 // `TEST_DATABASE_URL` is set, as every other live file in this package does.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { ctxOf, runWithContext } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
@@ -15,9 +16,10 @@ import {
   statementsOf,
 } from '@ultimat3/db';
 import { text, uuid } from './columns';
+import { bigint } from './columns-data';
 import { database } from './database';
 import { entity } from './entity';
-import { postgresDriver } from './pg-driver';
+import { postgresDriver, postgresRepo } from './pg-driver';
 import type { Preloaded } from './query';
 import { clearRegistry } from './registry';
 
@@ -40,7 +42,12 @@ const posts = entity('pg_batch_live_posts', {
   },
 });
 
-const DROP = 'drop table if exists "pg_batch_live_posts", "pg_batch_live_orgs" cascade';
+const keyed = entity('pg_batch_live_keyed', {
+  columns: { id: bigint().primaryKey(), label: text({ max: 8 }) },
+});
+
+const DROP =
+  'drop table if exists "pg_batch_live_keyed", "pg_batch_live_posts", "pg_batch_live_orgs" cascade';
 
 describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
   let client: PostgresClient;
@@ -51,7 +58,7 @@ describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
     await client.execute(raw(DROP));
     const migration = generateMigration({
       // Declaration order is dependency order: the foreign key needs its target first.
-      entities: [orgs.$describe(), posts.$describe()],
+      entities: [orgs.$describe(), posts.$describe(), keyed.$describe()],
       name: 'live inBatches',
       now: new Date('2026-08-13T00:00:00.000Z'),
     });
@@ -65,6 +72,21 @@ describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
   });
 
   const db = () => database({ orgs, posts }, { driver: postgresDriver() });
+
+  // Filed under the id as written, and the row under the server's spelling: the statement found the
+  // row and the caller was handed `null`, alone and batched.
+  test('a bigint key under another spelling is the row, alone and batched', async () => {
+    const repo = postgresRepo(keyed);
+    await repo.insert({ id: '7', label: 'seven' });
+    const inRequest = <T>(read: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), read);
+    for (const id of ['007', '+7', '7']) {
+      expect((await inRequest(() => repo.findById(id)))?.label).toBe('seven');
+    }
+    const batched = await inRequest(() =>
+      Promise.all(['007', '+7', '7'].map((id) => repo.findById(id))),
+    );
+    expect(batched.map((row) => row?.label)).toEqual(['seven', 'seven', 'seven']);
+  });
 
   /** A tenant nobody else writes to, so a whole-tenant walk is an assertion and not a race. */
   const newOrg = async (slug: string): Promise<string> =>

@@ -132,6 +132,7 @@ X_TENANCY_UNSCOPED: query is not scoped to a tenant
 | Cache keys include tenant + policy scope | framework-generated; a hand-built key is a rejected PR, so a cache hit cannot cross tenants |
 | Live queries scope in the matcher | not as a post-filter, so a cross-tenant row never enters the fanout path |
 | Vector and FTS search filter in SQL | similarity search cannot leak across tenants |
+| A reference stays inside its tenant | both ends scoped is a composite key in the database, refused alike for absent and foreign (`X_DB_FOREIGN_KEY_VIOLATION`). `references(() => x.id, { crossTenant: '<reason>' })` is the stated escape ([Same-tenant keys](Entities-And-Migrations#same-tenant-keys)) |
 | An agent actor cannot exceed its human | the actor is the signed-in user's session; no broad-rights service account |
 
 ## Testing denials

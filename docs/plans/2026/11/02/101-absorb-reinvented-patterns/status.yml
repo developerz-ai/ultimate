@@ -1,42 +1,42 @@
 plan: 101-absorb-reinvented-patterns
 title: "Make Ultimate the best framework for the world to build on"
-status: not_started        # not_started | in_progress | blocked | complete | superseded
+status: in_progress        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
-worked_by: ""
+worked_by: sebi + claude
 owner: sebi
-percent: 0
-current_focus: "sweep 1: security"
+percent: 13
+current_focus: "wave 2: sweeps 7, 7b, 8"
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 28-assets-stored-objects.md
     tier: 1
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 35-fix-security.md
     tier: 0
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 25-pkg-auth-totp-replay.md
     tier: 2
     sweep: "1"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 04-db-migration-safety.md
     tier: 1
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 05-entity-tenant-and-locks.md
     tier: 1
     sweep: "2"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 37-scrub-adopter-names.md
     tier: 5
     sweep: "3"
@@ -45,48 +45,48 @@ slices:
   - file: 02-db-entity-cancellation.md
     tier: 0
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 03-core-lifetime-helpers.md
     tier: 0
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 06-jobs-step-semantics.md
     tier: 3
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 34-idea-jobs-event-wait.md
     tier: 3
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 22-cli-upgrade.md
     tier: 5
     sweep: "5"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 35-fix-logic.md
     tier: 1
     sweep: "6"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 35-fix-concurrency.md
     tier: 1
     sweep: "6"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 29-data-large-tables.md
     tier: 2
     sweep: "6"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 35-fix-isr-default.md
     tier: 4
     sweep: "6"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 29-data-pg-unanswered.md
     tier: 1
     sweep: "7"
@@ -300,8 +300,8 @@ slices:
   - file: 27-agents-evals.md
     tier: 1
     sweep: "16"
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 10
   - file: 17-entity-test-driver.md
     tier: 1
     sweep: "16"

@@ -96,6 +96,20 @@ describe('a rate-limit refusal reschedules without spending an attempt', () => {
     expect(nacks[0]?.delayMs).toBeLessThan(3_600_000 + 60_000);
   });
 
+  test('a delivery another attempt holds waits the same way: uncounted, and maxDelay is no cap', async () => {
+    const held = new UltimateError({
+      code: 'X_NOTIFY_DELIVERY_HELD',
+      cause: 'another attempt holds this delivery',
+      fix: 'x jobs list --json',
+      meta: { retryAfterSeconds: 290 },
+    });
+    const { execution, nacks } = await runOnce(3, 3, held);
+    expect(execution.outcome).toBe('retried');
+    expect(nacks[0]?.countsAsAttempt).toBe(false);
+    expect(nacks[0]?.deadLetter).not.toBe(true);
+    expect(nacks[0]?.delayMs).toBeGreaterThanOrEqual(290_000);
+  });
+
   test('any other failure still counts — the control', async () => {
     const other = new UltimateError({ code: 'X_TEST_BROKEN', cause: 'broken', fix: 'fix it' });
     const { nacks } = await runOnce(3, 1, other);

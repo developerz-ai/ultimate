@@ -21,6 +21,10 @@ import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
 import { bustAfterCommit } from './cache-gate';
+import { memoryIdempotencyStore } from './idempotency-memory';
+
+// A foreign failure handed to the subject: test input, never its verdict.
+const COMMITTED_THEN_FAILED = new RangeError('committed, then failed');
 
 let busts: string[] = [];
 
@@ -229,5 +233,64 @@ describe('the bust inside a transaction — PGlite, through invoke', () => {
     arrange();
     await publish({ id: 4 }, { ctx });
     expect(busts).toEqual(['post']);
+  });
+
+  // A handler that wrote then threw: `idempotency.ts` treats that throw as possibly committed, so
+  // hiding the write behind a stale cache for the TTL was the other half of one disagreement.
+  const writeThenThrow = action({
+    input: t.object({ id: t.number }),
+    output: t.object({ id: t.number }),
+    policy: allow(),
+    idempotent: true,
+    cache: { invalidates: [tag('post')] },
+    async handle({ input }) {
+      await client.execute(sql`insert into bust_posts (id) values (${input.id})`);
+      throw COMMITTED_THEN_FAILED;
+    },
+  }).named('writeThenThrowBustPost');
+
+  test('a handler that throws outside a transaction busts once', async () => {
+    arrange();
+    const failure = await writeThenThrow({ id: 5 }, { ctx }).catch((error: unknown) => error);
+    await settled();
+    expect(failure).toBeInstanceOf(RangeError);
+    expect(await stored()).toEqual([5]);
+    expect(busts).toEqual(['post']);
+  });
+
+  test('a handler that throws inside a transaction that rolls back busts nothing', async () => {
+    arrange();
+    const failure = await withTransaction(() => writeThenThrow({ id: 6 }, { ctx }), {
+      client,
+    }).catch((error: unknown) => error);
+    await settled();
+    expect(failure).toBeInstanceOf(RangeError);
+    expect(await stored()).toEqual([]);
+    expect(busts).toEqual([]);
+  });
+
+  test('input the action refuses busts nothing: no handler ran', async () => {
+    arrange();
+    const refused = await publish({ id: 'not-a-number' } as unknown as { id: number }, {
+      ctx,
+    }).catch((error: unknown) => error);
+    await settled();
+    expect((refused as { code?: unknown }).code).toBe('X_INPUT_INVALID');
+    expect(busts).toEqual([]);
+  });
+
+  test('a replay, of a value or of a failure, busts nothing: no handler ran', async () => {
+    const store = memoryIdempotencyStore();
+    const keyed = { ctx, store, idempotencyKey: 'bust-k1' } as const;
+    arrange();
+    await writeThenThrow({ id: 7 }, keyed).catch(() => undefined);
+    await settled();
+    expect(busts).toEqual(['post']);
+
+    busts = [];
+    const replay = await writeThenThrow({ id: 7 }, keyed).catch((error: unknown) => error);
+    await settled();
+    expect((replay as { code?: unknown }).code).toBe('X_IDEMPOTENCY_REPLAYED_FAILURE');
+    expect(busts).toEqual([]);
   });
 });

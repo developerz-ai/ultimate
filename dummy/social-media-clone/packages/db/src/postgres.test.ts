@@ -133,6 +133,7 @@ test('a composite-key row is written, rewritten and removed — the friends feat
   // And the row a composite key could not delete until `deleteWhere` landed.
   await db.blocks.upsertAll([{ blockerId: ana.id, blockedId: ben.id }], {
     onConflict: ['blockerId', 'blockedId'],
+    onMatch: 'nothing',
   });
   expect(await db.blocks.deleteWhere({ blockerId: ana.id, blockedId: ben.id })).toBe(1);
   expect(await db.blocks.where({ blockerId: ana.id, blockedId: ben.id }).one()).toBeNull();

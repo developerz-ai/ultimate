@@ -8,9 +8,11 @@ import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only
 import { join } from 'node:path';
 import {
   configureLifecycle,
+  drain,
   drainDeadlineMs,
   readinessGraceMs,
   resetLifecycle,
+  resetTelemetry,
 } from '@ultimat3/core';
 import { processRoot } from './process-root-fixture';
 import { serveApp } from './serve';
@@ -101,6 +103,53 @@ describe('unit · the drain each role runs', () => {
       expect(drainDeadlineMs()).toBe(90_000);
     } finally {
       await worker.stop();
+    }
+  }, 120_000);
+});
+
+/**
+ * The exporter's place in the boot is what its place in the `close` phase is: hooks run
+ * last-registered first, and importing the app IS registering its hooks. Started after the import,
+ * the flush ran before an app's own teardown and that teardown's span was lost.
+ */
+describe('unit · the exporter is started before the app is imported', () => {
+  test("a span from an app's import-time close hook is delivered", async () => {
+    await rm(ROOT, { recursive: true, force: true });
+    await Bun.write(
+      join(ROOT, 'package.json'),
+      JSON.stringify({ name: 'serve-otlp-fixture', version: '1.0.0' }),
+    );
+    await Bun.write(
+      join(ROOT, 'app.config.ts'),
+      "import { defineConfig } from '@ultimat3/core';\n" +
+        "export const config = defineConfig({ name: 'serve-otlp-fixture' });\n",
+    );
+    await Bun.write(
+      join(ROOT, 'apps/web/api/index.ts'),
+      "import { onShutdown, withSpan } from '@ultimat3/core';\n" +
+        "onShutdown('app-teardown', () => withSpan('span-from-app-teardown', async () => 0), { phase: 'close' });\n",
+    );
+    resetLifecycle();
+    const bodies: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      bodies.push(String(init?.body));
+      return new Response('', { status: 200 });
+    }) as typeof globalThis.fetch;
+    const env = {
+      NODE_ENV: 'test',
+      ULTIMATE_STATE_DIR: join(ROOT, '.x'),
+      OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318',
+    };
+    const worker = await serveApp({ root: ROOT, env, role: 'worker', port: 0, metricsPort: 0 });
+    try {
+      await drain('SIGTERM');
+      expect(bodies.join('')).toContain('span-from-app-teardown');
+    } finally {
+      await worker.stop();
+      globalThis.fetch = real;
+      resetTelemetry();
+      resetLifecycle();
     }
   }, 120_000);
 });

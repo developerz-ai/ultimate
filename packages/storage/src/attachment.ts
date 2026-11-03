@@ -8,9 +8,10 @@ import type { Clock } from '@ultimat3/core';
 import { assert, finiteCount, renderThrowable, systemClock } from '@ultimat3/core';
 import type { StorageDriver, StorageListEntry, StorageObject } from './driver';
 import { objectNotFound, orgMismatch, tooLarge } from './errors';
-import { alreadyPromoted, notPending, quarantined } from './errors-promote';
-import { isWithinOrg, orgPrefix, scopedKey } from './path';
+import { alreadyPromoted, notPending, objectChanged, quarantined } from './errors-promote';
+import { assertSafeKey, isWithinOrg, orgPrefix, scopedKey } from './path';
 import type { UploadPolicy } from './upload';
+import { SNIFF_WINDOW_BYTES, validateStoredHead } from './upload';
 
 /** The one segment an unattached upload lives under. `sweepOrphans` reads only this prefix. */
 export const PENDING_SEGMENT = 'pending';
@@ -133,6 +134,54 @@ export interface PromoteAttachmentInput {
   readonly policy: UploadPolicy;
 }
 
+/** The head window of one stored object, under the type it is stored as. */
+async function judge(
+  disk: StorageDriver,
+  object: StorageObject,
+  key: string,
+  policy: UploadPolicy,
+): Promise<void> {
+  const head =
+    object.size === 0
+      ? new Uint8Array()
+      : (await disk.get(key, { range: [0, SNIFF_WINDOW_BYTES - 1] })).bytes;
+  validateStoredHead(
+    { key, declaredContentType: object.contentType, head, size: object.size },
+    policy,
+  );
+}
+
+/**
+ * `ifMatch` is the first line and this the second, for a disk whose `copy` honours no condition.
+ * The upload URL stays valid after the sniff, so a copy is only trusted once it is known to be the
+ * revision judged. Another size is another object, whatever else agrees.
+ *
+ * An etag alone does not settle it either way. An empty one says nothing, and an SSE-KMS or SSE-C
+ * bucket mints a new etag per copy, so refusing on a difference would refuse every promotion there.
+ * So a copy that cannot be proved the same is judged itself, by the rule the source just passed:
+ * what lands on the row's key has been looked at either way. A refusal leaves nothing attached; a
+ * delete that fails raises its own code, because the bytes are still there.
+ */
+async function assertCopyIsWhatWasJudged(
+  disk: StorageDriver,
+  judged: StorageObject,
+  copy: StorageObject,
+  policy: UploadPolicy,
+): Promise<void> {
+  const proved =
+    judged.etag !== '' && copy.etag === judged.etag && copy.contentType === judged.contentType;
+  if (proved && copy.size === judged.size) return;
+  try {
+    if (copy.size !== judged.size) {
+      throw objectChanged(copy.key, `${judged.size}B`, `${copy.size}B`);
+    }
+    await judge(disk, copy, copy.key, policy);
+  } catch (error) {
+    await disk.delete(copy.key);
+    throw error;
+  }
+}
+
 /**
  * Move a pending upload onto the row that now exists. Copy first, delete second: a delete that
  * ran first would lose the bytes on a failed write, and the sweep would have collected them
@@ -141,6 +190,12 @@ export interface PromoteAttachmentInput {
  * MEASURED before it moves: `stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and the
  * object stays under `pending/` for `sweepOrphans` — never at a key a row points to. `stat` and
  * not `get`: this is the call that learns the size, so it cannot be one that buffers it.
+ *
+ * SNIFFED before it moves, off a head window. A provider's presigned PUT binds method and expiry
+ * only, so a bucket holds whatever bytes and whatever type the uploader sent, and this is the first
+ * code that looks: bytes that contradict the stored type are `X_STORAGE_TYPE_REJECTED`, and stay
+ * pending too. A ranged read because `maxGetBytes` bounds the range, never the object. An overwrite
+ * after that read is `X_STORAGE_OBJECT_CHANGED`, or the copy itself is judged, and never lands.
  *
  * A source that is gone with the destination already there is `X_STORAGE_ALREADY_PROMOTED`
  * (409, `meta.attachedKey`), never the destination answered as if this call had moved it. 27.1.0
@@ -179,7 +234,13 @@ export async function promoteAttachment(input: PromoteAttachmentInput): Promise<
   if (pending.size > input.policy.maxBytes) {
     throw tooLarge(input.key, pending.size, input.policy.maxBytes);
   }
-  const object = await disk.copy(input.key, attached);
+  await judge(disk, pending, input.key, input.policy);
+  const object = await disk.copy(
+    input.key,
+    attached,
+    pending.etag === '' ? undefined : { ifMatch: pending.etag },
+  );
+  await assertCopyIsWhatWasJudged(disk, pending, object, input.policy);
   await disk.delete(input.key);
   return object;
 }
@@ -240,6 +301,38 @@ export async function sweepOrphans(input: SweepOrphansInput): Promise<SweepResul
       // An object whose age the provider did not report is SPARED: only a proven age is swept.
       if (object.lastModified === undefined || object.lastModified.getTime() > cutoff) continue;
       if ((await input.keep?.(object)) === true) continue;
+      try {
+        await input.disk.delete(object.key);
+        deleted.push(object.key);
+      } catch (error) {
+        failed.push({ key: object.key, reason: renderThrowable(error) });
+      }
+    }
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return { deleted, failed };
+}
+
+export interface DeleteVariantsInput {
+  readonly disk: StorageDriver;
+  /** The SOURCE key. Its variants are every key that opens with it and `@`. */
+  readonly key: string;
+}
+
+/**
+ * Delete every stored variant of one source, of every revision, and answer as `sweepOrphans` does:
+ * a refusal is recorded and the walk continues, so an erasure never reports what is still there.
+ * The source itself is the caller's to delete. `@` is in the prefix, so `x.png2@w1.webp` is
+ * another source's variant and stays.
+ */
+export async function deleteVariants(input: DeleteVariantsInput): Promise<SweepResult> {
+  const prefix = `${assertSafeKey(input.key)}@`;
+  const deleted: string[] = [];
+  const failed: SweepFailure[] = [];
+  let cursor: string | null = null;
+  do {
+    const page = await input.disk.list({ prefix, cursor });
+    for (const object of page.rows) {
       try {
         await input.disk.delete(object.key);
         deleted.push(object.key);

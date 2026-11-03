@@ -13,7 +13,7 @@ import { finiteCount } from '@ultimat3/core';
 import type { JobHandle, JobTenant, RetryPolicy } from '@ultimat3/jobs';
 import { DEFAULT_RETRY, job } from '@ultimat3/jobs';
 import type { Schema } from '@ultimat3/schema';
-import { t } from '@ultimat3/schema';
+import { parse, t } from '@ultimat3/schema';
 import { isBulkChannel } from './channel';
 import {
   NotifyChannelDuplicateError,
@@ -142,6 +142,7 @@ export function notifier<Params>(
     ),
     deliveries,
     keyFor: (params) => definition.key(params),
+    parseParams: (raw) => parse(definition.input, raw) as Params,
     // Bound to the definition rather than torn off it, so an author who writes `recipients` as a
     // method rather than an arrow still gets the right `this`. An enqueue that names no audience
     // and a notifier that resolves none is an empty fan-out, not an error: a broadcast with no

@@ -1,5 +1,6 @@
-// Single responsibility: the ONE ambient install point for where failed credential attempts are
-// counted, plus the purge over whatever it built.
+// Single responsibility: the ONE ambient install point for the credential state a fleet has to
+// share — where failed attempts are counted, with the purge over whatever it built, and where spent
+// TOTP steps are kept.
 //
 // WHY a seam and not a `defineAuth` argument: `defineAuth` is the APP's call, and the app is not
 // the thing that knows which database this process opened. A host boot resolves the pool long
@@ -14,6 +15,7 @@
 // make every app that tunes its own numbers fail at boot with `X_AUTH_LIMITER_POLICY_MISMATCH`.
 // The factory is called WITH the resolved policy, so the two halves cannot disagree.
 
+import type { TotpReplayGuard } from './mfa';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
 
 /**
@@ -109,4 +111,31 @@ export async function purgeAuthLimits(): Promise<number> {
     if (widest === undefined || limiter.policy.windowMs > widest.policy.windowMs) widest = limiter;
   }
   return widest === undefined ? 0 : await widest.purgeExpired();
+}
+
+/** Build the guard an `Auth` keeps its spent TOTP steps in. Called once per `defineAuth`. */
+export type TotpReplayFactory = () => TotpReplayGuard;
+
+let replayFactory: TotpReplayFactory | undefined;
+
+/**
+ * The host's install point for where spent steps are kept, for the limiter's reason: `defineAuth`
+ * is the app's call and the app does not know which database this process opened. Until a boot
+ * filled this, one code signed in once per replica. A second install replaces the first.
+ */
+export function configureTotpReplay(next: TotpReplayFactory): void {
+  replayFactory = next;
+}
+
+/** Back to `memoryTotpReplayGuard`, the per-process default. A host that installs one calls this on stop. */
+export function resetTotpReplay(): void {
+  replayFactory = undefined;
+}
+
+/**
+ * `defineAuth`'s reader, deliberately NOT exported from `src/index.ts` for `installedAuthLimiter`'s
+ * reason. `undefined` means no host installed one, and the caller falls back to memory.
+ */
+export function installedTotpReplay(): TotpReplayGuard | undefined {
+  return replayFactory?.();
 }

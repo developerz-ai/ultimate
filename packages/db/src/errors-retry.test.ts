@@ -14,6 +14,7 @@ import {
   poolAcquireTimeout,
 } from './errors';
 import { migrateConcurrent } from './migration-errors';
+import { txClosed } from './transaction-errors';
 
 /**
  * Sampled at MODULE SCOPE — before any hook runs, and therefore before the `beforeEach` below.
@@ -75,6 +76,11 @@ describe('the permanent codes stay terminal, which is the point of failing close
 
   test('a statement timeout stays terminal — its own fix is an index, not a wait', () => {
     expect(rendered(driver('57014'))).toBe('terminal');
+  });
+
+  test('X_DB_TRANSACTION_CLOSED stays terminal: the same call reaches the same dead handle', () => {
+    expect(rendered(txClosed('tx_1', 'committed'))).toBe('terminal');
+    expect(DB_ERROR_RETRY).not.toHaveProperty('X_DB_TRANSACTION_CLOSED');
   });
 
   test('X_DB_UNAVAILABLE stays terminal: four of its six throw sites are config faults', () => {

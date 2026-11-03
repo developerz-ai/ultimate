@@ -10,6 +10,7 @@ import type { Clock, Scheduler } from '@ultimat3/core';
 import {
   generationFence,
   isFixShellSafe,
+  logger,
   renderFixShellArg,
   renderThrowable,
   singleFlight,
@@ -50,6 +51,16 @@ export type IdTokenKeys = 'token-endpoint-tls' | JwksKeySource;
 
 /** Short enough that a rotated key set is picked up on its own; a new `kid` refreshes early. */
 export const DEFAULT_JWKS_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * How long past its TTL a key already held still answers while the key set cannot be read. An IdP
+ * outage otherwise ends every login with the verifying key in memory. Past it, the refusal: a key
+ * may have been withdrawn during the outage, and nothing here can tell.
+ */
+export const JWKS_STALE_IF_ERROR_MS = 60 * 60 * 1000;
+
+/** No fetch this soon after a failed one, on either path: an outage costs no request per token. */
+export const JWKS_FAILURE_COOLDOWN_MS = 30 * 1000;
 
 /** One client is one key set, so the flight has exactly one key and its name is never read. */
 const REFRESH_KEY = 'jwks';
@@ -110,12 +121,16 @@ const algorithmOf = (jwk: Record<string, unknown>): JwtAlgorithm | null => {
   return null;
 };
 
+/** Where a key published with no `kid` is filed: no name a token could mean starts with NUL. */
+const KID_LESS = '\u0000';
+
 /**
  * Caches by `kid` with a TTL, and refetches once when a token names a `kid` the cache has never
  * seen — which is what makes a key rotation heal itself instead of failing every login until the
  * TTL runs out. One refetch, not one per token: an unknown `kid` an attacker invents must not
  * become an unbounded outbound request per attempt, so the refresh is rate-limited by the same
- * TTL as the ordinary one.
+ * TTL as the ordinary one. A failed fetch is rated too (`JWKS_FAILURE_COOLDOWN_MS`), and leaves a
+ * key already held answering for `JWKS_STALE_IF_ERROR_MS`.
  */
 export function jwksClient(options: JwksClientOptions): JwksKeySource {
   const clock = options.clock ?? systemClock;
@@ -139,6 +154,9 @@ export function jwksClient(options: JwksClientOptions): JwksKeySource {
   // is reset by every fetch, ordinary ones included — so gating the early refresh on it would let
   // an attacker's own refresh authorise the next one.
   let lastMissRefreshMs = Number.NEGATIVE_INFINITY;
+  // The last failed fetch, kept so a caller inside the cooldown gets its refusal without a request.
+  let lastFailure: { readonly atMs: number; readonly error: unknown } | null = null;
+  let staleAnnounced = false;
   // Two refreshes can overlap once the deadline below can evict one, and BOTH end by installing
   // what they read. Without this, the later-settling of the two wins — so a refresh the client
   // already gave up on could drop a pre-rotation key set on top of the live one, and every login
@@ -199,13 +217,16 @@ export function jwksClient(options: JwksClientOptions): JwksKeySource {
       if (!isRecord(entry)) continue;
       const alg = algorithmOf(entry);
       const kid = entry['kid'];
-      if (alg === null || typeof kid !== 'string' || kid === '') continue;
+      const named = typeof kid === 'string' && kid !== '';
+      // RFC 7517: `kid` is optional. An absent one is filed by position, so two such keys stay two
+      // and `lookup` sees the ambiguity; a present one that is no name is a malformed entry.
+      if (alg === null || (kid !== undefined && !named)) continue;
       // A key the runtime cannot import is skipped rather than fatal: one malformed entry in a
       // published set must not take down every login the other keys would still have verified.
       const key = await crypto.subtle
         .importKey('jwk', entry as JsonWebKey, importParams(alg), false, ['verify'])
         .catch(() => null);
-      if (key !== null) next.set(`${kid}:${alg}`, key);
+      if (key !== null) next.set(`${named ? kid : `${KID_LESS}${next.size}`}:${alg}`, key);
     }
     // A 200 with nothing importable in it is a failed fetch, not a rotation to zero keys. Adopted,
     // it replaced a working cache with an empty one stamped fresh for a whole TTL.
@@ -244,7 +265,9 @@ export function jwksClient(options: JwksClientOptions): JwksKeySource {
     await flight.run(REFRESH_KEY, fetchKeys);
 
   const lookup = (current: Map<string, CryptoKey>, kid: string | null, alg: JwtAlgorithm) => {
-    if (kid !== null) return current.get(`${kid}:${alg}`) ?? null;
+    // A token naming a `kid` needs that key: its text is the caller's, so it never spells a filing.
+    if (kid !== null)
+      return kid.startsWith(KID_LESS) ? null : (current.get(`${kid}:${alg}`) ?? null);
     // No `kid`: unambiguous only when the set holds exactly one key for this algorithm.
     const matches = [...current.entries()].filter(([id]) => id.endsWith(`:${alg}`));
     return matches.length === 1 ? (matches[0]?.[1] ?? null) : null;
@@ -265,10 +288,42 @@ export function jwksClient(options: JwksClientOptions): JwksKeySource {
       // early refresh is rate-limited by the same TTL as the ordinary one — which is what the
       // docstring above always promised. Set BEFORE the await so concurrent callers that pass the
       // gate together still coalesce into the one shared refresh.
-      const earlyRefresh = !known && !stale && nowMs >= lastMissRefreshMs + ttlMs;
+      const cooling = lastFailure !== null && nowMs < lastFailure.atMs + JWKS_FAILURE_COOLDOWN_MS;
+      const earlyRefresh = !known && !stale && !cooling && nowMs >= lastMissRefreshMs + ttlMs;
+      const missGateWas = lastMissRefreshMs;
       if (earlyRefresh) lastMissRefreshMs = nowMs;
-      if (stale || earlyRefresh) current = await load();
+      let failure = cooling ? lastFailure : null;
+      if (!cooling && (stale || earlyRefresh)) {
+        try {
+          current = await load();
+          lastFailure = null;
+        } catch (error) {
+          // Every joiner of one failed fetch lands here holding the same error: one announcement.
+          if (lastFailure?.error !== error) staleAnnounced = false;
+          failure = { atMs: clock.now().getTime(), error };
+          lastFailure = failure;
+          // A fetch that read nothing proved nothing about this `kid`. The cooldown rates failures,
+          // so the gate is given back, or a rotated key misses for a whole TTL after the issuer heals.
+          if (earlyRefresh) lastMissRefreshMs = missGateWas;
+        }
+      }
       const key = lookup(current, kid, alg);
+      if (failure !== null) {
+        // Measured from the set's own age, so a flapping issuer cannot extend the window by failing
+        // again: a key this old is refused however recently the last fetch was tried.
+        const usable =
+          key !== null && (!stale || nowMs < fetchedAtMs + ttlMs + JWKS_STALE_IF_ERROR_MS);
+        if (!usable) throw failure.error;
+        // Once per failed fetch, not per token: an outage at login volume is one line per cooldown.
+        if (stale && !staleAnnounced) {
+          staleAnnounced = true;
+          logger.warn('auth.jwks.stale_served', {
+            provider: options.provider,
+            staleForMs: nowMs - (fetchedAtMs + ttlMs),
+          });
+        }
+        return key;
+      }
       if (key === null) {
         throw oauthTokenInvalid(
           options.provider,

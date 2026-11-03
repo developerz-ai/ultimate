@@ -85,7 +85,7 @@ over an existing primitive; the eight stay eight.
 
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-5',
+  model: 'claude-sonnet-5-5',
   input:  t.object({ postId: t.uuid, orgId: t.uuid }),   // orgId: the policy decides on it
   output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                       // versioned artifact

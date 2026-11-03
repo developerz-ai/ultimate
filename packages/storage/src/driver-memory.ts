@@ -17,6 +17,7 @@ import {
 import {
   assertListOptions,
   assertPutOptions,
+  type CopyOptions,
   DEFAULT_CONTENT_TYPE,
   etagOf,
   type ListOptions,
@@ -34,6 +35,7 @@ import {
 import type { LocalDriverOptions } from './driver-local';
 import { keyInTheWay } from './driver-memory-conflict';
 import { checksumMismatch, getTooLarge, keyConflict, objectNotFound } from './errors';
+import { objectChanged } from './errors-promote';
 import {
   assertObjectLockOptions,
   isLocked,
@@ -213,11 +215,14 @@ export function memoryStorageDriver(options: MemoryStorageDriverOptions = {}): M
       return new Blob([hit.bytes.slice()]).stream();
     },
 
-    async copy(from: string, to: string): Promise<StorageObject> {
+    async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
       // Both keys before either lookup, as the other two disks do: an unsafe destination is the
       // refusal whether or not the source exists.
       const [from_, destination] = [assertSafeKey(from), assertSafeKey(to)];
       const source = found(from_);
+      if (options?.ifMatch !== undefined && source.object.etag !== options.ifMatch) {
+        throw objectChanged(from_, options.ifMatch, source.object.etag);
+      }
       refuseConflict(destination);
       refuseOverwrite(destination, 'copy onto');
       const object: StorageObject = {

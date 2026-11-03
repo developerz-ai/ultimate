@@ -76,6 +76,13 @@ export function frameRouter(options: FrameRouterOptions): FrameRouter {
         ? await presence.roster(name)
         : await presence.join(name, { id: socket.id, actorId: socket.actorId });
     if (presence) options.busAnswered?.();
+    // Asked after the awaits, because the race IS the awaits: `teardown` ran during the beat, the
+    // beat answered false, and the `join` above wrote a member no close will ever remove — a ghost
+    // on every other client's roster until the TTL. Taken back here, by this write's own author.
+    if (presence && socket.closed) {
+      await presence.leave(name, socket.id);
+      return;
+    }
     // Read, though nothing here can repair it: the next beat re-sends the set, and the log is the
     // only trace a dropped one leaves anywhere.
     if (!socket.send(presenceFrame(name, 'sync', roster.members, roster.total))) {

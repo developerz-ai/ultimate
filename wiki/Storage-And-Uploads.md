@@ -161,13 +161,56 @@ defineStorage({
 
 A prefix is refused at boot (`X_CONFIG_INVALID`) when it names an undeclared disk, lacks its
 trailing `/`, would share the whole disk, or sits inside `org/`. `storage.isShared(disk, key)` is
-the question both routes ask. Objects a stranger may fetch belong in `apps/web/site/assets/`
-(content-hashed, no disk at all), not in a shared prefix.
+the question both routes ask.
 
 **The `GET` does not read `x-sig` or `x-exp`.** A signed GET URL `localDriver` mints points at
 this route, and is served on the terms above whatever its signature says: it neither opens an
 unshared key nor outlives the session. To serve an object by signature alone (no session), mount
 your own route around `readSignedObject({ url, disk, orgId })`, or return the bytes from an action.
+
+## Serving an object to a stranger
+
+`As of 2026-11-02`. **A file of the site is an `asset()`; a stored object is your route and
+`objectResponse`.** A shared prefix still needs a signed-in reader, so it cannot express an object
+whose authorization is app state (a published row): that decision is your route's, and the answer
+is the framework's.
+
+```ts
+import { byteWindow, objectResponse, type UltimateRequest } from '@ultimat3/http';
+import { objectNotFound, storage } from '@ultimat3/storage';
+
+declare function publishedPost(id: string): Promise<{ imageKey: string }>;
+
+export const handler = async (request: UltimateRequest): Promise<Response> => {
+  // Your rule first, from your own row. Nothing here reads a session.
+  const post = await publishedPost(request.params['id'] ?? '');
+  const disk = storage().disk();
+  const object = await disk.stat(post.imageKey);
+  if (object === undefined) throw objectNotFound(disk.name, post.imageKey);
+  return objectResponse(
+    request,
+    {
+      object,
+      open: async (range) =>
+        range === undefined
+          ? disk.stream(post.imageKey)
+          : byteWindow(await disk.stream(post.imageKey), range),
+    },
+    { cache: { mode: 'public', maxAgeSeconds: 300 } },
+  );
+};
+```
+
+| It answers | When |
+|---|---|
+| `200`, stored type, `content-length`, `etag`, `last-modified` | a plain `GET`. No etag known: no `etag` header, and no `304` |
+| `206`, `content-range` | one `Range:` window; `open` receives it, so it opens exactly those bytes |
+| `304` · `416` | a matching `if-none-match` · a window past the end. Neither opens anything. An `if-range` that is not this revision ignores the range: `200`, whole |
+| `content-disposition: attachment` + `content-security-policy: sandbox` | any type but a raster image, audio or video. `headers` replaces this rule for a caller with its own |
+| your `cache`, on every status | omitted, the route's `meta.cache` decides |
+
+`request` needs only `header(name)`, and `object` only `{ contentType, size, etag?, lastModified? }`:
+`@ultimat3/http` imports no storage, so a `StorageObject` fits and so does anything else.
 
 **Test the real route.** `storageRoutes({ storage })` from `@ultimat3/cli` returns the mounted
 `GET` and `PUT` (`servedStorage(storage)` is the registry they read), as `assetRoutes` returns
@@ -175,7 +218,14 @@ your own route around `readSignedObject({ url, disk, orgId })`, or return the by
 
 **The body is streamed** (`stat` + `stream`), never buffered: an object past the disk's
 `maxGetBytes` is served, and a `Range` reads and drops the bytes before its start rather than
-holding the object. `/media` still buffers — it decodes images.
+holding the object. `/media` streams the object the same way, and buffers a variant only: it
+decodes images.
+
+**One cache posture on both routes** (`As of 2026-11-02`): `private, max-age=0` plus an `etag`, for
+every key. A key is not content-addressed, since an overwrite changes the bytes under it, so
+nothing here answers `immutable`: `/media` once did on a shared key, and a CDN then served it to
+strangers for a year and never refreshed it. A public image is an `asset()`, or your own route over
+`objectResponse`.
 
 ## Attachments, quarantine, orphans
 
@@ -186,12 +236,46 @@ An upload lands under `org/<org>/pending/…` before its row exists, and is prom
 | `promoteAttachment({ disk, key, orgId, target, policy })` | measure, copy, then delete, onto `org/<org>/<entity>/<id>/<field>/…`. **`policy` is required** — pass the one the upload was granted under: the object's size is read with `stat()` and one over `policy.maxBytes` is `X_STORAGE_TOO_LARGE` and stays pending. Only a **pending** key: another row's attached key is `X_STORAGE_NOT_PENDING`. A second call for a key an earlier call already moved is `X_STORAGE_ALREADY_PROMOTED` (409, `meta.attachedKey`) and touches nothing: answer the row that holds that key, and never delete it in your own cleanup |
 | `grantUpload({ …, quarantine: true })` → `releaseQuarantine({ disk, key, orgId })` | the place for your scanner: a quarantined key cannot be promoted (`X_STORAGE_QUARANTINED`) until your scan job releases it. The scanner is your app's (axiom 8) |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | deletes stale `pending/` keys of one org and answers `{ deleted, failed }` — a refused delete is reported, never counted as done |
+| `deleteVariants({ disk, key })` | deletes every stored variant of one source, of every revision, and answers `{ deleted, failed }`. The source is yours to delete. A variant keeps its source's prefix, so an org-wide erasure by prefix already collects them |
+
+**An erasure of one object must call `deleteVariants`.** `disk.delete(key)` removes the source only.
+Once it is gone `/media` and `/_storage` answer `X_STORAGE_NOT_FOUND` for the variant too, but its
+bytes stay on the disk, and a variant minted before revisions (`hero.png@w640.webp`) names no revision
+and stays readable by its own key. Delete the source and its variants, and report `failed`.
+
+**Promotion also reads the object** (`As of 2026-11-02`). A presigned PUT on an s3 disk signs `host`
+alone, so the uploader chose the stored type and the bytes. `promoteAttachment` reads the first
+`SNIFF_WINDOW_BYTES` (64 KiB) with one ranged read and judges them by the rule the upload path uses
+(`validateStoredHead`); a contradiction is `X_STORAGE_TYPE_REJECTED`, and the key stays pending.
+
+The upload URL stays valid after that read, so the copy names the revision judged (`ifMatch`: on s3,
+`x-amz-copy-source-if-match`), and another is `X_STORAGE_OBJECT_CHANGED` (409). The copy is then
+checked: another size is refused and deleted; an etag that differs or is unknown (a disk with none, or
+SSE-KMS, which mints one per copy) means the copy's own head is judged, and refused and deleted if it
+does not pass. Bytes past the window are not sniffed on any path through promotion.
+
+| Refused at promotion | Why |
+|---|---|
+| an XML or `+xml` object over 64 KiB | a browser runs a script anywhere in an XML document, and the window cannot see all of it. Upload it through the server: `validateUpload` reads the whole body |
+| over 4,096 bytes of leading whitespace (`MAX_LEADING_WHITESPACE`), on every path | no real file opens that way, and past the window nothing is seen |
+| a disk whose `maxGetBytes` is under the window | its own `X_STORAGE_TOO_LARGE`: the ceiling bounds the range |
+
+A grant with a `target` has no promotion step: [Known gaps](Known-Gaps).
 
 ## Images
 
 A variant's key is the whole source key plus the transform — `photos/hero.png` at width 640 is
 `photos/hero.png@w640.webp` — so two sources that differ only by extension never share a cached
 variant. `width` and `height` are whole numbers of at least 1 (`X_INVARIANT` otherwise).
+
+`/media` keys what it stores on the bytes and the encoding as well: `photos/hero.png@w640-r0123abcd.png`,
+`r<8 hex>` being `variantRevision(object.etag)` and the format the `?f=` asked for, else the source's
+(`variantFormatOf`). It reads the source first, so a deleted source is `X_STORAGE_NOT_FOUND` whatever
+is still stored, and an overwrite misses every old variant. The variant's own key answers for its
+source too, on both routes: once the source is gone or holds another revision, it is
+`X_STORAGE_NOT_FOUND`. A source no key can state, a `gif` or an
+unknowable etag, is served and never stored. Old-revision variants are bytes nobody reads:
+`deleteVariants` or a bucket lifecycle rule removes them, and when is yours to choose.
 
 `transformImage()` and `blurPlaceholder()` run on core's pipeline (`Bun.Image`, no `sharp`) and
 encode `png`, `jpeg` and `webp`; `avif` is key and `srcset` math only. `variantKey()`,

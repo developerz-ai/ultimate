@@ -10,9 +10,9 @@ const keyOf = (path: string, query: readonly string[] | null): string =>
   isrKey(isrRequestUrl(at(path), query), 'en');
 
 describe('unit · the keyed query of an isr page', () => {
-  test('a route that declared NOTHING still keys on the whole query, as before', () => {
-    expect(keyOf('/blog?x=1', null)).not.toBe(keyOf('/blog?x=2', null));
-    expect(isrRequestUrl(at('/blog?x=1'), null).href).toBe('https://app.test/blog?x=1');
+  test('a route that declared NOTHING keys on none of its query', () => {
+    expect(keyOf('/blog?x=1', null)).toBe(keyOf('/blog?x=2', null));
+    expect(isrRequestUrl(at('/blog?x=1'), null).href).toBe('https://app.test/blog');
     expect(undeclaredQuery(at('/blog?x=1&y=2'), null)).toEqual(['x', 'y']);
   });
 

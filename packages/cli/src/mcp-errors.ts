@@ -312,6 +312,19 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x i18n check --json   # the finding names the locale and the key still carrying the reference value',
   X_WORKER_QUEUE_UNKNOWN:
     'x jobs list --json   # set WORKER_QUEUES to queues it lists, or add the queue to jobs.queues in app.config.ts',
+  X_UPGRADE_DIRTY_TREE: 'git status --short   # then commit or stash, and re-run: x upgrade --json',
+  X_UPGRADE_MIXED_PINS: 'x upgrade --dry-run --json   # the refusal names the exact --to to paste',
+  X_UPGRADE_HOP_TOO_WIDE:
+    'x upgrade --dry-run --json   # with no --to, it answers the one hop this app may take',
+  X_UPGRADE_REGISTRY_UNREACHABLE:
+    'bun pm view @ultimat3/cli version   # once this answers, re-run: x upgrade --json',
+  X_UPGRADE_PIN_UNREADABLE:
+    'x upgrade --json   # after editing the package.json the cause names, so every @ultimat3/* carries a version',
+  X_UPGRADE_VERSION_UNPUBLISHED:
+    'bun pm view @ultimat3/cli versions --json   # then: x upgrade --to <one of them> --json',
+  X_UPGRADE_INSTALL_FAILED:
+    'git restore .   # undoes the pins, since the tree was clean; then fix what the cause names and re-run: x upgrade --json',
+  X_UPGRADE_GATE_UNREADABLE: 'bun node_modules/@ultimat3/cli/src/bin.ts verify --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

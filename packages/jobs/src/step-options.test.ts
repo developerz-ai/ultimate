@@ -9,6 +9,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { Ctx } from '@ultimat3/core';
 import { ctxOf, frozenClock } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { t } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, NackOptions } from './driver';
 import { memoryJobDriver } from './driver-memory';
 import type { JobExecution } from './execute';
@@ -191,7 +192,11 @@ describe('the event poll actually paces a waiting step', () => {
       eventPoll: '1s',
       // `waitForEvent(name, event, options)` — three arguments. Called with two, `{ timeout }`
       // landed on the `event` parameter and the declared timeout was never read at all.
-      run: ({ step }) => step.waitForEvent('await-payment', 'invoice.paid', { timeout: '1h' }),
+      run: ({ step }) =>
+        step.waitForEvent('await-payment', 'invoice.paid', {
+          schema: t.object({}),
+          timeout: '1h',
+        }),
     });
 
     const execution = await harness.execute();

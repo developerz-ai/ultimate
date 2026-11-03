@@ -172,7 +172,7 @@ const allows = (allowance: DocCommandAllowance, path: string, subject: string): 
 
 /**
  * Pure, so the negative case is a fixture rather than an edit to a page three other people are
- * rewriting. `allowPlanned` is on: the nine `PLANNED_COMMANDS` and `x db studio` are in the
+ * rewriting. `allowPlanned` is on: the `PLANNED_COMMANDS` and `x db studio` are in the
  * registry, `x help` lists them, and `wiki/CLI-Reference.md` has a table whose whole job is to name
  * them. A `fix:` may not cite one; a sentence may.
  */

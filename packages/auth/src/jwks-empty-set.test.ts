@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { AuthError } from './errors';
-import { jwksClient } from './jwks';
+import { JWKS_FAILURE_COOLDOWN_MS, jwksClient } from './jwks';
 
 const clock = frozenClock(new Date('2026-08-16T12:00:00.000Z'));
 
@@ -73,7 +73,7 @@ describe('a key set with no importable key', () => {
     expect(source.calls).toBe(2);
   });
 
-  test('a cold client reports the failed fetch, and the next call asks again', async () => {
+  test('a cold client reports the failed fetch, and the next call past the cooldown asks again', async () => {
     const source = scripted([
       JSON.stringify({ keys: [] }),
       JSON.stringify({ keys: [await publicJwk('live')] }),
@@ -89,7 +89,8 @@ describe('a key set with no importable key', () => {
     expect(thrown instanceof AuthError ? thrown.fix : '').toBe(
       'curl -sS -m 5 https://issuer.example/jwks',
     );
-    // Not stamped fresh: the empty answer did not buy the issuer a TTL of silence.
+    // Not stamped fresh: the empty answer did not buy the issuer a TTL of silence, only a cooldown.
+    clock.advance(JWKS_FAILURE_COOLDOWN_MS);
     expect(await client.keyFor('live', 'ES256')).toBeDefined();
     expect(source.calls).toBe(2);
   });

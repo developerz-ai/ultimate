@@ -4,7 +4,8 @@
 // refuses it there. Every other cancellation still writes nothing.
 
 import { describe, expect, test } from 'bun:test';
-import { UltimateError } from '@ultimat3/core';
+import { ctxOf, runWithContext, UltimateError } from '@ultimat3/core';
+import { pgliteClient, raw, sql, withTransaction } from '@ultimat3/db';
 import { JobAbortedError, JobDrainedError } from './errors';
 import type { StepFence, StepRecord, StepStore } from './steps';
 import { stepRunner } from './steps';
@@ -90,4 +91,47 @@ describe('the drain does not lose a step that completed', () => {
     expect(outcome).toBeInstanceOf(JobAbortedError);
     expect(await store.get('run-1', 'charge')).toBeUndefined();
   });
+});
+
+describe('the drain and the write guard', () => {
+  test('a fenced put past X_DRAINING lands on a real database, where the guard refuses a body write', async () => {
+    const client = pgliteClient();
+    await client.execute(raw('create table step_put_probe (name text primary key)'));
+    try {
+      const inner = memoryStepStore();
+      const store: StepStore = {
+        ...inner,
+        // The pg store's path: a statement on the pool, through the funnel the guard stays out of.
+        async put(record, by) {
+          await client.execute(sql`insert into step_put_probe values (${record.name})`);
+          return inner.put(record, by);
+        },
+      };
+      const run = new AbortController();
+      const runner = stepRunner({
+        runId: 'run-1',
+        jobName: 'charge',
+        store,
+        signal: run.signal,
+        fence: FENCE,
+      });
+      const reason = drained();
+      const bodyWrite = await runWithContext(ctxOf({ signal: run.signal }), async () => {
+        const outcome = await runner.step.run('charge', () => {
+          run.abort(reason);
+          return 'charged';
+        });
+        expect(outcome).toBe('charged');
+        return withTransaction(() => client.query(sql`select 1`), { client }).catch(
+          (error: unknown) => error,
+        );
+      });
+
+      expect(bodyWrite).toBe(reason);
+      const rows = await client.query<{ name: string }>(sql`select name from step_put_probe`);
+      expect(rows.map((row) => row.name)).toEqual(['charge']);
+    } finally {
+      await client.close();
+    }
+  }, 30_000);
 });

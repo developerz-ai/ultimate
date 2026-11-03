@@ -5,6 +5,7 @@
 
 import type { DbClient } from '@ultimat3/db';
 import type { EntityCore } from './entity';
+import { canonicalDecimal, canonicalInteger } from './numeric-compare';
 import { decodeRow, type PhysicalRow } from './pg-row';
 import { type ReadShape, selectStatement } from './pg-sql';
 import type { QueryPlan } from './tenancy';
@@ -35,11 +36,18 @@ export type Answer = { readonly row: unknown } | { readonly error: unknown };
  * The string both sides of a batch are filed under — the requested id, and the key of a row that
  * came back. Postgres compares a `uuid` as a value and prints it lower-cased, so an id handed in
  * upper case matches the row *there* and would miss it here, which would make an answer depend on
- * whether some other lookup shared the microtask. Every other kind compares by its bytes, and
- * lower-casing a text key would merge two rows Postgres keeps apart.
+ * whether some other lookup shared the microtask. An integer or `numeric` is compared by value too:
+ * `'007'` matched the row and missed its answer here, filed under `'7'`. One the column could not
+ * hold stays as written, so the statement still carries it and Postgres answers its own refusal.
+ * Every other kind compares by its bytes, and lower-casing a text key would merge two rows
+ * Postgres keeps apart.
  */
-export const keyOf = (kind: string, value: unknown): string =>
-  kind === 'uuid' ? String(value).toLowerCase() : String(value);
+export const keyOf = (kind: string, value: unknown): string => {
+  if (kind === 'uuid') return String(value).toLowerCase();
+  if (kind === 'integer' || kind === 'bigint') return canonicalInteger(value) ?? String(value);
+  if (kind === 'numeric') return canonicalDecimal(value) ?? String(value);
+  return String(value);
+};
 
 /** A scope value has to be comparable as a string, or two scopes cannot be told apart. */
 const scopeValue = (value: unknown): string | undefined => {

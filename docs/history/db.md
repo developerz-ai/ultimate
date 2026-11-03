@@ -1677,3 +1677,83 @@ by a consuming app that could not remove three redundant indexes from its hot `r
   `generate-generated-{column,rebuild}.live.test.ts`.
 - **`unexpectedTable`'s `fix:` never names `x db gen`**: `psql -c '\d "T"'`, commented with the two
   repairs (claim it with `create table if not exists`, or drop it).
+
+## 2026-11-02 — a finished scope refuses writes (plan 101, slice 02)
+
+A `DbTx` statement once `outcome` left `open` is `X_DB_TRANSACTION_CLOSED`, `ending` included: the wait on `COMMIT` or `ROLLBACK`, where a statement sent runs after them on the same connection, outside any transaction. `abandonment()` from core refuses a statement, a nested scope, a `BEGIN` and a `COMMIT` with the signal's own reason, unless `completeTransaction()` marked the root (`completing`, by reference, new per attempt). `refuseAbandoned()` with no argument is the same check for a write with no `DbTx`, against the ambient open root. A nested scope asks `refuseIfFinished` again after its turn and after its body, and sends `ROLLBACK TO` only into an open root: a sibling that outlived the root must be told CLOSED, and the pin is back in the pool. Never in `runOn`: `settleFailure` and a job step's fenced write send past the abort through it. A statement on the pool outside any transaction is therefore not refused here. `transaction-closed{,.live}.test.ts`, `transaction-abandon.test.ts`.
+
+Moved out of `CLAUDE.md` at its ceiling: `execute()` trusts the command tag only when `> 0`, in both drivers (`rowsOf`, `affectedBy`). `runningAppVersion()` delegates to core's `appVersion()`. `rollback({ steps })` refuses anything but a positive safe integer, before the lock (`rollbackStepsInvalid`, `X_INVARIANT`).
+
+## Same-tenant keys (2026-11-02)
+
+- **The target's index is answered over the whole set** (`withSameTenantIndexes`), because `(tenant, id)` on `posts` is declared by whoever points at `posts`, and `declaredIndexes(entity)` sees one entity. It adds to `entity.indexes` so every arm (`createTable`, `indexPlan`, `snapshotOf`) reads one list.
+- **`concurrently: true`** so a live target's build is deferred and `targetIndexDeferred` puts the key behind it; a new table ignores the flag, which keeps a first migration one transaction.
+- **`set null (a)` is a spelling, kept whole in snapshots and on the catalog's side**, so a key changing its list is a changed rule. Read through `pg_get_constraintdef` and never `confdelsetcols`: that column is Postgres 15+ and this query runs on whatever an operator points it at.
+- **Names through `bounded`, 63 bytes and a hash tail**: two long keys sharing a prefix would otherwise be one name on the server.
+
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/db/CLAUDE.md`](../../packages/db/CLAUDE.md), which keeps the rule in one line.
+
+### Generation (`x db gen`)
+
+- **`index-plan.ts` walks both directions** (declared first, removed last); four names are skipped
+  (primary, moved aside, rebuilt, over a dropped column). **A removal and a `concurrently: true`
+  build on a live table go to the non-transactional step** (`concurrent-plan.ts`; `generate-steps.ts`
+  makes it `<id>_concurrently` or the whole migration); a shape a constraint could back
+  (`mayBeConstraintBacked`) is unhooked in the step, after its builds. Never recorded (history).
+
+- **An entity's INVARIANTS reach the DDL** (`invariant-ddl.ts`): a `check` is a named constraint, a
+  `unique` a unique INDEX on the one `declaredIndexes` list, an `assert` nothing; `checks` is recorded
+  absent-never-`[]`; the name `<table>_<name>_<check|key>` is re-derived, bounded at 63 bytes and
+  validated (`constraintNameUnsafe`). **An `assert` is an unrendered loss when a migration recorded its
+  CHECK**: `unrenderedOf(entities, current)` takes the recorded schema (required, nullable) and
+  `namesConstraint` matches both spellings.
+
+- **A retype moves its dependents aside** (`retype-dependents.ts`): only expressions that MENTION the
+  column (partial-index predicates, CHECKs), over-approximated on purpose (`referencesColumn` walks
+  `sql-scan.ts`); a plain btree survives. `generate-retype.live.test.ts`. What is moved is put back by
+  the ordinary diff (`MovedAside`), never twice. **Foreign keys over a retyped column**
+  (`retype-keys.ts`): the retype set is derived once for the whole schema (`retypedColumns`), drops go
+  in `preAlters` at the top of `up`, re-adding is `foreignKeyPlan`'s, both `breaksOn` ends are needed
+  (`generate-retype-key.live.test.ts`). `sql-type.ts` reads `SQL_TYPES` with `Object.hasOwn`.
+
+- **A foreign key is `alter table … add constraint`**, collected into a bucket merged after every table
+  statement (`foreign-key-plan.ts`); **dropping a table has its own bucket emitted BEFORE the table
+  statements** (`preDrops`), ordered children-first by `drop-order.ts`, which breaks a two-table cycle
+  by dropping one key first. `foreignKeyPlan` walks both directions, drops the name the previous
+  snapshot recorded, and rebuilds a key whose `onDelete` moved. **`on delete` reaches the SQL**
+  (`onDeleteRule`, `foreign-key.ts`; an unknown rule is `X_INVARIANT`).
+
+### Branches, replicas, read-only
+
+- **Read replicas are opt-in twice**: a pool when `DATABASE_REPLICA_URL` names one
+  (`default-client.ts`), and a read offered only inside `withReplicaReads(fn)` (`replica-scope.ts`);
+  read-your-writes is `ReplicaScope.wrote`, never a request-id map. **`withTransaction` is on the
+  primary structurally** (`replicatedClient` delegates `reserve()`; `isReservable` answers about the
+  database); `runRoot` calls `markScopeWrote()` unless `readOnly`. **`isPlainRead` is an allow-list**,
+  never `statementKind()` (`replica-route.test.ts` asserts they disagree). A standby refusal (`25006`)
+  re-runs on the primary; the breaker (3 failures, 10 s, `Clock.monotonic()`) parks the replica;
+  `ReplicaStats`; `db.replica_fallback`. The URL must name a read-only standby — nothing checks it.
+  `@ultimat3/cli`'s boot opens the per-request scope.
+
+- **This package owns no "is this SQL a write?" lexer** — `readonly.ts` and `X_READONLY_VIOLATION`
+  are deleted; `errors.test.ts` pins `DB_OWNED_ERROR_CODES`. The layers are `ensureReadOnlyRole()`
+  (layer 1, returns `null` on a missing permission) and `readOnlyQuery()` (layer 2: `BEGIN READ ONLY`
+  + statement timeout; it THROWS), with `@ultimat3/mcp` as layers 3–4. **`readOnlyQuery` takes ONE
+  statement** (`multipleStatements`, via `statementsOf`) and splices the splitter's `statements[0]`.
+
+### Connections and transactions
+
+- **An aborted transaction is reported** (`X_DB_TRANSACTION_ABORTED`; README "Transactions that end
+  badly"): a failure carrying a SQLSTATE marks the root's `abort`, only a successful `ROLLBACK TO`
+  clears it (a failed one sets it), and `COMMIT` is then refused unsent. `commit-tag.ts` reads the
+  COMMIT tag in BOTH funnels. `COMMIT` rejecting with no SQLSTATE is `X_DB_COMMIT_UNKNOWN`: neither
+  list runs. `transaction-errors.ts`; `transaction-options.ts` holds `DbTx`, options, `BEGIN` text.
+
+### Migrations
+
+- **`refuseDependentViews(tx, script)`** (`dependent-view.ts`) runs before each migration's first
+  statement: a word scan over `sql-scan.ts` finds retyped columns, one catalog round trip, the pair
+  filtered in JS (visible tables only), and `X_MIGRATION_VIEW_DEPENDS` carries the `drop view` /
+  `create view` from `pg_get_viewdef` (built through `identifier()` inside a `try`).

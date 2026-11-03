@@ -1,0 +1,197 @@
+// Single responsibility: the retry loop itself and the pure decision behind it, with every source of
+// non-determinism and the caller's lifetime handed in. Split from `retry.ts` so `client-flight.ts`
+// reaches the loop without `context.ts`: a page's bundle must not pay for the ambient request.
+
+import {
+  type BackoffCurve,
+  backoffDelay,
+  type JitterMode,
+  jitterStatedDelay,
+  type Random,
+} from './backoff';
+import { systemClock } from './clock';
+import { classifyThrown, type ErrorRetry, statedDelayMs } from './error-retry';
+import { finiteCount, finiteOption } from './finite-option';
+
+export interface RetryPolicy {
+  /** Total attempts INCLUDING the first. `attempts: 1` means no retry. */
+  readonly attempts: number;
+  /** The first delay, in ms. */
+  readonly base: number;
+  /**
+   * Ceiling for any single delay, in ms. A `retry-after` the responder named is clamped to it
+   * too, and then gets its spread on top — at most half again, so a burst told one delay does
+   * not wake together (`jitterStatedDelay`).
+   */
+  readonly max: number;
+  /**
+   * Required, unlike `backoffDelay`'s, and that is the point: a retry loop with no jitter is the
+   * thundering herd itself, so the mode is a decision each caller makes rather than one it can
+   * inherit without noticing.
+   */
+  readonly jitter: JitterMode;
+  readonly curve?: BackoffCurve | undefined;
+  readonly factor?: number | undefined;
+  /**
+   * Wall-clock budget for the WHOLE loop, waits included. A wait that would end past it is never
+   * started — the caller's own deadline outranks the attempts it was allowed.
+   */
+  readonly timeBudgetMs?: number | undefined;
+}
+
+/** Why the loop stopped. Absent while it is still retrying. */
+export type RetryStopReason = 'terminal' | 'attempts-exhausted' | 'budget-exhausted';
+
+export interface RetryDecision {
+  readonly retry: boolean;
+  readonly delayMs: number;
+  readonly attempt: number;
+  readonly nextAttempt: number;
+  /** The classification consulted, or `undefined` when nobody classified the thrown code. */
+  readonly classification: ErrorRetry | undefined;
+  readonly stoppedBy: RetryStopReason | undefined;
+}
+
+/**
+ * Retry, stop, and when — pure, so a caller can print the schedule and a test can pin it without a
+ * loop. `terminal` stops on the attempt that failed: the same code run again is the same answer,
+ * and the attempts left are a queue slot, a provider bill, or three more wrong passwords at a site
+ * that locks the account after three. Everything else keeps the attempt count in charge, and
+ * `retry-after` replaces only the DELAY, never the ceiling.
+ */
+export function retryDecision(
+  policy: RetryPolicy,
+  attempt: number,
+  error: unknown,
+  random?: Random,
+): RetryDecision {
+  // Screened HERE and not only in `retry()`: this function is exported so a caller can write its
+  // own loop, and `attempt >= NaN` is false for every attempt — the loop that asks it never ends.
+  const attempts = finiteCount('a retry policy', 'attempts', policy.attempts);
+  const classification = classifyThrown(error);
+  const stop = (stoppedBy: RetryStopReason): RetryDecision => ({
+    retry: false,
+    delayMs: 0,
+    attempt,
+    nextAttempt: attempt,
+    classification,
+    stoppedBy,
+  });
+
+  if (classification === 'terminal') return stop('terminal');
+  if (attempt >= attempts) return stop('attempts-exhausted');
+
+  const computed = backoffDelay({
+    attempt,
+    base: policy.base,
+    max: policy.max,
+    factor: policy.factor,
+    curve: policy.curve,
+    jitter: policy.jitter,
+    random,
+  });
+  const stated = classification === 'retry-after' ? statedDelayMs(error) : undefined;
+  return {
+    retry: true,
+    // The stated delay is a FLOOR plus a spread (`jitterStatedDelay`), never the bare number: a
+    // shedding server tells a whole burst `Retry-After: 1`, and waiting exactly that replays the
+    // burst in lockstep every second. The floor is clamped by the policy's own ceiling, which is
+    // what `max` is for — a responder naming a day is still a responder this deployment has not
+    // agreed to wait a day for — and the spread on top is at most half of it.
+    // `jitter: 'none'` is honoured here too — the caller's one decision, for a test or a printable
+    // schedule — and only that mode gets the bare floor.
+    delayMs:
+      stated === undefined
+        ? computed
+        : policy.jitter === 'none'
+          ? Math.min(stated, policy.max)
+          : jitterStatedDelay(Math.min(stated, policy.max), policy.max, random),
+    attempt,
+    nextAttempt: attempt + 1,
+    classification,
+    stoppedBy: undefined,
+  };
+}
+
+export interface RetryLoopDeps {
+  /** Handed the signal too, so a timer can let itself go on the abort that ended its wait. */
+  sleep(ms: number, signal: AbortSignal | undefined): Promise<void>;
+  /** Monotonic ms, read only when `timeBudgetMs` is set. Defaults to the system clock. */
+  now?: (() => number) | undefined;
+  random?: Random | undefined;
+  /** The caller's lifetime. Nothing is tried, and nothing is waited for, once it has aborted. */
+  signal?: AbortSignal | undefined;
+}
+
+/** The wait, ended at once by an abort whatever `sleep` was injected. A rejected sleep propagates. */
+function waitOut(deps: RetryLoopDeps, ms: number): Promise<void> {
+  const { signal } = deps;
+  if (signal === undefined) return deps.sleep(ms, undefined);
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const aborted = (): void => {
+      resolve();
+    };
+    signal.addEventListener('abort', aborted, { once: true });
+    deps.sleep(ms, signal).then(
+      () => {
+        signal.removeEventListener('abort', aborted);
+        resolve();
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', aborted);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Run `work` until it succeeds, the policy runs out, the classification says stop, the time budget
+ * does, or the signal aborts. `work` is handed the 1-based attempt number.
+ *
+ * The LAST error reaches the caller unchanged — never wrapped. An `UltimateError` carries a code, a
+ * cause and a runnable `fix:`, and a wrapper would replace all three with the fact that something
+ * was retried, which no reader can act on. An abort before any attempt has no such error, so it
+ * answers the signal's own reason.
+ */
+export async function retryLoop<T>(
+  work: (attempt: number) => Promise<T>,
+  policy: RetryPolicy,
+  deps: RetryLoopDeps,
+): Promise<T> {
+  // Both bounds are refused BEFORE the first try: a policy that cannot stop the loop is a defect in
+  // the call, and running the work once first would report it as the work's own failure.
+  // `finiteOption` for the budget, not `finiteCount`: it is a duration a caller computes from a
+  // monotonic clock, so a fraction is real and a spent (negative) one means "do not wait at all".
+  // Zero stays legal and means what it always did — one try, no retry (`retry.test.ts` pins it).
+  finiteCount('a retry policy', 'attempts', policy.attempts);
+  const budget =
+    policy.timeBudgetMs === undefined
+      ? undefined
+      : finiteOption('a retry policy', 'timeBudgetMs', policy.timeBudgetMs);
+  const now = deps.now ?? ((): number => systemClock.monotonic());
+  // Read once even when no budget is set: a clock call per attempt would be a cost the common case
+  // does not owe. `startedAt` is only compared against when `timeBudgetMs` is present.
+  const startedAt = now();
+  let failed: { readonly error: unknown } | undefined;
+
+  for (let attempt = 1; ; attempt += 1) {
+    // The classification cannot say this: `X_ABORTED` is unclassified by design, or a job body's
+    // would dead-letter on attempt 1, so a loop that asks only it goes on sending for a dead caller.
+    if (deps.signal?.aborted === true) {
+      throw failed === undefined ? deps.signal.reason : failed.error;
+    }
+    try {
+      return await work(attempt);
+    } catch (error) {
+      const decision = retryDecision(policy, attempt, error, deps.random);
+      if (!decision.retry) throw error;
+      // Decided BEFORE the wait, never after: a loop that sleeps and then discovers it is out of
+      // budget has already spent the caller's deadline on a wait nobody could use.
+      if (budget !== undefined && now() - startedAt + decision.delayMs > budget) throw error;
+      failed = { error };
+      await waitOut(deps, decision.delayMs);
+    }
+  }
+}

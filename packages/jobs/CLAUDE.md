@@ -5,8 +5,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 ## Boundary
 
 - May import: `core`, `schema`, `entity`, `policy`, `cache`, `time` — and `db`, for
-  `expectedQueryLoop` ONLY: `steps.ts` declares the per-step write one-per-step to the N+1
-  detector there, and no client is ever taken from it. Never `http`, `render`, `ui`.
+  `expectedQueryLoop` (`steps.ts` declares the per-step write one-per-step to the N+1 detector),
+  `outsideTransaction` (`execute.ts`) and `refuseAbandoned` (`outbox.ts`). No client is ever taken
+  from it. Never `http`, `render`, `ui`.
 - Consumers: `action` (`<job>.enqueue`, via the ambient jobs facade), `cli`, `mcp`, `admin`.
 - External deps: none. Postgres access goes through the injected `PgExecutor` (`@ultimat3/core`'s,
   re-exported from `index.ts`).
@@ -67,15 +68,15 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - Drivers: the six `JobDriver` methods plus optional `introspect`, `backfills`, `leases`; new
   capabilities go behind the interface. **`redisJobDriver`** (`@ultimat3/jobs/redis`, off the
   barrel) is one Lua script per operation: a semantic change lands in memory, pg AND the scripts.
-- Step results are persisted BEFORE the step returns. All time is epoch ms (`nowMs()`, `clock.ts`).
+- Step results are persisted BEFORE the step returns, and it returns what it persisted: `jsonForm`
+  (`steps-output.ts`), typed `StepOutput<T>`, one stringify + parse per EXECUTED step. Pinned in
+  `type-pins.ts`. A `waitForEvent` stores the RAW payload and parses it by its required `schema` on
+  a hit and a replay (`X_JOB_EVENT_INVALID`). All time is epoch ms (`nowMs()`, `clock.ts`).
 - **`postgresLeader` is correct only on a DEDICATED connection**; boot uses `postgresLeaseLeader`.
 
 ## Rules — numbers and limits
 
-- **Every numeric knob is refused when not FINITE** — core's `finiteOption()` (a bound) and
-  `finiteCount()` (a count, caller's minimum); `worker-options.ts` is where `jobWorker` reads them.
-  **`bun run finite-bounds` is a floor, never proof**: `concurrencyLimiter`'s five numbers are screened
-  with min 0 (zero is a HARD STOP). **A row count is `finiteCount` (min 0)**; `retry.attempts` is one with min 1.
+- **Every numeric knob is refused when not FINITE** (`finiteOption()`, `finiteCount()`, read in `worker-options.ts`); `bun run finite-bounds` is a floor. Full rule: `docs/history/jobs.md`.
 - **`WorkerOptions.concurrency` is read by OWN key** (`worker-slots.test.ts`); `maxInFlight` BEFORE
   the claim, its count back with the lease, before the `kick` (history).
 - **`job.concurrency` is enforced by `JobDriver.leases`** (one row per held slot in `x_job_leases`);
@@ -125,11 +126,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **A cancelled runner writes NOTHING** — `put()` in `steps.ts` (`X_ABORTED`) — save a fenced
   `X_DRAINING` on a live attempt: a step done in the drain is recorded once. The STORE fences
   the claim (`StepFence`, `SQL_STEP_PUT` as `SQL_ACK`: `X_JOB_LEASE_LOST`). `executeJob` passes it.
+- **A cancelled body's writes refuse too**, `enqueue` included (`outbox-abandon.test.ts`); a store is on the pool: a fenced `put` past `X_DRAINING` lands.
 - **`traceparent` is stamped at ENQUEUE time, in `outbox.ts`**, and an empty `spanId` sends none.
-- **The scheduler runs one dispatch round at a time**; every other `tick()` joins it; `stop()` waits it
-  out before `leader.release()`. Same two-hook rule; an ABANDONED round does not release
-  (`jobs.scheduler.drain-abandoned`). `stillLeading()` is asked every round and before every task,
-  and answers from memory inside `renewEveryMs`.
+- **The scheduler runs one dispatch round at a time**; `stop()` waits it out before `leader.release()`. Full rule: `docs/history/jobs.md`.
 - **`run-once` fires ONE catch-up**: the watermark rides the fire (`ScheduledFire.watermarkMs`),
   never a `markFired` behind it; `skip` fires the latest missed occurrence (`latestOccurrenceBy`).
 - **A lease for a run that never STARTED is `abandon()`ed, never `release()`d** — the rate stamp
@@ -168,9 +167,9 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **`progress()` is throttled in `progress.ts`** and flushed before every settle. **`onSettled`
   (`settled.ts`) is the ONE ending hook** — `completed`, `dead-lettered`, `dropped`, `refused` —
   AFTER a settle that LANDED, in the body's tenant scope, `ON_SETTLED_ATTEMPTS` tries, never
-  rethrown, at most once across a crash. Never for a cancel, a retry or a suspension.
+  rethrown, at most once across a crash. Never for a cancel, a retry or a suspension. Runs in
+  `runToCompletion`, under `run.scope` and `onSettledTimeout`, 30 s (`settled-signal.test.ts`).
 - **Failed for good + `deadLetter: false` is DROPPED**: `nack({ fail })`, outcome `dropped`.
-- **Worker registry rows expire** (`worker-registry.ts`, TTL = visibility timeout); `stop()` forgets.
 
 ## Rules — idle cost and the wake
 
@@ -194,7 +193,6 @@ Long form: `docs/history/jobs.md`, "the cross-process wake".
   freed slot and a due retry (`JobExecution.resumeAt`) `kick` one pass, no reset.
 - **`idle-cost.test.ts` / `queue-wake.test.ts` count statements per idle minute** — scheduler 6,
   worker and relay 30 with no wake, 12 with. Raising one is a regression.
-- **The memory driver stores a payload's JSON form**, as pg binds it (`driver-settle-parity.test.ts`).
 - **The event bus has ONE clock**: `postgresEventBus` takes no `clock`; `EventLookup.now()` is
   REQUIRED, stamps a NEW wait, and calls the TIMEOUT (asked once the runner thinks time is up).
   `purgeExpired()` is awaited and counted; `eventsPurgeTarget(bus)` is its `PurgeTarget`.
@@ -216,10 +214,7 @@ Long form: `docs/history/jobs.md`, "Moved 2026-10-01 — the outbox".
 
 Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-01 — factories".
 
-- **`backfill()`**: a step persists the CURSOR and a count, never the page; step names are positional;
-  **`handle` is AT LEAST ONCE** — never invert; a REPLAYED batch writes no ledger row. `tenant: 'none'`
-  is the only cross-tenant scope (`backfill-scope.ts`). `x_backfills` is what was SWEPT, keyed by RUN;
-  only `completed` blocks. The throttle is spent INSIDE the batch's `step.run`.
+- **`backfill()`**: a step persists the CURSOR, never the page; **`handle` is AT LEAST ONCE**. Full rule: `docs/history/jobs.md`.
 - **The ledger says what RAN, the registry what EXISTS, `backfill-pending.ts` is the diff.**
   `environments` is checked in `backfillPass()` and `gateBackfill()`; `requires` in `gateBackfill()`
   only; `count` after the last batch (`X_BACKFILL_STALLED`). `inspectBackfills()` is the ONE projection.
@@ -229,7 +224,6 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 - **`webhook()`**: ONE event to ONE endpoint, no steps; each attempt but a CANCELLED one recorded
   before the throw; `ledger.isDisabled` gates the socket. **The wire format is core's.** An org
   tenant reads `orgId` OFF THE INPUT; none, or not the run's org: TERMINAL `X_JOB_TENANT_MISMATCH`.
-- A `-fixture.ts` file does not ship; `backfill-pass-fixture.ts` raises a plain `Error` on purpose.
 
 ## Files
 
@@ -251,6 +245,8 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
 | `steps-timeout.ts` / `steps-suspension.ts` | a step's ceiling; `StepSuspension` and the timed-out marker |
+| `steps-api.ts` / `steps-store.ts` / `steps-output.ts` | `StepApi`, `EventLookup`; `StepRecord`, `StepFence`, `StepStore`; what a step answers, `StepOutput` and `jsonForm` |
+| `type-pins.ts` | compile-time pins for `StepOutput` and `waitForEvent` |
 | `outbox.ts` | staging in a `Tx`, the store seam, the ambient `JobsFacade` slot |
 | `outbox-relay.ts` | the relay: the poll timer, one pass, and its TWO shutdown hooks |
 | `outbox-pg.ts` | `postgresOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
@@ -303,6 +299,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `driver-pg-outbox-sql.ts` | the `x_outbox` statements |
 | `errors-operator.ts` / `errors-requeue.ts` | the operator verbs' refusals; `requeue`'s |
 | `errors-tenant.ts` | `JobTenantMismatchError` |
+| `errors-steps.ts` | `StepOutputUnserializableError`, `JobEventInvalidError` |
 
 Commands: `bun test packages/jobs` · `bun run --filter @ultimat3/jobs typecheck`. Test harnesses:
 history, "Moved 2026-10-01 — test harnesses".

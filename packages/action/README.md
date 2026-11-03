@@ -297,7 +297,9 @@ path) and `.as()`/jobs. An audited action's denied attempt still records the par
 `cache: { invalidates }` fans out **after** the handler commits, so it never fails it: a
 fan-out that refuses — an undeclared tag, `X_CACHE_TAG_UNKNOWN` — is one
 `action.invalidate.failed` log line and the entries expire by TTL. A replayed idempotent
-call busts nothing; the first call already did.
+call busts nothing; the first call already did. A handler that **threw** busts too: it may have
+committed, which is why `idempotent` records the same throw. A refused input or policy ran no handler
+and busts nothing.
 
 **After the COMMIT, not after the handler** (`As of 2026-10-02`). An action invoked inside a
 `withTransaction` — an app's own unit of work, or another action's — hands its bust to the ROOT
@@ -492,6 +494,17 @@ post-commit: a handler that took the money and then failed its own `output:` sch
 The reservation is settled as a FAILURE and the retry re-throws it under the first attempt's own
 code. Releasing it there is what made idempotency the cause of a double charge.
 
+**A finished record answers its own retry before any row rule is asked.** A retried delete's row is
+gone, so a rule asked again judges `null` and refuses a write that committed. With a settled or
+failed record under this key, `row:` and the policy's input and row half are skipped; the actor's
+half (`can()` with a permission revoked since) is decided on every call, and the key is this
+actor's alone. Another payload is `X_IDEMPOTENCY_CONFLICT`. In flight or absent, the rule decides.
+
+**An answer no retry could replay is refused, on both stores.** A `bigint` has no JSON form:
+`X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE` (500), settled as a failure and replayed, the handler having
+run. Return `String(id)`. A cycle stays `X_IDEMPOTENT_REPLAY_REDACTED`. `undefined` rests as `null`:
+JSON has no `undefined`, and the action's `output` schema answers for the shape of a replay.
+
 **A credential in the answer is never kept at rest.** The record lives a day, and a mutator is
 always idempotent — so a "create an API key" mutator would otherwise leave the plaintext key in
 `x_idempotency.value`. On settle, every value under a key `@ultimat3/core`'s `isRedactedKey` names
@@ -571,6 +584,8 @@ setIdempotencyStore(
 configureIdempotency({ scope: 'shared' });
 ```
 
+A keyed handler runs past the request deadline on a fresh signal, so its replay answers success, up to a hard ceiling: twice `requestTimeoutMs` by default (`idempotencyCeilingMs()`, 60 s), or `configureIdempotency({ scope, ceilingMs })`. Past it the handler is aborted and the key replays `X_IDEMPOTENCY_RUN_CEILING`.
+
 `configureIdempotency({ scope: 'shared' })` over a per-process store — or over a store that
 declares no scope at all — is `X_IDEMPOTENCY_NOT_SHARED` at `registerAction`, before the socket
 opens. The table is `SQL_IDEMPOTENCY_TABLE`, applied the way `SQL_JOBS_TABLE` is: `x db up` in
@@ -632,6 +647,16 @@ its `onCommit` (memory).
 | a finished transaction binds nothing | a promise chain the body forgot to await still finds the scope's handle; the settle then runs at once (`liveTxConnection`), never as a commit hook that a rollback already dropped |
 
 A `query` has none and never will: a read has nothing to be idempotent about.
+
+## `registerToolGate` — what a named tool passes first
+
+`registerToolGate(names, gate)`, `toolGateFor(name)`, `gatedToolNames()`, `noteToolNames(names)`,
+`knownToolNames()`, `admitActionCaller(action, name)`, `asCallerContext(actor, fn)`, types `ToolGate`,
+`ToolGateCall`. A mechanism for the two tool surfaces, one tier above: `@ultimat3/mcp`'s
+`mcpConfirmations` registers and `@ultimat3/ai`'s adapter reads. Keyed by name because a tool is
+named across both. First registered keeps the name, a later one is a no-op. `resetActions` clears
+the table, so a test that calls it after each case must re-declare a module-level gate, or its later
+cases run ungated. Declared outside what a worker loads is `X_ROLE_LOAD_INCOMPLETE`.
 
 ## `deprecated:` — a compat window, not a version
 
@@ -902,3 +927,12 @@ a job boundary the class is gone and the `code` is what survives — match on th
 
 Tier 3. Imports `@ultimat3/core`, `schema`, `cache`, `db`, `entity`, `policy`, `http`. Never imports
 `query`, `jobs`, `realtime` (same tier) or anything above it — those import *this*.
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+| Name | What |
+|---|---|
+| `IdempotencyOutputUnserializableError` | the class behind `X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE` |
+| `IdempotencyRunCeilingError` | the class behind `X_IDEMPOTENCY_RUN_CEILING` |

@@ -133,7 +133,7 @@ Model calls are slow and metered; exact-match caching almost never hits because 
 
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-5',
+  model: 'claude-sonnet-5-5',
   cache: {
     semantic: { threshold: 0.97, ttl: '7d' }, // partitions on the ACTOR by default
     invalidates: [tag.post],

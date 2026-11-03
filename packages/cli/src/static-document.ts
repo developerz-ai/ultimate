@@ -4,9 +4,8 @@
 // per request, nor a body per revalidation. No other mode comes through here.
 
 import type { UltimateRequest } from '@ultimat3/http';
-import { html } from '@ultimat3/http';
+import { html, notModified } from '@ultimat3/http';
 import type { RenderResult, RouteEntry } from '@ultimat3/render';
-import { etagMatches } from './runtime-storage';
 
 /** A rendered static document: always a string body, never a stream. */
 export type StaticResult = RenderResult & { readonly body: string };
@@ -100,13 +99,10 @@ export function staticMemoKey(
  */
 export function staticResponse(request: UltimateRequest, result: StaticResult): Response {
   const etag = result.headers['etag'];
-  if (
-    result.status === 200 &&
-    etag !== undefined &&
-    etagMatches(request.header('if-none-match'), etag)
-  ) {
+  if (result.status === 200 && etag !== undefined) {
     const { 'content-type': _dropped, ...headers } = result.headers;
-    return new Response(null, { status: 304, headers });
+    const fresh = notModified(request, etag, headers);
+    if (fresh !== undefined) return fresh;
   }
   return html(result.body, { status: result.status, headers: result.headers });
 }

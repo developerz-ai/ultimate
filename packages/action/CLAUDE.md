@@ -20,6 +20,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `facade.ts` | the fluent surface — binds each projection to the action, re-implements none |
 | `mutator.ts` | action + optimistic `.local` twin + authoritative `.server` + `.conflict` |
 | `registry.ts` | export-name registration, collisions, `describeActions()` |
+| `tool-gate.ts` | a named tool's gate: `mcp` registers, `ai` reads, first wins |
 | `define-api.ts` | `defineApi({ actions, mutators, queries, llm, jobs, tasks })` — the app's one boot call, and the `Api` type the typed clients are shaped from |
 | `client-scale-pins.ts` | compile-time pin: `rpc<Api['actions']>` over 300 actions in 100 modules, 100 reads in 50 |
 | `http.ts` | route projection (`enforcedBy: 'handler'`) + OpenAPI operation |
@@ -45,7 +46,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
 | `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
 | `cache-gate.ts` | the post-COMMIT bust — **the only** file that calls `invalidateTags` |
-| `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust) and `liveTransaction` (the settle) |
+| `tx-scope.ts` | the open transaction — **the only** file that imports `@ultimat3/db` (`tx-scope.test.ts`): `openCommitScope` (the bust), `liveTransaction` (the settle), `completeTransaction` |
 | `rate-limit-gate.ts` | **the one place** a declared `rateLimit:` is spent, and the installed-store slot |
 | `request-deadline.ts` | `requestDeadlineMs` — the app's `requestTimeoutMs`, resolved by http's own `defineHttpConfig` |
 | `audit.ts` | the audit seam's TYPES, re-exported from `@ultimat3/core` (shared with `query`); the slot (`setAuditSink`) is core's alone |
@@ -87,13 +88,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   under the default). `derivePath(name)` is pin-aware through `installPinLookup` — handed down by
   `registry.ts`, never imported up (cycle through `action.ts`). `rpc()` cannot see a pin;
   `action.client()` holds it.
-- **The style is stated ONCE, on the server.** A browser never restates it: the document carries
-  `<meta name="ultimate-path-style">` (render's `clientPathStyleTags`, written only for a
-  non-default style) and core's `actionPath(name)` reads it for every caller naming none — `rpc`,
-  realtime's `useMutation` and the outbox replay. `client.ts` passes `options.pathStyle` through
-  and adds NO default of its own. `ClientOptions.pathStyle` is for a caller with no document; a
-  wrong one is answered `X_CONTRACT_DRIFT` (404) by `explainActionPathMiss`, never
-  `X_ROUTE_NOT_FOUND`. A pinned action and a path under the SERVED style are never explained.
+- **The style is stated ONCE, on the server**; a browser reads `<meta name="ultimate-path-style">` through core's `actionPath(name)`. Full rule: `docs/history/action.md`.
 - **`Merge` in `define-api.ts` never recurses over the module list.** `Head & Merge<Rest>` is not
   a tail call: it cost one instantiation level per MODULE and answered TS2589 at the 48th entry of
   one list, whatever each exported (#534). The list is read as a union and intersected in one
@@ -214,6 +209,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 - **Everything `withIdempotency`'s `run` throws is treated as possibly-committed**: the reservation
   is SETTLED as a failure and a retry replays it; `release()` is only for a pre-handler failure. A
   `settle` that refuses leaves the record in flight. `idempotency-failure.test.ts`.
+- **A keyed run is owed its end**: `completeTransaction()`, then `runToCompletion(run)` under `idempotencyCeilingMs()` (`X_IDEMPOTENCY_RUN_CEILING`); `invoke` reads the handler's `ctx` inside it. `idempotency-orphan.test.ts`.
 - **A record belongs to ONE CALLER**: the key is
   `JSON.stringify([action, actor.kind, actor.id, actor.orgId ?? null, key])` — a JSON tuple, never a
   joined string. A blank header is `X_IDEMPOTENCY_KEY_INVALID` (4xx, before the handler), never "no
@@ -233,6 +229,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   subclasses) is redacted FAIL-CLOSED, and a getter is read once. `keepsRedaction: true` is a
   required store declaration (`type-pins.ts`: a pre-25 store is a build error — a required
   parameter alone is not). A reclaim and a `fail` reset the flag.
+- **A finished record skips the row half; a stale peek judges it in `beforeRun`** (`idempotency-row.test.ts`). **A `bigint` answer settles failed** (`X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE`).
 - **A stored status is NARROWED** (`isIdempotencyStatus`; unknown is
   `X_IDEMPOTENCY_STATUS_UNKNOWN`), never cast.
 - **Where records live is DECLARED and refused at registration**: `IdempotencyStore.scope` vs
@@ -256,7 +253,7 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
 
 - **The post-commit bust never fails the write** — `cache-gate.ts` (the only `invalidateTags` caller)
   absorbs a refusing fan-out and logs through core's `logger`, never rendering the tags. A replay
-  skips the bust.
+  skips the bust. **A started handler busts, thrown or not.**
 - **The bust waits for the ROOT commit** when a transaction is open (`openCommitScope().onCommit`):
   dropped on rollback, never fired before the rows are durable. A straggler past its scope gets
   `DbTx.onCommit`'s own answer, as entity's row observer does. `cache-gate-tx.test.ts` (PGlite).
@@ -271,10 +268,6 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   DENIED attempt is recorded. No audit entity, retention, hash chain or "who" convention. The
   vocabulary matches `@ultimat3/admin`'s by name (tier 5, no edge); admin's `AuditSink` is a known
   duplicate that unifying would need core for.
-- **Records carry `name` + `primitive`, required** (`type-pins.ts`); no `action` alias since 25.0.0.
-  The `x_audit.action` column holds `name`.
-- **The memory sink DROPS** — a ring at `DEFAULT_MAX_AUDIT_RECORDS`, oldest first, counting `dropped`;
-  no spelling of "unbounded".
 - **A durable sink writes what `audit-input.ts` allows**: input redacted through core's
   `isRedactedKey` (the table `defineEnv({ secret: true })` extends) plus `isSecret` by value, and
   always JSON-representable (named markers, cycle detection; `toJSON` never called).
@@ -290,7 +283,6 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   record is logged (`audit.sink.failed`) and the original error still reaches the caller.
 - **`auditSettled` sits outside the `catch`**, and **`auditOutcomeFor` is TOTAL** (fails closed to
   `failed`); `audit.test.ts` asserts the caller's throwable by identity.
-- **`json-schema.ts`'s refusal names `introspect()`** (`normalizeJsonSchema`, test-only export).
 
 ## Commands
 

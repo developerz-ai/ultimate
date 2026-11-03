@@ -6,7 +6,12 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import type { PgExecutor } from '@ultimat3/core';
 import { probeDatabaseName, sweepProbeDatabases } from '@ultimat3/core';
-import { type DeliveryClaim, type DeliveryLedger, memoryDeliveryLedger } from './ledger';
+import {
+  type DeliveryClaim,
+  type DeliveryClaimAnswer,
+  type DeliveryLedger,
+  memoryDeliveryLedger,
+} from './ledger';
 import { postgresDeliveryLedger, SQL_NOTIFY_DELIVERIES_TABLE } from './ledger-pg';
 
 const url = Bun.env['TEST_DATABASE_URL'];
@@ -70,24 +75,32 @@ afterAll(async () => {
   if (url !== undefined) await admin(`drop database if exists ${PROBE_DB} with (force)`);
 }, 60_000);
 
+const RECLAIM_MS = 60_000;
+
 const LEDGERS: readonly (readonly [string, () => Promise<DeliveryLedger>])[] = [
-  ['memory', () => Promise.resolve(memoryDeliveryLedger())],
+  ['memory', () => Promise.resolve(memoryDeliveryLedger({ reclaimAfterMs: RECLAIM_MS }))],
   [
     'postgres',
     async () => {
       await sql?.unsafe('truncate x_notify_deliveries', []);
-      return postgresDeliveryLedger({ executor: executor() });
+      return postgresDeliveryLedger({ executor: executor(), reclaimAfterMs: RECLAIM_MS });
     },
   ],
 ];
+
+const after = (ms: number): Date => new Date(AT.getTime() + ms);
+
+/** The claim id of an answer that must have been `owned`. */
+const owned = (answer: DeliveryClaimAnswer): string =>
+  answer.outcome === 'owned' ? answer.claimId : expect.unreachable(`got ${answer.outcome}`);
 
 for (const [name, fresh] of LEDGERS) {
   describe.skipIf(name === 'postgres' && url === undefined)(`${name} delivery ledger`, () => {
     test('a NULL and an empty recipient are ONE delivery: sent once, never claimed again', async () => {
       const ledger = await fresh();
-      expect(await ledger.claim(bulk, AT)).toBe(true);
-      await ledger.settle(bulk, 'sent', AT);
-      expect(await ledger.claim({ ...bulk, recipient: '' }, AT)).toBe(false);
+      const claimId = owned(await ledger.claim(bulk, AT));
+      await ledger.settle(bulk, 'sent', AT, claimId);
+      expect(await ledger.claim({ ...bulk, recipient: '' }, AT)).toEqual({ outcome: 'sent' });
       expect(await ledger.find({ ...bulk, recipient: '' })).toMatchObject({
         recipient: null,
         status: 'sent',
@@ -97,15 +110,58 @@ for (const [name, fresh] of LEDGERS) {
 
     test('a settle with no claim records nothing, so the claim after it still sends', async () => {
       const ledger = await fresh();
-      await ledger.settle(bulk, 'sent', AT);
+      expect(await ledger.settle(bulk, 'sent', AT, crypto.randomUUID())).toBe(false);
       expect(await ledger.find(bulk)).toBeUndefined();
-      expect(await ledger.claim(bulk, AT)).toBe(true);
+      owned(await ledger.claim(bulk, AT));
     });
 
-    test('a re-claim counts the attempt and keeps the row it found', async () => {
+    test('two claims at once: one owner, and the other is told when to come back', async () => {
       const ledger = await fresh();
-      await ledger.claim(bulk, AT);
-      expect(await ledger.claim({ ...bulk, recipient: '' }, AT)).toBe(true);
+      const answers = await Promise.all([ledger.claim(bulk, AT), ledger.claim(bulk, AT)]);
+      expect(answers.filter((answer) => answer.outcome === 'owned')).toHaveLength(1);
+      const other = answers.find((answer) => answer.outcome !== 'owned');
+      expect(other).toEqual({ outcome: 'held', retryAfterMs: RECLAIM_MS });
+      expect(await ledger.find(bulk)).toMatchObject({ status: 'sending', attempts: 1 });
+    });
+
+    test('a live claim is held up to the window, and reclaimed one past it', async () => {
+      const ledger = await fresh();
+      owned(await ledger.claim(bulk, AT));
+      expect(await ledger.claim(bulk, after(RECLAIM_MS))).toEqual({
+        outcome: 'held',
+        retryAfterMs: 0,
+      });
+      owned(await ledger.claim(bulk, after(RECLAIM_MS + 1)));
+      expect(await ledger.find(bulk)).toMatchObject({ status: 'sending', attempts: 2 });
+    });
+
+    test("a late settle changes nothing: the row is its reclaimer's", async () => {
+      const ledger = await fresh();
+      const late = owned(await ledger.claim(bulk, AT));
+      const current = owned(await ledger.claim(bulk, after(RECLAIM_MS + 1)));
+      expect(current).not.toBe(late);
+
+      expect(await ledger.settle(bulk, 'failed', after(RECLAIM_MS + 2), late)).toBe(false);
+      expect(await ledger.find(bulk)).toMatchObject({ status: 'sending' });
+
+      expect(await ledger.settle(bulk, 'sent', after(RECLAIM_MS + 3), current)).toBe(true);
+      expect(await ledger.settle(bulk, 'failed', after(RECLAIM_MS + 4), late)).toBe(false);
+      expect(await ledger.find(bulk)).toMatchObject({ status: 'sent' });
+    });
+
+    test('an attempt cannot move its own `sent` back to `failed`', async () => {
+      const ledger = await fresh();
+      const claimId = owned(await ledger.claim(bulk, AT));
+      expect(await ledger.settle(bulk, 'sent', AT, claimId)).toBe(true);
+      expect(await ledger.settle(bulk, 'failed', AT, claimId)).toBe(false);
+      expect(await ledger.find(bulk)).toMatchObject({ status: 'sent' });
+    });
+
+    test('a failed delivery is re-claimable at once, counting the attempt', async () => {
+      const ledger = await fresh();
+      const claimId = owned(await ledger.claim(bulk, AT));
+      await ledger.settle(bulk, 'failed', AT, claimId);
+      owned(await ledger.claim({ ...bulk, recipient: '' }, AT));
       expect(await ledger.find(bulk)).toMatchObject({
         recipient: null,
         status: 'sending',

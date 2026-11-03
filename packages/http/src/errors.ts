@@ -255,12 +255,11 @@ export const problemMetaInvalid = (code: string, reason: string): HttpError =>
  * "emit no CORS headers at all", which is unreadable from the console: every cross-origin call
  * fails and nothing on the server said anything.
  */
-export const corsConfigInvalid = (reason: string): HttpError =>
-  new HttpError({
-    code: 'X_CORS_CONFIG_INVALID',
-    cause: `cors config rejected: ${reason}`,
-    fix: "call configureHttp({ cors: { credentials: false } }) at module scope in a file under apps/*/, or replace origins: ['*'] with the exact origins allowed to call this app",
-  });
+export const corsConfigInvalid = (
+  reason: string,
+  fix = "call configureHttp({ cors: { credentials: false } }) at module scope in a file under apps/*/, or replace origins: ['*'] with the exact origins allowed to call this app",
+): HttpError =>
+  new HttpError({ code: 'X_CORS_CONFIG_INVALID', cause: `cors config rejected: ${reason}`, fix });
 
 /**
  * At `defineHttpConfig`. A directive name and a source both go into the header VERBATIM, and the
@@ -409,7 +408,7 @@ export const requestTimedOut = (method: string, pathname: string, timeoutMs: num
   new HttpError({
     code: 'X_TIMEOUT',
     cause: `${method} ${pathname} did not finish within ${timeoutMs}ms`,
-    fix: 'pass ctx.signal to every outbound call (fetch(url, { signal: ctx.signal })) and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/',
+    fix: 'pass ctx.signal to every outbound call (fetch(url, { signal: ctx.signal })) and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/. A write past the deadline is refused: wrap work that must land whole, runToCompletion(() => withTransaction(fn)), never a statement inside the transaction, whose COMMIT stays refused',
     meta: { timeoutMs },
   });
 

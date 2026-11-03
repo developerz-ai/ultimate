@@ -102,6 +102,7 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
     generated = await generateAppMigration(root, {
       name,
       allowDestructive: flagBool(ctx.args, 'allow-destructive'),
+      rollingUnsafe: flagBool(ctx.args, 'rolling-unsafe'),
     });
   } catch (error) {
     return {

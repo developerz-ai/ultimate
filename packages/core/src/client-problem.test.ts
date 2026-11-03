@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { MAX_REMOTE_TITLE_LENGTH, problemError } from './client-problem';
 import { clientTransport } from './client-transport';
 import { statedDelayMs } from './error-retry';
-import { retryDecision } from './retry';
+import { retryDecision } from './retry-loop';
 
 const URL = '/api/posts';
 const refusal = (body: Record<string, unknown>): string =>

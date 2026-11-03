@@ -29,6 +29,7 @@ const V4_RULES: readonly (readonly [number, number, AddressClass])[] = [
   [0x64400000, 10, 'cgnat'],
   [0xc0000000, 24, 'reserved'], // 192.0.0.0/24, IETF protocol assignments
   [0xc0000200, 24, 'reserved'], // 192.0.2.0/24, TEST-NET-1
+  [0xc0586300, 24, 'reserved'], // 192.88.99.0/24, the deprecated 6to4 relay anycast
   [0xc6120000, 15, 'reserved'], // 198.18.0.0/15, benchmarking
   [0xc6336400, 24, 'reserved'], // 198.51.100.0/24, TEST-NET-2
   [0xcb007100, 24, 'reserved'], // 203.0.113.0/24, TEST-NET-3
@@ -97,24 +98,48 @@ function parseV6(text: string): readonly number[] | undefined {
 
 const embeddedV4 = (g: readonly number[]): number => (g[6] ?? 0) * 0x10000 + (g[7] ?? 0);
 
-function classifyV6(g: readonly number[]): AddressClass {
-  const zeroUpTo = (n: number): boolean => g.slice(0, n).every((group) => group === 0);
-  if (zeroUpTo(8)) return 'unspecified';
-  if (zeroUpTo(7) && g[7] === 1) return 'loopback';
-  // IPv4-mapped `::ffff:a.b.c.d`, IPv4-compatible `::a.b.c.d` and NAT64 `64:ff9b::/96`: each is
-  // routed to the IPv4 address it carries, so that address is what gets classified.
-  if (zeroUpTo(5) && g[5] === 0xffff) return classifyV4(embeddedV4(g));
-  if (zeroUpTo(6)) return classifyV4(embeddedV4(g));
+const zeroUpTo = (g: readonly number[], n: number): boolean =>
+  g.slice(0, n).every((group) => group === 0);
+
+/** `::ffff:a.b.c.d`: how a dual-stack socket spells an IPv4 peer, so that peer really is the IPv4. */
+const isMappedV4 = (g: readonly number[]): boolean => zeroUpTo(g, 5) && g[5] === 0xffff;
+
+/**
+ * The IPv4 a TRANSIT form carries: IPv4-translated `::ffff:0:a.b.c.d`, IPv4-compatible `::a.b.c.d`,
+ * NAT64 `64:ff9b::/96` and 6to4 `2002::/16`, which alone holds it in bits 16-47, not the last 32.
+ * Each is routed to that address, but the address on the packet is not that host's.
+ */
+function transitV4(g: readonly number[]): number | undefined {
+  if (zeroUpTo(g, 4) && g[4] === 0xffff && g[5] === 0) return embeddedV4(g);
+  const isLoopbackOrUnspecified = zeroUpTo(g, 7) && (g[7] ?? 0) <= 1;
+  if (zeroUpTo(g, 6) && !isLoopbackOrUnspecified) return embeddedV4(g);
   if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((group) => group === 0)) {
-    return classifyV4(embeddedV4(g));
+    return embeddedV4(g);
   }
+  if (g[0] === 0x2002) return (g[1] ?? 0) * 0x10000 + (g[2] ?? 0);
+  return undefined;
+}
+
+function classifyV6(g: readonly number[]): AddressClass {
+  if (zeroUpTo(g, 8)) return 'unspecified';
+  if (zeroUpTo(g, 7) && g[7] === 1) return 'loopback';
+  // Each of these is routed to the IPv4 address it carries, so that is what gets classified.
+  if (isMappedV4(g)) return classifyV4(embeddedV4(g));
+  const carried = transitV4(g);
+  if (carried !== undefined) return classifyV4(carried);
   const first = g[0] ?? 0;
+  const second = g[1] ?? 0;
   if ((first & 0xffc0) === 0xfe80) return 'link-local';
   if ((first & 0xffc0) === 0xfec0) return 'private'; // deprecated site-local
   if ((first & 0xfe00) === 0xfc00) return 'ula';
-  if ((first & 0xff00) === 0xff00) return 'reserved'; // multicast
-  if (first === 0x2001 && g[1] === 0x0db8) return 'reserved'; // documentation
-  if (first === 0x0100 && g.slice(1, 4).every((group) => group === 0)) return 'reserved'; // 100::/64
+  // Only `2000::/3` is global unicast. The rest — multicast, `100::/64`, local-use NAT64, SRv6, the
+  // unassigned space — is named rather than left to read as public, which is what fails closed.
+  if ((first & 0xe000) !== 0x2000) return 'reserved';
+  // Teredo. Its client address is obfuscated, so unwrapping it would classify a mask, not a host.
+  if (first === 0x2001 && second === 0) return 'private';
+  if (first === 0x2001 && second < 0x0200) return 'reserved'; // 2001::/23, IETF protocol assignments
+  if (first === 0x2001 && second === 0x0db8) return 'reserved'; // documentation
+  if (first === 0x3fff && second < 0x1000) return 'reserved'; // 3fff::/20, documentation
 
   return 'public';
 }
@@ -141,6 +166,22 @@ export function classifyAddress(address: string): AddressClass | undefined {
   }
   const v4 = parseV4(text);
   return v4 === undefined ? undefined : classifyV4(v4);
+}
+
+/**
+ * The class of an address as a CALLER or a local name, for a check that grants something on it —
+ * `classifyAddress` answers where a DIAL would land, a different question over the same bits. A
+ * transit form spelling an inward IPv4 (`64:ff9b::7f00:1`, `2002:7f00:1::`) is a stranger across
+ * the network, so it answers `reserved`, never the class it spells; `::ffff:127.0.0.1` stays
+ * `loopback`, being only how a dual-stack socket writes 127.0.0.1. `undefined` as there.
+ */
+export function peerAddressClass(address: string): AddressClass | undefined {
+  const kind = classifyAddress(address);
+  if (kind === undefined || kind === 'public') return kind;
+  const text = literalOf(address);
+  if (!text.includes(':')) return kind;
+  const groups = parseV6(text);
+  return groups !== undefined && transitV4(groups) !== undefined ? 'reserved' : kind;
 }
 
 /** Fails CLOSED: anything but a literal classified `public` — a hostname included — is `false`. */

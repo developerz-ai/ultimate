@@ -334,7 +334,7 @@ One typed entry point for model calls — provider-agnostic, observable, cached,
 
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-5',
+  model: 'claude-sonnet-5-5',
   input:  t.object({ postId: t.uuid }),
   output: t.object({ summary: t.string, tags: t.string.array() }),
   prompt: summarizePrompt,                       // versioned artifact
@@ -373,6 +373,8 @@ Long or multi-call chains are `job`s with steps, so a model call that fails on s
 | `backfill()` | `job()` | the resumable, paced sweep those run over → [Migrations and backfills](Migrations-And-Backfills) |
 
 A tool is one of two things. A real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue of actions and authorize identically. Or an `inProcessTool({ name, description, input, execute })`: a tool that is this process's alone, with no `mcp` flag, in no MCP catalogue, route or `openapi.json`, running as `ctx.actor` under the agent's own policy → [In-process tools](Agents#in-process-tools). An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
+
+A tool in `mcpConfirmations({ tools })` waits for a person on **both** surfaces: `X_MCP_CONFIRMATION_PENDING` over `tools/call`, on a server handed `confirmations` or not, and as an agent's `tool_result`. A name no tool answers to is `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at the `manifest` step. One list, no second option → [A tool that waits for a person](Agents#a-tool-that-waits-for-a-person).
 
 Full reference, including the at-least-once trap that makes every mutating tool's idempotency your obligation: [Agents](Agents).
 

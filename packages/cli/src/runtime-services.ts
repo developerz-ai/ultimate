@@ -4,7 +4,14 @@
 // boot installs, only backed by embedded drivers.
 
 import { mkdirSync } from 'node:fs';
-import { configureAuthLimiters, postgresAuthLimiter, resetAuthLimiters } from '@ultimat3/auth';
+import {
+  configureAuthLimiters,
+  configureTotpReplay,
+  postgresAuthLimiter,
+  postgresTotpReplayGuard,
+  resetAuthLimiters,
+  resetTotpReplay,
+} from '@ultimat3/auth';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
 import {
@@ -388,6 +395,11 @@ export async function startServices(
       postgresAuthLimiter({ executor, clock: systemClock, policy }),
     );
     started.push(() => resetAuthLimiters());
+    // Where spent TOTP steps are kept, for the same reason: a code one replica accepted must be
+    // refused by the rest, and `defineAuth` runs when the app's modules import.
+    const totpReplay = postgresTotpReplayGuard({ executor });
+    configureTotpReplay(() => totpReplay);
+    started.push(() => resetTotpReplay());
     // Where an action's or a query's declared `rateLimit:` is counted — on every surface, so a
     // task or a one-off command spends from the fleet's table too, not one process' memory. Before
     // `loadApp` for the auth limiters' reason; `startRoles` stacks a deployment's override over it.
@@ -403,6 +415,7 @@ export async function startServices(
       installRetentionSweep({
         idempotency: queue.idempotency,
         rateLimit: rateLimitStore,
+        totpReplay,
         events,
         ...jobsRetentionTargets(executor, config),
         inboxRetention: inboxRetentionOf(config),

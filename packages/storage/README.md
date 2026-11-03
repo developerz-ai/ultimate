@@ -313,10 +313,12 @@ a test fixture), or the guard answers about one process and the disk signs accor
 Verification is constant-time, checks the signature *before* the expiry (a forged URL never
 learns it was merely late), takes a `Clock` so tests freeze time, and returns
 `{ ok: false, reason }` rather than throwing — `malformed | unsafe-key | signature-mismatch |
-expired`. S3 presign covers method, expiry and content type but **not** `maxBytes`: S3 has no
-header for it, so a bucket-backed disk's ceiling is a bucket rule or a post-upload `object.size`
-check, never the signature. `s3Driver` does not refuse `maxBytes` either — `grantUpload` supplies
-it on every grant, so refusing would break every s3 upload an app mints.
+expired`. An S3 presign binds method and expiry only. It signs `host` alone: `contentType` becomes
+`response-content-type`, which governs a GET, so a PUT's `Content-Type` is the uploader's, and S3
+has no header for a size. A bucket-backed disk's ceiling is a bucket rule or `promoteAttachment`'s
+measure, and its type is `promoteAttachment`'s sniff, never the signature. `driver-s3.test.ts` pins
+this. `s3Driver` does not refuse `maxBytes` either — `grantUpload` supplies it on every grant, so
+refusing would break every s3 upload an app mints.
 
 ## Uploads sniff the content type
 
@@ -337,6 +339,14 @@ browser reports for a picked file — normalise to `audio/mp4` and `video/mp4`, 
 allowlist names the type it means.
 
 `validateUpload({ key, declaredContentType, bytes }, uploadPolicy({ maxBytes: 5e6 }))`
+
+**The same rule over an object already on a disk:**
+`validateStoredHead({ key, declaredContentType, head, size }, policy)`, where `head` is
+`disk.get(key, { range: [0, SNIFF_WINDOW_BYTES - 1] })`'s bytes (64 KiB) and `size` the object's. No
+checksum, and no buffering of the object. It answers `{ key, contentType, size }`. A character cut at
+the window's end is not a bad sequence. An XML or `+xml` type over the window is refused, because XML
+runs a script anywhere in the document and only `validateUpload` reads all of it. On both paths, over
+`MAX_LEADING_WHITESPACE` (4,096 B) of leading whitespace is `X_STORAGE_TYPE_REJECTED`.
 
 ## The direct-upload round trip
 
@@ -397,9 +407,10 @@ An upload happens **before** the row it belongs to exists, so it lands at
 | `pendingKey(orgId, uploadName(id, filename))` | `org/o1/pending/u-1.png` |
 | `quarantineKey(orgId, name)` | `org/o1/pending/quarantine/u-1.png` |
 | `attachmentKey(orgId, { entity, id, field }, name)` | `org/o1/post/p-1/cover/u-1.png` |
-| `promoteAttachment({ disk, key, orgId, target, policy })` | `stat`, `copy`, then `delete` — never the reverse. **`policy` is required**: the object is measured here (`stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and it stays under `pending/` for the sweep), because an s3 presign bounds no size. A call after the source is gone, with the attached key present, is `X_STORAGE_ALREADY_PROMOTED` (409, `meta.attachedKey`): an earlier call moved the bytes, so this one answers the row that holds them and never deletes that key. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
+| `promoteAttachment({ disk, key, orgId, target, policy })` | `stat`, `copy`, then `delete` — never the reverse. **`policy` is required**: the object is measured here (`stat().size` over `policy.maxBytes` is `X_STORAGE_TOO_LARGE`, and it stays under `pending/` for the sweep), because an s3 presign bounds no size. Then one ranged read of the first 64 KiB through `validateStoredHead`, because it binds no type or bytes either: a contradiction is `X_STORAGE_TYPE_REJECTED`, and it stays pending too. The URL stays valid after that read, so `copy(from, to, { ifMatch })` names the revision judged (`X_STORAGE_OBJECT_CHANGED`, on s3 a signed CopyObject), and the copy is checked: another size is refused and deleted, and an etag that differs or is unknown (SSE-KMS mints one per copy) means the copy's own head is judged. A call after the source is gone, with the attached key present, is `X_STORAGE_ALREADY_PROMOTED` (409, `meta.attachedKey`): an earlier call moved the bytes, so this one answers the row that holds them and never deletes that key. The key must be a **pending** one (`isPendingKey`): an attached key a client sent back is another row's file, and moving it would delete the victim's copy (`X_STORAGE_NOT_PENDING`) |
 | `releaseQuarantine({ disk, key, orgId })` | quarantine → pending; returns the released key |
 | `sweepOrphans({ disk, orgId, olderThanMs })` | `{ deleted, failed }` for stale `pending/` keys. `olderThanMs` is a whole number of 0 or more, refused otherwise (`X_INVARIANT`) — `NaN` read as "everything is old enough" and deleted an upload made a moment ago |
+| `deleteVariants({ disk, key })` | `{ deleted, failed }` for every stored variant of one source, every revision (`list({ prefix: `${key}@` })`). **An erasure of one object must call it**: `disk.delete` leaves the variants' bytes behind. The source is the caller's to delete; a variant keeps its prefix, so an org-wide erasure by prefix already collects them |
 
 The filename contributes nothing but its extension, and only if it matches `.[a-z0-9]{1,12}`.
 `sweepOrphans` can only reach the `pending/` prefix of one org — a sweep that could touch an
@@ -424,7 +435,7 @@ const grant = await grantUpload({ disk, orgId, request, quarantine: true });
 
 // promoteAttachment on that key throws X_STORAGE_QUARANTINED. Your scan job decides:
 const released = await releaseQuarantine({ disk, key, orgId });   // clean
-await promoteAttachment({ disk, key: released, orgId, target });
+await promoteAttachment({ disk, key: released, orgId, target, policy });
 ```
 
 Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan, so
@@ -480,6 +491,14 @@ whole numbers of at least 1 on `variantKey` and `fitDimensions` (`X_INVARIANT` o
 `wNaN`, no `w1.5`). `fitDimensions` never answers a zero edge (1000×1 at width 100 is 100×1) and
 never upscales except under `fit: 'cover'`, which is the exact box asked for.
 
+`variantKey(key, { revision })` adds `r<8 hex>` (`hero.png@w640-r0123abcd.webp`), so a variant names
+the bytes it was made from; absent, the key is byte-identical to one minted without it.
+`variantRevision(etag)` is that part of an etag, however a provider quoted it, or `undefined` when it
+cannot tell two revisions apart. `variantFormatOf(contentType)` maps a stored `png`, `jpeg` or `webp`
+to its format and anything else to `undefined`. A key the route cannot state from those two is a
+variant served and never stored. `variantSourceOf(key)` reads a revisioned key back into
+`{ source, revision }`, which is how a route refuses a variant whose source is gone or overwritten.
+
 **`VARIANT_FORMATS` / `VariantFormat` are what a variant KEY can carry, `As of 2026-08`** —
 `avif`, `webp`, `jpeg`, `png` — and this package exports no `IMAGE_FORMATS` and no `ImageFormat`. Those two names are
 `@ultimat3/core`'s, over the six formats it can PROBE (`png`, `jpeg`, `webp`, `avif`, `gif`,
@@ -500,3 +519,14 @@ the outputs that keep alpha. The encoded size is always exactly `fitDimensions()
 the box, it does not letterbox to it. `blurPlaceholder()` returns a ThumbHash PNG `data:` URI, at
 most 32px on its long edge.
 `bun test` from `packages/storage`.
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+| Name | What |
+|---|---|
+| `CopyOptions` | `copy(from, to, { ifMatch })`: the source's `etag` as this disk reported it |
+| `DeleteVariantsInput` | what `deleteVariants` takes: `{ disk, key }` |
+| `StoredHeadCandidate` | what `validateStoredHead` reads: the key, the type, the first bytes and the WHOLE object's size |
+| `ValidatedHead` | what `validateStoredHead` answers |

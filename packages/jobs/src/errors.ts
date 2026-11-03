@@ -45,6 +45,8 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_ON_SETTLED_FAILED',
   'X_JOB_NOT_FOUND',
   'X_JOB_TENANT_MISMATCH',
+  'X_STEP_OUTPUT_UNSERIALIZABLE',
+  'X_JOB_EVENT_INVALID',
 ] as const;
 
 /**
@@ -104,6 +106,8 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_ON_SETTLED_FAILED: 'the onSettled hook failed after the run was settled',
   X_JOB_NOT_FOUND: 'the queue holds no job with this id',
   X_JOB_TENANT_MISMATCH: "a job's payload names an org other than the tenant it runs under",
+  X_STEP_OUTPUT_UNSERIALIZABLE: 'a step returned a value JSON cannot hold',
+  X_JOB_EVENT_INVALID: 'a waited event failed its schema',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -160,6 +164,10 @@ registerErrorRetry({
   // The payload names the wrong org, or none its tenant can run under — a fact about the ROW, so
   // every attempt and every `x jobs retry` is refused identically: the repair is a new enqueue.
   X_JOB_TENANT_MISMATCH: 'terminal',
+  // The same value is refused on attempt five; the step's side effect has already happened.
+  X_STEP_OUTPUT_UNSERIALIZABLE: 'terminal',
+  // The stored event is the same on every attempt: the repair is the publisher or the schema.
+  X_JOB_EVENT_INVALID: 'terminal',
 });
 
 // No `docs:` on any class below, here or in `backfill-errors.ts`. `UltimateError` fills it from
@@ -262,14 +270,16 @@ export class StepDuplicateError extends UltimateError {
 }
 
 export class JobTimeoutError extends UltimateError {
-  constructor(input: { job: string; timeoutMs: number; step?: string }) {
+  /** `fix` for a ceiling the job's `timeout` does not set: the `onSettled` hook's. */
+  constructor(input: { job: string; timeoutMs: number; step?: string; fix?: string }) {
     super({
       code: 'X_JOB_TIMEOUT',
       cause:
         input.step === undefined
           ? `job "${input.job}" exceeded its ${input.timeoutMs}ms timeout`
           : `job "${input.job}" step "${input.step}" exceeded its ${input.timeoutMs}ms timeout`,
-      fix: `raise timeout on the job definition, or split the work into step.run() calls`,
+      fix:
+        input.fix ?? `raise timeout on the job definition, or split the work into step.run() calls`,
     });
   }
 }

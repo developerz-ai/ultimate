@@ -123,11 +123,30 @@ export class VerifyFailedError extends UltimateError {
 
 /** The command needs an app root (a directory containing `app.config.ts`) and found none. */
 export class NotInAppError extends UltimateError {
-  constructor(input: { command: string; from: string }) {
+  constructor(input: {
+    command: string;
+    from: string;
+    /** `app.config.ts` directories under `from`: an app below the cwd is one `cd` away. */
+    below?: readonly string[];
+    /** `from` already depends on the framework, so `x new` would be a second project, not a fix. */
+    adopter?: boolean;
+  }) {
+    const [first] = input.below ?? [];
+    const found = (input.below ?? []).join(', ');
     super({
       code: 'X_NOT_IN_APP',
-      cause: `"x ${input.command}" must run inside an Ultimate app; no app.config.ts at or above ${input.from}`,
-      fix: 'x new myapp && cd myapp',
+      cause:
+        first !== undefined
+          ? `"x ${input.command}" runs from the directory holding app.config.ts, and that is below ${input.from}: ${found}`
+          : input.adopter === true
+            ? `"x ${input.command}" must run inside an Ultimate app; ${input.from} depends on @ultimat3/* but no app.config.ts exists at or above it, or within three directories below`
+            : `"x ${input.command}" must run inside an Ultimate app; no app.config.ts at or above ${input.from}`,
+      fix:
+        first !== undefined
+          ? `cd ${quoteArg(first)} && x ${quoteArg(input.command)} --json`
+          : input.adopter === true
+            ? `x new scratch-app --dry-run --json   # its file list carries app.config.ts; write one at the app root, then re-run: x ${quoteArg(input.command)} --json`
+            : 'x new myapp && cd myapp',
     });
   }
 }

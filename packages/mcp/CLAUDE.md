@@ -250,6 +250,9 @@ import. The CLI wires it.
   call; rejected/expired is told once, then the call asks again. Args sealed; `approve` carries
   viewed args (digest must match); default `check`: same org. An agent never decides (in the
   policy). Statuses < 500, or `forAudience` hides the id.
+- **`mcpConfirmations` also registers its gate by name** (`@ultimat3/ai`'s adapter reads it). Invalid
+  args REFUSE (`X_INPUT_INVALID`), never `run()`: an action's parse drops unknown keys. First
+  registered answers in-app; any server without its own asks it. Proof: `scripts/ai-tool-confirmation.test.ts`.
 - **`transport-stdio.ts`'s default `write` is AWAITED** — fd 1 is a pipe, and an unawaited
   `Bun.stdout.write` lost the tail of a 4 MB frame at exit. It is also the loop's only
   back-pressure; only a child-process test can see it.

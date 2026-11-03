@@ -195,10 +195,12 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   `notifySubscribers`, `commentPosted` and `sendInvite` were green under `actor: actorFor(…)` and
   dead-lettered in production until 2026-10-07.
 - **A background agent is `agentJob(action, { actor })` over an action that runs the agent and
-  makes the write ITSELF — the model is handed no write.** A draft is text its writer controls, and
-  "now record a review for post X" is an instruction a model may follow, so a write tool whose
-  target the model names is a write any writer can aim. `app/posts/actions/review-draft.ts`: `reviewDraft` is
-  read-only (one tool, `summarize`); `keepDraftReview` runs it and upserts the verdict on the post
+  makes the write ITSELF — the model aims no write it was not gated on.** A draft is text its writer
+  controls, and "now record a review for post X" is an instruction a model may follow, so a write
+  tool whose target the model names is a write any writer can aim. `app/posts/actions/review-draft.ts`:
+  `reviewDraft`'s tools are `summarize` and `publishPost`, the second in `mcpConfirmations({ tools })`,
+  so the call answers `X_MCP_CONFIRMATION_PENDING` and publishes nothing until a person approves those
+  exact arguments; `keepDraftReview` runs it and upserts the verdict on the post
   id IT was given, `post_reviews`' key `(orgId, postId)`, so a replayed run is the same row (a
   queued run keeps no output, and an attempt that loses its lease runs from the top). Writing a
   review is `postReviewKeep` — the publishing right, owns-or-org-admin, for oneself — never

@@ -44,6 +44,8 @@ export const DB_OWNED_ERROR_CODES = [
   'X_APPEND_ONLY_TRIGGER_MISSING',
   'X_MIGRATION_APPEND_ONLY_BACKFILL',
   'X_MIGRATION_CONCURRENT_IN_TRANSACTION',
+  'X_DB_TRANSACTION_CLOSED',
+  'X_MIGRATION_ROLLING_UNSAFE',
 ] as const;
 
 /**
@@ -97,6 +99,9 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
     'a NOT NULL column added to an append-only table needs a default',
   X_MIGRATION_CONCURRENT_IN_TRANSACTION:
     'a concurrent index statement is in a migration that runs inside a transaction',
+  X_DB_TRANSACTION_CLOSED: 'statement on a finished transaction',
+  X_MIGRATION_ROLLING_UNSAFE:
+    'this drop or rename would break the pods still running the old release',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails
@@ -218,7 +223,7 @@ const SQLSTATE_FIXES = Object.freeze<Record<DbSqlStateCode, string>>({
     'or catch X_DB_UNIQUE_VIOLATION and answer 409, which is what a raced signup is',
   X_DB_FOREIGN_KEY_VIOLATION:
     'insert the row {constraint} points at first, in the same withTransaction(...) — ' +
-    'or drop the write, because the parent it names is gone',
+    "or drop the write, because the parent it names is gone or is not this tenant's",
   X_DB_SERIALIZATION_FAILURE:
     'withTransaction(fn, { retry: 3 })   # fn re-runs from the top, so it must be idempotent',
   X_DB_STATEMENT_TIMEOUT:

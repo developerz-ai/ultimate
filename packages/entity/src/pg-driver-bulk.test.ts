@@ -1,7 +1,8 @@
 // Many rows, ONE statement. `insertAll`/`upsertAll` against a recording client, where the statement
 // text is the whole claim: the tuple list, the `default` cell a row naming fewer columns takes, the
 // `on conflict` clause each `onMatch` compiles to and the four refusals that precede it, and the
-// chunking that keeps a wide batch inside Postgres's bind count.
+// chunking that keeps a wide batch inside Postgres's bind count. What holds the chunks together is
+// `pg-driver-bulk-chunks.test.ts`'s.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { ctxOf, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
@@ -215,16 +216,17 @@ describe('a batch is one statement, and both drivers mean the same by it', () =>
 
     await repo().insertAll(batch);
 
-    expect(client.statements).toHaveLength(2);
-    expect(client.statements[0]?.values).toHaveLength(perStatement * width);
-    expect(client.statements[1]?.values).toHaveLength(2 * width);
+    const inserts = client.statements.filter((statement) => statement.text.startsWith('insert'));
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0]?.values).toHaveLength(perStatement * width);
+    expect(inserts[1]?.values).toHaveLength(2 * width);
     // Each one is a whole statement, never a fragment of one Postgres would refuse.
-    for (const statement of client.statements) {
+    for (const statement of inserts) {
       expect(statement.text).toStartWith(`insert into "pg_bulk_invoices" ${COLUMNS} values (`);
       expect(statement.text).toEndWith('returning *');
     }
     // The references, in the order the batch named them: nothing dropped, nothing reordered.
-    const bound = client.statements.flatMap((statement) => [...statement.values]);
+    const bound = inserts.flatMap((statement) => [...statement.values]);
     expect(bound.filter((_, index) => index % width === 2)).toEqual(
       batch.map((row) => row.reference),
     );

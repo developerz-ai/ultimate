@@ -41,7 +41,7 @@ describe('unit · revalidate options are screened at defineRoute', () => {
     clearRoutes();
     expect(route?.revalidateOnInvalidate).toBe('stale');
     expect(route?.revalidateMaxStale).toBeNull();
-    // Undeclared is `null`, not `[]`: the page still keys on the whole query string.
+    // Undeclared is `null` on the descriptor, so a manifest can tell it from a written `[]`.
     expect(route?.revalidateQuery).toBeNull();
   });
 

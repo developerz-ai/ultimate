@@ -194,7 +194,9 @@ function walk(statements: readonly string[]): ChainState {
       tables.delete(dropped[1] ?? '');
       continue;
     }
-    const index = statement.match(/^create (unique )?index "?(\w+)"? on "?(\w+)"? ?\(([^)]*)\)/i);
+    const index = statement.match(
+      /^create (unique )?index (?:concurrently )?(?:if not exists )?"?(\w+)"? on "?(\w+)"? ?\(([^)]*)\)/i,
+    );
     if (index !== null) {
       indexes.set(index[2] ?? '', {
         table: index[3] ?? '',
@@ -203,7 +205,7 @@ function walk(statements: readonly string[]): ChainState {
       });
       continue;
     }
-    const unindex = statement.match(/^drop index (?:if exists )?"?(\w+)"?/i);
+    const unindex = statement.match(/^drop index (?:concurrently )?(?:if exists )?"?(\w+)"?/i);
     if (unindex !== null) {
       indexes.delete(unindex[1] ?? '');
       continue;

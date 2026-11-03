@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Scheduler } from '@ultimat3/core';
 import { frozenClock } from '@ultimat3/core';
-import { jwksClient } from './jwks';
+import { JWKS_FAILURE_COOLDOWN_MS, jwksClient } from './jwks';
 
 const NOW = new Date('2026-08-16T12:00:00.000Z');
 
@@ -138,7 +138,8 @@ describe('the JWKS refresh is single-flighted', () => {
     await Promise.all([first, joiner, midSettle]);
 
     // Slot free, incumbent's clear already run: now a refresh starts, and a concurrent caller
-    // joins THAT one.
+    // joins THAT one. Past the failed read's cooldown too, or no refresh starts at all.
+    clock.advance(JWKS_FAILURE_COOLDOWN_MS);
     const second = swallow(keys.keyFor('k2', 'RS256'));
     await flush();
     const lateJoiner = swallow(keys.keyFor('k2', 'RS256'));

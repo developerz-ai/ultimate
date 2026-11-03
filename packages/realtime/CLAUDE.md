@@ -98,7 +98,10 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   outside the lane, against the live window.
 - **`desynced` is a mark with a reader**: the next delivery serves a fresh snapshot out of the shared
   window and only then clears it. **`result.refill` is checked BEFORE the mark** — a guessed window
-  never clears a mark (`live-fanout.test.ts`).
+  never clears a mark (`live-fanout.test.ts`). **A quiet query has three more readers**
+  (`sync-drain.test.ts`): Bun's `drain` (`registry.repair`, which waits out a read in flight), a read
+  that lands, and the node's sweep (`registry.repairMarked`, on the idle interval), which also re-reads
+  a stale window that owes one, once a pass. Never out of a window stale or with a read not settled.
 - **A change the window already holds is refused** (`change.lsn <= entry.lsn`, counted as
   `staleChanges`). **A gap is detected**: the replicator stamps `producer` + `seq`; a skipped
   sequence — or a NEW producer after a known one — stales every window; `refillWindowInLane` replaces it.
@@ -131,6 +134,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `Transport.onReconnect(listener)` (required) announces each recovery.
 - **A bucket name is checked before interpolation** (`assertBucket`, `X_TRANSPORT_PROTOCOL`); a
   presence key or member id is base64url-encoded (`encodeToken`), never validated.
+- **A socket closed during its presence write takes the write back** (`joinPresence`, asked after the
+  awaits; `sync-frames.test.ts`).
 - Presence lives in `transport.shared`. The sync node is `PresenceRegistry`'s only caller:
   subscribing to a topic IS joining, repeating the frame is the heartbeat, dropping or closing is the
   leave. Expiry is silent, so the node sweeps on an interval, and **one node per topic sweeps** (lowest
@@ -149,7 +154,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   late subscription and RAISES `X_TRANSPORT_UNAVAILABLE`. `#release` takes the reserved bridge, never
   a name.
 - **An upgrade from another origin is `403 X_SOCKET_ORIGIN_REFUSED`** before `authenticate`
-  (`sync-origin.ts`): `allowedOrigins`, when declared, is the WHOLE list; undeclared, the
+  (`sync-origin.ts`): `allowedOrigins`, when declared, is the WHOLE list (`sec-fetch-site` unread); undeclared, the
   `Host`-derived origin (and its `https` spelling when reached over plain http). The refusal names
   the asker and the list. `x dev` keeps the reached-on origin (`admitReachedOrigin`) and adds
   its web role's beside a declared list; a container adds nothing. `AcceptBudget` is reserved before
@@ -241,12 +246,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 - **A catch-up read waits for the page's writes in flight over its types**
   (`RecordStore.afterWrites`): it lands once each is answered or echoed, within that bound; a row
   moved meanwhile is kept (#778).
-- **A frame names the write that produced it**: `records.write`, `patch.writes` (a live patch
-  one, a resume each it replays, off `RowPatch.write` in the ring) — `writeDigest(key)`, from a
-  REQUIRED `ChangeEvent.write: string | null`. `RecordStore.push` digests each overlay key first
-  (`record-names.ts`); `client-channels.ts` / `live-rows.ts` settle in the frame's own batch. A
-  non-digest is a protocol error, dropped on the bus. Partly confirmed rows go to
-  `OverlayEntry.confirmed`. `write-echo.test.ts`, `live-write-echo.test.ts`.
+- **A frame names the write that produced it** (`writeDigest(key)`, from a REQUIRED `ChangeEvent.write`; `write-echo.test.ts`). Full rule: `docs/history/realtime.md`.
 - `local(tx, input)` is pure and CONVERGENT: no I/O, no `Date.now()`, no `Math.random()`.
 - **One conflict vocabulary**: `ConflictPolicy` from `@ultimat3/core`, resolved by core's
   `resolveConflict(overlayRow, serverRow)` in `RecordStore.settle`. A server delete is not a conflict.
@@ -259,12 +259,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   reader hears only keys it shows or keeps (history, 2026-10-29).
 - Every subscription handle is `Disposable`; `[Symbol.dispose]` IS the release. Type claims go in
   `type-pins.ts`.
-- **The outbox**: only `pending` is sendable; `drain()` is one chained pass at a time; `#epoch` is
-  bumped before the requeue scan, read every pass. `#persist` hands SNAPSHOTS by KEY; one tab drains
-  (`navigator.locks`), resetting a stored `inflight`. A `rescope` abandons the queue and bumps the
-  epoch synchronously; `enqueue` decides WHOSE queue before its first await
-  (`X_OFFLINE_QUEUE_ABANDONED`); `useMutation` fences its POST on its scope epoch. A refused disk is
-  warned `X_LOCAL_STORE_UNAVAILABLE`, never rejecting `ready`. An entry leaves disk at its ack.
+- **The outbox**: only `pending` is sendable, one chained `drain()` at a time, one tab drains (`navigator.locks`); a `rescope` abandons the queue (`X_OFFLINE_QUEUE_ABANDONED`). Full rule: `docs/history/realtime.md`.
 
 ## The client connection
 

@@ -82,11 +82,16 @@ export const BARE: Omit<ColumnMeta, 'kind'> = {
 };
 
 export interface Binding {
+  /** The entity's NAME, what a relation and the registry key on. */
   readonly table: string;
+  /** The physical table, what a foreign key names. Equal to `table` unless `{ table }` was said. */
+  readonly physicalTable: string;
   /** camelCase key on the row. */
   readonly property: string;
   /** snake_case physical column name. */
   readonly name: string;
+  /** The physical tenant column of the entity that owns this column, `null` when it has none. */
+  readonly tenant: string | null;
 }
 
 const bindings = new WeakMap<AnyColumn, Binding>();
@@ -96,7 +101,13 @@ const bindings = new WeakMap<AnyColumn, Binding>();
  * one between two entities would give it two physical names and silently mis-name a foreign
  * key, so a second binding is a declaration-time error.
  */
-export const bindColumn = (column: AnyColumn, table: string, property: string): Binding => {
+export const bindColumn = (
+  column: AnyColumn,
+  table: string,
+  property: string,
+  tenant: string | null = null,
+  physicalTable: string = table,
+): Binding => {
   const existing = bindings.get(column);
   if (existing !== undefined && existing.table !== table) {
     throw invariantViolated(
@@ -109,8 +120,10 @@ export const bindColumn = (column: AnyColumn, table: string, property: string): 
   // The DERIVED name too, not only a declared one: `snake(property)` lower-cases and nothing else.
   const binding: Binding = {
     table,
+    physicalTable,
     property,
     name: assertColumnName(columnName(property, column.$meta)),
+    tenant,
   };
   bindings.set(column, binding);
   return binding;
@@ -205,17 +218,28 @@ export const makeColumn = <T, Optional extends boolean>(
 
   tenant: () => makeColumn<T, Optional>({ ...meta, tenant: true, index: true }, parse, optional),
 
-  references: (target, options = {}) =>
-    makeColumn<T, Optional>(
+  references: (target, options = {}) => {
+    // The rule `crossTenant()` already sets: an escape with no argument reads like a forgotten key,
+    // and the next reader cannot tell a considered edge from an accident.
+    if (options.crossTenant !== undefined && options.crossTenant.trim() === '') {
+      refuseColumn(
+        'references',
+        'crossTenant was given a blank reason, so the same-tenant key it lifts carries no argument',
+        "uuid().references(() => target.id, { crossTenant: 'why this edge spans tenants' })   # or drop the option and keep the same-tenant key",
+      );
+    }
+    return makeColumn<T, Optional>(
       {
         ...meta,
         references: target,
         index: true,
         ...(options.onDelete === undefined ? {} : { onDelete: options.onDelete }),
+        ...(options.crossTenant === undefined ? {} : { crossTenant: options.crossTenant }),
       },
       parse,
       optional,
-    ),
+    );
+  },
 
   default: (value) => makeColumn<T, true>({ ...meta, default: literal(value) }, parse, true),
 

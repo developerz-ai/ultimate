@@ -330,3 +330,60 @@ describe('unit · replica identity a realtime declaration needs', () => {
     });
   });
 });
+
+describe('unit · a retired column is on the record by design', () => {
+  const posts = (retired?: readonly string[]): EntityDescriptionLike => ({
+    name: 'posts',
+    table: 'posts',
+    primaryKey: [],
+    columns: [],
+    indexes: [],
+    ...(retired === undefined ? {} : { retired }),
+  });
+  const recorded = (flag: boolean): SchemaDescription => ({
+    tables: [
+      {
+        schema: 'public',
+        name: 'posts',
+        columns: [
+          {
+            name: 'legacy',
+            dataType: 'text',
+            nullable: true,
+            default: null,
+            position: 1,
+            ...(flag ? { retired: true as const } : {}),
+          },
+        ],
+        primaryKey: [],
+        indexes: [],
+        foreignKeys: [],
+      },
+    ],
+  });
+  const supplied = (entity: EntityDescriptionLike) => async () => [entity];
+
+  test('listed and recorded: nothing to generate, so nothing to report', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', recorded(true));
+      expect(await checkSnapshotDrift(root, supplied(posts(['legacy'])))).toEqual([]);
+    });
+  });
+
+  test('listed and not yet marked: the migration is owed', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', recorded(false));
+      const findings = await checkSnapshotDrift(root, supplied(posts(['legacy'])));
+      expect(findings.map((each) => each.code)).toEqual(['X_DB_SCHEMA_UNMIGRATED']);
+      expect(findings[0]?.cause).toContain('declared retired');
+    });
+  });
+
+  test('recorded and no longer listed: the drop is owed', async () => {
+    await withRoot(async (root) => {
+      await commit(root, '0001_init', recorded(true));
+      const findings = await checkSnapshotDrift(root, supplied(posts()));
+      expect(findings.map((each) => each.code)).toEqual(['X_DB_SCHEMA_UNDECLARED']);
+    });
+  });
+});

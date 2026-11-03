@@ -4,10 +4,21 @@
 // into both and walks them side by side, so a boundary rule added to one driver and not the other
 // shows up here first.
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { type RecordingClient, recordingClient } from '@ultimat3/db';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { ctxOf, runWithContext } from '@ultimat3/core';
+import {
+  generateMigration,
+  type PgliteClient,
+  pgliteClient,
+  type RecordingClient,
+  raw,
+  recordingClient,
+  statementsOf,
+} from '@ultimat3/db';
 import type { BatchIterator } from './batch';
-import { text, uuid } from './columns';
+import { keyOf } from './batch-read';
+import { integer, text, uuid } from './columns';
+import { bigint, decimal } from './columns-data';
 import { entity } from './entity';
 import { memoryRepo } from './memory-repo';
 import { postgresRepo } from './pg-driver';
@@ -171,5 +182,123 @@ describe('memory and Postgres draw batch boundaries at the same place', () => {
     expect([...firstMem.map((row) => row.id), ...idsOf(restMem)]).toEqual(
       SEED.map((row) => row.id),
     );
+  });
+});
+
+/**
+ * `keyOf` files a requested id and a returned key under one string. Postgres compares `bigint` and
+ * `numeric` by value, so `'007'` matched the row and was filed apart from it: the statement found
+ * it, and the caller was handed `null`.
+ */
+describe('a numeric key has one spelling', () => {
+  test.each([
+    ['bigint', '007', '7'],
+    ['bigint', '+7', '7'],
+    ['bigint', 7, '7'],
+    ['bigint', 7n, '7'],
+    ['bigint', '-0', '0'],
+    ['integer', ' 42 ', '42'],
+    ['numeric', '2.50', '2.5'],
+    ['numeric', '+02.500', '2.5'],
+    ['numeric', '.5', '0.5'],
+    ['numeric', '5.', '5'],
+    ['numeric', '-0.00', '0'],
+    ['numeric', '1e3', '1000'],
+    ['numeric', 1e21, '1000000000000000000000'],
+    ['numeric', 2.5, '2.5'],
+  ])('%s %p', (kind, value, expected) => {
+    expect(keyOf(kind, value)).toBe(expected);
+  });
+
+  test.each([
+    ['bigint', 'abc'],
+    ['bigint', ''],
+    ['bigint', '7.0'],
+    ['bigint', '0x10'],
+    ['integer', '1e3'],
+    ['numeric', ''],
+    ['numeric', '.'],
+    ['numeric', 'abc'],
+    ['numeric', '1e99999999'],
+  ])('%s %p is filed as written, so Postgres answers its own refusal', (kind, value) => {
+    expect(keyOf(kind, value)).toBe(value);
+  });
+
+  test('every other kind stays as it compares', () => {
+    expect(keyOf('text', '007')).toBe('007');
+    expect(keyOf('uuid', 'ABC')).toBe('abc');
+  });
+});
+
+describe('findById under another spelling of the key, both drivers', () => {
+  // A point read batches only inside a request's context: `coalesce.ts` keys on it.
+  const inRequest = <T>(read: () => Promise<T>): Promise<T> => runWithContext(ctxOf({}), read);
+  const bigs = entity('batch_key_bigs', {
+    columns: { id: bigint().primaryKey(), label: text({ max: 8 }) },
+  });
+  const decimals = entity('batch_key_decimals', {
+    columns: { id: decimal().primaryKey(), label: text({ max: 8 }) },
+  });
+  const ints = entity('batch_key_ints', {
+    columns: { id: integer().primaryKey(), label: text({ max: 8 }) },
+  });
+  let pglite: PgliteClient;
+
+  beforeAll(async () => {
+    pglite = pgliteClient();
+    const migration = generateMigration({
+      entities: [bigs.$describe(), decimals.$describe(), ints.$describe()],
+      name: 'batch key parity',
+      now: new Date('2026-11-02T00:00:00.000Z'),
+    });
+    for (const statement of statementsOf(migration.up)) await pglite.execute(raw(statement));
+    await postgresRepo(bigs, { client: pglite }).insert({ id: '7', label: 'big' });
+    await postgresRepo(decimals, { client: pglite }).insert({ id: '2.5', label: 'dec' });
+    await postgresRepo(ints, { client: pglite }).insert({ id: 7, label: 'int' });
+  }, 30_000);
+
+  afterAll(async () => {
+    await pglite.close();
+  });
+
+  for (const name of ['memory', 'postgres'] as const) {
+    const bigRepo = () =>
+      name === 'postgres'
+        ? postgresRepo(bigs, { client: pglite })
+        : memoryRepo(bigs, [{ id: '7', label: 'big' }]);
+    const decimalRepo = () =>
+      name === 'postgres'
+        ? postgresRepo(decimals, { client: pglite })
+        : memoryRepo(decimals, [{ id: '2.5', label: 'dec' }]);
+
+    test.each(['007', '+7', '7'])(`${name} · bigint %p, alone`, async (id) => {
+      const row = await inRequest(() => bigRepo().findById(id));
+      expect(row?.label).toBe('big');
+    });
+
+    test(`${name} · bigint, three spellings batched in one tick`, async () => {
+      const repo = bigRepo();
+      const rows = await inRequest(() =>
+        Promise.all([repo.findById('007'), repo.findById('+7'), repo.findById('7')]),
+      );
+      expect(rows.map((row) => row?.label)).toEqual(['big', 'big', 'big']);
+    });
+
+    test.each(['2.5', '2.50', '+02.500'])(`${name} · decimal %p, alone`, async (id) => {
+      const row = await inRequest(() => decimalRepo().findById(id));
+      expect(row?.label).toBe('dec');
+    });
+  }
+
+  test('postgres · integer, a string spelling', async () => {
+    const repo = postgresRepo(ints, { client: pglite });
+    const row = await inRequest(() => repo.findById('007'));
+    expect(row?.label).toBe('int');
+  });
+
+  test("postgres · a key the column cannot hold is the server's own refusal", async () => {
+    const repo = postgresRepo(bigs, { client: pglite });
+    const refused = await inRequest(() => repo.findById('abc')).catch((error: unknown) => error);
+    expect((refused as { code?: unknown }).code).toBe('X_DB_STATEMENT_FAILED');
   });
 });

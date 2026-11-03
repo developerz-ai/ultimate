@@ -1,7 +1,9 @@
-// Single responsibility: which foreign keys a migration must add or drop, and into which of the
-// two buckets each statement goes — `constraints` runs AFTER the table statements, `preDrops`
-// BEFORE them. `generate.ts` assembles the plan; `foreign-key.ts` writes the SQL.
+// Single responsibility: which foreign keys a migration adds or drops, and where each statement
+// goes — `constraints` AFTER the table statements, `preDrops` BEFORE them, or the deferred step for
+// a key on a live table, whose add and validate would scan it under a lock that stops writes.
+// `generate.ts` assembles the plan; `foreign-key.ts` writes the SQL.
 
+import { type ConcurrentPlan, contractKey, deferKey, targetIndexDeferred } from './concurrent-plan';
 import type { EntityDescriptionLike } from './entity-shape';
 import {
   addForeignKey,
@@ -9,24 +11,16 @@ import {
   foreignKeyTarget,
   keyId,
   onDeleteRule,
+  referenceParts,
   unrestorableNote,
 } from './foreign-key';
 import type { ForeignKeyDescription, TableDescription } from './introspect';
+import { sameTenantKeyName } from './same-tenant';
 
 /** The two directions of one migration, pushed in `up` order; `down` is reversed at assembly. */
 export interface Plan {
   readonly up: string[];
   readonly down: string[];
-}
-
-/**
- * The two ends of a `references()`, which entity renders as `"<table>.<column>"`. Read once: the
- * clause that writes the constraint and the snapshot that records it must not disagree about what
- * it points at, or drift reports a key the database holds exactly as declared.
- */
-export function referenceParts(references: string): readonly [string, string] {
-  const [table = references, column = 'id'] = references.split('.');
-  return [table, column];
 }
 
 /**
@@ -43,12 +37,28 @@ export function referenceParts(references: string): readonly [string, string] {
  * `onDelete` is the column's own, and `addForeignKey` spells it: a rule recorded here while no
  * clause declared one would be a claim about the database that is not true, which is what it was
  * until the clause learned to write it out.
+ *
+ * A column carrying `sameTenant` is the composite `(tenant, column) -> target (tenant, target)`, under
+ * a name of its own so the plain key it replaces on a live table can stand until it validates
+ * (`sameTenantKeyName`). Its `set null` names the one column: bare, Postgres nulls every column of a
+ * key, and that includes the tenant.
  */
 export function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescription[] {
   return entity.columns
     .filter((column) => column.references !== null)
     .map((column): ForeignKeyDescription => {
       const [table, key] = referenceParts(column.references ?? '');
+      const tenant = column.sameTenant;
+      if (tenant !== null && tenant !== undefined) {
+        const rule = column.onDelete ?? null;
+        return {
+          name: sameTenantKeyName(entity.table, column.column),
+          columns: [tenant.column, column.column],
+          referencedTable: table,
+          referencedColumns: [tenant.targetColumn, key],
+          onDelete: rule === 'set null' ? `set null (${column.column})` : rule,
+        };
+      }
       return {
         name: `${entity.table}_${column.column}_fkey`,
         columns: [column.column],
@@ -92,14 +102,35 @@ export function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescript
  * every table statement; one the entity dropped is left where the retype left it, because dropping
  * it a second time is `42704`; and one whose `on delete` moved comes back carrying the new rule.
  * Its `down` is the retype's, pushed where reversal puts it after both ends are back.
+ *
+ * WHICH PHASE. A key on a table in `live` goes to the deferred step (`deferKey`): `not valid`, then
+ * `validate`. So does a key on a table this migration creates whose target index only the deferred
+ * step builds, since `add constraint` before that index exists is `42830`. One path for every such
+ * key, whether or not its target index is new, so the question is never asked twice. Two stay
+ * transactional: a key on a new table over a target that already has its index (nothing to scan,
+ * byte-identical to what every table's first migration always said), and a retype's re-add, which
+ * holds ACCESS EXCLUSIVE for the rewrite already, so a second pass buys nothing and costs a window
+ * with no key. A recorded key whose column a deferred key now covers goes in the contract phase;
+ * until then the old key still guards every write.
  */
 export function foreignKeyPlan(
   entity: EntityDescriptionLike,
   live: TableDescription | undefined,
   plans: ConstraintPlans,
 ): void {
-  const { constraints, preDrops, doomed, predropped } = plans;
+  const { constraints, preDrops, doomed, predropped, concurrent } = plans;
   const wanted = foreignKeysOf(entity);
+  const movedByRetype = new Set(
+    (live?.foreignKeys ?? [])
+      .filter((key) => predropped.has(keyId(entity.table, key.name)))
+      .map(foreignKeyTarget),
+  );
+  const deferredColumns = new Set<string>();
+  const swapped = new Set<string>();
+  const defer = (key: ForeignKeyDescription, recorded?: ForeignKeyDescription): void => {
+    deferKey(entity.table, key, recorded, concurrent);
+    for (const column of key.columns) deferredColumns.add(column);
+  };
   const recordedKeys = (live?.foreignKeys ?? []).filter(
     (key) => !predropped.has(keyId(entity.table, key.name)),
   );
@@ -114,6 +145,19 @@ export function foreignKeyPlan(
       continue;
     }
     if (recorded === undefined) {
+      const onLiveTable = live !== undefined && !movedByRetype.has(foreignKeyTarget(key));
+      if (
+        onLiveTable ||
+        targetIndexDeferred(concurrent, key.referencedTable, key.referencedColumns)
+      ) {
+        // A recorded key repointed under its own name: the one ALTER is its contract too.
+        const named = recordedKeys.find((each) => each.name === key.name);
+        if (named !== undefined) swapped.add(named.name);
+        // Moved away from a table this migration drops: `preDrops` takes it first, and there is
+        // nothing to restore it onto, so the snapshot and the `down` treat this key as new.
+        defer(key, named !== undefined && doomed.has(named.referencedTable) ? undefined : named);
+        continue;
+      }
       constraints.up.push(addForeignKey(entity.table, key));
       constraints.down.push(dropForeignKey(entity.table, key.name));
       continue;
@@ -121,15 +165,13 @@ export function foreignKeyPlan(
     // The rule is not part of a key's identity, so the same key under a new one is a rebuild —
     // Postgres has no `alter constraint` for it, the same reason `redefineIndex` recreates.
     if (onDeleteRule(recorded.onDelete) === onDeleteRule(key.onDelete)) continue;
-    constraints.up.push(
-      dropForeignKey(entity.table, recorded.name),
-      addForeignKey(entity.table, key),
-    );
-    // Pushed forwards and read backwards, like `redefineIndex`: `down` is reversed at assembly.
-    constraints.down.push(
-      addForeignKey(entity.table, recorded),
-      dropForeignKey(entity.table, key.name),
-    );
+    // Under its own name the one ALTER swaps it; under another the recorded key holds till contract.
+    if (recorded.name === key.name) {
+      defer(key, recorded);
+    } else {
+      defer(key);
+      contractKey(entity.table, recorded, concurrent);
+    }
   }
   const declared = new Set(wanted.map(foreignKeyTarget));
   const columns = new Set(entity.columns.map((column) => column.column));
@@ -140,6 +182,11 @@ export function foreignKeyPlan(
     if (!key.columns.every((column) => columns.has(column))) continue;
     if (doomed.has(key.referencedTable)) {
       unrestorableDrop(entity.table, key.name, key.referencedTable, preDrops);
+      continue;
+    }
+    if (swapped.has(key.name)) continue;
+    if (key.columns.some((column) => deferredColumns.has(column))) {
+      contractKey(entity.table, key, concurrent);
       continue;
     }
     constraints.up.push(dropForeignKey(entity.table, key.name));
@@ -160,6 +207,11 @@ export interface ConstraintPlans {
    * `add constraint`, and it is this function that writes it.
    */
   readonly predropped: ReadonlySet<string>;
+  /**
+   * The deferred step. Filled by every table's `diffTable` BEFORE this function runs for any table,
+   * since a key's own table says nothing about whether its target's index is deferred.
+   */
+  readonly concurrent: ConcurrentPlan;
 }
 
 /**

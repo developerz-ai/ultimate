@@ -9,116 +9,32 @@
 import type { Clock } from '@ultimat3/core';
 import { finiteOption, isUltimateError, logger, renderThrowable } from '@ultimat3/core';
 import { expectedQueryLoop } from '@ultimat3/db';
+import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { finiteDurationMs, nowMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
+import { JobEventInvalidError } from './errors-steps';
 import { createRunSignal } from './run-signal';
+import type { EventLookup, StepApi, WaitForEventOptions } from './steps-api';
+import type { StepOutput } from './steps-output';
+import { jsonForm } from './steps-output';
+import type { StepFence, StepRecord, StepStore } from './steps-store';
 import {
   isStepSuspension,
   isWaitTimedOut,
   StepSuspension,
   WAIT_TIMED_OUT,
+  waitFloor,
+  waitFloorOf,
 } from './steps-suspension';
 import { withStepTimeout } from './steps-timeout';
 
+export type { EventLookup, StepApi, WaitForEventOptions } from './steps-api';
+export type { StepOutput } from './steps-output';
+export type { StepFence, StepRecord, StepStatus, StepStore } from './steps-store';
+export { isStepStatus, STEP_STATUSES } from './steps-store';
 export { isStepSuspension, StepSuspension } from './steps-suspension';
-
-/**
- * The runtime list is the declaration and `StepStatus` is derived from it, the shape
- * `BACKFILL_STATUSES` and `PRIMITIVE_KINDS` already have. A bare union cannot narrow a `text`
- * column, so `driver-pg-rows.ts` cast one instead — and a cast that lands an unknown status on a
- * record makes `stepRun`'s `existing?.status === 'completed'` false, which RE-EXECUTES a step
- * this file promises runs once.
- */
-export const STEP_STATUSES = ['completed', 'sleeping', 'waiting', 'failed'] as const;
-
-export type StepStatus = (typeof STEP_STATUSES)[number];
-
-/** Narrows a status read back out of a store. Never a cast — the list decides. */
-export const isStepStatus = (value: string): value is StepStatus =>
-  (STEP_STATUSES as readonly string[]).includes(value);
-
-export interface StepRecord {
-  readonly runId: string;
-  readonly name: string;
-  readonly status: StepStatus;
-  /** The memoized return value. Present only when `status === 'completed'`. */
-  readonly output?: unknown;
-  readonly startedAt: number;
-  readonly completedAt?: number;
-  /** Epoch ms at which a sleeping/waiting step becomes runnable. */
-  readonly wakeAt?: number;
-  readonly event?: string;
-  readonly correlationKey?: string;
-  readonly attempts: number;
-  readonly error?: string;
-}
-
-/** The claim a step write is made under: `claimOf(claimed)`, plus the row it names. */
-export interface StepFence {
-  readonly job: string;
-  readonly jobId: string;
-  readonly workerId: string;
-  readonly claim: number;
-}
-
-export interface StepStore {
-  get(runId: string, name: string): Promise<StepRecord | undefined>;
-  /**
-   * With `by`, the write lands only while that claim still holds the row (`running`, same worker,
-   * same claim ordinal — `SQL_ACK`'s fence) and is `X_JOB_LEASE_LOST` otherwise: the in-process
-   * signal cannot stop a body in ANOTHER process whose lease lapsed. Without it the write is
-   * unfenced — a transfer (`x jobs drain`) or a runner driven by hand, with no row to hold.
-   */
-  put(record: StepRecord, by?: StepFence): Promise<void>;
-  list(runId: string): Promise<readonly StepRecord[]>;
-  del(runId: string, name: string): Promise<void>;
-  clear(runId: string): Promise<void>;
-}
-
-/** The slice of the event bus a waiting step needs. Implemented by `events.ts`. */
-export interface EventLookup {
-  /**
-   * The bus's OWN clock, in epoch ms: what a publish issued now would be stamped with. A consumer
-   * that wants "published after I asked" takes its "asked at" from here and never from its own
-   * process — `publishedAt` is this clock's, and two clocks compared is a skew between pods
-   * deciding which answers count. `waitForEvent` stamps a NEW wait with it.
-   */
-  now(): Promise<number>;
-  find(
-    event: string,
-    correlationKey: string | undefined,
-    afterMs: number,
-  ): Promise<{ readonly payload: unknown; readonly publishedAt: number } | undefined>;
-}
-
-export interface WaitForEventOptions {
-  /** How long to wait before giving up. Default 24h. */
-  readonly timeout?: DurationInput;
-  /** Correlation key the published event must carry — usually an entity id. */
-  readonly match?: string;
-  /** Default false: a timeout resolves `undefined`. `true` fails the job with X_JOB_TIMEOUT. */
-  readonly required?: boolean;
-}
-
-export interface StepApi {
-  /**
-   * Run once, ever. On replay the persisted output is returned and `fn` is not called.
-   *
-   * `fn` receives the step's `AbortSignal` — the run's cancellation and this step's own ceiling,
-   * whichever fires first. Hand it to `fetch`, or read `.aborted` in a loop: past it, this step
-   * may no longer write, because the attempt that replaced this one owns the run.
-   */
-  run<T>(name: string, fn: (signal: AbortSignal) => Promise<T> | T): Promise<T>;
-  /** Suspend the run. `sleep(duration)` derives the step name from the duration. */
-  sleep(name: string, duration: DurationInput): Promise<void>;
-  sleep(duration: DurationInput): Promise<void>;
-  waitForEvent<T>(
-    name: string,
-    event: string,
-    options?: WaitForEventOptions,
-  ): Promise<T | undefined>;
-}
 
 export interface StepRunnerOptions {
   readonly runId: string;
@@ -203,18 +119,32 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
    * Sound because the fence in `put()` is: only the attempt that owns the run may write to it, so
    * within one attempt an absent name stays absent unless this runner writes it. Writes go into
    * the map as they go into the store, never the other way round — the store is still the record.
+   *
+   * The PROMISE is the memo, and the map is published only when the list has answered: a map
+   * assigned before the await let a second caller read it empty, so `Promise.all` over completed
+   * steps re-ran one on replay and answered a value the store did not hold. A rejected list clears
+   * the memo, so the next call asks again rather than this attempt failing on one blip for good.
    */
   let hydrated: Map<string, StepRecord> | undefined;
+  let hydrating: Promise<Map<string, StepRecord>> | undefined;
 
-  const load = async (name: string): Promise<StepRecord | undefined> => {
-    if (hydrated === undefined) {
-      hydrated = new Map();
-      for (const record of await store.list(runId)) hydrated.set(record.name, record);
-    }
-    return hydrated.get(name);
+  const hydrate = (): Promise<Map<string, StepRecord>> => {
+    if (hydrating !== undefined) return hydrating;
+    const pending = (async () => {
+      const records = await store.list(runId);
+      hydrated = new Map(records.map((record) => [record.name, record]));
+      return hydrated;
+    })();
+    hydrating = pending;
+    pending.catch(() => {
+      if (hydrating === pending) hydrating = undefined;
+    });
+    return pending;
   };
 
-  /** Keep the hydrated view in step with what was just persisted. */
+  const load = async (name: string): Promise<StepRecord | undefined> => (await hydrate()).get(name);
+
+  /** Keep the hydrated view in step. Every write follows a `load`, so the list has answered. */
   const remember = (record: StepRecord): void => {
     hydrated?.set(record.name, record);
   };
@@ -291,12 +221,15 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
 
   const now = (): number => nowMs(clock);
 
-  async function run<T>(name: string, fn: (signal: AbortSignal) => Promise<T> | T): Promise<T> {
+  async function run<T>(
+    name: string,
+    fn: (signal: AbortSignal) => Promise<T> | T,
+  ): Promise<StepOutput<T>> {
     claimName(name);
     const existing = await load(name);
     if (existing?.status === 'completed') {
       trace(replayed, name);
-      return existing.output as T;
+      return existing.output as StepOutput<T>;
     }
 
     const startedAt = existing?.startedAt ?? now();
@@ -319,19 +252,27 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
         fn(signal),
         stepTimeoutMs,
         deadline,
-        () => new JobTimeoutError({ job: jobName, step: name, timeoutMs: stepTimeoutMs ?? 0 }),
+        () =>
+          new JobTimeoutError({
+            job: jobName,
+            step: name,
+            timeoutMs: stepTimeoutMs ?? 0,
+            fix: `job({ name: '${jobName}', stepTimeout: '5m' })   # raises the ceiling; or split step.run('${name}', …) into smaller steps`,
+          }),
       );
+      // What goes in the store is what comes back, so both attempts see one value.
+      const stored = jsonForm(output as T, { job: jobName, step: name });
       // Persist BEFORE returning: a crash one line later must not re-run this step.
       await put({
         runId,
         name,
         status: 'completed',
-        output,
+        output: stored,
         startedAt,
         completedAt: now(),
         attempts,
       });
-      return output;
+      return stored;
     } catch (error) {
       if (isStepSuspension(error)) throw error;
       // The failure is this run's own history, so it is recorded on the way out — unless the
@@ -401,16 +342,24 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
     throw new StepSuspension({ step: name, resumeAt: wakeAt, reason: 'sleep' });
   }
 
-  async function waitForEvent<T>(
+  async function waitForEvent<S extends StandardSchemaV1>(
     name: string,
     event: string,
-    waitOptions: WaitForEventOptions = {},
-  ): Promise<T | undefined> {
+    waitOptions: WaitForEventOptions<S>,
+  ): Promise<InferOutput<S> | undefined> {
+    /** The store keeps the raw payload; a hit and a replay parse it alike, so both see one value. */
+    const answer = async (payload: unknown): Promise<InferOutput<S>> => {
+      const parsed = await validateAsync(waitOptions.schema, payload);
+      if (parsed.issues === undefined) return parsed.value;
+      const issues = formatIssues(parsed.issues);
+      throw new JobEventInvalidError({ job: jobName, step: name, event, issues });
+    };
+
     claimName(name);
     const existing = await load(name);
     if (existing?.status === 'completed') {
       trace(replayed, name);
-      return isWaitTimedOut(existing.output) ? undefined : (existing.output as T | undefined);
+      return isWaitTimedOut(existing.output) ? undefined : answer(existing.output);
     }
 
     const at = now();
@@ -422,20 +371,46 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
       finiteDurationMs(waitOptions.timeout ?? 86_400_000, 'step.waitForEvent', 'timeout');
     const correlationKey = waitOptions.match;
 
-    const hit = await options.events?.find(event, correlationKey, startedAt);
+    const floor = waitFloorOf(existing?.output);
+    const parked = {
+      runId,
+      name,
+      status: 'waiting',
+      startedAt,
+      event,
+      attempts: (existing?.attempts ?? 0) + 1,
+      ...(correlationKey === undefined ? {} : { correlationKey }),
+    } as const;
+
+    const hit = await options.events?.find(event, correlationKey, floor ?? startedAt);
     if (hit !== undefined) {
+      // The form a replay will parse, so a hit cannot answer what its replay refuses.
+      const stored = jsonForm(hit.payload, { job: jobName, step: name });
+      // Parsed before it is recorded: a refused event is not this step's answer, on any attempt.
+      const value = await answer(stored).catch(async (refusal: unknown) => {
+        // The original error is what the caller sees; without the floor a retry is refused again.
+        await put({ ...parked, output: waitFloor(hit.publishedAt + 1), wakeAt: at }).catch(
+          (unwritten: unknown) =>
+            logger.warn('jobs.step.floor-unrecorded', {
+              job: jobName,
+              step: name,
+              error: renderThrowable(unwritten),
+            }),
+        );
+        throw refusal;
+      });
       await put({
         runId,
         name,
         status: 'completed',
-        output: hit.payload,
+        output: stored,
         startedAt,
         completedAt: at,
         event,
         attempts: (existing?.attempts ?? 0) + 1,
         ...(correlationKey === undefined ? {} : { correlationKey }),
       });
-      return hit.payload as T;
+      return value;
     }
 
     // `deadline` is on the BUS's clock, so the bus calls the timeout: asked only once this runner
@@ -454,6 +429,7 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
             'step.waitForEvent',
             'timeout',
           ),
+          fix: `step.waitForEvent('${name}', '${event}', { timeout: '1h' })   # raises the wait's timeout; or make the publisher of "${event}" send it sooner`,
         });
       }
       logger.warn('jobs.step.wait-timeout', { job: jobName, step: name, event });
@@ -472,14 +448,9 @@ export function stepRunner(options: StepRunnerOptions): StepRunner {
 
     const resumeAt = at + Math.min(remaining, pollMs);
     await put({
-      runId,
-      name,
-      status: 'waiting',
-      startedAt,
+      ...parked,
       wakeAt: resumeAt,
-      event,
-      attempts: (existing?.attempts ?? 0) + 1,
-      ...(correlationKey === undefined ? {} : { correlationKey }),
+      ...(floor === undefined ? {} : { output: waitFloor(floor) }),
     });
     throw new StepSuspension({ step: name, resumeAt, reason: 'event' });
   }

@@ -2,4 +2,4 @@
 
 alter table "run_events" add constraint "run_events_org_id_fkey" FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE CASCADE;
 
-alter table "run_events" add constraint "run_events_run_id_fkey" FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE;
+alter table "run_events" add constraint "run_events_run_id_tenant_fkey" FOREIGN KEY (org_id, run_id) REFERENCES runs(org_id, id) ON DELETE CASCADE;

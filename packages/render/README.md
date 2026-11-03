@@ -621,9 +621,11 @@ a job boundary the class is gone and the `code` is what survives — match on th
   a tag bust and evicts their renders in flight, where the default `'stale'` answers the old copy
   once more: the next request on this replica and on each one the broadcast reaches; a replica
   that misses it serves its copy until `ttl`. `maxStale` bounds how long past its `ttl` a copy is
-  served (`0`: never; the default under `'purge'`). `query: ['page']` (or `[]`) is the only part
-  of the query string in the key and in the URL `load` is given (`isrRequestUrl`†); a route that
-  declares none still keys on the whole query string, and `x verify` says so. **Never stored:** a
+  served (`0`: never; the default under `'purge'`). `query: ['page']` is the only part of the
+  query string in the key and in the URL `load` is given (`isrRequestUrl`†); a route that declares
+  none keys on none. With no declared origin the key carries the request's (`isrKey`†'s third
+  argument, `__x_origin`), and with one `load` is given that origin. `isr` and `static` render as
+  nobody: no actor, no inbound header, the default zone. Per-visitor means `ssr`. **Never stored:** a
   5xx (the last good page keeps answering, stale; a 1 s cooldown stops a render per request), a
   render whose `load` returned `noStore(data)`, one invalidated while it ran, a throw, a redirect.
 - **A store two processes write needs `IsrStore.tagFence`**† — `sample` / `bump` / an atomic

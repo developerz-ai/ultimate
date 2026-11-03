@@ -5,10 +5,16 @@
 // Money is the one place the projection is not one-to-one: one property becomes the two
 // physical columns that back it.
 
-import { columnName, moneyColumns, referenceBinding } from './column';
+import { type Binding, bindingOf, columnName, moneyColumns, referenceBinding } from './column';
 import { currencyCheck, scaleCheck } from './columns';
+import { EntityError, invariantViolated } from './errors';
 import type { Invariant } from './invariants';
-import type { ColumnDescription, EntityDescription, ReferenceDescription } from './registry';
+import type {
+  ColumnDescription,
+  EntityDescription,
+  ReferenceDescription,
+  SameTenantKey,
+} from './registry';
 import type { SearchVector } from './search';
 import type { AnyColumn, ColumnMeta, IndexDef } from './types';
 
@@ -28,6 +34,8 @@ export interface DescribeInput<Row> {
   readonly search?: SearchVector | null;
   /** `entity({ appendOnly: true })` — projected only when true. */
   readonly appendOnly?: boolean;
+  /** `entity({ retired: [...] })` — physical names, projected only when there are any. */
+  readonly retired?: readonly string[] | undefined;
 }
 
 /**
@@ -55,6 +63,42 @@ const describeSearchColumn = (search: SearchVector): ColumnDescription => ({
 });
 
 /**
+ * Whether this edge holds its two ends to one tenant. Decided here because a thunk can only be
+ * answered once both modules evaluated, and from the bindings because they alone know each side's
+ * physical tenant column.
+ *
+ * Both ends scoped, and neither end IS the tenant column: `orgId -> orgs.id` is the tenant's own
+ * root, where a composite would pair a column with itself. A `crossTenant` reason on an edge that
+ * could never be same-tenant is refused, or it would state a reason for nothing and read as a
+ * decision someone took.
+ */
+const sameTenantOf = (
+  entityName: string,
+  property: string,
+  meta: ColumnMeta,
+  own: Binding | undefined,
+  target: Binding,
+): SameTenantKey | null => {
+  const column = own?.tenant ?? null;
+  const targetColumn = target.tenant;
+  const eligible =
+    own !== undefined &&
+    column !== null &&
+    targetColumn !== null &&
+    own.name !== column &&
+    target.name !== targetColumn;
+  if (!eligible) {
+    if (meta.crossTenant === undefined) return null;
+    throw new EntityError({
+      code: 'X_INVARIANT_VIOLATED',
+      cause: `${entityName}.${property} states crossTenant on an edge that is not same-tenant: ${target.table} and ${entityName} do not both carry a tenant, or the column is the tenant column itself`,
+      fix: `references(() => ${target.table}.${target.property}) — in the columns of ${entityName}, with the crossTenant option removed`,
+    });
+  }
+  return meta.crossTenant === undefined ? { column, targetColumn } : null;
+};
+
+/**
  * The foreign keys an entity declares, resolved through the one binding resolver. Money is
  * skipped for the reason the DDL projection drops a reference there too: one property is two
  * physical columns, so `snake(property)` names neither of them, and a relation and a foreign-key
@@ -75,9 +119,11 @@ export const describeReferences = (
         column: columnName(property, meta),
         nullable: !meta.notNull,
         targetEntity: target.table,
+        targetTable: target.physicalTable,
         targetProperty: target.property,
         targetColumn: target.name,
         onDelete: meta.onDelete ?? null,
+        sameTenant: sameTenantOf(entityName, property, meta, bindingOf(column), target),
       },
     ];
   });
@@ -106,6 +152,34 @@ export const sqlTypeOf = (meta: ColumnMeta): string => {
     return `${element === undefined ? 'text' : sqlTypeOf(element)}[]`;
   }
   return meta.kind;
+};
+
+/**
+ * At declaration, on the physical names: the same word in both lists is a column read by the release
+ * that says it stopped, and `x db gen` could only answer later and further away. Never through
+ * `describeEntity`: that answers a `references()` thunk, and a self-reference or a schema cycle is
+ * still in its temporal dead zone at this point.
+ */
+export const assertNotRetired = (
+  entityName: string,
+  entries: readonly (readonly [string, AnyColumn])[],
+  retired: readonly string[] | undefined,
+): void => {
+  for (const [property, column] of entries) {
+    const parts = column.$meta.kind === 'money' ? moneyColumns(property, column.$meta) : null;
+    const physical =
+      parts === null
+        ? [columnName(property, column.$meta)]
+        : [parts.minor, parts.currency, ...(parts.scale === null ? [] : [parts.scale])];
+    const held = physical.find((each) => retired?.includes(each) === true);
+    if (held !== undefined) {
+      throw invariantViolated(
+        entityName,
+        held,
+        'is listed under retired and still declared in columns; a column is one or the other',
+      );
+    }
+  }
 };
 
 const describeColumn = <Row>(
@@ -179,10 +253,12 @@ const describeColumn = <Row>(
       // Rendered from the resolved record, so the string a migration reads and the record a
       // traversal reads can never disagree about what a `references()` points at.
       references:
-        reference === undefined ? null : `${reference.targetEntity}.${reference.targetColumn}`,
+        reference === undefined ? null : `${reference.targetTable}.${reference.targetColumn}`,
       // Off the resolved reference, never off `meta` again: a rule with no key is not a thing, and
       // reading the option twice is two places for the pair to disagree.
       onDelete: reference?.onDelete ?? null,
+      // `true`-or-absent's cousin: absent, so no entity without such an edge moves the hash.
+      ...(reference?.sameTenant == null ? {} : { sameTenant: reference.sameTenant }),
     },
   ];
 };
@@ -241,5 +317,6 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
     // `true` or absent, never `false`: `x verify`'s source drift hashes this projection as JSON,
     // and an entity that never said `appendOnly` must hash exactly what it hashed before.
     ...(input.appendOnly === true ? { appendOnly: true as const } : {}),
+    ...((input.retired ?? []).length === 0 ? {} : { retired: input.retired }),
   };
 };

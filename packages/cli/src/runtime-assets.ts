@@ -6,12 +6,19 @@
 // from `runtime-storage.ts`, because the same bytes are reachable through both.
 
 import { probeImage } from '@ultimat3/core';
-import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
-import { applyCacheHeaders } from '@ultimat3/http';
+import type { ObjectSource, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
+import { applyCacheHeaders, notModified, objectResponse } from '@ultimat3/http';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery, usableWidths } from '@ultimat3/seo';
-import type { ImageTransform, Storage, VariantFormat } from '@ultimat3/storage';
-import { DEFAULT_QUALITY, isTenantScoped, isVariantFormat, variantKey } from '@ultimat3/storage';
+import type { ImageTransform, Storage, StorageObject, VariantFormat } from '@ultimat3/storage';
+import {
+  DEFAULT_QUALITY,
+  isVariantFormat,
+  objectNotFound,
+  variantFormatOf,
+  variantKey,
+  variantRevision,
+} from '@ultimat3/storage';
 import { faviconRoute } from './favicon';
 // The icon matrix's source, its base path and its renderer live in their own module so that
 // `pwa-artifacts.ts` — which this file imports for the manifest route — can reach them without
@@ -24,12 +31,13 @@ import { revalidatedResponse } from './revalidated-response';
 import {
   AUTHORIZED_OBJECT_CACHE,
   assertReadableKey,
+  assertVariantCurrent,
   authorizeStorageRead,
+  readStorageObject,
   STORAGE_READ_PERMISSION,
 } from './runtime-storage';
 import { siteAssetRoutes } from './site-asset-routes';
 import { siteAssetTable } from './site-assets';
-import { storedObjectHeaders } from './stored-object-headers';
 
 /**
  * Storage-backed images. `responsiveImage({ src: '/media/<key>' })` mints its variants under it.
@@ -41,14 +49,6 @@ import { storedObjectHeaders } from './stored-object-headers';
  * tenant's uploads.
  */
 export const MEDIA_BASE_PATH = '/media';
-
-/**
- * A content-addressed variant answers forever with the same bytes, so the immutable hint is a fact
- * about the key. It is NOT a fact about this route — see `mediaCache`. The generated ICONS are not
- * content-addressed (`/icons/icon-192.png` names a size, not bytes), so they revalidate instead —
- * see `revalidatedResponse`.
- */
-const IMMUTABLE_IMAGE: CacheHint = { mode: 'immutable' };
 
 /**
  * Whether a variant is one the framework itself can MINT, and therefore one worth storing.
@@ -78,65 +78,105 @@ const isMintableWidth = (width: number | undefined, intrinsic: number): boolean 
 const isMintableQuality = (quality: number | undefined): boolean =>
   quality === undefined || quality === DEFAULT_QUALITY;
 
-const imageResponse = (bytes: Uint8Array, contentType: string, cache: CacheHint): Response =>
-  applyCacheHeaders(
-    // Copied, not passed through: a `Uint8Array<ArrayBufferLike>` may be backed by a
-    // `SharedArrayBuffer`, which `Response` does not accept, and copying is what makes that true
-    // by construction rather than by a cast that would only silence it.
-    new Response(new Uint8Array(bytes), {
-      headers: { 'content-type': contentType, ...storedObjectHeaders(contentType) },
-    }),
-    cache,
-  );
-
 /**
- * Immutable is a claim about the KEY, and a tenant-scoped key names one org's private object: a
- * CDN or shared proxy that stores it under a public URL for a year hands it to every other tenant,
- * which is the cross-tenant read one hop removed. `/media` declared `public, max-age=31536000,
- * immutable` for exactly those keys until this branch. Applied in the handler rather than declared
- * in `meta.cache` because the posture is decided by the key, which no route declaration can see —
- * the pipeline's `cache-headers` stage only fills a `cache-control` a handler did not set.
+ * Bytes already in hand, as `objectResponse` asks for them. Copied, not passed through: a
+ * `Uint8Array<ArrayBufferLike>` may be backed by a `SharedArrayBuffer`, which `Response` does not
+ * accept, and copying is what makes that true by construction rather than by a cast.
  */
-const mediaCache = (key: string): CacheHint =>
-  isTenantScoped(key) ? AUTHORIZED_OBJECT_CACHE : IMMUTABLE_IMAGE;
+const heldBytes = (bytes: Uint8Array): ObjectSource['open'] => {
+  const body = new Uint8Array(bytes);
+  return (range) => (range === undefined ? body : body.subarray(range.start, range.end + 1));
+};
 
 /**
  * `exactOptionalPropertyTypes` makes an explicit `undefined` a different answer from an absent
  * key, and `variantKey` reads presence — so a spread, never an assignment.
  */
-function storageTransform(query: ImageQuery, format: VariantFormat | undefined): ImageTransform {
+function storageTransform(
+  query: ImageQuery,
+  format: VariantFormat,
+  revision: string,
+): ImageTransform {
   return {
     ...(query.width === undefined ? {} : { width: query.width }),
-    ...(format === undefined ? {} : { format }),
+    format,
     ...(query.quality === undefined ? {} : { quality: query.quality }),
+    revision,
   };
 }
 
 /**
- * A cache hit costs one `exists` and one `get`; a miss costs a decode. The source is read once
- * either way and handed to the driver rather than fetched again — `read` exists so seo never has
- * to guess whether a `src` is a path, a key or a URL, and here it is unambiguously a storage key.
+ * The validator of one transform of one revision of a source. Built only from the source's own
+ * etag and values this route parsed, so a `?f=` no format names never reaches a header: `undefined`
+ * there, and the driver refuses that URL. An unknowable source etag is `undefined` too.
+ */
+function variantEtag(
+  source: StorageObject,
+  query: ImageQuery,
+  format: VariantFormat | undefined,
+): string | undefined {
+  const bare = source.etag.replace(/^(W\/)?"|"$/g, '');
+  if (bare === '') return undefined;
+  if (format === undefined && query.format !== undefined) return undefined;
+  const transform = [
+    query.width === undefined ? 'intrinsic' : `w${query.width}`,
+    format ?? 'source',
+    ...(query.quality === undefined ? [] : [`q${query.quality}`]),
+  ];
+  return `"${bare}-${transform.join('-')}"`;
+}
+
+/**
+ * The source is STATED first, so a deleted one is `X_STORAGE_NOT_FOUND` on every disk before any
+ * variant is consulted, and its etag decides the key: a variant is looked up under the revision and
+ * the format it would be made in, so an overwrite misses it and `?w=` cannot share a key with
+ * `?w=&f=webp`. A key no one can state honestly (a `gif`, an unknowable etag) is served, never
+ * stored. A revalidation costs one `stat`, a hit one `exists` and one `get`, a miss a decode.
  */
 async function transformedVariant(
   storage: Storage,
+  request: UltimateRequest,
   key: string,
   query: ImageQuery,
   images: ImageTransformDriver | undefined,
 ): Promise<Response> {
   const disk = storage.disk();
+  await assertVariantCurrent(disk, storage.defaultDisk, key);
+  const object = await disk.stat(key);
+  if (object === undefined) throw objectNotFound(storage.defaultDisk, key);
+
   // A format storage cannot name has no variant key, so it cannot be cached. The driver refuses
   // it with core's `X_IMAGE_UNSUPPORTED`; refusing it here too would give one bad URL two codes.
+  const named = query.format;
   const format =
-    query.format !== undefined && isVariantFormat(query.format) ? query.format : undefined;
-  const cacheable = query.format === undefined || format !== undefined;
-  const cached = cacheable ? variantKey(key, storageTransform(query, format)) : undefined;
-  // The SOURCE key decides the posture, not the variant's: `variantKey` keeps the source's prefix,
-  // so a variant of `org/<id>/…` is one org's object too, and reading the hint off the derived key
-  // would be a second answer to a question the source already settled.
-  const cache = mediaCache(key);
+    named === undefined
+      ? variantFormatOf(object.contentType)
+      : isVariantFormat(named)
+        ? named
+        : undefined;
+  const revision = variantRevision(object.etag);
+  const cached =
+    format === undefined || revision === undefined
+      ? undefined
+      : variantKey(key, storageTransform(query, format, revision));
+
+  const etag = variantEtag(object, query, format);
+  // Before anything is read: this is the request a revalidating browser makes for every image.
+  const fresh = etag === undefined ? undefined : notModified(request, etag);
+  if (fresh !== undefined) return applyCacheHeaders(fresh, AUTHORIZED_OBJECT_CACHE);
+  const answer = (contentType: string, bytes: Uint8Array): Promise<Response> =>
+    objectResponse(
+      request,
+      {
+        object: { contentType, size: bytes.byteLength, etag },
+        open: heldBytes(bytes),
+      },
+      { cache: AUTHORIZED_OBJECT_CACHE },
+    );
+
   if (cached !== undefined && (await disk.exists(cached))) {
     const hit = await disk.get(cached);
-    return imageResponse(hit.bytes, hit.object.contentType, cache);
+    return answer(hit.object.contentType, hit.bytes);
   }
 
   const source = await disk.get(key);
@@ -157,12 +197,15 @@ async function transformedVariant(
   });
   if (
     cached !== undefined &&
+    // The bytes just decoded are the revision the key names, or an overwrite landed in between and
+    // this variant would answer for bytes it was not made from.
+    source.object.etag === object.etag &&
     isMintableWidth(query.width, intrinsic) &&
     isMintableQuality(query.quality)
   ) {
     await disk.put(cached, variant.bytes, { contentType: variant.contentType });
   }
-  return imageResponse(variant.bytes, variant.contentType, cache);
+  return answer(variant.contentType, variant.bytes);
 }
 
 /**
@@ -181,10 +224,10 @@ async function mediaResponse(
   authorizeStorageRead({ disk: storage.defaultDisk, key: requested }, ctx);
   const key = assertReadableKey(storage, storage.defaultDisk, requested, ctx.actor);
   const query = parseImageQuery(request.url.searchParams);
-  if (query !== null) return transformedVariant(storage, key, query, images);
-  // No transform asked for: the object itself, still under the storage key's own safety checks.
-  const read = await storage.disk().get(key);
-  return imageResponse(read.bytes, read.object.contentType, mediaCache(key));
+  if (query !== null) return transformedVariant(storage, request, key, query, images);
+  // No transform asked for: the object itself, read and answered exactly as `/_storage` answers it.
+  const served = await readStorageObject(storage, { disk: storage.defaultDisk, key }, ctx.actor);
+  return objectResponse(request, served, { cache: AUTHORIZED_OBJECT_CACHE });
 }
 
 export interface AssetRoutesOptions {
@@ -230,7 +273,7 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
   // whatever is on the app's only disk, which is every tenant's uploads, so it takes `/_storage`'s
   // declaration verbatim. `enforcedBy: 'handler'` for the reason that route gives — the `authz`
   // stage resolves a policy from `@ultimat3/render`'s page table, which this route is not in.
-  // `cache` declares the conservative posture; `mediaCache` narrows or widens it per key.
+  // No key's bytes are fixed and every answer is authorized for one actor, so one posture for all.
   routes.push({
     method: 'GET',
     path: `${MEDIA_BASE_PATH}/*key`,

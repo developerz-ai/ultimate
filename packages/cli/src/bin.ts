@@ -22,6 +22,7 @@ const local = resolveLocalCli({
   cwd: cwdFromArgv(Bun.argv.slice(2), process.cwd()),
   selfPath: import.meta.path,
   env: Bun.env,
+  command: Bun.argv[2],
 });
 if (local !== undefined) {
   writeErrorLine(`x: using the app's own @ultimat3/cli at ${local}`);

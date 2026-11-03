@@ -34,7 +34,8 @@ export const notifySubscribers = job({
     const post = await step.run('load-post', async () => {
       const found = await ctx.posts.inOrg(toOrgId(input.orgId), toPostId(input.postId));
       if (found === null) throw new PostNotFound(input.postId);
-      return found;
+      // What the mail reads: a step persists a small plain view, and answers it as JSON.
+      return { id: found.id, authorName: found.authorName };
     });
 
     // No channel announcement here, by decision: `org-posts` carries RECORDS, derived from the
@@ -43,13 +44,12 @@ export const notifySubscribers = job({
     // event)` from `@ultimat3/realtime/server` on a channel declared `events: true` — the process
     // bus, no hub. This step used to call `ctx.channel(...)`, a service nothing registered, so
     // every run of this job dead-lettered on a `TypeError` before it mailed anybody.
-    const recipients = await step.run('load-recipients', () =>
-      ctx.orgs.digestRecipients(toOrgId(post.orgId)),
-    );
+    const orgId = toOrgId(input.orgId);
+    const recipients = await step.run('load-recipients', () => ctx.orgs.digestRecipients(orgId));
 
     // The org's NAME, because the mail's `{org}` is a name slot. Its own step, so a provider blip
     // on the send below replays neither this read nor the two above it.
-    const org = await step.run('load-org', () => ctx.orgs.byId(toOrgId(post.orgId)));
+    const org = await step.run('load-org', () => ctx.orgs.byId(orgId));
 
     for (const member of recipients) {
       // One step per recipient, because the step IS the retry unit: a provider blip on recipient

@@ -1,6 +1,7 @@
 // A stored object is served from the app's own origin, with the stored content type and nothing
 // else (s1-sec L6): an uploaded `text/html` or SVG opened by URL ran on the app's origin. Both
-// surfaces that serve stored bytes are asked, for both kinds of object.
+// surfaces that serve stored bytes are asked, for both kinds of object; which types are inline is
+// `@ultimat3/http`'s `stored-object-headers.test.ts`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 // why: Bun has no mkdtemp and no recursive remove.
@@ -22,7 +23,6 @@ import {
 } from '@ultimat3/storage';
 import { assetRoutes, MEDIA_BASE_PATH } from './runtime-assets';
 import { STORAGE_READ_PERMISSION, storageRoutes } from './runtime-storage';
-import { isInlineSafe, storedObjectHeaders } from './stored-object-headers';
 
 let root = '';
 let storage: Storage;
@@ -80,18 +80,6 @@ const viaMedia = (key: string) =>
   );
 
 describe('unit · a stored object, presented', () => {
-  test('only raster images, audio and video are inline — never svg, html or xml', () => {
-    expect(isInlineSafe('image/png')).toBe(true);
-    expect(isInlineSafe('IMAGE/JPEG; charset=binary')).toBe(true);
-    expect(isInlineSafe('video/mp4')).toBe(true);
-    for (const type of ['image/svg+xml', 'text/html', 'application/xml', 'application/pdf', '']) {
-      expect(storedObjectHeaders(type)).toEqual({
-        'content-disposition': 'attachment',
-        'content-security-policy': 'sandbox',
-      });
-    }
-  });
-
   test('/_storage: an uploaded html file is a sandboxed download, a png is shown', async () => {
     const html = await viaStorage('brand/page.html');
     expect(html.headers.get('content-disposition')).toBe('attachment');

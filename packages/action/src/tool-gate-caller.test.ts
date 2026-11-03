@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { ctxOf, hasContext, runWithContext, useContext, userActor } from '@ultimat3/core';
-import { asCallerContext } from './caller-context';
+import { asCallerContext } from './tool-gate';
 
 const alice: Actor = userActor({ id: 'alice', orgId: 'org-a' });
 const agent: Actor = userActor({ id: 'agent-1', orgId: 'org-b' });

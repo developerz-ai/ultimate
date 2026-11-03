@@ -1,7 +1,7 @@
 // The run's deadline: CANCEL, then fail the attempt — never the reverse. Apart from `execute.ts`
 // at that file's size ceiling; it is the one timer an attempt owns.
 
-import { isUltimateError, logger, renderThrowable } from '@ultimat3/core';
+import { isUltimateError, logger, MAX_TIMER_MS, renderThrowable } from '@ultimat3/core';
 import { JobTimeoutError } from './errors';
 
 /**
@@ -22,12 +22,16 @@ export function raceTimeout(
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let expired = false;
-    const timer = setTimeout(() => {
-      expired = true;
-      const failure = new JobTimeoutError({ job, timeoutMs });
-      cancel.abort(failure);
-      reject(failure);
-    }, timeoutMs);
+    const timer = setTimeout(
+      () => {
+        expired = true;
+        const failure = new JobTimeoutError({ job, timeoutMs });
+        cancel.abort(failure);
+        reject(failure);
+      },
+      // `setTimeout` keeps 32 bits: past this it fires at about 1 ms, cancelling the run at its start.
+      Math.min(timeoutMs, MAX_TIMER_MS),
+    );
     const abandoned = (ended: 'resolved' | 'rejected', error?: unknown): void => {
       logger.warn('jobs.timeout.abandoned', {
         job,

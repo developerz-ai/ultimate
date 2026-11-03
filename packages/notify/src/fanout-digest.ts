@@ -4,6 +4,7 @@
 // Exactly one run opens a given window, so exactly one sleeps on it — which is what stops fifty
 // events in one hour from scheduling fifty flushes of the same digest.
 
+import type { StepOutput } from '@ultimat3/jobs';
 import { attemptDelivery } from './attempt';
 import type { NotifyChannel } from './channel';
 import type { DigestSlot } from './digest';
@@ -78,7 +79,7 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
       digest.drain(slotFor(id), endsAt),
     );
     if (batch.length === 0) continue;
-    const events = rehydrate<Params>(batch);
+    const events = rehydrate(batch, plan.parseParams);
     const newest = events[events.length - 1] ?? event;
     const sent = await step.run(`digest-send:${channel.name}:${id}`, (signal) =>
       attemptDelivery(
@@ -109,14 +110,16 @@ export async function flushDigest<Params>(input: DigestFlush<Params>): Promise<v
 }
 
 /**
- * A step's return value round-trips through JSON, so a replayed batch arrives with `at` as an ISO
- * string that the type still calls a `Date`. Rebuilt here rather than trusted — a channel that
- * formats it would throw on `at.getTime` only on the replay path, which is the path nothing tests.
- *
- * The cast is the digest store's untyped edge: it holds `NotifyEvent<unknown>` because one store
- * serves every notifier, and what comes out of a slot is exactly what this notifier put in.
+ * A step answers the stored form, so the drained batch holds `at` and any date in `params` as ISO
+ * strings on every attempt, and a channel is promised a `Date` and `Params`: both rebuilt here,
+ * `params` through the notifier's own `input`, the parse a job's payload gets off the queue.
  */
 const rehydrate = <Params>(
-  batch: readonly NotifyEvent<unknown>[],
+  batch: StepOutput<readonly NotifyEvent<unknown>[]>,
+  parseParams: (raw: unknown) => Params,
 ): readonly NotifyEvent<Params>[] =>
-  batch.map((entry) => ({ ...entry, at: new Date(entry.at) })) as readonly NotifyEvent<Params>[];
+  batch.map((entry) => ({
+    ...entry,
+    at: new Date(entry.at),
+    params: parseParams(entry.params),
+  }));

@@ -3,7 +3,8 @@
 // in a cell resolves to the column's own DEFAULT, or that `on conflict` finds the unique index the
 // framework's own migration wrote. Skips unless `TEST_DATABASE_URL` is set, as the live suite does.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import {
   generateMigration,
   type PostgresClient,
@@ -12,8 +13,9 @@ import {
   setDbClient,
   setStatementObserver,
   statementsOf,
+  withTransaction,
 } from '@ultimat3/db';
-import { boolean, money, text, timestamp, uuid } from './columns';
+import { boolean, integer, money, text, timestamp, uuid } from './columns';
 import { database } from './database';
 import { entity } from './entity';
 import { postgresDriver, postgresRepo } from './pg-driver';
@@ -62,10 +64,26 @@ const tags = entity('pg_bulk_live_tags', {
   primaryKey: ['orgId', 'invoiceId', 'label'],
 });
 
+/** Two columns: the plan's probe, where one statement carries 32,767 rows. */
+const probes = entity('pg_bulk_live_probes', {
+  columns: { id: text({ max: 40 }).primaryKey(), label: text({ max: 40 }).unique() },
+});
+
+/** Five columns: 13,107 rows is exactly the 65,535 binds Postgres allows in one statement. */
+const binds = entity('pg_bulk_live_binds', {
+  columns: {
+    orgId: integer().primaryKey(),
+    a: text({ max: 40 }),
+    b: text({ max: 40 }),
+    c: text({ max: 40 }),
+    d: text({ max: 40 }),
+  },
+});
+
 type Invoice = typeof invoices.$row;
 
 const DROP =
-  'drop table if exists "pg_bulk_live_tags", "pg_bulk_live_invoices", "pg_bulk_live_orgs" cascade';
+  'drop table if exists "pg_bulk_live_tags", "pg_bulk_live_invoices", "pg_bulk_live_orgs", "pg_bulk_live_probes", "pg_bulk_live_binds" cascade';
 
 const MONEY = { minor: 12_500, currency: 'EUR' };
 
@@ -87,7 +105,13 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
     await client.execute(raw(DROP));
     migration = generateMigration({
       // Declaration order is dependency order: the foreign keys need their targets first.
-      entities: [orgs.$describe(), invoices.$describe(), tags.$describe()],
+      entities: [
+        orgs.$describe(),
+        invoices.$describe(),
+        tags.$describe(),
+        probes.$describe(),
+        binds.$describe(),
+      ],
       name: 'live bulk writes',
       now: new Date('2026-08-12T00:00:00.000Z'),
     });
@@ -244,6 +268,91 @@ describe.skipIf(!hasPostgres)('live · postgres · bulk writes', () => {
     // And the other tenant's row is byte-for-byte what it was — same id, same values, still theirs.
     expect(await repo().findById(theirs.id, { orgId: other })).toEqual(theirs);
     expect(await repo().count({ orgId: other })).toBe(1);
+  });
+
+  describe('a batch past the bind ceiling is all or nothing', () => {
+    // The probe the plan reproduced: 2 columns, so 32,767 rows a statement, duplicate in the second.
+    const WIDE_ROWS = 40_000;
+    const DUPLICATE_AT = 35_000;
+    const wide = () => postgresRepo(probes);
+    const probeRow = (index: number) => ({ id: `w-${index}`, label: `l-${index}` });
+    const batch = (): readonly (typeof probes.$row)[] =>
+      Array.from({ length: WIDE_ROWS }, (_, index) =>
+        // The first row's id under a label of its own, so only the primary key refuses it.
+        index === DUPLICATE_AT ? { ...probeRow(index), id: probeRow(0).id } : probeRow(index),
+      );
+    const left = async (): Promise<number> => wide().count({});
+    const codeOf = (call: Promise<unknown>): Promise<string> =>
+      call.then(
+        () => 'resolved',
+        (error: unknown) => (isUltimateError(error) ? error.code : String(error)),
+      );
+
+    beforeEach(async () => {
+      await client.execute(raw('delete from "pg_bulk_live_probes"'));
+    });
+
+    test('a duplicate in the second chunk leaves no row of the first', async () => {
+      expect(await codeOf(wide().insertAll(batch()))).toBe('X_DB_UNIQUE_VIOLATION');
+      expect(await left()).toBe(0);
+    });
+
+    test('and an upsert whose second chunk fails leaves none either', async () => {
+      // `on conflict (label)` does not arbitrate the primary key, so the repeat is still refused.
+      const refused = await codeOf(
+        wide().upsertAll(batch(), { onConflict: ['label'], onMatch: 'nothing' }),
+      );
+      expect(refused).toBe('X_DB_UNIQUE_VIOLATION');
+      expect(await left()).toBe(0);
+    });
+
+    test('the same batch, clean, stores every row in order', async () => {
+      const rows = Array.from({ length: WIDE_ROWS }, (_, index) => probeRow(index));
+      const written = await wide().insertAll(rows);
+      expect(written.map((row) => row.id)).toEqual(rows.map((row) => row.id));
+      expect(await left()).toBe(WIDE_ROWS);
+    });
+
+    test('inside withTransaction a catch keeps the outer writes', async () => {
+      await withTransaction(async () => {
+        await wide().insert(probeRow(-1));
+        // A savepoint, not the outer transaction: the failure is the caller's to catch.
+        expect(await codeOf(wide().insertAll(batch()))).toBe('X_DB_UNIQUE_VIOLATION');
+        await wide().insert(probeRow(-2));
+      });
+      expect((await wide().findMany({ limit: 10 })).rows.map((row) => row.id).sort()).toEqual([
+        'w--1',
+        'w--2',
+      ]);
+    });
+
+    test('inside withTransaction an uncaught failure takes the outer writes with it', async () => {
+      await codeOf(
+        withTransaction(async () => {
+          await wide().insert(probeRow(-1));
+          await wide().insertAll(batch());
+        }),
+      );
+      expect(await left()).toBe(0);
+    });
+
+    test('the widest statement the server accepts goes as one, one row more as two', async () => {
+      // 65,535 binds exactly: 32,767 × 2 is one short of it, so this entity binds five a row.
+      const row = (index: number) => ({ orgId: index, a: `a${index}`, b: 'b', c: 'c', d: 'd' });
+      const widest = 13_107;
+      const at = (length: number) => Array.from({ length }, (_, index) => row(index));
+      const [one, oneSent] = await counting('insert into "pg_bulk_live_binds"', () =>
+        postgresRepo(binds).insertAll(at(widest)),
+      );
+      expect(oneSent).toBe(1);
+      expect(one).toHaveLength(widest);
+      await client.execute(raw('delete from "pg_bulk_live_binds"'));
+      const [two, twoSent] = await counting('insert into "pg_bulk_live_binds"', () =>
+        postgresRepo(binds).insertAll(at(widest + 1)),
+      );
+      expect(twoSent).toBe(2);
+      expect(two).toHaveLength(widest + 1);
+    });
   });
 
   test('a soft-deleted row still occupies its unique key, so an upsert collides with it', async () => {

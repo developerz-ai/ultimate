@@ -267,6 +267,7 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
     // 120s budget under it decided nothing.
     idling = setInterval(() => {
       for (const socket of sockets.idle()) evict(socket, CLOSE.idle, 'idle timeout');
+      detach(options.registry.repairMarked(), 'sync.repair_sweep');
     }, idleSweepPeriodMs(sockets.idleTimeoutMs));
     idling.unref();
     if (options.authenticate) {
@@ -428,9 +429,13 @@ export function syncNode(options: SyncNodeOptions): SyncNode {
 
       drain(ws: SyncWs): void {
         // A `records` frame backpressure refused left this socket gapped on that channel; the
-        // repair is the node's verdict, sent the moment the socket can take a frame again.
+        // repair is the node's verdict, sent the moment the socket can take a frame again. A live
+        // query's refused frame is the same debt, and its only other reader is the next change to
+        // that query, which may never come.
         const socket = sockets.get(ws.data.socketId);
-        if (socket) sockets.gapRepairs.repairAll(socket);
+        if (!socket) return;
+        sockets.gapRepairs.repairAll(socket);
+        if (socket.desynced.size > 0) detach(options.registry.repair(socket), 'sync.drain_repair');
       },
 
       close(ws: SyncWs): void {

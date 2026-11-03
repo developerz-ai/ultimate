@@ -16,6 +16,7 @@ import { coverageExcludesProbe, withCoverageExcludes } from './doctor-coverage';
 import { shippedGuardsProbe, withGuardListing } from './doctor-guards';
 import type { OfflineFallbackFact } from './doctor-offline';
 import { offlineFallbackFinding, offlineFallbackProbe } from './doctor-offline';
+import { rollingSinceProbe, withRollingReminder } from './doctor-rolling';
 import type { SealedKeysFact } from './doctor-sealed';
 import { sealedKeyFindings, sealedKeysProbe } from './doctor-sealed';
 import { PORT_RANGE, portPairAfter, readIntFlag } from './flag-number';
@@ -409,9 +410,14 @@ export const doctorCommand: CliCommand = {
       probe.root === undefined ? [] : await shippedGuardsProbe(probe.root),
     );
     // The second listing: what the coverage floor does not see (`doctor-coverage.ts`).
-    return withCoverageExcludes(
+    const covered = withCoverageExcludes(
       listed,
       probe.root === undefined ? [] : await coverageExcludesProbe(probe.root),
+    );
+    // A reminder, not a finding: the rolling rail is off until this is set (`doctor-rolling.ts`).
+    return withRollingReminder(
+      covered,
+      probe.root === undefined ? undefined : await rollingSinceProbe(probe.root),
     );
   },
 };

@@ -1419,3 +1419,63 @@ PGlite in the `unit` step and `column-matrix.live.test.ts` on `Bun.SQL` in the `
 Not fixed, because the framework never opens such a pool: on a PREPARING `Bun.SQL` connection an
 `int4[]` with a NULL member fails inside the driver. `prepare: false` is `bun-sql.ts`'s; a change
 to it has to answer the third column of the table above first.
+
+## 2026-11-02 — a finished scope refuses writes (plan 101, slice 02)
+
+`refuseAbandoned()` from `@ultimat3/db` sits in `writing()`, the Postgres funnel, and at the head of each `memoryRepo` write; reads are not refused.
+
+Moved out of `CLAUDE.md` at its ceiling: timestamps are `timestamptz`, a naive timestamp stays inexpressible. `src/index.ts` re-exports `t` from `@ultimat3/schema` verbatim (`index.test.ts`).
+
+## Moved from `CLAUDE.md` at its ceiling, 2026-11-02
+
+- **Full-text search** (`search.ts`): one generated `tsvector` per entity, `websearch_to_tsquery`, a
+  closed `SEARCH_LANGUAGES` set spliced, `coalesce(col, '')` per source, NOT NULL vector column; the
+  memory driver refuses (`X_SEARCH_IN_MEMORY`); relevance is not a served order.
+  `pg-search.live.test.ts`.
+
+## 2026-11-02: a many-row write is all or nothing and overwrites what it named
+
+Past the bind ceiling a batch was several autocommits: 40,000 rows, duplicate at row 35,000, left 32,767 on Postgres and 0 in memory. `writeChunks` holds them in one transaction; one chunk stays autocommit. `$parse` fills every column, so `db.*.upsertAll` reset each unnamed column on a collision and made the uneven-batch refusal unreachable; `tableFor` now asks `overwrittenBy` of the raw rows. Memory judged rows as they landed, so its upsert and soft `deleteWhere` left partial writes; `undoingBatch` undoes them. A JS-only rule was judged on the merged upsert row and the stamped row in memory only; Postgres now judges both in a transaction (`judgedRows`, `writeChunks`).
+
+## Same-tenant references and locks (2026-11-02)
+
+- **Decided at describe time, from two `Binding.tenant`s**, because a `references()` thunk can only be answered once both schema modules evaluated. Both ends scoped, neither end the tenant column, no `crossTenant`. Absent on `ColumnDescription` when false so an app with no such edge keeps its drift hash. `crossTenant` on an ineligible edge is refused: a reason for nothing.
+- **`entity()` may not resolve a thunk at declaration.** The `retired` check used `describe()` for a week of working tree and threw `ReferenceError` on any self-reference. `assertNotRetired` reads the physical names itself.
+- **Memory refuses only a target found under another tenant.** It enforces no foreign key, and starting would break every parent-less fixture. Found by primary-key lookup through `MemoryTables`, one per driver, below the sealing and tenant seams. The whole batch is judged before any row lands; a row `do nothing` leaves alone is judged by nobody, on either driver.
+- **`lock` is a transaction through the driver's own transactor**, the read through `idPlan` and `selectStatement`, so tenant and soft delete are the read path's. Never coalesced. `pg-lock.ts` calls `withStatementAttribution` on the lock statement only, so `fn`'s own raw statements are not reported as `lock`.
+- **`lockKey`'s input is `<table>:<tenant or ->:<key>`, the tenant read off `readPlan`.** One derivation for both drivers. A `crossTenant()` sweep naming no org holds `-` and no org's key, on purpose: it would otherwise have to guess one.
+- **Memory locks are reentrant twice**: by async chain (`heldByChain`) and by `tx` (`heldByTx`), because a key joined to a `tx` is held past the scope that took it, as a Postgres lock is, and the same transaction taking it again must not wait on itself. The chain also carries its `Tx`, so a nested lock with no options joins, as a savepoint does, and a waiter past its bound answers `57014`, Postgres' code for the same mistake: one code, even though its fix speaks of indexes. A hand-written `Tx` with no `onCommit` cannot say when it ends, so its key goes when the scope does.
+
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/entity/CLAUDE.md`](../../packages/entity/CLAUDE.md), which keeps the rule in one line.
+
+### Do not regress — schema and DDL
+
+- **The two halves must AGREE, term by term** (`expr.ts`): `matches(/…/i)` is `~*`, other flags are
+  refused (`matchOperator`); `minLength` counts code points; `trimmed()` strips U+0020 only (`btrim`);
+  `atLeast`/`eq(<number>)` judge by the column's KIND (`invariantColumns(name, columns)`), so a
+  `bigint()`/`decimal()` row compares by its digits. **`isNull()`/`isNotNull()` are the only
+  total members**; `iff(a, b)` renders `(a) = (b)` — measured as the safe direction
+  (`pg-invariant-null.live.test.ts`); `iff` is a function, and a `unique` operand is refused with the
+  `c.unique([…])` fix built through `JSON.stringify`. One app-only operand makes the whole rule
+  app-only.
+
+- **Money is three columns**: `<p>_minor bigint`, `<p>_currency char(3)`, `<p>_scale integer null`.
+  NULL scale decodes to an ABSENT key (never `0`); the scale bound is `@ultimat3/schema`'s
+  (`isMoneyScale`, `scaleCheck`); scale is not addressable (`MONEY_PARTS`). The currency bound is
+  schema's in both halves (`isCurrencyCode`, `CURRENCY_CODE_PATTERN`; `currency-check.live.test.ts`).
+  `MoneyValue` is re-exported from `@ultimat3/schema` — one declaration (`type-pins.ts`). `parseMinor`
+  refuses past ±2^53; `narrowMoney` runs in both drivers. `money({ columns })` merges per part and
+  `scale: null` means a two-column amount (`decodeRow` branches on `$meta.kind === 'money'`).
+
+### Do not regress — sealed columns
+
+- **A sealed property on a repository row is SERVER-ONLY** — own, readable, writable, NOT
+  enumerable (`serverOnly`, `sealed.ts`; set by `openRow`). Every generic serialiser omits it, which
+  is what holds a `query`'s rows, a loose `output`, a log line, an island prop, a job payload and a
+  cache tier — none of them parses a row. So ABOVE the seam a row is copied with `copyRow` /
+  `pickRow` (descriptors), never `{ ...row }`, `Object.assign({}, row)` or `out[k] = row[k]`:
+  `preload.ts`, `select()` in `query.ts`, `touch()` in `touch.ts`. `sealRow` reads each sealed property BY NAME,
+  so a row passed back whole is written whole. A required one missing on insert is `sealedMissing`
+  (`X_INVARIANT_VIOLATED`, from `$parse` and from the seam), naming the spread. `sealed.test.ts`.

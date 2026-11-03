@@ -28,6 +28,7 @@ import type { ProgressFn } from './progress';
 import type { RetryPolicy } from './retry';
 import { DEFAULT_RETRY } from './retry';
 import type { JobSettled } from './settled';
+import { ON_SETTLED_TIMEOUT_MS } from './settled';
 import type { StepApi } from './steps';
 import type { JobTenant } from './tenant';
 import { assertJobTenant, jobTenantFor } from './tenant';
@@ -118,6 +119,12 @@ export interface JobDefinition<I, R = unknown> {
    */
   readonly stepTimeout?: DurationInput;
   /**
+   * Ceiling for `onSettled`, every try included. Default `ON_SETTLED_TIMEOUT_MS`. It aborts the
+   * hook's `ctx.signal` with `X_JOB_TIMEOUT`, then the worker moves on, so a hook on a dead host
+   * cannot hold a slot for good.
+   */
+  readonly onSettledTimeout?: DurationInput;
+  /**
    * How long a `step.waitForEvent` parks between polls. Default 30s. Lower it for a wait a user
    * is watching; the step suspends for exactly this long each time, so it is also the resolution
    * of the resume, never a busy loop.
@@ -178,6 +185,7 @@ export interface JobHandle<I = unknown> {
   readonly timeoutMs: number | undefined;
   /** The declared per-step ceiling in ms; `executeJob` hands it to the step runner. */
   readonly stepTimeoutMs: number | undefined;
+  readonly onSettledTimeoutMs: number;
   /** The declared event-poll interval in ms; `undefined` leaves the runner's 30s default. */
   readonly eventPollMs: number | undefined;
   readonly input: StandardSchemaV1<unknown, I>;
@@ -278,6 +286,15 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
     definition.stepTimeout === undefined
       ? undefined
       : finiteDurationMs(definition.stepTimeout, `job "${name}"`, 'stepTimeout');
+  const onSettledTimeoutMs =
+    definition.onSettledTimeout === undefined
+      ? ON_SETTLED_TIMEOUT_MS
+      : finiteDurationMs(definition.onSettledTimeout, `job "${name}"`, 'onSettledTimeout');
+  assert(
+    onSettledTimeoutMs > 0,
+    `job "${name}" declares onSettledTimeout ${String(definition.onSettledTimeout)}, which is no ceiling at all`,
+    `set a finite positive onSettledTimeout on job("${name}") — "30s" or 30_000 — or omit the field for the default`,
+  );
   const eventPollMs =
     definition.eventPoll === undefined
       ? undefined
@@ -313,6 +330,7 @@ export function job<I, R = unknown>(definition: JobDefinition<I, R>): JobHandle<
         ? undefined
         : finiteDurationMs(definition.timeout, `job "${name}"`, 'timeout'),
     stepTimeoutMs,
+    onSettledTimeoutMs,
     eventPollMs,
     input: definition.input,
     parse(raw: unknown): I {

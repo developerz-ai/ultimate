@@ -480,7 +480,7 @@ is admitted is decided in `sync-origin.ts`:
 | Admitted | When |
 |---|---|
 | no `Origin` header | always — RFC 6455 has every browser send one, so its absence is not a browser |
-| `syncNode({ allowedOrigins })`, compared exactly (scheme, host, port) | when any is declared. The declaration is the WHOLE list (24.0.0): the origin the node was reached on is no longer admitted beside it, because that origin is read off the `Host` header and a sibling subdomain pointed at the node would be "its own" |
+| `syncNode({ allowedOrigins })`, compared exactly (scheme, host, port) | when any is declared. The declaration is the WHOLE list (24.0.0): the origin the node was reached on is no longer admitted beside it, because that origin is read off the `Host` header and a sibling subdomain pointed at the node would be "its own". `sec-fetch-site` is not read beside it, for the same reason |
 | the origin the node was reached on | only when nothing is declared. A node reached over plain `http` also admits the `https` spelling of that host and port: TLS ended at a proxy, the scheme is not knowable there, and a browser sends no `sec-fetch-site` on a websocket handshake |
 
 The CLI passes `APP_URL`'s origin, which the Compose rung (`:3000` / `:3001`) requires on `sync`

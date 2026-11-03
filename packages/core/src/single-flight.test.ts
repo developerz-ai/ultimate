@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { ctxOf, runWithContext, tryUseContext } from './context';
 import { UltimateError } from './errors';
 import { singleFlight } from './single-flight';
 
@@ -194,5 +195,263 @@ describe('singleFlight', () => {
     const flight = singleFlight({ deadlineMs: 5_000, schedule: timers.schedule });
     await flight.run('k', async () => 'done');
     expect(timers.pending()).toBe(0);
+  });
+});
+
+/**
+ * One closed tab must not fail every healthy reader of a cold key. Each reader here runs on its own
+ * context, because that is how the signal reaches a flight, and a re-lead's work reads the context
+ * it finds, which is what proves the second load ran as the joiner and not as the leader.
+ */
+describe('a joiner after its leader was aborted', () => {
+  const lifetimeFlight = () => singleFlight({ signal: () => tryUseContext()?.signal });
+  const as = <T>(signal: AbortSignal, fn: () => T): T => runWithContext(ctxOf({ signal }), fn);
+  const aborted = (): DOMException => new DOMException('the caller left', 'AbortError');
+
+  test('a live joiner gets the value from a second load, under its own context', async () => {
+    const flight = lifetimeFlight();
+    const leader = new AbortController();
+    const joiner = new AbortController();
+    const gate = deferred<string>();
+    const loadedUnder: (AbortSignal | undefined)[] = [];
+
+    const led = as(leader.signal, () => flight.run('key', () => gate.promise));
+    const joined = as(joiner.signal, () =>
+      flight.run('key', async () => {
+        loadedUnder.push(tryUseContext()?.signal);
+        return 'second';
+      }),
+    );
+    leader.abort();
+    gate.reject(aborted());
+
+    await expect(led).rejects.toThrow('the caller left');
+    expect(await joined).toBe('second');
+    expect(loadedUnder).toEqual([joiner.signal]);
+    expect(flight.size).toBe(0);
+  });
+
+  test('three live joiners are one second load, and they share it', async () => {
+    const flight = lifetimeFlight();
+    const leader = new AbortController();
+    const gate = deferred<string>();
+    const second = deferred<string>();
+    let reloads = 0;
+
+    const led = as(leader.signal, () => flight.run('key', () => gate.promise));
+    led.catch(() => undefined);
+    const joined = [1, 2, 3].map(() =>
+      as(new AbortController().signal, () =>
+        flight.run('key', () => {
+          reloads += 1;
+          return second.promise;
+        }),
+      ),
+    );
+    leader.abort();
+    gate.reject(aborted());
+    await Bun.sleep(0);
+    second.resolve('value');
+
+    expect(await Promise.all(joined)).toEqual(['value', 'value', 'value']);
+    expect(reloads).toBe(1);
+  });
+
+  test('a re-leader aborted in turn hands its live joiners a third load', async () => {
+    const flight = lifetimeFlight();
+    const first = new AbortController();
+    const second = new AbortController();
+    const firstGate = deferred<string>();
+    const secondGate = deferred<string>();
+
+    const led = as(first.signal, () => flight.run('key', () => firstGate.promise));
+    led.catch(() => undefined);
+    const relead = as(second.signal, () => flight.run('key', () => secondGate.promise));
+    relead.catch(() => undefined);
+    const last = as(new AbortController().signal, () => flight.run('key', async () => 'third'));
+    first.abort();
+    firstGate.reject(aborted());
+    await Bun.sleep(0);
+    second.abort();
+    secondGate.reject(aborted());
+
+    expect(await last).toBe('third');
+  });
+
+  test('a leader that FAILS with its signal live hands its joiner that failure, no second load', async () => {
+    const flight = lifetimeFlight();
+    const gate = deferred<string>();
+    const failure = new UltimateError({
+      code: 'X_FLIGHT_PROBE',
+      cause: 'the load itself failed',
+      fix: 'x doctor --json',
+    });
+    let reloads = 0;
+
+    const led = as(new AbortController().signal, () => flight.run('key', () => gate.promise));
+    led.catch(() => undefined);
+    const joined = as(new AbortController().signal, () =>
+      flight.run('key', async () => {
+        reloads += 1;
+        return 'second';
+      }),
+    );
+    gate.reject(failure);
+
+    await expect(joined).rejects.toBe(failure);
+    expect(reloads).toBe(0);
+  });
+
+  test('a joiner whose own signal is aborted takes the rejection', async () => {
+    const flight = lifetimeFlight();
+    const leader = new AbortController();
+    const joiner = new AbortController();
+    const gate = deferred<string>();
+    const failure = aborted();
+    let reloads = 0;
+
+    const led = as(leader.signal, () => flight.run('key', () => gate.promise));
+    led.catch(() => undefined);
+    const joined = as(joiner.signal, () =>
+      flight.run('key', async () => {
+        reloads += 1;
+        return 'second';
+      }),
+    );
+    leader.abort();
+    joiner.abort();
+    gate.reject(failure);
+
+    await expect(joined).rejects.toBe(failure);
+    expect(reloads).toBe(0);
+  });
+
+  test('with no `signal` option a joiner shares the rejection, as it always did', async () => {
+    const flight = singleFlight();
+    const leader = new AbortController();
+    const gate = deferred<string>();
+    const failure = aborted();
+    let reloads = 0;
+
+    const led = as(leader.signal, () => flight.run('key', () => gate.promise));
+    const joined = as(new AbortController().signal, () =>
+      flight.run('key', async () => {
+        reloads += 1;
+        return 'second';
+      }),
+    );
+    expect(joined).toBe(led);
+    leader.abort();
+    gate.reject(failure);
+
+    await expect(joined).rejects.toBe(failure);
+    expect(reloads).toBe(0);
+  });
+
+  test('a joiner still contributes its context to the load it re-leads', async () => {
+    const flight = lifetimeFlight();
+    const leader = new AbortController();
+    const gate = deferred<string>();
+    const contexts: (string | undefined)[] = [];
+    const join = (context: string) => ({
+      context,
+      merge: (current: string, joining: string): string => `${current}+${joining}`,
+    });
+
+    const led = as(leader.signal, () => flight.run('key', () => gate.promise, join('leader')));
+    led.catch(() => undefined);
+    const joined = as(new AbortController().signal, () =>
+      flight.run(
+        'key',
+        async (shared) => {
+          contexts.push(shared());
+          return 'second';
+        },
+        join('joiner'),
+      ),
+    );
+    leader.abort();
+    gate.reject(aborted());
+
+    await joined;
+    expect(contexts).toEqual(['joiner']);
+  });
+});
+
+describe('`released`: told each time a key stops being held', () => {
+  test('on settle, on a rejection, on `evict` and on the deadline, once each', async () => {
+    const freed: string[] = [];
+    const timers = manualTimers();
+    const flight = singleFlight({
+      deadlineMs: 5_000,
+      schedule: timers.schedule,
+      released: (key) => {
+        freed.push(key);
+      },
+    });
+    await flight.run('settled', async () => 'done');
+    await flight.run('rejected', () => Promise.reject(new TypeError('no'))).catch(() => undefined);
+    expect(freed).toEqual(['settled', 'rejected']);
+
+    const evicted = deferred<string>();
+    const evicting = flight.run('evicted', () => evicted.promise);
+    expect(flight.evict('evicted')).toBe(true);
+    expect(flight.evict('evicted')).toBe(false);
+    expect(freed).toEqual(['settled', 'rejected', 'evicted']);
+    evicted.resolve('late');
+    await evicting;
+    // Settling after it was evicted frees nothing: the key was already not this load's.
+    expect(freed).toEqual(['settled', 'rejected', 'evicted']);
+
+    void flight.run('wedged', () => new Promise<string>(() => undefined));
+    timers.fire();
+    expect(freed).toEqual(['settled', 'rejected', 'evicted', 'wedged']);
+  });
+
+  test('an evicted load settling does not report the key a newer load holds', async () => {
+    const freed: string[] = [];
+    const flight = singleFlight({
+      released: (key) => {
+        freed.push(key);
+      },
+    });
+    const first = deferred<string>();
+    const second = deferred<string>();
+    const old = flight.run('k', () => first.promise);
+    flight.evict('k');
+    freed.length = 0;
+    const newer = flight.run('k', () => second.promise);
+    first.resolve('old');
+    await old;
+    expect(freed).toEqual([]);
+    second.resolve('new');
+    await newer;
+    expect(freed).toEqual(['k']);
+  });
+
+  test('it runs before a joiner re-leads, so what it clears is the old holder', async () => {
+    const events: string[] = [];
+    const flight = singleFlight({
+      signal: () => tryUseContext()?.signal,
+      released: () => {
+        events.push('released');
+      },
+    });
+    const leader = new AbortController();
+    const gate = deferred<string>();
+    const led = runWithContext(ctxOf({ signal: leader.signal }), () =>
+      flight.run('k', () => gate.promise),
+    );
+    led.catch(() => undefined);
+    const joined = runWithContext(ctxOf({ signal: new AbortController().signal }), () =>
+      flight.run('k', async () => {
+        events.push('re-led');
+        return 'second';
+      }),
+    );
+    leader.abort();
+    gate.reject(new DOMException('gone', 'AbortError'));
+    await joined;
+    expect(events.slice(0, 2)).toEqual(['released', 're-led']);
   });
 });

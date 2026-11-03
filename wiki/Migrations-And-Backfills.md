@@ -205,6 +205,44 @@ An embedded scratch boot restores a post-`initdb` snapshot instead of running `i
 
 `x db migrate` also reports `unexpected-object` (`X_DB_DRIFT`): a trigger, function, view, type or sequence the dev database holds and replaying the migrations does not create. Compared by identity, never by definition text. The fix is one command that prints its definition (`psql "$DATABASE_URL" -c '…'`); its comment gives the repair in order — copy the definition into a migration, drop the hand-made copy, then `x db migrate`.
 
+## Foreign keys and CHECKs on a live table
+
+`As of 2026-11-02`. A key or a CHECK added as one statement scans the whole table holding a lock that stops writes. `x db gen` writes it in two halves instead, so writes keep flowing.
+
+| What | Where it lands |
+|---|---|
+| A foreign key on a live table | the `_concurrently` step, each statement in its own short transaction under `lock_timeout`: index builds, `alter table … drop constraint if exists k, add constraint k … not valid`, `validate constraint`, then the drop of any old key. An old key under another name holds until that last statement |
+| A key on a table this migration creates | the plain `add constraint` in the transaction, byte-identical to before — unless the unique index it needs is built by the deferred step, which would otherwise be `42830`. Then it defers too |
+| A key re-added after a retype | the transaction: the rewrite holds ACCESS EXCLUSIVE already |
+| A CHECK on a live table | `add constraint … not valid` in the transaction (it needs no index), `validate constraint` in the deferred step. New writes are held to it at once. A new table's stays in `create table` |
+| `down` | restore the old key, drop the new key, drop the index |
+
+`x db migrate` re-runs a failed step from the top. `validate` finding a bad row is `X_DB_FOREIGN_KEY_VIOLATION` (or the CHECK's own failure) with the constraint in place holding new writes and the old release still serving: repair the row, re-run. A declared constraint left `NOT VALID` in a database whose ledger says the step ran is `X_DB_DRIFT`, kind `not-valid-constraint`, and its fix is the validate statement.
+
+## A column drop takes two releases
+
+`As of 2026-11-02`. Old and new pods serve one schema during a roll, and the old release names every column it declares in every read and insert, so a drop in the release that stops declaring it answers `X_DB_SCHEMA_STALE` from every old pod.
+
+| Release | The entity | `x db gen` | Writes |
+|---|---|---|---|
+| N | remove it from `columns`, add `retired: ['legacy']` (physical name) | `x db gen "retire legacy"` | `-- retires "t"."legacy"` and no statement. The column stays in the table and the snapshot, marked `retired`, with its indexes, keys and own CHECK |
+| N+1 | remove it from `retired` | `x db gen "drop legacy" --allow-destructive` | `-- contracts "t"."legacy"`, the `drop column`, `-- destructive: true` |
+
+| Refusal | When |
+|---|---|
+| `X_MIGRATION_ROLLING_UNSAFE` | a column leaves the entity without having been retired, with or without `--allow-destructive`. Also a retired name no migration records or `columns` still declares, a NOT NULL column with no default or a key column (the new release's inserts would fail, so relax it first), a committed `drop`/`rename` when the `drift` rail is on, and a retire and its drop both pending on a live production database |
+| `X_MIGRATION_IRREVERSIBLE` | the retired column is removed without `--allow-destructive`. Retiring is not consent to losing the rows |
+
+An app that stops before it starts (one instance, `strategy: Recreate`) says so: `x db gen "drop legacy" --allow-destructive --rolling-unsafe` writes `-- rolling-unsafe: true` and needs no retire.
+
+**The rail.** `rollingSince: "<migration id>"` in `x.verify.json` turns on the `drift` step's fifth rail for every migration after that id: a `drop column` with no `-- retires` in an earlier file, a `rename column`, a `rename table`. A closed list, on statements and not on prose. `x new` writes `"0"`. Unset, the rail does not run, because an applied migration cannot gain a marker (checksum); `x doctor` prints one line naming the id to set. A retire before the bound still earns the drop after it.
+
+**A new enum member is not railed.** N-1 pods refuse a value they do not know (`X_INVARIANT_VIOLATED`), but adding a member nobody writes yet is safe, and no file says when the first write ships. Add the member in N, write it in N+1.
+
+## A lock wait is a turn lost, not a failed deploy
+
+`As of 2026-11-02`. `lock_timeout` firing during `migrate()` or `rollback()` sends it again, up to `lockRetries` more times (default 5), waiting at least one `lockTimeoutMs` plus jitter so the queue behind the ALTER drains, with a warn line per attempt. A transactional step retries whole, since it rolled back whole; a `-- transaction: false` step retries the one statement, since what ran before it stays run. The ledger row is written only by a success. Exhausted is `X_DB_LOCK_TIMEOUT`, its cause stating the attempts.
+
 ## The destructive-migration rail
 
 A generated migration that drops a column or table, retypes a column, or truncates a table needs an explicit marker in the file, or `x verify`'s `drift` step refuses to ship it:
@@ -409,7 +447,7 @@ Scaffolds a working pair, never a stub: `x g backfill <name>` writes `<feature>/
 | Code | Cause | Fix |
 |---|---|---|
 | `X_MIGRATION_CONFLICT` | the ledger disagrees with this build — a foreign app-version row that is not a rollback (rows all newer than the build are accepted), or an applied migration whose checksum moved | deploy the version `cause` names, or `x db gen "fix <migration>"` — never edit an applied migration |
-| `X_MIGRATION_IRREVERSIBLE` | a generated plan drops a column or table and its `down` cannot restore the rows | `x db gen "<name>" --allow-destructive`, or keep the column and deprecate it |
+| `X_MIGRATION_IRREVERSIBLE` | a generated plan drops a column or table and its `down` cannot restore the rows | `x db gen "<name>" --allow-destructive`, or put the column back in `columns` and keep it |
 | `X_MIGRATION_DESTRUCTIVE` | a committed migration's `up` destroys data with no `-- destructive: true` line | add the marker, or regenerate with `--allow-destructive` — before the migration is applied |
 | `X_MIGRATION_SNAPSHOT_MISSING` | the newest migration on disk carries no `.snapshot.json` sidecar to diff against | `git checkout -- packages/db/migrations/<id>.snapshot.json` — or, when it was never written, `rm packages/db/migrations/<id>.* && x db gen "<name>"`, the delete first |
 | `X_MIGRATION_CONCURRENT_IN_TRANSACTION` | a migration without `-- transaction: false` holds a concurrent index statement, which Postgres refuses inside a transaction block (`25001`) | `sed -i '1i -- transaction: false' packages/db/migrations/<id>.sql` before it is applied, or move the statement into a migration of its own. Refused before `BEGIN`, so nothing is applied |

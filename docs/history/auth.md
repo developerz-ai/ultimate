@@ -625,3 +625,16 @@ a current fact: the rules that still hold are in that file, and where the two di
   redeemed it. `completeMfa` takes a recovery code where it takes six digits.
 - **`x_auth_failures` is reported, not dropped.** `x doctor` raises `X_FRAMEWORK_TABLE_ORPHANED`
   with the `drop table` to run once every replica is on this release.
+- **Narrative moved out of `packages/auth/CLAUDE.md` for its size ceiling, `As of 2026-11-02`.**
+  `Clear-Site-Data`: a PWA's offline cache does not survive a sign-out, by decision (a cached private
+  page IS the previous principal's data); the page boot's rescope wipe is the second line. Tests:
+  a limiter whose statements were never executed is a credential control nobody has run, the
+  pairing `@ultimat3/http`'s rate-limit store and `@ultimat3/realtime`'s Postgres files use too.
+  `mfa.required`: enforcing it would lock out every un-enrolled user. `errors.ts`: a `hasErrorCode()`
+  guard would suppress the `X_ERROR_CODE_DUPLICATE` that fires when two packages claim one code.
+  `NaN` makes every comparison false: no expiry, the empty password accepted, a year-old handshake
+  opened. Nothing in the package reads the environment to guess a replica count.
+- **`TotpReplayGuard` became one atomic `claim`, `As of 2026-11-02`.** `isUsed` + `remember` were
+  synchronous and could not be made atomic across a network: a guard with async methods answered a
+  truthy `Promise`, locking every account out, and the default memory guard let one code sign in
+  once per replica. A boot now installs `postgresTotpReplayGuard` (`x_totp_steps`).

@@ -26,6 +26,19 @@ export interface SingleFlightOptions {
   readonly deadlineMs?: number | undefined;
   /** Injected so a deadline is provable without waiting for one. */
   readonly schedule?: Scheduler | undefined;
+  /**
+   * The lifetime of whoever is calling, read at each `run`. Set, a joiner whose leader was aborted
+   * and whose own signal is live re-leads with its own `work`: the leader's closed tab is not a
+   * failure of the read it joined. Any other rejection is shared, ordinary failures included.
+   * Absent means every joiner shares every rejection. Injected, so this file reads no context.
+   */
+  readonly signal?: (() => AbortSignal | undefined) | undefined;
+  /**
+   * Told each time `key` stops being held: settle, deadline or `evict`, and not when a load already
+   * evicted settles. So a caller keeping state per held key mirrors the map exactly, with no gap
+   * before the settle and no entry left behind by a load that never does.
+   */
+  readonly released?: ((key: string) => void) | undefined;
 }
 
 export interface SingleFlight {
@@ -51,9 +64,10 @@ export interface SingleFlight {
   evict(key: string): boolean;
 }
 
-/** The leader's promise, the box its merged context lives in, and its deadline's canceller. */
+/** The leader's promise, its signal, the box its merged context lives in, its deadline's canceller. */
 interface Flight {
   readonly running: Promise<unknown>;
+  readonly signal: AbortSignal | undefined;
   readonly shared: { context: unknown };
   cancelDeadline: () => void;
 }
@@ -69,12 +83,68 @@ export function singleFlight(options?: SingleFlightOptions): SingleFlight {
   const inflight = new Map<string, Flight>();
   const schedule = options?.schedule ?? defaultScheduler;
   const deadlineMs = options?.deadlineMs;
+  const readSignal = options?.signal;
+  const released = options?.released;
 
   // Identity, never key presence. `inflight.delete(key)` from a settling load drops whatever holds
   // the key NOW — which, once a deadline can evict, is a different load that has not settled: its
   // joiners would then be sharing a promise nothing in the map answers for.
   const evict = (key: string, entry: Flight): void => {
-    if (inflight.get(key) === entry) inflight.delete(key);
+    if (inflight.get(key) !== entry) return;
+    inflight.delete(key);
+    released?.(key);
+  };
+
+  const run = <T, C = undefined>(
+    key: string,
+    work: (shared: () => C | undefined) => Promise<T>,
+    join?: FlightJoin<C>,
+  ): Promise<T> => {
+    const joined = inflight.get(key);
+    // Two readers of one key asking for two different `T` is a caller bug this cannot see; the
+    // value they share is the same object either way, so the cast is the honest one.
+    if (joined !== undefined) {
+      if (join !== undefined) {
+        joined.shared.context = join.merge(joined.shared.context as C, join.context);
+      }
+      if (readSignal === undefined) return joined.running as Promise<T>;
+      const mine = readSignal();
+      // Asked at the rejection, not now: either side may yet abort. `settled` was attached at lead,
+      // ahead of this, so the key is already free; the first re-lead leads and the rest join it. No
+      // cap is needed, as each further round spends one more aborted leader. `catch` runs under the
+      // context it was attached in, so the re-lead's `work` is this joiner's, as this joiner.
+      return (joined.running as Promise<T>).catch((error: unknown) => {
+        if (joined.signal?.aborted !== true || mine?.aborted === true) throw error;
+        return run(key, work, join);
+      });
+    }
+
+    const shared: { context: unknown } = { context: join?.context };
+    // Wrapped so a `work()` that throws SYNCHRONOUSLY still rejects the joiners rather than
+    // escaping past the map and leaving no entry to clear.
+    const running: Promise<T> = (async () => await work(() => shared.context as C | undefined))();
+    const entry: Flight = {
+      running,
+      signal: readSignal?.(),
+      shared,
+      cancelDeadline: (): void => undefined,
+    };
+    inflight.set(key, entry);
+
+    if (deadlineMs !== undefined) {
+      entry.cancelDeadline = schedule(() => {
+        evict(key, entry);
+      }, deadlineMs);
+    }
+
+    const settled = (): void => {
+      entry.cancelDeadline();
+      evict(key, entry);
+    };
+    // A rejected load MUST clear too, or one failure is cached as a permanent rejection.
+    void running.then(settled, settled);
+
+    return running;
   };
 
   return {
@@ -88,45 +158,10 @@ export function singleFlight(options?: SingleFlightOptions): SingleFlight {
       const held = inflight.get(key);
       if (held === undefined) return false;
       held.cancelDeadline();
-      return inflight.delete(key);
+      evict(key, held);
+      return true;
     },
 
-    run<T, C = undefined>(
-      key: string,
-      work: (shared: () => C | undefined) => Promise<T>,
-      join?: FlightJoin<C>,
-    ): Promise<T> {
-      const joined = inflight.get(key);
-      // Two readers of one key asking for two different `T` is a caller bug this cannot see; the
-      // value they share is the same object either way, so the cast is the honest one.
-      if (joined !== undefined) {
-        if (join !== undefined) {
-          joined.shared.context = join.merge(joined.shared.context as C, join.context);
-        }
-        return joined.running as Promise<T>;
-      }
-
-      const shared: { context: unknown } = { context: join?.context };
-      // Wrapped so a `work()` that throws SYNCHRONOUSLY still rejects the joiners rather than
-      // escaping past the map and leaving no entry to clear.
-      const running: Promise<T> = (async () => await work(() => shared.context as C | undefined))();
-      const entry: Flight = { running, shared, cancelDeadline: (): void => undefined };
-      inflight.set(key, entry);
-
-      if (deadlineMs !== undefined) {
-        entry.cancelDeadline = schedule(() => {
-          evict(key, entry);
-        }, deadlineMs);
-      }
-
-      const settled = (): void => {
-        entry.cancelDeadline();
-        evict(key, entry);
-      };
-      // A rejected load MUST clear too, or one failure is cached as a permanent rejection.
-      void running.then(settled, settled);
-
-      return running;
-    },
+    run,
   };
 }

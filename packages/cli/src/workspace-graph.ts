@@ -67,6 +67,31 @@ export function workspaceGlobs(manifest: unknown): readonly string[] {
   return Array.isArray(field) ? stringsOf(field) : stringsOf(asRecord(field)?.['packages']);
 }
 
+/**
+ * The one walker over `workspaces`: every manifest the globs claim, root-relative, POSIX and sorted,
+ * never a vendored one. A `!` entry subtracts, as npm reads it. Handed to `Bun.Glob` it is a glob of
+ * its own, matching every file in the tree that is not that manifest.
+ */
+export async function workspaceManifestPaths(
+  root: string,
+  globs: readonly string[],
+): Promise<readonly string[]> {
+  const excluded = globs
+    .filter((glob) => glob.startsWith('!'))
+    .map((glob) => new Bun.Glob(glob.slice(1).replace(/\/+$/, '')));
+  const found = new Set<string>();
+  for (const glob of globs.filter((candidate) => !candidate.startsWith('!'))) {
+    const manifests = new Bun.Glob(`${glob.replace(/\/+$/, '')}/package.json`);
+    for await (const path of manifests.scan({ cwd: root, absolute: false })) {
+      const manifest = path.replaceAll('\\', '/');
+      const dir = manifest.slice(0, -'/package.json'.length);
+      if (isVendored(manifest) || excluded.some((negated) => negated.match(dir))) continue;
+      found.add(manifest);
+    }
+  }
+  return [...found].sort();
+}
+
 const declaredDepsOf = (manifest: Record<string, unknown>): readonly string[] =>
   DEPENDENCY_FIELDS.flatMap((field) => Object.keys(asRecord(manifest[field]) ?? {}));
 
@@ -89,26 +114,20 @@ export async function scanWorkspaces(root: string): Promise<WorkspaceScan> {
   const rootManifest = await readManifest(join(root, 'package.json'));
   const found: { dir: string; name: string; version: string; declared: readonly string[] }[] = [];
   const unreadable: string[] = [];
-  for (const pattern of workspaceGlobs(rootManifest)) {
-    for await (const relative of new Bun.Glob(`${pattern}/package.json`).scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      if (isVendored(relative)) continue;
-      const manifest = await readManifest(join(root, relative));
-      const name = manifest?.['name'];
-      if (manifest === undefined || typeof name !== 'string' || name === '') {
-        unreadable.push(relative.replaceAll('\\', '/'));
-        continue;
-      }
-      const version = manifest['version'];
-      found.push({
-        dir: relative.replaceAll('\\', '/').slice(0, -'/package.json'.length),
-        name,
-        version: typeof version === 'string' ? version : '0.0.0',
-        declared: declaredDepsOf(manifest),
-      });
+  for (const relative of await workspaceManifestPaths(root, workspaceGlobs(rootManifest))) {
+    const manifest = await readManifest(join(root, relative));
+    const name = manifest?.['name'];
+    if (manifest === undefined || typeof name !== 'string' || name === '') {
+      unreadable.push(relative);
+      continue;
     }
+    const version = manifest['version'];
+    found.push({
+      dir: relative.slice(0, -'/package.json'.length),
+      name,
+      version: typeof version === 'string' ? version : '0.0.0',
+      declared: declaredDepsOf(manifest),
+    });
   }
   found.sort((left, right) => left.dir.localeCompare(right.dir));
   const names = new Set<string>();

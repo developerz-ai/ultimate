@@ -76,6 +76,38 @@ describe('unit · the gate compares what a worker registers with what the whole 
     expect(await roleLoadFindings(dir, exec)).toEqual([]);
   }, 60_000);
 
+  // The decision action's module is what registers a tool's gate, and an agent a worker runs reads
+  // the gate by name: absent there, that agent's call to the tool would run with nobody asked.
+  const GATE = (
+    body: string,
+  ) => `import { mcpConfirmations, memoryConfirmationStore } from '@ultimat3/mcp';
+${body}export const confirmRefunds = mcpConfirmations({
+  tools: ['refundOrder'],
+  store: memoryConfirmationStore(),
+  permission: 'order:confirm',
+});
+`;
+
+  test('a tool gate declared in a module reaching a document is a finding', async () => {
+    const dir = await fixtureApp({
+      'apps/web/app/orders/confirm.ts': GATE(
+        "import { Card } from '../../shared/ui/card.tsx';\nexport const card = Card;\n",
+      ),
+    });
+    expect(await roleLoadFindings(dir, exec)).toEqual([
+      roleLoadFinding({
+        kind: 'tool gate',
+        name: 'refundOrder',
+        module: 'apps/web/app/orders/confirm.ts',
+      }),
+    ]);
+  }, 60_000);
+
+  test('the same tool gate in a document-free module is none', async () => {
+    const dir = await fixtureApp({ 'apps/web/app/orders/confirm.ts': GATE('') });
+    expect(await roleLoadFindings(dir, exec)).toEqual([]);
+  }, 60_000);
+
   test('a probe that prints no answer is a finding, never a pass', async () => {
     const silent = await roleLoadFindings('/nowhere', async (command) => ({
       command,

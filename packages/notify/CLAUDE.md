@@ -53,6 +53,17 @@ A job body runs **before** its checkpoint lands, so both layers are load-bearing
    spellings against each other.
 
 `attempt.ts` is the only place a send happens, so there is exactly one implementation of that order.
+
+**A claim has one owner, and `held` is not `sent`** (`As of 2026-11-02`). `claim` answers
+`owned` (with a `claimId`), `sent` or `held`. A `sending` row fires only past `reclaimAfterMs`
+(`DEFAULT_DELIVERY_RECLAIM_MS`, 5 min, on the job's clock); `settle` is fenced `claim_id = $7 and
+status = 'sending'` as `SQL_IDEMPOTENCY_SETTLE` is, and `false` is logged `notify.settle_fenced`.
+`attemptDelivery` raises `held` as `X_NOTIFY_DELIVERY_HELD` (`retry-after`, the window's remainder
+in `meta.retryAfterSeconds`, deferred by jobs' `rateLimitDeferralMs` with the attempt uncounted) and
+never returns `false` for it: `false` checkpoints the step, and a
+holder that then dies is a notification no retry is left to send (`attempt.test.ts`,
+`ledger-parity.live.test.ts`).
+
 The **one at-most-once seam** is a digest flush: `DigestStore.drain` empties the window, and a
 process killed between the drain and its checkpoint loses that batch. It is stated in `digest.ts`
 rather than hidden. `postgresDigestStore` makes the window itself durable and shared — the

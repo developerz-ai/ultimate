@@ -13,7 +13,8 @@ import { type OriginVerdict, proveSameOrigin } from '@ultimat3/core';
  *   declaration IS the app's origin, so it is the whole list: the origin the node sees is derived
  *   from the `Host` header, which names whatever host the request was aimed at — a sibling
  *   subdomain pointed at this node is "its own origin" by that reading, and a `Domain=`-wide
- *   session cookie rides its socket;
+ *   session cookie rides its socket. `sec-fetch-site` is withheld from the rule here for the same
+ *   reason: a browser says `same-origin` of the host it dialled, and that host is the question;
  * - **the node's own ORIGIN, only when nothing is declared** — host and port exactly as the
  *   request reached it (`x dev`, a combined-role container). A host name alone is not this app:
  *   cookies are not isolated by port. `admitReached` keeps it beside a declared list (`x dev`).
@@ -28,10 +29,11 @@ export function upgradeOrigin(
   if (origin === null) return { ok: true };
   // Normalised once (`https://x/` and `https://x` are one origin), then matched as whole strings.
   const admitted = allowedOrigins.map((allowed) => URL.parse(allowed)?.origin);
+  const listIsWhole = admitted.length > 0 && !admitReached;
   return proveSameOrigin({
-    selfOrigins: admitted.length > 0 && !admitReached ? [] : selfOrigins(url),
+    selfOrigins: listIsWhole ? [] : selfOrigins(url),
     origin,
-    secFetchSite: request.headers.get('sec-fetch-site'),
+    secFetchSite: listIsWhole ? null : request.headers.get('sec-fetch-site'),
     listed: (asked) => admitted.includes(asked),
     listName: 'APP_URL or syncNode({ allowedOrigins })',
   });

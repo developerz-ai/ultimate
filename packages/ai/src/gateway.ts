@@ -30,6 +30,7 @@ import { resolveModel } from './model-resolve';
 import type { ModelId } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
 import type { SamplingWire } from './sampling';
+import { ZERO_USAGE } from './wire';
 
 /**
  * Response cache. Structurally satisfied by `@ultimat3/cache`'s memo/LRU tiers; declared as
@@ -179,8 +180,9 @@ class GatewayImpl implements Gateway {
     const cacheKey = promptCacheKey(resolved);
     const cached = await this.config.cache?.get(cacheKey);
     if (cached !== undefined) {
-      // A cache hit costs nothing, so it is deliberately NOT debited from the budget.
-      return JSON.parse(cached) as GenerateResult;
+      // A cache hit costs nothing, so it is deliberately NOT debited from the budget, and says so:
+      // carrying the stored figures, a meter summing the run billed it a second time.
+      return freeOf(JSON.parse(cached) as GenerateResult);
     }
 
     // Reserve against the ESTIMATE before spending anything — tokens AND money, since a
@@ -378,6 +380,14 @@ async function settleFailure(
   if (billed === undefined) return ledger?.release(reservation);
   await ledger?.record(billed.usage, billed.cost, reservation);
 }
+
+/** The stored answer as a hit delivers it: no token spent, no money, in the currency it named. */
+const freeOf = (stored: GenerateResult): GenerateResult => ({
+  ...stored,
+  usage: ZERO_USAGE,
+  cost: { ...stored.cost, minor: 0 },
+  ...(stored.costExact === undefined ? {} : { costExact: { ...stored.costExact, minor: 0 } }),
+});
 
 /**
  * The request's completion ceiling, screened at the one seam every model call in an app passes

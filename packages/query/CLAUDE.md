@@ -40,7 +40,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `audit-errors.ts` | `X_QUERY_AUDIT_SINK_MISSING` / `X_QUERY_AUDIT_SINK_FAILED` (titles in `errors.ts`) |
 | `download.ts` | `query({ download })`: the build, the in-process file, the mint, the serve — through `admittedCall` |
 | `download-token.ts` | the `_token`: claims `seal()`ed under the master key, opened against one query, one input, the clock |
-| `download-http.ts` | the download route: mint JSON without `_token`, the file with it (`Range:`, `content-disposition`) |
+| `download-http.ts` | the download route: mint JSON without `_token`, the file with it (`content-disposition`, and `Range:` by http's `objectResponse`; only `bodyOf` slices a body) |
 | `download-errors.ts` | the four `X_QUERY_DOWNLOAD_*` classes (titles in `errors.ts`) |
 | `search-string.ts` | `searchOf`: the input as a search string — the client's request and a minted URL, one encoding |
 

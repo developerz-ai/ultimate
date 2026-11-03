@@ -2,29 +2,24 @@
 // only difference is where the rows are, which is the point: a test that passes against memory
 // means something about Postgres.
 //
-// It never takes a connection as an argument. `db()` from `@ultimat3/db` returns the open
-// transaction when there is one, so a repository call inside `withTransaction` joins it without
-// being told — which is how `ctx.jobs.enqueue()` lands its outbox row atomically with the write
-// that caused it. `RepoOptions.tx` is the in-memory driver's undo hook and is ignored here.
+// It takes no connection. `db()` from `@ultimat3/db` returns the open transaction, so a repository
+// call inside `withTransaction` joins it unasked, which lands `ctx.jobs.enqueue()`'s outbox row
+// with its write. `RepoOptions.tx` is the in-memory driver's undo hook and is ignored here.
 
 import { pageOf } from '@ultimat3/core';
 import {
   currentTx,
   type DbClient,
   db,
+  refuseAbandoned,
   type SqlFragment,
   withStatementAttribution,
 } from '@ultimat3/db';
 import { aggregateColumnOf, aggregateMinor, assertOneUnit } from './aggregate';
 import { decodeAggregate } from './aggregate-decode';
 import { appendOnlyRepo } from './append-only';
-import {
-  conflictKeys,
-  insertChunks,
-  insertColumns,
-  namedProperties,
-  upsertPlan,
-} from './bulk-write';
+import { conflictKeys, insertColumns, statementColumns, upsertPlan } from './bulk-write';
+import { writeChunks } from './bulk-write-send';
 import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
 import { moneyColumns } from './column';
@@ -37,6 +32,7 @@ import { notFound, repoClientPinned } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { judgedWrite } from './judged-write';
+import { postgresLocks } from './pg-lock';
 import { bindValues, decodeRow, type PhysicalRow, physicalName, sortPrecision } from './pg-row';
 import { countStatement, type ReadShape, selectStatement } from './pg-sql';
 import {
@@ -49,12 +45,7 @@ import {
   type MoneyUnitRow,
 } from './pg-sql-aggregate';
 import { postgresTransactor } from './pg-transactor';
-import {
-  type ConflictTarget,
-  deleteStatement,
-  insertStatement,
-  updateStatement,
-} from './pg-write-sql';
+import { type ConflictTarget, deleteStatement, updateStatement } from './pg-write-sql';
 import { deletePlan, idPlan, readPlan, updatePlan } from './plan';
 import type { FindManyArgs, Repo, UpsertArgs } from './repo';
 import { sealedRepo } from './sealed-repo';
@@ -65,15 +56,13 @@ import { taggedWrite } from './write-tag';
 
 export interface PostgresDriverOptions {
   /**
-   * Pin a client. Left out, every call resolves `db()` — the ambient pool, or the open
-   * transaction when one is in scope. Tests pass `recordingClient()` here or install one
-   * globally with `setDbClient()`.
+   * Pin a client. Left out, every call resolves `db()` — the ambient pool, or the open transaction
+   * in scope. Tests pass `recordingClient()` here or install one with `setDbClient()`.
    */
   readonly client?: DbClient | undefined;
   /**
-   * Preload foreign keys resolved by a page into a request-scoped cache, so the first
-   * `findById` for any one of them resolves that key for the whole page in one statement.
-   * Default: true.
+   * Preload foreign keys resolved by a page into a request-scoped cache, so the first `findById`
+   * for any of them resolves that key for the whole page in one statement. Default: true.
    */
   readonly jitPreload?: boolean | undefined;
 }
@@ -165,19 +154,58 @@ export const postgresRepo = <Row>(
    * Every write goes out through here: the ONE place the request's preloaded rows are dropped (a
    * row this statement changes must not be served afterwards from a page read before it — so
    * before the statement, not after), and where a keyed request's write names itself in the WAL
-   * (`write-tag.ts`).
+   * (`write-tag.ts`). The one funnel for an autocommit repository write, so it is also where a scope
+   * whose caller was already answered stops: the pool does not refuse, and must not (`runOn`).
    */
-  const writing = <T>(send: () => Promise<T>): Promise<T> => {
+  const writing = async <T>(send: () => Promise<T>): Promise<T> => {
+    refuseAbandoned();
     forgetPreloaded(entity.$name);
     return taggedWrite(config.client !== undefined, send);
   };
 
   /**
+   * Only an entity with a JS-only rule comes here: rows ARE needed, so how many is a memory bound.
+   * Counted BEFORE the write, because a refusal after `returning *` has already allocated what it
+   * refuses; a concurrent writer can drift the count, which moves a bound, never a decision.
+   */
+  const judgedRows = async (
+    op: string,
+    plan: QueryPlan,
+    values: ReadonlyMap<string, unknown>,
+    shape: ReadShape,
+  ): Promise<number> => {
+    const matched = await attributed(op, () =>
+      client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
+    );
+    const rows = Number(matched?.count ?? 0);
+    if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, rows);
+    const statement = updateStatement(entity, plan, values, shape, true);
+    return judged(async (send) => {
+      const written = await attributed(op, () => writing(() => send.query<PhysicalRow>(statement)));
+      for (const row of written) entity.$assert(decodeRow(entity, row));
+      return written.length;
+    });
+  };
+
+  /**
+   * `delete` and `deleteWhere`. A soft delete is an update, so an app-only rule judges the stamped
+   * rows, as `memoryRepo`'s `write` does; everything else is one statement and a count.
+   */
+  const removed = (op: string, plan: QueryPlan): Promise<number> =>
+    entity.$softDelete && hasJsOnlyInvariant(entity.$invariants)
+      ? judgedRows(
+          op,
+          plan,
+          new Map([[physicalName(entity, SOFT_DELETE_COLUMN), entityNow()]]),
+          shapeOf({}),
+        )
+      : attributed(op, () => writing(() => client().execute(removal(plan))));
+
+  /**
    * The one insert path, for one row or ten thousand: the batch's own column list, split into as
    * many statements as Postgres's bind count allows, and the rows the server stored. `insert(row)`
-   * comes through here too, so there is no second builder for the two to drift apart in — and a
-   * batch wide enough to split is several statements, which is why an all-or-nothing caller wraps
-   * the call in `withTransaction` rather than trusting one statement's atomicity.
+   * comes through here too, so there is no second builder for the two to drift apart in. All or
+   * nothing however many statements it takes (`bulk-write-send.ts`).
    */
   const writeRows = async (
     op: string,
@@ -193,25 +221,17 @@ export const postgresRepo = <Row>(
       assertRowTenant(entity.$name, entity.$tenantColumn, op, row);
       entity.$assert(row);
     }
-    const columns = insertColumns(entity, namedProperties(entity, batch));
     const bound = batch.map((row) => bindValues(entity, row));
-    const shape = { columns, ...(conflict === undefined ? {} : { conflict }) };
-    const written: Row[] = [];
+    const shape = {
+      columns: statementColumns(entity, batch),
+      ...(conflict === undefined ? {} : { conflict }),
+    };
     // Attributed here rather than in each of the three callers: a batch wide enough to split is
-    // several statements sent inside this loop, and every one of them belongs to the call that
+    // several statements sent inside this call, and every one of them belongs to the call that
     // asked for it — `insert`, `insertAll` or `upsertAll`, which is why the op is a parameter.
-    await attributed(op, () =>
-      writing(async () => {
-        for (const chunk of insertChunks(bound, columns.length)) {
-          for (const row of await client().query<PhysicalRow>(
-            insertStatement(entity, chunk, shape),
-          )) {
-            written.push(decodeRow(entity, row));
-          }
-        }
-      }),
+    return attributed(op, () =>
+      writing(() => writeChunks(entity, bound, shape, client(), config.client)),
     );
-    return written;
   };
 
   const repo: Repo<Row> = {
@@ -280,7 +300,8 @@ export const postgresRepo = <Row>(
 
     async upsertAll(batch, args: UpsertArgs<Row>) {
       const rows = narrowed(batch);
-      const plan = upsertPlan(entity, rows, args.onConflict, args.onMatch ?? 'update');
+      const { onConflict, onMatch = 'update', overwrites } = args;
+      const plan = upsertPlan(entity, rows, onConflict, onMatch, overwrites);
       // Refused here, not by the server: a batch that repeats a conflict target is `21000` in
       // Postgres and a silent overwrite in memory, and the two drivers have to mean one thing.
       conflictKeys(entity, plan, rows);
@@ -290,7 +311,9 @@ export const postgresRepo = <Row>(
       });
     },
 
-    async update(id, patch, options) {
+    async update(id, given, options) {
+      // Here and in `memory-repo.ts`, the one door: a value `insert` refuses, a fragment included.
+      const patch = entity.$parsePatch(given);
       const op = 'update';
       const plan = idPlan(entity, id, options, op);
       // The plan bounds WHICH row is written; the patch decides what it becomes, and a patch
@@ -321,7 +344,7 @@ export const postgresRepo = <Row>(
     async delete(id, options) {
       const op = 'delete';
       const plan = idPlan(entity, id, options, op);
-      if ((await attributed(op, () => writing(() => client().execute(removal(plan))))) === 0) {
+      if ((await removed(op, plan)) === 0) {
         throw notFound(entity.$name, id);
       }
     },
@@ -338,10 +361,11 @@ export const postgresRepo = <Row>(
       const op = 'deleteWhere';
       // The plan is built before the write is announced: a refused filter never happened.
       const plan = deletePlan(entity, filter, options, op);
-      return attributed(op, () => writing(() => client().execute(removal(plan))));
+      return removed(op, plan);
     },
 
-    async updateWhere(filter, patch, options) {
+    async updateWhere(filter, given, options) {
+      const patch = entity.$parsePatch(given);
       const op = 'updateWhere';
       const plan = updatePlan(entity, filter, patch, options, op);
       // The same move, filtered: one statement can hand away every row it matches.
@@ -361,24 +385,7 @@ export const postgresRepo = <Row>(
         const statement = updateStatement(entity, plan, values, shape, false);
         return attributed(op, () => writing(() => client().execute(statement)));
       }
-      // Rows ARE needed, so how many is a memory bound rather than a detail — this is the one
-      // statement in the driver whose result size is the caller's filter and not a page. Counted
-      // BEFORE the write, because a refusal after `returning *` has already allocated the thing it
-      // is refusing; the count can drift by whatever a concurrent writer adds between the two,
-      // which moves a bound, never a decision.
-      const matched = await attributed(op, () =>
-        client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
-      );
-      const rows = Number(matched?.count ?? 0);
-      if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, rows);
-      const statement = updateStatement(entity, plan, values, shape, true);
-      return judged(async (send) => {
-        const written = await attributed(op, () =>
-          writing(() => send.query<PhysicalRow>(statement)),
-        );
-        for (const row of written) entity.$assert(decodeRow(entity, row));
-        return written.length;
-      });
+      return judgedRows(op, plan, values, shape);
     },
 
     async count(args = {}) {
@@ -456,11 +463,8 @@ export const postgresRepo = <Row>(
     },
 
     /**
-     * `reltuples`, the planner's own estimate — one row out of `pg_class`, constant time, and the
-     * only answer that stays constant time as the table grows. `count(*)` walks every visible row
-     * because MVCC gives it no shortcut, so past a few million it is the read that trips a web
-     * role's `statement_timeout`, and no index can help: `X_DB_STATEMENT_TIMEOUT`'s fix names one
-     * anyway, and following it changes nothing.
+     * `reltuples`, the planner's own estimate — one row out of `pg_class`, constant time. `count(*)`
+     * walks every visible row, so past a few million it trips a web role's `statement_timeout`.
      */
     async approximateCount(args = {}) {
       const op = 'approximateCount';
@@ -476,6 +480,8 @@ export const postgresRepo = <Row>(
       // table to every caller.
       return Number.isFinite(estimate) && estimate >= 0 ? estimate : null;
     },
+
+    ...postgresLocks(entity, config.client, client),
   };
   // The one sealing seam, shared with `memoryRepo()`: sealed on the way in, opened on the way out.
   // Append-only outermost, as there: a refused rewrite seals nothing and sends no statement.

@@ -254,6 +254,7 @@ describe('unit · the generatable list is the generators own output', () => {
       name: 'every form',
       now: new Date('2026-01-01T00:00:00.000Z'),
       allowDestructive: true,
+      rollingUnsafe: true,
       // Without this the corpus holds no `replica identity` statement, so the invariant below
       // holds VACUOUSLY for that form — which is exactly how the generator came to emit SQL its
       // own rail then reported.

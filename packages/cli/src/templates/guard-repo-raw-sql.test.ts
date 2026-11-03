@@ -29,6 +29,31 @@ describe('unit · shipped guard · repo-raw-sql', () => {
     );
   });
 
+  test('a row locked by its id names db.<table>.lock, where the guard used to be silent', async () => {
+    const findings = await shippedGuardFindings('repo-raw-sql', {
+      [REPO]: [
+        "import { db, sql } from '@ultimat3/db';",
+        'export const lockPost = (id: string) =>',
+        `  db().one(sql\`select * from posts where id = ${hole('id')} for update\`);`,
+        '',
+      ].join('\n'),
+    });
+    expect(findings.map((finding) => finding.code)).toEqual(['X_REPO_RAW_SQL']);
+    expect(findings[0]?.at).toBe(`${REPO}:3`);
+    expect(findings[0]?.fix).toStartWith('db.posts.lock(id, fn) — ');
+  });
+
+  test('another lock mode and a lock with no id are past what the handle says', async () => {
+    for (const statement of [
+      'select * from jobs where state = ? for update skip locked',
+      'select * from posts where id = ? for no key update',
+      'select * from posts where org_id = ? for update',
+    ]) {
+      const source = `export const q = sql\`${statement}\`;\n`;
+      expect(await shippedGuardFindings('repo-raw-sql', { [REPO]: source })).toEqual([]);
+    }
+  });
+
   test('a join, the handle itself and a comment naming sql are silent', async () => {
     const findings = await shippedGuardFindings('repo-raw-sql', {
       [REPO]: [

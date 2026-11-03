@@ -34,6 +34,11 @@ describe('unit · framework schema', () => {
     expect(AUTH_TABLE_NAMES.length).toBe(5);
   });
 
+  test('the spent TOTP steps are applied at boot', () => {
+    // Missing, the first second factor on a booted process is `42P01` where a session belongs.
+    expect(frameworkTableNames()).toContain('x_totp_steps');
+  });
+
   test('every notify table is applied at boot', () => {
     // A missing delivery ledger is `42P01` on the first claim inside a worker, which reads as a
     // dead-lettered notification rather than as a missing schema.

@@ -60,6 +60,30 @@ describe('proveSameOrigin', () => {
     expect(JSON.stringify(odd)).not.toContain('hunter2');
   });
 
+  // `null` is what a sandboxed iframe, a `data:` page and a cross-origin redirect all send, so it
+  // names no one: every attacker can present it, and a list containing it is a list of everybody.
+  describe('an opaque origin is never proof', () => {
+    const opaque = { ...base, origin: 'null' };
+    const refusal = {
+      ok: false,
+      reason: 'the request declared the opaque origin null, which no list can vouch for',
+    };
+
+    test('not when a list holds it', () => {
+      expect(proveSameOrigin({ ...opaque, listed: () => true })).toEqual(refusal);
+    });
+
+    test('not when the self origins hold it', () => {
+      expect(proveSameOrigin({ ...opaque, selfOrigins: ['null'] })).toEqual(refusal);
+    });
+
+    test('the browser reporting cross-site is still the reason quoted', () => {
+      expect(
+        proveSameOrigin({ ...opaque, listed: () => true, secFetchSite: 'cross-site' }),
+      ).toEqual({ ok: false, reason: 'the request reported sec-fetch-site: cross-site' });
+    });
+  });
+
   test('neither header is not proof', () => {
     expect(proveSameOrigin(base)).toEqual({
       ok: false,

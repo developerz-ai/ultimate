@@ -148,4 +148,6 @@ export const TIER_4_ERROR_STATUS = {
   X_AGENT_TOOL_UNDECLARED: 500,
   // @ultimat3/ai — an agent's next request would not fit its model's context window
   X_AGENT_CONTEXT_EXHAUSTED: 500,
+  // @ultimat3/notify — another attempt holds this delivery
+  X_NOTIFY_DELIVERY_HELD: 409,
 } satisfies Readonly<Record<string, number>>;

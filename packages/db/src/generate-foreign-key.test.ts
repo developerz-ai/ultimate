@@ -127,11 +127,13 @@ describe('unit · a references() added to a column that already exists', () => {
       now: at,
     });
     expect(migration.up).toContain(
-      'alter table "comments" add constraint "comments_post_id_fkey" ' +
-        'foreign key ("post_id") references "posts" ("id");',
+      'add constraint "comments_post_id_fkey" foreign key ("post_id") references "posts" ("id") not valid;',
+    );
+    expect(migration.up).toContain(
+      'alter table "comments" validate constraint "comments_post_id_fkey";',
     );
     expect(migration.down).toContain(
-      'alter table "comments" drop constraint "comments_post_id_fkey";',
+      'alter table "comments" drop constraint if exists "comments_post_id_fkey";',
     );
   });
 
@@ -215,6 +217,7 @@ describe('unit · a references() removed from a column that keeps existing', () 
       name: 'drop column',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
     expect(migration.up).toContain('alter table "comments" drop column "post_id";');
     expect(migration.up).not.toContain('drop constraint');
@@ -258,16 +261,18 @@ describe('unit · the on delete rule the entity declared', () => {
       now: at,
     });
     // `statementsOf` is the splitter `migrate()` applies, so these are the sends, terminator off.
+    // One ALTER swaps it, so the live table never has no key; the deferred step, so nothing stops.
     expect(statementsOf(migration.up)).toEqual([
-      'alter table "comments" drop constraint "comments_post_id_fkey"',
-      'alter table "comments" add constraint "comments_post_id_fkey" foreign key ("post_id") ' +
-        'references "posts" ("id") on delete cascade',
+      '-- transaction: false\nalter table "comments" drop constraint if exists ' +
+        '"comments_post_id_fkey", add constraint "comments_post_id_fkey" foreign key ("post_id") ' +
+        'references "posts" ("id") on delete cascade not valid',
+      'alter table "comments" validate constraint "comments_post_id_fkey"',
     ]);
-    // Read backwards: drop what this migration created, then put the recorded rule back.
+    // Read backwards: the recorded rule swapped back, then validated.
     expect(statementsOf(migration.down)).toEqual([
-      'alter table "comments" drop constraint "comments_post_id_fkey"',
-      'alter table "comments" add constraint "comments_post_id_fkey" foreign key ("post_id") ' +
-        'references "posts" ("id")',
+      'alter table "comments" drop constraint if exists "comments_post_id_fkey", add constraint ' +
+        '"comments_post_id_fkey" foreign key ("post_id") references "posts" ("id") not valid',
+      'alter table "comments" validate constraint "comments_post_id_fkey"',
     ]);
     const recorded = migration.snapshot.tables.find((each) => each.name === 'comments');
     expect(recorded?.foreignKeys[0]?.onDelete).toBe('cascade');

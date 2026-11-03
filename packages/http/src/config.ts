@@ -6,6 +6,7 @@
 import {
   DEFAULT_ENVIRONMENT,
   DEFAULT_HEALTH_DETAIL_PEERS,
+  MAX_TIMER_MS,
   tryResolveEnvironment,
 } from '@ultimat3/core';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
@@ -180,13 +181,6 @@ const assertFiniteCount = (
 };
 
 const MAX_PORT = 65_535;
-
-/**
- * The longest delay a timer holds: a signed 32-bit count of milliseconds, about 24.8 days. Past
- * it `setTimeout` arms ~1 ms, so a "longer" request budget timed every request out at once.
- * `requestTimeoutMs` is screened against it and `deadline.ts` reads the inbound header by it.
- */
-export const MAX_TIMER_MS = 2_147_483_647;
 
 /**
  * Nobody has 64 proxies in front of one process; a bigger number is a typo, not a topology.

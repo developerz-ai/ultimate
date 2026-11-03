@@ -113,7 +113,7 @@ never runs, while the subpath retains the projection, the key and the registry a
 | `text({ max })`, `integer()`, `boolean()`, `url()` | `text`/`integer`/`boolean` + CHECK | format is enforced by the database too. `url()` judges the STORED text against its CHECK (`^https?://`), so leading whitespace, a tab inside the scheme and `https:/a.b` are refused here rather than by a raw `23514` |
 
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
-`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)` ·
+`.onUpdateNow()` · `.references(() => other.id, { onDelete, crossTenant })` · `.tenant()` · `.column(name)` ·
 `.sealed()` (`text()` only).
 Physical names are derived from the property key (`orgId` → `org_id`); a name is written once, or
 never — `.column()` is the exception, and it exists for tables this framework did not create.
@@ -375,6 +375,10 @@ written into the statement rather than inherited from the server, and the same s
 `@ultimat3/query` uses. `posts.orderBy('publishedAt', 'desc')` on a nullable column pages correctly
 in both drivers; the cursor carries "this row had none" as a position of its own. The one ordering
 still refused is a nullable **primary-key** column, which no tiebreak can make total.
+
+`orderBy` on a `json`, `bytes` or array column is refused where the plan is built, at any row count
+(`X_INVARIANT_VIOLATED`). It has no position a cursor can carry: it paged wrongly or threw past page
+1. Order by a scalar.
 
 A `timestamp()` sort key is carried at the column's own **microsecond** precision, not at the
 millisecond a JS `Date` holds: the read projects the instant as text beside the column and the seek
@@ -671,7 +675,7 @@ not `n`.
 
 ```ts
 db.posts.delete(id);                                        // by a single primary key
-db.posts.update(id, { title });                             // ditto
+db.posts.update(id, { title });                             // ditto; named columns validate as insert does
 
 db.likes.deleteWhere({ postId, userId });                   // -> 1  · the only way to unlike
 db.likes.deleteWhere({ postId });                           // -> n  · every like on that post
@@ -691,12 +695,15 @@ and never unwritten.
 | Returns | the **number of rows affected**, so "nothing matched" is distinguishable from "it worked" |
 | Empty filter | `X_WRITE_UNFILTERED`. An `undefined` value is dropped before the count, so a forgotten variable is the error and not the whole table |
 | Empty patch | `X_PATCH_EMPTY`. Counting rows for a statement that set nothing is the same silent no-op, one argument along |
+| Patch values | named columns pass their schemas, the same issues `insert` raises (`X_INVARIANT_VIOLATED`), before any statement, on both drivers. Absent stays absent, `null` clears a nullable column |
 | Tenancy | the plan a read builds, through `scopedPlan` — the actor's org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row. The patch is judged too, through `assertRowTenant`: a filter bounds which rows are written, never what they become |
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
 | Rows read back | **only when something can still refuse them.** A `check` or a `unique` invariant is a constraint Postgres enforced on the statement, so the answer is a count and the statement carries no `returning *`. Only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on the result — and then the match is counted first and refused past `MAX_ASSERTED_ROWS` (50,000), naming `inBatches(1000)`, because a refusal issued after `returning *` is already holding what it is refusing. On Postgres the statement and that judgement share one transaction (a SAVEPOINT inside an open one), for `update(id, patch)` too, so a refused write is rolled back rather than left committed |
 
 ## Append-only entities
+
+`retired: ['legacy']` is the first half of a column drop under a rolling deploy: delete the column from `columns` and name its physical spelling here. It leaves the row type, the projection and every insert, so the new release never reads it, while `x db gen` writes only a marker, so the old release keeps working. Remove it from the list in the next release and `x db gen "drop legacy" --allow-destructive` drops it. A name still in `columns` is `X_INVARIANT_VIOLATED`. → `wiki/Migrations-And-Backfills.md`.
 
 `appendOnly: true` declares a table whose rows are written once and never changed or removed — a
 ledger, an audit trail, an event log. Held twice, like an invariant: the repository refuses, and
@@ -737,6 +744,8 @@ await db.entries.update(first.id, { amountMinor: 0 }).catch((refused: unknown) =
 
 ## Writing many rows
 
+Each call is all or nothing, `As of 2026-11-02`.
+
 ```ts
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
 
@@ -761,14 +770,14 @@ caller counts what it actually inserted.
 | | |
 |---|---|
 | One builder | `insertStatement` compiles every insert in the framework, so `insertAll([row])` is the text `insert(row)` always produced. There is no second insert path to drift |
-| What a collision overwrites | every column the batch writes, minus the conflict target (how the row was found), minus the primary key (where it lives) and minus the soft-delete stamp (whether the row is there at all). Moving either of the first two moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| What a collision overwrites | every column the batch's rows **named** (defaults `$parse` fills reach a new row only, so an unnamed `createdAt` or `label` keeps its stored value; `onUpdateNow()` columns move; a hand-held repository reads the rows it was given, or `UpsertArgs.overwrites`), minus the conflict target (how the row was found), minus the primary key (where it lives) and minus the soft-delete stamp (whether the row is there at all). Moving either of the first two moves a row nobody asked to move, and every foreign key pointing at that id misses it |
 | A soft-deleted row it lands on | stays deleted, and takes the batch's other columns. The stamped row still occupies its conflict target — that index is not partial — so `excluded."deleted_at"` would resurrect it; `$parse` fills `deletedAt: null` into every row before the plan is built, so the stamp is dropped from the set list rather than refused. `insertAll` still writes the stamp a new row carries |
 | Conflict target | properties of a **declared** unique constraint — the primary key, a `unique()` column, an `indexes: [{ on, unique: true }]` entry, or an `invariant(name, c.unique([…]))`. Anything else is `X_INVARIANT_VIOLATED` here rather than `42P10` from the server |
 | Tenancy | on a tenant-scoped entity `onMatch: 'update'` requires the tenant column *in the conflict target*, else `X_TENANCY_UNSCOPED`: a target that omits it matches another tenant's row and rewrites it. `'nothing'` is allowed — it writes nothing to a row it does not own |
 | A batch that repeats itself | two rows with one conflict target under `'update'` is refused. Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect row a second time`, so it cannot pass in memory either |
-| Uneven batches | under `'update'` every row must name the same columns: `excluded.<column>` for a row that omitted one is that column's *default*, not "leave it alone". Under `'nothing'` and under `insertAll`, an omitted column is `default` in its cell, which is what the same row means on its own |
+| Uneven batches | under `'update'` every row must name the same columns: `excluded.<column>` for a row that omitted one is that column's *default*, not "leave it alone". Under `'nothing'` and under `insertAll`, an omitted column is `default` in its cell, which is what the same row means on its own. A property present with `undefined` is absent here as in every write: refused beside a row writing a value, and left out of the set list when no row writes one |
 | Nulls | a null in the conflict target collides with nothing, in both drivers — a Postgres unique index is `NULLS DISTINCT` |
-| Size | past 65535 bind parameters the batch is several statements, never one the server refuses. Wrap the call in `withTransaction` when all-or-nothing matters |
+| Size | past 65535 bind parameters the batch is several statements inside one transaction (a savepoint inside an open `withTransaction`), never one the server refuses. A failure in any chunk leaves no row of the batch, in both drivers; one chunk stays one autocommit statement, no `BEGIN`. Partial progress is yours to ask for: split the batch and call once per part |
 | Filtered writes | `updateWhere` / `deleteWhere` above are the bulk forms of `update` and `delete` — one statement for a loop that would otherwise call either per row; there is no `updateAll` |
 
 ## Relations are the foreign keys, read twice
@@ -1004,6 +1013,20 @@ string or a path parameter — it is `X_TENANCY_ACTOR_MISMATCH`, refused rather 
 overridden, with both values in the cause. `in` on the tenant column is judged the same way: a set
 containing the actor's org is still a set that is not it.
 
+**A reference stays inside its tenant.** Both ends scoped makes `references()` a composite key:
+`(org_id, post_id) -> posts (org_id, id)`, so a row naming another org's post is refused by the
+database with `X_DB_FOREIGN_KEY_VIOLATION`, the code and the text a dangling id gets. Memory refuses
+a target found under another tenant and accepts one not found, because it enforces no foreign key.
+`crossTenant: '<reason>'` on the option is the stated escape; blank, or on an edge that was never
+same-tenant, is `X_INVARIANT_VIOLATED`. `x db gen` adds the `(tenant, id)` unique index the target
+needs and swaps the key online. [The wiki](../../wiki/Entities-And-Migrations.md#same-tenant-keys).
+
+**A read-modify-write takes a lock.** `db.posts.lock(id, (row, tx) => …)` holds the row for the
+callback and `db.posts.lockKey(key, (tx) => …)` holds a key of this table and tenant. A transaction
+each, a savepoint inside an open one, and the lock lasts to the root COMMIT. `fn` writes with
+`{ tx }`. A hand-written `Repo` without them answers `X_LOCK_UNSUPPORTED`.
+[The wiki](../../wiki/Entities-And-Migrations.md#locking-a-row-or-a-key).
+
 | Situation | Answer |
 |---|---|
 | actor carries an `orgId` | the plan is scoped to it, derived |
@@ -1101,3 +1124,11 @@ implementation in one package instead of two. No `drizzle-orm` dependency:
 `types.ts` declares the narrow structural column vocabulary this package consumes, so the
 generated SQL stays readable and an agent can self-correct against it. `@ultimat3/cache`
 invalidates by the `entity:<name>` tag.
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+| Name | What |
+|---|---|
+| `SameTenantKey` | a `references()` whose two ends share a tenant: the physical tenant column on each side, which makes the key composite. `ReferenceDescription.sameTenant` holds it, or `null` |

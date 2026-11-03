@@ -2,12 +2,16 @@
 // here has no call site to blame it on — it is simply wrong in every handler. These tests pin
 // what creation resolves and that the ALS hands the same object back, rather than a copy that
 // drifts from what the pipeline decided.
+
 import { describe, expect, test } from 'bun:test';
 import {
   anonymousActor,
   ctxOf,
+  defineService,
   isAnonymous,
+  resetServices,
   runWithContext,
+  useContext,
   userActor,
   uuidV7,
 } from '@ultimat3/core';
@@ -23,7 +27,9 @@ import {
   useRequestCookie,
   useRequestHeader,
   useRequestHeaders,
+  withAnonymousRequest,
 } from './context';
+import { setRedirect, takeRedirect } from './redirect';
 
 const config = defineHttpConfig({
   rateLimit: { scope: 'process' },
@@ -217,6 +223,172 @@ describe('the inbound headers on the context', () => {
   });
 });
 
+// What an `isr` or `static` document renders in. Still a request, so a redirect and a header read
+// work; nobody's request, so nothing in it can name the visitor who happened to fill the store.
+describe('withAnonymousRequest', () => {
+  const ALICE = userActor({ id: 'alice' });
+  const signedIn = (services?: Record<string, unknown>) => {
+    const ctx = requestContext({
+      url: new URL('https://example.com/x'),
+      method: 'get',
+      role: 'web',
+      config,
+      requestHeaders: {
+        cookie: 'session=abc',
+        authorization: 'Bearer t',
+        'x-api-key': 'k',
+        'proxy-authorization': 'Basic p',
+        'x-forwarded-email': 'alice@example.com',
+        'accept-language': 'es',
+        host: 'evil.test',
+      },
+      ip: '203.0.113.9',
+      peer: { id: 'p', spiffeId: null, subject: null, uriSans: [], dnsSans: [], by: null },
+      ...(services === undefined ? {} : { services }),
+    });
+    ctx.actor = ALICE;
+    return ctx;
+  };
+
+  test('the actor and every inbound header are gone; the outer context keeps them', () => {
+    const ctx = signedIn();
+    withAnonymousRequest(ctx, ctx.url, (scope) => {
+      expect(isAnonymous(scope.actor)).toBe(true);
+      expect(isAnonymous(useContext().actor)).toBe(true);
+      expect(useRequestCookie('session')).toBeNull();
+      for (const name of [
+        'authorization',
+        'x-api-key',
+        'proxy-authorization',
+        'x-forwarded-email',
+        'accept-language',
+        'host',
+      ]) {
+        expect(useRequestHeader(name)).toBeNull();
+      }
+      expect([...scope.requestHeaders.keys()]).toEqual([]);
+    });
+    // The pipeline still knows who asked: it answers her privately.
+    expect(ctx.actor).toBe(ALICE);
+    expect(ctx.requestHeaders.get('cookie')).toBe('session=abc');
+  });
+
+  test('the visitor-derived slots are empty, the zone is the default, the locale stays keyed', () => {
+    const ctx = signedIn();
+    ctx.tz = 'Asia/Tokyo';
+    ctx.locale = 'es';
+    ctx.clientBuildId = 'client-claim';
+    ctx.authz = { allowed: true };
+    ctx.readBody = () => Promise.resolve(new Uint8Array());
+    ctx.rateLimit = { allowed: true, limit: 1, remaining: 0, resetAtMs: 1, retryAfterSeconds: 0 };
+    withAnonymousRequest(ctx, ctx.url, (scope) => {
+      expect(scope.tz).toBe(timeConfig().defaultZone);
+      expect(useContext().tz).toBe(timeConfig().defaultZone);
+      expect(scope.locale).toBe('es');
+      expect(scope.ip).toBeNull();
+      expect(scope.peer).toBeNull();
+      expect(scope.clientBuildId).toBeNull();
+      expect(scope.authz).toBeUndefined();
+      expect(scope.rateLimit).toBeUndefined();
+      expect(scope.readBody).toBeUndefined();
+    });
+    expect(ctx.tz).toBe('Asia/Tokyo');
+    expect(ctx.ip).toBe('203.0.113.9');
+  });
+
+  test('the url is the one it was handed, never the request it came from', () => {
+    const ctx = signedIn();
+    const narrowed = new URL('https://public.test/x');
+    withAnonymousRequest(ctx, narrowed, (scope) => {
+      expect(scope.url).toBe(narrowed);
+      expect(useRequestContext().url.href).toBe('https://public.test/x');
+    });
+    expect(ctx.url.href).toBe('https://example.com/x');
+  });
+
+  test('it is the ambient request: the same id, and useRequestContext answers the scope', () => {
+    const ctx = signedIn();
+    withAnonymousRequest(ctx, ctx.url, (scope) => {
+      expect(useRequestContext()).toBe(scope);
+      expect(scope.requestId).toBe(ctx.requestId);
+      expect(scope.url).toBe(ctx.url);
+      expect(scope.headers).toBe(ctx.headers);
+    });
+  });
+
+  test('setRedirect inside lands on the scope, not on the outer context', () => {
+    const ctx = signedIn();
+    withAnonymousRequest(ctx, ctx.url, (scope) => {
+      setRedirect('/elsewhere', 302);
+      expect(takeRedirect(scope)).toEqual({ location: '/elsewhere', status: 302 });
+    });
+    expect(ctx.redirect).toBeUndefined();
+  });
+
+  test('a registered service is rebuilt for nobody, on every door to it', () => {
+    resetServices();
+    defineService('whoami', (facts) => (isAnonymous(facts.actor) ? 'nobody' : facts.actor.id));
+    try {
+      const ctx = signedIn();
+      expect(ctx['whoami']).toBe('alice');
+      withAnonymousRequest(ctx, ctx.url, (scope) => {
+        expect(scope['whoami']).toBe('nobody');
+        expect(scope.services['whoami']).toBe('nobody');
+        expect(useContext().services['whoami']).toBe('nobody');
+      });
+    } finally {
+      resetServices();
+    }
+  });
+
+  test("a registered service is built in the default zone, not the visitor's", () => {
+    resetServices();
+    defineService('zone', (facts) => facts.tz);
+    try {
+      const ctx = signedIn();
+      ctx.tz = 'Asia/Tokyo';
+      withAnonymousRequest(ctx, ctx.url, (scope) => {
+        expect(scope['zone']).toBe(timeConfig().defaultZone);
+      });
+    } finally {
+      resetServices();
+    }
+  });
+
+  test('a service named after a request field never shadows the request', () => {
+    resetServices();
+    defineService('url', () => 'a service');
+    try {
+      const ctx = signedIn();
+      withAnonymousRequest(ctx, ctx.url, (scope) => {
+        expect(scope.url).toBe(ctx.url);
+      });
+    } finally {
+      resetServices();
+    }
+  });
+
+  test('a hand-built service an app passed is carried, as `withChildContext` carries it', () => {
+    const posts = { byId: () => 'a post' };
+    withAnonymousRequest(signedIn({ posts }), new URL('https://example.com/x'), (scope) => {
+      expect(scope.services['posts']).toBe(posts);
+      expect(scope['posts']).toBe(posts);
+    });
+  });
+
+  test('the scope survives an await, and fn answers what it returned', async () => {
+    const answer = await withAnonymousRequest(
+      signedIn(),
+      new URL('https://example.com/x'),
+      async () => {
+        await Bun.sleep(0);
+        return isAnonymous(useContext().actor);
+      },
+    );
+    expect(answer).toBe(true);
+  });
+});
+
 describe('elapsedMs', () => {
   test('is a non-negative finite number', () => {
     const ctx = requestContext({
@@ -249,86 +421,5 @@ describe('actorView', () => {
     expect(view?.orgId).toBe('org-1');
     // it's a cast, not a copy, so identity is preserved
     expect(Object.is(view, actor)).toBe(true);
-  });
-});
-
-describe('services ride ON the context, not only under ctx.services', () => {
-  // `CtxServices` exists to be augmented, so `ctx.posts` has to BE the service — core's
-  // `ctxOf` has spread the bag onto the context since it shipped and this one did not, so
-  // an app declaring `ctx.posts` the documented way read `undefined` over HTTP while `ctx.services`
-  // beside it was populated.
-  const posts = { byId: () => 'a post' };
-
-  test('a passed service is reachable both ways', () => {
-    const ctx = requestContext({
-      url: new URL('https://app.test/x'),
-      method: 'GET',
-      role: 'web',
-      config,
-      services: { posts },
-    });
-
-    expect(ctx.services['posts']).toBe(posts);
-    expect(ctx['posts']).toBe(posts);
-  });
-
-  test('a service can never shadow a framework field', () => {
-    // Spread order is the guarantee: `actor`, `logger` and `signal` are the request's, whatever an
-    // app named a service. The colliding service stays reachable under `ctx.services`.
-    const impostor = { id: 'not-an-actor' };
-    const ctx = requestContext({
-      url: new URL('https://app.test/x'),
-      method: 'GET',
-      role: 'web',
-      config,
-      services: { actor: impostor },
-    });
-
-    expect(isAnonymous(ctx.actor)).toBe(true);
-    expect(ctx.services['actor']).toBe(impostor);
-  });
-
-  test('a defineService factory installs on THIS surface too, not only in a job', async () => {
-    // The half that made the bug total. The pipeline passes NO `services` at all
-    // (`pipeline.ts:224`), and this file used to build its own bag from that argument alone — so a
-    // `defineService('posts', …)` an app registered at boot was installed for a job, a task and a
-    // CLI command and NOT for a request. `useService('posts')` threw `X_SERVICE_MISSING` on the
-    // one surface an app spends its life on. Composing `ctxOf` is what fixed it: the
-    // installer is core's, and this is core's constructor.
-    const { defineService, resetServices, runWithContext, useService } = await import(
-      '@ultimat3/core'
-    );
-    resetServices();
-    const built = { kind: 'from-a-factory' };
-    defineService('probeService', () => built);
-    try {
-      const ctx = requestContext({
-        url: new URL('https://app.test/x'),
-        method: 'GET',
-        role: 'web',
-        config,
-      });
-      expect(ctx['probeService']).toBe(built);
-      // `useService<T>` has no inference site, so `T` widens to `unknown` and `toBe`'s overload
-      // resolves against `undefined`. Named here rather than left to infer.
-      expect(runWithContext(asCtx(ctx), () => useService<typeof built>('probeService'))).toBe(
-        built,
-      );
-    } finally {
-      resetServices();
-    }
-  });
-
-  test('a context with no services and no factories carries an empty bag rather than nothing', () => {
-    const ctx = requestContext({
-      url: new URL('https://app.test/x'),
-      method: 'GET',
-      role: 'web',
-      config,
-    });
-
-    expect(ctx.services).toEqual({});
-    // `useService()` is what names the failure; a missing bag was a bare TypeError.
-    expect(Object.isFrozen(ctx.services)).toBe(true);
   });
 });

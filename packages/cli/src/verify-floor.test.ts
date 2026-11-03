@@ -384,3 +384,19 @@ describe('the coverage floor and the step deadlines a repository states', () => 
     ).toBe(true);
   });
 });
+
+describe('rollingSince', () => {
+  test('a migration id reads through, and absent is off', () => {
+    expect(parse('{"steps":[],"rollingSince":"20261102_x"}').rollingSince).toBe('20261102_x');
+    expect(parse('{"steps":[]}').rollingSince).toBeUndefined();
+  });
+
+  test('anything else is a problem, whose fix repairs that key', () => {
+    for (const bad of ['""', '12', 'null', '[]']) {
+      const floor = parse(`{"steps":[],"rollingSince":${bad}}`);
+      expect(floor.rollingSince).toBeUndefined();
+      expect(floor.problems[0]).toContain('"rollingSince"');
+      expect(floorProblemFindings(floor)[0]?.fix).toContain('"rollingSince"');
+    }
+  });
+});

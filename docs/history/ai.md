@@ -923,3 +923,13 @@ The full wording of the rules `packages/ai/CLAUDE.md` now states in brief (moved
   fences are read once at `definePrompt`; no hash moves.
 - `definePrompt` refuses a re-registered version whose hash moved; the hash is over core's
   `canonicalJson`; an absent schema hashes as `''`.
+
+## `openAiProvider()` wire rules
+
+Moved out of `packages/ai/CLAUDE.md` for its ceiling (2026-11):
+
+  - `max_completion_tokens`; `role: 'system'`; `stream_options: { include_usage: true }` and an
+    ESTIMATE when usage never arrives; subtract `cached_tokens` from `prompt_tokens`;
+  - no code of its own (a media refusal is the shared `X_AI_CONTENT_UNSUPPORTED`);
+    `AiTransportError` takes the provider's `envVar`; the key is revealed late,
+    never stored, scrubbed from `detail`.

@@ -11,6 +11,7 @@ import type { LiveSubscription } from './live-contract';
 import { applyToWindow, bridgeChange, type Projection, projectionOf } from './matcher-bridge';
 import { type QueryEntry, refillWindowInLane } from './query-window';
 import { type Subscriber, type SubscriberGate, windowIndex } from './subscriber-gate';
+import { subscriptionKey } from './subscription-book';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 import { FRAME_LIMITS } from './wire-version';
 
@@ -257,6 +258,45 @@ async function resnapshot(
   subscription.cursor = cursor;
   subscription.socket.clearDesynced(subscription.sid);
   return true;
+}
+
+/**
+ * The repair when no change is coming: the socket drained, and a query nobody writes to has no next
+ * fanout to read the mark. Run in the entry's lane, and the mark asked inside it, so two drains
+ * landing together send one snapshot. Named nothing: this window was not read for any write.
+ *
+ * A window nothing trusts stays marked, for the reason `fanoutChange` checks a guess before the
+ * mark: a repair clears it, so one served out of these rows is recorded as healed against rows known
+ * to be wrong. `generation` covers the read in flight: `startRead` has already cleared `stale`.
+ */
+export async function repairSubscriber(
+  deps: FanoutDeps,
+  entry: QueryEntry,
+  subscription: LiveSubscription,
+): Promise<boolean> {
+  if (entry.stale || entry.applied !== entry.generation) return false;
+  if (!subscription.socket.desynced.has(subscription.sid)) return false;
+  const held = entry.subscribers.get(subscriptionKey(subscription.socket.id, subscription.sid));
+  if (held !== subscription) return false;
+  return await resnapshot(deps, entry, subscription, []);
+}
+
+/**
+ * Every mark on one window answered, in its lane: a read just landed, or the node's sweep came round
+ * (a mark's other readers are a change or a drain, and a quiet query may never see either). A stale
+ * window is re-read first, as a fanout would, once a pass however many subscribers it owes. A read
+ * still out is left alone: its landing runs this. Frames that left.
+ */
+export async function repairWindow(deps: FanoutDeps, entry: QueryEntry): Promise<number> {
+  const subscribers = [...entry.subscribers.values()];
+  if (!subscribers.some((held) => held.socket.desynced.has(held.sid))) return 0;
+  if (entry.stale) {
+    await refillWindowInLane(entry);
+    deps.source.floorAt?.(entry.qid, entry.lsn, { exclusive: true });
+    for (const held of subscribers) held.socket.markDesynced(held.sid);
+  }
+  if (entry.applied !== entry.generation) return 0;
+  return await resnapshotAll(deps, entry);
 }
 
 /** A write this truth may hold, and the RECORD key of the row it made — what it is shown by. */

@@ -53,9 +53,12 @@ export const deliverDigest = job({
     // of milliseconds mails those posts twice in March and to nobody in October. Same window
     // `postly.digestPreview` promises.
     //
-    // ONE read for every reader of this digest, which is the whole reason the group exists.
+    // ONE read for every reader of this digest, which is the whole reason the group exists. What
+    // the mail prints and nothing else: a step persists a small plain view, never a page of rows.
     const since = previousDigestAt(new Date(input.slotAt), input.zone);
-    const posts = await step.run('load-posts', () => ctx.posts.publishedSince(orgId, since));
+    const posts = await step.run('load-posts', async () =>
+      (await ctx.posts.publishedSince(orgId, since)).map(({ title }) => ({ title })),
+    );
 
     // An empty digest is not a digest. Skipping still records the step, so a retry does not
     // re-query — and it skips the two reads below, so an org with nothing to say costs one

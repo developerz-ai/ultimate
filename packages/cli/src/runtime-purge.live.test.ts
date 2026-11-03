@@ -17,7 +17,7 @@ import { mkdtempSync, rmSync } from 'node:fs'; // why: Bun has no mkdtemp and no
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { accountKey, defineAuth, memoryAuthAdapter } from '@ultimat3/auth';
+import { accountKey, defineAuth, memoryAuthAdapter, totpStep } from '@ultimat3/auth';
 import { ctxOf, probeDatabaseName, sweepProbeDatabases, systemClock } from '@ultimat3/core';
 import { dbExecutor } from '@ultimat3/db';
 import type { PurgeReport } from '@ultimat3/jobs';
@@ -152,6 +152,13 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       // The row is in the DATABASE, not in this process's heap — which is the whole difference
       // between a lockout the fleet enforces and one each pod enforces on its own.
       expect(await countIn('x_auth_lockouts')).toBe(1);
+
+      // The same for a spent step: claimed once, in the table every replica reads.
+      const step = totpStep(new Date());
+      expect(await auth.totpReplay.claim('user-1', step, new Date())).toBe(true);
+      const otherReplica = defineAuth({ adapter: memoryAuthAdapter() });
+      expect(await otherReplica.totpReplay.claim('user-1', step, new Date())).toBe(false);
+      expect(await countIn('x_totp_steps')).toBe(1);
     },
     BOOT_TIMEOUT_MS,
   );
@@ -196,12 +203,18 @@ describeLive('live · postgres · what the boot installs for auth and retention'
            ('00000000-0000-4000-8000-000000000004', 'mail.send', '{}'::jsonb, 'u', null)`,
       );
 
+      // A step spent years before this process's clock, and one spent just now: only the first is
+      // past every window a replica can still offer.
+      await auth.totpReplay.claim('old', 1, new Date(0));
+      await auth.totpReplay.claim('live', totpStep(new Date()), new Date());
+
       const report = await runSweep();
 
       expect(report.swept.map((sweep) => sweep.name)).toEqual([
         'x_idempotency',
         'x_rate_limit',
         'x_auth',
+        'x_totp_steps',
         'x_notify_deliveries',
         'x_notify_inbox',
         'x_notify_digests',
@@ -219,8 +232,10 @@ describeLive('live · postgres · what the boot installs for auth and retention'
       // clock, so a sweep that read `now()` on the server would take a different set. The three
       // notify targets contribute nothing here — no `setNotifyStores` ran, which is the state of
       // an app that never wired the Postgres stores, and it must be zero rather than a throw.
-      expect(report.removed).toBe(5);
+      expect(report.removed).toBe(6);
       expect(await countIn('x_auth_lockouts')).toBe(1);
+      expect(report.swept.find((sweep) => sweep.name === 'x_totp_steps')?.removed).toBe(1);
+      expect(await countIn('x_totp_steps')).toBe(1);
       // Empty tables, so nothing to remove — but the statements ran, which is what a missing
       // relation would have failed on.
       expect(report.swept.find((sweep) => sweep.name === 'x_rate_limit')?.removed).toBe(0);
