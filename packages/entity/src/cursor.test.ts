@@ -4,10 +4,14 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { encodeCursor } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
 import { boolean, integer, money, text, timestamp, uuid } from './columns';
+import { arrayOf, bytes, json } from './columns-data';
 import { assertSeekable, cursorFor, planScope, seekFrom, valueAt } from './cursor';
 import { database, memoryDriver } from './database';
 import { entity } from './entity';
+import { postgresDriver } from './pg-driver';
+import { planFor } from './plan';
 import { clearRegistry } from './registry';
 import type { QueryPlan, SortDirection, SortKey } from './tenancy';
 
@@ -358,5 +362,59 @@ describe('the page after the row it pointed at was deleted', () => {
     const second = await feed().after(first.nextCursor).page();
 
     expect(second.rows.map((row) => row.id)).toEqual([id(2), id(3)]);
+  });
+});
+
+/**
+ * A key no keyset can seek on. `bytes` paged an empty page 2 with no error, an array answered
+ * `22P02` on page 2, and `json` threw a `TypeError` on either driver: a row count decided when. So
+ * the ordering is refused where the plan is built, with no rows at all.
+ */
+describe('a kind no cursor can carry', () => {
+  const blobs = entity('cursor_test_blobs', {
+    columns: {
+      id: uuid().primaryKey(),
+      data: json(t.record(t.string)),
+      bytes: bytes(),
+      tags: arrayOf(text({ max: 8 })),
+      title: text({ max: 8 }),
+    },
+  });
+
+  for (const column of ['data', 'bytes', 'tags'] as const) {
+    const refusal = (run: () => unknown) => {
+      try {
+        run();
+      } catch (error) {
+        return error as { code?: unknown; cause?: unknown };
+      }
+      return expect.unreachable('the ordering was accepted');
+    };
+
+    test(`${column} is refused at planFor, naming the column`, () => {
+      const error = refusal(() => planFor(blobs, { orderBy: [{ column, direction: 'asc' }] }));
+      expect(error.code).toBe('X_INVARIANT_VIOLATED');
+      expect(String(error.cause)).toContain(column);
+    });
+
+    for (const [name, driver] of [
+      ['memory', memoryDriver],
+      ['postgres', postgresDriver],
+    ] as const) {
+      test(`${column} is refused by ${name}, with no row and no statement`, async () => {
+        const db = database({ blobs }, { driver: driver() });
+        const refused = await db.blobs
+          .orderBy(column, 'asc')
+          .all()
+          .catch((error: unknown) => error);
+        expect((refused as { code?: unknown }).code).toBe('X_INVARIANT_VIOLATED');
+      });
+    }
+  }
+
+  test('a scalar on the same entity still orders', () => {
+    expect(() =>
+      planFor(blobs, { orderBy: [{ column: 'title', direction: 'asc' }] }),
+    ).not.toThrow();
   });
 });

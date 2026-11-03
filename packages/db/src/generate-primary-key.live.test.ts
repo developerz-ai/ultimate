@@ -112,6 +112,7 @@ describe.skipIf(!hasPostgres)('live · postgres · changing a primary key', () =
       name: 'drop id',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
     await apply(migration.up);
     expect(await liveKey()).toEqual(['slug']);

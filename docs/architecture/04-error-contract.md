@@ -302,7 +302,7 @@ tier apart from the table they read:
 | Reader | Effect |
 |---|---|
 | `nextRetryForError` (`packages/jobs/src/retry-classification.ts`), wired at `execute.ts` | a `terminal` code stops on the attempt that failed — the remaining attempts are a queue slot and a provider bill. `retry-after` replaces the delay, never the ceiling |
-| `retryDecision` / `retry` (`packages/core/src/retry.ts`) | the same two rules, as a loop any caller can run |
+| `retryDecision` / `retry` (`packages/core/src/retry-loop.ts`, `retry.ts`) | the same two rules, as a loop any caller can run |
 
 Both read `classifyThrown`, not `error.retry`, and the difference is load-bearing: `retryFor` fails
 closed, so every **unclassified** error already carries `terminal`. Reading the field would

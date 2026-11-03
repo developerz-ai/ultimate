@@ -211,11 +211,14 @@ The chart rolls with `maxUnavailable: 0, maxSurge: 1`. Old and new pods therefor
 
 | Release | May do | May not do |
 |---|---|---|
-| N | add a nullable column, add a table, add an index | drop, rename, or add `NOT NULL` to an existing column |
-| N+1 | the drop or rename, once no pod runs release N-1's code | — |
+| N | add a nullable column, add a table, add an index, add a key or CHECK (`x db gen` writes it `not valid` then validates), retire a column, add an enum member nobody writes yet | drop, rename, or add `NOT NULL` to an existing column; write a new enum member (N-1 refuses it, `X_INVARIANT_VIOLATED`) |
+| N+1 | the drop or rename, once no pod runs release N-1's code; the first write of that enum member | — |
 
-Nothing enforces this at sync time. It is a review blocker: a migration that drops or renames in the
-same release as the code that stops using it will break the still-running old pod mid-roll.
+Enforced, as `X_MIGRATION_ROLLING_UNSAFE`: `x db gen` refuses to drop a column not retired first, the
+`drift` step refuses a committed drop or rename once `rollingSince` is set in `x.verify.json`, and
+`migrate()` refuses a retire and its drop both pending on a live production database. An enum member
+has no rail, since no file says when its first write ships.
+`strategy: Recreate` has no old pods: `x db gen "<name>" --allow-destructive --rolling-unsafe`.
 
 **RWO caveat:** `maxSurge: 1` briefly runs two pods, and a `ReadWriteOnce` volume cannot attach to
 both. An Ultimate role holds no durable state, so this should never bite — if you have added a

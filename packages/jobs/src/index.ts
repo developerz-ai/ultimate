@@ -153,6 +153,7 @@ export {
   JobPageInvalidError,
 } from './errors-operator';
 export { JobNotFoundError, JobNotRequeueableError } from './errors-requeue';
+export { JobEventInvalidError, StepOutputUnserializableError } from './errors-steps';
 export { JobTenantMismatchError } from './errors-tenant';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export {
@@ -323,7 +324,7 @@ export {
 export type { ScheduledFire, SchedulerState } from './scheduler-state';
 export { fireThroughDriver, memorySchedulerState } from './scheduler-state';
 export type { JobCompleted, JobFailed, JobSettled } from './settled';
-export { ON_SETTLED_ATTEMPTS } from './settled';
+export { ON_SETTLED_ATTEMPTS, ON_SETTLED_TIMEOUT_MS } from './settled';
 export type {
   EventLookup,
   StepApi,
@@ -344,6 +345,7 @@ export {
   stepRunner,
 } from './steps';
 export { memoryStepStore } from './steps-memory';
+export type { StepOutput } from './steps-output';
 export type {
   CatchUpPolicy,
   TaskDefinition,

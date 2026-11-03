@@ -89,6 +89,12 @@ Tier 1. Tagged caching + THE invalidation graph.
   `requestTimeoutMs` default, written as a literal because http is tier 2. `loadDeadlineMs`
   overrides it and `schedule` injects the timer. Eviction frees the KEY only; the load runs on. Not
   an `app.config.ts` key on purpose.
+- **A read refuses to join a load a bust has overtaken** (`tier-leading.ts`): a reader's unseen tags are
+  covered, then an invalid fence evicts the key and the read leads. A joiner from before the bust keeps
+  its load. An entry lives exactly while the flight holds the key (`released`). A joiner asks the fence
+  only when the generation moved or it brought a new tag: ~1,600 arrivals must not each walk the marks.
+- **A joiner survives its leader's abort** (`singleFlight`'s `signal`, `tryUseContext()?.signal`): it
+  re-leads under its own context. A failure with the leader's signal live is still shared.
 - **A joiner shares the leader's WRITE, so it contributes to it** (`FlightJoin`, `mergeSetOptions`
   in `set-options.ts`): tags union, TTLs take the shortest. `work` reads the merge after the load
   AND once more after the fill (`tagsAddedSince`), re-filling every tier.
@@ -161,6 +167,7 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `graph.ts` | tag → dependents (cache keys, ISR routes, CDN paths, live queries) |
 | `tiers.ts` | `CacheTier`, `TierLabel`, `assertTtl`, read-through stack |
 | `fence.ts` | the invalidation fence a fill (here or in `query`) checks before it publishes |
+| `tier-leading.ts` | which fence each in-flight load holds, and whether a reader may join it |
 | `tier-fence.ts` | `TierFence`/`FenceVerdict`, and how a fill samples and asks a shared tier's fence |
 | `redis-fence.ts` | the leased generation keys a bust writes and a fill watches |
 | `set-options.ts` | how two callers' `CacheSetOptions` combine, and the `null`-load TTL |

@@ -387,6 +387,8 @@ const verifyFloor = (example: boolean): string =>
         funcs: COVERAGE_BAR,
         exclude: SCAFFOLD_COVERAGE_EXCLUDE,
       },
+      // The rolling rail judges from the first migration: a new app has nothing to grandfather.
+      rollingSince: '0',
     },
     null,
     2,

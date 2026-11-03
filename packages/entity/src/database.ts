@@ -3,6 +3,7 @@
 
 import type { EntityCore } from './entity';
 import { memoryRepo, memoryTransactor } from './memory-repo';
+import type { MemoryTables } from './memory-same-tenant';
 import type { RelatedTables } from './preload';
 import type { Table } from './query';
 import { tableFor } from './query';
@@ -46,13 +47,15 @@ export const memoryDriver = (): Driver => {
   // Held separately from `repos` so the reset is a call on the repository the tables already
   // resolved, never a replacement of it.
   const resets: (() => void)[] = [];
+  // The repositories as a same-tenant reference reads them: below the sealing and tenant seams.
+  const stored: MemoryTables = new Map();
   return {
     repo<Row>(entity: EntityCore<Row>): Repo<Row> {
       const existing = repos.get(entity.$name);
       // Keyed by entity name and only ever written from that same entity, so the row type a
       // caller asks for is the one that was stored.
       if (existing !== undefined) return existing as Repo<Row>;
-      const created = memoryRepo<Row>(entity);
+      const created = memoryRepo<Row>(entity, [], stored);
       repos.set(entity.$name, created);
       resets.push(() => created.reset());
       return created;

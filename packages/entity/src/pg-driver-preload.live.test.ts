@@ -45,7 +45,9 @@ const posts = entity('pg_preload_live_posts', {
     orgId: uuid()
       .references(() => orgs.id)
       .tenant(),
-    authorId: uuid().references(() => members.id),
+    // Stated so the READ guard below is what is under test: a row the key never refused is what a
+    // table holds from before same-tenant keys, and the preload has to hold on its own.
+    authorId: uuid().references(() => members.id, { crossTenant: 'rows older than the key' }),
     /** Nullable on purpose: the missing-key case a `belongsTo` has to attach `null` for. */
     reviewerId: uuid()
       .references(() => members.id)

@@ -5,7 +5,7 @@
 // replays the send. This is the second layer: the claim is taken atomically before the send, and a
 // claim that already reads `sent` answers `false` and the fan-out skips.
 
-import { finiteCount } from '@ultimat3/core';
+import { finiteCount, uuidV7 } from '@ultimat3/core';
 
 export const DELIVERY_STATUSES = ['sending', 'sent', 'failed'] as const;
 
@@ -39,20 +39,43 @@ export interface DeliveryRecord extends DeliveryClaim {
   readonly at: Date;
 }
 
+/**
+ * What a claim answers, and the three are three because each asks something different of the caller.
+ * `owned`: send, and settle under this id. `sent`: it went out, stop. `held`: a live attempt holds
+ * it. This attempt must NOT send and must NOT read that as `sent` either, or a holder that then dies
+ * is a notification nobody retries. `retryAfterMs` is what is left of the holder's window.
+ */
+export type DeliveryClaimAnswer =
+  | { readonly outcome: 'owned'; readonly claimId: string }
+  | { readonly outcome: 'sent' }
+  | { readonly outcome: 'held'; readonly retryAfterMs: number };
+
 export interface DeliveryLedger {
   /**
-   * Take ownership of this delivery. `true` means send; `false` means a completed row already
-   * exists and this attempt must not send.
+   * Take ownership of this delivery. A `failed` row is claimed at once.
    *
-   * A row left `sending` by a killed process IS re-claimable, deliberately: the alternative is a
-   * notification that silently never arrives because the process that owned it died. At-least-once
-   * is the guarantee this package offers and the honest one — `settle` is what closes the window.
+   * A row left `sending` IS re-claimable once its window has passed, deliberately: the alternative
+   * is a notification that silently never arrives because the process that owned it died. Inside
+   * the window it is `held`, so a second attempt running beside the first does not send too.
+   * At-least-once is the guarantee this package offers and the honest one: a send outlasting the
+   * window still overlaps its reclaimer.
    */
-  claim(claim: DeliveryClaim, at: Date): Promise<boolean>;
-  /** Record the outcome. Only `sent` blocks a future claim. */
-  settle(claim: DeliveryClaim, status: DeliveryStatus, at: Date): Promise<void>;
+  claim(claim: DeliveryClaim, at: Date): Promise<DeliveryClaimAnswer>;
+  /**
+   * Record the outcome, if `claimId` still owns the row and it is still `sending`. `false` means it
+   * did not, and nothing changed: a late attempt never moves its reclaimer's row, least of all from
+   * `sent` back to `failed`. Only `sent` blocks a future claim.
+   */
+  settle(claim: DeliveryClaim, status: DeliveryStatus, at: Date, claimId: string): Promise<boolean>;
   find(claim: DeliveryClaim): Promise<DeliveryRecord | undefined>;
 }
+
+/**
+ * How long a `sending` row belongs to the attempt that claimed it. Five minutes: past the 30 s a job
+ * lease survives a dead worker by, and past any send a provider SDK's own timeout allows. Too short
+ * is a duplicate send; too long is a crashed attempt's recipient waiting that much longer.
+ */
+export const DEFAULT_DELIVERY_RECLAIM_MS = 5 * 60 * 1000;
 
 /**
  * The tuple as one string. `JSON.stringify` of an ARRAY rather than a joined separator: a
@@ -70,6 +93,8 @@ export interface MemoryDeliveryLedgerOptions {
    * into the heap, and it says so by publishing `size`.
    */
   readonly max?: number;
+  /** How long a `sending` row is held. Defaults to `DEFAULT_DELIVERY_RECLAIM_MS`. */
+  readonly reclaimAfterMs?: number | undefined;
 }
 
 export const DEFAULT_MAX_DELIVERY_RECORDS = 10_000;
@@ -100,7 +125,13 @@ export function memoryDeliveryLedger(
     options.max ?? DEFAULT_MAX_DELIVERY_RECORDS,
     1,
   );
-  const rows = new Map<string, DeliveryRecord>();
+  const reclaimAfterMs = finiteCount(
+    'memoryDeliveryLedger',
+    'reclaimAfterMs',
+    options.reclaimAfterMs ?? DEFAULT_DELIVERY_RECLAIM_MS,
+    1,
+  );
+  const rows = new Map<string, { readonly record: DeliveryRecord; readonly claimId: string }>();
   let dropped = 0;
 
   const evict = (): void => {
@@ -121,28 +152,37 @@ export function memoryDeliveryLedger(
     },
     claim(claim, at) {
       const id = keyOf(claim);
-      const existing = rows.get(id);
-      if (existing?.status === 'sent') return Promise.resolve(false);
+      const existing = rows.get(id)?.record;
+      if (existing?.status === 'sent') return Promise.resolve({ outcome: 'sent' });
+      const reclaimAt = (existing?.at.getTime() ?? 0) + reclaimAfterMs;
+      if (existing?.status === 'sending' && at.getTime() <= reclaimAt) {
+        return Promise.resolve({ outcome: 'held', retryAfterMs: reclaimAt - at.getTime() });
+      }
+      const claimId = uuidV7();
       // The row it found keeps its own identity, as the pg `on conflict do update` does.
-      rows.set(id, {
+      const record: DeliveryRecord = {
         ...(existing ?? claim),
         status: 'sending',
         attempts: (existing?.attempts ?? 0) + 1,
         at,
-      });
+      };
+      rows.set(id, { record, claimId });
       evict();
-      return Promise.resolve(true);
+      return Promise.resolve({ outcome: 'owned', claimId });
     },
-    settle(claim, status, at) {
+    settle(claim, status, at, claimId) {
       const id = keyOf(claim);
       const existing = rows.get(id);
       // No claim, no row: the pg `update` matches nothing, and a row written here would refuse
       // the claim after it — a notification dev never sends and production does.
-      if (existing !== undefined) rows.set(id, { ...existing, status, at });
-      return Promise.resolve();
+      if (existing?.claimId !== claimId || existing.record.status !== 'sending') {
+        return Promise.resolve(false);
+      }
+      rows.set(id, { claimId, record: { ...existing.record, status, at } });
+      return Promise.resolve(true);
     },
     find(claim) {
-      return Promise.resolve(rows.get(keyOf(claim)));
+      return Promise.resolve(rows.get(keyOf(claim))?.record);
     },
     clear() {
       rows.clear();

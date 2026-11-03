@@ -85,7 +85,7 @@ describe('route facts', () => {
     );
   });
 
-  test('a query declaration that is DROPPED is a change: the page keys on the whole query again', () => {
+  test('a query declaration that is DROPPED is a recorded change, even where it keys the same', () => {
     const from = fixtureManifest({ routes: route({ onInvalidate: 'stale', query: [] }) });
     const to = fixtureManifest({ routes: route({ onInvalidate: 'stale' }) });
     expect(routePaths(diffManifest(from, to).internal)).toEqual(['routes./posts.query']);

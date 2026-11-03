@@ -25,8 +25,8 @@ export async function runFanout<Params>(
   const { input, step, ctx, runId } = args;
   // One step for BOTH facts, because both must survive a replay: a re-resolved audience would
   // deliver to whoever subscribed during the wait, and a re-read clock would write a different
-  // `at` into the inbox on every attempt. Epoch ms rather than a `Date` — a step's return value
-  // round-trips through JSON, and a `Date` comes back a string.
+  // `at` into the inbox on every attempt. Epoch ms rather than a `Date`: a step answers the stored
+  // form, where a `Date` is a string.
   const open = await step.run('open', async () => ({
     at: ctx.now().getTime(),
     recipients: input.recipients ?? [...(await plan.recipientsFor({ input: input.params, ctx }))],

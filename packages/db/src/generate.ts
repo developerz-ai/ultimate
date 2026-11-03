@@ -5,7 +5,7 @@
 
 import { systemClock } from '@ultimat3/core';
 import { checkClauses, checkPlan, declaredChecks } from './check-ddl';
-import { alterColumnInPlace } from './column-alter';
+import { alterColumnInPlace, retypeOverDefault, wantedDefault } from './column-alter';
 import { defaultExpression } from './column-default';
 import { type ConcurrentPlan, emptyConcurrentPlan } from './concurrent-plan';
 import { dropOrder } from './drop-order';
@@ -28,9 +28,12 @@ import { migrationIrreversible } from './migration-errors';
 import { addChangedKey, dropChangedKey, migrationNameArg } from './primary-key';
 import type { ReplicaIdentityInput } from './replica-identity';
 import { replicaIdentityFullAfter, replicaIdentityPlan } from './replica-identity';
+import { contractsMarkerFor, recordRetired, retirePlan } from './retired';
 import type { MovedAside } from './retype-dependents';
 import { moveDependentsAside } from './retype-dependents';
 import { moveKeysAside, retypedColumns, retypedIn } from './retype-keys';
+import { columnDropNotRetired } from './rolling-errors';
+import { withSameTenantIndexes } from './same-tenant';
 import { identifier } from './sql';
 import { sqlType } from './sql-type';
 import { type UnrenderedDeclaration, unrenderedOf } from './unrendered';
@@ -67,7 +70,7 @@ export function snapshotOf(
   entities: readonly EntityDescriptionLike[],
   replicaIdentityFull: ReadonlySet<string> = NONE,
 ): SchemaDescription {
-  const tables = [...entities]
+  const tables = [...withSameTenantIndexes(entities)]
     .sort((a, b) => (a.table < b.table ? -1 : 1))
     .map((entity): TableDescription => {
       const columns: ColumnDescription[] = [...entity.columns]
@@ -177,8 +180,8 @@ function retypeColumn(
   const alter = (type: string): string =>
     `alter table ${identifier(table).text} alter column ${identifier(column.column).text} ` +
     `type ${type} using ${identifier(column.column).text}::${type};`;
-  plan.up.push(alter(wanted));
-  plan.down.push(alter(recorded.dataType));
+  retypeOverDefault(table, column, recorded, plan, alter(wanted), alter(recorded.dataType));
+  moved.defaults.add(column.column);
   return 'altered';
 }
 
@@ -195,16 +198,27 @@ function diffTable(
   // over it has to be stated again even though its own definition never moved.
   const rebuilt = new Set<string>();
   // What a retype dropped ahead of itself, read by the two arms below.
-  const moved: MovedAside = { indexes: new Set(), checks: new Set() };
+  const moved: MovedAside = { indexes: new Set(), checks: new Set(), defaults: new Set() };
   for (const column of entity.columns) {
     const recorded = existing.get(column.column);
     if (recorded !== undefined) {
       if (retypeColumn(live, column, recorded, plan, moved, retyped) === 'rebuilt') {
         rebuilt.add(column.column);
       } else {
-        // After any retype, so a new default is set against the column's new type. A rebuilt
-        // column was re-added carrying its whole clause, so it has nothing left to move.
-        alterColumnInPlace(entity, column, recorded, plan);
+        // After any retype, so nullability moves on the column's new type. A rebuilt column was
+        // re-added carrying its whole clause, so it has nothing left to move. A retype already
+        // moved the default, across the type (`column-alter.ts`).
+        alterColumnInPlace(
+          entity,
+          column,
+          moved.defaults.has(column.column)
+            ? {
+                ...recorded,
+                default: wantedDefault(column, recorded),
+              }
+            : recorded,
+          plan,
+        );
       }
       continue;
     }
@@ -241,7 +255,7 @@ function diffTable(
   // that does not exist yet is `42703`. `check-ddl.ts` owns which of them move; `rebuilt` because a
   // column dropped and re-added lost its constraint while the snapshot still records it, and
   // `moved.checks` because a retype already dropped the ones written against the old type.
-  checkPlan(entity, live, plan, rebuilt, moved.checks);
+  checkPlan(entity, live, plan, rebuilt, moved.checks, concurrent);
 }
 
 export interface GenerateOptions {
@@ -252,6 +266,12 @@ export interface GenerateOptions {
   readonly now?: Date | undefined;
   /** Allow a DROP COLUMN whose down cannot restore the data. `x db gen --allow-destructive`. */
   readonly allowDestructive?: boolean | undefined;
+  /**
+   * Drop a column that was never retired, for an app that stops before it starts: one instance, or
+   * `strategy: Recreate`. `x db gen --rolling-unsafe`. Consent to the outage and not to the loss,
+   * so `allowDestructive` is still asked of it.
+   */
+  readonly rollingUnsafe?: boolean | undefined;
   /**
    * Tables a live query subscribes to, so logical replication carries the old row —
    * `@ultimat3/realtime` refuses a subscription without it. Absent or empty emits nothing.
@@ -278,6 +298,11 @@ export interface GeneratedMigration {
    * cannot be written unmarked and then refused by `x verify` for lacking the mark.
    */
   readonly destructive: boolean;
+  /**
+   * `true` when `--rolling-unsafe` let this `up` drop a column it never retired. Absent otherwise.
+   * `x db gen` writes it as `-- rolling-unsafe: true`, the line the `drift` step's rail reads.
+   */
+  readonly rollingUnsafe?: boolean | undefined;
   /**
    * Every declaration this generator could not write down. Empty on a migration that carries the
    * whole schema, which is what makes it readable as a verdict rather than as noise — and the same
@@ -310,7 +335,10 @@ export function slugify(name: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
-export function generateMigration(options: GenerateOptions): GeneratedMigration {
+export function generateMigration(given: GenerateOptions): GeneratedMigration {
+  // One list for every arm below: a target's same-tenant index is declared by whoever points at it,
+  // and neither `createTable`, `diffTable` nor a snapshot may hold a different answer.
+  const options = { ...given, entities: withSameTenantIndexes(given.entities, given.current) };
   const current = options.current ?? { tables: [] };
   const plan: Plan = { up: [], down: [] };
   // Applied AFTER `plan`, outside its transaction, in a step of its own (`concurrent-plan.ts`).
@@ -336,11 +364,11 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
   // and the key that a retype of its column breaks is recorded on whichever table OWNS the key.
   const retyped = retypedColumns(options.entities, current);
   const predropped = moveKeysAside(current, retyped, doomed, preAlters);
-  const plans: ConstraintPlans = { constraints, preDrops, doomed, predropped };
+  const plans: ConstraintPlans = { constraints, preDrops, doomed, predropped, concurrent };
+  let droppedUnretired = false;
 
   for (const entity of options.entities) {
     const live = findTable(current, entity.table);
-    foreignKeyPlan(entity, live, plans);
     if (live === undefined) {
       plan.up.push(...createTable(entity));
       plan.down.push(`drop table ${identifier(entity.table).text};`);
@@ -349,16 +377,35 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     }
     // The key first and last, around every column statement of the table (`primary-key.ts`): the
     // snapshot below records `entity.primaryKey`, and until this arm existed nothing produced it.
+    retirePlan(entity, live, plan, options.entities);
     dropChangedKey(entity, live, current, plan, options.name);
     diffTable(entity, live, plan, retypedIn(retyped, entity.table), concurrent);
-    const kept = new Set(entity.columns.map((column) => column.column));
+    const kept = new Set([
+      ...entity.columns.map((column) => column.column),
+      ...(entity.retired ?? []),
+    ]);
     for (const column of live.columns) {
       if (kept.has(column.name)) continue;
+      // Order matters: the release boundary first, with the flag or without it. Retiring is what
+      // earns the next question; it is never consent to losing the rows, so that one still stands.
+      if (column.retired !== true && options.rollingUnsafe !== true) {
+        throw columnDropNotRetired(
+          entity.name,
+          entity.table,
+          column.name,
+          migrationNameArg(options.name),
+        );
+      }
       if (options.allowDestructive !== true) {
         throw migrationIrreversible(
           `dropping "${entity.table}"."${column.name}" discards its rows and cannot be undone`,
-          `x db gen ${migrationNameArg(options.name)} --allow-destructive   # or keep the column and deprecate it`,
+          `x db gen ${migrationNameArg(options.name)} --allow-destructive   # or put "${column.name}" back in columns and keep it`,
         );
+      }
+      if (column.retired === true) {
+        plan.up.push(contractsMarkerFor(entity.table, column.name));
+      } else {
+        droppedUnretired = true;
       }
       plan.up.push(
         `alter table ${identifier(entity.table).text} drop column ${identifier(column.name).text};`,
@@ -370,6 +417,11 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
       );
     }
     addChangedKey(entity, live, plan, options.name);
+  }
+
+  // After every table's diff, so the deferred step already says which target indexes it builds.
+  for (const entity of options.entities) {
+    foreignKeyPlan(entity, findTable(current, entity.table), plans);
   }
 
   const order = dropOrder(current.tables.filter((table) => !wanted.has(table.name)));
@@ -433,7 +485,12 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     // ends have been retyped back, which is every other statement in the script.
     down: [...preAlters.down, ...plan.down].reverse(),
     concurrent,
-    snapshot: snapshotOf(options.entities, replicaIdentityFullAfter(replicaIdentity)),
+    snapshot: recordRetired(
+      snapshotOf(options.entities, replicaIdentityFullAfter(replicaIdentity)),
+      options.entities,
+      current,
+    ),
     unrendered,
+    ...(droppedUnretired ? { rollingUnsafe: true } : {}),
   });
 }

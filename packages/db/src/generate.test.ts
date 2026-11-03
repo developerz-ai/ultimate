@@ -251,6 +251,7 @@ describe('generateMigration', () => {
         current: before,
         name: 'drop legacy',
         now: at,
+        rollingUnsafe: true,
       });
     } catch (error) {
       thrown = error;
@@ -272,6 +273,7 @@ describe('generateMigration', () => {
           ]),
           name: 'drop $(touch pwned)',
           now: at,
+          rollingUnsafe: true,
         });
       } catch (error) {
         return (error as { fix: string }).fix;
@@ -297,6 +299,7 @@ describe('generateMigration', () => {
       name: 'drop legacy',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
     expect(migration.up).toContain('drop column "legacy";');
     expect(migration.down).toContain('-- data is not restored');

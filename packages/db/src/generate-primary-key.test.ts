@@ -60,7 +60,15 @@ const generate = (
   entities: readonly EntityDescriptionLike[],
   current: SchemaDescription,
   allowDestructive = false,
-) => generateMigration({ entities, current, name: 'rekey', now: NOW, allowDestructive });
+) =>
+  generateMigration({
+    entities,
+    current,
+    name: 'rekey',
+    now: NOW,
+    allowDestructive,
+    rollingUnsafe: allowDestructive,
+  });
 
 const DROP = 'alter table "posts" drop constraint if exists "posts_pkey";';
 const add = (columns: string): string =>

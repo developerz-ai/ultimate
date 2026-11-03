@@ -34,7 +34,7 @@ import { type Actor, anonymousActor } from './actor';
 import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
 import { DEFAULT_LOCALE, DEFAULT_TIME_ZONE } from './default-locale';
-import { UltimateError } from './errors';
+import { isUltimateError, UltimateError } from './errors';
 import { finiteOption } from './finite-option';
 import { traceId as newTraceId, uuidV7 } from './ids';
 import { type Logger, logger as rootLogger, setLoggerContextFields } from './logger';
@@ -214,6 +214,13 @@ export function ctxOf(init: CtxInit = {}): Ctx {
   return Object.freeze(ctx);
 }
 
+/** What bounds a `runToCompletion` scope, when its caller owns a ceiling. */
+export interface CompletionBound {
+  readonly signal?: AbortSignal | undefined;
+  /** Epoch ms: what an outbound hop forwards as the budget left. */
+  readonly deadlineAt?: number | undefined;
+}
+
 export function runWithContext<T>(ctx: Ctx, fn: () => T): T {
   // A request scope is what gives an outbound typed call a budget to forward; see the module.
   installTraceHeaders();
@@ -288,6 +295,27 @@ function composeSignal(parent: AbortSignal, patch: AbortSignal | undefined): Abo
  */
 export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
   const parent = useContext();
+  const child = derivedContext(parent, patch, {
+    // One request, one budget: a child scope inherits the deadline for the same reason it
+    // inherits `requestId`. A patch may SHORTEN it (a step with its own budget); nothing here
+    // lengthens it, because the socket the parent is answering does not move. `??` alone said
+    // that and did not do it — a patched hour replaced a parent's second outright, and
+    // `remainingBudgetMs` then put the hour on `x-request-timeout-ms` for the next hop.
+    deadlineAt: earliest(screenDeadline(patch.deadlineAt) ?? undefined, parent.deadlineAt),
+    signal: composeSignal(parent.signal, patch.signal),
+  });
+  return requestContext.run(child, fn);
+}
+
+/**
+ * The one build of a child context, narrowing (`withChildContext`) or not (`runToCompletion`): the
+ * caller decides the two members that say how long this work may run, everything else is the rule.
+ */
+function derivedContext(
+  parent: Ctx,
+  patch: CtxPatch,
+  lifetime: { readonly deadlineAt: number | undefined; readonly signal: AbortSignal },
+): Ctx {
   // A factory-managed service was built for the PARENT's actor; forwarding it verbatim into an
   // impersonated child would answer every call with the parent's tenant. `ctxOf` below
   // rebuilds every registered factory fresh against the child's own actor, so only services no
@@ -295,7 +323,7 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
   const carried = Object.fromEntries(
     Object.entries(parent.services).filter(([name]) => !isManagedService(name)),
   );
-  const child = ctxOf({
+  return ctxOf({
     requestId: parent.requestId,
     traceId: patch.traceId ?? parent.traceId,
     actor: patch.actor ?? parent.actor,
@@ -305,16 +333,69 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
     role: patch.role ?? parent.role,
     clock: patch.clock ?? parent.clock,
     logger: patch.logger ?? parent.logger,
-    // One request, one budget: a child scope inherits the deadline for the same reason it
-    // inherits `requestId`. A patch may SHORTEN it (a step with its own budget); nothing here
-    // lengthens it, because the socket the parent is answering does not move. `??` alone said
-    // that and did not do it — a patched hour replaced a parent's second outright, and
-    // `remainingBudgetMs` then put the hour on `x-request-timeout-ms` for the next hop.
-    deadlineAt: earliest(screenDeadline(patch.deadlineAt) ?? undefined, parent.deadlineAt),
-    signal: composeSignal(parent.signal, patch.signal),
+    deadlineAt: lifetime.deadlineAt,
+    signal: lifetime.signal,
     services: { ...carried, ...(patch.services ?? {}) },
   });
+}
+
+/**
+ * Why this scope's work no longer belongs to anyone: the ambient signal's reason, when it was
+ * aborted with a CODED one, the same object. Coded means somebody was answered (`X_TIMEOUT`) or
+ * another attempt owns the run (a job's `X_ABORTED`, `X_DRAINING`, `X_JOB_TIMEOUT`,
+ * `X_JOB_SLOT_LOST`, `X_JOB_LEASE_LOST`), so a write landing now lands behind their back. A client
+ * hang-up is Bun's uncoded `AbortError`: nobody was told anything, and a click followed by a
+ * navigation must keep landing, so it answers `undefined`.
+ */
+export function abandonment(): UltimateError | undefined {
+  const signal = tryUseContext()?.signal;
+  if (signal?.aborted !== true) return undefined;
+  return isUltimateError(signal.reason) ? signal.reason : undefined;
+}
+
+/**
+ * Run `fn` to its end whatever happens to the scope around it: a FRESH signal nothing aborts and no
+ * deadline, same request id and actor, managed services rebuilt over it. The one escape from
+ * `abandonment()`, which then has no special case; `retry()` and `outbound()` inside keep working.
+ * Unbounded by default, and work left hanging holds its slot for good: a caller owning work it cannot
+ * trust passes `bound` (`withIdempotency`'s `ceilingMs`, `onSettled`'s timeout), whose coded abort is
+ * abandonment again. Inside an open transaction wrap the whole `withTransaction`: its COMMIT is
+ * outside an inner scope, and refused. Outside a context it just runs `fn`.
+ */
+export function runToCompletion<T>(fn: () => T, bound: CompletionBound = {}): T {
+  const parent = tryUseContext();
+  if (parent === undefined) return fn();
+  const child = completionScope(parent, {
+    deadlineAt: screenDeadline(bound.deadlineAt) ?? undefined,
+    signal: bound.signal ?? new AbortController().signal,
+  });
   return requestContext.run(child, fn);
+}
+
+/**
+ * The lifetime a frozen `ctxOf` child can hold. A context that is not frozen is wider than core can
+ * name (`@ultimat3/http`'s request, a tier above): a rebuilt one drops its fields, and a copy would
+ * lose a slot written inside (`setRedirect`'s, read back on the original). So it is forwarded, and
+ * only the lifetime and what closed over it read differently: the same object, a fresh signal.
+ */
+function completionScope(
+  parent: Ctx,
+  lifetime: { readonly deadlineAt: number | undefined; readonly signal: AbortSignal },
+): Ctx {
+  const child = derivedContext(parent, {}, lifetime);
+  if (Object.isFrozen(parent)) return child;
+  const fresh = new Map<string | symbol, unknown>([
+    ['signal', child.signal],
+    ['deadlineAt', child.deadlineAt],
+    ['services', child.services],
+  ]);
+  for (const name of Object.keys(child.services)) {
+    // Only what IS the service today: a service named `url` never shadows the request's own.
+    if (parent[name] === parent.services[name]) fresh.set(name, child.services[name]);
+  }
+  return new Proxy(parent, {
+    get: (target, key) => (fresh.has(key) ? fresh.get(key) : Reflect.get(target, key)),
+  });
 }
 
 /** Resolve a late-bound service. Throws `X_SERVICE_MISSING` rather than returning undefined. */

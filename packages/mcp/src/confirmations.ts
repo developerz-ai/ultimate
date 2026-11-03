@@ -2,10 +2,11 @@
 // ninth primitive. What it returns IS the decision action (`{ id, decision: 'approve' | 'reject' }`):
 // registered like any other, it has its route, OpenAPI operation, typed client and audit record, and
 // its policy is decided by `guard()` like every other write. The gate the agent meets lives in
-// `confirmation-gate.ts`, applied by `defineAppMcp({ confirmations })`.
+// `confirmation-gate.ts`, applied by `defineAppMcp({ confirmations })` for an MCP server and registered
+// by name for an in-app agent's `agent({ tools })`.
 
 import type { Action } from '@ultimat3/action';
-import { action } from '@ultimat3/action';
+import { action, registerToolGate } from '@ultimat3/action';
 import type { Clock, SealKeySource } from '@ultimat3/core';
 import { finiteCount, systemClock } from '@ultimat3/core';
 import type { KnownPermission, PolicyArgs, PolicyDecision } from '@ultimat3/policy';
@@ -14,6 +15,7 @@ import type { JsonValue } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import { decideConfirmation } from './confirmation-decide';
 import { McpConfirmationToolUnknownError } from './confirmation-errors';
+import { confirmationToolGate } from './confirmation-gate';
 import type { McpConfirmation, McpConfirmationStore } from './confirmation-store';
 
 /** Ten minutes: long enough for a person to read a request, short enough to go stale. */
@@ -51,7 +53,10 @@ export interface McpConfirmationDecision {
 }
 
 export interface McpConfirmationsInput<TTools extends string = string> {
-  /** The tools whose every call waits for a person. Each must be one the server projects. */
+  /**
+   * The tools whose every call waits for a person, from `defineAppMcp({ confirmations })` AND from
+   * `agent({ tools })`. Each must be one the server projects.
+   */
   readonly tools: readonly TTools[];
   /** `memoryConfirmationStore()` for a test or `x dev`; `postgresConfirmationStore()` for a fleet. */
   readonly store: McpConfirmationStore;
@@ -128,13 +133,17 @@ export function mcpConfirmations<const TTools extends string>(
     handle: ({ input: asked, ctx }) =>
       decideConfirmation({ store, clock, sealKeys }, asked, ctx.actor.id),
   });
-  return Object.assign(decide, {
+  const confirmations = Object.assign(decide, {
     tools: Object.freeze([...input.tools]),
     store,
     ttlMs,
     clock,
     sealKeys,
   });
+  // On the declaration, so there is no `agent({ confirmations })` for an author to forget. A worker
+  // holds it only if it imports this module, which is `X_ROLE_LOAD_INCOMPLETE` when it would not.
+  registerToolGate(confirmations.tools, confirmationToolGate(confirmations));
+  return confirmations;
 }
 
 /**

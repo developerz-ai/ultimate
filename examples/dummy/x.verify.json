@@ -20,6 +20,7 @@
     "manifest",
     "seo"
   ],
+  "rollingSince": "20261007162256_add_webhook_endpoints_webhook_deliveries_and_post_reviews",
   "coverage": {
     "lines": 76,
     "funcs": 63,

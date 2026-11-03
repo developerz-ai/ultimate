@@ -2,6 +2,8 @@
 
 CREATE INDEX posts_author_id_idx ON public.posts USING btree (author_id);
 
+CREATE UNIQUE INDEX posts_org_id_id_tenant_key ON public.posts USING btree (org_id, id);
+
 CREATE INDEX posts_org_id_idx ON public.posts USING btree (org_id);
 
 CREATE INDEX posts_org_id_published_at_647c63aa_idx ON public.posts USING btree (org_id DESC, published_at DESC) WHERE (status = 'published'::text);

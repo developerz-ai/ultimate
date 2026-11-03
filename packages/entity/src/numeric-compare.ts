@@ -55,3 +55,46 @@ export const numericOrder = (
   if (!isNumber(value) || !isNumber(operand)) return undefined;
   return value < operand ? -1 : value > operand ? 1 : 0;
 };
+
+const INTEGER_TEXT = /^[+-]?\d+$/;
+const DECIMAL_PARTS = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
+
+/** Past this an exponent would have the padding below build a string nobody asked for. */
+const MAX_EXPONENT = 1000;
+
+const textOf = (value: unknown): string | undefined => {
+  if (typeof value === 'string') return value.trim();
+  return isNumber(value) ? plainDecimal(value) : undefined;
+};
+
+/**
+ * One spelling for the value an integer column compares by: `'007'`, `'+7'`, `7` and `7n` are one
+ * key to Postgres. `undefined` for what such a column cannot hold (`'7.0'`, `''`, which `BigInt`
+ * alone would read as `0`), so a caller keeps it as written and the server answers its own refusal.
+ */
+export const canonicalInteger = (value: unknown): string | undefined => {
+  const text = textOf(value);
+  return text !== undefined && INTEGER_TEXT.test(text) ? BigInt(text).toString() : undefined;
+};
+
+/**
+ * One spelling for the value a `numeric` compares by: `'2.5'`, `'2.50'` and `'+02.500'` are one
+ * value and one unique key, and a `numeric` has one zero. Answers what `numericOrder` calls equal,
+ * plus the literals Postgres also reads (`'.5'`, `'5.'`, `'1e3'`). `undefined` when it is no such
+ * literal, for the same reason as above.
+ */
+export const canonicalDecimal = (value: unknown): string | undefined => {
+  const parts = DECIMAL_PARTS.exec(textOf(value) ?? 'not a decimal');
+  if (parts === null) return undefined;
+  const [, sign = '', whole = '', fraction = '', exponent = '0'] = parts;
+  const shift = Number(exponent);
+  if (whole.length + fraction.length === 0 || Math.abs(shift) > MAX_EXPONENT) return undefined;
+  const digits = whole + fraction;
+  const point = whole.length + shift;
+  const integer = point <= 0 ? '' : digits.slice(0, point).padEnd(point, '0');
+  const rest = point <= 0 ? '0'.repeat(-point) + digits : digits.slice(point);
+  const before = integer.replace(/^0+/, '') || '0';
+  const after = rest.replace(/0+$/, '');
+  const unsigned = after === '' ? before : `${before}.${after}`;
+  return sign === '-' && unsigned !== '0' ? `-${unsigned}` : unsigned;
+};

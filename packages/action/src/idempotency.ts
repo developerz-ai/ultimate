@@ -4,15 +4,29 @@
  * a value or a failure — and a concurrent duplicate is refused rather than run twice, because a
  * double charge is worse than a 409.
  */
-import { compareFingerprint, isUltimateError, keyedFingerprint, logger } from '@ultimat3/core';
+import {
+  compareFingerprint,
+  finiteCount,
+  isUltimateError,
+  jsonbRefusal,
+  keyedFingerprint,
+  logger,
+  MAX_TIMER_MS,
+  runToCompletion,
+  tryUseContext,
+} from '@ultimat3/core';
 import {
   IdempotencyConflictError,
   IdempotencyNotSharedError,
+  IdempotencyOutputUnserializableError,
   IdempotencyReplayedFailureError,
+  IdempotencyRunCeilingError,
   IdempotentReplayRedactedError,
 } from './errors';
 import { memoryIdempotencyStore } from './idempotency-memory';
 import { restingAnswer } from './idempotency-redact';
+import { requestDeadlineMs } from './request-deadline';
+import { carrySettleOnCommit } from './tx-scope';
 
 /**
  * Where a store's records live. Declared by the driver, never inferred — the same rule
@@ -153,6 +167,8 @@ export interface IdempotencyStore {
  */
 export interface IdempotencyConfig {
   readonly scope: IdempotencyScope;
+  /** How long a keyed run may go on, in ms. Default `idempotencyCeilingMs()`. */
+  readonly ceilingMs?: number | undefined;
 }
 
 /**
@@ -166,11 +182,30 @@ let defaultStore: IdempotencyStore = memoryIdempotencyStore();
 
 /** Declared at boot, before `registerActions()`. Nothing infers a replica count. */
 export function configureIdempotency(next: IdempotencyConfig): void {
+  // At boot: unscreened, a bad value is refused by every keyed request instead.
+  if (next.ceilingMs !== undefined) {
+    finiteCount('configureIdempotency', 'ceilingMs', next.ceilingMs, 1);
+  }
   config = next;
 }
 
 export function idempotencyConfig(): IdempotencyConfig {
   return config;
+}
+
+/** The ceiling when the request deadline is `0`, "no deadline": there is nothing to double. */
+const CEILING_WITHOUT_DEADLINE_MS = 60_000;
+
+/**
+ * The hard ceiling on a keyed run: the declared one, else twice the request deadline (60 s by
+ * default). A handler the deadline's own socket answer has given up on gets as long again to finish;
+ * read per call because the app declares its deadline after the boot built its stores.
+ */
+export function idempotencyCeilingMs(): number {
+  if (config.ceilingMs !== undefined) return config.ceilingMs;
+  const deadline = requestDeadlineMs();
+  // `ceil`: http's screen admits a fraction, and this one counts whole milliseconds.
+  return deadline > 0 ? Math.ceil(2 * deadline) : CEILING_WITHOUT_DEADLINE_MS;
 }
 
 export function setIdempotencyStore(store: IdempotencyStore): void {
@@ -232,6 +267,8 @@ export interface WithIdempotencyOptions {
    * the key's outcome, and a retry once the bucket refills must still be able to run.
    */
   readonly beforeRun?: () => Promise<void>;
+  /** This call's ceiling, in ms, over `idempotencyCeilingMs()`. Past it the failure is settled. */
+  readonly ceilingMs?: number | undefined;
 }
 
 export async function withIdempotency<T>(
@@ -241,6 +278,12 @@ export async function withIdempotency<T>(
   run: () => Promise<T>,
   options: WithIdempotencyOptions = {},
 ): Promise<IdempotentOutcome<T>> {
+  const ceilingMs = finiteCount(
+    'withIdempotency',
+    'ceilingMs',
+    options.ceilingMs ?? idempotencyCeilingMs(),
+    1,
+  );
   const requestHash = keyedFingerprint(input, IDEMPOTENCY_FINGERPRINT_PURPOSE);
   const { record, created } = await store.reserve(key, requestHash);
   if (record.requestHash !== requestHash) assertSamePayload(key, record.requestHash, input);
@@ -269,9 +312,15 @@ export async function withIdempotency<T>(
       throw error;
     }
   }
+  // A run under a key is OWED its end: the orphan finishing is what makes the replay answer success.
+  // An aborted `ctx.signal` would fail its vendor call, `settleFailure` would run, and the key would
+  // replay a failure. The COMMIT of a transaction around this gate sits outside the scope below, so
+  // that root is marked too, and the settle rides it. A reclaimed reservation still fences its own.
+  // The escape removes every bound the request had, so the ceiling below is the one it has.
+  carrySettleOnCommit();
   let value: T;
   try {
-    value = await run();
+    value = await runWithinCeiling(key, ceilingMs, run);
   } catch (error) {
     await settleFailure(store, key, record.id, error);
     throw error;
@@ -290,8 +339,64 @@ export async function withIdempotency<T>(
   // The CALLER gets `value` whole; the store gets the resting copy, so an answer carrying a
   // credential is never written down in plaintext for the window (#591).
   const resting = restingAnswer(value);
+  if (!jsonRepresentable(resting.value)) {
+    const refusal = new IdempotencyOutputUnserializableError(key);
+    await settleFailure(store, key, record.id, refusal);
+    throw refusal;
+  }
   await store.settle(key, resting.value, record.id, resting.redacted);
   return { value, replayed: false };
+}
+
+/**
+ * Whether a store can write this down. Tested HERE so both stores answer alike: memory holds any
+ * value, and Postgres throws from its own `JSON.stringify`. A resting copy has no `toJSON` left to
+ * run, so this calls no app code. `undefined` passes and rests as `null` (JSON has no `undefined`):
+ * the replay goes through the action's `output` schema, and that schema answers for its shape.
+ * Text `jsonb` refuses counts too: Postgres alone would raise it, after the handler ran.
+ */
+function jsonRepresentable(value: unknown): boolean {
+  try {
+    const text = JSON.stringify(value);
+    return text === undefined || jsonbRefusal(text) === undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `run` in `runToCompletion`'s scope, under a signal this ceiling aborts. ABORTS before it rejects,
+ * as a job's step timeout does: the failure about to be settled is what a retry replays, so a handler
+ * still going must be told. One that ignores it is let go of: the in-flight count and the drain stop
+ * waiting, and a transaction around the gate rolls back on this throw, so its statements then refuse.
+ */
+function runWithinCeiling<T>(key: string, ceilingMs: number, run: () => Promise<T>): Promise<T> {
+  const ceiling = new AbortController();
+  const startedAt = tryUseContext()?.now().getTime();
+  const bound = {
+    signal: ceiling.signal,
+    ...(startedAt === undefined ? {} : { deadlineAt: startedAt + ceilingMs }),
+  };
+  // Past what a timer holds `setTimeout` arms ~1 ms, and the longest ceiling killed every handler.
+  const delayMs = Math.min(ceilingMs, MAX_TIMER_MS);
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const failure = new IdempotencyRunCeilingError(key, ceilingMs);
+      ceiling.abort(failure);
+      reject(failure);
+    }, delayMs);
+    // `async`: a `run` that throws synchronously takes the same path, and clears the timer.
+    (async () => runToCompletion(run, bound))().then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (cause: unknown) => {
+        clearTimeout(timer);
+        reject(cause);
+      },
+    );
+  });
 }
 
 /**

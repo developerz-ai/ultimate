@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ConfigInvalidError, EnvMissingError } from '@ultimat3/core';
 import { s3Driver } from './driver-s3';
-import type { S3ListEntryLike } from './driver-s3-client';
+import type { S3ClientLike, S3ListEntryLike } from './driver-s3-client';
 import { bytesOf, catchError, codeOf, FakeS3Client, textOf } from './driver-s3-fixture';
 import type { StorageError } from './errors';
 import { META_DIR, scopedKey } from './path';
@@ -286,6 +286,27 @@ describe('s3Driver', () => {
       expect(fake.presignCalls).toEqual([
         { key: 'org/org-1/i.txt', options: { method: 'PUT', expiresIn: 2, type: 'image/png' } },
       ]);
+    });
+
+    // Bun's real presigner, offline. `type` is a response parameter, and only a GET reads it.
+    test('a presigned PUT signs `host` alone, so it binds neither type nor size', async () => {
+      const client = new Bun.S3Client({
+        accessKeyId: 'key',
+        secretAccessKey: 'secret',
+        bucket: 'b',
+        endpoint: 'https://s3.example.test',
+      });
+      const driver = s3Driver({ bucket: 'b', client: client as unknown as S3ClientLike });
+      const signed = new URL(
+        await driver.signedUrl('org/org-1/j.png', {
+          method: 'PUT',
+          contentType: 'image/png',
+          maxBytes: 1024,
+        }),
+      );
+      expect(signed.searchParams.get('X-Amz-SignedHeaders')).toBe('host');
+      expect(signed.searchParams.get('response-content-type')).toBe('image/png');
+      expect(signed.search).not.toContain('1024');
     });
 
     /**

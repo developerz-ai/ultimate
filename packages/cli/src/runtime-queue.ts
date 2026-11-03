@@ -182,8 +182,8 @@ async function startJobs(
   schema: SchemaMode,
 ): Promise<RunningQueue> {
   await applySchema(client, schema);
-  // Bound to `client`, never the ambient `db()`: the queue, the event bus and the idempotency
-  // reservations stay on the boot's pool whatever transaction is open.
+  // Bound to `client`, never the ambient `db()`: the queue and the idempotency reservations stay
+  // on the boot's pool whatever transaction is open.
   const executor = dbExecutor(() => client);
   const driver = overrides?.jobs ?? postgresJobDriver({ executor });
   setJobDriver(driver);
@@ -195,7 +195,9 @@ async function startJobs(
   setJobsFacade(
     outboxJobsFacade({ store: outbox, driver }, () => currentTx() as unknown as Tx | undefined),
   );
-  const events = postgresEventBus({ executor });
+  // The open transaction's connection, as the outbox beside it: an answer belongs to the unit of
+  // work that gave it, so a refusal that rolls back never resumes the run waiting on it.
+  const events = postgresEventBus({ executor: dbExecutor(() => currentTx() ?? client) });
   setEventBus(events);
   const idempotency = postgresIdempotencyStore({
     executor,

@@ -175,6 +175,41 @@ export class IdempotencyReservationLostError extends UltimateError {
 }
 
 /**
+ * A keyed handler's answer that JSON has no form for: in practice a `bigint`, since
+ * `restingAnswer` has already cut a cycle and everything else `JSON.stringify` could run app code
+ * on. Refused by `withIdempotency`, before either store is asked: memory would keep the live value
+ * and replay it while Postgres threw an uncoded `TypeError` from its settle and left the record in
+ * flight, so the same handler answered differently per store. Settled as a failure and replayed:
+ * the handler ran, and running it again is the double charge.
+ */
+export class IdempotencyOutputUnserializableError extends UltimateError {
+  constructor(key: string) {
+    super({
+      code: 'X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE',
+      cause: `the answer of the handler under idempotency key "${key}" holds a value JSON has no form for, so no retry could replay it. The handler has run`,
+      fix: 'handle: ({ input }) => ({ id: String(input.id) })   # return JSON: String(id) for a bigint, text with no NUL and no lone surrogate (a NaN is not this refusal: it rests as null), then send a fresh Idempotency-Key once the handler is fixed',
+      meta: { key },
+    });
+  }
+}
+
+/**
+ * A keyed run still going at its ceiling. It outlives the request deadline on purpose, and nothing
+ * else would end it: the request's in-flight count, the key's 409 and the drain would all wait. The
+ * handler may have written, so the failure is SETTLED and replayed, never released.
+ */
+export class IdempotencyRunCeilingError extends UltimateError {
+  constructor(key: string, ceilingMs: number) {
+    super({
+      code: 'X_IDEMPOTENCY_RUN_CEILING',
+      cause: `the handler under idempotency key "${key}" was still running ${ceilingMs}ms after it started: it was aborted and the key settled as this failure. It may have written before that, so read its effect before sending a fresh key`,
+      fix: 'configureIdempotency({ scope, ceilingMs: 300_000 })   # at boot, to raise the ceiling; or pass ctx.signal to the call that hung',
+      meta: { key, ceilingMs },
+    });
+  }
+}
+
+/**
  * A replay of a settled answer that had a field redacted at rest. Refused, never served: the
  * stored copy holds `[redacted]` where the first caller got a credential, and handing that back
  * as "the answer" is a silent wrong value. The first attempt RAN — a fresh key runs it again, so

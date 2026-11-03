@@ -23,7 +23,7 @@ export const FIX_PROSE_PINS: Readonly<Record<string, number>> = {
   db: 32,
   entity: 49,
   flags: 7,
-  http: 26,
+  http: 25,
   jobs: 37,
   mail: 40,
   manifest: 6,

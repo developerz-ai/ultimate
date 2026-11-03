@@ -3,8 +3,8 @@
  * `packages/db/src/schema/posts.ts` and change nothing else — the build must fail loudly
  * everywhere the value flows, never arrive silently as `undefined`."
  *
- * This performs the exact rename against the real files on disk, typechecks the app with the
- * real compiler before and after, and asserts on the *diff* — not a raw error count. The app
+ * This performs the exact rename on a private copy of the app's sources, typechecks that copy with
+ * the real compiler before and after, and asserts on the *diff* — not a raw error count. The app
  * already carries pre-existing, separately-tracked drift (the Postgres entity driver — PR 5 —
  * leaves `packages/db`'s repo layer red on its own), so counting total diagnostics would prove
  * nothing about the rename specifically. The diff isolates exactly what the rename broke.
@@ -17,16 +17,8 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-// `writeFileSync`, not `Bun.write`: EVERY write to the tracked schema below is synchronous — the
-// mutation, the body's `finally`, the signal handlers and the `afterAll` repair alike. A signal
-// handler has no chance to await, and an abandoned test has no `finally` at all: a pending
-// `Bun.write` never landed, and the schema stayed renamed for every file after this one. Bun ships
-// no synchronous write.
-import { writeFileSync } from 'node:fs';
-// Node-specific and unavoidable: restoring a tracked file before the runner dies needs synchronous
-// signal cleanup — `process.on`, `process.off` and `process.exit` — and Bun exposes no other way to
-// intercept SIGINT/SIGTERM. Imported through `node:` rather than read off the global, per CLAUDE.md.
-import process from 'node:process';
+// why: Bun has no recursive copy, no symlink and no recursive remove, and the copy below needs all three.
+import { cpSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 
 // `Bun.spawn`, not `@ultimat3/cli`'s `exec`: this file sits at the app root, which has no
 // `node_modules` of its own (only the workspace members under `apps/*`/`packages/*` do) — a
@@ -43,7 +35,13 @@ const ROOT = import.meta.dir;
 // dependencies are installed the divergence is visible instead of silent.
 const TSC = `${ROOT}/../../node_modules/.bin/tsc`;
 const TSC_ARGS = ['--noEmit', '--pretty', 'false', '-p', 'tsconfig.json'] as const;
-const SCHEMA_FILE = `${ROOT}/packages/db/src/schema/posts.ts`;
+/**
+ * Where the rename happens, never the tracked file: the unit step runs its slices side by side, and
+ * while this test held `posts.ts` renamed every seed in another process failed on `posts.summary`
+ * (`X_INVARIANT_VIOLATED`). Under the app root so `@ultimat3/*` still resolves up to the repo's.
+ */
+const COPY = `${ROOT}/.x/type-chain-${String(process.pid)}`;
+const SCHEMA_FILE = `${COPY}/packages/db/src/schema/posts.ts`;
 
 const RENAME_FROM = '    excerpt: text({ max: EXCERPT_MAX }),';
 const RENAME_TO = '    summary: text({ max: EXCERPT_MAX }),';
@@ -123,7 +121,7 @@ let compiler = 'unknown';
 
 /** The real compiler, over the real app, close to how `x verify`'s typecheck step runs it. */
 async function typecheckApp(): Promise<TypecheckRun> {
-  const proc = Bun.spawn([TSC, ...TSC_ARGS], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+  const proc = Bun.spawn([TSC, ...TSC_ARGS], { cwd: COPY, stdout: 'pipe', stderr: 'pipe' });
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -165,43 +163,36 @@ function harnessFault(run: TypecheckRun): string {
   ].join('\n');
 }
 
-const SIGNALS = ['SIGHUP', 'SIGINT', 'SIGTERM'] as const;
-/** 128 + signal number — the shell's own convention for "killed by". */
-const SIGNAL_EXIT: Readonly<Record<(typeof SIGNALS)[number], number>> = {
-  SIGHUP: 129,
-  SIGINT: 130,
-  SIGTERM: 143,
-};
+/** A workspace's `node_modules` is symlinks into the repo, kept as they are: only sources are copied. */
+const WORKSPACE_ROOTS = ['apps', 'packages'] as const;
 
-/**
- * `finally` does not run on SIGINT, SIGTERM or a `process.exit` from anywhere else, and this test
- * mutates a tracked file in the checkout everyone works in — an interrupted run would leave
- * `posts.ts` renamed and the next reader would think that was the schema. Registered only around
- * the mutation window and released the moment it closes, so the handlers cannot outlive it.
- *
- * A temp copy is not an alternative: the file has to be inside the real `tsc` program for the
- * rename to break the type chain at all, which is the entire proof.
- */
-function guardRestore(path: string, contents: string): () => void {
-  const restore = (): void => {
-    writeFileSync(path, contents);
+/** The app's sources under `COPY`, resolving exactly as the app does but for the one file renamed. */
+async function copyApp(): Promise<void> {
+  mkdirSync(COPY, { recursive: true });
+  for (const entry of ['app.config.ts', 'bin', 'types', 'apps', 'guards', 'packages', 'scripts']) {
+    cpSync(`${ROOT}/${entry}`, `${COPY}/${entry}`, {
+      recursive: true,
+      filter: (source) => !/\/(?:node_modules|dist|\.x)(?:\/|$)/.test(source),
+    });
+  }
+  for (const workspace of WORKSPACE_ROOTS) {
+    for (const name of readdirSync(`${ROOT}/${workspace}`)) {
+      const modules = `${ROOT}/${workspace}/${name}/node_modules`;
+      if (readdirSync(`${ROOT}/${workspace}/${name}`).includes('node_modules')) {
+        symlinkSync(modules, `${COPY}/${workspace}/${name}/node_modules`);
+      }
+    }
+  }
+  // `@postly/db/seeds/dev` is the one app import `paths` does not name, so a workspace symlink
+  // would answer it from the tracked schema and hide the seed's four diagnostics.
+  const config = (await Bun.file(`${ROOT}/tsconfig.json`).json()) as {
+    compilerOptions: { paths: Record<string, readonly string[]> };
   };
-  const listeners = SIGNALS.map((signal) => {
-    const listener = (): void => {
-      restore();
-      process.exit(SIGNAL_EXIT[signal]);
-    };
-    process.on(signal, listener);
-    return { signal, listener } as const;
-  });
-  process.on('exit', restore);
-  return (): void => {
-    for (const { signal, listener } of listeners) process.off(signal, listener);
-    process.off('exit', restore);
-  };
+  config.compilerOptions.paths['@postly/db/seeds/dev'] = ['./packages/db/seeds/dev.ts'];
+  await Bun.write(`${COPY}/tsconfig.json`, JSON.stringify(config));
 }
 
-/** Captured once, before anything can mutate it, so the restore assertion has a real reference. */
+/** The copy's schema as read, before the rename. */
 let pristine = '';
 
 // Pure, over fixtures: the three parsing and filtering decisions the proof below rests on, none of
@@ -251,29 +242,12 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     compiler = (await new Response(version.stdout).text()).trim();
     await version.exited;
 
+    await copyApp();
     pristine = await Bun.file(SCHEMA_FILE).text();
   });
 
-  afterAll(async () => {
-    // Exact equality, not `toContain`: the rename is a fixture, so the file has to come back byte
-    // for byte whether the test below passed, failed, or was filtered out of this run entirely.
-    const found = await Bun.file(SCHEMA_FILE).text();
-
-    // Repair BEFORE asserting, and this is the line the whole run's health turns on. A test that
-    // times out is ABANDONED: the runner drops the pending `await`, so the body's `finally` never
-    // runs and the signal guard only fires at process exit — long after every later file has read
-    // the schema. Left renamed, one abandoned fixture took the rest of the suite with it
-    // (`post-excerpts.test.ts` reads the `excerpt` column and failed on a column now called
-    // `summary`), which is a cascade no reader can attribute to this file. `writeFileSync` for the
-    // reason the guard at the top of this file gives: no await, no window to lose the write in.
-    // `pristine === ''` means `beforeAll` never reached its read — writing would blank a tracked
-    // file to "restore" it, which is the one outcome worse than leaving the rename.
-    if (pristine !== '' && found !== pristine) writeFileSync(SCHEMA_FILE, pristine);
-
-    // Still asserted, and still exact: the repair above puts the checkout right, it does not excuse
-    // the body. A drift here is the fixture going stale against the rename below, and it has to be
-    // loud rather than quietly written back.
-    expect(found).toBe(pristine);
+  afterAll(() => {
+    rmSync(COPY, { recursive: true, force: true });
   });
 
   test('excerpt → summary, and nothing else, breaks the build — never silently', async () => {
@@ -339,19 +313,8 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
      */
     const alreadyFailing = new Set(beforeInApp.map((d) => d.file));
 
-    let after: TypecheckRun;
-    const release = guardRestore(SCHEMA_FILE, pristine);
-    try {
-      writeFileSync(SCHEMA_FILE, pristine.replace(RENAME_FROM, RENAME_TO));
-      after = await typecheckApp();
-    } finally {
-      // Always restored, even if typechecking throws — the rename is a fixture, not a change.
-      // `writeFileSync`, not the `Bun.write` that stood here: one synchronous rule for every write
-      // to a tracked file in this test. And its limit, which is why `afterAll` restores too — a test
-      // the runner ABANDONS on a timeout never reaches a `finally` at all.
-      writeFileSync(SCHEMA_FILE, pristine);
-      release();
-    }
+    await Bun.write(SCHEMA_FILE, pristine.replace(RENAME_FROM, RENAME_TO));
+    const after = await typecheckApp();
 
     expect(harnessFault(after)).toBe('');
     const introduced = after.diagnostics.filter(

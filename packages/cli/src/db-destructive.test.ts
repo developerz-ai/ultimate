@@ -144,6 +144,7 @@ describe('unit · the destructive rail', () => {
       current: before,
       name: 'drop body',
       allowDestructive: true,
+      rollingUnsafe: true,
     });
     expect(migration.destructive).toBe(true);
 

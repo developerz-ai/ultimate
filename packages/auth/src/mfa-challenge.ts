@@ -90,8 +90,8 @@ const TOTP_SHAPE = new RegExp(`^[0-9]{${TOTP_DIGITS}}$`);
  * The guess is RESERVED before the code is looked at, against the account, the address and the
  * tenant — the buckets a password guess spends — so six digits are worth `maxAttempts` tries per
  * window and no more, and a wrong code is followed by `X_ACCOUNT_LOCKED`. A code is good once:
- * a TOTP step is remembered in `auth.totpReplay`, and a recovery code is consumed by the adapter
- * in one atomic step, so two requests carrying one code cannot both finish.
+ * a TOTP step is claimed in `auth.totpReplay` and a recovery code is consumed by the adapter, each
+ * in one atomic step, so two requests carrying one code cannot both finish, on any replica.
  */
 export async function completeMfa(
   auth: Auth,
@@ -117,12 +117,18 @@ export async function completeMfa(
   if (TOTP_SHAPE.test(presented)) {
     const now = auth.clock.now();
     const verdict = verifyTotp({ secret, code: presented, at: now });
-    // Checked and remembered with no `await` between them: two concurrent completions carrying
-    // one code cannot both find the step unspent.
-    if (!verdict.ok || verdict.step === null || auth.totpReplay.isUsed(user.id, verdict.step)) {
-      throw mfaCodeRejected();
+    // Only a code that verified claims its step, so a wrong guess never writes.
+    if (!verdict.ok || verdict.step === null) throw mfaCodeRejected();
+    let claimed: boolean;
+    try {
+      claimed = await auth.totpReplay.claim(user.id, verdict.step, now);
+    } catch (thrown) {
+      // A store that is down reached no verdict, so the guess is not counted as a wrong one.
+      await attempt.release();
+      throw thrown;
     }
-    auth.totpReplay.remember(user.id, verdict.step, now);
+    // `=== true`: an answer that is anything else is not evidence the step was unspent.
+    if (claimed !== true) throw mfaCodeRejected();
   } else {
     let consumed: boolean;
     try {

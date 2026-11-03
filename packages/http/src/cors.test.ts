@@ -104,6 +104,43 @@ describe('originListed()', () => {
   });
 });
 
+// `null` is what every sandboxed iframe on the web sends, so allowing it with credentials hands any
+// site the reply. It reaches a list by accident: `URL.parse('localhost:3000').origin` is that string.
+describe('the opaque origin', () => {
+  const listed = { ...DEFAULT_CORS, origins: ['null', 'https://a.test'] };
+
+  test('is refused at the declaration, with or without credentials', () => {
+    for (const credentials of [true, false]) {
+      let thrown: unknown;
+      try {
+        assertCorsConfig({ ...listed, credentials });
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as HttpError).code).toBe('X_CORS_CONFIG_INVALID');
+      expect((thrown as HttpError).cause).toContain("'null'");
+    }
+  });
+
+  test('is never listed and never answered, if a config reached here unscreened', () => {
+    expect(originListed(listed, 'null')).toBe(false);
+    const headers = corsHeaders(listed, 'null');
+    expect(headers['access-control-allow-origin']).toBeUndefined();
+    expect(headers['access-control-allow-credentials']).toBeUndefined();
+  });
+
+  test('a real listed origin still answers', () => {
+    expect(corsHeaders(listed, 'https://a.test')['access-control-allow-origin']).toBe(
+      'https://a.test',
+    );
+  });
+
+  test("origins: ['*'] without credentials still answers it, as any origin", () => {
+    const open = { ...DEFAULT_CORS, origins: ['*'], credentials: false };
+    expect(corsHeaders(open, 'null')['access-control-allow-origin']).toBe('*');
+  });
+});
+
 describe('assertCorsConfig()', () => {
   // `DEFAULT_CORS.credentials` is true, so `origins: ['*']` on its own is the natural "open it up"
   // edit — and it used to resolve to no CORS headers at all, silently, on every request.

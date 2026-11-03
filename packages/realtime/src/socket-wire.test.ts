@@ -7,7 +7,9 @@ import { markListening } from '@ultimat3/core';
 import { SyncSocket, type WsLike } from './socket';
 import { type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
-const FRAMES = 40;
+/** 60 MB: past any loopback's send and receive buffers, 32 MB between them at Linux's tcp maximums. */
+const MAX_FRAMES = 400;
+const DROPS_WANTED = 5;
 const PAD = 'x'.repeat(150 * 1024);
 
 let stop: (() => void) | undefined;
@@ -16,7 +18,7 @@ afterEach(() => {
   stop = undefined;
 });
 
-/** One `events` frame per index, each carrying 150 kB, so 40 of them overrun a 1 MB buffer. */
+/** One `events` frame per index, each carrying 150 kB. */
 const frameAt = (index: number): Frame => ({
   type: 'events',
   v: PROTOCOL_VERSION,
@@ -27,6 +29,7 @@ const frameAt = (index: number): Frame => ({
 describe('unit · what a real socket says about a frame', () => {
   test('a frame counted as dropped never arrives; every other frame does', async () => {
     const sent = new Set<number>();
+    let attempted = 0;
     let socket: SyncSocket | undefined;
     const server = Bun.serve({
       port: 0,
@@ -47,10 +50,13 @@ describe('unit · what a real socket says about a frame', () => {
             id: 'wire',
             clientBuildId: 'b',
             serverBuildId: 'b',
-            maxDroppedFrames: FRAMES,
+            maxDroppedFrames: MAX_FRAMES,
           });
-          for (let index = 0; index < FRAMES; index += 1) {
-            if (socket.send(frameAt(index))) sent.add(index);
+          // Until the buffer really overruns: how much a kernel absorbs first is the machine's own
+          // (tcp autotuning took a fixed 6 MB whole, and no frame was ever dropped).
+          while (attempted < MAX_FRAMES && socket.droppedFrames < DROPS_WANTED) {
+            if (socket.send(frameAt(attempted))) sent.add(attempted);
+            attempted += 1;
           }
         },
         message() {},
@@ -83,7 +89,7 @@ describe('unit · what a real socket says about a frame', () => {
     });
 
     expect(socket?.sentFrames).toBe(sent.size);
-    expect(socket?.droppedFrames).toBe(FRAMES - sent.size);
+    expect(socket?.droppedFrames).toBe(attempted - sent.size);
     // The claim itself: nothing counted as dropped arrived, and nothing reported sent went missing.
     expect([...received].sort((a, b) => a - b)).toEqual([...sent].sort((a, b) => a - b));
     // Non-vacuity: the buffer really was overrun, so both branches were taken.

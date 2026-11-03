@@ -160,3 +160,12 @@ still fires `cancel` then `close` on Escape and on a backdrop press, `requestClo
 `<form method="dialog">` still close it — so every closing path the router already handled is
 unchanged.
 
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/render/CLAUDE.md`](../../packages/render/CLAUDE.md), which keeps the rule in one line.
+
+### Client navigation
+
+| Files | Rule |
+|---|---|
+| Client navigation | `navigation*.ts` — soft navigation over server-rendered documents, NOT a mode: the router renders nothing, it swaps the document the route already rendered. Rules are pure (`navigation-rules.ts`: `linkVerdict`, `formVerdict`, `responseVerdict`, `mayPrefetch`) and unit-tested; the DOM half (`navigation-swap.ts`, `navigation.ts`) is proven in Chrome by `packages/cli/e2e/client-navigation-*.e2e.test.ts`. `./navigation` (`navigation-entry.ts`) is the script the CLI builds; importing it starts it, and a document without `ultimate-navigation` is never intercepted. Route-presented modals (`navigation: 'modal'`): the hash grammar and verdicts are pure (`navigation-modal-rules.ts`), the `<dialog>` is `navigation-modal.ts`, styled by `@ultimat3/ui`'s `global.scss` under `NAVIGATION_MODAL_ATTRIBUTE` (pinned by `navigation-modal-style.test.ts` — render never imports ui), proven by `client-navigation-modal.e2e.test.ts`. |

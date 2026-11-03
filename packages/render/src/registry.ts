@@ -76,7 +76,7 @@ export interface RouteDescriptor {
   readonly revalidateMaxStale?: string | number | null;
   /**
    * `revalidate.query`, sorted: the only query parameters an `isr` page of this route keys on.
-   * `null` when the route declared none — its pages then key on the WHOLE query string.
+   * `null` when the route declared none — its pages then key on no query at all.
    */
   readonly revalidateQuery?: readonly string[] | null;
   readonly prerenderable: boolean;

@@ -212,8 +212,15 @@ describe('every repository method names the statement it sends', () => {
 
     await memberRepo().insertAll(batch);
 
-    expect(recorded.statements).toHaveLength(2);
-    expect(pairs).toEqual([pairFor('insertAll'), pairFor('insertAll')]);
+    // Two inserts and the transaction that makes them one write: its BEGIN and COMMIT are this
+    // call's as well, or a wide batch's round trips would read as nobody's.
+    expect(recorded.texts.map((text) => text.split(' ')[0]?.toUpperCase())).toEqual([
+      'BEGIN',
+      'INSERT',
+      'INSERT',
+      'COMMIT',
+    ]);
+    expect(pairs).toEqual(Array.from({ length: 4 }, () => pairFor('insertAll')));
   });
 
   test('the pair is gone once the call returns — nothing leaks into the next statement', async () => {

@@ -107,6 +107,9 @@ const CATALOG = {
   // `x doctor`'s other listing: what the coverage floor in x.verify.json does not see, and why.
   'cli.doctor.coverageExclude':
     '{count} path(s) x.verify.json excludes from the coverage floor — each with the reason it gives:',
+  // `x doctor`'s reminder: the rolling rail is off until this key is set (`doctor-rolling.ts`).
+  'cli.doctor.rollingSince':
+    'the rolling-deploy rail is off: set "rollingSince": "{newest}" in x.verify.json to judge every migration after your newest',
   'cli.docs.code': '{code} is an error code — x errors explain answers it',
   'cli.docs.exports': 'exports: {list}',
   'cli.docs.installed': 'installed: {list}',
@@ -333,8 +336,6 @@ const CATALOG = {
   'cli.verify.allSkipped': 'found {skipped} test(s) and every one skipped itself',
   'cli.verify.warnings': '{count} warning(s) — --verbose or --json lists them',
   'cli.verify.slowest': 'slowest: {files}',
-  'cli.verify.isrQueryUndeclared':
-    "{file}: render 'isr' with no revalidate.query — its stored pages are keyed on the whole query string, so any visitor can mint one per request. Declare revalidate: { query: [] } (or the parameters the page varies on)",
   'cli.verify.isrQueryOmitted':
     '{file}: reads the query parameter "{name}", which revalidate.query does not list — the page is stored under a key without it, so every visitor gets the document rendered for whichever value arrived first. Declare query: [{declared}], or stop reading it',
   // The other shape the same counts can take: a suite that reported no test at all, skipped ones
@@ -386,6 +387,42 @@ const CATALOG = {
   'cli.secrets.dropped':
     'dropped retired master key {kid} from {path} — {count} retired key(s) still declared',
   'cli.secrets.ring': 'retired master key(s) that still open sealed values: {kids}',
+  'cli.upgrade.atLatest': 'already at {version}, the newest release',
+  'cli.upgrade.atTarget': 'already at {version}; {next} is the next release',
+  'cli.upgrade.noApp.done':
+    '{from} -> {to}: no app.config.ts, so no x verify ran; {count} script(s) passed',
+  'cli.upgrade.noApp.none':
+    '{from} -> {to}: nothing checked: no app.config.ts, and no typecheck or test script',
+  'cli.upgrade.noApp.red': '{from} -> {to}: no app.config.ts, and a script failed: {names}',
+  'cli.upgrade.scriptRed': 'failed, re-run it: bun run {name}',
+  'cli.upgrade.then.atTarget':
+    'nothing to do at {version}; a bare x upgrade --json takes the next release, {next}',
+  'cli.upgrade.then.dryRunNoApp':
+    'no app.config.ts, so on a clean tree x upgrade --json moves the pins and runs {scripts} in place of x verify',
+  'cli.upgrade.then.noProof':
+    'nothing checked this hop: confirm {to} works by hand, commit it, then re-run x upgrade --json for the next one',
+  'cli.upgrade.then.scriptsGreen':
+    'the scripts passed, which is less than x verify would say: review the diff, commit this hop to {to}, then re-run x upgrade --json for the next one',
+  'cli.upgrade.then.scriptsRed':
+    'read the section, make each failed script pass, commit this hop to {to}, then re-run x upgrade --json for the next one',
+  'cli.upgrade.bunEdited': 'bun floor: {path} {from} -> {to}',
+  'cli.upgrade.bunManual': 'bun floor, by hand: {path}:{line} — {why}',
+  'cli.upgrade.done': '{from} -> {to}: the gate is green',
+  'cli.upgrade.dryRun': '{from} -> {to}: nothing written, no gate run',
+  'cli.upgrade.guard': 'guard, yours to take or leave: {fix}',
+  'cli.upgrade.read': 'read: {title} — {url}',
+  'cli.upgrade.red': '{from} -> {to}: not done, the gate says: {summary}',
+  'cli.upgrade.stillRunning': 'x upgrade: still in {stage} ({elapsed})',
+  'cli.upgrade.then': 'then: {then}',
+  'cli.upgrade.then.atLatest':
+    'nothing to do: this app is on {version}, and no newer release is published',
+  'cli.upgrade.then.dryRun': 'on a clean tree, run the hop: x upgrade --json',
+  'cli.upgrade.then.last':
+    'review the diff and commit this hop to {to}: it is the newest release, so the walk is over',
+  'cli.upgrade.then.red':
+    'read the section, close each finding by its fix, re-check with x verify --json, commit this hop to {to}, then re-run x upgrade --json for the next one',
+  'cli.upgrade.then.walk':
+    'review the diff and commit this hop to {to}, then re-run x upgrade --json to take the next one, {next}',
 } as const;
 
 export type MessageKey = keyof typeof CATALOG;

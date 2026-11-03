@@ -1,7 +1,7 @@
 // What `x verify` says about the query an `isr` route keys on. Advice and not a finding: the scan
 // reads source text, so it can miss a read made through a helper and can name one that is not a
-// query read at all — and a route that declared nothing works as it always did. Both are exactly
-// what a reader should hear about before a visitor finds it.
+// query read at all. A read the key omits is still what a reader should hear about before a
+// visitor finds it.
 
 // why: Bun exposes no path-join primitive; Bun.file takes one already joined.
 import { join } from 'node:path';
@@ -32,20 +32,15 @@ export function queryReads(source: string): readonly string[] {
 const listed = (names: readonly string[]): string => names.map((name) => `'${name}'`).join(', ');
 
 /**
- * One line per `isr` route with no `revalidate.query` — it renders and stores a page for every
- * distinct query string, so `?x=1`, `?x=2`, … evict its real pages and cost a render each — and
- * one per parameter a route's module reads and its declaration omits: the page is stored under a
- * key without it, so every visitor gets the document rendered for whichever value arrived first.
+ * One line per parameter an `isr` route's module reads and its declaration omits, no declaration
+ * being none: the page is stored under a key without it, so every visitor gets the document
+ * rendered for whichever value arrived first.
  */
 export async function isrQueryAdvice(root: string): Promise<readonly string[]> {
   const advice: string[] = [];
   for (const route of describePages()) {
     if (route.mode !== 'isr') continue;
-    const declared = route.revalidateQuery ?? null;
-    if (declared === null) {
-      advice.push(msg('cli.verify.isrQueryUndeclared', { file: route.file }));
-      continue;
-    }
+    const declared = route.revalidateQuery ?? [];
     const module = Bun.file(join(root, route.file));
     if (!(await module.exists())) continue;
     for (const name of queryReads(await module.text())) {

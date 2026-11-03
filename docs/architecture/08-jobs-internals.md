@@ -35,7 +35,7 @@ stepRunner(options) => {
 | Memo load | `driver.steps.list(runId)` once per attempt, before `run()` is entered |
 | Persist-before-return | a step's result is durable before the next line executes. A crash between them replays that step, never skips it |
 | `step.sleep` | persists a wake time and throws `SUSPEND`. The job resumes **in a fresh process** — `'3d'` is safe, no timer in memory, no connection held |
-| `step.waitForEvent(name, { match, timeout })` | same suspension mechanism; resumes with the event payload or `null` on timeout |
+| `step.waitForEvent(name, event, { schema, match, timeout })` | same suspension mechanism; resumes with the payload parsed by the required `schema`, or `undefined` on timeout |
 | Step names | unique and stable within a job. Renaming invalidates the stored result — the step re-runs. `x verify` fails duplicate names in one `run` |
 | Replay observability | a replayed step emits a span with `replayed=true`, never a fake execution |
 | Retry unit | the **step**. A failure in `nudge` replays `provision` and `welcome-email` from storage in microseconds and retries only `nudge` |

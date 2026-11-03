@@ -3,9 +3,17 @@
 // app-version fence is the `migrate` role's contract — a pod must refuse to migrate a database
 // another build already owns, because the alternative is two schemas racing during a rollout.
 
-import { appVersion, finiteCount, logger, renderFixShellArg } from '@ultimat3/core';
+import {
+  appVersion,
+  finiteCount,
+  isProduction,
+  logger,
+  type Random,
+  renderFixShellArg,
+} from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { expectedQueryLoop } from './expected-loop';
+import { MIGRATION_LOCK_RETRIES } from './migrate-lock-retry';
 import { ledgerAheadOfBuild } from './migrate-rollback';
 import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './migration-errors';
 import type { Migration } from './migration-ledger';
@@ -19,6 +27,8 @@ import {
 } from './migration-ledger';
 import { applyMigrationStep } from './migration-step';
 import { poolProfileFor } from './pool-profile';
+import { retireAndContractPending } from './rolling';
+import { retireAndContractTogether } from './rolling-errors';
 import { raw, sql } from './sql';
 
 export type { LedgerRow, Migration } from './migration-ledger';
@@ -81,6 +91,13 @@ export interface MigrateOptions {
   readonly lockWaitMs?: number | undefined;
   /** `SET LOCAL lock_timeout` per migration. Defaults to the `migrate` role's profile. */
   readonly lockTimeoutMs?: number | undefined;
+  /** Attempts past the first when `lock_timeout` fires (`migrate-lock-retry.ts`). Defaults to 5. */
+  readonly lockRetries?: number | undefined;
+  /** Seams for the wait between those attempts; a test reads the schedule. */
+  readonly lockRetrySleep?: ((ms: number) => Promise<void>) | undefined;
+  readonly lockRetryRandom?: Random | undefined;
+  /** Whether a retire and its drop may land in one deploy. Defaults to core's `isProduction()`. */
+  readonly production?: boolean | undefined;
 }
 
 /**
@@ -192,10 +209,15 @@ function migrationLockTimeoutMs(explicit: number | undefined): number {
   );
 }
 
+/** Screened beside `lockTimeoutMs`, before the advisory lock, for the reason given there. */
+const migrationLockRetries = (explicit: number | undefined): number =>
+  finiteCount('migrate', 'lockRetries', explicit ?? MIGRATION_LOCK_RETRIES, 0);
+
 export async function migrate(options: MigrateOptions): Promise<MigrationReport> {
   const client = options.client ?? baseClient();
   const appVersion = runningAppVersion(options.appVersion);
   const lockTimeoutMs = migrationLockTimeoutMs(options.lockTimeoutMs);
+  const retries = migrationLockRetries(options.lockRetries);
   const started = performance.now();
 
   return withAdvisoryLock(
@@ -222,6 +244,13 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
       }
 
       const pending = pendingMigrations(ledger, options.migrations);
+      // Before the first BEGIN, so nothing is half done. Only where a previous release can be
+      // running: a non-empty ledger in production. A fresh database, a template or a branch has no
+      // old pods to break and replays both freely.
+      if (ledger.length > 0 && (options.production ?? isProduction())) {
+        const pair = retireAndContractPending(pending);
+        if (pair !== undefined) throw retireAndContractTogether(pair);
+      }
       // A statement per migration and a transaction per migration is the point, not an N+1 to batch:
       // one failed `up` must leave the ledger describing exactly the migrations that did run, and a
       // batch commits or loses all of them together. Declared here so a diagnostic reports the loops
@@ -240,6 +269,11 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
               up: migration.up,
               script: migration.up,
               lockTimeoutMs,
+              lockRetry: {
+                retries,
+                sleep: options.lockRetrySleep,
+                random: options.lockRetryRandom,
+              },
               record: async (client) => {
                 const durationMs = Math.round(performance.now() - at);
                 await client.execute(sql`
@@ -284,6 +318,8 @@ export interface RollbackOptions {
   readonly lockWaitMs?: number | undefined;
   /** `SET LOCAL lock_timeout` per reversal. Defaults to the `migrate` role's profile. */
   readonly lockTimeoutMs?: number | undefined;
+  /** Attempts past the first when `lock_timeout` fires. Defaults to 5, as `migrate`'s does. */
+  readonly lockRetries?: number | undefined;
 }
 
 /** Reverse the newest `steps` applied migrations. `x db rollback`. */
@@ -294,6 +330,7 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
   // "one fewer", so an unvalidated count reverses migrations nobody asked about.
   if (!Number.isSafeInteger(steps) || steps < 1) throw rollbackStepsInvalid(steps);
   const lockTimeoutMs = migrationLockTimeoutMs(options.lockTimeoutMs);
+  const retries = migrationLockRetries(options.lockRetries);
   const known = new Map(options.migrations.map((migration) => [migration.id, migration]));
 
   // The same lock `migrate` takes, because the race is the same one: a rollback reversing the id a
@@ -333,6 +370,7 @@ export async function rollback(options: RollbackOptions): Promise<readonly strin
               up: migration.up,
               script: migration.down,
               lockTimeoutMs,
+              lockRetry: { retries },
               record: async (client) => {
                 await client.execute(sql`delete from ${raw(LEDGER_TABLE)} where id = ${row.id}`);
               },

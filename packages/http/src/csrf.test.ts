@@ -4,7 +4,7 @@
 // that decides before the write happens.
 import { describe, expect, test } from 'bun:test';
 import { type CorsConfig, DEFAULT_CORS } from './cors';
-import { type CsrfCheckInput, checkCsrf, DEFAULT_CSRF, selfOrigin } from './csrf';
+import { type CsrfCheckInput, checkCsrf, csrfBlocked, DEFAULT_CSRF, selfOrigin } from './csrf';
 
 const cors: CorsConfig = { ...DEFAULT_CORS, origins: ['https://admin.example.com'] };
 
@@ -18,6 +18,22 @@ const input = (patch: Partial<CsrfCheckInput> = {}): CsrfCheckInput => ({
   cors,
   config: DEFAULT_CSRF,
   ...patch,
+});
+
+describe('csrfBlocked', () => {
+  const hint = "curl -H 'sec-fetch-site: same-origin'";
+
+  test.each(['127.0.0.1', '::1', '::ffff:127.0.0.1'])('%s is told the local header', (ip) => {
+    expect(csrfBlocked('/x', 'r', ip).fix).toStartWith(hint);
+  });
+
+  // Telling a remote sender which header passes is the one thing this branch must not do.
+  test.each(['64:ff9b::7f00:1', '2002:7f00:1::', '::127.0.0.1', '10.0.0.1'])(
+    '%s is not a local client',
+    (ip) => {
+      expect(csrfBlocked('/x', 'r', ip).fix).not.toContain('sec-fetch-site');
+    },
+  );
 });
 
 describe('checkCsrf', () => {

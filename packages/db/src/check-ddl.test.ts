@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { checkClauses, checkPlan, columnCheckName, declaredChecks } from './check-ddl';
+import { emptyConcurrentPlan } from './concurrent-plan';
 import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
 import { generateMigration, snapshotOf } from './generate';
 import type { TableDescription } from './introspect';
@@ -131,7 +132,7 @@ describe('diffTable', () => {
     const up = migrate(posts(), recorded);
     expect(up).toContain('alter table "posts" drop constraint if exists "posts_status_check";');
     expect(up).toContain(
-      `alter table "posts" add constraint "posts_status_check" check (${STATUS_CHECK});`,
+      `alter table "posts" add constraint "posts_status_check" check (${STATUS_CHECK}) not valid;`,
     );
     expect(up.indexOf('drop constraint if exists')).toBeLessThan(up.indexOf('add constraint'));
   });
@@ -157,7 +158,7 @@ describe('diffTable', () => {
     expect(up).toContain('alter table "posts" drop constraint "posts_status_check";');
     expect(up).toContain(
       `alter table "posts" add constraint "posts_status_check" ` +
-        `check (status in ('draft', 'published', 'archived'));`,
+        `check (status in ('draft', 'published', 'archived')) not valid;`,
     );
   });
 
@@ -166,7 +167,7 @@ describe('diffTable', () => {
     const up = migrate(posts(), recorded);
     expect(up).toContain('add column "status" text');
     expect(up).toContain(
-      `alter table "posts" add constraint "posts_status_check" check (${STATUS_CHECK});`,
+      `alter table "posts" add constraint "posts_status_check" check (${STATUS_CHECK}) not valid;`,
     );
     expect(up).not.toContain('drop constraint if exists');
   });
@@ -196,6 +197,61 @@ describe('diffTable', () => {
     expect(up).toContain(
       `alter table "posts" add constraint "posts_status_check" check (${STATUS_CHECK});`,
     );
+  });
+});
+
+describe('a live table, online', () => {
+  const unchecked = posts({ columns: posts().columns.map((each) => ({ ...each, check: null })) });
+  const VALIDATE = 'alter table "posts" validate constraint "posts_status_check";';
+
+  test('an added check is not valid in the transaction, validated in the deferred step', () => {
+    const migration = generateMigration({
+      entities: [posts()],
+      current: snapshotOf([unchecked]),
+      name: 'x',
+      now: new Date('2026-11-02T00:00:00.000Z'),
+    });
+    expect(migration.transactional).toBe(true);
+    expect(migration.up).toContain(`check (${STATUS_CHECK}) not valid;`);
+    expect(migration.up).not.toContain('validate constraint');
+    expect(migration.followUp?.transactional).toBe(false);
+    expect(migration.followUp?.up).toContain(VALIDATE);
+    // A validate reverses to nothing: the transactional step's `down` drops the constraint.
+    expect(migration.followUp?.down).toBe('');
+  });
+
+  test('a new table stays plain, byte for byte', () => {
+    const migration = generateMigration({
+      entities: [posts()],
+      name: 'x',
+      now: new Date('2026-11-02T00:00:00.000Z'),
+    });
+    expect(migration.followUp).toBeUndefined();
+    expect(migration.up).toContain(`constraint "posts_status_check" check (${STATUS_CHECK})`);
+    expect(migration.up).not.toContain('not valid');
+  });
+
+  test('a check that did not move writes neither half', () => {
+    const migration = generateMigration({
+      entities: [posts()],
+      current: snapshotOf([posts()]),
+      name: 'x',
+      now: new Date('2026-11-02T00:00:00.000Z'),
+    });
+    expect(migration.up).toBe('');
+    expect(migration.followUp).toBeUndefined();
+  });
+
+  test('a constraint a retype moved aside comes back plain, the rewrite holds the table anyway', () => {
+    const plan = { up: [] as string[], down: [] as string[] };
+    const concurrent = emptyConcurrentPlan();
+    const live = snapshotOf([posts()]).tables[0];
+    if (live === undefined) return expect.unreachable('the snapshot holds the table');
+    checkPlan(posts(), live, plan, new Set(), new Set(['posts_status_check']), concurrent);
+    expect(plan.up).toEqual([
+      `alter table "posts" add constraint "posts_status_check" check (${STATUS_CHECK});`,
+    ]);
+    expect(concurrent.validate).toEqual([]);
   });
 });
 

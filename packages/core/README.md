@@ -16,7 +16,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | acting as another actor, with an origin and a reason | `impersonate.ts` |
 | is an error worth retrying? one classification per code | `error-retry.ts` |
 | how long to wait before the next attempt — one curve, one jitter table | `backoff.ts` |
-| the retry executor and the pure decision behind it | `retry.ts` |
+| the retry executor, bound to its caller's lifetime | `retry.ts` |
+| the retry loop and the pure decision behind it, no context | `retry-loop.ts` |
 | which HTTP statuses are worth repeating | `retryable-status.ts` |
 | N callers on one key are ONE run | `single-flight.ts` |
 | how many may run at once, and how many may wait | `flight-gate.ts` |
@@ -76,7 +77,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `jobs.concurrency`'s default and domain — one slot count for every queue a worker serves, or a table per queue (`{ banks: 4, 'banks-long': 2 }`; a queue the table does not name runs at the default). `JOBS_CONCURRENCY_DEFAULT` (8), `type JobsConcurrency` | `config-jobs.ts` |
 | SIGTERM/SIGINT → the one drain; on Windows also SIGHUP (console close) and SIGBREAK (Ctrl-Break) — `drainSignals(platform)` | `lifecycle-signals.ts` |
 | is this directory inside a `bun build --compile` binary? `isCompiledBundle(import.meta.dir)` — `/$bunfs/` and Windows' `B:\~BUN\` | `bunfs.ts` |
-| which network an IP literal belongs to — `classifyAddress`, for SSRF screens | `address-class.ts` |
+| which network an IP literal belongs to — `classifyAddress`, for SSRF screens; `peerAddressClass`, for a check that trusts a caller or a local name | `address-class.ts` |
 | the network a caller's address keys a per-caller budget on — `addressNetwork`: IPv4 exact, IPv4-mapped as IPv4, IPv6 as its /64 | `address-class.ts` |
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
 | `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
@@ -262,6 +263,24 @@ A factory runs again on **every** `ctxOf` / `withChildContext` call and is never
 because it closes over the ctx (actor, clock, tz) it was built for. `withChildContext` drops a
 factory-managed name from what it carries forward on purpose: only an ad hoc service nobody
 registered survives an actor swap unrebuilt.
+
+`As of 2026-11-02`, a scope that was abandoned stops writing. `abandonment()` answers the ambient
+signal's reason when it was aborted with a coded one (the request deadline's `X_TIMEOUT`, a job's
+cancellation), the same object, and `undefined` for a client hang-up, which is uncoded: nobody was
+told anything. `@ultimat3/db` and `@ultimat3/entity` refuse on it. `runToCompletion(fn)` is the one
+escape: same request id and actor, a fresh signal, no deadline, managed services rebuilt over it.
+
+```ts
+import { runToCompletion } from '@ultimat3/core';
+import { withTransaction } from '@ultimat3/db';
+
+declare function recordCharge(): Promise<void>;
+
+await runToCompletion(() => withTransaction(() => recordCharge())); // lands, past the deadline
+```
+
+Nothing in that scope bounds `fn`: the caller owns a ceiling, as `withIdempotency` and `onSettled`
+do. Wrap the whole transaction, as above: a statement wrapped inside one still has its COMMIT refused.
 
 ## Actor facts — the app's own authz vocabulary, on the framework's actor
 
@@ -482,7 +501,7 @@ match with `sealAll()`; uniqueness cannot be held across keys.
 - Metrics are the same shape one signal over: `counter()`, `gauge()`, `histogram()`, aggregated
   in process, free until `configureMetrics({ exporter })`. See below.
 - `onShutdown(name, hook, { phase })` with phases `accept → inflight → close` under one
-  deadline; `readyzPayload()` flips to 503 the moment draining starts, `healthzPayload()` stays
+  deadline, `close` running last-registered first; `readyzPayload()` flips to 503 the moment draining starts, `healthzPayload()` stays
   200 until stopped. It **returns an unregister**, and a caller that starts and stops more than
   once has to keep it: a discarded one is a hook per `start()`, each retaining the resource it
   was going to drain, and the next drain runs every one of them against a torn-down copy.
@@ -732,12 +751,12 @@ nothing consulted it before deciding to try again. `As of 2026-08-23`.
 | Export | The one answer | The question it settles |
 |---|---|---|
 | `backoffDelay({ attempt, base, max, factor?, curve?, jitter?, random? })` | one curve — `exponential \| linear \| fixed`, `full \| equal \| none` — 1-based `attempt`, clamped to `max` **before** jitter, rounded, and `0` rather than `NaN` | how long to wait. `random` is injectable, so a schedule is a unit test rather than a range |
-| `singleFlight({ deadlineMs?, schedule? })` → `run(key, work, join?)`, `size`, `keys()`, `evict(key)` | N callers on one key are ONE run | who pays for a miss. Eviction is identity-checked, so a load that settles late never drops the load that replaced it; `deadlineMs` frees the KEY a wedged load would hold forever — it never cancels the work and never rejects a joiner. `evict(key)` does the same on demand, for a caller that learns the load in flight began before a write its result must reflect |
+| `singleFlight({ deadlineMs?, schedule?, signal?, released? })` → `run(key, work, join?)`, `size`, `keys()`, `evict(key)` | N callers on one key are ONE run | who pays for a miss. With `signal`, a live joiner re-leads when its leader was aborted, rather than sharing that rejection. `released(key)` fires each time a key stops being held. Eviction is identity-checked, so a load that settles late never drops the load that replaced it; `deadlineMs` frees the KEY a wedged load would hold forever — it never cancels the work and never rejects a joiner. `evict(key)` does the same on demand, for a caller that learns the load in flight began before a write its result must reflect |
 | `flightGate({ maxConcurrent, maxQueued }, { subject?, overflow? })` | one bound, one queue, one refusal | how many at once. Past the queue the answer is `X_FLIGHT_GATE_OVERLOADED` (503) and never a longer queue; the slot is HANDED to a waiter, never released and re-acquired. Both limits are screened at construction (`finiteCount`, 0 allowed); a width of 0 refuses every caller rather than queueing for a slot that never frees. `run(work, signal?)`: an abort while QUEUED removes the waiter and rejects with the abort's reason |
 | `generationFence(subject)` → `generation()`, `bump()`, `guard(issued)` | whether an answer still applies | `X_SUPERSEDED` (499) and `isSuperseded(error)` — the piece nothing in the tree had. `guard` compares `!==`, never `<` |
 | `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `>= 500`, plus 408, 409, 425, 429 | which HTTP answers are worth repeating |
 | `jitterStatedDelay(waitMs, capMs, random?)` | the ONE rule for a delay a responder named | the stated wait as a FLOOR plus a spread in `[0, min(wait / 2, cap))`, so a burst told `Retry-After: 1` does not replay in lockstep. `retryDecision`'s `retry-after` path (floor clamped to `max`; `jitter: 'none'` gets the bare floor) and `@ultimat3/jobs`' rate-limit deferral and webhook throttle all take it |
-| `retry(work, policy, { sleep, now?, random? })`, `retryDecision(policy, attempt, error, random?)` | the executor and the pure decision behind the classification | whether to try again at all. `clientFlight` is its one caller in the framework; `jobs`, `ai` and `db` each keep their own loop and delegate only the arithmetic and the classification |
+| `retry(work, policy, { sleep?, now?, random? }?)`, `retryDecision(policy, attempt, error, random?)` | the executor and the pure decision behind the classification | whether to try again at all. `retry` stops on the ambient `ctx.signal` and clamps its budget to `ctx.deadlineAt`, with no opt-out: `runToCompletion(fn)` is the way to outlive a caller. `clientFlight` runs the same loop with no context (`retry-loop.ts`), so a page pays for no ambient request; `jobs`, `ai` and `db` each keep their own loop and delegate only the arithmetic and the classification |
 | `clientFlight({ principal?, retry?, deadlineMs?, limit?, … })` → `run(plan)`, `keyFor(url, opts?)`, `bump()`, `generation()` | the five above composed into one typed-client call | dedup, supersession, retry, one wall-clock deadline and a concurrency ceiling, for a call whose dispatch the caller supplies. `@ultimat3/action` and `@ultimat3/query` import it from here and re-export only its types — one file, because both are tier 3 and neither may import the other |
 | `isTransientFailure(error)` | what a CLIENT may send again | a declared `retryable`/`retry-after`, plus a dispatch that produced no response at all. It **inverts** `retryDecision`'s unclassified default on purpose: a caller's own `AbortError` and a foreign `TypeError` are terminal |
 | `traceHeaders()`, `problemOf(text)`, `retryForStatus(code, status, retryAfterSeconds?)`, `FRAMEWORK_CODE` | what a typed client puts on the wire and reads back off it | the W3C header (nothing at all when the span context is incomplete), a total `problem+json` read, and the classification a STATUS is allowed to give when nobody declared one for the code — `retry-after` for a 429 or 503 that stated a delay, unless the code is declared `terminal` |
@@ -826,3 +845,13 @@ hand-rolled JPEG and PNG codecs is what put it there.
 
 `image/image-fixture.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only round
 trips against itself proves nothing. Never regenerate a fixture with our own encoder.
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+| Name | What |
+|---|---|
+| `CompletionBound` | what bounds a `runToCompletion` scope, when its caller owns a ceiling |
+| `MAX_TIMER_MS` | the longest delay a timer holds, 2,147,483,647 ms: past it `setTimeout` arms ~1 ms |
+| `jsonbRefusal(text)` | why `jsonb` would refuse this `JSON.stringify` output, or `undefined`. Names the class of thing, never the text |

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "eeb091807e5c78ebadfdd2ab3d92310b2c69676c3878c1918fc3d6777884427f",
+  "buildId": "2b3581299404fa50cbcfff7ce6cb04c2289b7b69143c7e246e8d9a05ae93ae67",
   "tiers": {
     "0": [
       "core",
@@ -1180,6 +1180,11 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_DB_TRANSACTION_CLOSED",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_DB_UNAVAILABLE",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -1940,6 +1945,11 @@
       "at": "packages/action/src/error-titles.ts"
     },
     {
+      "code": "X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
       "code": "X_IDEMPOTENCY_REPLAYED_FAILURE",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
@@ -1951,6 +1961,11 @@
     },
     {
       "code": "X_IDEMPOTENCY_RESERVATION_LOST",
+      "owner": "action",
+      "at": "packages/action/src/error-titles.ts"
+    },
+    {
+      "code": "X_IDEMPOTENCY_RUN_CEILING",
       "owner": "action",
       "at": "packages/action/src/error-titles.ts"
     },
@@ -2086,6 +2101,11 @@
     },
     {
       "code": "X_JOB_DUPLICATE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_EVENT_INVALID",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
     },
@@ -2278,6 +2298,11 @@
       "code": "X_LOCALE_UNSUPPORTED",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
+    },
+    {
+      "code": "X_LOCK_UNSUPPORTED",
+      "owner": "entity",
+      "at": "packages/entity/src/entity-error.ts"
     },
     {
       "code": "X_LOCKFILE_STALE",
@@ -2625,6 +2650,11 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_MIGRATION_ROLLING_UNSAFE",
+      "owner": "db",
+      "at": "packages/db/src/errors.ts"
+    },
+    {
       "code": "X_MIGRATION_SNAPSHOT_MISSING",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
@@ -2751,6 +2781,11 @@
     },
     {
       "code": "X_NOTIFY_DELIVERY_FAILED",
+      "owner": "notify",
+      "at": "packages/notify/src/errors.ts"
+    },
+    {
+      "code": "X_NOTIFY_DELIVERY_HELD",
       "owner": "notify",
       "at": "packages/notify/src/errors.ts"
     },
@@ -4170,6 +4205,11 @@
       "at": "packages/jobs/src/errors.ts"
     },
     {
+      "code": "X_STEP_OUTPUT_UNSERIALIZABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
       "code": "X_STORAGE_ALREADY_PROMOTED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
@@ -4211,6 +4251,11 @@
     },
     {
       "code": "X_STORAGE_NOT_PENDING",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_OBJECT_CHANGED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },
@@ -4783,6 +4828,46 @@
       "code": "X_UNREACHABLE",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_DIRTY_TREE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_GATE_UNREADABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_HOP_TOO_WIDE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_INSTALL_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_MIXED_PINS",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_PIN_UNREADABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_REGISTRY_UNREACHABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_UPGRADE_VERSION_UNPUBLISHED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_URL_PATHNAME_AS_PATH",

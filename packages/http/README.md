@@ -413,6 +413,27 @@ export const ingestSesEvent = action({
 | one reader | `bodyRaw()` and `bodyBytes()` share one capped read, so an action that reads both reads the stream once |
 | off HTTP | `X_NO_REQUEST`: a job or an MCP call has no body bytes |
 
+## Serving a stored object
+
+`As of 2026-11-02`. `objectResponse(request, { object, open }, { cache?, headers? })` is the one
+correct answer to a GET for bytes held elsewhere: `/_storage`, `/media`, a query's download, and your
+own route for an object a stranger may fetch.
+
+| Argument | Is |
+|---|---|
+| `request` | anything with `header(name)` |
+| `object` | `{ contentType, size, etag?, lastModified? }`. Structural: this package imports no storage, and a `StorageObject` fits. No etag (or `''`): no `etag` header, no 304 |
+| `open(range?)` | exactly those bytes as a `BodyInit`, or a promise of them. A 304 and a 416 open nothing |
+| `cache` | a `CacheHint` applied to every status. Omitted, the route's `meta.cache` decides |
+| `headers` | replaces the stored-object rule (`attachment` + `sandbox` for any type but a raster image, audio or video), for a caller with its own |
+
+A failing `if-range` (another etag, a weak one, a date that is not exact) ignores the range and
+answers the whole object, so no window of an older revision is spliced onto this one.
+
+`notModified(request, etag, headers?)` is the 304 alone, or `undefined`, for bytes not yet in hand: a
+route that would have to decode to answer asks it first. `*`, a weak validator and a comma list all
+count.
+
 ## Setting a cookie
 
 `As of 2026-10-06`. A route handler, a page `load()` or an action cannot hand the pipeline a
@@ -445,6 +466,22 @@ export const choosePreferences = action({
 | an invalid cookie | `X_COOKIE_INVALID` (core) before anything is appended: a non-token name, `__Host-` without `Secure`, a pair over 4096 octets |
 | off HTTP | `X_NO_REQUEST` in a job, a task or an impersonated child context; `X_NO_CONTEXT` outside any |
 | by hand | refused: `bun run set-cookie-literals` fails the build on a `Set-Cookie` attribute spelled in a literal anywhere but `packages/core/src/cookie.ts` (`X_SET_COOKIE_HAND_BUILT`) |
+
+## Rendering a shared document
+
+`withAnonymousRequest(ctx, url, (scope) => …)`: run as this request with nobody behind it. What
+`@ultimat3/cli` renders `isr` and `static` in, so a stored document holds no visitor's answer.
+
+| | |
+|---|---|
+| the actor | anonymous, with registered services rebuilt for it |
+| the inbound headers | none: no header is in a stored page's key, and `accept-language` is already `ctx.locale` |
+| `url` | the one handed in: the document's address, already narrowed to its key |
+| `tz` | the app's default; `locale` stays, because it is in the key |
+| `ip`, `peer`, `clientBuildId`, `authz`, `rateLimit`, `readBody` | empty |
+| a redirect | `setRedirect()` lands on `scope`: read it with `takeRedirect(scope)` |
+| the response headers | `scope.headers` is `ctx.headers` |
+| the outer `ctx` | unchanged: the pipeline still answers the identified request privately |
 
 ## Errors
 
@@ -511,3 +548,16 @@ nothing for: the error it returns is thrown in place of `X_ROUTE_NOT_FOUND`, `un
 plain miss. Synchronous, given only the request line, never asked about a matched route or a 405.
 `@ultimat3/action` answers it for a path that is one of its actions under a `pathStyle` this server
 does not serve (`X_CONTRACT_DRIFT`, 404).
+
+## Supporting exports
+
+`As of 2026-11-02`.
+
+Types of `objectResponse`.
+
+| Name | What |
+|---|---|
+| `ServableObject` | what the answer needs before it opens anything. `StorageObject` is one |
+| `ObjectSource` | `{ object, open }`: `open(range?)` returns the body |
+| `ObjectRequest` | the one thing asked of the request, `header(name)`, so a test needs no `Request` |
+| `ObjectResponseOptions` | `cache` and `headers`. `cache` omitted, the route's declared `meta.cache` decides |

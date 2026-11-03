@@ -17,6 +17,7 @@ export const NOTIFY_ERROR_CODES = [
   'X_NOTIFY_STORE_MISSING',
   'X_NOTIFY_DELIVERY_FAILED',
   'X_NOTIFY_DIGEST_UNSUPPORTED',
+  'X_NOTIFY_DELIVERY_HELD',
 ] as const;
 
 export type NotifyErrorCode = (typeof NOTIFY_ERROR_CODES)[number];
@@ -28,6 +29,7 @@ export const NOTIFY_ERROR_TITLES: Readonly<Record<NotifyErrorCode, string>> = {
   X_NOTIFY_STORE_MISSING: 'a channel needs a store nothing installed',
   X_NOTIFY_DELIVERY_FAILED: 'a channel did not accept the delivery',
   X_NOTIFY_DIGEST_UNSUPPORTED: 'a digest window is declared on a bulk channel',
+  X_NOTIFY_DELIVERY_HELD: 'another attempt holds this delivery',
 };
 
 // One unconditional call, so a second package claiming one of notify's codes throws
@@ -66,6 +68,9 @@ registerErrorRetry({
   // declaring it is what makes that an answer rather than a coincidence, and what stops a later
   // sweep through this file from making the whole package terminal.
   X_NOTIFY_DELIVERY_FAILED: 'retryable',
+  // "Not yet": the holder finishes or its window lapses, and the refusal names how long that is.
+  // Waited out with the attempt uncounted and `maxDelay` no cap (`rateLimitDeferralMs`, jobs).
+  X_NOTIFY_DELIVERY_HELD: 'retry-after',
 });
 
 /** Refused where it is written: a notifier with no channel is a job that fans out to nobody. */
@@ -154,6 +159,27 @@ export class NotifyDigestUnsupportedError extends UltimateError {
       cause: `notifier "${input.notifier}" declares a digest window on the bulk channel "${input.channel}", and a window coalesces per recipient where a bulk send has none`,
       fix: `drop digest from the "${input.channel}" entry on notifier("${input.notifier}") and give it a wait instead, or deliver it through deliveryChannel('${input.channel}', …) one recipient at a time`,
       meta: { notifier: input.notifier, channel: input.channel },
+    });
+  }
+}
+
+/**
+ * A live attempt holds this delivery's claim. Never read as `sent`: that checkpoints the step, and a
+ * holder that then dies is a notification no retry is left to send. `retryAfterSeconds` is the one
+ * spelling a job's retry waits out, so the next attempt lands past the holder's window.
+ */
+export class NotifyDeliveryHeldError extends UltimateError {
+  constructor(input: { notifier: string; channel: string; retryAfterMs: number }) {
+    super({
+      code: 'X_NOTIFY_DELIVERY_HELD',
+      cause: `another attempt holds the "${input.channel}" delivery of notifier "${input.notifier}", so this one neither sent it nor counted it as sent; the claim can be reclaimed in ${String(input.retryAfterMs)} ms`,
+      fix: 'x jobs list --json   # the run retries on its own once the claim can be reclaimed; to shorten that, set reclaimAfterMs on postgresDeliveryLedger()',
+      meta: {
+        notifier: input.notifier,
+        channel: input.channel,
+        // One past the window: a retry landing exactly on its edge is still refused.
+        retryAfterSeconds: Math.ceil(input.retryAfterMs / 1_000) + 1,
+      },
     });
   }
 }

@@ -210,6 +210,76 @@ for (const [name, build] of STORES) {
 }
 
 /**
+ * An answer no retry could replay. Memory kept the live value and replayed it; Postgres threw an
+ * uncoded `TypeError` out of its own `JSON.stringify`, so the record stayed in flight and the retry
+ * was a conflict, for a handler that had run. One verdict now, decided before either store is asked.
+ */
+for (const [name, build] of STORES) {
+  describe(`idempotency refuses an unserialisable answer — ${name}`, () => {
+    let under: Awaited<ReturnType<(typeof STORES)[number][1]>>;
+    let runs = 0;
+    const once = (value: unknown) =>
+      withIdempotency(under.store, KEY, { id: 'same-payload' }, () => {
+        runs += 1;
+        return Promise.resolve(value);
+      });
+
+    beforeAll(async () => {
+      under = await build();
+    });
+
+    beforeEach(async () => {
+      await under.reset();
+      runs = 0;
+    });
+
+    test('a bigint: the same code first and on replay, and the handler ran once', async () => {
+      const first = await once({ n: 5n }).catch((error: unknown) => error);
+      expect(codeOf(first)).toBe('X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE');
+      expect((await under.store.get(KEY))?.status).toBe('failed');
+
+      const replay = await once({ n: 5n }).catch((error: unknown) => error);
+      expect(codeOf(replay)).toBe('X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE');
+      expect((replay as { meta?: { replayed?: unknown } }).meta?.replayed).toBe(true);
+      expect(runs).toBe(1);
+    });
+
+    // Postgres alone refused these, from `jsonb`, after the handler ran: X_DB_STATEMENT_FAILED, the
+    // record left in flight, and the retry a 409.
+    for (const [label, answer] of [
+      ['a NUL', { note: 'a\u0000b' }],
+      ['a lone surrogate', { note: 'x\ud83d' }],
+    ] as const) {
+      test(`${label}: the same code first and on replay, and the handler ran once`, async () => {
+        const first = await once(answer).catch((error: unknown) => error);
+        expect(codeOf(first)).toBe('X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE');
+        expect((first as { fix?: string }).fix).toContain('NUL');
+        expect((first as { fix?: string }).fix).toContain('surrogate');
+        expect((await under.store.get(KEY))?.status).toBe('failed');
+        const replay = await once(answer).catch((error: unknown) => error);
+        expect(codeOf(replay)).toBe('X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE');
+        expect(runs).toBe(1);
+      });
+    }
+
+    test('a cycle stays the redaction it already was, not this refusal', async () => {
+      const cyclic: Record<string, unknown> = { id: 'k1' };
+      cyclic['self'] = cyclic;
+      expect((await once(cyclic)).replayed).toBe(false);
+      expect((await under.store.get(KEY))?.status).toBe('settled');
+    });
+
+    // Written down, not repaired: JSON has no `undefined`, so a store keeps `null` and the action's
+    // `output` schema is what answers for the shape of a replay (`invoke.ts`).
+    test('undefined settles, and the record holds no value', async () => {
+      expect((await once(undefined)).replayed).toBe(false);
+      expect((await under.store.get(KEY))?.status).toBe('settled');
+      expect((await under.store.get(KEY))?.value ?? null).toBeNull();
+    });
+  });
+}
+
+/**
  * The two cases that need the reservation to OUTLIVE the transaction it was made in. The embedded
  * server has one session, so a reservation there joins the transaction and a rollback takes it;
  * memory and a real Postgres pool both keep it — this half is the live suite's twin.

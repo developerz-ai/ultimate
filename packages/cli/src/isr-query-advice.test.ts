@@ -1,6 +1,5 @@
-// `x verify`'s advice about the query an `isr` route keys on: a route that declared none (it keys
-// on the whole query string), and a route whose declaration OMITS a parameter its own module reads
-// — every visitor is then answered the document rendered for whichever value arrived first.
+// `x verify`'s advice about the query an `isr` route keys on: a route whose declaration, or lack
+// of one, OMITS a parameter its own module reads — every visitor is then answered the document rendered for whichever value arrived first.
 
 import { afterEach, describe, expect, test } from 'bun:test';
 // why: Bun has no API for a temporary directory or a recursive delete.
@@ -58,15 +57,24 @@ export function Page(props: { readonly query: { currency?: string } }) {
 `;
 
 describe('unit · isr query advice', () => {
-  test('names each isr route with no revalidate.query, and no other route', async () => {
+  test('no declaration is safe by itself: a route that reads no parameter gets no advice', async () => {
     await page('apps/web/site/blog/page.tsx', 'isr');
     await page('apps/web/site/pricing/page.tsx', 'isr', []);
-    await page('apps/web/site/search/page.tsx', 'isr', ['q']);
     await page('apps/web/site/about/page.tsx', 'ssr');
+    expect(await isrQueryAdvice(root)).toEqual([]);
+  });
+
+  test('no declaration keys on none, so a parameter the module reads is named', async () => {
+    await page('apps/web/site/pricing/page.tsx', 'isr', undefined, PRICING);
     const advice = await isrQueryAdvice(root);
-    expect(advice).toHaveLength(1);
-    expect(advice[0]).toStartWith('apps/web/site/blog/page.tsx: ');
-    expect(advice[0]).toContain('revalidate: { query: [] }');
+    expect(advice.map((line) => /reads the query parameter "(\w+)"/.exec(line)?.[1])).toEqual([
+      'currency',
+      'plan',
+      'ref',
+      'tab',
+      'view',
+    ]);
+    expect(advice[0]).toContain("query: ['currency']");
   });
 
   test('a declared query that omits a parameter the module reads is named, once per parameter', async () => {

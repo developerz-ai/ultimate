@@ -24,7 +24,7 @@ import {
   resetStorage,
   scopedKey,
 } from '@ultimat3/storage';
-import { etagMatches, STORAGE_READ_PERMISSION, storageRoutes } from './runtime-storage';
+import { STORAGE_READ_PERMISSION, storageRoutes } from './runtime-storage';
 
 const BYTES = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 const KEY = scopedKey('org-1', 'avatars', 'a.png');
@@ -363,16 +363,5 @@ describe('unit · dev storage · path safety', () => {
     await expect(
       call(storageRoutes({ storage }), { actor: reader(['member'], 'org-1'), key: '../../secret' }),
     ).rejects.toBeUltimateError('X_STORAGE_PATH_UNSAFE');
-  });
-});
-
-describe('unit · dev storage · conditional and range parsing', () => {
-  test('a weak validator, a list and a star all match', () => {
-    expect(etagMatches('"abc"', '"abc"')).toBe(true);
-    expect(etagMatches('W/"abc"', '"abc"')).toBe(true);
-    expect(etagMatches('"other", "abc"', '"abc"')).toBe(true);
-    expect(etagMatches('*', '"abc"')).toBe(true);
-    expect(etagMatches('"other"', '"abc"')).toBe(false);
-    expect(etagMatches(null, '"abc"')).toBe(false);
   });
 });

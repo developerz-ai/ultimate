@@ -4,8 +4,8 @@
 // until the process died, and SIGTERM then waited out the whole drain budget for work that would
 // never finish.
 
-import { REQUEST_TIMEOUT_HEADER, systemClock } from '@ultimat3/core';
-import { type HttpConfig, MAX_TIMER_MS } from './config';
+import { MAX_TIMER_MS, REQUEST_TIMEOUT_HEADER, systemClock } from '@ultimat3/core';
+import type { HttpConfig } from './config';
 import { requestTimedOut } from './errors';
 
 /**

@@ -7,11 +7,14 @@ import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { formatLsn } from './changefeed';
-import { ChannelHub } from './channel';
+import { ChannelHub, type Topic } from './channel';
+import { channel } from './channel-decl';
 import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
+import { OPEN_POLICY } from './policy-fake-fixture';
+import { PresenceRegistry } from './presence';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { ackRefOf, frameRouter } from './sync-frames';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
@@ -270,5 +273,74 @@ describe('a reply the socket refuses is not a reply that was delivered', () => {
 
     expect(target.ws.frames.map((frame) => frame.type)).toEqual(['snapshot']);
     expect([...target.socket.desynced]).toEqual([]);
+  });
+});
+
+describe('a socket that closes during its beat leaves no ghost on the roster', () => {
+  const room = channel('frames-ghost-room', {
+    params: ['orgId'],
+    catchUp: { name: 'roomRead' },
+    policy: OPEN_POLICY,
+    events: true,
+  });
+  const ROOM = room.topic({ orgId: 'o1' });
+  const subscribeRoom: Frame = {
+    type: 'subscribe',
+    v: PROTOCOL_VERSION,
+    op: 'add',
+    sid: 'room',
+    target: { kind: 'channel', channel: 'frames-ghost-room', params: { orgId: 'o1' } },
+  };
+
+  /** The beat answers only when the test says, standing for a slow bus. */
+  class HeldPresence extends PresenceRegistry {
+    gate: Promise<unknown> = Promise.resolve();
+    override async heartbeat(name: Topic, id: string): Promise<boolean> {
+      await this.gate;
+      return await super.heartbeat(name, id);
+    }
+  }
+
+  const presenceRig = () => {
+    const transport = new InProcessTransport();
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({ transport, sockets });
+    const presence = new HeldPresence({ transport, hub });
+    const ws = new FakeWs();
+    const socket = new SyncSocket({
+      ws,
+      id: 'sock-1',
+      clientBuildId: 'build-1',
+      serverBuildId: 'build-1',
+      actor: alice,
+    });
+    sockets.add(socket);
+    const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
+    const route = frameRouter({ hub, registry, buildId: 'build-1', presence });
+    return { presence, ws, socket, route: (frame: Frame) => route(socket, frame) };
+  };
+
+  test('close during a held heartbeat: the join it falls into is taken back', async () => {
+    const app = presenceRig();
+    await app.route(subscribeRoom);
+    const held = deferred<void>();
+    app.presence.gate = held.promise;
+
+    const beating = app.route(subscribeRoom);
+    await flush();
+    // What `teardown` does for a closing socket: close it, then say its leave.
+    app.socket.close(1000, 'gone');
+    await app.presence.leave(ROOM, app.socket.id);
+    held.resolve();
+    await beating;
+
+    expect(await app.presence.list(ROOM)).toEqual([]);
+  });
+
+  test('an open socket stays on the roster through its beat', async () => {
+    const app = presenceRig();
+    await app.route(subscribeRoom);
+    await app.route(subscribeRoom);
+    expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['sock-1']);
   });
 });

@@ -84,4 +84,8 @@ export const TIER_1_ERROR_STATUS = {
   X_SITEMAP_ENTRY_INVALID: 500,
   // @ultimat3/storage — the requested byte range starts past the end of the object
   X_STORAGE_RANGE_UNSATISFIABLE: 416,
+  // @ultimat3/db — statement on a finished transaction
+  X_DB_TRANSACTION_CLOSED: 500,
+  // @ultimat3/storage — the object changed while it was being promoted
+  X_STORAGE_OBJECT_CHANGED: 409,
 } satisfies Readonly<Record<string, number>>;

@@ -14,7 +14,7 @@ import { LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
 import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import { deliverChange } from './live-deliver';
-import { type FanoutDeps, snapshotFrame } from './live-fanout';
+import { type FanoutDeps, repairSubscriber, repairWindow, snapshotFrame } from './live-fanout';
 import { floorAfterRead } from './live-floor';
 import { DEFAULT_MAX_ENTRIES, type LiveQueryRegistryOptions } from './live-query-options';
 import { reauthorizeSocket } from './live-reauth';
@@ -336,6 +336,39 @@ export class LiveQueryRegistry {
     });
   }
 
+  /**
+   * This socket's marked subscriptions, repaired now it can take a frame: Bun's `drain`. Frames that
+   * left. Every lane is entered before any is awaited, as `deliverChange` does, so one slow policy
+   * pass holds up its own query id and nothing else.
+   */
+  async repair(socket: SyncSocket): Promise<number> {
+    const repairs = [...socket.desynced].map(async (sid) => {
+      const subscription = this.#book.get(socket.id, sid);
+      const entry = subscription && this.#entries.get(subscription.qid);
+      if (!subscription || !entry) return false;
+      // Its rows are about to be replaced, so wait: this drain is the only one coming. Bounded by
+      // the read's own deadline, and a read that failed staled the window, which refuses below.
+      await entry.reading?.result.catch(() => undefined);
+      return await entry.lock.run(() => repairSubscriber(this.#fanout, entry, subscription));
+    });
+    return (await Promise.all(repairs)).filter(Boolean).length;
+  }
+
+  /** The node's sweep: every window owing a mark, each in its lane, one read a window at most. */
+  async repairMarked(): Promise<number> {
+    const lanes = [...this.#entries.values()].map((entry) =>
+      entry.lock.run(() => repairWindow(this.#fanout, entry)),
+    );
+    let sent = 0;
+    let failure: { readonly error: unknown } | null = null;
+    for (const lane of await Promise.allSettled(lanes)) {
+      if (lane.status === 'fulfilled') sent += lane.value;
+      else failure ??= { error: lane.reason };
+    }
+    if (failure !== null) throw failure.error;
+    return sent;
+  }
+
   #attachUnlessGone(
     entry: QueryEntry,
     socket: SyncSocket,
@@ -416,6 +449,11 @@ export class LiveQueryRegistry {
       lastLsn: this.#lastLsn,
       origin: this.#origin,
     });
+    // A mark refused while this read was out has no other reader on a quiet query. Still stale: the
+    // sweep's, because re-reading here would charge this subscribe for a read it did not ask for.
+    if (window.landed !== null && !entry.stale) {
+      await entry.lock.run(() => repairWindow(this.#fanout, entry));
+    }
     return { rows: await this.#gate.filterRows(entry, who, window.rows), lsn };
   }
 }

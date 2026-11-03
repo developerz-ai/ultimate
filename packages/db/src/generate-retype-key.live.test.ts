@@ -183,6 +183,7 @@ describe.skipIf(!hasPostgres)(
         name: 'drop posts and retype code',
         now: at,
         allowDestructive: true,
+        rollingUnsafe: true,
       });
       await apply(dropChild.up);
       expect(await typeOf(ORGS, 'code')).toBe('text');

@@ -37,19 +37,53 @@ const executorOf = (answers: readonly (readonly unknown[])[], calls: Call[]): Pg
 describe('unit · postgres delivery ledger', () => {
   test('a returned row means this caller owns the delivery; no row means it already went out', async () => {
     const calls: Call[] = [];
-    const owned = postgresDeliveryLedger({ executor: executorOf([[{ attempts: 1 }]], calls) });
-    expect(await owned.claim(claim, AT)).toBe(true);
+    const owned = postgresDeliveryLedger({
+      executor: executorOf([[{ attempts: 1 }]], calls),
+      reclaimAfterMs: 60_000,
+    });
+    const answer = await owned.claim(claim, AT);
+    if (answer.outcome !== 'owned') expect.unreachable('a returned row is ownership');
     expect(calls[0]?.sql).toBe(SQL_NOTIFY_CLAIM);
-    expect(calls[0]?.params).toEqual(['post.liked', 'like:p1', 'ana', 'email', AT]);
+    expect(calls[0]?.params).toEqual([
+      'post.liked',
+      'like:p1',
+      'ana',
+      'email',
+      AT,
+      answer.claimId,
+      new Date(AT.getTime() - 60_000),
+    ]);
+    expect(calls).toHaveLength(1);
 
-    const taken = postgresDeliveryLedger({ executor: executorOf([[]], []) });
-    expect(await taken.claim(claim, AT)).toBe(false);
+    const row = { ...claim, attempts: 1, at: AT.toISOString() };
+    const taken = postgresDeliveryLedger({
+      executor: executorOf([[], [{ ...row, status: 'sent' }]], []),
+    });
+    expect(await taken.claim(claim, AT)).toEqual({ outcome: 'sent' });
+  });
+
+  test('no row and an unsent one is another attempt, told how long is left and never `sent`', async () => {
+    const row = { ...claim, attempts: 1, at: AT.toISOString(), status: 'sending' };
+    const held = postgresDeliveryLedger({
+      executor: executorOf([[], [row]], []),
+      reclaimAfterMs: 60_000,
+    });
+    expect(await held.claim(claim, new Date(AT.getTime() + 15_000))).toEqual({
+      outcome: 'held',
+      retryAfterMs: 45_000,
+    });
+    // A row a sweep took between the two statements: retry; the next claim finds it free.
+    const swept = postgresDeliveryLedger({ executor: executorOf([[], []], []), reclaimAfterMs: 1 });
+    expect((await swept.claim(claim, AT)).outcome).toBe('held');
   });
 
   test('the claim statement refuses to re-claim a `sent` row, in the statement itself', () => {
     // The `where` on the `do update` is the whole guarantee: without it the upsert would bump
     // `attempts` on a completed delivery and hand the caller a row back.
     expect(SQL_NOTIFY_CLAIM).toContain("where x_notify_deliveries.status <> 'sent'");
+    expect(SQL_NOTIFY_CLAIM).toContain(
+      "and (x_notify_deliveries.status <> 'sending' or x_notify_deliveries.at < $7)",
+    );
     expect(SQL_NOTIFY_CLAIM).toContain(
       "on conflict (notifier, key, channel, coalesce(recipient, ''))",
     );
@@ -66,12 +100,22 @@ describe('unit · postgres delivery ledger', () => {
 
   test('settle names the status and the clock, positionally, on every path', async () => {
     const calls: Call[] = [];
-    const ledger = postgresDeliveryLedger({ executor: executorOf([[]], calls) });
-    await ledger.settle(claim, 'sent', AT);
+    const ledger = postgresDeliveryLedger({ executor: executorOf([[{ key: 'k' }], []], calls) });
+    expect(await ledger.settle(claim, 'sent', AT, 'id-1')).toBe(true);
     expect(calls[0]?.sql).toBe(SQL_NOTIFY_SETTLE);
-    expect(calls[0]?.params).toEqual(['post.liked', 'like:p1', 'ana', 'email', 'sent', AT]);
+    expect(calls[0]?.params).toEqual(['post.liked', 'like:p1', 'ana', 'email', 'sent', AT, 'id-1']);
     // Scoped by all four columns, so settling one channel never touches another's row.
     expect(SQL_NOTIFY_SETTLE).toContain("coalesce(recipient, '') = coalesce($3, '')");
+    expect(SQL_NOTIFY_SETTLE).toContain("claim_id = $7::uuid and status = 'sending'");
+    // No row back is the fence holding, and the caller is told.
+    expect(await ledger.settle(claim, 'sent', AT, 'id-2')).toBe(false);
+  });
+
+  test('the column is added by `alter`, never by editing the create', () => {
+    expect(SQL_NOTIFY_DELIVERIES_TABLE).toContain(
+      'alter table x_notify_deliveries add column if not exists claim_id uuid',
+    );
+    expect(SQL_NOTIFY_DELIVERIES_TABLE.split('alter table')[0]).not.toMatch(/\bclaim_id\b/);
   });
 
   test('a delivery nothing has ever claimed answers undefined rather than a row', async () => {

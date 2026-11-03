@@ -2,4 +2,6 @@
 
 CREATE INDEX connections_org_id_created_at_idx ON public.connections USING btree (org_id, created_at);
 
+CREATE UNIQUE INDEX connections_org_id_id_tenant_key ON public.connections USING btree (org_id, id);
+
 CREATE INDEX connections_org_id_idx ON public.connections USING btree (org_id);

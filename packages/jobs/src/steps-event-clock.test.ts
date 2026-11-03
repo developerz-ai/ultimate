@@ -5,6 +5,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
 import { memoryEventBus } from './events';
 import type { EventLookup, StepStore } from './steps';
 import { isStepSuspension, stepRunner } from './steps';
@@ -12,6 +13,7 @@ import { memoryStepStore } from './steps-memory';
 
 const T0 = 1_790_000_000_000;
 const SKEW_MS = 5_000;
+const Otp = t.object({ code: t.number });
 
 function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
   let current = startMs;
@@ -42,7 +44,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
         store,
         clock: worker,
         events,
-      }).step.waitForEvent('otp', 'otp.entered', { timeout: '1h' });
+      }).step.waitForEvent('otp', 'otp.entered', { schema: Otp, timeout: '1h' });
 
     expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
     expect((await store.get('run-skew', 'otp'))?.startedAt).toBe(T0);
@@ -69,7 +71,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
       clock: worker,
       events,
     })
-      .step.waitForEvent('otp', 'otp.entered', { timeout: '1h' })
+      .step.waitForEvent('otp', 'otp.entered', { schema: Otp, timeout: '1h' })
       .catch((error: unknown) => error);
     expect(isStepSuspension(outcome)).toBe(true);
   });
@@ -88,7 +90,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
     };
     for (let poll = 0; poll < 3; poll += 1) {
       await stepRunner({ runId: 'run-poll', jobName: 'j', store, clock: worker, events })
-        .step.waitForEvent('otp', 'otp.entered', { timeout: '1h' })
+        .step.waitForEvent('otp', 'otp.entered', { schema: Otp, timeout: '1h' })
         .catch((error: unknown) => error);
       database.advance(30_000);
       worker.advance(30_000);
@@ -100,7 +102,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
   test('with no bus at all the runner clock is the only one there is', async () => {
     const worker = fakeClock(T0 + SKEW_MS);
     await stepRunner({ runId: 'run-none', jobName: 'j', store, clock: worker })
-      .step.waitForEvent('otp', 'otp.entered', { timeout: '1h' })
+      .step.waitForEvent('otp', 'otp.entered', { schema: Otp, timeout: '1h' })
       .catch((error: unknown) => error);
     expect((await store.get('run-none', 'otp'))?.startedAt).toBe(T0 + SKEW_MS);
   });
@@ -119,7 +121,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
     };
     const attempt = (required = false): Promise<unknown> =>
       stepRunner({ runId: 'run-early', jobName: 'awaitOtp', store, clock: worker, events })
-        .step.waitForEvent('otp', 'otp.entered', { timeout: '10s', required })
+        .step.waitForEvent('otp', 'otp.entered', { schema: Otp, timeout: '10s', required })
         .catch((error: unknown) => error);
 
     expect(isStepSuspension(await attempt())).toBe(true);
@@ -145,7 +147,7 @@ describe('a wait is stamped by the bus that stamps the answer', () => {
     const events = memoryEventBus({ clock: database });
     const attempt = (): Promise<unknown> =>
       stepRunner({ runId: 'run-late', jobName: 'awaitOtp', store, clock: worker, events })
-        .step.waitForEvent('otp', 'otp.entered', { timeout: '10s' })
+        .step.waitForEvent('otp', 'otp.entered', { schema: Otp, timeout: '10s' })
         .catch((error: unknown) => error);
 
     expect(isStepSuspension(await attempt())).toBe(true);

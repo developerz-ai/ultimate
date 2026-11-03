@@ -163,4 +163,15 @@ a current fact: the rules that still hold are in that file, and where the two di
 - **`retentionOf` is optional on `StorageDriver`**, like `registerAs`: required, it breaks every
   hand-written driver in other packages' tests. All three shipped disks implement it.
 - A `copy()` does not carry the source's lock: on S3 a lock is per version and set by the request.
-
+- **A `list({ limit: 0 })` was refused for a reason.** It sliced `[0, 0)` on the local disk and then
+  dropped its own `truncated` flag (`truncated && last !== undefined`, with an empty page), so a
+  paging caller read "complete, and there is nothing here" over a full disk, while the s3 disk handed
+  `maxKeys: 0` to the provider. `X_INVARIANT` for the reason `@ultimat3/seo`'s `chunk()` uses it: a
+  bound with no code of its own is still a coded refusal.
+- **A listing's `contentType` is optional because the s3 driver invented one.** It reported
+  `application/octet-stream` while the local driver read the truth from its sidecar: two drivers
+  disagreeing about one object. The local `list()` omits it too when there is no sidecar.
+- **`promoteAttachment` does not use `validateUpload`** (plan 101, S4). That takes the whole body and
+  hashes it, and `get` is capped at `maxGetBytes`, so promotion would refuse or buffer each large
+  object. `sniffText` decodes a head with `stream`: strict decoding gave up on a cut character, and
+  `undefined` accepts a text type, so HTML opening a large object passed as plain text.

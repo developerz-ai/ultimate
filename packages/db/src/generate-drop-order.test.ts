@@ -82,6 +82,7 @@ describe('dropping a referenced table', () => {
       name: 'drop authors',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     const drop = migration.up.indexOf('drop constraint "posts_author_id_fkey"');
@@ -100,6 +101,7 @@ describe('dropping a referenced table', () => {
       name: 'drop authors',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     expect(migration.up).not.toContain('drop constraint');
@@ -119,6 +121,7 @@ describe('dropping a referenced table', () => {
       name: 'drop both',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     // "authors" sorts first and is the PARENT: dropped first it is 2BP01.
@@ -140,6 +143,7 @@ describe('dropping a referenced table', () => {
       name: 'drop authors',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     expect(migration.up).toContain('drop constraint "posts_author_id_fkey"');
@@ -189,6 +193,7 @@ describe('dropping a referenced table', () => {
       name: 'drop nodes',
       now: at,
       allowDestructive: true,
+      rollingUnsafe: true,
     });
 
     expect(migration.up).toContain('drop table "nodes";');

@@ -62,6 +62,12 @@ export interface VerifyFloor {
    * Absent in an app is `X_COVERAGE_FLOOR_UNSTATED`: no app is held to a number it did not write.
    */
   readonly coverage?: CoverageFloor;
+  /**
+   * The migration id the rolling-deploy rail judges after (`db-rolling.ts`), exclusive: an applied
+   * migration cannot gain a marker, so what it already holds is not judged. `"0"` judges everything.
+   * Absent is off, and `x doctor` says which id turns it on.
+   */
+  readonly rollingSince?: string;
   /** Why part of the file is not a floor. The `manifest` step reports these; nothing swallows them. */
   readonly problems: readonly string[];
 }
@@ -71,6 +77,9 @@ export const BUDGET_FIELD = 'agentsMdMaxBytes';
 
 /** The floor's typecheck-binary key. Named once: the problem quotes it and the fix repairs it. */
 export const TYPECHECK_BIN_FIELD = 'typecheckBin';
+
+/** The floor's rolling-rail bound. Named once: the problem quotes it and the fix repairs it. */
+export const ROLLING_SINCE_FIELD = 'rollingSince';
 
 /** The floor's isolation key. */
 export const ISOLATE_FIELD = 'isolate';
@@ -130,6 +139,19 @@ function readTypecheckBin(payload: Record<string, unknown> | undefined): {
   return { bin: raw, problems: [] };
 }
 
+function readRollingSince(payload: Record<string, unknown> | undefined): {
+  since?: string;
+  problems: readonly string[];
+} {
+  const raw = payload?.[ROLLING_SINCE_FIELD];
+  if (raw === undefined) return { problems: [] };
+  if (typeof raw !== 'string' || raw.trim().length === 0)
+    return {
+      problems: [`"${ROLLING_SINCE_FIELD}" is ${JSON.stringify(raw)}, which is not a migration id`],
+    };
+  return { since: raw, problems: [] };
+}
+
 const asRecord = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -163,12 +185,14 @@ export function parseVerifyFloor(
   const isolate = readIsolate(record);
   const timeouts = readStepTimeouts(record, declared);
   const coverage = readCoverageFloor(record);
+  const rolling = readRollingSince(record);
   const rest = {
     ...(budget.budget === undefined ? {} : { agentsMdMaxBytes: budget.budget }),
     ...(typecheckBin.bin === undefined ? {} : { typecheckBin: typecheckBin.bin }),
     ...(isolate.isolate === undefined ? {} : { isolate: isolate.isolate }),
     ...(timeouts.timeouts === undefined ? {} : { stepTimeoutMs: timeouts.timeouts }),
     ...(coverage.coverage === undefined ? {} : { coverage: coverage.coverage }),
+    ...(rolling.since === undefined ? {} : { rollingSince: rolling.since }),
   };
   const steps = record?.['steps'];
   if (!Array.isArray(steps)) {
@@ -182,6 +206,7 @@ export function parseVerifyFloor(
         ...isolate.problems,
         ...timeouts.problems,
         ...coverage.problems,
+        ...rolling.problems,
       ],
     };
   }
@@ -200,6 +225,7 @@ export function parseVerifyFloor(
       ...budget.problems,
       ...timeouts.problems,
       ...coverage.problems,
+      ...rolling.problems,
     ],
   };
 }
@@ -289,5 +315,7 @@ const fixFor = (problem: string): string => {
     return `x verify --json   # then write "${STEP_TIMEOUT_FIELD}" in ${VERIFY_FLOOR_FILE} as { "unit": 900000 } — a step it runs, a whole number of milliseconds`;
   if (problem.includes(`"${COVERAGE_FIELD}`))
     return `x verify --only unit --json   # then write "${COVERAGE_FIELD}" in ${VERIFY_FLOOR_FILE} as { "lines": 95, "funcs": 95 }, every "exclude" entry as { "glob": "…", "why": "…" }`;
+  if (problem.includes(`"${ROLLING_SINCE_FIELD}"`))
+    return `x doctor --json   # it names your newest migration id: set "${ROLLING_SINCE_FIELD}" in ${VERIFY_FLOOR_FILE} to that, "0" to judge them all, or drop the key`;
   return `x verify --json   # then write ${VERIFY_FLOOR_FILE} as {"steps":["unit","contract"]}, naming only steps it ran`;
 };

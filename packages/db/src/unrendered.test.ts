@@ -130,7 +130,7 @@ describe('unrenderedOf · an app-judged rule the database already enforces', () 
     // loss, and reporting it would be a marker on a migration that lost nothing.
     expect(migration.up).toContain(
       'alter table "posts" add constraint "posts_post_slug_shape_check" ' +
-        `check (${SLUG_EXPRESSION});`,
+        `check (${SLUG_EXPRESSION}) not valid;`,
     );
     expect(migration.unrendered).toEqual([]);
   });

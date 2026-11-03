@@ -241,6 +241,44 @@ describe.skipIf(target === undefined)('live · s3 · the driver against a real s
     await forged.arrayBuffer();
   });
 
+  test('copy with a matching ifMatch lands, keeping the bytes and the type', async () => {
+    // A space and a non-ASCII byte, because the source travels in a signed header.
+    const source = at('copy é/source one.png');
+    await disk.put(source, bytesOf('revision one'), { contentType: 'image/png' });
+    const { etag } = (await disk.stat(source)) ?? expect.unreachable('the source was just written');
+    expect(etag).not.toBe('');
+
+    const copied = await disk.copy(source, at('copy é/landed.png'), { ifMatch: etag });
+
+    expect(copied.key).toBe(at('copy é/landed.png'));
+    expect(copied.size).toBe('revision one'.length);
+    expect(copied.contentType).toStartWith('image/png');
+    expect(copied.etag).toBe(etag);
+    expect(textOf((await disk.get(at('copy é/landed.png'))).bytes)).toBe('revision one');
+  });
+
+  test('copy with a stale ifMatch is X_STORAGE_OBJECT_CHANGED, and leaves no destination', async () => {
+    const source = at('copy-stale/source.png');
+    await disk.put(source, bytesOf('revision one'), { contentType: 'image/png' });
+    const { etag } = (await disk.stat(source)) ?? expect.unreachable('the source was just written');
+    await disk.put(source, bytesOf('revision two'), { contentType: 'image/png' });
+
+    const refused = await catchError(() =>
+      disk.copy(source, at('copy-stale/landed.png'), { ifMatch: etag }),
+    );
+
+    expect(codeOf(refused)).toBe('X_STORAGE_OBJECT_CHANGED');
+    expect(await disk.exists(at('copy-stale/landed.png'))).toBe(false);
+  });
+
+  test('copy with ifMatch from a source that is gone is X_STORAGE_NOT_FOUND', async () => {
+    const refused = await catchError(() =>
+      disk.copy(at('copy-gone/none.png'), at('copy-gone/landed.png'), { ifMatch: '"0123"' }),
+    );
+    expect(codeOf(refused)).toBe('X_STORAGE_NOT_FOUND');
+    expect(await disk.exists(at('copy-gone/landed.png'))).toBe(false);
+  });
+
   test('a presigned PUT stores what the browser sends, under the granted content type', async () => {
     const url = await disk.signedUrl(at('upload.png'), {
       method: 'PUT',

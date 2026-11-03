@@ -149,7 +149,7 @@ export function totpCode(secret: string, step: number, digits: number = TOTP_DIG
 
 export interface TotpVerification {
   readonly ok: boolean;
-  /** The step the code belonged to — feed it to `TotpReplayGuard.remember()`. */
+  /** The step the code belonged to — what `TotpReplayGuard.claim()` is asked to spend. */
   readonly step: number | null;
 }
 
@@ -191,14 +191,23 @@ export function verifyTotp(input: VerifyTotpInput): TotpVerification {
   return { ok: false, step: null };
 }
 
+/**
+ * One atomic question: spend this step. A check and a write are two round trips across a network,
+ * and two replicas can both pass the check between them, so the guard has no separate read.
+ */
 export interface TotpReplayGuard {
-  isUsed(subject: string, step: number): boolean;
-  remember(subject: string, step: number, at: Date): void;
+  /**
+   * `true` the first time a subject spends a step, `false` for a replay. `at` is the caller's clock
+   * reading. A store that cannot answer REJECTS: a down database is not a wrong code.
+   */
+  claim(subject: string, step: number, at: Date): Promise<boolean>;
 }
 
-/** What `memoryTotpReplayGuard` returns: the interface, plus the bound it keeps, observable. */
+/** What `memoryTotpReplayGuard` returns: the interface, plus the table it keeps, observable. */
 export interface MemoryTotpReplayGuard extends TotpReplayGuard {
   readonly size: number;
+  /** For a test reading the eviction order. Nothing on the sign-in path asks this: `claim` does. */
+  isUsed(subject: string, step: number): boolean;
 }
 
 /**
@@ -233,9 +242,9 @@ const newestStep = (steps: ReadonlySet<number>): number => {
 };
 
 /**
- * In-memory by default because a single web process is the common case; a multi-process
- * deployment passes a Redis-backed guard with the same two methods. Steps older than the
- * drift window are dropped — nothing outside it can be replayed anyway.
+ * One process' table: the default when no host installed a guard, so a code is single-use per
+ * replica. A framework boot installs `postgresTotpReplayGuard` instead (`configureTotpReplay`).
+ * Steps older than the drift window are dropped — nothing outside it can be replayed anyway.
  *
  * Bounded, because the subject map only ever grew: pruning happened inside one subject's `Set`
  * and never revisited a subject who stopped signing in, so the table carried one permanent entry
@@ -270,7 +279,7 @@ export function memoryTotpReplayGuard(
       if (steps.size === 0) used.delete(subject);
     }
     if (used.size <= cap) return;
-    // Map iteration is insertion order and `remember` re-files the subject it touches, so this
+    // Map iteration is insertion order and `claim` re-files the subject it touches, so this
     // sort — stable by specification — breaks a tie on the newest step by least recently seen.
     // Both keys point the same way: the subject who just proved a code is the last one out.
     const furthest = [...used.entries()].sort((a, b) => newestStep(a[1]) - newestStep(b[1]));
@@ -285,7 +294,10 @@ export function memoryTotpReplayGuard(
       return used.size;
     },
     isUsed: (subject, step) => used.get(subject)?.has(step) === true,
-    remember: (subject, step, at) => {
+    // `async` with no `await` in the body: it runs to its `return` in one turn, so two concurrent
+    // completions carrying one code cannot both find the step unspent.
+    claim: async (subject, step, at) => {
+      if (used.get(subject)?.has(step) === true) return false;
       const now = totpStep(at);
       const floor = now - drift;
       const steps = used.get(subject) ?? new Set<number>();
@@ -296,6 +308,7 @@ export function memoryTotpReplayGuard(
       used.delete(subject);
       used.set(subject, steps);
       if (used.size > cap || now - lastSweepStep >= SWEEP_EVERY_STEPS) sweep(now, floor);
+      return true;
     },
   };
 }

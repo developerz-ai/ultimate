@@ -5,6 +5,7 @@
 
 import { createHash } from 'node:crypto';
 import { type Environment, resolveEnvironment } from '@ultimat3/core';
+import { overwrittenBy } from './bulk-write';
 import { entityNow } from './clock';
 import type { Driver } from './database';
 import { memoryDriver } from './database';
@@ -12,7 +13,8 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { EntityError } from './errors';
 import type { Tx } from './repo';
 import type { Predicate } from './tenancy';
-import type { ColumnMap, Insertable } from './types';
+import { stampedColumns, touch } from './touch';
+import type { ColumnMap, Insertable, RowPatch } from './types';
 
 /** Framework namespace for seed labels. Fixed forever: changing it moves every seeded id. */
 const NAMESPACE = 'a3c1f0d6-5c2b-4a3e-9f1b-6d4e7c8a9b02';
@@ -253,6 +255,16 @@ const withoutPreserved = <Row>(row: Row, preserve: readonly string[]): Row => {
   return copy as Row;
 };
 
+/** What a replay overwrites: the columns the seed named and the `onUpdateNow()` ones, never `preserve`. */
+const seedOverwrites = <Row>(
+  entity: EntityCore<Row>,
+  values: unknown,
+  preserve: readonly string[],
+): readonly (keyof Row & string)[] =>
+  [...overwrittenBy(entity, [values as RowPatch<Row>]), ...stampedColumns(entity)].filter(
+    (property) => !preserve.includes(property),
+  ) as (keyof Row & string)[];
+
 export const defineSeed = (
   name: string,
   build: (context: SeedContext) => Promise<void>,
@@ -336,11 +348,17 @@ export const defineSeed = (
               return outcome;
             }
             const write: SeedWrite = stored === undefined ? 'inserted' : 'updated';
-            await repo.upsertAll([stored === undefined ? row : withoutPreserved(row, preserve)], {
-              ...undo,
-              onConflict: key.by,
-              onMatch: 'update',
-            });
+            // What the caller named, as `db.*.upsertAll` does: `$parse` filled the rest, and a
+            // re-run must not reset a column this seed never mentioned to its default.
+            await repo.upsertAll(
+              [touch(entity, stored === undefined ? row : withoutPreserved(row, preserve))],
+              {
+                ...undo,
+                onConflict: key.by,
+                onMatch: 'update',
+                overwrites: seedOverwrites(entity, values, preserve),
+              },
+            );
             metrics[write === 'inserted' ? 'inserted' : 'updated'] += 1;
             return write;
           },

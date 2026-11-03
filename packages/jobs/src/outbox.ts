@@ -31,6 +31,7 @@ import {
   UltimateError,
   uuidV7,
 } from '@ultimat3/core';
+import { refuseAbandoned } from '@ultimat3/db';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
@@ -321,6 +322,9 @@ export function outboxJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
       input: I,
       options: EnqueueOptions = {},
     ): Promise<EnqueueResult> {
+      // A direct `driver.enqueue` is a write the transaction guard cannot see: a scope whose caller
+      // was already answered starts no job, on either path below.
+      refuseAbandoned();
       // Asked before anything is staged, and for its refusal alone: a `concurrency.key` that
       // answers an empty string is one lock shared by every run of the job, and the caller of
       // this enqueue is the only one who can still be told (`X_JOB_DECLARATION_INVALID`).

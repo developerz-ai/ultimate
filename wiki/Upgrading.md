@@ -6,6 +6,7 @@
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 29.x → 30.0.0 | **29** so far — the rows below are the plan's first sweeps: a write past its deadline that rolls back, a closed-transaction refusal, a two-release column drop, **same-tenant composite keys that need one `x db gen`**, `upsertAll` overwriting only what it names, every agent and MCP call held by `mcpConfirmations`, `'null'` refused in `cors.origins`, `isr` and `static` that render as nobody, a query-free `isr` key by default, and three required interface changes | `[Unreleased]` in `CHANGELOG.md`, and the walkthrough below in order |
 | 28.x → 29.0.0 | **2** — **Bun 1.4.4 as the floor**; a `WORKER_QUEUES` entry the app does not know refuses the worker's boot | the `29.0.0` section, in order |
 | 27.x → 28.0.0 | **2** — **Bun 1.4.3 as the floor**; `@ultimat3/ui/jsx-probe` and its `probe`/`unprobe` removed | the `28.0.0` section, in order |
 | 26.x → 27.0.0 | **2** — `AsyncContext.exit` required; **`/_storage` and `/media` refuse a key outside every `org/<id>/` prefix unless `defineStorage({ shared })` lists its prefix**, and `Storage.isShared` required | the `27.0.0` section, in order |
@@ -74,6 +75,88 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## 29.x → 30.0.0, entry by entry
+
+`As of 2026-11-02`, unpublished: `CHANGELOG.md`'s `[Unreleased]` breaking entries in their order, grouped by package, lowest tier first. No legacy path, no codemod, no shim. A later slice appends its rows below the last one and never renumbers; each row's `CHANGELOG.md` line names it as `(#N)` after the dash.
+
+### The upgrade, top to bottom
+
+| # | Do | What you see until you do | Entries |
+|---|---|---|---|
+| 1 | commit, then `bunx @ultimat3/cli@latest upgrade --json`: it pins every `@ultimat3/*`, raises the Bun floor, installs and runs the gate | `X_UPGRADE_DIRTY_TREE` on a dirty tree | — |
+| 2 | `x db gen "same-tenant keys"`, commit `packages/db/migrations` and `packages/db/schema/`. A validate failing `X_DB_FOREIGN_KEY_VIOLATION` found rows already pointing across tenants: decide those rows, or state `crossTenant: '<reason>'` on an edge that means it | `X_DB_DRIFT` from `drift`, and `X_SCHEMA_DUMP_DRIFT` for the new framework columns. An entity whose `{ table }` differs from its name moves its keys to the table they always meant in the same migration | 8, 25 |
+| 3 | `x verify --only typecheck` and close every error: a `Date` off a step result, `step.waitForEvent` with no `schema`, a hand-written `TotpReplayGuard` or `DeliveryLedger`, a hand-built `ReferenceDescription` | a compile error at each site | 8, 16, 21, 22, 25 |
+| 4 | `x verify --only manifest`: correct a misspelt name in `mcpConfirmations({ tools })`, or expose the action, or build a hand-written server at module scope in `apps/<app>/mcp.ts`. For a role load, add the import its fix names to `apps/web/api/index.ts`, or move the declaration into a module that imports no `.tsx` and no stylesheet | `X_MCP_CONFIRMATION_TOOL_UNKNOWN`, `X_ROLE_LOAD_INCOMPLETE` | 18, 27 |
+| 5 | `x verify --only unit,contract,job`: move each fixture the new refusals name | `X_DB_TRANSACTION_CLOSED`, `X_INVARIANT_VIOLATED`, a memory-driver fixture wiring two tenants refused | 3, 4, 8–14, 19, 20 |
+| 6 | `grep -rnE "render: '(isr\|static)'" apps/`: a page varying per visitor becomes `ssr`, and every parameter a `load` or page reads goes in `revalidate: { query: ['<name>'] }` | nothing fails: a signed-in `load` sees nobody, and a query the key dropped serves one document for every value | 23, 24 |
+| 7 | `grep -rnE "upsertAll\|seed\.upsert" apps/ packages/`: name each column a collision must overwrite. A wide `insertAll` that relied on partial progress splits its own batch | nothing fails: a timestamp stops moving on re-upsert, or a failed batch leaves no rows | 11, 12, 13 |
+| 8 | read `mcpConfirmations({ tools })` against every `agent({ tools })` and every MCP server: the agent's `output` reports the pending confirmation id, and a tool that must run unconfirmed leaves `tools` | the write answers `X_MCP_CONFIRMATION_PENDING` and writes nothing | 17, 26 |
+| 9 | **before the next column drop:** declare it `retired`, deploy, then drop | `X_MIGRATION_ROLLING_UNSAFE` from `x db gen` | 5 |
+| 10 | **before the deploy:** move a CDN rule keyed on `public, immutable` for `/media`; re-upload through the server an XML or `+xml` object over 64 KiB that awaits promotion | a CDN miss; `X_STORAGE_TYPE_REJECTED` at promotion | 6, 7, 15 |
+| 11 | `grep -rnE "onShutdown\|retry\(" apps/`: reorder a close hook that depends on running first; wrap a retry or a write that must outlive its caller in `runToCompletion(fn)` | nothing fails: a write or a retry stops with its caller | 1, 2, 3 |
+| 12 | `grep -rn "'null'" apps/ packages/`, and read each list built from `URL.parse(…).origin`: list real origins with their scheme | `X_CORS_CONFIG_INVALID` at boot | 28 |
+| 13 | read each `HeadTag` with a non-http(s) `href`: serve an inline SVG favicon from `site.favicon`, or a same-origin path under `assets/` | nothing fails in production; `head.attribute_dropped` once in dev | 29 |
+
+### Entry by entry
+
+Tier 0 — `@ultimat3/core` (1–2). Tier 1 — `@ultimat3/db` (3–5), `@ultimat3/storage` (6–7). Tier 2 — `@ultimat3/entity` (8–14), `@ultimat3/http` (15), `@ultimat3/auth` (16). Tier 3 — `@ultimat3/action` (17–20), `@ultimat3/jobs` (21–22). Tier 4 — `@ultimat3/render` (23–24), `@ultimat3/notify` (25). Appended after the tier order: `@ultimat3/mcp` (26–27), `@ultimat3/http` (28), `@ultimat3/render` (29).
+
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `close`-phase `onShutdown` order | a close hook relies on running before one registered after it: hooks now run last-registered first, so register in the order you want released. `accept` and `inflight` are unchanged |
+| 2 | `retry()` | a retry must outlive its caller: it now stops when the ambient `ctx.signal` aborts and never waits past `ctx.deadlineAt`. Write `runToCompletion(() => retry(work, policy))`. Outside a request context nothing changes |
+| 3 | a write past `requestTimeoutMs` or a job's cancellation | the work must land anyway: it now rolls back. Wrap the whole of it, `runToCompletion(() => withTransaction(fn))`: wrapped inside the transaction, the statement lands and the COMMIT is still refused. It drops the deadline for what runs inside it, so give a raw `fetch` in there its own. A keyed `idempotent` action already runs in that scope, up to `configureIdempotency({ scope, ceilingMs })`, twice `requestTimeoutMs` by default; a handler past it is aborted and its key replays `X_IDEMPOTENCY_RUN_CEILING` |
+| 4 | a statement on a finished `DbTx` | one outlives its scope: it is `X_DB_TRANSACTION_CLOSED`, not an autocommit. `await` it inside `withTransaction(fn)`, or use `outsideTransaction(fn)` for work that must outlive the scope |
+| 5 | dropping a column | you drop in one release: set `retired: ['<c>']` and `x db gen "retire <c>"`, deploy, then remove it and `x db gen "drop <c>" --allow-destructive`. One instance that stops before it starts: `--rolling-unsafe` |
+| 6 | `promoteAttachment` | a pending object's bytes do not match its type: it reads the first 64 KiB and refuses. An XML or `+xml` object over 64 KiB refuses too: upload it through the server. An object overwritten during promotion refuses `X_STORAGE_OBJECT_CHANGED`: promote again once the upload has finished |
+| 7 | the content sniff | a file opens with over 4,096 B of whitespace: refused everywhere. Trim it before upload |
+| 8 | `references()` between two tenant-scoped entities | always once: `x db gen "same-tenant keys"` adds one unique index per referenced table and swaps the key online. A row already crossing tenants fails the validate: decide it, or state `crossTenant: '<reason>'` on an edge that means it, including two tenant columns meaning different things. A memory test wiring a parent and child across tenants moves its fixture. `onDelete: 'set null'` needs Postgres 15+. A null tenant column skips the check. A hand-built `ReferenceDescription` needs `sameTenant: null` and `targetTable`. An entity declared with a `{ table }` that differs from its name, as a target: `X_DB_DRIFT` until `x db gen` |
+| 9 | `update`, `updateWhere`, `transition` | a value `insert` would refuse reached them: it is refused before the statement, not as `X_DB_STATEMENT_FAILED`, and a number written to a text column is an error, not a coercion. Pass the column's type |
+| 10 | `orderBy` on a `json`, `bytes` or array column | you order by one: refused at plan time (it paged wrongly or threw past page 1). Order by a scalar |
+| 11 | `db.x.upsertAll`, `seed.upsert` | you relied on a collision resetting unnamed columns: name the column, `{ ...row, label: 'default', createdAt: now }`. A timestamp expected to move on re-upsert (`reviewedAt`) is named or declared `onUpdateNow()`. Both `X_INVARIANT_VIOLATED`: rows naming different columns (give each row the same columns), and rows naming only the conflict target or primary key, which answer `would write nothing`: `db.blocks.upsertAll([{ blockerId, blockedId }], { onConflict: ['blockerId', 'blockedId'] })` takes `onMatch: 'nothing'` when "already there" is fine, or a named column to overwrite |
+| 12 | `repo.upsertAll` on a hand-held repository | one row holds `label: undefined` and another a value: `X_INVARIANT_VIOLATED`. Give every row a value, or none |
+| 13 | a wide `insertAll` / `upsertAll` | you relied on partial progress when one failed: it now leaves nothing. Split the batch yourself and call once per part |
+| 14 | a soft delete under a JS-only invariant | the stamped row breaks the rule: refused on Postgres too, and `deleteWhere` past `MAX_ASSERTED_ROWS` matched rows is refused. Relax the invariant for the stamped row, or delete in smaller `where` sets |
+| 15 | `/media` on a shared key | a CDN rule keys on `public, immutable`: it misses from now on. Serve a public image from `apps/web/site/assets/` via `asset()`, or from an app route using `objectResponse`. Existing variants under old keys go unread and are re-minted once |
+| 16 | a custom `totpReplay` | you wrote one: replace `isUsed`/`remember` with `claim(subject, step, at): Promise<boolean>`, answering `true` the first time, `false` for a replay, and rejecting when its store is down. A framework-booted app needs no edit: drop the option and the boot installs `postgresTotpReplayGuard`, whose table `x_totp_steps` is applied at boot (`ROLE=migrate` on an external database) |
+| 17 | a tool in both `mcpConfirmations({ tools })` and `agent({ tools })` | an agent calls it: it now waits for a person. Have the agent's `output` report the pending confirmation id, or remove the tool from `tools` to let the call run unconfirmed. With two deciders on one tool, the first registered answers in-app |
+| 18 | a decision action's module that reaches a document | `manifest` goes red with `X_ROLE_LOAD_INCOMPLETE`: add the import its fix names to `apps/web/api/index.ts`, or move the declaration into a module that imports no `.tsx` and no stylesheet |
+| 19 | `asProjectableAction(handBuilt)` | you compare by identity: it returns a copy behind the gate, and projecting that copy, or a spread of it, passes the gate once. Compare a hand-built tool by `name` |
+| 20 | a failed agent tool's text | a test pins the rendered `(fix: …)` of an error that declares `callerFix`: the model now sees `callerFix`. Move the assertion with it |
+| 21 | `step.run`'s answer | you read a value JSON changes: a `Date` is a compile error at the read, so write `new Date(value)`; a miss stored from `undefined` is `null`, so compare `=== null`; a value JSON cannot hold (a `bigint`, a cycle, `NaN`, an infinity, an invalid `Date`, a NUL, a lone surrogate) is `X_STEP_OUTPUT_UNSERIALIZABLE`; a keyed action answering such text is `X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE`. A step's object keys read in `jsonb`'s order on every attempt. Runs in flight across the upgrade replay as they always did |
+| 22 | `step.waitForEvent` | you wait on an event: `schema` is required and `<T>` is gone. Pass a schema |
+| 23 | `isr` and `static` routes | a `load` reads the actor, a cookie, `Authorization` or any other inbound header: it now sees none, `ctx.ip` and `ctx.peer` are `null`, `ctx.tz` is the app's default, and `ctx.url` is the document's address, with no undeclared query. A page that varies per visitor is `render: 'ssr'`. With no declared origin, a process stores `isr` pages for 16 request origins: set `APP_URL` if you serve more |
+| 24 | an `isr` route with no `revalidate.query` | its `load` or page reads a query parameter: the route now serves one document for every value, and nothing can see that from the key alone. List it in `revalidate: { query: ['<name>'] }` |
+| 25 | `x_notify_deliveries`, `DeliveryLedger` | always, for the column: `x db gen`, commit `packages/db/schema/`. An app with its own ledger also takes the table below. A channel whose send can outlast five minutes sets `reclaimAfterMs` above its slowest send, or a reclaimer overlaps it |
+| 26 | a tool in `mcpConfirmations({ tools })` on a server you handed no `confirmations` | a caller relied on it running at once: it now waits. To let a call run unconfirmed, remove the tool from `tools` |
+| 27 | a name in `mcpConfirmations({ tools })` | no exposed action, exposed query, MCP tool or in-process tool answers to it: `X_MCP_CONFIRMATION_TOOL_UNKNOWN` at `manifest`. Correct the spelling, or expose the action. A hand-written tool counts once its `defineAppMcp` has run when the app loads, so build that server at module scope in `apps/<app>/mcp.ts` |
+| 28 | `cors.origins` containing `'null'` | you list it, or build the list from `URL.parse('localhost:3000').origin` (no scheme): `X_CORS_CONFIG_INVALID` at boot, with or without credentials. List real origins with their scheme: `configureHttp({ cors: { origins: ['http://localhost:3000'] } })`. A public, credential-free API uses `origins: ['*'], credentials: false` |
+| 29 | a `HeadTag` `href` | a `link` carries `data:image/svg+xml`, any other `data:` type, or a scheme outside `http`, `https`, `mailto`, `tel`, `sms`: it prints no `href` (`android-app:` and `ios-app:` stay on `rel="alternate"`; a raster `data:image/` stays). Serve the file: `site.favicon` for an icon, or a same-origin path under `assets/`. `head.attribute_dropped` names the tag and attribute in dev |
+
+### Entry 25: a hand-written `DeliveryLedger`
+
+A compile error until it does:
+
+| Was | Now |
+|---|---|
+| `claim(claim, at): Promise<boolean>` | `claim(claim, at): Promise<DeliveryClaimAnswer>`: `{ outcome: 'owned', claimId }`, `{ outcome: 'sent' }` or `{ outcome: 'held', retryAfterMs }` |
+| `settle(claim, status, at): Promise<void>` | `settle(claim, status, at, claimId): Promise<boolean>`: `false` when `claimId` no longer owns a `sending` row, and nothing changes |
+
+A `sending` row is no longer re-claimable at once: it is held for `reclaimAfterMs`, default `DEFAULT_DELIVERY_RECLAIM_MS` (5 minutes). A retry landing inside it raises `X_NOTIFY_DELIVERY_HELD` and is rescheduled past the window with the attempt uncounted.
+
+### Not breaking, but you will see it
+
+| What moved | Do |
+|---|---|
+| `onSettled`'s `ctx.signal` is live | a hook that treated an aborted signal as "the run ended" reads `settled.outcome` instead. It is aborted at `onSettledTimeout`, 30 s across every try by default: raise it on a hook that takes longer |
+| `publishEvent` inside a transaction commits and rolls back with it | nothing, unless a rolled-back event must still resume a run: publish it in `outsideTransaction(fn)` |
+| the `drift` step's `rollingSince` rail is off until set | optional: set `rollingSince` in `x.verify.json` to your newest applied migration id. `x doctor` reminds you |
+| any other `HeadTag` attribute drops as `attributePair` does: `on*`, `srcdoc`, a non-http(s) `href` or `src` on `base` or `script` | nothing to migrate: these never belonged in a document |
+| `disk.delete` still leaves a variant's bytes, now unreadable once its source is gone | an erasure of one object also calls `deleteVariants({ disk, key })` |
+| a websocket upgrade from an unlisted origin is refused whatever `sec-fetch-site` it carries | add a sibling host to `allowedOrigins` |
+| stored `isr` entries re-render once, for the new key | nothing |
+| an `isr` route's `isr.query.undeclared` log line is gone | remove an alert keyed on it |
 
 ## 28.x → 29.0.0, entry by entry
 
@@ -3273,35 +3356,35 @@ The defect it fixes is why every generated entity needed a `!`: `InvariantColumn
 | Pinned exact versions | no `^`, no `~`, in the framework or in a generated app. A range is a silent upgrade |
 | Lockstep releases | one release bumps all 30 packages — 29 `@ultimat3/*` plus the unscoped `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
 | Published with provenance | npm via OIDC trusted publishing. Every tarball from 3.0.0 onward carries an attestation — verified through 5.0.1; **2.0.0's do not**, that release went out by hand. Per version: `npm view @ultimat3/core@<version> dist.attestations` |
-| Breaking changes land with the edit named | **no release has shipped a codemod** and `x upgrade` is not implemented, so every `BREAKING —` entry names the manual edit itself. A section of this page walks it |
+| Breaking changes land with the edit named | **no release has shipped a codemod**, so every `BREAKING —` entry names the manual edit itself; `x upgrade` walks the pins, the Bun floor and the gate, and points at the section |
 | Dependency upgrades are framework work | Solid is pinned to **`1.9.14`, the stable line** — Solid 2 is still prerelease (`2.0.0-beta.N`, DOM renderer split into `@solidjs/web`) and every app inherits whatever core this repo pins. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
-| Bun floor | `>=1.4.0`, target 2.0. Below the floor → `X_BUN_VERSION`. It was `>=1.3.0` until 2026-08-27, while `x test` emitted `bun test --isolate` — a flag Bun added in 1.3.13 — so the declared floor named runtimes the CLI could not run on |
-| Not shipped `As of 2026-08`, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+| Bun floor | `>=1.4.4` (`REQUIRED_BUN`, `As of 2026-11-02`), target 2.0. Below the floor → `X_BUN_VERSION`. It was `>=1.3.0` until 2026-08-27, while `x test` emitted `bun test --isolate` — a flag Bun added in 1.3.13 — so the declared floor named runtimes the CLI could not run on |
+| Not shipped `As of 2026-08`, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API and multi-region replication. The Redis **job** driver shipped (`@ultimat3/jobs/redis`) and the NATS stub is deleted, `As of 2026-11-02` |
 
 Do not upgrade a transitive dependency of a `@ultimat3/*` package by hand. Open an issue instead — the pin is deliberate.
 
-## `x upgrade` — **planned, not shipped**
+## `x upgrade`, one major per run
 
-`As of 2026-08` this command exits `X_NOT_IMPLEMENTED` ([`packages/cli/src/cmd-planned.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-planned.ts)). Its own `fix:` line names what to run instead, and that is the upgrade path today:
+`As of 30.0.0`. Every hop gets its own gate, so a red one is that hop's. No codemod, no `openapi.json` step of its own (`x manifest` writes it): `x verify`'s findings carry what a section's rows do not.
 
+```bash
+x upgrade --dry-run --json                  # what this hop would do; writes nothing
+x upgrade --json                            # one hop: pins, Bun floor, bun install, the gate
+bunx @ultimat3/cli@latest upgrade --json    # an app below 30.0.0, whose own CLI has no such command
 ```
-bun update --latest && x verify     # the shipped path
-```
 
-Everything the manual path skips, you do yourself: bump every `@ultimat3/*` pin to **one** exact version, then `x manifest` and `x verify`. There are no codemods to run, because no release has shipped one yet.
-
-The design below is what the command will do, kept here because the **classes of breakage it automates are real today** and the next section is how each one is detected with or without it.
-
-| # | Step | Detail |
+| # | Do | Why |
 |---|---|---|
-| 1 | Resolve the target release | all `@ultimat3/*` at one version; refuses a partial set |
-| 2 | Bump `package.json` pins | every workspace, exact versions |
-| 3 | Run codemods | per-release, idempotent, AST-based. Each prints the files it touched |
-| 4 | Regenerate `x.manifest.json` | routes, entities, actions, jobs, policies, tags, budgets |
-| 5 | Regenerate `openapi.json` | HTTP surface from action/query declarations |
-| 6 | Run `x verify` | the gate. Not green = the upgrade is not done |
+| 1 | commit or stash first | a dirty tree refuses (`X_UPGRADE_DIRTY_TREE`): git is the only state between runs |
+| 2 | run it | exact pins in every workspace, `overrides` included, the Bun floor raised, `bun install`, then `x manifest`, `x doctor`, `x verify` from the CLI just installed |
+| 3 | open `data.section.url` | that major's entries, in full. Only what the gate cannot see needs it |
+| 4 | close each `data.verify.findings[]` by its `fix`, then `x verify --json` | `data.done` is verify's verdict, and the exit code follows it |
+| 5 | review `git diff`, commit | it never commits |
+| 6 | re-run until `data.next` is `null` | the pins say where the walk stands |
 
-`--dry-run`, once it exists, performs 1, 3 (in-memory), and reports the diff without writing. Output carries every changed file, every codemod name, and every check that would fail.
+A repository with pins and no `app.config.ts` hops too: no `x verify` can run, so it runs the `typecheck` and `test` scripts it declares, and `data.proof` (`verify`, `scripts`, `none`) says what `done` rests on.
+
+Refusals name their own fix: `X_UPGRADE_MIXED_PINS` (`x upgrade --to <the higher version> --json`), `X_UPGRADE_HOP_TOO_WIDE`, `X_UPGRADE_PIN_UNREADABLE`, `X_UPGRADE_REGISTRY_UNREACHABLE`, `X_UPGRADE_VERSION_UNPUBLISHED`, `X_UPGRADE_INSTALL_FAILED`. `data.bun.manual[]` lists what only you can move: a digest-pinned image, an expression. `data.guards.differs[]` offers `x g guard <name> --force`, and your guard is never touched. A hop below 30.0.0 reports `X_BUDGET_UNMEASURED` until `x build --target static --json` has run. Field by field: [CLI reference](CLI-Reference#x-upgrade).
 
 ## Breaking-change classes and how each is detected
 

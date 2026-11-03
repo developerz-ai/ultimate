@@ -119,10 +119,16 @@ export {
   configureKdfGate,
   kdfGate,
 } from './kdf-gate';
-export type { AuthLimiterFactory } from './limiter-install';
+export type { AuthLimiterFactory, TotpReplayFactory } from './limiter-install';
 // `installedAuthLimiter` is deliberately absent: `defineAuth` is the one reader, and a second
 // caller building limiters out of band would be a second answer to where failures are counted.
-export { configureAuthLimiters, purgeAuthLimits, resetAuthLimiters } from './limiter-install';
+export {
+  configureAuthLimiters,
+  configureTotpReplay,
+  purgeAuthLimits,
+  resetAuthLimiters,
+  resetTotpReplay,
+} from './limiter-install';
 export type { HandleDirectory } from './login-identity';
 export { normaliseHandle } from './login-identity';
 export { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
@@ -160,6 +166,11 @@ export {
   MFA_CHALLENGE_TTL_MS,
   mfaChallengeRequired,
 } from './mfa-challenge';
+export type {
+  PostgresTotpReplayGuard,
+  PostgresTotpReplayGuardOptions,
+} from './mfa-replay-postgres';
+export { postgresTotpReplayGuard, SQL_TOTP_REPLAY_TABLE } from './mfa-replay-postgres';
 export type { MfaSecretStore, SealMfaSecretsReport } from './mfa-secret';
 export {
   countUnsealedMfaSecrets,

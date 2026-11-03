@@ -1627,3 +1627,25 @@ Adding a command: write `cmd-<name>.ts` exporting a `CliCommand`, register it in
 add its message keys to `messages.ts`. Help and parsing derive from the spec automatically. A
 command's `run` must be `async`: a synchronous throw escapes every caller that awaits the promise
 the signature promises, `dispatch`'s own error path included.
+
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/cli/CLAUDE.md`](../../packages/cli/CLAUDE.md), which keeps the rule in one line.
+
+### Gate steps (`x verify`)
+
+| Files | Rule |
+|---|---|
+| `coverage-floor.ts` / `coverage-lcov.ts` / `coverage-source.ts` / `verify-coverage-run.ts` | an APP's `unit` step holds `coverage` in `x.verify.json` over its whole source tree. The suite runs as fixed slices, one plain `bun test` each — never `--parallel --coverage`, whose merge moves with the core count. `coverage-lcov.ts` is the ONE lcov reader; `scripts/coverage-gate.ts` reads through it. A shard defers to `verify-merge.ts` (`coverageRiders`), which also holds the shards' `files` to a partition of the corpus they hashed and reads each part step through `verify-part-step.ts`; `doctor-coverage.ts` lists the excludes |
+| `app-transport.ts` / `browser-transport.ts` / `transport-calls.ts` / `import-closure.ts` / `server-barrels.ts` | `boundaries`, built in: one browser transport. `app-transport.ts` reuses the files `readAppSources` read (no second walk), resolves through the app's tsconfig `paths` and workspace manifests, reads the app's own `packages/*` lazily, and STOPS at `node_modules`. `browser-transport.ts` is the pure rule — `scripts/browser-transport.ts` calls the same function with this repo's seam FILES. Never a `guards/` file: an app must not be able to delete it |
+### Boot (`x dev`, the container)
+
+| Files | Rule |
+|---|---|
+| `island-bundle.ts` / `island-store.ts` / `island-sources.ts` / `island-realtime.ts` / `island-realtime-state.ts` / `island-runtime.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed; the image build writes a verified store the container loads — each chunk's recorded source files (`island-sources.ts`) are rehashed at read, so an edit since the build is a rebuild, never the old chunk. `island-runtime.ts` builds realtime's page runtime ONCE per build as `/islands/page-runtime.<id>.js` (resolved through `@ultimat3/realtime/page-runtime`), which a realtime island awaits where no page boot is rendered. `island-realtime-state.ts`: which realtime islands only FOLLOW the socket (not held, no first-paint wait); the answer rides `IslandChunk.realtime` via the store to the renderer |
+
+### Build and data
+
+| Files | Rule |
+|---|---|
+| `role-load.ts` / `document-graph.ts` / `serve-web.ts` | a role imports what it runs: `ROLE_LOADS` (declared over `Role`) — `worker`/`scheduler` import the API index and every module reaching no `.tsx`/stylesheet, verified against `x.manifest.json`'s jobs and tasks (`X_ROLE_LOAD_INCOMPLETE` imports everything); `serve-web.ts` is the web surface, behind `await import()`. `scanAppModules(root, { track: false })` is the container's scan — no reload graph, no error-code walk. Per-role module pins and `NEVER_AT_BOOT`: `serve-graph.test.ts` |

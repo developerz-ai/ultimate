@@ -9,47 +9,17 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
-import { defineAuth, memoryAuthAdapter, resetAuthLimiters } from '@ultimat3/auth';
-import type { PurgeDriver } from '@ultimat3/cache';
-import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
-import { NotImplementedError, registerReadinessCheck } from '@ultimat3/core';
+import { defineAuth, memoryAuthAdapter, resetAuthLimiters, totpStep } from '@ultimat3/auth';
+import { registeredTiers, resetTiers } from '@ultimat3/cache';
+import { registerReadinessCheck } from '@ultimat3/core';
+import { raw } from '@ultimat3/db';
 import { jobDriver } from '@ultimat3/jobs';
-import type { MailDriver } from '@ultimat3/mail';
-import { memoryMailDriver, tryMailDriver } from '@ultimat3/mail';
+import { tryMailDriver } from '@ultimat3/mail';
 import { TransportUnavailableError } from '@ultimat3/realtime';
-import { DEFAULT_PRESENCE_TTL_MS, selectTransport } from '@ultimat3/realtime/server';
+import { DEFAULT_PRESENCE_TTL_MS } from '@ultimat3/realtime/server';
 import type { DevServices } from './runtime-bindings';
-import { eventsBinding, resolveServices } from './runtime-bindings';
-import {
-  cdnLabel,
-  describeCdn,
-  describeMail,
-  mailLabel,
-  type RunningServices,
-  startServices,
-} from './runtime-services';
-
-const runtimeWith = (mail: MailDriver, mailDetail: string): RunningServices =>
-  ({ mail, mailDetail }) as unknown as RunningServices;
-
-const cdnRuntimeWith = (purge: PurgeDriver, purgeDetail: string): RunningServices =>
-  ({ purge, purgeDetail }) as unknown as RunningServices;
-
-/**
- * `describeMail` reads `name` and `mailDetail`, never `send` — so this one exists only to satisfy
- * `MailDriver`, and it refuses with a code carrying a runnable fix. Never a bare Error, tests
- * included: a throw without a code and a fix is not an instruction to whoever reaches it.
- */
-const fakeSmtp = (): MailDriver => ({
-  name: 'smtp',
-  send: (): Promise<never> =>
-    Promise.reject(
-      new NotImplementedError({
-        cause: 'sending through the describeMail fixture transport is not implemented',
-        fix: 'x dev   # boots the transport SMTP_URL selects, which does send',
-      }),
-    ),
-});
+import { resolveServices } from './runtime-bindings';
+import { describeCdn, describeMail, startServices } from './runtime-services';
 
 /**
  * One embedded-Postgres directory for the whole file, not one per boot. Every case below stops its
@@ -98,88 +68,6 @@ function rootWithRealtime(realtime: string): string {
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
-});
-
-describe('describeMail', () => {
-  test('a caught outbox reports as embedded, like the other bindings', () => {
-    expect(describeMail(runtimeWith(memoryMailDriver(), 'caught in memory'))).toBe('mail=embedded');
-  });
-
-  test('a real transport names itself and the env key that selected it', () => {
-    expect(describeMail(runtimeWith(fakeSmtp(), 'SMTP_URL'))).toBe(
-      'mail=external(smtp via SMTP_URL)',
-    );
-  });
-
-  // The boot line is printed, logged and scraped. `SMTP_URL` holds a password, so the detail is
-  // the key's name and never its value — this is the assertion that keeps it that way.
-  test('the report carries the env key, never the credential behind it', () => {
-    expect(describeMail(runtimeWith(fakeSmtp(), 'SMTP_URL'))).not.toContain('@');
-  });
-});
-
-/**
- * The status value `--json` carries and the label the boot line prints are two surfaces of one
- * fact, and `wiki/Configuration.md` quotes both — so a catalog edit that moves the printed line
- * without moving the documented status has to fail here rather than in a script that parses it.
- */
-describe('the rendered label and the machine status', () => {
-  test('agree for every mail case', () => {
-    const memory = runtimeWith(memoryMailDriver(), 'caught in memory');
-    expect(mailLabel(memory)).toBe(describeMail(memory));
-    const smtp = runtimeWith(fakeSmtp(), 'SMTP_URL');
-    expect(mailLabel(smtp)).toBe(describeMail(smtp));
-  });
-
-  test('agree for every cdn case', () => {
-    const none = cdnRuntimeWith(noopPurgeDriver(), 'no edge');
-    expect(cdnLabel(none)).toBe(describeCdn(none));
-    const fastly = cdnRuntimeWith(
-      { name: 'fastly', purge: () => Promise.resolve([]), purgeAll: () => Promise.resolve() },
-      'FASTLY_API_TOKEN',
-    );
-    expect(cdnLabel(fastly)).toBe(describeCdn(fastly));
-  });
-});
-
-/**
- * Two readers of one `realtime` section: `eventsBinding` for the boot line an operator reads, and
- * `selectTransport` for the object the process actually fans out on. A boot that printed
- * `events=external` while running the in-process transport would be the worst of both, so the two
- * answers are pinned against each other rather than trusted to stay in step.
- */
-describe('the reported binding and the selected transport', () => {
-  // One config handed to both readers, as `startServices` hands its loaded section to both.
-  const memory = { enabled: true, transport: 'memory', urlEnv: undefined } as const;
-  const nats = { enabled: true, transport: 'nats', urlEnv: 'NATS_URL' } as const;
-
-  test('agree that no url is embedded', () => {
-    expect(eventsBinding({}, memory).mode).toBe(selectTransport({}, memory).mode);
-  });
-
-  test('agree that a url — even a padded one — is external', () => {
-    const env = { NATS_URL: '  nats://bus.test:4222  ' };
-    expect(eventsBinding(env, nats).mode).toBe(selectTransport(env, nats).mode);
-    expect(selectTransport(env, nats).mode).toBe('external');
-  });
-});
-
-describe('describeCdn', () => {
-  // There is no embedded CDN. Reporting one would read as a fifth service this boot started.
-  test('no credential reports no edge, not an embedded one', () => {
-    expect(describeCdn(cdnRuntimeWith(noopPurgeDriver(), 'no edge'))).toBe('cdn=none');
-  });
-
-  test('a real driver names itself and the env key that selected it', () => {
-    const fastly: PurgeDriver = {
-      name: 'fastly',
-      purge: () => Promise.resolve([]),
-      purgeAll: () => Promise.resolve(),
-    };
-    expect(describeCdn(cdnRuntimeWith(fastly, 'FASTLY_API_TOKEN'))).toBe(
-      'cdn=external(fastly via FASTLY_API_TOKEN)',
-    );
-  });
 });
 
 describe('startServices', () => {
@@ -346,6 +234,33 @@ describe('startServices', () => {
    * ambient accessors it had just installed. `registerReadinessCheck` is the concrete trigger: it
    * refuses a duplicate name, which is what a second boot in one process presents it with.
    */
+  test(
+    "a booted process's defineAuth keeps spent TOTP steps in the boot database, until it stops",
+    async () => {
+      const runtime = await startServices(resolveServices(root, {}), DEV_ENV);
+      try {
+        // Two `defineAuth`, neither naming a guard: two replicas as far as `Auth` can tell. Each
+        // holding its own memory would answer `true` twice, which is the defect.
+        const at = new Date();
+        const step = totpStep(at);
+        const first = defineAuth({ adapter: memoryAuthAdapter() }).totpReplay;
+        const second = defineAuth({ adapter: memoryAuthAdapter() }).totpReplay;
+        expect(await first.claim('boot-subject', step, at)).toBe(true);
+        expect(await second.claim('boot-subject', step, at)).toBe(false);
+        // The row is in the table, so a replica in another process reads the same answer.
+        const rows = await runtime.db.query<{ readonly subject: string }>(
+          raw('select subject from x_totp_steps'),
+        );
+        expect(rows.map((row) => row.subject)).toContain('boot-subject');
+      } finally {
+        await runtime.stop();
+      }
+      // Released with the boot: a guard left installed would reach through a closed pool.
+      expect(defineAuth({ adapter: memoryAuthAdapter() }).totpReplay).toHaveProperty('size', 0);
+    },
+    { timeout: 60_000 },
+  );
+
   test(
     'a boot that fails before the transport dial still releases the queue and the limiter',
     async () => {

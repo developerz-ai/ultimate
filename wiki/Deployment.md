@@ -72,6 +72,11 @@ SIGTERM
   6. close pools, release advisory locks, exit 0
 ```
 
+`onShutdown` has three phases, `accept → inflight → close`. `accept` and `inflight` run hooks in
+registration order. **`close` runs them last-registered first**, `As of 2026-11`: resources are released in
+reverse of acquisition, and the boot starts the OTLP exporter before it imports the app, so the flush
+is the last hook and a teardown's own spans still reach the collector.
+
 Both numbers are `app.config.ts`'s `drain` section, applied to every role by the production boot
 ([Configuration](Configuration#drain)). The budget is what a running job gets on a deploy, so an
 app with long jobs raises it there: `drain: { deadlineMs: 600_000 }`. The platform's kill timer

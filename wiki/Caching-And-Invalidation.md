@@ -100,6 +100,14 @@ against a key pinned for the life of the process. 30 s because `@ultimat3/http` 
 waiting on that read at the same bound; a load still running past it has no reader left to serve.
 `As of 2026-08-23`. Set it per stack: `cacheStack(tiers, { loadDeadlineMs })`.
 
+**Who shares that load, and who does not** `As of 2026-11`. A read joins it unless the load's fence was
+moved: after a `drop`, a `write` or a tag bust covering the key or the reader's own tags, the next
+read leads a fresh load, so a read-your-write never answers from data loaded before the write. A
+reader that joined before the bust keeps the load it joined. And a load whose leader was aborted
+(`ctx.signal`, a closed tab) does not fail the readers who joined it: the first one with a live
+signal loads again under its own context and the rest join that. A load that fails with its leader
+still live fails its joiners too.
+
 The read ladder keeps the same rule with no report to hand back: a tier that throws on `get`, `set` or `del` is a tier that did not answer, so the walk continues and the source is still returned. A value too large for the in-process LRU (`X_CACHE_TOO_LARGE`) costs the entry, never the read. Every absorbed refusal lands in a bounded log — `recentTierFailures()`, last 100, newest first, carrying the tier, the operation, the key and the `X_*` code — plus one `cache.tier.failed` warn. The one call left to throw is the load itself: it *is* the business read.
 
 ## Failure modes removed
@@ -169,7 +177,7 @@ Model calls are slow and metered; exact-match caching almost never hits because 
 
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-5-5',
   cache: {
     semantic: { threshold: 0.97, ttl: '7d' }, // partitions on the ACTOR by default
     invalidates: [tag.post],

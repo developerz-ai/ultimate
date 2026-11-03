@@ -1,6 +1,6 @@
 // Single responsibility: whether a migration DECLARES something with a marker line — a top-level
-// `--` comment of its own, and nothing that merely looks like one. Two markers ask this question
-// (`-- destructive: true`, `-- transaction: false`), so the scan is written once.
+// `--` comment of its own, and nothing that merely looks like one. Several markers ask this question
+// (`-- destructive: true`, `-- transaction: false`, `rolling.ts`'s), so the scan is written once.
 
 import { noiseAt } from './sql-scan';
 
@@ -24,6 +24,12 @@ function startsLine(sql: string, index: number): boolean {
  * substring.
  */
 export function hasMarkerLine(sql: string, marker: RegExp): boolean {
+  return markerLines(sql, marker).length > 0;
+}
+
+/** Every such line's text, in source order: a marker that names something is read off these. */
+export function markerLines(sql: string, marker: RegExp): readonly string[] {
+  const found: string[] = [];
   let index = 0;
   while (index < sql.length) {
     const noise = noiseAt(sql, index);
@@ -32,8 +38,10 @@ export function hasMarkerLine(sql: string, marker: RegExp): boolean {
       continue;
     }
     const text = sql.slice(index, noise.end);
-    if (noise.kind === 'line-comment' && startsLine(sql, index) && marker.test(text)) return true;
+    if (noise.kind === 'line-comment' && startsLine(sql, index) && marker.test(text)) {
+      found.push(text);
+    }
     index = noise.end;
   }
-  return false;
+  return found;
 }

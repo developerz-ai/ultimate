@@ -11,6 +11,9 @@ import {
 } from './render-stream';
 import { STREAM_REVEAL_BODIES } from './stream-scripts';
 
+// A foreign failure handed to the subject: test input, never its verdict.
+const THREW_BEFORE_PROMISE = new RangeError('threw before it returned a promise');
+
 function deferred(): {
   promise: Promise<string>;
   resolve: (value: string) => void;
@@ -94,6 +97,32 @@ describe('out-of-order streaming', () => {
     broken.reject(new Error('query timed out'));
 
     const html = await collected;
+    expect(html).toContain('<p data-err="feed">unavailable</p>');
+    expect(html.endsWith('</body></html>')).toBe(true);
+  });
+
+  test('a hole that throws synchronously reveals its fallback and closes the document', async () => {
+    const plan: StreamPlan = {
+      head: '<body>',
+      shell: holeMarker('feed', 'skeleton'),
+      holes: [
+        {
+          id: 'feed',
+          fallback: 'skeleton',
+          // `StreamHole` is public: nothing makes `resolve` an async function.
+          resolve: () => {
+            throw THREW_BEFORE_PROMISE;
+          },
+        },
+      ],
+    };
+
+    const html = await collectStream(
+      renderStreamHtml(plan, {
+        buildId: 'b1',
+        errorFallback: (id) => `<p data-err="${id}">unavailable</p>`,
+      }),
+    );
     expect(html).toContain('<p data-err="feed">unavailable</p>');
     expect(html.endsWith('</body></html>')).toBe(true);
   });

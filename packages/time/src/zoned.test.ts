@@ -11,6 +11,7 @@ import {
   startOfDay,
   toZoned,
 } from './zoned';
+import type { TimeZone } from './zones';
 import { offsetAt, UTC } from './zones';
 
 const BERLIN = 'Europe/Berlin';
@@ -231,7 +232,10 @@ describe('years before 100', () => {
     // standard time in year 99, so `Intl` answers with its LMT, +00:53.
     const berlin = fromZoned({ year: 99, month: 12, day: 31, hour: 0, minute: 0 }, BERLIN);
     expect(offsetAt(BERLIN, berlin)).toBe(53);
-    expect(toIso(berlin)).toBe('0099-12-30T23:07:00.000Z');
+    // +00:53:28 in full: searched at the rounded offset this wall clock was never found, and the
+    // gap branch answered 23:07:00, an instant 28 seconds off whose own wall clock is 00:00:28.
+    expect(toIso(berlin)).toBe('0099-12-30T23:06:32.000Z');
+    expect(toZoned(berlin, BERLIN).second).toBe(0);
   });
 });
 
@@ -352,5 +356,39 @@ describe('isoInZone', () => {
   test('round-trips through fromIso', () => {
     const at = fromIso('2026-03-14T08:00:07Z');
     expect(toIso(fromIso(isoInZone(at, ADELAIDE)))).toBe(toIso(at));
+  });
+});
+
+describe('a zero-day move, and a zone off the minute', () => {
+  const AMSTERDAM = 'Europe/Amsterdam' as TimeZone;
+  const MONROVIA = 'Africa/Monrovia' as TimeZone;
+
+  test('zero days is the instant itself in the repeated hour, whichever pass it is', () => {
+    // 2026-10-25: 02:30 happens twice in Amsterdam, at 00:30Z and at 01:30Z.
+    for (const iso of ['2026-10-25T00:30:00Z', '2026-10-25T01:30:00Z']) {
+      const at = fromIso(iso);
+      expect(toIso(addDaysInZone(at, 0, AMSTERDAM))).toBe(toIso(at));
+    }
+  });
+
+  test('zero days is the instant itself in a zone whose offset holds seconds', () => {
+    const at = fromIso('1960-06-01T12:00:00Z');
+    expect(toIso(addDaysInZone(at, 0, MONROVIA))).toBe(toIso(at));
+  });
+
+  test('an offset of -00:44:30 round-trips through toZoned and fromZoned', () => {
+    const at = fromIso('1960-06-01T12:00:00Z');
+    const zoned = toZoned(at, MONROVIA);
+    expect({ hour: zoned.hour, minute: zoned.minute, second: zoned.second }).toEqual({
+      hour: 11,
+      minute: 15,
+      second: 30,
+    });
+    expect(toIso(fromZoned(zoned, MONROVIA))).toBe(toIso(at));
+  });
+
+  test('a real day in that zone still keeps the wall clock', () => {
+    const at = fromIso('1960-06-01T12:00:00Z');
+    expect(toIso(addDaysInZone(at, 1, MONROVIA))).toBe('1960-06-02T12:00:00.000Z');
   });
 });

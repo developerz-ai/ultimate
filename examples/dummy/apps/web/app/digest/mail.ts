@@ -9,15 +9,17 @@
 
 import { blocks, defineMail, type Infer, t } from '@ultimat3/mail';
 import { MemberView } from '../orgs/entity';
-import { PostSummary } from '../posts/entity';
 
 /**
  * `org` is the org's NAME, top-level for the same two reasons `mail.ts` in `posts/` spells out:
  * `{org}` is a name slot, and the subject interpolates from the payload's top level only.
+ *
+ * `posts` is what the template prints: this payload crosses a `step.run`, which answers JSON, and a
+ * feed row's `Date`s would be strings by the time they got here.
  */
 export const DigestData = t.object({
   member: MemberView,
-  posts: t.array(PostSummary),
+  posts: t.array(t.object({ title: t.string })),
   localDate: t.string,
   org: t.string,
 });

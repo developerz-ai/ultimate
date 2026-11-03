@@ -107,6 +107,8 @@ export interface NotifyPlan<Params> {
    * channel with no wait fires immediately even when a later one waits an hour. */
   readonly deliveries: readonly ResolvedDelivery<Params>[];
   keyFor(params: Params): string;
+  /** The notifier's `input`, for params read back out of a store or a step in their stored form. */
+  parseParams(raw: unknown): Params;
   recipientsFor(args: RecipientArgs<Params>): Promise<readonly Recipient[]> | readonly Recipient[];
 }
 

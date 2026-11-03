@@ -8,7 +8,12 @@
 
 import { SQL_AUDIT_TABLE, SQL_IDEMPOTENCY_TABLE } from '@ultimat3/action';
 import { ADMIN_AUDIT_TABLE, SQL_ADMIN_AUDIT_TABLE } from '@ultimat3/admin/schema';
-import { AUTH_TABLE_NAMES, AUTH_TABLES, SQL_AUTH_LIMIT_TABLES } from '@ultimat3/auth';
+import {
+  AUTH_TABLE_NAMES,
+  AUTH_TABLES,
+  SQL_AUTH_LIMIT_TABLES,
+  SQL_TOTP_REPLAY_TABLE,
+} from '@ultimat3/auth';
 import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import { SQL_JOBS_TABLE } from '@ultimat3/jobs';
 import { MCP_CONFIRMATIONS_TABLE, SQL_MCP_CONFIRMATIONS_TABLE } from '@ultimat3/mcp/schema';
@@ -84,6 +89,12 @@ export const FRAMEWORK_SCHEMA: readonly FrameworkSchema[] = Object.freeze([
     pkg: '@ultimat3/auth',
     tables: Object.freeze(['x_auth_lockouts']),
     ddl: Object.freeze([SQL_AUTH_LIMIT_TABLES]),
+  }),
+  // Spent TOTP steps, so a code is single-use across the fleet rather than per replica.
+  Object.freeze({
+    pkg: '@ultimat3/auth',
+    tables: Object.freeze(['x_totp_steps']),
+    ddl: Object.freeze([SQL_TOTP_REPLAY_TABLE]),
   }),
   /**
    * The five tables `PostgresAuthAdapter` reads, and the oldest hole in this list.

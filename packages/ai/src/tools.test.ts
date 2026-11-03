@@ -124,7 +124,7 @@ describe('exposure is opt-in, the same opt-in MCP reads', () => {
 describe('runLlmToolCall renders a failure the model can act on', () => {
   // The real denial an action's policy gate throws, not a hand-rolled lookalike: a duck-typed
   // `{ code, cause, fix }` would keep passing after `PolicyError` stopped carrying one of them.
-  test('a framework error keeps its code, cause and fix', async () => {
+  test('a framework error keeps its code and cause, and says what a caller does', async () => {
     const denied = projectable('publishPost', { expose: true }, async () => {
       throw policyForbidden('post:publish', 'actor lacks post:publish');
     });
@@ -137,7 +137,7 @@ describe('runLlmToolCall renders a failure the model can act on', () => {
       toolUseId: 'call-3',
       content:
         'X_FORBIDDEN: post:publish denied: actor lacks post:publish ' +
-        '(fix: x policy explain post:publish --json   # shows which clause decided and why)',
+        '(fix: this caller lacks the permission post:publish: ask the account owner or an administrator to grant it, or call with credentials that have it — retrying the same call is refused the same way)',
       isError: true,
     });
   });
@@ -477,9 +477,15 @@ describe('asProjectableAction', () => {
     expect(() => asProjectableAction(publishPost())).toThrow('X_ACTION_UNREGISTERED');
   });
 
-  test('an already-projectable object passes through as itself', () => {
+  // Not itself since 30.0.0: a hand-built tool under a gated name waits like any other, so its `run`
+  // is behind the gate (`tools-confirmation.test.ts`). The rest of it is what the author wrote.
+  test('an already-projectable object keeps its fields, and projects to itself once projected', () => {
     const fake = projectable('handRolled', { expose: true });
-    expect(asProjectableAction(fake)).toBe(fake);
+    const once = asProjectableAction(fake);
+    const { run: _fake, ...declared } = fake;
+    const { run: _once, ...projected } = once;
+    expect(projected).toEqual(declared);
+    expect(asProjectableAction(once)).toBe(once);
   });
 
   test('toolLabel names an unregistered action instead of failing to name it', () => {

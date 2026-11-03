@@ -8,6 +8,7 @@
 // Deliberately one function: an app author should never have to know that `ToolRegistry`,
 // `frameworkResources` and `mcpHttpRoute` exist.
 
+import { noteToolNames } from '@ultimat3/action';
 import type { ErrorAudience } from '@ultimat3/core';
 import type { RequestFacts as McpRequestFacts, RateLimitStore } from '@ultimat3/http';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
@@ -238,6 +239,8 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
     { source: "include: 'exposed'", tools: included },
     { source: 'tools:', tools: written },
   ]);
+  // The `manifest` step reads these: a hand-written tool is in no registry, and a gate on one is real.
+  noteToolNames(named.map((tool) => tool.name));
   // Scopes, then the gate: the gate wraps `handle`, which every resolve reaches last.
   const projected = withConfirmations(withScopes(named, input.scopes), input.confirmations);
 

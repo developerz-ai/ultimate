@@ -17,6 +17,7 @@ import {
 import {
   assertListOptions,
   assertPutOptions,
+  type CopyOptions,
   DEFAULT_CONTENT_TYPE,
   etagOf,
   type ListOptions,
@@ -48,6 +49,7 @@ import {
   sidecarPathOf,
 } from './driver-local-write';
 import { checksumMismatch, deleteFailed, getTooLarge, listFailed, objectNotFound } from './errors';
+import { objectChanged } from './errors-promote';
 import {
   assertObjectLockOptions,
   isLocked,
@@ -303,7 +305,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     },
 
     /** A real file copy — `Bun.write` from a `BunFile` never routes the bytes through the heap. */
-    async copy(from: string, to: string): Promise<StorageObject> {
+    async copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject> {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
       // Measured AND read in one turn on both keys. Measured in the source's turn and read in the
@@ -314,6 +316,9 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         // type is the same durable lie. The hash is streamed, and only for a pair in doubt.
         const entry = await headObject(root, source, () => etagOfFile(root, source, registered));
         if (entry === undefined) throw objectNotFound(registered, source);
+        if (options?.ifMatch !== undefined && entry.etag !== options.ifMatch) {
+          throw objectChanged(source, options.ifMatch, entry.etag);
+        }
         const lastModified = clock.now();
         const sidecar: Sidecar = {
           contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,

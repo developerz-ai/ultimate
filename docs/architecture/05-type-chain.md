@@ -96,8 +96,9 @@ export function PostCard(props: { post: PostView }) {
 Rename `excerpt` → `summary` in `packages/db/src/schema/posts.ts` and change nothing else. `x verify` reports, ordered by how many diagnostics each file earns:
 
 Measured in `examples/dummy`, by running the real compiler over the real app:
-[`type-chain.test.ts`](../../examples/dummy/type-chain.test.ts) performs this exact rename against
-the files on disk, typechecks before and after, and asserts on the DIFF. The file set and the total
+[`type-chain.test.ts`](../../examples/dummy/type-chain.test.ts) performs this exact rename on a
+private copy of the sources (never the tracked file: the unit step's slices run side by side),
+typechecks before and after, and asserts on the DIFF. The file set and the total
 below are what it pins; a per-file count is stated only where that file pins one too.
 
 | Where it breaks | Diagnostics | Message shape |

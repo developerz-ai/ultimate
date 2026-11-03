@@ -9,6 +9,7 @@ import { echoProvider } from './echo-provider';
 import { promptCacheKey, providerGateway } from './gateway';
 import { useFixtureModels } from './model-fixture';
 import type { GenerateRequest } from './provider';
+import { runMeter } from './run-meter';
 import type { LlmTool } from './tools';
 
 // The framework registers no model: this suite registers the rows it names (`model-fixture.ts`).
@@ -90,5 +91,76 @@ describe('a cache that cannot write', () => {
         result.usage.cacheReadTokens +
         result.usage.cacheWriteTokens,
     );
+  });
+});
+
+/**
+ * A prompt-cache hit is not debited, and the gateway's own comment says it costs nothing. It came
+ * back carrying the original usage and cost, so a meter summing the run counted it again and read
+ * twice what the budget beside it read.
+ */
+describe('a cache hit', () => {
+  const cachedGateway = () => {
+    const store = memoryBudgetStore();
+    const entries = new Map<string, string>();
+    let calls = 0;
+    const echo = echoProvider();
+    const gateway = providerGateway({
+      providers: [
+        {
+          name: 'counting',
+          models: echo.models,
+          generate(request) {
+            calls += 1;
+            return echo.generate(request);
+          },
+          stream: (request) => echo.stream(request),
+        },
+      ],
+      budget: { org: 1_000_000 },
+      budgetStore: store,
+      cache: {
+        get: (key) => entries.get(key),
+        set: (key, value) => {
+          entries.set(key, value);
+        },
+      },
+    });
+    return { gateway, store, calls: () => calls };
+  };
+
+  test('reads zero usage and zero cost, in the same currency', async () => {
+    const { gateway } = cachedGateway();
+    const scoped = () => gateway.scope({ orgKey: 'org:acme' }, () => gateway.generate(base));
+    const miss = await scoped();
+    const hit = await scoped();
+
+    expect(hit.text).toBe(miss.text);
+    expect(hit.usage).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    expect(hit.cost).toEqual({ minor: 0, currency: miss.cost.currency });
+    expect(hit.costExact?.minor).toBe(0);
+    expect(hit.costExact?.currency).toBe(miss.costExact?.currency ?? 'absent');
+    expect(miss.usage.inputTokens).toBeGreaterThan(0);
+  });
+
+  test('miss then hit through one meter totals one call, and the budget moved once', async () => {
+    const { gateway, store, calls } = cachedGateway();
+    const meter = runMeter();
+    const scoped = () => gateway.scope({ orgKey: 'org:acme' }, () => gateway.generate(base));
+
+    const miss = await meter.call(scoped());
+    const once = meter.total();
+    const spent = store.spent('org:acme');
+
+    await meter.call(scoped());
+    expect(calls()).toBe(1);
+    expect(store.spent('org:acme')).toBe(spent);
+    expect(meter.total()?.usage).toEqual(once?.usage ?? miss.usage);
+    expect(meter.total()?.cost).toEqual(once?.cost ?? miss.cost);
   });
 });

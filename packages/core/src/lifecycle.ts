@@ -280,7 +280,11 @@ function remainingBudget(reason: ShutdownReason): number {
 }
 
 async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<void> {
-  for (const registration of registrations.filter((entry) => entry.phase === phase)) {
+  const hooks = registrations.filter((entry) => entry.phase === phase);
+  // Resources are released in reverse of acquisition, and only `close` releases any: an exporter
+  // registered at boot flushes after what it serves has ended its last span.
+  if (phase === 'close') hooks.reverse();
+  for (const registration of hooks) {
     const outcome = await settleWithin(() => registration.hook(reason), remainingBudget(reason));
     if (outcome.kind === 'failed') {
       report('error', 'shutdown hook failed', {

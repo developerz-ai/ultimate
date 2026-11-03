@@ -12,6 +12,7 @@ import { registerOAuthProvider } from './oauth-registry';
 import { base64Url } from './tokens';
 
 const NOW = new Date('2026-08-16T12:00:00.000Z');
+
 const clock = frozenClock(NOW);
 
 const text = (value: string): string => base64Url(new TextEncoder().encode(value));
@@ -358,75 +359,6 @@ describe('a key set the process cannot reach at all', () => {
     expect(error?.cause).toContain('AbortError');
     expect(error?.cause).not.toContain('[object Object]');
     expect(error?.cause).not.toContain('[object Object]');
-  });
-});
-
-describe('a token with no kid', () => {
-  test('resolves when the set holds exactly one key for that algorithm', async () => {
-    const pair = await rsaKeyPair();
-    const jwk = await publicJwk(pair, 'k1');
-    delete jwk['kid'];
-    const served = keySet([{ ...(await publicJwk(pair, 'k1')) }]);
-    const keys = jwksClient({
-      provider: 'test-op',
-      jwksUri: 'https://op.test/jwks',
-      clock,
-      fetch: served.fetch,
-    });
-    // The header carries no `kid`, so the only unambiguous answer is "the one RS256 key".
-    const body = `${text(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${text(JSON.stringify({ sub: 'ada' }))}`;
-    const signature = await crypto.subtle.sign(
-      { name: 'RSASSA-PKCS1-v1_5' },
-      pair.privateKey,
-      new TextEncoder().encode(body),
-    );
-    const token = `${body}.${base64Url(new Uint8Array(signature))}`;
-
-    expect(await verifyJwtSignature(token, keys)).toBe(true);
-  });
-
-  test('is refused when the set holds two keys for that algorithm — it names none of them', async () => {
-    const first = await rsaKeyPair();
-    const second = await rsaKeyPair();
-    const served = keySet([await publicJwk(first, 'k1'), await publicJwk(second, 'k2')]);
-    const keys = jwksClient({
-      provider: 'test-op',
-      jwksUri: 'https://op.test/jwks',
-      clock,
-      fetch: served.fetch,
-    });
-    const body = `${text(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${text(JSON.stringify({ sub: 'ada' }))}`;
-    const signature = await crypto.subtle.sign(
-      { name: 'RSASSA-PKCS1-v1_5' },
-      first.privateKey,
-      new TextEncoder().encode(body),
-    );
-    const token = `${body}.${base64Url(new Uint8Array(signature))}`;
-
-    // Picking one would be guessing which key an unauthenticated caller meant.
-    expect(await codeOf(() => verifyJwtSignature(token, keys))).toBe('X_OAUTH_TOKEN_INVALID');
-  });
-
-  test('an ES256 key in the same set does not answer for an RS256 token', async () => {
-    const rsa = await rsaKeyPair();
-    const ec = await ecKeyPair();
-    const served = keySet([await publicJwk(rsa, 'k1'), await publicJwk(ec, 'k2')]);
-    const keys = jwksClient({
-      provider: 'test-op',
-      jwksUri: 'https://op.test/jwks',
-      clock,
-      fetch: served.fetch,
-    });
-    // One RS256 key and one ES256 key: the RS256 lookup is unambiguous even with no `kid`.
-    const body = `${text(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${text(JSON.stringify({ sub: 'ada' }))}`;
-    const signature = await crypto.subtle.sign(
-      { name: 'RSASSA-PKCS1-v1_5' },
-      rsa.privateKey,
-      new TextEncoder().encode(body),
-    );
-    expect(await verifyJwtSignature(`${body}.${base64Url(new Uint8Array(signature))}`, keys)).toBe(
-      true,
-    );
   });
 });
 

@@ -9,7 +9,7 @@ import { columnFor } from './column';
 import { valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { EntityError, invariantViolated } from './errors';
-import { columnsOf } from './pg-row';
+import { allColumns, columnsOf } from './pg-row';
 import type { RowPatch } from './types';
 import { uniqueConstraints } from './unique-constraints';
 
@@ -31,11 +31,14 @@ export interface UpsertPlan {
 const owns = (row: unknown, property: string): boolean =>
   typeof row === 'object' && row !== null && Object.hasOwn(row, property);
 
+/** A value this row writes: present and not `undefined`, the same two tests `bindValues` makes. */
+const writes = (row: unknown, property: string): boolean =>
+  owns(row, property) && (row as Readonly<Record<string, unknown>>)[property] !== undefined;
+
 /**
- * The properties a batch writes: every declared column at least one row names, in declaration
- * order. `Object.hasOwn` decides it, exactly as `bindValues` does — a property present and
- * `undefined` is a value the caller wrote, and dropping it here would insert a column the update
- * set then skipped.
+ * The columns a batch's statement lists: every declared column at least one row names, in
+ * declaration order. A present `undefined` keeps its place here and binds no value, so its cell is
+ * `default`. What a COLLISION overwrites is a narrower question: `upsertPlan` asks `writes`.
  */
 export const namedProperties = <Row>(
   entity: EntityCore<Row>,
@@ -52,6 +55,19 @@ export const insertColumns = <Row>(
     const column = columnFor(entity.$columns, property);
     return column === undefined ? [] : columnsOf(property, column);
   });
+
+/**
+ * The column list one statement of this batch carries. Rows naming nothing are all defaults, which
+ * only a column list can spell for several rows at once: no list at all is
+ * `insert into t () values ()`, a syntax error the framework would have written.
+ */
+export const statementColumns = <Row>(
+  entity: EntityCore<Row>,
+  rows: readonly RowPatch<Row>[],
+): readonly string[] => {
+  const named = insertColumns(entity, namedProperties(entity, rows));
+  return named.length > 0 ? named : allColumns(entity);
+};
 
 /**
  * Rows per statement: the bind budget divided by one row's width, never fewer than one. Splitting
@@ -147,6 +163,27 @@ const sameColumns = (left: readonly string[], right: readonly string[]): boolean
   left.length === right.length && [...left].sort().join() === [...right].sort().join();
 
 /**
+ * What a batch overwrites on a collision: the columns its rows write, refusing a batch whose rows
+ * disagree. `writes`, not `owns`: a present `undefined` is absent in every write there is, and
+ * overwriting with it would hand the stored row the column's default — the loss `unevenBatch`
+ * refuses. `tableFor` asks this of the CALLER's rows, before `$parse` makes every row name every
+ * column; a repository handed rows directly asks it in `upsertPlan`.
+ */
+export const overwrittenBy = <Row>(
+  entity: EntityCore<Row>,
+  rows: readonly RowPatch<Row>[],
+): readonly string[] => {
+  const properties = Object.keys(entity.$columns).filter((property) =>
+    rows.some((row) => writes(row, property)),
+  );
+  for (const [position, row] of rows.entries()) {
+    const missing = properties.find((property) => !writes(row, property));
+    if (missing !== undefined) throw unevenBatch(entity.$name, position, missing);
+  }
+  return properties;
+};
+
+/**
  * The conflict target, and what a collision overwrites. `'nothing'` overwrites nothing by
  * definition; `'update'` takes every column the batch writes except three closed sets — the
  * conflict target, which is how the stored row was found, the primary key, which is its address,
@@ -169,13 +206,14 @@ const sameColumns = (left: readonly string[], right: readonly string[]): boolean
  * carry the tenant column under `'update'` (another tenant's row, silently rewritten), a batch
  * whose rows name different columns under `'update'` (`excluded.<col>` is the column's default for
  * a row that omitted it, so "leave it alone" is not what happens), and a target that leaves
- * nothing to write.
+ * nothing to write. `overwrites` is `UpsertArgs.overwrites`: named, it replaces what the rows say.
  */
 export const upsertPlan = <Row>(
   entity: EntityCore<Row>,
   rows: readonly RowPatch<Row>[],
   onConflict: readonly string[],
   onMatch: 'update' | 'nothing',
+  overwrites?: readonly string[],
 ): UpsertPlan => {
   if (onConflict.length === 0) throw noConflictTarget(entity.$name);
   for (const property of onConflict) {
@@ -201,11 +239,10 @@ export const upsertPlan = <Row>(
   if (tenant !== null && !onConflict.includes(tenant)) {
     throw crossTenantUpsert(entity.$name, tenant, onConflict);
   }
-  const properties = namedProperties(entity, rows);
-  for (const [position, row] of rows.entries()) {
-    const missing = properties.find((property) => !owns(row, property));
-    if (missing !== undefined) throw unevenBatch(entity.$name, position, missing);
-  }
+  const properties =
+    overwrites === undefined
+      ? overwrittenBy(entity, rows)
+      : Object.keys(entity.$columns).filter((property) => overwrites.includes(property));
   const spared = new Set([
     ...onConflict,
     ...entity.$primaryKey,

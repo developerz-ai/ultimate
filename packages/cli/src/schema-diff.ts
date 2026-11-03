@@ -73,6 +73,12 @@ function columnDetail(
       recorded.generated ?? 'not generated'
     }`;
   }
+  // `true` or absent. Listed under `retired` with no marker yet is the app's half alone.
+  if ((declared.retired === true) !== (recorded.retired === true)) {
+    return declared.retired === true
+      ? 'is declared retired and no migration recorded it'
+      : 'is declared again and was recorded retired';
+  }
   return undefined;
 }
 

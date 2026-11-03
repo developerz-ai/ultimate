@@ -192,6 +192,13 @@ const assertAliasFits = <Row>(entity: EntityCore<Row>, path: string): void => {
 };
 
 /**
+ * The kinds with no text a seek can bind back: `bytea` cut a page at nothing and answered an empty
+ * page 2 with no error, an array answered `22P02` there, and `jsonb` threw a `TypeError` on the
+ * memory side and at the cursor on Postgres.
+ */
+const UNSEEKABLE: ReadonlySet<ColumnKind> = new Set<ColumnKind>(['jsonb', 'bytea', 'array']);
+
+/**
  * A keyset seek only has a total order when every sort column is present on every row —
  * `null > 'x'` is unknown in SQL and would drop rows from the middle of a listing.
  *
@@ -209,7 +216,16 @@ export const assertSeekable = <Row>(
   for (const key of orderBy) {
     // Resolving the kind is the other half: it refuses a column the entity never declared and a
     // money property named without its part — both mint a cursor nothing can decode.
-    if (kindAt(entity, key.column) === 'timestamptz') assertAliasFits(entity, key.column);
+    const kind = kindAt(entity, key.column);
+    if (kind === 'timestamptz') assertAliasFits(entity, key.column);
+    if (UNSEEKABLE.has(kind)) {
+      throw invariantViolated(
+        entity.$name,
+        'cursor',
+        `${key.column} is ${kind}, which no cursor can carry a position in: page 2 came back ` +
+          'empty or as an error, depending on the row count. Order by a scalar column',
+      );
+    }
     if (columnAt(entity, key.column).$meta.notNull) continue;
     // An ORDINARY nullable key is orderable, `As of 2026-08-24`: NULL has a declared place
     // (`asc nulls last` / `desc nulls first`), the cursor carries that place, and the seek reaches

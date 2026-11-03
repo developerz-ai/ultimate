@@ -4,8 +4,8 @@
 // name that outlives its bytes is a file no client refreshes for a year.
 
 import type { UltimateRequest } from '@ultimat3/http';
+import { notModified } from '@ultimat3/http';
 import { contentHash } from '@ultimat3/render/server';
-import { etagMatches } from './runtime-storage';
 
 /**
  * The document's own posture (`@ultimat3/render`'s `render-static.ts`), for the same reason: the
@@ -32,8 +32,5 @@ export function revalidatedResponse(
     'cache-control': REVALIDATE_CACHE_CONTROL,
     etag,
   };
-  if (etagMatches(request.header('if-none-match'), etag)) {
-    return new Response(null, { status: 304, headers });
-  }
-  return new Response(bytes, { headers });
+  return notModified(request, etag, headers) ?? new Response(bytes, { headers });
 }

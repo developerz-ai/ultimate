@@ -1,8 +1,8 @@
 // The retention sweep this boot owns: the framework tables that grow with traffic, the `purge()`
 // job that empties them and the `task` that fires it hourly.
 //
-// NINE TARGETS, `As of 2026-10-17` — `x_idempotency`, `x_rate_limit`, the `x_auth` limiter's
-// table, `x_notify_deliveries`, `x_notify_inbox`, `x_notify_digests`, `x_job_events`, `x_outbox`
+// TEN TARGETS, `As of 2026-11-02` — `x_idempotency`, `x_rate_limit`, the `x_auth` limiter's
+// table, `x_totp_steps`, `x_notify_deliveries`, `x_notify_inbox`, `x_notify_digests`, `x_job_events`, `x_outbox`
 // (published rows) and `x_jobs` (finished rows, with their `x_job_steps`). Counted nowhere in prose but here: this header said
 // "three" for two releases after the notify tables joined the boot's DDL, which is how
 // `x_notify_inbox` became the one framework table nothing swept — and `x_jobs` was the next one.
@@ -19,6 +19,7 @@
 // per source address forever.
 
 import type { PostgresIdempotencyStore } from '@ultimat3/action';
+import type { PostgresTotpReplayGuard } from '@ultimat3/auth';
 import { purgeAuthLimits } from '@ultimat3/auth';
 import type { PostgresRateLimitStore } from '@ultimat3/http';
 import type { EventBus, JobHandle, PurgeInput, PurgeTarget } from '@ultimat3/jobs';
@@ -52,6 +53,12 @@ export const PURGE_TASK_NAME = 'x.purge.hourly';
 export interface RetentionStores {
   readonly idempotency: PostgresIdempotencyStore;
   readonly rateLimit: PostgresRateLimitStore;
+  /**
+   * The guard this boot installed through `configureTotpReplay`. Unlike the limiter it takes
+   * nothing from the app, so it exists here. REQUIRED, or `x_totp_steps` keeps a row per second
+   * factor for the life of the deployment.
+   */
+  readonly totpReplay: PostgresTotpReplayGuard;
   /**
    * The bus this boot installed for `step.waitForEvent`. REQUIRED: `x_job_events` takes a row per
    * publish and `find` only filters an expired one, so a boot that left it out is the table
@@ -149,6 +156,11 @@ function retentionTargets(stores: RetentionStores): readonly PurgeTarget[] {
       purgeExpired: (nowMs: number): Promise<number> => stores.rateLimit.purgeExpired(nowMs),
     },
     authTarget,
+    {
+      name: 'x_totp_steps',
+      // The job's clock: `verifyTotp` derived every step in that table from a process's clock.
+      purgeExpired: (nowMs: number): Promise<number> => stores.totpReplay.purgeExpired(nowMs),
+    },
     ...notifyTargets(stores.inboxRetention ?? NO_INBOX_RETENTION),
     // Its own clock, and so no `nowMs`: every instant in that table is the database's.
     eventsPurgeTarget(stores.events),

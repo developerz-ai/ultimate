@@ -21,8 +21,8 @@ import { UltimateError } from './errors';
 import type { FlightGate, FlightGateLimits } from './flight-gate';
 import { flightGate } from './flight-gate';
 import { generationFence } from './generation-fence';
-import type { RetryPolicy } from './retry';
-import { retry } from './retry';
+import type { RetryPolicy } from './retry-loop';
+import { retryLoop } from './retry-loop';
 import type { Scheduler } from './single-flight';
 import { singleFlight } from './single-flight';
 
@@ -49,7 +49,7 @@ export const DEFAULT_CLIENT_RETRY: RetryPolicy = {
  * no response at all.
  *
  * The default is the OPPOSITE of `retryDecision`'s, one file over, and that is the point.
- * `retry.ts` sends a throw nobody classified again until the attempts run out — which for a
+ * `retry-loop.ts` sends a throw nobody classified again until the attempts run out — which for a
  * client means a caller's own `AbortError` and a `TypeError` out of a mapper both get retried.
  * `@ultimat3/ai` and `@ultimat3/db` each refused that executor outright over it; this predicate
  * keeps the executor and inverts the default instead, and is a parameter (`transient`) so an app
@@ -239,7 +239,7 @@ export function clientFlight(options: ClientFlightOptions = {}): ClientFlight {
     // it would replace a code, a cause and a runnable `fix:` with the fact that something retried.
     let stopped: { readonly error: unknown } | undefined;
     const sendAgain = transientFor(plan);
-    const answer = await retry<T | typeof STOPPED>(
+    const answer = await retryLoop<T | typeof STOPPED>(
       async (count) => {
         try {
           return await once(plan, signal, count);

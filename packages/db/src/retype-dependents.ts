@@ -102,6 +102,8 @@ export function retypeDependents(column: string, live: TableDescription): Retype
 export interface MovedAside {
   readonly indexes: Set<string>;
   readonly checks: Set<string>;
+  /** Columns whose default the retype already moved, so the in-place arm has nothing to do. */
+  readonly defaults: Set<string>;
 }
 
 /**

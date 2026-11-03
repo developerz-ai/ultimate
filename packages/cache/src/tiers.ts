@@ -4,7 +4,7 @@
 // sites. Order is data, not control flow.
 
 import type { CacheTierName, Clock, Scheduler } from '@ultimat3/core';
-import { CACHE_TIERS, singleFlight, systemClock } from '@ultimat3/core';
+import { CACHE_TIERS, singleFlight, systemClock, tryUseContext } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheLimitInvalidError, CacheTtlInvalidError } from './errors';
 import type { CacheFence, FenceScope } from './fence';
 import { markInvalidated, sampleFence } from './fence';
@@ -13,6 +13,7 @@ import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
 import type { TierFence, TierFences } from './tier-fence';
 import { sampleTierFences, verdictOf } from './tier-fence';
+import { leadingLoads } from './tier-leading';
 
 /**
  * The rungs, spelled in `@ultimat3/core` and nowhere else. Tier 0 owns the NAMES because
@@ -265,6 +266,9 @@ export function cacheStack(
 ): CacheStack {
   const ordered = sortTiers(tiers);
   const clock = options.clock ?? systemClock;
+  // The fence of each load holding a key, so a read can refuse to join one a bust has overtaken.
+  // The fence stops that load's FILL; only this stops a read-your-write being answered by it.
+  const leading = leadingLoads();
   // Per stack, not per module: two stacks are two ladders and must not join each other's loads.
   //
   // The deadline frees the KEY and nothing else — `load()` is the app's function and this stack
@@ -282,6 +286,12 @@ export function cacheStack(
       'the loadDeadlineMs argument to cacheStack(...)',
     ),
     schedule: options.schedule,
+    // A closed tab's aborted load must not fail every healthy reader that joined it: this is the
+    // cold-key arrival the flight exists to collapse, so the first of them loads again instead.
+    signal: () => tryUseContext()?.signal,
+    released: (key) => {
+      leading.release(key);
+    },
   });
 
   /** Take back what a fence refused mid-ladder: half a stale ladder is still a stale read. */
@@ -397,6 +407,11 @@ export function cacheStack(
       // The stampede guard. The homepage feed read 8,000x/s with a 60s lease misses for the whole
       // ~200ms `load()` takes, so ~1,600 identical queries reach Postgres at every TTL boundary
       // unless the arrivals inside that window join the read already running.
+      //
+      // Unless that read began before a write this one must see. Asked of the fence and not of the
+      // key, because a tag bust names no key. This reader's own tags are covered first, back to
+      // the sample: a bust of a tag only it declares has overtaken the load just the same.
+      if (leading.overtaken(key, setOptions?.tags)) flight.evict(key);
       return await flight.run<T, CacheSetOptions>(
         key,
         async (shared) => {
@@ -406,6 +421,7 @@ export function cacheStack(
             key,
             ...(setOptions?.tags === undefined ? {} : { tags: setOptions.tags }),
           });
+          leading.lead(key, fence, setOptions?.tags);
           // The same sample, taken in each tier other replicas also write. One round trip, and
           // only when such a tier is on the ladder.
           const fleet = await sampleTierFences(ordered, key, {

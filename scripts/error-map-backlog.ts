@@ -53,6 +53,7 @@ export const OFF_SOCKET: Pins = {
     'X_APPEND_ONLY_TRIGGER_MISSING',
     'X_MIGRATION_APPEND_ONLY_BACKFILL',
     'X_MIGRATION_CONCURRENT_IN_TRANSACTION',
+    'X_MIGRATION_ROLLING_UNSAFE',
   ],
   // tier 1 — a flag declared twice, at registration.
   flags: ['X_FLAG_DUPLICATE'],
@@ -71,7 +72,7 @@ export const OFF_SOCKET: Pins = {
     'X_OAUTH_PROVIDER_DUPLICATE',
   ],
   // tier 2 — the N+1 pair: dev notices surfaced by the overlay, never thrown at a caller.
-  entity: ['X_N_PLUS_ONE_QUERY', 'X_N_PLUS_ONE_WRITE'],
+  entity: ['X_N_PLUS_ONE_QUERY', 'X_N_PLUS_ONE_WRITE', 'X_LOCK_UNSUPPORTED'],
   // tier 2 — a role declared twice at registration.
   policy: ['X_ROLE_REDEFINED'],
   // tier 3 — an action or its path registered twice, at `registerActions`.
@@ -90,6 +91,8 @@ export const OFF_SOCKET: Pins = {
     'X_JOB_TIMEOUT',
     'X_STEP_DUPLICATE',
     'X_JOB_TENANT_MISMATCH',
+    'X_STEP_OUTPUT_UNSERIALIZABLE',
+    'X_JOB_EVENT_INVALID',
   ],
   // tier 3 — judged at `query()`, where the declaration is written, or on a live read: a
   // WebSocket subscription carrying a `kind`, not a request carrying a status (`live.ts`).

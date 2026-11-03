@@ -9,15 +9,14 @@
 
 import type { Actor } from '@ultimat3/core';
 import { actorOf } from '@ultimat3/core';
-import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
-import {
-  asCtx,
-  byteWindow,
-  contentRangeOf,
-  parseByteRange,
-  RANGE_UNSATISFIABLE,
-  unauthenticated,
+import type {
+  CacheHint,
+  ObjectSource,
+  RequestContext,
+  Route,
+  UltimateRequest,
 } from '@ultimat3/http';
+import { asCtx, byteWindow, objectResponse, unauthenticated } from '@ultimat3/http';
 import type { KnownPermission } from '@ultimat3/policy';
 import {
   can,
@@ -27,7 +26,7 @@ import {
   policyForbidden,
   reasonOf,
 } from '@ultimat3/policy';
-import type { Storage, StorageObject } from '@ultimat3/storage';
+import type { Storage, StorageDriver } from '@ultimat3/storage';
 import {
   assertSafeKey,
   DEFAULT_SIGNED_URL_BASE,
@@ -37,9 +36,10 @@ import {
   keyUnshared,
   objectNotFound,
   orgMismatch,
+  variantRevision,
+  variantSourceOf,
 } from '@ultimat3/storage';
 import { storageUploadRoute } from './runtime-storage-upload';
-import { storedObjectHeaders } from './stored-object-headers';
 
 /**
  * The one capability that gates reading a stored object, on every disk. A permission and not a
@@ -64,9 +64,9 @@ const READ_PERMISSION = STORAGE_READ_PERMISSION as unknown as KnownPermission;
  * The cache posture of a response that was authorized for ONE actor, named once so the two routes
  * that serve stored bytes cannot declare different ones — which they did: `/media` answered
  * `public, max-age=31536000, immutable` for the same object this route marks private, so a CDN held
- * one tenant's file under a public key for a year. Revalidation costs a request and no bytes, which
- * is the trade an authorized response wants: the bytes never change under a key, but the actor's
- * permission to read them can be revoked. `vary` names the two headers that carry an identity.
+ * one tenant's file under a public key for a year. A key is not content-addressed either: an
+ * overwrite changes the bytes under it, which is what the etag answers. `vary` names the two
+ * headers that carry an identity.
  */
 export const AUTHORIZED_OBJECT_CACHE: CacheHint = {
   mode: 'private',
@@ -154,89 +154,49 @@ export function assertReadableKey(
 }
 
 /**
- * What the route serves: the object's description and a STREAM of its bytes, never a buffer. The
- * route used `get()`, which holds the whole object in memory and refuses past the disk's
- * `maxGetBytes` — so a large upload was either a pod's worth of heap or `X_STORAGE_TOO_LARGE`.
+ * A stored variant read by its OWN key answers for its source, or the URL outlives an erasure: a key
+ * naming a revision is served only while the source still holds that revision. Both routes read
+ * through here. An unrevisioned key is an ordinary object, because `logo@2x.png` is a real name.
  */
-export interface ServedObject {
-  readonly object: StorageObject;
-  /** Opened only once the route knows it will send a body: a 304 and a 416 open nothing. */
-  readonly open: () => Promise<ReadableStream<Uint8Array>>;
+export async function assertVariantCurrent(
+  driver: StorageDriver,
+  disk: string,
+  key: string,
+): Promise<void> {
+  const variant = variantSourceOf(key);
+  if (variant === undefined) return;
+  const source = await driver.stat(variant.source);
+  if (source === undefined || variantRevision(source.etag) !== variant.revision) {
+    throw objectNotFound(disk, key);
+  }
 }
 
 /**
  * Everything between the decision and the bytes. An unknown disk is the same 404 the foreign-tenant
  * case answers, rather than `X_STORAGE_DISK_UNKNOWN`, whose cause lists every configured disk name.
+ *
+ * A STREAM of the bytes, never a buffer: `get()` holds the whole object in memory and refuses past
+ * the disk's `maxGetBytes`, so a large upload was a pod's worth of heap or `X_STORAGE_TOO_LARGE`,
+ * and a video's `bytes=0-` probe is the whole object, which only a stream holds. The content type
+ * is the STORED one and the validator the driver's own content hash: inventing a cache key here
+ * would be a second identity for one object.
  */
 export async function readStorageObject(
   storage: Storage,
   input: StorageReadInput,
   actor: Actor,
-): Promise<ServedObject> {
+): Promise<ObjectSource> {
   const key = assertReadableKey(storage, input.disk, input.key, actor);
   if (!storage.diskNames.includes(input.disk)) throw objectNotFound(input.disk, key);
   const driver = storage.disk(input.disk);
+  await assertVariantCurrent(driver, input.disk, key);
   const object = await driver.stat(key);
   if (object === undefined) throw objectNotFound(input.disk, key);
-  return { object, open: () => driver.stream(key) };
-}
-
-/** `*`, a weak validator and a comma list all count — the etag is what has to match. */
-export function etagMatches(header: string | null, etag: string): boolean {
-  if (header === null) return false;
-  if (header.trim() === '*') return true;
-  return header.split(',').some((candidate) => candidate.trim().replace(/^W\//, '') === etag);
-}
-
-/**
- * The content type is the STORED one — the upload gate sniffed those bytes and `put` recorded the
- * answer, so an extension in the URL is the only party that can lie. The validator is the driver's
- * own content hash (local: sha256 of the bytes, S3: the provider's etag), which is the identity
- * storage already keeps for an object; inventing a cache key here would be a second one.
- */
-export async function storageResponse(
-  request: UltimateRequest,
-  served: ServedObject,
-): Promise<Response> {
-  const { object } = served;
-  const etag = `"${object.etag}"`;
-  const headers = new Headers({
-    'content-type': object.contentType,
-    etag,
-    'accept-ranges': 'bytes',
-    // A type a browser would RUN (html, svg, xml) is a download, never a page on this origin.
-    ...storedObjectHeaders(object.contentType),
-  });
-  // Omitted, never invented: a disk whose provider reported no date has none, and a `Last-Modified`
-  // made up for it is a validator a cache would go on to trust.
-  const modified = object.lastModified;
-  if (modified !== undefined) headers.set('last-modified', modified.toUTCString());
-  // Revalidation costs a request and no bytes, which is the trade an authorized response wants:
-  // the bytes never change under a key, but the actor's permission to read them can be revoked.
-  if (etagMatches(request.header('if-none-match'), etag)) {
-    return new Response(null, { status: 304, headers });
-  }
-
-  const size = object.size;
-  const range = parseByteRange(request.header('range'), size);
-  if (range === RANGE_UNSATISFIABLE) {
-    headers.set('content-range', `bytes */${size}`);
-    return new Response(null, { status: 416, headers });
-  }
-  // `size` is the stat's: a key's bytes never change under it (an upload mints a new key), so the
-  // length declared here is the length the stream delivers.
-  if (range === undefined) {
-    headers.set('content-length', String(size));
-    return new Response(await served.open(), { headers });
-  }
-  // A disk could serve the window itself (`get(key, { range })`), but `get` buffers and is bounded
-  // by `maxGetBytes`; a video's `bytes=0-` probe is the whole object, which only a stream holds.
-  headers.set('content-range', contentRangeOf(range, size));
-  headers.set('content-length', String(range.end - range.start + 1));
-  return new Response(byteWindow(await served.open(), range), {
-    status: 206,
-    headers,
-  });
+  return {
+    object,
+    open: async (range) =>
+      range === undefined ? driver.stream(key) : byteWindow(await driver.stream(key), range),
+  };
 }
 
 /**
@@ -299,7 +259,7 @@ export function storageRoutes(options: StorageRoutesOptions): readonly Route[] {
           key: request.params['key'] ?? '',
         };
         authorizeStorageRead(input, ctx);
-        return storageResponse(request, await readStorageObject(options.storage, input, ctx.actor));
+        return objectResponse(request, await readStorageObject(options.storage, input, ctx.actor));
       },
     },
     // The upload half: the `PUT` every `grantUpload` URL names (#523). One call mounts both, so

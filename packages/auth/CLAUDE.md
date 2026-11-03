@@ -21,9 +21,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `idleSlideMs`, `password.minLength`, the two argon2 costs, every `rateLimit` number), and every
   runtime one through `assertFiniteAuthCount` — `jwks.ttlMs`, the three OAuth legs' `timeoutMs`
   (screened OUTSIDE each leg's `try`), the limiter's `maxKeys`, `mfa.drift`,
-  `oauth.handshake.ttlMs`, `session.cookie.maxAgeSeconds`, `kdf.maxConcurrent`/`maxQueued`. A `NaN`
-  makes every comparison false: no expiry, the empty password accepted, a year-old handshake
-  opened. **`mfa.drift` and the KDF gate are the two that HANG** — mutate `verifyTotp` with the
+  `oauth.handshake.ttlMs`, `session.cookie.maxAgeSeconds`, `kdf.maxConcurrent`/`maxQueued`.
+  **`mfa.drift` and the KDF gate are the two that HANG** — mutate `verifyTotp` with the
   `NaN` case, never by deleting the screen (that wedges `mfa.test.ts`).
 - **A number is screened ABOVE the write it feeds.** `issueVerification` screens its TTL before
   `putVerification` (which upserts on `(purpose, identifier)`); `verify.test.ts` asserts no row
@@ -49,7 +48,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   concurrent guesses all passed the check. `assertAuthLimiterPolicy` (once, in `defineAuth`)
   refuses a per-process limiter under `scope: 'shared'` (`X_AUTH_LIMITER_NOT_SHARED`) and different
   `maxAttempts`/`windowMs`/`lockoutMs` (`X_AUTH_LIMITER_POLICY_MISMATCH`). `maxKeys` is not
-  compared. Nothing here reads the environment to guess a replica count.
+  compared.
 - **Every credential check runs through `openLoginAttempt`** (`login-attempt.ts`): account → ip →
   org reserved in that fixed order BEFORE the KDF or the TOTP compare. A failure calls nothing (the
   reservations are the record); `release()` for no verdict (a shed KDF, a store that is down, a
@@ -152,6 +151,11 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `deadlineMs = timeoutMs * 2`**; eviction frees the key, never the work, and a `generationFence`
   generation check (read, never `guard`) stops a superseded refresh overwriting the cache.
   `schedule` is injectable.
+- **A failed JWKS refresh is rated and survivable, in `keyFor`, above the transport**: no fetch
+  inside `JWKS_FAILURE_COOLDOWN_MS` of a failure, on either path; a key held answers until
+  `fetchedAt + ttl + JWKS_STALE_IF_ERROR_MS` (the set's age, so failing again never extends it),
+  logged `auth.jwks.stale_served` once per failed fetch; everything else is the last failure
+  rethrown. Constants, no option (`jwks-outage.test.ts`).
 - **A success clears the ACCOUNT bucket and nothing else** — clearing the address bucket made the
   limiter inert against stuffing. A password proven with a second factor still owed clears
   NOTHING: `completeMfa` is what clears, or a repeat of the first leg wipes the wrong codes.
@@ -193,17 +197,20 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `auth:mfa-challenge`: user id, nonce, expiry on the server's clock, `MFA_CHALLENGE_TTL_MS`) —
   `meta`, never `cause`, and never a bare user id: a second leg keyed by one is unauthenticated by
   construction. The code is reserved against the same three buckets before it is compared, and a
-  spent step is refused through `auth.totpReplay` (checked and remembered with no `await`
-  between). It needs the app's master key (`X_SEAL_KEY_MISSING`). No route ships: the handler
-  decides how the challenge travels. Anything that is not six digits is a RECOVERY CODE: hashed
+  spent step is refused through `auth.totpReplay.claim`, called only after the code verified. It
+  needs the app's master key (`X_SEAL_KEY_MISSING`). No route ships: the handler decides how the
+  challenge travels. Anything that is not six digits is a RECOVERY CODE: hashed
   (`recoveryCodeHash`) and consumed by `adapter.consumeRecoveryCode` — one conditional UPDATE, so
   single-use is storage's guarantee. There is no read-then-write redemption helper.
-- **`mfa.required` is the literal `false`, and `defineAuth` refuses a `true`** (`X_CONFIG_INVALID`):
-  enforcing it would lock out every un-enrolled user. `mfa.issuer` is read by
-  `enrolTotp(auth, { account })`.
+- **`mfa.required` is the literal `false`, and `defineAuth` refuses a `true`** (`X_CONFIG_INVALID`).
+  `mfa.issuer` is read by `enrolTotp(auth, { account })`.
 - **A TOTP secret that decodes to zero bytes is NO key**: `verifyTotp` returns the generic failure
   (`{ ok: false, step: null }`), `totpCode` and `enrolTotp` throw `X_MFA_SECRET_INVALID`. The secret
   never reaches `cause:`/`fix:`. No length floor beyond one byte.
+- **`TotpReplayGuard` is one atomic `claim(subject, step, at): Promise<boolean>`**; a rejection is
+  no verdict (`attempt.release()`, rethrown). Precedence: `config.totpReplay` →
+  `configureTotpReplay`'s factory → memory. `postgresTotpReplayGuard`: `x_totp_steps`, one
+  `on conflict do nothing`; `purgeExpired(nowMs)` keeps slack past the drift.
 - **`memoryTotpReplayGuard`'s table is bounded and the eviction ORDER is the guarantee**: subjects
   whose steps are all below the drift floor are forgotten first; past `DEFAULT_MAX_TOTP_SUBJECTS`,
   evict by newest spent step ascending, least-recently-seen tie-break. `maxSubjects` is normalised
@@ -223,7 +230,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `rate-limit.ts` | per-ip, per-account and per-org buckets as reservations, lockout, scope check, `loginFailed()` |
 | `login-attempt.ts` | one attempt's reservations across the three buckets, taken before the check and settled after it |
 | `rate-limit-postgres.ts` | the SHARED limiter: one table, one row per key, a one-statement take, over a structural `PgExecutor` |
-| `limiter-install.ts` | the host's one install point for that limiter — the factory, what it built, and the purge over it |
+| `limiter-install.ts` | the host's one install point for that limiter — the factory, what it built, and the purge over it, and the TOTP guard's |
 | `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-builtins.ts` | the two shipped IdPs (`github`, `google`), as data. Imports only the type, so no cycle |
 | `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |
@@ -232,6 +239,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity` |
 | `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` (sessions and api keys) |
 | `mfa-challenge.ts` | the sealed challenge `X_MFA_REQUIRED` carries, and `completeMfa` |
+| `mfa-replay-postgres.ts` | the shared replay guard: one table, the claim, the sweep |
 | `mfa-secret.ts` | the TOTP secret at rest: seal on write, open on read, the one-shot that seals older rows |
 | `directory.ts` | `describeUser` (allow-list projection), `listOrgUsers`, external-id lookup |
 | `privileges.ts` | `updatePrivileges` — the grant, the rotation it requires, and the sessions a changed password ends |
@@ -251,8 +259,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it — core's `flightGate` with auth's own refusal injected |
 | `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
 | `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
-| `sign-out.ts` | `signOutHeaders({ session? })` — the expired session cookie plus `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. A PWA's offline cache does not survive a sign-out, by decision (a cached private page IS the previous principal's data); the page boot's rescope wipe is the second line. Secure contexts only |
-| `client-scope.ts` | `clientScopeOf(actor)` — the OPAQUE per-principal id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`) over kind, id and impersonator, 32 hex; `''` for anonymous. Without `SESSION_SECRET`, a random per-process key and one `auth.client_scope.process_key` warning (rescopes, never leaks) |
+| `sign-out.ts` | `signOutHeaders({ session? })` — the expired session cookie plus `Clear-Site-Data: "cache", "storage"` (`SIGN_OUT_CLEAR_SITE_DATA`), never `"cookies"`. Secure contexts only |
+| `client-scope.ts` | `clientScopeOf(actor)` — the OPAQUE per-principal id for `<meta name="ultimate-scope">`: keyed SHA-256 (`SESSION_SECRET`) over kind, id and impersonator, 32 hex; `''` for anonymous. Without `SESSION_SECRET`, a random per-process key and one `auth.client_scope.process_key` warning |
 
 ```bash
 bun test packages/auth
@@ -264,14 +272,10 @@ Gotchas:
 - `noUncheckedIndexedAccess` — index a `Record` into a local before narrowing it.
 - `X_NOT_IMPLEMENTED` is core's, `X_FORBIDDEN` is policy's. `errors.ts` registers only the codes
   this package **owns**, unconditionally, and lists the borrowed two in `AUTH_BORROWED_ERROR_CODES`
-  without a title. A `hasErrorCode()` guard would suppress the `X_ERROR_CODE_DUPLICATE` that is
-  supposed to fire when two packages claim one code.
+  without a title. Never a `hasErrorCode()` guard.
 - Tests run against `MemoryAuthAdapter`; the one ADAPTER test that boots a database is
-  `adapter-parity-identity.test.ts` (PGlite). The two other exceptions are
-  `postgresAuthLimiter`'s, and they are exceptions in the shape the repo already has: the
-  scripted-executor twin (`rate-limit-postgres.test.ts`) proves the protocol with no server,
-  and `rate-limit-postgres.live.test.ts` is `describe.skip` without `TEST_DATABASE_URL` — the
-  same pairing `@ultimat3/http`'s rate-limit store and `@ultimat3/realtime`'s Postgres files
-  use. A limiter whose statements were never executed is a credential control nobody has run.
+  `adapter-parity-identity.test.ts` (PGlite). `postgresAuthLimiter` and `postgresTotpReplayGuard`
+  each pair a scripted-executor twin (`*.test.ts`) with a `*.live.test.ts`, `describe.skip`
+  without `TEST_DATABASE_URL`.
 
 Why each rule above is shaped the way it is: [`docs/history/auth.md`](../../docs/history/auth.md).

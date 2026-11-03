@@ -255,6 +255,19 @@ export const mfaRequiredUnenforceable = (): AuthError =>
   });
 
 /**
+ * A `totpReplay` with no `claim`: a guard written for the `isUsed`/`remember` pair, which could not
+ * be atomic across a network. `X_CONFIG_INVALID` is core's code, borrowed like the one above.
+ */
+export const totpReplayGuardInvalid = (): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause:
+      'defineAuth({ totpReplay }) has no claim function, so completeMfa has no way to spend a TOTP step',
+    fix: 'defineAuth({ totpReplay: { claim: (subject, step, at) => firstUse(subject, step, at) } })   # claim(subject, step, at) replaces isUsed/remember, answering true the first time and false for a replay; or drop the totpReplay option on a framework-booted process',
+    meta: { option: 'totpReplay' },
+  });
+
+/**
  * `login(auth, { handle })` on an app whose `defineAuth` named no `handles` lookup. Refused before
  * any bucket is reserved or any hash run: this is a wiring fault, never a failed guess.
  */

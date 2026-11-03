@@ -48,6 +48,14 @@ export interface UpsertArgs<T = unknown> extends RepoOptions {
    * omits it from the result, so the result is always "the rows this call wrote".
    */
   readonly onMatch?: 'update' | 'nothing';
+  /**
+   * What a collision overwrites, when the rows cannot say it: `db.*.upsertAll` sets this from what
+   * the caller's rows named, plus `onUpdateNow()` columns, because `$parse` fills every column
+   * before a row reaches a repository and an unnamed one would otherwise reset the stored value.
+   * The conflict target, the primary key and the soft-delete stamp stay spared. Absent, every
+   * column the rows write.
+   */
+  readonly overwrites?: readonly (keyof T & string)[];
 }
 
 /**
@@ -149,6 +157,21 @@ export interface Repo<T = unknown> {
    * the table has never been analysed, which is a fact and not an estimate.
    */
   approximateCount(args?: FindManyArgs): Promise<number | null>;
+  /**
+   * The row, locked, for as long as `fn` runs: a read-modify-write that loses no update. A
+   * transaction of its own, or a savepoint in an open one, where the lock lives to the root COMMIT.
+   * The read is the read path's, so another tenant's id and a soft-deleted row are `X_NOT_FOUND`.
+   * `fn` writes with `{ tx }`, the rule on every write.
+   *
+   * Optional, like `lockKey`: a hand-written driver still compiles, and the typed handle answers
+   * `X_LOCK_UNSUPPORTED` for one without it.
+   */
+  lock?<R>(id: IdOf<T>, fn: (row: T, tx: Tx) => Promise<R> | R, options?: RepoOptions): Promise<R>;
+  /**
+   * `fn` alone among callers of this key, in this table and this tenant, for work no one row names.
+   * On a tenant-scoped entity with no actor it is `X_TENANCY_UNSCOPED`, exactly as a read.
+   */
+  lockKey?<R>(key: string, fn: (tx: Tx) => Promise<R> | R, options?: RepoOptions): Promise<R>;
 }
 
 /**

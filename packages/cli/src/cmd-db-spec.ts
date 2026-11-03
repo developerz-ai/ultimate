@@ -95,5 +95,12 @@ export const dbSpec: CommandSpec = {
       type: 'boolean',
       summary: 'let x db gen emit a drop whose down cannot restore the rows',
     },
+    // Declared because `X_MIGRATION_ROLLING_UNSAFE`'s own fix line names it.
+    {
+      name: 'rolling-unsafe',
+      type: 'boolean',
+      summary:
+        'let x db gen drop a column never retired, for an app that stops before it starts: one instance, or strategy: Recreate',
+    },
   ],
 };

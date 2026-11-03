@@ -150,6 +150,7 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | `reserve()` **debits, then checks** | the in-memory scopes check and debit with no `await` between, the store's through its atomic `take`; a read-then-write let concurrent calls — one request per scope racing one org key — all read the same `spent()` and all pass. `record` reconciles and `release` gives it back |
 | The cache key is every tool **whole**, through core's `fingerprint` | every `llm()` tool is named `respond`, so a key over names served an answer shaped for an old `output` schema; a cache `set` that throws is logged, never turned into a failure of a call already paid for |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
+| A cache hit reads zero `usage`, `cost` and `costExact`, in the same currency | it is not debited, so a meter summing the stored figures read more than the budget beside it |
 | Retries use **full jitter**, from core's one curve | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` with the gateway's field names mapped onto it, and the roll is `providerGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
 | A 4xx is never retried **except 408, 409 and 425** | the same body gets the same rejection and burns the budget — but a request the server stopped reading (408), a round a concurrent writer won (409) and a handshake that had not finished (425) are transient by construction, and core's `isRetryableStatus` is the one table that says so |
 
@@ -436,6 +437,7 @@ sub-agent in its own `tools` and the sub-agent runs under the same actor, throug
 | the tools of **one turn** run concurrently, results paired by `tool_use` id | a turn asking for five tools cost 5x wall clock and nothing said so. Order is positional, never by completion; the batch is bounded by what one turn asked for, and each tool is an action with its own `policy` and `rateLimit`, so a second ceiling here would be a throttle competing with those |
 | `onTurn` reports each completed turn as it happens (and an `agent.turn` span event, always) | a 90-second run emitted nothing until it returned. Observation only — it cannot steer the loop, see the transcript or reach the actor — and a throw from it fails the run rather than being swallowed |
 | a tool is an `mcp: { expose: true }` action or an `inProcessTool()`; anything else is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate for ACTIONS, so an in-app agent and an external MCP client see the same catalogue of them — and a tool no MCP client may see is declared as one that is this process's alone |
+| a tool in `mcpConfirmations({ tools })` answers `X_MCP_CONFIRMATION_PENDING` until a person approves | one list for both surfaces, so no option an author can forget. The decision action declares no `mcp.expose`, so listing it is `X_AGENT_TOOL_UNEXPOSED`: **exposing it hands an in-app agent, whose actor is the user, its own approval** |
 | running out of turns is `X_AGENT_MAX_TURNS`, never a partial answer | a half-finished transcript returned as a result is working notes presented as a decision |
 | a cycle of 1 to 3 tool turns — same calls, arguments, results and failures — gone round `maxRepeatedToolCalls` (default 3) times is `X_AGENT_TOOL_LOOP` | such a turn can only be followed by another like it; a changed result is progress; a repair turn neither counts nor resets |
 | `deadlineMs` (no default) is the run's wall-clock ceiling: `X_AGENT_DEADLINE` | the in-flight model call is aborted on the socket and every tool's `ctx.signal` fires; a tool that ignores it still finishes late. A caller that leaves first is still `X_ABORTED` |
@@ -987,9 +989,19 @@ An in-app agent and an external MCP agent both end at the same `invoke` — `run
 carries it, and an action facade has no `.run` of its own. So they authorize identically. The
 actor comes from the request context, never from the model.
 
+A tool in `mcpConfirmations({ tools })` waits for a person here too. `run` asks the policy's actor
+half, then the gate registered for that name (read per call), then `invoke`; `asProjectableAction`
+puts a hand-built tool behind the same gate, and `runLlmToolCall` projects whatever it is handed, so
+it is one pass whichever way a tool arrives. The model reads `X_MCP_CONFIRMATION_PENDING`, reports
+through `output`, and a later user turn repeats the call. No new run outcome. The gate binds a tool's
+**name**, never what it reaches: `inProcessTool({ name: 'refundNow', execute: () => invoke(refundOrder, …) })`
+is not gated by `refundOrder`'s row, so list `refundNow` in `tools`.
+[Agents → A tool that waits for a person](https://github.com/developerz-ai/ultimate/wiki/Agents#a-tool-that-waits-for-a-person).
+
 `inProcessTool({ name, description, input, execute })` is a tool that is this process's alone: no `mcp`, no policy of its own (the agent's decides), in no catalogue but the agent's. Its own typed refusal reads back as `{"error":{"code","cause","fix"}}`. [Agents → In-process tools](https://github.com/developerz-ai/ultimate/wiki/Agents#in-process-tools).
 
-A failed tool reads back as `CODE: cause (fix: …)` — except a 5xx code whose cause core's
+A failed tool reads back as `CODE: cause (fix: …)`, the fix being the error's `callerFix` when it
+declares one — except a 5xx code whose cause core's
 `hasPublicCause` does not declare public, which reads `CODE: ` plus a fixed sentence (and a
 `callerFix`, when the `UltimateError` declared one): the rule a production problem document follows,
 and the one `@ultimat3/mcp` applies. The model's provider keeps every request it is sent, so a

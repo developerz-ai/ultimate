@@ -33,7 +33,9 @@ const posts = entity('preload_test_posts', {
     orgId: uuid()
       .references(() => orgs.id)
       .tenant(),
-    authorId: uuid().references(() => members.id),
+    // Stated so the READ guard below is what is under test: a row the key never refused is what a
+    // table holds from before same-tenant keys, and the preload has to hold on its own.
+    authorId: uuid().references(() => members.id, { crossTenant: 'rows older than the key' }),
     /** Nullable on purpose: a post nobody reviewed is data, not a broken key. */
     reviewerId: uuid()
       .references(() => members.id)
@@ -62,7 +64,8 @@ const tickets = entity('preload_test_tickets', {
     id: uuid().primaryKey(),
     workspaceId: uuid().tenant(),
     orgId: uuid(),
-    memberId: uuid().references(() => members.id),
+    // Two tenant columns that are two different things, which is what the option is for.
+    memberId: uuid().references(() => members.id, { crossTenant: 'workspaces span orgs' }),
   },
 });
 

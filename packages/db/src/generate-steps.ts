@@ -21,6 +21,8 @@ export interface DiffSteps {
   /** The schema the whole diff leaves behind. */
   readonly snapshot: SchemaDescription;
   readonly unrendered: readonly UnrenderedDeclaration[];
+  /** `--rolling-unsafe` was asked for and this diff dropped a column that was never retired. */
+  readonly rollingUnsafe?: boolean | undefined;
 }
 
 /** One file's worth. `destructive` is read off `up` by the gate's own classifier, never assembled. */
@@ -74,9 +76,12 @@ export function assembleSteps(diff: DiffSteps): GeneratedMigration {
     down: diff.down.join('\n'),
     // What the transactional step alone leaves behind, when a second one follows it.
     snapshot:
-      later.length === 0 ? snapshot : intermediateSnapshot(snapshot, diff.concurrent.deferred),
+      later.length === 0
+        ? snapshot
+        : intermediateSnapshot(snapshot, diff.concurrent.deferred, diff.concurrent.deferredKeys),
     unrendered,
     transactional: true,
+    ...(diff.rollingUnsafe === true ? { rollingUnsafe: true } : {}),
   });
   if (later.length === 0) return first;
   // `_concurrently` sorts right after the plain id — as a ledger id, an `.sql` and every sidecar —

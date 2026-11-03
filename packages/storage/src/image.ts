@@ -4,6 +4,7 @@
 // bytes, `transformImage()` returns exactly the size `fitDimensions()` already promised.
 
 import {
+  assert,
   assertFiniteImageQuality,
   blurDataUrl,
   finiteCount,
@@ -13,6 +14,7 @@ import {
   transformImageBytes,
 } from '@ultimat3/core';
 import { assertSafeKey } from './path';
+import { normalizeContentType } from './upload';
 
 /**
  * The formats a stored VARIANT can be minted in — a strict subset of the ones `@ultimat3/core`
@@ -41,6 +43,50 @@ export type VariantFormat = (typeof VARIANT_FORMATS)[number];
 export const isVariantFormat = (format: string): format is VariantFormat =>
   (VARIANT_FORMATS as readonly string[]).includes(format);
 
+/** The source encodings core can write back, so a variant with no `?f=` keeps its source's. */
+const SOURCE_VARIANT_FORMATS: ReadonlyMap<string, VariantFormat> = new Map([
+  ['image/png', 'png'],
+  ['image/jpeg', 'jpeg'],
+  ['image/webp', 'webp'],
+]);
+
+/**
+ * The format a variant of this stored type is written in when nobody named one. `undefined` (a
+ * `gif`) means no key can state what the transform will answer: such a variant is served, never
+ * stored. Without this `variantKey` read the absent format as `webp` while the driver kept the
+ * source's, so `?w=320` and `?w=320&f=webp` shared one key and the first request chose the bytes.
+ */
+export const variantFormatOf = (contentType: string): VariantFormat | undefined =>
+  SOURCE_VARIANT_FORMATS.get(normalizeContentType(contentType));
+
+const REVISION = /^[0-9a-f]{8}$/;
+/** The `@…r<8 hex>.<ext>` only `variantKey({ revision })` writes. The last `@` is the variant's. */
+const REVISIONED_VARIANT = /^(.+)@(?:[^@/]*-)?r([0-9a-f]{8})\.(?:avif|webp|jpg|png)$/;
+
+/** The source and revision a stored variant's key names, or `undefined` for any other key. */
+export function variantSourceOf(
+  key: string,
+): { readonly source: string; readonly revision: string } | undefined {
+  const match = REVISIONED_VARIANT.exec(key);
+  return match?.[1] === undefined || match[2] === undefined
+    ? undefined
+    : { source: match[1], revision: match[2] };
+}
+
+/**
+ * The part of a source's etag a variant key carries, so an overwritten source misses every variant
+ * of its old bytes. Hex only, because a provider's etag arrives quoted and a multipart one carries
+ * `-<parts>`. `undefined` when the etag is unknowable (`''`) or too short to tell two revisions
+ * apart: that variant has no honest key, so it is served, never stored.
+ */
+export function variantRevision(etag: string): string | undefined {
+  const revision = etag
+    .toLowerCase()
+    .replace(/[^0-9a-f]/g, '')
+    .slice(0, 8);
+  return REVISION.test(revision) ? revision : undefined;
+}
+
 /** `cover` fills the box and crops the overflow; `contain` fits inside it, no crop. */
 export type ImageFit = 'cover' | 'contain';
 
@@ -51,6 +97,8 @@ export interface ImageTransform {
   /** 1-100. Omitted means the format default (`DEFAULT_QUALITY`). */
   readonly quality?: number | undefined;
   readonly fit?: ImageFit | undefined;
+  /** `variantRevision(source.etag)`: which bytes this variant was made from. Absent, unkeyed. */
+  readonly revision?: string | undefined;
 }
 
 export interface ImageSize {
@@ -116,6 +164,15 @@ export function variantKey(sourceKey: string, transform: ImageTransform): string
     transform.quality === undefined ? DEFAULT_QUALITY : transform.quality,
   );
   if (quality !== DEFAULT_QUALITY) parts.push(`q${quality}`);
+  const { revision } = transform;
+  if (revision !== undefined) {
+    assert(
+      REVISION.test(revision),
+      'variantKey was given a revision that is not 8 hex digits, so it would mint a key nothing can derive again',
+      'variantKey(key, { width, revision: variantRevision(object.etag) })',
+    );
+    parts.push(`r${revision}`);
+  }
   if (parts.length === 0) parts.push('full');
   return assertSafeKey(`${safe}@${parts.join('-')}.${FORMAT_EXTENSIONS[format]}`);
 }

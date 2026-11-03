@@ -4,7 +4,7 @@
 // side's spelling, never the catalog's — which is Postgres' rewriting.
 
 import { psqlCommand } from './dependent-view';
-import { addForeignKey, dropForeignKey, onDeleteRule } from './foreign-key';
+import { addForeignKey, dropForeignKey, onDeleteRule, validateConstraint } from './foreign-key';
 import type { CheckDescription, ForeignKeyDescription } from './introspect';
 import type { Migration } from './migrate';
 import { addPrimaryKey, dropPrimaryKey } from './primary-key';
@@ -23,6 +23,8 @@ export type DriftKind =
   | 'missing-check'
   | 'missing-foreign-key'
   | 'changed-foreign-key'
+  // A declared constraint the catalog holds `NOT VALID`: the deferred step's validate never finished.
+  | 'not-valid-constraint'
   // Constructed in `drift-append-only.ts`: an `appendOnly` table whose refusing trigger is gone.
   | 'missing-append-only-trigger'
   // Constructed in `object-drift.ts`: a trigger, function, view, type or sequence in the live
@@ -402,6 +404,35 @@ export function changedForeignKey(
       `${rule === null ? 'declares no on delete rule' : `is on delete ${rule}`}, not what ` +
       'migrations declare',
     fix: rebuilt(),
+  };
+}
+
+/**
+ * The constraint is there and holds every new write; rows that predate it are unchecked. Left by a
+ * deferred step that stopped between its add and its validate, or by hand. The fix is the validate
+ * statement (`repair`), because a ledger that recorded the step will apply nothing on a re-run; a
+ * step still pending is re-run by `x db migrate`, whose validate is the same statement.
+ */
+export function notValidConstraint(
+  schema: string,
+  table: string,
+  constraint: string,
+): DriftDifference {
+  const path = pathTo(schema);
+  const steps = 'alter table … validate constraint … on the constraint this difference names';
+  return {
+    kind: 'not-valid-constraint',
+    table,
+    column: null,
+    cause: `constraint "${constraint}" on "${table}" is NOT VALID: rows older than it were never checked`,
+    fix:
+      path === null || !spellable([table, constraint])
+        ? byHand(steps)
+        : repair(
+            path,
+            validateConstraint(table, constraint),
+            'a row it finds is X_DB_FOREIGN_KEY_VIOLATION or a CHECK failure: repair that row, then run it again',
+          ),
   };
 }
 

@@ -51,6 +51,7 @@ one adds, the other adds.
 | `pg-vector.ts` | `postgresVectorStore()` — the production store |
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
 | `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
+| `tools-gate.ts` | a tool's way to `run`: actor half, the name's gate, the tool |
 | `tool-idempotency.ts` | an idempotent action's reserved `idempotencyKey` tool argument — MCP's, restated (same tier), held equal by the parity test |
 | `tool-arguments.ts` / `answer-errors.ts` | one argument-string reader for both wires and what an unreadable one means (`assertToolArguments`); `X_LLM_TRUNCATED` + `X_LLM_TOOL_ARGUMENTS_INVALID` |
 | `billed.ts` / `run-meter.ts` | `meta.billed` + `billedOf`; the meter every `llm()`/`agent()` provider call goes through |
@@ -194,14 +195,10 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   - structured output is the `respond` tool, never `response_format`; `tool_choice` names the tool
     only when the request offers exactly one and the row is not `forcedToolChoice: false`;
   - `strict: true` only when `satisfiesStrictMode` says the schema qualifies;
-  - `max_completion_tokens`; `role: 'system'`; `stream_options: { include_usage: true }` and an
-    ESTIMATE when usage never arrives; subtract `cached_tokens` from `prompt_tokens`;
   - tool-call deltas merge by `tool_calls[].index`, a differing `id` starting a new call; calls are
     read at `end()` (`[DONE]` or socket close), never at the finish reason; `isComplete()` accepts
     `[DONE]` or a finish reason, except `[DONE]` with pending tool fragments, which is refused;
-  - no code of its own (a media refusal is the shared `X_AI_CONTENT_UNSUPPORTED`);
-    `AiTransportError` takes the provider's `envVar`; the key is revealed late,
-    never stored, scrubbed from `detail`.
+  - the rest: [history](../../docs/history/ai.md#openaiprovider-wire-rules).
 - **`embedBatched` enforces the `Embedder` arity per batch** (`X_AI_EMBEDDER_INVALID` with both
   counts). One `remoteEmbedder()` for every vendor; vectors L2-normalised; a wrong width is
   `X_VECTOR_DIM_MISMATCH`.
@@ -225,6 +222,8 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   - `ctx.signal` is read at the top of every turn, before every tool batch, and forwarded to
     `fetch`; `X_ABORTED` is core's.
   - One turn's tools run concurrently, results paired by index; no tool STARTS after an abort.
+  - **`mcpConfirmations({ tools })` holds a tool here**, one pass each however it arrives
+    (`tools-gate.ts`). Proof: `scripts/ai-tool-confirmation.test.ts`.
   - `onTurn` reports facts only (also an `agent.turn` span event); a throw from it fails the run.
     `.stream()` on `agent()` is deliberately not shipped. No semantic cache.
   - Every replayed `tool_use` is answered by a `tool_result` in the very next message
@@ -235,7 +234,8 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
   - **A 5xx code's cause reaches the model only when core's `hasPublicCause` allows it** (status from
     `@ultimat3/http`'s `statusFor`) — else `CODE: HIDDEN_TOOL_CAUSE`, plus a branded `callerFix`. The
     same verdict a problem document and `@ultimat3/mcp` give, from `failure-disclosure.ts` — the
-    rule a hive member's `reason` follows too. Never a second copy. One widening, for an
+    rule a hive member's `reason` follows too. Never a second copy. A tool's shown fix is its
+    `callerFix`, if branded (`tools.ts`). One widening, for an
     `inProcess` tool only (`discloseOwnFailure`): a branded error under a code with NO declared
     status is shown as `{ error: { code, cause, fix } }`; `discloseErrors: false` opts out.
 - **A run only NARROWS its declaration**: `offerTools()` ⊆ declared names (`X_AGENT_TOOL_UNDECLARED`),

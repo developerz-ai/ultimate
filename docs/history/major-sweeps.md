@@ -8,7 +8,8 @@ wired or deleted (`JobsConfig.driver`, `realtime.heartbeatMs`, `PrecacheAsset.cr
 thing** are corrected (`on delete` reaching the generated SQL, `in` with a non-array operand,
 `t.date` accepting an offsetless date-time, `isValidCron` accepting an unsatisfiable day/month
 pair, a local disk's signed URLs carrying the driver kind rather than the registered disk name).
-No codemod ships: each entry names its own manual edit.
+No codemod ships: each entry names its own manual edit, and `x upgrade` (30.0.0) walks an app
+through the pins, the Bun floor and the gate one major per run, pointing at that major's section.
 [`wiki/Upgrading.md`](../../wiki/Upgrading.md) walks every major, oldest first, and states its own count —
 `bun run changelog-check` reads each count from that major's own `CHANGELOG.md` section.
 

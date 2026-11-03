@@ -6,6 +6,7 @@
 
 // why: Bun ships no path API; the fix names the import relative to the API index.
 import { dirname, join } from 'node:path';
+import { gatedToolNames } from '@ultimat3/action';
 import { ERROR_DOCS_URL, registeredServiceNames, singleLine } from '@ultimat3/core';
 import { entityNames } from '@ultimat3/entity';
 import { catalogDeclarationCount } from '@ultimat3/i18n';
@@ -67,6 +68,7 @@ export function registrations(): readonly Registration[] {
       'channel',
       registeredChannels().map((channel) => channel.name),
     ),
+    ...of('tool gate', gatedToolNames()),
   ];
 }
 

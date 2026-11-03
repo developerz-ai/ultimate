@@ -16,6 +16,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
 | `x mcp serve` | `@ultimat3/mcp`'s 18 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
+| `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate | the `--json` report names the wiki section, the guards that differ and what the gate still says ([fields](../../wiki/CLI-Reference.md#x-upgrade)); `bunx @ultimat3/cli@latest upgrade` in an app that predates it; pins with no `app.config.ts` still hop, and `data.proof` says what checked them |
 | `x doctor` | environment, ports, drift, PWA prerequisites, `APP_URL` | every finding carries a fix command; probes the port `x dev` binds ([which one](../../wiki/CLI-Reference.md#x-doctor)); the framework's deploy secrets only where the machine names `staging`/`production` |
 | `x deploy` | container deploy plan | compose or helm; zero platform primitives |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
@@ -77,6 +78,9 @@ is a different file (`local-cli.ts`), prints one line on stderr saying so, and e
 child's code; fd 1 is the child's alone, so a `--json` consumer sees one document. A workspace
 symlink resolves to the same file and is not handed over (both tracked apps, and every scaffold
 CI installs), and a compiled `x` keeps itself — its own path is not one `realpath` can resolve.
+**`x upgrade` is the one exception:** an app's CLI strictly older than the invoked one keeps the
+invoked one, so `bunx @ultimat3/cli@latest upgrade` works in an app whose own CLI has no such
+command. It opens no second registry: it loads no app, and its gate is the installed CLI's.
 `ULTIMATE_KEEP_GLOBAL_CLI=1` keeps the CLI that was invoked, for the one deliberate case: running a
 checkout's `x` against an app pinned to an older release to see what the next one would say.
 

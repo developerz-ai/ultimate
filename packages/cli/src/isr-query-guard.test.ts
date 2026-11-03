@@ -61,6 +61,15 @@ describe('unit · a page reading a query parameter its isr key does not carry', 
     expect(lines[0]).toContain("query: ['currency', 'plan']");
   });
 
+  test('an isr route with no declaration keys on none, so any read is told', () => {
+    const entry = entryOf('apps/web/site/undeclared/page.tsx', 'isr');
+    const lines = warned(() => {
+      void routeQuery(entry, new URL('https://app.test/undeclared'), DEV)['currency'];
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("query: ['currency']");
+  });
+
   test('what a renderer asks of any object is not a parameter read', () => {
     const entry = entryOf('apps/web/site/guard-probes/page.tsx', 'isr', []);
     const lines = warned(() => {
@@ -85,9 +94,8 @@ describe('unit · a page reading a query parameter its isr key does not carry', 
     expect(lines).toEqual([]);
   });
 
-  test('a route that declared no query, or is not isr, is never wrapped', () => {
+  test('a route that is not isr is never wrapped', () => {
     const lines = warned(() => {
-      routeQuery(entryOf('apps/web/site/guard-none/page.tsx', 'isr'), at, DEV)['plan'];
       routeQuery(entryOf('apps/web/site/guard-ssr/page.tsx', 'ssr'), at, DEV)['plan'];
     });
     expect(lines).toEqual([]);

@@ -3,283 +3,334 @@
 // and dropping the socket from the table is three of `teardown`'s five steps, not five.
 
 import { afterAll, afterEach, describe, expect, jest, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
-import { queryHash } from '@ultimat3/query';
-import { RingChangeBuffer } from './change-buffer';
-import { ChannelHub, type Topic } from './channel';
-import { channel } from './channel-decl';
+import { type ChangeEvent, formatLsn } from './changefeed';
 import { clearChannels } from './channel-registry';
-import { InProcessTransport } from './fanout';
-import type { Row } from './json';
-import { LiveQueryRegistry } from './live-query';
-import { OPEN_POLICY } from './policy-fake-fixture';
-import { PresenceRegistry } from './presence';
-import { CLOSE, SocketRegistry } from './socket';
-import { type SyncNode, type SyncWs, syncNode, type WsData } from './sync-node';
-import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
-
-const BUILD_ID = 'build-1';
-/** A channel declared `events: true`: joining it is joining its presence set. */
-const room = channel('drain-room', {
-  params: ['orgId'],
-  catchUp: { name: 'roomRead' },
-  policy: OPEN_POLICY,
-  events: true,
-});
-const ROOM: Topic = room.topic({ orgId: 'o1' });
-const ROOM_TARGET = { kind: 'channel', channel: 'drain-room', params: { orgId: 'o1' } } as const;
+import {
+  type Harness,
+  harness,
+  POLICY_STORE_DOWN,
+  type RecordingWs,
+  ROWS,
+} from './sync-drain-fixture';
+import type { Frame } from './sync-protocol';
 
 afterAll(() => {
   clearChannels();
 });
-const INPUT = { orgId: 'o1' };
-const QID = queryHash('liveFeed', INPUT);
-const ROWS: readonly Row[] = [{ id: 'p1', orgId: 'o1' }];
 
-class RecordingWs implements SyncWs {
-  readonly sent: Frame[] = [];
-  readonly data: WsData;
-  closedWith: number | null = null;
-
-  constructor(id: string) {
-    this.data = { socketId: id, clientBuildId: BUILD_ID };
-  }
-
-  /** Bytes this socket claims are queued. Over the ceiling, `SyncSocket.send` declines. */
-  buffered = 0;
-
-  send(message: string): number {
-    this.sent.push(decode(message));
-    return message.length;
-  }
-
-  close(code?: number): void {
-    this.closedWith ??= code ?? null;
-  }
-
-  subscribe(): void {}
-  unsubscribe(): void {}
-  getBufferedAmount(): number {
-    return this.buffered;
-  }
-}
-
-interface Harness {
-  readonly node: SyncNode;
-  readonly presence: PresenceRegistry;
-  readonly registry: LiveQueryRegistry;
-  readonly sockets: SocketRegistry;
-  readonly tick: (ms: number) => void;
-  connect(id: string): RecordingWs;
-  /** One socket holding both kinds of state a teardown has to release: a room and a live query. */
-  seat(id: string): Promise<RecordingWs>;
-}
-
-function harness(options: { idleTimeoutMs?: number } = {}): Harness {
-  const clock = frozenClock(0);
-  const sockets = new SocketRegistry({
-    clock,
-    ...(options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: options.idleTimeoutMs }),
-  });
-  const transport = new InProcessTransport({ clock });
-  const hub = new ChannelHub({ transport, sockets });
-  const presence = new PresenceRegistry({ transport, hub, clock, ttlMs: 30_000 });
-  const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register({
-    name: 'liveFeed',
-    entities: ['posts'],
-    snapshot: async () => ({ rows: ROWS, lsn: '' }),
-    visible: () => true,
-    matcher: () => ({ entities: ['posts'], match: () => ({ patches: [], refill: false }) }),
-  });
-  const node = syncNode({
-    hub,
-    registry,
-    transport,
-    buildId: BUILD_ID,
-    sockets,
-    presence,
-    clock,
-    ...(options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: options.idleTimeoutMs }),
-  });
-  const send = async (ws: RecordingWs, frame: Frame): Promise<void> => {
-    node.websocket.message(ws, encode(frame));
-    await Bun.sleep(1);
-  };
-  return {
-    node,
-    presence,
-    registry,
-    sockets,
-    tick: (ms) => clock.advance(ms),
-    connect(id: string): RecordingWs {
-      const ws = new RecordingWs(id);
-      node.websocket.open(ws);
-      return ws;
-    },
-    async seat(id: string): Promise<RecordingWs> {
-      const ws = this.connect(id);
-      await send(ws, {
-        type: 'subscribe',
-        v: PROTOCOL_VERSION,
-        op: 'add',
-        sid: id,
-        target: ROOM_TARGET,
-      });
-      await send(ws, {
-        type: 'subscribe',
-        v: PROTOCOL_VERSION,
-        op: 'add',
-        sid: `q-${id}`,
-        target: { kind: 'query', qid: 'liveFeed', input: INPUT, cursor: null },
-      });
-      return ws;
-    },
-  };
-}
-
-/** Everything one socket held, asked of the node rather than of the socket table. */
-async function held(app: Harness, id: string): Promise<Record<string, unknown>> {
-  return {
-    sockets: app.sockets.count,
-    members: (await app.presence.list(ROOM)).map((member) => member.id),
-    topicMembers: app.sockets.subscriberCount(ROOM),
-    subscription: app.registry.subscription(id, `q-${id}`) === undefined ? 'gone' : 'held',
-    subscribers: app.registry.subscriberCount(QID),
-  };
-}
-
-const NOTHING = {
-  sockets: 0,
-  members: [],
-  topicMembers: 0,
-  subscription: 'gone',
-  subscribers: 0,
-};
-
-describe('a socket the node evicts is released the way a closed one is', () => {
-  test("Bun's close callback is the reference: it releases all five", async () => {
-    const app = harness();
-    const ws = await app.seat('s1');
-    expect(await held(app, 's1')).toEqual({
-      sockets: 1,
-      members: ['s1'],
-      topicMembers: 1,
-      subscription: 'held',
-      subscribers: 1,
-    });
-
-    app.node.websocket.close(ws);
-    await Bun.sleep(1);
-
-    expect(await held(app, 's1')).toEqual(NOTHING);
-  });
-
-  test('drain() releases them too — a rolling restart is this path, not the close callback', async () => {
-    const app = harness();
-    const ws = await app.seat('s1');
-
-    await app.node.drain({ graceMs: 0 });
-    await Bun.sleep(1);
-
-    // Presence lives on the SHARED set with a 30s TTL, so a member this node never said goodbye
-    // for is rendered by every other node until it expires — while the client is already back on
-    // a new node under a new socket id. The live half leaks in-process: `entry.subscribers` never
-    // empties, so the matcher, the shared window and the retained ring outlive the process's use
-    // for them and `source.forget(qid)` is never called.
-    expect(await held(app, 's1')).toEqual(NOTHING);
-    expect(ws.closedWith).toBe(CLOSE.goingAway);
-  });
-
-  /**
-   * The grace is owed to a socket, not to the clock. Measured 2026-09-06 on `x dev`: Ctrl-C took
-   * 5.1s with no browser open, and 5.0s of it was this drain sleeping its default grace over a
-   * table with nothing in it.
-   */
-  test('a drain with no sockets waits for nobody', async () => {
-    const app = harness();
-    const started = performance.now();
-    await app.node.drain({ graceMs: 5_000 });
-    expect(performance.now() - started).toBeLessThan(1_000);
-  });
-
-  test('the grace ends when the last socket leaves, not when the clock says', async () => {
-    const app = harness();
-    const ws = await app.seat('s1');
-    const started = performance.now();
-    const draining = app.node.drain({ graceMs: 5_000 });
-    await Bun.sleep(5);
-    // Bun's close callback: the client hung up on its own during the grace.
-    app.node.websocket.close(ws);
-    await draining;
-    expect(performance.now() - started).toBeLessThan(1_000);
-    expect(await held(app, 's1')).toEqual(NOTHING);
-  });
-
-  /**
-   * The `reconnect` frame IS this socket's slot in the spread — there is no cursor behind it and
-   * nothing re-sends it — so a client that never received one reconnects on its own backoff, into
-   * the herd the spread exists to break. Sent fire-and-forget, a drain that reached half its
-   * clients returned a plan claiming it reached all of them.
-   */
-  test('a reconnect frame the socket refuses is counted, not claimed as delivered', async () => {
-    const app = harness();
-    const reachable = await app.seat('s1');
-    const drowning = await app.seat('s2');
-    drowning.buffered = 4 * 1024 * 1024;
-
-    const plan = await app.node.drain({ graceMs: 0 });
-
-    expect(
-      // Sorted by the NAMED field before mapping: `[socketId, notified]` is a `(string | boolean)[]`
-      // to TypeScript, so `a[0]` was `string | boolean | undefined` and the comparison read an
-      // index nothing guaranteed was there.
-      [...plan]
-        .sort((a, b) => a.socketId.localeCompare(b.socketId))
-        .map((entry) => [entry.socketId, entry.notified]),
-    ).toEqual([
-      ['s1', true],
-      ['s2', false],
-    ]);
-    expect(reachable.sent.some((frame) => frame.type === 'reconnect')).toBe(true);
-    expect(drowning.sent.some((frame) => frame.type === 'reconnect')).toBe(false);
-  });
-
-  /** `ms` of Bun's fake time, then event-loop turns (`setImmediate` is left real). */
-  const elapse = async (ms: number): Promise<void> => {
-    jest.advanceTimersByTime(ms);
-    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
-  };
+describe("Bun's drain repairs a subscriber backpressure left behind", () => {
   afterEach(() => {
     jest.useRealTimers();
   });
 
-  test('the idle sweep releases them too, and it has a caller at all', async () => {
-    // Short enough that `start()` arms a sub-second pass; the clock the budget is measured on is
-    // frozen and driven by the test, and the interval is a real one on Bun's fake timers — it
-    // fires because the test moves them (`elapse`), never because 1.4 s went by.
-    const app = harness({ idleTimeoutMs: 4_000 });
+  const SID = 'q-s1';
+  const change = (position: number): ChangeEvent => ({
+    table: 'posts',
+    op: 'update',
+    before: null,
+    after: { id: 'p1', orgId: 'o1', title: `v${String(position)}` },
+    lsn: formatLsn(position),
+    txid: String(position),
+    orgId: 'o1',
+    at: 1_000,
+    write: null,
+  });
+
+  /** A socket whose patch was refused: marked, and the buffer has since emptied. */
+  const dropped = async (app: Harness): Promise<RecordingWs> => {
     const ws = await app.seat('s1');
+    ws.buffered = 4 * 1024 * 1024;
+    await app.registry.deliver(change(2));
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(true);
+    ws.buffered = 0;
+    ws.sent.length = 0;
+    return ws;
+  };
+
+  const snapshots = (ws: RecordingWs): readonly Frame[] =>
+    ws.sent.filter((frame) => frame.type === 'snapshot');
+
+  const drain = async (app: Harness, ws: RecordingWs): Promise<void> => {
+    app.node.websocket.drain(ws);
+    await Bun.sleep(0);
+  };
+
+  test('with no later change it delivers one snapshot and clears the mark', async () => {
+    const app = harness();
+    const ws = await dropped(app);
+
+    await drain(app, ws);
+
+    const frames = snapshots(ws);
+    expect(frames).toHaveLength(1);
+    const frame = frames[0];
+    if (frame?.type !== 'snapshot') expect.unreachable('the repair is a snapshot');
+    // The window the refused patch was folded into, so the repair holds what the patch carried.
+    expect(frame.rows[0]?.['title']).toBe('v2');
+    expect(frame.sid).toBe(SID);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
+    expect(app.registry.subscription('s1', SID)?.cursor.lsn).toBe(formatLsn(2));
+  });
+
+  test('a second drain sends nothing', async () => {
+    const app = harness();
+    const ws = await dropped(app);
+    await drain(app, ws);
+    ws.sent.length = 0;
+
+    await drain(app, ws);
+
+    expect(ws.sent).toEqual([]);
+  });
+
+  test('two drains landing together send one snapshot', async () => {
+    const app = harness();
+    const ws = await dropped(app);
+
+    app.node.websocket.drain(ws);
+    await drain(app, ws);
+
+    expect(snapshots(ws)).toHaveLength(1);
+  });
+
+  test('a healthy socket is sent nothing', async () => {
+    const app = harness();
+    const ws = await app.seat('s1');
+    ws.sent.length = 0;
+
+    await drain(app, ws);
+
+    expect(ws.sent).toEqual([]);
+  });
+
+  test('a gate that cannot decide keeps the mark, and a later drain still repairs', async () => {
+    let broken = false;
+    const app = harness({
+      visible: () => {
+        if (broken) throw POLICY_STORE_DOWN;
+        return true;
+      },
+    });
+    const ws = await dropped(app);
+
+    broken = true;
+    await drain(app, ws);
+    expect(snapshots(ws)).toEqual([]);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(true);
+
+    broken = false;
+    await drain(app, ws);
+    expect(snapshots(ws)).toHaveLength(1);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
+  });
+
+  test('a repair the socket refuses again keeps the mark', async () => {
+    const app = harness();
+    const ws = await dropped(app);
+    ws.buffered = 4 * 1024 * 1024;
+
+    await drain(app, ws);
+
+    expect(ws.sent).toEqual([]);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(true);
+  });
+
+  test('a window nothing trusts stays marked: the next change re-reads it first', async () => {
+    const app = harness();
+    const ws = await app.seat('s1');
+    app.registry.invalidate();
+    ws.sent.length = 0;
+
+    await drain(app, ws);
+
+    expect(ws.sent).toEqual([]);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(true);
+  });
+
+  test('a re-read in flight is not trusted either: `stale` is already cleared under it', async () => {
+    let held: Promise<void> | null = null;
+    const app = harness({
+      snapshot: async () => {
+        await held;
+        return { rows: ROWS, lsn: '' };
+      },
+    });
+    const ws = await dropped(app);
+    app.registry.invalidate();
+    let release = (): void => undefined;
+    held = new Promise((resolve) => {
+      release = resolve;
+    });
+    // A cold subscriber forces the read, and the rows under it are the ones it was forced to replace.
+    await app.seat('s2');
+
+    await drain(app, ws);
+    expect(snapshots(ws)).toEqual([]);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(true);
+
+    release();
+    await Bun.sleep(0);
+    await drain(app, ws);
+    expect(snapshots(ws)).toHaveLength(1);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
+  });
+
+  test('a mark refused during a read is repaired when the read lands, with no second drain', async () => {
+    let held: Promise<void> | null = null;
+    const app = harness({
+      snapshot: async () => {
+        await held;
+        return { rows: ROWS, lsn: '' };
+      },
+    });
+    const ws = await dropped(app);
+    app.registry.invalidate();
+    let release = (): void => undefined;
+    held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await app.seat('s2');
+    await drain(app, ws);
+    expect(snapshots(ws)).toEqual([]);
+
+    release();
+    await Bun.sleep(0);
+
+    expect(snapshots(ws)).toHaveLength(1);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
+  });
+
+  /** The node's sweep, on Bun's fake timers: `start()` arms it at a quarter of the idle budget. */
+  const sweep = async (): Promise<void> => {
+    jest.advanceTimersByTime(1_000);
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+  };
+
+  test('a window nothing trusts is re-read by the sweep, and its marks answered', async () => {
+    let reads = 0;
+    const app = harness({
+      idleTimeoutMs: 60_000,
+      snapshot: async () => {
+        reads += 1;
+        return { rows: ROWS, lsn: '' };
+      },
+    });
+    const ws = await app.seat('s1');
+    app.registry.invalidate();
+    ws.sent.length = 0;
+    const before = reads;
     jest.useFakeTimers();
     await app.node.start();
 
-    app.tick(10_000);
-    await elapse(1_400);
+    jest.advanceTimersByTime(15_000);
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
 
-    expect(await held(app, 's1')).toEqual(NOTHING);
-    expect(ws.closedWith).toBe(CLOSE.idle);
+    expect(reads).toBe(before + 1);
+    expect(snapshots(ws)).toHaveLength(1);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
+
+    // Nothing left marked: the next pass reads nothing and sends nothing.
+    jest.advanceTimersByTime(15_000);
+    for (let turn = 0; turn < 5; turn += 1) await new Promise((resolve) => setImmediate(resolve));
+    expect(reads).toBe(before + 1);
+    expect(snapshots(ws)).toHaveLength(1);
     await app.node.stop();
   });
 
-  test('a socket inside its idle budget is left alone', async () => {
-    const app = harness({ idleTimeoutMs: 4_000 });
-    await app.seat('s1');
+  test('a gate that cannot decide is retried by the sweep, with no drain and no change', async () => {
+    let broken = false;
+    const app = harness({
+      idleTimeoutMs: 4_000,
+      visible: () => {
+        if (broken) throw POLICY_STORE_DOWN;
+        return true;
+      },
+    });
+    const ws = await dropped(app);
+    broken = true;
+    await drain(app, ws);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(true);
+    broken = false;
     jest.useFakeTimers();
     await app.node.start();
+    app.sockets.get('s1')?.touch();
 
-    app.tick(1_000);
-    await elapse(1_400);
+    await sweep();
 
-    expect(app.sockets.count).toBe(1);
+    expect(snapshots(ws)).toHaveLength(1);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
     await app.node.stop();
+  });
+
+  test('a drain during a read waits it out and repairs, with nothing else to re-run it', async () => {
+    let held: Promise<void> | null = null;
+    const app = harness({
+      snapshot: async () => {
+        await held;
+        return { rows: ROWS, lsn: '' };
+      },
+    });
+    const ws = await dropped(app);
+    let release = (): void => undefined;
+    held = new Promise((resolve) => {
+      release = resolve;
+    });
+    // A read no landing repair follows: discarded, because a change passes it while it is out.
+    await app.seat('s2');
+    await app.registry.deliver(change(3));
+    ws.buffered = 4 * 1024 * 1024;
+    await app.registry.deliver(change(4));
+    ws.buffered = 0;
+    ws.sent.length = 0;
+
+    await drain(app, ws);
+    expect(snapshots(ws)).toEqual([]);
+    release();
+    await Bun.sleep(0);
+
+    expect(snapshots(ws)).toHaveLength(1);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
+  });
+
+  test('a read whose answer the window moved past leaves its marks repairable', async () => {
+    let held: Promise<void> | null = null;
+    const app = harness({
+      snapshot: async () => {
+        await held;
+        return { rows: ROWS, lsn: '' };
+      },
+    });
+    const ws = await dropped(app);
+    let release = (): void => undefined;
+    held = new Promise((resolve) => {
+      release = resolve;
+    });
+    await app.seat('s2');
+    // Folded while the read is out, so what it answers is behind the window and is discarded.
+    await app.registry.deliver(change(3));
+    ws.buffered = 4 * 1024 * 1024;
+    await app.registry.deliver(change(4));
+    ws.buffered = 0;
+    ws.sent.length = 0;
+    release();
+    await Bun.sleep(0);
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(true);
+
+    await drain(app, ws);
+
+    const frame = snapshots(ws)[0];
+    if (frame?.type !== 'snapshot') expect.unreachable('the repair is a snapshot');
+    expect(frame.rows[0]?.['title']).toBe('v4');
+    expect(app.sockets.get('s1')?.desynced.has(SID)).toBe(false);
+  });
+
+  test('a subscription dropped meanwhile is not repaired', async () => {
+    const app = harness();
+    const ws = await dropped(app);
+    app.registry.unsubscribe('s1', SID);
+
+    await drain(app, ws);
+
+    expect(snapshots(ws)).toEqual([]);
   });
 });

@@ -3,80 +3,57 @@
 // document (head + the route's component, the surface's CSS LINKED, `style-bundle.ts`), it never
 // decides what a mode means or what headers it earns.
 
-import { actionPathStyle } from '@ultimat3/action';
 import { clientScopeOf } from '@ultimat3/auth';
 import type { Actor, Ctx } from '@ultimat3/core';
-import { CLIENT_SCOPE_HEADER, escapeHtml, singleFlight } from '@ultimat3/core';
+import { CLIENT_SCOPE_HEADER, singleFlight } from '@ultimat3/core';
 import type {
   RouteMeta as HttpRouteMeta,
   RedirectIntent,
   RequestContext,
   Route,
-  RouteParams,
   UltimateRequest,
 } from '@ultimat3/http';
-import { asCtx, html, NO_STORE, redirect, stream, takeRedirect } from '@ultimat3/http';
-import { currentLocale } from '@ultimat3/i18n';
-import type { IslandCollector, RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
 import {
-  clientPathStyleTags,
-  clientPersistTags,
-  clientScopeTag,
-  clientSyncTags,
+  asCtx,
+  html,
+  NO_STORE,
+  redirect,
+  stream,
+  takeRedirect,
+  withAnonymousRequest,
+} from '@ultimat3/http';
+import type { RenderResult, RouteData, RouteEntry } from '@ultimat3/render';
+import {
   documentCarriesScope,
-  headFromMeta,
   hydrateRuntime,
-  metaContextFor,
-  renderHead,
   routeDataFor,
   routeEntries,
   routeFor,
   routeStatusOf,
-  seoRenderers,
 } from '@ultimat3/render';
 import type { IsrController } from '@ultimat3/render/server';
 import {
   contentHash,
-  ROOT_ELEMENT_ID,
-  renderComponent,
   renderSsr,
   ssrHeaders,
   staticHeaders,
   streamResult,
 } from '@ultimat3/render/server';
-import { loadAppConfig } from './app-config-load';
-import type { DocumentOptions } from './document-options';
-import { routeQuery } from './isr-query-guard';
 import {
   type NavigationDocumentHead,
   navigationMetaOf,
-  navigationTagsOf,
   principalRelocation,
 } from './page-navigation';
 import { bootScript, collectorFor } from './route-islands';
 import { addressedUrl } from './runtime-address';
 import { attachedIsr } from './runtime-isr';
 import { isrOutcome } from './runtime-isr-outcome';
-import { siteAssetTable } from './site-assets';
+import type { DevRouteData, RenderOptions } from './runtime-render-document';
+import { documentFrom, headFor, lang, routeBody, stylesFor } from './runtime-render-document';
 import type { StaticResult } from './static-document';
 import { createStaticMemo, staticMemoKey, staticResponse } from './static-document';
-import { styleBundle } from './style-bundle';
 
 export type { DocumentOptions, IslandResolver } from './document-options';
-
-/**
- * The app-wide favicon head, from `site.favicon`: the content-hashed URL `asset('assets/….svg')`
- * returns and `/assets/*` serves, never the raw path. Per render, never frozen at boot.
- */
-export async function appFaviconHead(root: string): Promise<string | undefined> {
-  const favicon = (await loadAppConfig(root))?.site.favicon;
-  if (favicon === undefined) return undefined;
-  const url = siteAssetTable(root).resolve(favicon).url;
-  return `<link rel="icon" type="image/svg+xml" href="${escapeHtml(url)}">`;
-}
-
-/** `DocumentOptions`, plus the app root the app's own favicon is resolved against per render. */
-export type RenderOptions = DocumentOptions & { readonly root?: string };
 
 export interface DevRenderOptions extends RenderOptions {
   readonly buildId: string;
@@ -92,130 +69,6 @@ export interface DevRenderOptions extends RenderOptions {
    */
   readonly memoStatic?: boolean;
 }
-/** What a route's `meta(data)` is given. `url` is a string because that is what `ld.*` embeds. */
-export interface DevRouteData extends Record<string, unknown> {
-  readonly url: string;
-  readonly params: RouteParams;
-}
-/**
- * `<html lang>` is the request's own locale, never a constant: the `locale` stage negotiated it
- * one stage before this handler and published it on the context, so a hardcoded `'en'` shipped
- * every document mislabelled — wrong for a screen reader, wrong for `hreflang`. Outside a request
- * (`x build`'s prerender) it is the app's own configured fallback.
- */
-const lang = (): string => currentLocale();
-
-/**
- * `scope` is present only on a PRIVATE document (a gated `ssr` page, every `stream`): the page's
- * client scope (`@ultimat3/auth`'s `clientScopeOf`), which core's `pageClient()` reads to fence its
- * one store per principal. A shareable document carries NO scope tag — absent means "not rendered
- * for anyone", a different answer from `''`, the anonymous page.
- */
-const headFor = async (
-  entry: RouteEntry,
-  ctx: DevRouteData,
-  data: RouteData,
-  options: RenderOptions,
-  scope?: string,
-): Promise<string> => {
-  const meta = metaContextFor(ctx, data);
-  const url = new URL(ctx.url);
-  const router = navigationTagsOf(options.navigation, entry, meta.t);
-  return (
-    renderHead(
-      headFromMeta(
-        await entry.config.meta(meta),
-        seoRenderers({
-          path: url.pathname,
-          baseUrl: options.origin ?? url.origin,
-          // The default is the cluster's own head (`alternates` is default-first by contract), so
-          // `x-default` comes from the list the hreflang tags do — never a second locale read.
-          localization: {
-            locale: meta.locale,
-            defaultLocale: meta.alternates[0]?.locale ?? meta.locale,
-            alternates: meta.alternates,
-          },
-        }),
-        [
-          ...(options.sync === undefined ? [] : clientSyncTags(options.sync)),
-          // Every document, shareable ones included: the style is the app's, not a visitor's, and
-          // it is the only way an island's `rpc()` learns it. Read per render — `defineApi` may run
-          // after these routes are built. `'resource'`, the default, is no tag.
-          ...clientPathStyleTags(actionPathStyle()),
-          ...router,
-          // The page boot rides the scope tag: its whole job — restoring a principal's persisted
-          // records and replaying its queued writes — is per principal, and a shareable document
-          // (no scope tag) has neither.
-          ...(scope === undefined
-            ? []
-            : [clientScopeTag(scope), ...clientPersistTags(options.persisted?.() ?? [])]),
-        ],
-      ),
-    ) +
-    (options.themeHead ?? '') +
-    // One mechanism per document: the router prefetches for itself, the browser for the rest.
-    (router.length === 0 ? (options.speculationHead ?? '') : '') +
-    // The app's own favicon: one link, every document, the URL the table resolves NOW.
-    ((options.root === undefined ? options.faviconHead : await appFaviconHead(options.root)) ??
-      '') +
-    // Per locale: each links its own locale's manifest (`PwaArtifacts.headFor`).
-    (typeof options.pwaHead === 'function' ? options.pwaHead(meta.locale) : (options.pwaHead ?? ''))
-  );
-};
-
-/**
- * `<link rel="stylesheet">` for the surface's own stylesheets, or nothing at all when the surface
- * imports none.
- *
- * In `<head>`, which is what keeps this a swap and not a regression: a `<link rel="stylesheet">`
- * there is render-blocking in every browser, exactly as the inline block was, so there is no window
- * in which the document paints unstyled. Moving it to the body, or deferring it, would introduce a
- * flash — never do that here.
- *
- * Read through `styleBundle()` rather than passed in through `DocumentOptions`: the registry it
- * derives from is process-global (importing the app IS what fills it), so a caller that forgot to
- * thread a resolver would serve a document with no CSS at all. One reader, and it is the same one
- * `styleRoutes` serves from.
- */
-const styleTag = (entry: RouteEntry): string => {
-  const href = styleBundle().hrefFor(entry.surface);
-  return href === undefined ? '' : `<link rel="stylesheet" href="${href}">`;
-};
-
-/** The surface stylesheet, then the app's brand — the order that lets the brand win the cascade. */
-const stylesFor = (entry: RouteEntry, options: DocumentOptions): string =>
-  styleTag(entry) + (options.brandHead ?? '');
-
-/**
- * The route's rendered body, inside the hydration root. Every mode goes through here — an empty
- * root is what a module exporting no component renders, and nothing else: `spa` was the one mode
- * that never reached this function, so every `spa` route ever declared served an empty root.
- */
-export async function routeBody(
-  entry: RouteEntry,
-  ctx: DevRouteData,
-  data: RouteData,
-  islands: IslandCollector,
-): Promise<string> {
-  if (entry.component === undefined) return `<div id="${ROOT_ELEMENT_ID}"></div>`;
-  const url = new URL(ctx.url);
-  const html = await renderComponent(
-    entry.component,
-    // `data` is the route's own `load` result and is what `meta` was just given — the same object,
-    // never a second resolution. `query` is supplied because a page that reads `props.query.x`
-    // otherwise dereferences undefined and takes the whole render down.
-    {
-      data,
-      params: ctx.params,
-      url: ctx.url,
-      query: routeQuery(entry, url),
-    },
-    entry.file,
-    { islands },
-  );
-  return `<div id="${ROOT_ELEMENT_ID}">${html}</div>`;
-}
-
 /**
  * Head + body for one route render — the document `x dev` serves, which the build's prerenderer
  * must emit too.
@@ -260,33 +113,6 @@ function documentScope(entry: RouteEntry, buildId: string, actor: Actor): string
         ? clientScopeOf(actor)
         : undefined;
   }
-}
-
-/**
- * The document from data ALREADY resolved. Split from `routeDocument` so one request resolves
- * `load` exactly once: `stream` renders head and body separately, and resolving in each would let
- * a `<title>` describe content the body does not contain.
- *
- * The hydration runtime is appended after the body and only after it: what strategies a page needs
- * is a fact about the islands the walk just recorded, so emitting it earlier would guess or ship
- * the whole runtime to a page with no island.
- */
-async function documentFrom(
-  entry: RouteEntry,
-  ctx: DevRouteData,
-  data: RouteData,
-  options: RenderOptions,
-  scope?: string,
-): Promise<string> {
-  const islands = collectorFor(entry, options, scope);
-  const [head, body] = await Promise.all([
-    headFor(entry, ctx, data, options, scope),
-    routeBody(entry, ctx, data, islands),
-  ]);
-  return (
-    `<!doctype html><html lang="${lang()}"><head>${head}${stylesFor(entry, options)}</head>` +
-    `<body>${body}${bootScript(entry, islands, options, scope)}${hydrateRuntime(islands.directives)}</body></html>`
-  );
 }
 
 /** Every mode but `isr`, which `renderIsr` answers: its `load` runs only when the store misses. */
@@ -468,6 +294,21 @@ async function renderEntry(
   const at = entry.config.render === 'static' ? addressedUrl(request.url, ctx) : request.url;
   const data: DevRouteData = { url: at.href, params: ctx.params };
   if (entry.config.render === 'isr') return renderIsr(entry, data, ctx, options, isr);
+  // A `static` document is kept and answered to every later visitor, so it is rendered as nobody,
+  // `load` and document both: the memo and a CDN would otherwise hold this visitor's answer.
+  if (entry.config.render === 'static') {
+    return withAnonymousRequest(ctx, at, (scope) => loadAndRender(entry, data, scope, options));
+  }
+  return loadAndRender(entry, data, ctx, options);
+}
+
+/** Every mode but `isr`, whose `load` is inside its producer (`runtime-isr-outcome.ts`). */
+async function loadAndRender(
+  entry: RouteEntry,
+  data: DevRouteData,
+  ctx: RequestContext,
+  options: DevRenderOptions,
+): Promise<Rendered> {
   // ONCE per request, before the mode is chosen: every branch of `resultFor` reads this same
   // object, so a route's `load` runs exactly once however its mode splits head from body.
   const loaded = await routeDataFor(entry.config, data);
@@ -494,7 +335,14 @@ async function renderIsr(
 ): Promise<Rendered> {
   const document = (loaded: RouteData, at: DevRouteData): Promise<string> =>
     documentFrom(entry, at, loaded, options);
-  const outcome = await isrOutcome({ entry, data, ctx, isr, document });
+  const outcome = await isrOutcome({
+    entry,
+    data,
+    ctx,
+    isr,
+    document,
+    origin: options.origin,
+  });
   if (outcome.kind === 'redirect') return { respond: () => loadRedirect(entry, outcome.to) };
   return { respond: () => responseOf(outcome.result) };
 }

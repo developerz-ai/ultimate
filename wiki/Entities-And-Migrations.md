@@ -174,6 +174,95 @@ Removing the key is a real option, not a hedge: inference (steps 2–4) still ap
 | Cache keys | framework-generated from the query name, its parsed input and its tags — never hand-built. The tenant reaches the key through the **input**, so a `cache:` read must take it there ([Caching and invalidation](Caching-And-Invalidation)) |
 | Live queries | the tenant predicate is part of the matcher, not a post-filter |
 | Vector search | tenant + policy filters applied **in SQL**, so similarity search cannot leak across tenants |
+| Foreign keys | a reference holds its two ends to one tenant, in the database: below |
+
+### Same-tenant keys
+
+A `references()` with both ends tenant-scoped is a composite key, and refuses a row pointing into another tenant. `As of 2026-11-02`, the default.
+
+```ts
+import { entity, text, uuid } from '@ultimat3/entity';
+
+const orgs = entity('orgs', { columns: { id: uuid().primaryKey() } });
+const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().references(() => orgs.id).tenant() },
+});
+const items = entity('items', {
+  columns: { id: uuid().primaryKey(), orgId: uuid().references(() => orgs.id).tenant() },
+});
+
+export const comments = entity('comments', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => orgs.id).tenant(),
+    postId: uuid().references(() => posts.id), // (org_id, post_id) -> posts (org_id, id)
+    // the plain key, on purpose
+    catalogId: uuid().references(() => items.id, { crossTenant: 'a shared catalog row' }),
+    body: text(),
+  },
+});
+```
+
+| Edge | Key |
+|---|---|
+| both ends scoped | `<table>_<column>_tenant_fkey` over `(tenant, column)`. A self-reference too |
+| an end with no tenant (`orgId -> orgs.id`), or the tenant column itself | the plain `<table>_<column>_fkey` |
+| `crossTenant: '<reason>'` | the plain key. A blank reason, and a reason on an edge that was never same-tenant, are `X_INVARIANT_VIOLATED` |
+| a null key | checked by nobody, as on any foreign key |
+
+| Question | Answer |
+|---|---|
+| The refusal | `X_DB_FOREIGN_KEY_VIOLATION`, the same code and text as a dangling id: no existence oracle |
+| Raw SQL | meets the same key. It is the database's, not the repo's |
+| Memory driver | refuses a target **found under another tenant**, same code. Not found stays accepted: it enforces no foreign key at all |
+| The index behind it | a unique `(tenant, column)` on the target, one per referenced table, skipped when a total unique over those columns exists. `x db gen` declares it for you, and keeps it while a retired column's key still needs it |
+| `onDelete: 'set null'` | written `on delete set null (<column>)`, or the tenant column would go too. Needs Postgres 15+ |
+| Onto live tables | `x db gen "same-tenant keys"`: all deferred, in order — build the index, add the key `not valid`, validate, drop the old key. Writes keep landing and the old key holds until the new one validates |
+| Validate fails `X_DB_FOREIGN_KEY_VIOLATION` | rows already point across tenants, and that is the finding. Decide those rows, or state `crossTenant` on an edge that means it |
+
+### Locking a row or a key
+
+A read-modify-write through the handle loses updates. `db.<table>.lock` does not. `As of 2026-11-02`.
+
+```ts
+import { database, entity, integer, type Tx, uuid } from '@ultimat3/entity';
+
+const posts = entity('posts', {
+  columns: { id: uuid().primaryKey(), likeCount: integer().default(0) },
+});
+const invoices = entity('invoices', {
+  columns: { id: uuid().primaryKey(), number: integer() },
+});
+const db = database({ posts, invoices });
+declare function nextNumber(year: number, tx: Tx): Promise<number>;
+
+export async function like(postId: string): Promise<void> {
+  await db.posts.lock(postId, async (post, tx) => {
+    await db.posts.update(postId, { likeCount: post.likeCount + 1 }, { tx });
+  });
+}
+
+export async function nextInvoice(year: number): Promise<number> {
+  return db.invoices.lockKey(`number:${String(year)}`, async (tx) => nextNumber(year, tx));
+}
+```
+
+| | `lock(id, (row, tx) => R, options?)` | `lockKey(key, (tx) => R, options?)` |
+|---|---|---|
+| Postgres | `select … for update`, the read path's own statement | `pg_advisory_xact_lock(hashtextextended('<table>:<tenant or ->:<key>', 0))` |
+| Scope | that row | one key, one table, one tenant: org A's key never blocks org B |
+| Absent, another tenant's, soft-deleted | `X_NOT_FOUND` | n/a |
+| No actor on a scoped entity | `X_TENANCY_UNSCOPED`, as a read | `X_TENANCY_UNSCOPED`, as a read |
+| Blank key | n/a | `X_INVARIANT` |
+
+| Rule | Detail |
+|---|---|
+| Transaction | its own, committed when `fn` returns, rolled back when it throws. Nested in `withTransaction` it is a savepoint, and the lock lives to the root COMMIT |
+| Writes inside `fn` | with `{ tx }`, the rule on every write. Memory undoes only what names it |
+| Bound | no wait option. The role's `statement_timeout`. A deadlock is `X_DB_SERIALIZATION_FAILURE` |
+| Memory driver | a queue per key, reentrant within one async chain; a nested lock joins the outer one's transaction; `update(id)` and `delete(id)` wait for a row's holder, the filtered writes and `upsertAll` do not; a waiter past 5 s is `X_DB_STATEMENT_TIMEOUT`, Postgres' code, usually two locks taken in opposite order |
+| A hand-written `Repo` | both are optional on the contract; the handle answers `X_LOCK_UNSUPPORTED` |
+| `crossTenant()` with no `orgId` | holds its own `<table>:-:<key>`, no org's. Name `orgId` to take that org's key |
 
 ## The repo
 
@@ -213,13 +302,15 @@ export const db = database(entities, { driver });
 | tenancy — every read runs under the actor's org | an org parameter, a `.where({ orgId })`, an `org_id = …` in SQL. No function in a generated repo takes or names an org. A read with no actor is `X_TENANCY_UNSCOPED`; an actor with no org is `X_TENANCY_ACTOR_ORG_REQUIRED`; a row written for another org is `X_TENANCY_ACTOR_MISMATCH` |
 | codecs — money, timestamps, [sealed columns](#sealed-columns) | row decoding, a column list, money's three columns |
 | paging — `.limit(n)`, then `.after(cursor).page()` | an offset, or a paging module |
-| the transaction — inside `withTransaction` the handle is the transaction | a client argument |
+| the transaction — inside `withTransaction` the handle is the transaction, and a statement on it after the scope ended is `X_DB_TRANSACTION_CLOSED`: `await` it, or `outsideTransaction(fn)` for work that must outlive the scope | a client argument |
+| locks — `db.posts.lock(id, fn)` for a row, `db.posts.lockKey(key, fn)` for a key, both under the tenant | `for update` by hand, or an advisory lock |
+| abandonment — once `ctx.signal` is aborted with a coded reason (`X_TIMEOUT`, a job's cancellation) a write rethrows that reason: a transaction rolls back and neither driver writes. A client hang-up is not a refusal. `runToCompletion(fn)` for work that must land | a check of the signal before each write |
 
 | Raw `sql` | Where |
 |---|---|
 | belongs | a `query`'s source, built with `from()`; a migration |
 | is the exception | a `repo.ts`, for what the handle cannot say: a join, an aggregate, a CTE, a window |
-| is refused | a `repo.ts`, for `select *` / `insert` / `update` / `delete` on one table |
+| is refused | a `repo.ts`, for `select *` / `insert` / `update` / `delete` on one table, and `select * … where id = ? for update` (`db.<table>.lock(id, fn)`) |
 
 | Enforced by | What fails |
 |---|---|
@@ -355,6 +446,8 @@ await db.checkpoints.update(id, { cursor: batches.cursor });   // resume with .a
 | Closing | `break`, `return` and a throw all stop the next statement; `await using` is the same guarantee for a handle held in a variable, and `close()` is idempotent. One handle is one iteration — a second `for await` continues it rather than restarting the table |
 | Batch size | a whole number of rows, at least one. A chain that also called `limit()` is `X_INVARIANT_VIOLATED`: one number with two meanings, and neither reading is safe to guess |
 | Sort order | an ordering no cursor can carry is refused at `inBatches()`, not one batch later — a result that fits in a single batch mints no cursor, so deferring it would hide the mistake until the table grew. **An ordinary nullable sort column is no longer one of them, `As of 2026-08-24`**: NULL has a written-down place (`asc nulls last` / `desc nulls first`), the cursor carries it and the seek reaches it. What is refused is a **nullable primary-key column** — the tiebreak `totalOrder` appends precisely so two rows sharing a sort value cannot straddle a page boundary, and `null = null` is unknown, so it cannot do that job. Reachable only through `primaryKey: [...]`; drop `.nullable()` from the column |
+| Unsortable kinds | `orderBy` on a `json`, `bytes` or array column is refused at plan time, at any row count (`X_INVARIANT_VIOLATED`). It paged wrongly or threw past page 1. Order by a scalar |
+| Patches | `update`, `updateWhere` validate named columns, with `insert`'s issues, before the statement, on both drivers. Absent stays absent, `null` clears a nullable column |
 | Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
 
 ## A count per row is one grouped count
@@ -389,7 +482,8 @@ that already exists, over exactly the rows `count()` counts.
 ## Writing many rows is one statement
 
 The sections above make a read loop stop being N statements. A loop of `insert()` calls is
-the same defect on the write side, and `insertAll`/`upsertAll` are its answer, `As of 2026-08`:
+the same defect on the write side, and `insertAll`/`upsertAll` are its answer, `As of 2026-08`. Each
+call is all or nothing, `As of 2026-11-02`:
 
 ```ts
 await db.tags.insertAll(names.map((name) => ({ orgId, name })));   // one statement, n rows
@@ -411,14 +505,14 @@ already stored is skipped and absent, which is how a caller counts what it actua
 | Property | Behavior |
 |---|---|
 | One builder | every insert in the framework compiles through the same function, so `insertAll([row])` is the text `insert(row)` always produced. There is no second insert path to drift |
-| What a collision writes | every column the batch names, minus the conflict target (how the row was found), minus the primary key (where it lives) and minus the soft-delete stamp (whether the row is there at all). Moving either of the first two moves a row nobody asked to move, and every foreign key pointing at that id misses it |
+| What a collision writes | every column the batch's rows **named** (defaults `$parse` fills reach a new row only, so an unnamed `createdAt` or `label` keeps its stored value; `onUpdateNow()` columns move), minus the conflict target (how the row was found), minus the primary key (where it lives) and minus the soft-delete stamp (whether the row is there at all). Moving either of the first two moves a row nobody asked to move, and every foreign key pointing at that id misses it |
 | A soft-deleted row it lands on | stays deleted, and takes the batch's other columns. A stamped row still occupies its conflict target — that unique index is not partial — so writing `deletedAt` from the incoming row would bring back a row the app deleted, which is the resurrection `update()` and `updateWhere()` refuse by carrying `deleted_at is null`. `insertAll` is unaffected: a row that collides with nothing writes the stamp it carries |
 | Conflict target | properties of a **declared** unique constraint — the primary key, a `unique()` column, an `indexes: [{ on, unique: true }]` entry, or an `invariant(name, c.unique([…]))`. Anything else is `X_INVARIANT_VIOLATED` here rather than `42P10` from the server |
 | Tenancy | on a tenant-scoped entity, `onMatch: 'update'` requires the tenant column *inside* the conflict target, else `X_TENANCY_UNSCOPED`: an upsert builds no read plan, so a target that omits it matches another tenant's row and rewrites it. `'nothing'` is allowed — it writes nothing to a row it does not own |
 | A batch repeating itself | two rows with one conflict target under `'update'` is refused: Postgres answers that statement `ON CONFLICT DO UPDATE command cannot affect row a second time`, so it cannot pass in memory either |
-| Uneven batches | under `'update'` every row names the same columns — `excluded.<column>` for a row that omitted one is that column's *default*, not the stored value. `insertAll` and `'nothing'` accept an uneven batch and render `default` in the missing cell |
+| Uneven batches | under `'update'` every row names the same columns — `excluded.<column>` for a row that omitted one is that column's *default*, not the stored value. `insertAll` and `'nothing'` accept an uneven batch and render `default` in the missing cell. A property present with `undefined` is absent here as in every write: refused beside a row writing a value, and left out of the set list when no row writes one |
 | Nulls | a null in the conflict target collides with nothing, in both drivers — a Postgres unique index is `NULLS DISTINCT` |
-| Size | past 65535 bind parameters the batch is several statements, never one the server refuses. Wrap the call in `withTransaction` when all-or-nothing matters |
+| Size | past 65535 bind parameters the batch is several statements inside one transaction (a savepoint inside an open `withTransaction`), never one the server refuses. A failure in any chunk leaves no row of the batch, in both drivers; one chunk stays one autocommit statement, no `BEGIN`. Partial progress is yours to ask for: split the batch and call once per part |
 
 There is no `updateAll`: `updateWhere(filter, patch)` and `deleteWhere(filter)` are already the
 bulk forms of `update` and `delete`, and a second spelling of one of them would be a second path.
@@ -724,7 +818,7 @@ More in [MCP and AI](MCP-And-AI).
 | Pre-deploy | `ROLE=migrate` container | run-once hook, same image; waits on the session-pinned migration lock while another version's migration is in flight, then applies. The wait is bounded at 60s (`As of 2026-08`) — past that it exits non-zero with `X_MIGRATE_CONCURRENT` instead of hanging the rollout |
 | Test template | automatic | migrate + seed once into `myapp_test_tpl`, then clone per worker |
 
-Prod ordering is fixed: `ROLE=migrate` completes, then `web` / `sync` / `worker` / `scheduler` roll. Migrations are forward-compatible with the previous release so a rolling restart never serves a request against a schema it cannot read. See [Deployment](Deployment).
+Prod ordering is fixed: `ROLE=migrate` completes, then `web` / `sync` / `worker` / `scheduler` roll. A generated migration is forward-compatible with the previous release, so a rolling restart never serves a request against a schema it cannot read: a column drop takes two releases through `retired: ['<c>']` (refused otherwise, `X_MIGRATION_ROLLING_UNSAFE`), and a key or CHECK on a live table is added without stopping writes → [Migrations And Backfills](Migrations-And-Backfills). See [Deployment](Deployment).
 
 ## Drift is a `x verify` failure
 
@@ -790,13 +884,13 @@ answer both.
 | Rule | Detail |
 |---|---|
 | Every migration has a `down` | `x db gen` writes both halves of one file, split by a lone `-- down` line |
-| A generated drop | refuses with `X_MIGRATION_IRREVERSIBLE` — its `down` cannot restore the rows. Re-run with `x db gen "<name>" --allow-destructive` |
+| A generated column drop | takes two releases. Not retired first: `X_MIGRATION_ROLLING_UNSAFE`, whose fix prints the path. Retired: `X_MIGRATION_IRREVERSIBLE` — its `down` cannot restore the rows — until `x db gen "<name>" --allow-destructive` |
 | A changed primary key | `As of 2026-10-02`: `alter table … drop constraint if exists "<table>_pkey"` ahead of the table's column statements and `add constraint "<table>_pkey" primary key (…)` after them, reversed in `down`. Until then it wrote **no statement** and `x db gen` re-recorded the hash sidecar as if nothing had changed. A key another table's foreign key is written against refuses with `X_MIGRATION_IRREVERSIBLE` naming those constraints: drop the keys in one migration, change the key in the next,  restore them in a third. A key over a column the same migration adds with no default refuses the same way — every existing row would hold `NULL` there: add the column, backfill it, then key it. A nullable column leaving the key gets `drop not null`, in `up` and in `down`, because Postgres keeps a key column `NOT NULL` after the key is gone |
 | A destructive `up` | must carry `-- destructive: true` as a line in the file. `x db gen` writes it for you; an unmarked one fails `x verify`'s `drift` step with `X_MIGRATION_DESTRUCTIVE` |
 | What counts as destructive | `drop table`, `drop column`, `truncate`, `alter column … type` — a closed list. `drop constraint`, `drop default`, `drop not null` and `drop index` do not: the database rebuilds those. A truncate is a statement that **starts with** `TRUNCATE`. `create trigger … before truncate` and `grant`/`revoke … truncate` only name the operation to guard or permit it, and are not truncates (`As of 2026-09-24`, #522) |
 | Only `up` is judged | reversing a `create table` is a `drop table`, so a rail that read `down` would mark every migration ever generated |
 | Mark it before it is applied | the marker is SQL the checksum covers, so adding it to an applied migration is an edit — `X_MIGRATION_CONFLICT`, correctly |
-| Rollout | a marked drop still wants a rollout note; prefer expand → migrate → contract across two releases |
+| Rollout | expand → migrate → contract across two releases is what the generator enforces for a column: `retired`, deploy, drop |
 
 ```sql
 -- 20260814120000_drop_legacy

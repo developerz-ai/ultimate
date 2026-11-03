@@ -102,8 +102,27 @@ export function offsetAt(zone: TimeZone, at: Instant): number {
     parts.minute,
     parts.second,
   );
-  // Offsets are whole minutes; rounding absorbs the sub-second part `asIfUtc` drops.
+  // Rounded for a label: modern offsets are whole minutes, a historic one is `offsetSecondsAt`'s.
   return Math.round((asIfUtc - at.getTime()) / 60_000);
+}
+
+/**
+ * The same difference in SECONDS, unrounded: what an instant is computed from. A zone's history
+ * holds offsets off the minute (Africa/Monrovia was -00:44:30 until 1972), and rounding one moved
+ * every instant built from it. Internal: a label and `offsetMinutes` are the public reading.
+ */
+export function offsetSecondsAt(zone: TimeZone, at: Instant): number {
+  const parts = zonePartsAt(zone, at);
+  const asIfUtc = utcEpoch(
+    parts.year,
+    parts.month,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  // Whole seconds on both sides: the wall clock above has dropped the milliseconds.
+  return (asIfUtc - Math.floor(at.getTime() / 1000) * 1000) / 1000;
 }
 
 /** `+01:00`, `-04:00`, `+05:45`, `Z`. */

@@ -5,6 +5,7 @@ export type { AcceptSignedUploadInput, SignedRequestInput } from './accept';
 export { acceptSignedUpload, readSignedObject, signedUploadConstraints } from './accept';
 export type {
   AttachmentTarget,
+  DeleteVariantsInput,
   PromoteAttachmentInput,
   ReleaseQuarantineInput,
   SweepFailure,
@@ -14,6 +15,7 @@ export type {
 export {
   attachmentKey,
   attachmentPrefix,
+  deleteVariants,
   isPendingKey,
   isQuarantinedKey,
   PENDING_SEGMENT,
@@ -30,6 +32,7 @@ export {
 } from './attachment';
 export type {
   ByteLimit,
+  CopyOptions,
   ListOptions,
   PutOptions,
   ServerSideEncryption,
@@ -120,7 +123,10 @@ export {
   srcsetDescriptors,
   transformImage,
   VARIANT_FORMATS,
+  variantFormatOf,
   variantKey,
+  variantRevision,
+  variantSourceOf,
 } from './image';
 export type {
   LockedAction,
@@ -178,15 +184,25 @@ export {
 } from './signing-secret';
 export type { Storage, StorageConfig } from './storage';
 export { definedStorage, defineStorage, disk, resetStorage, storage } from './storage';
-export type { UploadCandidate, UploadPolicy, UploadPolicyInit, ValidatedUpload } from './upload';
+export type {
+  StoredHeadCandidate,
+  UploadCandidate,
+  UploadPolicy,
+  UploadPolicyInit,
+  ValidatedHead,
+  ValidatedUpload,
+} from './upload';
 export {
   contentTypeMatches,
   DEFAULT_MAX_UPLOAD_BYTES,
   DOCUMENT_CONTENT_TYPES,
   IMAGE_CONTENT_TYPES,
+  MAX_LEADING_WHITESPACE,
   normalizeContentType,
+  SNIFF_WINDOW_BYTES,
   sniffContentType,
   uploadPolicy,
+  validateStoredHead,
   validateUpload,
 } from './upload';
 export type {

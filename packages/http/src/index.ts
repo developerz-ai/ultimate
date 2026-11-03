@@ -37,6 +37,7 @@ export {
   useRequestCookie,
   useRequestHeader,
   useRequestHeaders,
+  withAnonymousRequest,
 } from './context';
 export type { InboundCorrelation } from './correlation';
 export type { CorsConfig } from './cors';
@@ -127,6 +128,13 @@ export {
   redirectForRouter,
   relocate,
 } from './navigation';
+export type {
+  ObjectRequest,
+  ObjectResponseOptions,
+  ObjectSource,
+  ServableObject,
+} from './object-response';
+export { notModified, objectResponse } from './object-response';
 export type { OverlayMeta, OverlayNotice } from './overlay';
 export { overlayResponse, wantsOverlay } from './overlay';
 export { OVERLAY_STYLE } from './overlay-style';

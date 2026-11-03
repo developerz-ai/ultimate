@@ -132,7 +132,10 @@ describe('generateMigration · invariants', () => {
     });
     expect(migration.up).toContain(
       `alter table "members" add constraint "members_member_email_shape_check" ` +
-        `check (position('@' in email) > 1);`,
+        `check (position('@' in email) > 1) not valid;`,
+    );
+    expect(migration.followUp?.up).toContain(
+      'alter table "members" validate constraint "members_member_email_shape_check";',
     );
     expect(migration.up).toContain(
       'create unique index "members_member_unique_per_org_key" on "members" ("org_id", "user_id");',

@@ -279,7 +279,7 @@ import { formatMoney } from '@ultimat3/money';
 
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-5-5',
   input:  t.object({ postId: t.uuid }),
   output: t.object({ summary: t.string, tags: t.string.array() }),
   prompt: summarizePrompt,                       // versioned artifact

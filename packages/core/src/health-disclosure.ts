@@ -2,7 +2,7 @@
 // outside every pipeline, so the body is a stranger's to read: everyone gets the verdict, and the
 // build id, the in-flight count and the readiness check names go only to a listed peer.
 
-import { classifyAddress } from './address-class';
+import { peerAddressClass } from './address-class';
 import type { HealthReport } from './lifecycle';
 import type { Role } from './roles';
 
@@ -33,7 +33,7 @@ export function healthBody(
  */
 export function healthPeerListed(peers: readonly string[], address: string | null): boolean {
   if (address === null || !Array.isArray(peers)) return false;
-  const kind = classifyAddress(address);
+  const kind = peerAddressClass(address);
   if (kind === undefined) return false;
   const literal = address.trim().toLowerCase();
   return peers.some(

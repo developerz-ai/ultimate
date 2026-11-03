@@ -5,7 +5,7 @@
 // went through. `setRedirect` exists so those form posts work without JS, which makes them a
 // first-class surface here rather than a legacy one.
 
-import { classifyAddress, proveSameOrigin } from '@ultimat3/core';
+import { peerAddressClass, proveSameOrigin } from '@ultimat3/core';
 import type { CorsConfig } from './cors';
 import { originListed } from './cors';
 import { HttpError } from './errors';
@@ -101,7 +101,7 @@ export const csrfBlocked = (
   reason: string,
   ip: string | null = null,
 ): HttpError =>
-  ip !== null && classifyAddress(ip) === 'loopback'
+  ip !== null && peerAddressClass(ip) === 'loopback'
     ? new HttpError({
         code: 'X_CSRF_BLOCKED',
         cause: `${pathname} refused a write it could not show came from this app: ${reason}`,

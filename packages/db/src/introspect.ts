@@ -23,6 +23,12 @@ export interface ColumnDescription {
    * spellings, which is the same rule `IndexDescription.where` states one field down.
    */
   readonly generated?: string | undefined;
+  /**
+   * `true` on a column an entity lists under `retired` and a migration has marked (`retired.ts`):
+   * old pods may still read it, so it stays until a later migration drops it. Absent otherwise, and
+   * always absent on a catalog read: the database has no such idea.
+   */
+  readonly retired?: true | undefined;
 }
 
 export interface IndexDescription {
@@ -110,6 +116,11 @@ export interface TableDescription {
    */
   readonly checkNames?: readonly string[] | undefined;
   /**
+   * The constraints the catalog holds `NOT VALID` (`convalidated`): rows that predate one are
+   * unchecked. A catalog reading, absent when there are none, and never on a sidecar.
+   */
+  readonly notValidNames?: readonly string[] | undefined;
+  /**
    * That a migration set `replica identity full` on this table — what `@ultimat3/realtime` requires
    * of every table a live query subscribes to, and the only reason this generator emits it.
    *
@@ -184,12 +195,34 @@ interface ForeignKeyRow {
   readonly referenced_table: string;
   readonly referenced_columns: readonly string[];
   readonly on_delete: string | null;
+  /** `set null (a, b)`'s list as the server prints it. Postgres 15+; `null` for any other rule. */
+  readonly set_null_columns?: string | null | undefined;
+  readonly validated?: boolean | undefined;
 }
+
+/**
+ * A key's rule in the spelling a description holds, list included. The list reads the definition
+ * text, not `confdelsetcols`, which is a column only Postgres 15+ has: this query runs against
+ * whatever an operator points it at. The server quotes a reserved word and a description never
+ * does, so each name is unquoted or `user` is a permanent `changed-foreign-key`.
+ */
+const unquotedName = (name: string): string => {
+  const trimmed = name.trim();
+  return trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1).replaceAll('""', '"')
+    : trimmed;
+};
+
+const onDeleteOf = (row: ForeignKeyRow): string | null =>
+  row.set_null_columns == null
+    ? row.on_delete
+    : `set null (${row.set_null_columns.split(',').map(unquotedName).join(', ')})`;
 
 /** A CHECK constraint's NAME. There is deliberately no column for its definition — see `checkNames`. */
 interface CheckRow {
   readonly table_name: string;
   readonly constraint_name: string;
+  readonly validated?: boolean | undefined;
 }
 
 /** An enabled trigger's NAME — the half of `appendOnly` the catalog can answer. */
@@ -199,6 +232,22 @@ interface TriggerNameRow {
 }
 
 const byName = (a: { name: string }, b: { name: string }): number => (a.name < b.name ? -1 : 1);
+
+/** Absent when none: `false` only, so a row a fake client wrote without the field is not one. */
+const notValidOf = (
+  rows: readonly {
+    readonly table_name: string;
+    readonly constraint_name: string;
+    readonly validated?: boolean | undefined;
+  }[],
+  table: string,
+): { readonly notValidNames?: readonly string[] } => {
+  const names = rows
+    .filter((row) => row.table_name === table && row.validated === false)
+    .map((row) => row.constraint_name)
+    .sort();
+  return names.length === 0 ? {} : { notValidNames: names };
+};
 
 export async function introspectSchema(
   options: IntrospectOptions = {},
@@ -291,7 +340,9 @@ export async function introspectSchema(
       array_agg(sa.attname order by k.ord) as columns,
       tgt.relname as referenced_table,
       array_agg(ta.attname order by k.ord) as referenced_columns,
-      c.confdeltype as on_delete
+      c.confdeltype as on_delete,
+      substring(pg_get_constraintdef(c.oid) from 'ON DELETE SET NULL \\(([^)]*)\\)') as set_null_columns,
+      c.convalidated as validated
     from pg_constraint c
     join pg_class src on src.oid = c.conrelid
     join pg_class tgt on tgt.oid = c.confrelid
@@ -300,7 +351,7 @@ export async function introspectSchema(
     join pg_attribute sa on sa.attrelid = src.oid and sa.attnum = k.src_attnum
     join pg_attribute ta on ta.attrelid = tgt.oid and ta.attnum = k.tgt_attnum
     where c.contype = 'f' and n.nspname = ${schema}
-    group by src.relname, c.conname, tgt.relname, c.confdeltype
+    group by c.oid, src.relname, c.conname, tgt.relname, c.confdeltype, c.convalidated
     order by src.relname, c.conname
   `);
 
@@ -310,7 +361,7 @@ export async function introspectSchema(
   // a correct database as wrong. `contype = 'c'` is the CHECK constraints alone — Postgres 17
   // onwards records a NOT NULL as `'n'`, and a domain's as `'c'` on the domain rather than here.
   const checks = await client.query<CheckRow>(sql`
-    select src.relname as table_name, c.conname as constraint_name
+    select src.relname as table_name, c.conname as constraint_name, c.convalidated as validated
     from pg_constraint c
     join pg_class src on src.oid = c.conrelid
     join pg_namespace n on n.oid = src.relnamespace
@@ -385,7 +436,7 @@ export function buildSchema(
           columns: [...row.columns],
           referencedTable: row.referenced_table,
           referencedColumns: [...row.referenced_columns],
-          onDelete: row.on_delete,
+          onDelete: onDeleteOf(row),
         }))
         .sort(byName),
       // Always written, `[]` included: this reading of a table HAS asked the catalog, and absence
@@ -394,6 +445,7 @@ export function buildSchema(
         .filter((row) => row.table_name === name)
         .map((row) => row.constraint_name)
         .sort(),
+      ...notValidOf([...foreignKeys, ...checks], name),
       ...(triggers === undefined
         ? {}
         : {

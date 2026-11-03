@@ -47,6 +47,7 @@ export const GENERATABLE_FORMS: readonly GeneratableForm[] = [
   { name: 'drop column', pattern: /^alter\s+table\s[\s\S]*?\bdrop\s+column\b/ },
   { name: 'add constraint', pattern: /^alter\s+table\s[\s\S]*?\badd\s+constraint\b/ },
   { name: 'drop constraint', pattern: /^alter\s+table\s[\s\S]*?\bdrop\s+constraint\b/ },
+  { name: 'validate constraint', pattern: /^alter\s+table\s[\s\S]*?\bvalidate\s+constraint\b/ },
   {
     name: 'alter column type',
     pattern: /^alter\s+table\s[\s\S]*?\balter\s+column\s[\s\S]*?\btype\b/,

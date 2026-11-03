@@ -106,6 +106,14 @@ async function bootRoles(boot: {
   readonly metrics: MetricsEndpoint;
 }): Promise<ServedApp> {
   const { options, role, runtime, acquired, metrics } = boot;
+  // Before the app's modules, because importing one may register a `close` hook, and that phase
+  // runs last-registered first: the flush has to be the hook registered earliest, or a teardown's
+  // spans are recorded into an exporter already shut down. `OTEL_EXPORTER_OTLP_ENDPOINT` is in the
+  // shipped chart and nothing read it, so every deployment that configured a collector got an empty
+  // dashboard. `x dev` keeps its own recorder — the `/_x` timeline is a different sink with a
+  // different lifetime — so this is the production boot's alone (axiom 6).
+  const stopOtlp = startOtlpExport(options.env);
+  acquired.push(stopOtlp);
   // The image's compiled stylesheets, before the first page is imported — importing one IS
   // compiling its sheet — and the count of what this boot compiles anyway.
   adoptPrebuiltStyles(options.root);
@@ -124,12 +132,6 @@ async function bootRoles(boot: {
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.
   configureReporting(options.env, buildId);
-  // Beside error reporting, and for the same reason it is here: `OTEL_EXPORTER_OTLP_ENDPOINT` is
-  // in the shipped chart and nothing read it, so every deployment that configured a collector got
-  // an empty dashboard. `x dev` keeps its own recorder — the `/_x` timeline is a different sink
-  // with a different lifetime — so this is the production boot's alone (axiom 6).
-  const stopOtlp = startOtlpExport(options.env);
-  acquired.push(stopOtlp);
   // Only the web role serves pages, so only it builds islands and assembles a route table: a
   // worker, scheduler, sync or replicator pod compiled every island of the app on every boot for
   // nothing it would ever serve (plan 101, slice 12 e). The MODULE is the web role's as well —

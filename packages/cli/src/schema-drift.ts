@@ -15,7 +15,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
 import type { EntityDescriptionLike, UnrenderedDeclaration } from '@ultimat3/db';
-import { declaredSchema, shellInertIdentifier, snapshotOf, unrenderedOf } from '@ultimat3/db';
+import {
+  declaredSchema,
+  recordRetired,
+  shellInertIdentifier,
+  snapshotOf,
+  unrenderedOf,
+} from '@ultimat3/db';
 import { describeEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
 import { checkSourceDrift, DB_PACKAGE } from './drift';
@@ -151,7 +157,12 @@ export async function checkSnapshotDrift(
   // states for the same call: a short one makes every subscribed name in the missing module a typo.
   const wanted = wantedReplicaIdentity(identity, new Set(entities.map((entity) => entity.table)));
   if ('finding' in wanted) return [wanted.finding];
-  const differences = diffDeclaredSchema(snapshotOf(entities, wanted.tables), recorded);
+  // `recordRetired`, the step `x db gen` takes after `snapshotOf`: a retired column stays on the
+  // record though no entity declares it, and that is the design rather than a difference.
+  const differences = diffDeclaredSchema(
+    recordRetired(snapshotOf(entities, wanted.tables), entities, recorded),
+    recorded,
+  );
   if (differences.length === 0) return [];
   // `recorded` and not the entities alone: whether an `assert` is a LOSS depends on whether a
   // migration recorded a CHECK for it, which only the sidecar knows.

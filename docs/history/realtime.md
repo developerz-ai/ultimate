@@ -1508,3 +1508,25 @@ code — `throttle.ts` (a board redrawn per record, ten a second, on a phone), `
 - Moved here from `packages/realtime/CLAUDE.md` (its size ceiling): **every `socket.send` reads its
   answer** — a dropped subscribe reply marks it desynced; a dropped roster logs
   `sync.presence_roster_dropped`; `drain()` returns `DrainedSocket[]` (`notified`).
+
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/realtime/CLAUDE.md`](../../packages/realtime/CLAUDE.md), which keeps the rule in one line.
+
+### The page
+
+- **A frame names the write that produced it**: `records.write`, `patch.writes` (a live patch
+  one, a resume each it replays, off `RowPatch.write` in the ring) — `writeDigest(key)`, from a
+  REQUIRED `ChangeEvent.write: string | null`. `RecordStore.push` digests each overlay key first
+  (`record-names.ts`); `client-channels.ts` / `live-rows.ts` settle in the frame's own batch. A
+  non-digest is a protocol error, dropped on the bus. Partly confirmed rows go to
+  `OverlayEntry.confirmed`. `write-echo.test.ts`, `live-write-echo.test.ts`.
+
+### The page
+
+- **The outbox**: only `pending` is sendable; `drain()` is one chained pass at a time; `#epoch` is
+  bumped before the requeue scan, read every pass. `#persist` hands SNAPSHOTS by KEY; one tab drains
+  (`navigator.locks`), resetting a stored `inflight`. A `rescope` abandons the queue and bumps the
+  epoch synchronously; `enqueue` decides WHOSE queue before its first await
+  (`X_OFFLINE_QUEUE_ABANDONED`); `useMutation` fences its POST on its scope epoch. A refused disk is
+  warned `X_LOCAL_STORE_UNAVAILABLE`, never rejecting `ready`. An entry leaves disk at its ack.

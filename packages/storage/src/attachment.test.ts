@@ -10,6 +10,7 @@ import { frozenClock, pageOf } from '@ultimat3/core';
 import {
   attachmentKey,
   attachmentPrefix,
+  deleteVariants,
   isPendingKey,
   isQuarantinedKey,
   pendingKey,
@@ -34,6 +35,13 @@ let root = '';
 let disk: StorageDriver;
 let clock: ReturnType<typeof frozenClock>;
 const bytesOf = (text: string): Uint8Array => new TextEncoder().encode(text);
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/** `size` bytes a sniff reads as a PNG. No decoder runs here, so nothing past the signature counts. */
+const pngOf = (size: number): Uint8Array => {
+  const bytes = new Uint8Array(size);
+  bytes.set(PNG_SIGNATURE);
+  return bytes;
+};
 
 beforeEach(async () => {
   root = await mkdtemp(`${tmpdir()}/ultimate-storage-attach-`);
@@ -87,7 +95,7 @@ describe('keys', () => {
 describe('promoteAttachment', () => {
   test('moves the bytes onto the row and leaves nothing pending', async () => {
     const key = pendingKey(ORG, 'u-1.png');
-    await disk.put(key, bytesOf('cover-bytes'), { contentType: 'image/png' });
+    await disk.put(key, pngOf(11), { contentType: 'image/png' });
 
     const object = await promoteAttachment({
       disk,
@@ -242,6 +250,44 @@ describe('sweepOrphans', () => {
   });
 });
 
+describe('deleteVariants', () => {
+  const SOURCE = attachmentKey(ORG, TARGET, 'x.png');
+  const put = (key: string) => disk.put(key, bytesOf('v'), { contentType: 'image/webp' });
+
+  test('takes every revision of one source, and neither the source nor a neighbour', async () => {
+    const variants = [`${SOURCE}@w1-r0123abcd.webp`, `${SOURCE}@w1-r4567ef01.webp`];
+    const neighbour = attachmentKey(ORG, TARGET, 'x.png2@w1.webp');
+    for (const key of [SOURCE, neighbour, ...variants]) await put(key);
+
+    const swept = await deleteVariants({ disk, key: SOURCE });
+    expect([...swept.deleted].sort()).toEqual(variants);
+    expect(swept.failed).toEqual([]);
+    expect(await disk.exists(SOURCE)).toBe(true);
+    expect(await disk.exists(neighbour)).toBe(true);
+    for (const key of variants) expect(await disk.exists(key)).toBe(false);
+  });
+
+  test('a refused delete lands in `failed`, and the walk goes on across pages', async () => {
+    const denied = `${SOURCE}@w1.webp`;
+    const gone = `${SOURCE}@w2.webp`;
+    const { driver, deleted } = agedDisk(
+      { [denied]: START, [gone]: START, [SOURCE]: START },
+      new Set([denied]),
+    );
+    const swept = await deleteVariants({ disk: driver, key: SOURCE });
+    expect(swept.deleted).toEqual([gone]);
+    expect(swept.failed.map((failure) => failure.key)).toEqual([denied]);
+    expect(swept.failed[0]?.reason).toContain('AccessDenied');
+    expect(deleted).toEqual([gone]);
+  });
+
+  test('a key that could not be a source is refused before the disk is asked', async () => {
+    await expect(deleteVariants({ disk, key: '../x.png' })).rejects.toThrow(
+      'X_STORAGE_PATH_UNSAFE',
+    );
+  });
+});
+
 describe('quarantine', () => {
   test('promoteAttachment REFUSES a key nothing has cleared', async () => {
     const key = quarantineKey(ORG, 'u-1.png');
@@ -261,7 +307,7 @@ describe('quarantine', () => {
 
   test('releaseQuarantine moves the object onto the pending key promotion accepts', async () => {
     const key = quarantineKey(ORG, 'u-1.png');
-    await disk.put(key, bytesOf('clean-bytes'), { contentType: 'image/png' });
+    await disk.put(key, pngOf(11), { contentType: 'image/png' });
     expect(isQuarantinedKey(key, ORG)).toBe(true);
     expect(isPendingKey(key, ORG)).toBe(true);
 

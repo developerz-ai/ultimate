@@ -41,6 +41,23 @@ export function isWaitTimedOut(output: unknown): boolean {
   );
 }
 
+const WAIT_FLOOR_KEY = '~ultimate.waitFloor';
+
+/**
+ * What a `waiting` record holds once its schema refused an event: where the next search starts.
+ * `startedAt` cannot carry it, because the timeout counts from there. `find` answers the EARLIEST
+ * event, so without this a repaired publisher's event sat behind the refused one until its TTL.
+ */
+export const waitFloor = (afterMs: number): Record<string, number> => ({
+  [WAIT_FLOOR_KEY]: afterMs,
+});
+
+export function waitFloorOf(output: unknown): number | undefined {
+  if (typeof output !== 'object' || output === null) return undefined;
+  const floor = (output as Record<string, unknown>)[WAIT_FLOOR_KEY];
+  return typeof floor === 'number' ? floor : undefined;
+}
+
 export function isStepSuspension(error: unknown): error is StepSuspension {
   return error instanceof Error && (error as { brand?: unknown }).brand === StepSuspension.brand;
 }

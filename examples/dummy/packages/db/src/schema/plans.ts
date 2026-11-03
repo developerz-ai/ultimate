@@ -15,6 +15,11 @@ export const plans = entity('plans', {
     monthly: money(),
     seats: integer(),
   },
+  /**
+   * Retired, not dropped: the release before this one still reads it, and a rolling deploy runs
+   * both. The next release removes this line and runs `x db gen "drop tagline" --allow-destructive`.
+   */
+  retired: ['tagline'],
   primaryKey: ['code', 'currency'],
   invariants: (c) => [
     invariant('plan_price_non_negative', c.monthly.minor.atLeast(0)),

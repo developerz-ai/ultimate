@@ -9,6 +9,7 @@ import {
   assertTimeZone,
   offsetAt,
   offsetLabel,
+  offsetSecondsAt,
   type TimeZone,
   utcEpoch,
   zonePartsAt,
@@ -91,7 +92,8 @@ export function toZoned(at: Instant, zone: TimeZone): ZonedDateTime {
  *      - exactly one                      → normal case
  *      - none                             → the hour was skipped (gap)
  *
- * Milliseconds ride along untouched: every real offset is a whole number of minutes.
+ * Milliseconds ride along untouched: an offset is whole seconds, the search is in seconds, and a
+ * zone off the minute (Africa/Monrovia until 1972) is searched at its real offset.
  */
 export function fromZonedDetailed(
   wall: WallClock,
@@ -114,11 +116,11 @@ export function fromZonedDetailed(
   );
 
   const probes = [target - 86_400_000, target, target + 86_400_000];
-  const offsets = new Set(probes.map((ms) => offsetAt(zone, new Date(ms) as Instant)));
+  const offsets = new Set(probes.map((ms) => offsetSecondsAt(zone, new Date(ms) as Instant)));
 
   const verified: number[] = [];
-  for (const offsetMinutes of offsets) {
-    const candidate = target - offsetMinutes * 60_000;
+  for (const offsetSeconds of offsets) {
+    const candidate = target - offsetSeconds * 1000;
     if (matchesWall(candidate, zone, normal)) verified.push(candidate);
   }
   const distinct = [...new Set(verified)].sort((a, b) => a - b);
@@ -136,7 +138,7 @@ export function fromZonedDetailed(
   // the smaller lands before the transition, the larger after it.
   if (gap === 'throw') throw dstNonexistent(describeWall(normal), zone);
   const bracket = [...offsets]
-    .map((offsetMinutes) => target - offsetMinutes * 60_000)
+    .map((offsetSeconds) => target - offsetSeconds * 1000)
     .sort((a, b) => a - b);
   const chosen = gap === 'next' ? bracket[bracket.length - 1] : bracket[0];
   return finish(chosen ?? target, millisecond, zone, 'gap');
@@ -184,6 +186,9 @@ export function addDaysInZone(at: Instant, days: number, zone: TimeZone): Instan
   if (!Number.isSafeInteger(days)) {
     throw scheduleInvalid('days', days, 'a whole number of days');
   }
+  // Identity, and not a round trip: the wall clock of a repeated hour names two instants, and
+  // reading this one back answered the first pass whichever one `at` was.
+  if (days === 0) return at;
   const zoned = toZoned(at, zone);
   return fromZoned(
     {

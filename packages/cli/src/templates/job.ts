@@ -34,7 +34,7 @@ export const ${name.camel} = job({
   retry: { attempts: 5, backoff: 'exponential' },
   async run({ input, step }) {
     const row = await step.run('load', () => repo.byId(input.id));
-    if (row === undefined) return { skipped: true };
+    if (row === null) return { skipped: true };
     await step.run('process', async () => {
       await repo.list(1);
     });

@@ -46,7 +46,12 @@ export {
   withFacts,
 } from './actor';
 export type { AddressClass } from './address-class';
-export { addressNetwork, classifyAddress, isPublicAddress } from './address-class';
+export {
+  addressNetwork,
+  classifyAddress,
+  isPublicAddress,
+  peerAddressClass,
+} from './address-class';
 /** Test support: the one name a live suite gives the database it creates (`probe-databases`). */
 export { APP_CONFIG_FILE, APP_STATE_DIR, appDirOf, appStatePath } from './app-dir';
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
@@ -212,10 +217,20 @@ export {
 } from './config-sitemap';
 export type { ConflictPolicy, ResolveConflictOptions, Row } from './conflict-policy';
 export { resolveConflict } from './conflict-policy';
-export type { Ctx, CtxFacts, CtxInit, CtxPatch, CtxServices, ServiceBag } from './context';
+export type {
+  CompletionBound,
+  Ctx,
+  CtxFacts,
+  CtxInit,
+  CtxPatch,
+  CtxServices,
+  ServiceBag,
+} from './context';
 export {
+  abandonment,
   ctxOf,
   hasContext,
+  runToCompletion,
   runWithContext,
   throwIfAborted,
   tryUseContext,
@@ -537,7 +552,7 @@ export {
   writeMasterKeyFile,
   writeSecretsFile,
 } from './exports/secrets';
-export { finiteCount, finiteOption } from './finite-option';
+export { finiteCount, finiteOption, MAX_TIMER_MS } from './finite-option';
 export type {
   FlightGate,
   FlightGateLimits,
@@ -617,6 +632,7 @@ export {
 } from './intl-cache';
 export { isIsoDateTime } from './iso-date';
 export { isJsonObject } from './json-object';
+export { jsonbRefusal } from './json-storable';
 export type { FingerprintMatch } from './keyed-fingerprint';
 export {
   compareFingerprint,
@@ -756,8 +772,10 @@ export {
   REQUEST_TIMEOUT_HEADER,
   remainingBudgetMs,
 } from './request-budget';
-export type { RetryDecision, RetryDeps, RetryPolicy, RetryStopReason } from './retry';
-export { retry, retryDecision } from './retry';
+export type { RetryDeps } from './retry';
+export { retry } from './retry';
+export type { RetryDecision, RetryPolicy, RetryStopReason } from './retry-loop';
+export { retryDecision } from './retry-loop';
 export { isRetryableStatus, RETRYABLE_STATUSES } from './retryable-status';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';

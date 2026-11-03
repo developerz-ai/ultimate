@@ -30,7 +30,8 @@ export const METRIC_EXPORT_INTERVAL_MS = 60_000;
  *
  * Both are registered with `onShutdown(..., { phase: 'close' })`: the last spans of a drain are
  * the ones that explain the drain, and a process that exits with a full queue loses exactly the
- * window an operator went looking for.
+ * window an operator went looking for. That phase runs last-registered first, so the boot calls this
+ * BEFORE anything whose teardown should be seen: everything registered after it flushes into it.
  *
  * The release UNINSTALLS what it installed, per signal. `configureTelemetry`/`configureMetrics`
  * merge into process-global state, so stopping the timer and dropping the drain hooks left the

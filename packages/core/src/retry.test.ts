@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { registerErrorRetry, registeredErrorRetry, resetErrorRetry } from './error-retry';
 import { UltimateError } from './errors';
-import { retry, retryDecision } from './retry';
+import { retry } from './retry';
+import { retryDecision } from './retry-loop';
 
 /**
  * What was registered before this file ran — the preload's packages, whose module bodies will not

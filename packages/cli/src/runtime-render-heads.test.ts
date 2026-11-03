@@ -27,7 +27,8 @@ import {
 import { clearStylesheets, loadStylesheet } from '@ultimat3/render/server';
 import { renderRoute } from '@ultimat3/testing';
 import { faviconBytes } from './favicon';
-import { appFaviconHead, appRoutes } from './runtime-render';
+import { appRoutes } from './runtime-render';
+import { appFaviconHead } from './runtime-render-document';
 import { siteAssetTable } from './site-assets';
 
 const BUILD_ID = 'build-under-test';

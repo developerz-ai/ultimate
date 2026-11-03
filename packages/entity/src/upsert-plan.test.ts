@@ -286,15 +286,23 @@ describe('the rows of an updating batch name the same columns', () => {
     expect(error?.fix).toContain('label: <value>');
   });
 
-  test('naming it and leaving it undefined is naming it — the same Object.hasOwn', () => {
+  test('naming it and leaving it undefined is not writing it — the same test bindValues makes', () => {
     // No cast: `RowPatch<Item>` spells a property that is PRESENT and `undefined`, which is the
     // whole subject of this test and what `Partial<Item>` refused under
-    // `exactOptionalPropertyTypes`.
-    const even: RowPatch<Item>[] = [
+    // `exactOptionalPropertyTypes`. It binds no value, so `excluded."label"` is the column's
+    // default: passing this batch would overwrite the first stored row with exactly that.
+    const lopsided: RowPatch<Item>[] = [
       { sku: 'a', label: undefined },
       { sku: 'b', label: 'y' },
     ];
-    expect(upsertPlan(items, even, ['sku'], 'update')).toEqual({ on: ['sku'], set: ['label'] });
+    const error = caught(() => upsertPlan(items, lopsided, ['sku'], 'update'));
+    expect(error?.cause).toContain('row 1 does not name "label"');
+    // Undefined in every row: no batch value exists, so the set list leaves the column alone.
+    const none: RowPatch<Item>[] = [
+      { sku: 'a', quantity: 1, label: undefined },
+      { sku: 'b', quantity: 2, label: undefined },
+    ];
+    expect(upsertPlan(items, none, ['sku'], 'update')).toEqual({ on: ['sku'], set: ['quantity'] });
   });
 
   test('an uneven batch under nothing is allowed — there is nothing to overwrite', () => {

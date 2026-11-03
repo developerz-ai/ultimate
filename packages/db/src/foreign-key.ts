@@ -41,6 +41,38 @@ export function onDeleteRule(raw: string | null): string | null {
 const WRITABLE = new Set(['cascade', 'restrict', 'set null', 'set default']);
 
 /**
+ * `set null (a, b)`: only those columns go, the form a composite key needs to keep its other half
+ * (Postgres 15+). The list is the rule's own text in a description and in the snapshot, so a key
+ * that changes it reads as a changed rule, and `introspectSchema()` answers in the same spelling.
+ */
+const SET_NULL_COLUMNS = /^set null \((.+)\)$/;
+
+/** The clause for a screened rule: `identifier` for each name, never the text as it arrived. */
+const ruleClause = (rule: string | null): string => {
+  if (rule === null) return '';
+  const listed = SET_NULL_COLUMNS.exec(rule)?.[1];
+  if (listed === undefined) return ` on delete ${rule}`;
+  return ` on delete set null (${quoted(listed.split(',').map((name) => name.trim()))})`;
+};
+
+/** Whether a rule is one `addClause` may write: a listed column has to be one of the key's own. */
+const isWritable = (rule: string, key: ForeignKeyDescription): boolean => {
+  const listed = SET_NULL_COLUMNS.exec(rule)?.[1];
+  if (listed === undefined) return WRITABLE.has(rule);
+  return listed.split(',').every((name) => key.columns.includes(name.trim()));
+};
+
+/**
+ * The two ends of a `references()`, which entity renders as `"<table>.<column>"`. Read once: the
+ * clause that writes the constraint and the snapshot that records it must not disagree about what
+ * it points at, or drift reports a key the database holds exactly as declared.
+ */
+export function referenceParts(references: string): readonly [string, string] {
+  const [table = references, column = 'id'] = references.split('.');
+  return [table, column];
+}
+
+/**
  * A key's identity: its columns, its target table, its target columns — never its name. Postgres
  * names an inline `references` clause `<table>_<column>_fkey` and a hand-written migration may have
  * said `constraint fk_posts_org`; a key pointing the same way under another name is the same key.
@@ -91,24 +123,63 @@ const quoted = (names: readonly string[]): string =>
  * `X_INVARIANT` rather than DDL, the same discipline `createIndex` applies to an index naming no
  * column: `entity()`'s option is a closed union, so only a hand-built description can get here.
  */
-export function addForeignKey(table: string, key: ForeignKeyDescription): string {
+export function addForeignKey(
+  table: string,
+  key: ForeignKeyDescription,
+  options: { readonly notValid?: boolean } = {},
+): string {
+  return (
+    `alter table ${identifier(table).text} ${addClause(table, key)}` +
+    `${options.notValid === true ? ' not valid' : ''};`
+  );
+}
+
+/** The `add constraint …` clause alone, with the rule screened. Both statement forms end in it. */
+function addClause(table: string, key: ForeignKeyDescription): string {
   const rule = onDeleteRule(key.onDelete);
   assert(
-    rule === null || WRITABLE.has(rule),
+    rule === null || isWritable(rule, key),
     `foreign key "${key.name}" on "${table}" declares an unknown on delete rule`,
     `references(() => target.id, { onDelete: 'cascade' })   # cascade | restrict | set null`,
   );
   return (
-    `alter table ${identifier(table).text} add constraint ${identifier(key.name).text} ` +
-    `foreign key (${quoted(key.columns)}) ` +
+    `add constraint ${identifier(key.name).text} foreign key (${quoted(key.columns)}) ` +
     `references ${identifier(key.referencedTable).text} (${quoted(key.referencedColumns)})` +
-    `${rule === null ? '' : ` on delete ${rule}`};`
+    ruleClause(rule)
   );
+}
+
+/**
+ * The deferred step's add: `not valid`, so it scans nothing and new writes are held to it at once.
+ *
+ * One ALTER and not a drop beside an add. `add constraint` has no `if not exists`, so the drop is
+ * what makes the step re-runnable — and two statements would each take a transaction of their own
+ * (`migration-step.ts`), leaving a same-named rebuild with no key at all between them.
+ */
+export function replaceForeignKeyNotValid(table: string, key: ForeignKeyDescription): string {
+  return (
+    `alter table ${identifier(table).text} drop constraint if exists ${identifier(key.name).text}, ` +
+    `${addClause(table, key)} not valid;`
+  );
+}
+
+/**
+ * Scans the rows a `not valid` constraint let stand, under SHARE UPDATE EXCLUSIVE on the table:
+ * reads and writes keep flowing. On a constraint that is already valid it does nothing, so a step
+ * failing after this statement re-runs it harmlessly.
+ */
+export function validateConstraint(table: string, name: string): string {
+  return `alter table ${identifier(table).text} validate constraint ${identifier(name).text};`;
 }
 
 /** The reverse. Dropping a constraint loses nothing the database cannot rebuild. */
 export function dropForeignKey(table: string, constraint: string): string {
   return `alter table ${identifier(table).text} drop constraint ${identifier(constraint).text};`;
+}
+
+/** The deferred step's drop, re-runnable: the step re-runs from its first statement on a failure. */
+export function dropForeignKeyIfExists(table: string, constraint: string): string {
+  return `alter table ${identifier(table).text} drop constraint if exists ${identifier(constraint).text};`;
 }
 
 /**

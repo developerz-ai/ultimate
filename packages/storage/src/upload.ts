@@ -17,10 +17,20 @@ import {
   tooLarge,
   xmlBodyUnreadable,
 } from './errors';
+import { leadingWhitespacePastLimit, xmlBodyPastWindow } from './errors-sniff';
 import { HEIF_CONTAINER, ISO_BMFF_CONTAINER, ISO_BMFF_TYPES, sniffIsoBmff } from './iso-bmff';
 import { assertSafeKey } from './path';
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+/**
+ * How much of a stored object promotion reads to decide its type. Every signature fits, and
+ * `MAX_LEADING_WHITESPACE` is what stops a body hiding its markup past the end of it.
+ */
+export const SNIFF_WINDOW_BYTES = 64 * 1024;
+
+/** Bytes of whitespace a body may open with. No real file opens with more. */
+export const MAX_LEADING_WHITESPACE = 4096;
 
 /**
  * `image/svg+xml` is deliberately ABSENT, and this is the default `uploadPolicy()` allowlist. An
@@ -127,10 +137,11 @@ const matches = (bytes: Uint8Array, rule: MagicRule): boolean =>
     part.pattern.every((byte, index) => bytes[part.offset + index] === byte),
   );
 
-function sniffText(bytes: Uint8Array): string | undefined {
+/** `truncated`: the bytes are a head, so a character cut at their end is not a bad sequence. */
+function sniffText(bytes: Uint8Array, truncated: boolean): string | undefined {
   let text: string;
   try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: truncated });
   } catch {
     return undefined;
   }
@@ -139,7 +150,9 @@ function sniffText(bytes: Uint8Array): string | undefined {
     const printable = code >= 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
     if (!printable) return undefined;
   }
-  const head = text.slice(0, 512).trimStart().toLowerCase();
+  // Trimmed BEFORE it is cut. The other way round, 512 bytes of padding left an empty head, and
+  // XHTML under `application/xml` was accepted as the plain text it was not.
+  const head = text.trimStart().slice(0, 512).toLowerCase();
   if (
     head.startsWith('<!doctype html') ||
     head.startsWith('<html') ||
@@ -195,14 +208,28 @@ function activeMarkupType(text: string): 'text/html' | 'image/svg+xml' | undefin
   return scanned.includes(SVG_NAMESPACE) ? 'image/svg+xml' : undefined;
 }
 
-/** `undefined` means "no rule recognised it", never "it is fine". */
-export function sniffContentType(bytes: Uint8Array): string | undefined {
+function sniffBytes(bytes: Uint8Array, truncated: boolean): string | undefined {
   for (const rule of MAGIC_RULES) {
     if (matches(bytes, rule)) return rule.type;
   }
   // Not a `MagicRule`: every ISO base media file opens with the same `ftyp` box, and the one rule
   // that matched it labelled AVIF, HEIC, MOV and M4A all `video/mp4`. The major brand decides.
-  return sniffIsoBmff(bytes) ?? sniffText(bytes);
+  return sniffIsoBmff(bytes) ?? sniffText(bytes, truncated);
+}
+
+/** `undefined` means "no rule recognised it", never "it is fine". */
+export const sniffContentType = (bytes: Uint8Array): string | undefined => sniffBytes(bytes, false);
+
+/**
+ * Whether the first `MAX_LEADING_WHITESPACE + 1` bytes are all whitespace. Decoded leniently, and
+ * with `stream` so a wide space cut at the end of the slice is not a replacement character: the
+ * question is asked of bytes the strict sniff may go on to give up on.
+ */
+function opensPastWhitespaceLimit(bytes: Uint8Array): boolean {
+  if (bytes.byteLength <= MAX_LEADING_WHITESPACE) return false;
+  const opening = bytes.subarray(0, MAX_LEADING_WHITESPACE + 1);
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(opening, { stream: true });
+  return text.trimStart() === '';
 }
 
 // A `Map`, not an object literal: `base` is the transport's own `Content-Type` header by the time
@@ -274,6 +301,42 @@ const isXmlType = (type: string): boolean =>
   type === 'application/xml' || type === 'text/xml' || type.endsWith('+xml');
 
 /**
+ * Whether these bytes may be what `declared` says: the one type rule, over a whole body or a head.
+ * `truncated` says the object goes on past `bytes`, which only matters to the two questions a head
+ * cannot answer in full: a character cut at its end, and whether an XML document runs a script.
+ */
+function assertTypeAgrees(
+  key: string,
+  declared: string,
+  bytes: Uint8Array,
+  truncated: boolean,
+): void {
+  if (opensPastWhitespaceLimit(bytes)) {
+    throw leadingWhitespacePastLimit(key, declared, MAX_LEADING_WHITESPACE);
+  }
+  // `activeMarkupType` must read the whole document, because XML runs a script anywhere in it.
+  if (truncated && isXmlType(declared)) {
+    throw xmlBodyPastWindow(key, declared, SNIFF_WINDOW_BYTES);
+  }
+  const sniffed = sniffBytes(bytes, truncated);
+  if (sniffed === undefined) {
+    // `undefined` is "no rule recognised it", never "it is fine" — `sniffContentType`'s own doc
+    // says so and this branch read it the other way, so any body the sniffer bailed on (one
+    // control byte, one non-UTF-8 sequence) skipped the guard entirely. Measured: an HTML
+    // document with a trailing `0x01` was accepted as `image/png`.
+    //
+    // An XML type is refused the same way, though no signature names it: a browser decodes XML by
+    // its BOM or `encoding=` declaration (UTF-16, a legacy charset) and runs the XHTML or SVG it
+    // finds, so a body the sniffer could not read as UTF-8 text is one whose script it never saw.
+    // Plain text types (`text/csv`) stay accepted: a Latin-1 CSV is real, and nothing executes it.
+    if (hasSignature(declared)) throw contentTypeUnrecognised(key, declared);
+    if (isXmlType(declared)) throw xmlBodyUnreadable(key, declared);
+  } else if (!contentTypeMatches(declared, sniffed)) {
+    throw contentTypeMismatch(key, declared, sniffed);
+  }
+}
+
+/**
  * Throws the first violated constraint, in this order: key, size, type, checksum. The key comes
  * before the size because a key nothing may store makes the other three moot, and which
  * constraint a rejected upload reports is what the client retries on — `upload.test.ts` pins it.
@@ -290,22 +353,7 @@ export function validateUpload(
   if (!policy.allowedContentTypes.includes(declared)) {
     throw contentTypeNotAllowed(key, declared, policy.allowedContentTypes);
   }
-  const sniffed = sniffContentType(candidate.bytes);
-  if (sniffed === undefined) {
-    // `undefined` is "no rule recognised it", never "it is fine" — `sniffContentType`'s own doc
-    // says so and this branch read it the other way, so any body the sniffer bailed on (one
-    // control byte, one non-UTF-8 sequence) skipped the guard entirely. Measured: an HTML
-    // document with a trailing `0x01` was accepted as `image/png`.
-    //
-    // An XML type is refused the same way, though no signature names it: a browser decodes XML by
-    // its BOM or `encoding=` declaration (UTF-16, a legacy charset) and runs the XHTML or SVG it
-    // finds, so a body the sniffer could not read as UTF-8 text is one whose script it never saw.
-    // Plain text types (`text/csv`) stay accepted: a Latin-1 CSV is real, and nothing executes it.
-    if (hasSignature(declared)) throw contentTypeUnrecognised(key, declared);
-    if (isXmlType(declared)) throw xmlBodyUnreadable(key, declared);
-  } else if (!contentTypeMatches(declared, sniffed)) {
-    throw contentTypeMismatch(key, declared, sniffed);
-  }
+  assertTypeAgrees(key, declared, candidate.bytes, false);
 
   const checksum = sha256Base64(candidate.bytes);
   const claimed = candidate.checksum;
@@ -314,4 +362,42 @@ export function validateUpload(
     throw checksumMismatch(key, 'none', checksum);
   }
   return { key, contentType: declared, bytes: candidate.bytes, size, checksum };
+}
+
+export interface StoredHeadCandidate {
+  readonly key: string;
+  /** The type the object was stored under. On a provider disk, whatever the uploader sent. */
+  readonly declaredContentType: string;
+  /** The object's first bytes: `disk.get(key, { range: [0, SNIFF_WINDOW_BYTES - 1] })`. */
+  readonly head: Uint8Array;
+  /** The WHOLE object's size, which is how a head knows it is one. */
+  readonly size: number;
+}
+
+export interface ValidatedHead {
+  readonly key: string;
+  readonly contentType: string;
+  readonly size: number;
+}
+
+/**
+ * `validateUpload` for bytes already on a disk, from a head and a size, so promotion neither
+ * buffers an object nor refuses one past `maxGetBytes`. Same order, no checksum: a whole-body hash
+ * is what this exists not to need. An XML type over the window is refused here and only here, as
+ * the server-side path reads all of it.
+ */
+export function validateStoredHead(
+  candidate: StoredHeadCandidate,
+  policy: UploadPolicy = uploadPolicy(),
+): ValidatedHead {
+  const key = assertSafeKey(candidate.key);
+  const { size } = candidate;
+  if (size > policy.maxBytes) throw tooLarge(key, size, policy.maxBytes);
+
+  const declared = normalizeContentType(candidate.declaredContentType);
+  if (!policy.allowedContentTypes.includes(declared)) {
+    throw contentTypeNotAllowed(key, declared, policy.allowedContentTypes);
+  }
+  assertTypeAgrees(key, declared, candidate.head, size > candidate.head.byteLength);
+  return { key, contentType: declared, size };
 }

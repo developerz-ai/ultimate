@@ -105,6 +105,19 @@ const declaredTimeoutMs = (declared: number | null | undefined): number | null =
       : finiteCount('renderStreamHtml', 'holeTimeoutMs', declared, 1);
 
 /**
+ * A hole's `resolve`, its synchronous throw included. `StreamHole` is public, so nothing makes it an
+ * async function, and one that throws before returning a promise threw out of `renderStreamHtml`
+ * with no byte sent. Called here and now, not a microtask later: every hole starts as the stream does.
+ */
+const startHole = (hole: StreamHole, signal: AbortSignal): Promise<string> => {
+  try {
+    return Promise.resolve(hole.resolve(signal));
+  } catch (error) {
+    return Promise.reject(error);
+  }
+};
+
+/**
  * Flush order is completion order, not declaration order — a fast hole never waits behind
  * a slow one. The stream closes only after every hole has settled, so a rejected boundary
  * degrades to its error fallback instead of truncating the document.
@@ -187,7 +200,7 @@ export function renderStreamHtml(
         // A response nobody is reading must not hold the process open until its deadline.
         timer?.unref?.();
 
-        void hole.resolve(holes.signal).then(
+        void startHole(hole, holes.signal).then(
           (html) => {
             reveal(html);
           },

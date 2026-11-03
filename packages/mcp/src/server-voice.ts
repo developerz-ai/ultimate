@@ -46,7 +46,16 @@ export function invalidArgsResult(
   issues: readonly ArgIssue[],
   audience: ErrorAudience,
 ): { readonly code: string; readonly result: McpToolResult } {
-  const invalid = new InputInvalidError(
+  const invalid = invalidArgsError(name, issues);
+  return {
+    code: invalid.code,
+    result: { content: [{ type: 'text', text: invalid.format({ audience }) }], isError: true },
+  };
+}
+
+/** A tool's arguments, refused against its published schema: the one `X_INPUT_INVALID` for that. */
+export function invalidArgsError(name: string, issues: readonly ArgIssue[]): InputInvalidError {
+  return new InputInvalidError(
     name,
     formatIssues(issues).join('; '),
     issues.map((issue) => ({
@@ -57,8 +66,4 @@ export function invalidArgsResult(
     })),
     'tool',
   );
-  return {
-    code: invalid.code,
-    result: { content: [{ type: 'text', text: invalid.format({ audience }) }], isError: true },
-  };
 }

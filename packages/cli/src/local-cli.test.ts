@@ -27,9 +27,59 @@ const app = () => {
   return dir;
 };
 
-const io = (existing: readonly string[], real: (p: string) => string = (p) => p): LocalCliIo => ({
+const io = (
+  existing: readonly string[],
+  real: (p: string) => string = (p) => p,
+  read: (p: string) => string = () => '{}',
+): LocalCliIo => ({
   exists: (path) => existing.includes(path),
   realpath: real,
+  read,
+});
+
+describe('resolveLocalCli, x upgrade', () => {
+  const self = '/home/u/.bun/install/cache/cli/src/bin.ts';
+  const withVersions = (local: string, held: string, running: string): LocalCliIo =>
+    io([local], undefined, (path) =>
+      JSON.stringify({ version: path.startsWith('/home/u/') ? running : held }),
+    );
+
+  test('an older app CLI keeps the one invoked: it is the version being moved off', () => {
+    const dir = app();
+    const local = join(dir, LOCAL_CLI_BIN);
+    expect(
+      resolveLocalCli(
+        { cwd: dir, selfPath: self, env: {}, command: 'upgrade' },
+        withVersions(local, '19.4.0', '30.0.0'),
+      ),
+    ).toBeUndefined();
+  });
+
+  test('an equal or newer app CLI answers it, as it answers everything', () => {
+    const dir = app();
+    const local = join(dir, LOCAL_CLI_BIN);
+    for (const held of ['30.0.0', '31.2.0']) {
+      expect(
+        resolveLocalCli(
+          { cwd: dir, selfPath: self, env: {}, command: 'upgrade' },
+          withVersions(local, held, '30.0.0'),
+        ),
+      ).toBe(local);
+    }
+  });
+
+  test('every other command defers, however old the app CLI is', () => {
+    const dir = app();
+    const local = join(dir, LOCAL_CLI_BIN);
+    for (const command of ['verify', 'doctor', undefined]) {
+      expect(
+        resolveLocalCli(
+          { cwd: dir, selfPath: self, env: {}, command },
+          withVersions(local, '19.4.0', '30.0.0'),
+        ),
+      ).toBe(local);
+    }
+  });
 });
 
 describe('resolveLocalCli', () => {

@@ -13,10 +13,11 @@
 
 // why: `realpathSync` is the whole decision — Bun ships no symlink-resolving stat of its own, and
 // `Bun.file(path).exists()` follows a link without saying where it went.
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 // why: Bun exposes no path-join primitive; the local bin is assembled from the app root.
-import { join } from 'node:path';
-import { findAppRoot } from './app-root';
+import { dirname, join } from 'node:path';
+import { stringField } from '@ultimat3/core';
+import { findAppRoot, versionAtLeast } from './app-root';
 
 /**
  * Set to any value to keep the CLI that was invoked. Nothing in this repository's CI needs it —
@@ -31,11 +32,34 @@ export const LOCAL_CLI_BIN = join('node_modules', '@ultimat3', 'cli', 'src', 'bi
 export interface LocalCliIo {
   exists(path: string): boolean;
   realpath(path: string): string;
+  /** The text of a file, `package.json` here. Throwing is the same answer as an unreadable file. */
+  read(path: string): string;
 }
 
 const nodeIo: LocalCliIo = {
   exists: existsSync,
   realpath: (path) => realpathSync(path),
+  read: (path) => readFileSync(path, 'utf8'),
+};
+
+/**
+ * The one command the app's own CLI must not answer when it is the older of the two: an app with no
+ * `x upgrade` yet is told `bunx @ultimat3/cli@latest upgrade`, and handing that to the app's CLI
+ * answers `X_NOT_IMPLEMENTED` from the very version it exists to move off. It is safe because of what
+ * it does not do: it loads no app, so there is no second registry — the gate is the installed CLI's.
+ */
+const OUTLIVES_THE_APP_CLI = 'upgrade';
+
+const versionOfBin = (bin: string, io: LocalCliIo): string | undefined => {
+  const parsed: unknown = JSON.parse(io.read(join(dirname(dirname(bin)), 'package.json')));
+  return stringField(parsed, 'version');
+};
+
+/** Strictly older: an equal or newer app CLI has the command too, and the usual rule stands. */
+const appCliIsOlder = (local: string, self: string, io: LocalCliIo): boolean => {
+  const held = versionOfBin(io.realpath(local), io);
+  const running = versionOfBin(io.realpath(self), io);
+  return held !== undefined && running !== undefined && !versionAtLeast(held, running);
 };
 
 /**
@@ -55,6 +79,8 @@ export function resolveLocalCli(
     readonly cwd: string;
     readonly selfPath: string;
     readonly env: Readonly<Record<string, string | undefined>>;
+    /** The word after the binary, `Bun.argv[2]` as `bin.ts` reads it for `dev`. */
+    readonly command?: string | undefined;
   },
   io: LocalCliIo = nodeIo,
 ): string | undefined {
@@ -64,7 +90,11 @@ export function resolveLocalCli(
   const local = join(root.dir, LOCAL_CLI_BIN);
   if (!io.exists(local)) return undefined;
   try {
-    return io.realpath(local) === io.realpath(input.selfPath) ? undefined : local;
+    if (io.realpath(local) === io.realpath(input.selfPath)) return undefined;
+    if (input.command === OUTLIVES_THE_APP_CLI && appCliIsOlder(local, input.selfPath, io)) {
+      return undefined;
+    }
+    return local;
   } catch {
     return undefined;
   }

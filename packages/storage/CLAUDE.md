@@ -51,6 +51,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `driver-s3-client.ts` | `S3*Like` + `buildClient`, lazy (import never opens a socket) |
 | `driver-s3-signed.ts` | signed requests: Bun's addressing restated, `requireEnv`, `fetch`, refusal as `S3Error` fields |
 | `driver-s3-lock.ts` | the signed PUT's headers; `?retention` / `?legal-hold` |
+| `driver-s3-copy.ts` | `copy(…, { ifMatch })`: a signed CopyObject |
 | `object-lock.ts` | lock types, the `put()` screen, `isLocked`, the local/memory refusals |
 | `driver-s3-region.ts` | a provider's wrong-region refusal → `X_CONFIG_INVALID` whose fix names `S3_REGION` |
 | `path.ts` | key validation + `META_DIR` + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
@@ -63,7 +64,8 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
 | `grant.ts` | `grantUpload` — the ONE way a presigned PUT is minted; the client never names a key |
 | `accept.ts` | `acceptSignedUpload` / `readSignedObject` — the two decisions a `/_storage` route is made of |
-| `attachment.ts` | `pending/` → row promotion, the `quarantine/` segment, and `sweepOrphans` |
+| `attachment.ts` | `pending/` → row promotion, the `quarantine/` segment, `sweepOrphans` and `deleteVariants` |
+| `errors-sniff.ts` | the two `X_STORAGE_TYPE_REJECTED` refusals only a bounded sniff reaches: too much leading whitespace, XML past the window |
 | `upload-client.ts` | the browser half: grant → PUT with progress → key. No `Bun.*`, no `node:` |
 
 ```bash
@@ -109,11 +111,7 @@ Gotchas:
   Without `dot`, dot-prefixed keys were missing from the listing while `put`/`get` handled them —
   and `sweepOrphans` pages through `list()`. Pinned in `driver-parity.test.ts`.
 - **A `list({ limit })` is a positive integer or a refusal** — `resolveListLimit` at the
-  `ListOptions` seam, so both disks answer one way. `limit: 0` used to slice `[0, 0)` on the local
-  disk and then drop its own `truncated` flag (`truncated && last !== undefined`, with an empty
-  page), so a paging caller read "complete, and there is nothing here" over a full disk, while the
-  s3 disk handed `maxKeys: 0` to the provider. Core's `assert` (`X_INVARIANT`), for the reason
-  `@ultimat3/seo`'s `chunk()` uses it: a bound with no code of its own is still a coded refusal.
+  `ListOptions` seam, so both disks answer one way. Core's `assert` (`X_INVARIANT`).
 - **`list()` answers core's `Page<StorageListEntry>`, and no storage-local page type exists**
   (`As of 25.0.0`; `ListPage` is deleted). Every driver builds it with core's `pageOf`, so
   `hasMore` is derived from the cursor and cannot disagree with it. The cursor is minted only when
@@ -139,10 +137,14 @@ Gotchas:
 - **`signedUrl({ maxBytes })` is signed on `local` and unenforceable on `s3`, and the s3 driver may
   NOT refuse it.** `grantUpload` passes `maxBytes: policy.maxBytes` on every grant, so a refusal
   would break every s3 upload an app mints. S3 has no request header for a size and Bun's `presign`
-  covers method, expiry and type — so on the production disk the client PUTs straight into the
-  bucket and nothing between the grant and the object holds the ceiling. That belongs to a bucket
-  rule or a post-upload `object.size` check, neither of which is a driver's; `SignedUrlOptions`
-  says so and `driver-parity.test.ts` pins both halves.
+  binds method and expiry only (it signs `host` alone; `driver-s3.test.ts` pins it) — so on the
+  production disk the client PUTs straight into the bucket and nothing between the grant and the
+  object holds the ceiling or the type. That belongs to a bucket rule or `promoteAttachment`,
+  neither of which is a driver's; `SignedUrlOptions` says so and `driver-parity.test.ts` pins both
+  halves.
+- **`promoteAttachment` sniffs a head window** (`validateStoredHead`, 64 KiB), then ties it to the
+  copy: `ifMatch`, then size and etag. Never refuse on etag alone: SSE-KMS mints one per copy.
+- **`/media`'s variant key names its source's revision and format.** No `revision`: the old key.
 - **`delete()` is idempotent for an ABSENT key and for nothing else.** Both drivers used to end in
   `.catch(() => undefined)`, so a denied `s3:DeleteObject`, a `SlowDown`, an expired credential and
   a read-only mount all resolved as success — and `sweepOrphans` returned them as deleted, which
@@ -168,9 +170,7 @@ Gotchas:
   the app's scan verdict, and returns the ordinary pending key promotion accepts. Ultimate ships
   no scanner — axiom 8, and `application/zip` is an accepted OOXML container by design.
 - **`StorageListEntry` vs `StorageObject`.** A listing's `contentType` is optional; a `get()`'s is
-  not. `ListObjectsV2` returns no Content-Type, and the s3 driver used to invent
-  `application/octet-stream` while the local driver read the truth from its sidecar — two drivers
-  disagreeing about one object. The local `list()` now omits it too when there is no sidecar.
+  not. `ListObjectsV2` returns no Content-Type, and no driver invents one.
 - **`META_DIR` lives in `path.ts`, not in `driver-local.ts`.** The sidecar namespace overlapped the
   object namespace: `put('a/b', png)` writes `<root>/.meta/a/b.json`, and `.meta/a/b.json` was
   itself a legal key, so an uploader could rewrite another object's recorded `contentType` to
@@ -197,8 +197,8 @@ Gotchas:
   /_storage/:disk/*key` gates on `@ultimat3/policy`'s `evaluate()` (`storage:read`), which is tier
   2 and unreachable from here — so a "serve this object" helper in this package could only ever be
   a second authz path. This package's contribution to that route is `assertSafeKey`,
-  `isTenantScoped`/`isWithinOrg` and the driver's own `contentType`/`etag`; the `Response` is the
-  host's, exactly as `accept.ts`'s header says.
+  `isTenantScoped`/`isWithinOrg` and the driver's own `contentType`/`etag`; the `Response` is
+  `@ultimat3/http`'s `objectResponse`, structural over those fields, as `accept.ts`'s header says.
 - `acceptSignedUpload` still has no mounted route: the signing secret is closed over inside
   `localDriver` and no `StorageDriver` method exposes it, so a host cannot verify a signed PUT
   through the `Storage` seam it is handed. Serving reads needed none of it (policy decides, not a

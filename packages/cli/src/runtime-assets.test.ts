@@ -17,13 +17,14 @@ import type { Route } from '@ultimat3/http';
 import { defineHttpConfig, requestContext, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { MAX_IMAGE_WIDTH, responsiveImage } from '@ultimat3/seo';
-import type { Storage } from '@ultimat3/storage';
+import type { ImageTransform, Storage } from '@ultimat3/storage';
 import {
   DEFAULT_QUALITY,
   defineStorage,
   localDriver,
   resetStorage,
   variantKey,
+  variantRevision,
 } from '@ultimat3/storage';
 import { ICON_SOURCE } from './icon-assets';
 import { assetRoutes, MEDIA_BASE_PATH } from './runtime-assets';
@@ -42,6 +43,12 @@ function png(width: number, height: number): Uint8Array {
 
 let root = '';
 let storage: Storage;
+
+/** `variantKey` for the bytes a key holds NOW: a stored variant names its source's revision. */
+const storedKey = async (key: string, transform: ImageTransform): Promise<string> => {
+  const object = await storage.disk().stat(key);
+  return variantKey(key, { ...transform, revision: variantRevision(object?.etag ?? '') });
+};
 
 const call = async (routes: readonly Route[], path: string): Promise<Response> => {
   const url = new URL(`http://dev.test${path}`);
@@ -185,7 +192,7 @@ describe('unit · dev assets · responsive variants', () => {
 
   test('?w= resizes and caches the variant under its storage key', async () => {
     const routes = assetRoutes({ root, storage });
-    const cached = variantKey(SOURCE_KEY, { width: 320, format: 'png' });
+    const cached = await storedKey(SOURCE_KEY, { width: 320, format: 'png' });
     expect(await storage.disk().exists(cached)).toBe(false);
 
     const response = await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=320&f=png`);
@@ -230,7 +237,7 @@ describe('unit · dev assets · responsive variants', () => {
   // by what the framework can MINT, not by what a URL can ask for.
   test('a width no srcset can mint is served but never written to the disk', async () => {
     const routes = assetRoutes({ root, storage });
-    const cached = variantKey(SOURCE_KEY, { width: 7, format: 'png' });
+    const cached = await storedKey(SOURCE_KEY, { width: 7, format: 'png' });
 
     const response = await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=7&f=png`);
     // Still answered — refusing would break nothing an attacker cares about and would turn a
@@ -244,7 +251,7 @@ describe('unit · dev assets · responsive variants', () => {
   // per URL the framework mints. seo never writes `?q=`, so only the default is worth storing.
   test('a quality the framework never mints is served but never written to the disk', async () => {
     const routes = assetRoutes({ root, storage });
-    const cached = variantKey(SOURCE_KEY, { width: 320, format: 'png', quality: 37 });
+    const cached = await storedKey(SOURCE_KEY, { width: 320, format: 'png', quality: 37 });
 
     const response = await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=320&f=png&q=37`);
     expect(response.status).toBe(200);
@@ -254,7 +261,7 @@ describe('unit · dev assets · responsive variants', () => {
 
   test('the default quality spelled out is the default variant, and is stored', async () => {
     const routes = assetRoutes({ root, storage });
-    const cached = variantKey(SOURCE_KEY, { width: 320, format: 'png' });
+    const cached = await storedKey(SOURCE_KEY, { width: 320, format: 'png' });
 
     await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=320&f=png&q=${DEFAULT_QUALITY}`);
     expect(await storage.disk().exists(cached)).toBe(true);
@@ -265,7 +272,7 @@ describe('unit · dev assets · responsive variants', () => {
   // would refuse a URL the framework itself mints.
   test("the source's own intrinsic width is cacheable, because a srcset names it", async () => {
     const routes = assetRoutes({ root, storage });
-    const cached = variantKey(SOURCE_KEY, { width: 1200, format: 'png' });
+    const cached = await storedKey(SOURCE_KEY, { width: 1200, format: 'png' });
 
     await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=1200&f=png`);
     expect(await storage.disk().exists(cached)).toBe(true);
@@ -287,13 +294,12 @@ describe('unit · dev assets · responsive variants', () => {
 
     const response = await call(routes, `${image.img.src}&f=png`);
     expect(probeImage(new Uint8Array(await response.arrayBuffer())).width).toBe(MAX_IMAGE_WIDTH);
-    const cached = variantKey(wideKey, { width: MAX_IMAGE_WIDTH, format: 'png' });
+    const cached = await storedKey(wideKey, { width: MAX_IMAGE_WIDTH, format: 'png' });
     expect(await storage.disk().exists(cached)).toBe(true);
     // Still closed: a width between two candidates is served and not stored.
     await call(routes, `${MEDIA_BASE_PATH}/${wideKey}?w=5000&f=png`);
-    expect(await storage.disk().exists(variantKey(wideKey, { width: 5000, format: 'png' }))).toBe(
-      false,
-    );
+    const between = await storedKey(wideKey, { width: 5000, format: 'png' });
+    expect(await storage.disk().exists(between)).toBe(false);
   });
 
   test('an unusable width is refused before any byte is decoded', async () => {

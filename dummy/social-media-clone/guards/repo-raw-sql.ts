@@ -3,7 +3,7 @@
 // step — nothing registers this file, so nothing can forget to. Delete it to drop the rule.
 //
 // Only a statement the handle can express is reported: `select *`, `insert`, `update` or `delete`
-// on ONE table, with plain comparisons. A join, an aggregate, a CTE, a window, an `or`, a function
+// on ONE table, with plain comparisons, and `select * … where id = ? for update`. A join, an aggregate, a CTE, a window, an `or`, a function
 // call and a statement composed from another fragment are past what the handle says, and silent.
 
 import type { Finding, Guard } from '@ultimat3/cli';
@@ -129,6 +129,8 @@ const UPDATE = new RegExp(
   `^update ${TABLE} set ${ASSIGNMENT}(?:, ?${ASSIGNMENT})* where ${WHERE}(?: returning \\*)?$`,
 );
 const DELETE = new RegExp(`^delete from ${TABLE} where ${WHERE}(?: returning \\*)?$`);
+/** One row by its id, locked: the read-modify-write `lock` exists for. Another lock mode is silent. */
+const LOCKED = new RegExp(`^select \\* from ${TABLE} where ${WHERE}(?: limit 1)? for update$`);
 
 /** `short_links` → `shortLinks`: the handle is keyed by the camelCase the entity declares. */
 const camel = (name: string): string =>
@@ -177,6 +179,10 @@ export function handleCallFor(sql: string): string | undefined {
     .trim()
     .replace(/;$/, '')
     .trim();
+  const locked = LOCKED.exec(text);
+  if (locked !== null && /(^| )"?id"? = \?/.test(locked[2] ?? '')) {
+    return `db.${camel(locked[1] ?? '')}.lock(id, fn)`;
+  }
   const select = SELECT.exec(text);
   if (select !== null) {
     const [, table = '', where, column, direction, limit] = select;

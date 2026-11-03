@@ -85,6 +85,14 @@ export function nextRetryForError(
 const RATE_LIMITED = 'X_RATE_LIMITED';
 
 /**
+ * `@ultimat3/notify`'s refusal of a delivery another attempt holds: the same "not yet", because the
+ * holder finishes or its window lapses. Counted, a provider blip and a crash left a third attempt
+ * meeting the crashed one's row and dead-lettered a notification nothing sent. A literal, as a tier
+ * below names no import above it; a shipped code never changes.
+ */
+const DELIVERY_HELD = 'X_NOTIFY_DELIVERY_HELD';
+
+/**
  * How long to wait out a rate-limit refusal, or `undefined` when `error` is not one. A refusal is
  * "not yet", never "failed": the bucket refills, so the run is rescheduled with its attempt
  * UNCOUNTED — counted, a backlog of rate-limited jobs spent every attempt waiting and was
@@ -102,7 +110,8 @@ export function rateLimitDeferralMs(
   error: unknown,
   random: Random = Math.random,
 ): number | undefined {
-  if (!isUltimateError(error) || error.code !== RATE_LIMITED) return undefined;
+  if (!isUltimateError(error)) return undefined;
+  if (error.code !== RATE_LIMITED && error.code !== DELIVERY_HELD) return undefined;
   const cap = finiteDurationMs(policy.maxDelay ?? DEFAULT_RETRY.maxDelay, 'retry', 'maxDelay');
   const wait = statedDelayMs(error) ?? Math.min(backoffDelayMs(policy, attempt), cap);
   return jitterStatedDelay(wait, cap, random);

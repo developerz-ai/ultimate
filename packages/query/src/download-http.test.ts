@@ -180,6 +180,24 @@ describe('the file', () => {
     expect(whole.headers.get('content-disposition')).toStartWith('inline;');
   });
 
+  test('a stream a 416 will never send is cancelled, not left open', async () => {
+    let cancelled = false;
+    const sized = recording((bytes) => ({
+      body: new ReadableStream<Uint8Array>({
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      size: bytes.byteLength,
+      contentType: 'video/mp4',
+      filename: 'a.mp4',
+    }));
+    const server = serve(sized, viewer);
+    const beyond = await get(server, await mintedPath(server), { range: 'bytes=10-' });
+    expect(beyond.status).toBe(416);
+    expect(cancelled).toBe(true);
+  });
+
   test('a handle answering a base64 string is a 500 naming the fix, never served', async () => {
     const wrong = recording(() => ({
       body: 'MDEy' as unknown as Uint8Array,

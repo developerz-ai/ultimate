@@ -56,11 +56,27 @@ const searchSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragm
   return sql`${column} @@ websearch_to_tsquery(${raw(`'${vector.language}'`)}, ${String(term)})`;
 };
 
+/**
+ * The path a predicate's column resolves through. A NULL test on a whole money property asks about
+ * its amount, the one thing that is NULL when the money is: memory answers it off the property, and
+ * resolving the property here refused it. An amount compared whole stays refused: no single column
+ * holds one, so naming a part is the caller's to do.
+ */
+const nullTestPath = <Row>(entity: EntityCore<Row>, predicate: Predicate): string => {
+  const asksNull =
+    predicate.op === 'is-null' ||
+    predicate.op === 'is-not-null' ||
+    ((predicate.op === 'eq' || predicate.op === 'neq') && predicate.value === null);
+  return asksNull && columnFor(entity.$columns, predicate.column)?.$meta.kind === 'money'
+    ? `${predicate.column}.minor`
+    : predicate.column;
+};
+
 const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFragment => {
   // BEFORE the column is resolved: a `matches` predicate names `SEARCH_PROPERTY`, which is not a
   // column and must never be looked up as one.
   if (predicate.op === 'matches') return searchSql(entity, predicate);
-  const column = columnRef(entity, predicate.column);
+  const column = columnRef(entity, nullTestPath(entity, predicate));
   const value = predicate.value;
   switch (predicate.op) {
     case 'eq':

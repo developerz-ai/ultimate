@@ -44,7 +44,7 @@ export interface RouteFact {
   readonly onInvalidate?: 'stale' | 'purge';
   /** `revalidate.maxStale`, as declared; absent when the route declared none. */
   readonly maxStale?: string | number;
-  /** `revalidate.query`, sorted; absent when the route declared none (it keys on the whole query). */
+  /** `revalidate.query`, sorted; absent when the route declared none (it keys on no query). */
   readonly query?: readonly string[];
   readonly budget?: { readonly js?: string };
   /** Which surface the route lives in — `site` may never import from `app`. */

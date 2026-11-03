@@ -2,6 +2,6 @@
 
 alter table "post_reviews" add constraint "post_reviews_org_id_fkey" FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE CASCADE;
 
-alter table "post_reviews" add constraint "post_reviews_post_id_fkey" FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE;
+alter table "post_reviews" add constraint "post_reviews_post_id_tenant_fkey" FOREIGN KEY (org_id, post_id) REFERENCES posts(org_id, id) ON DELETE CASCADE;
 
-alter table "post_reviews" add constraint "post_reviews_reviewed_by_fkey" FOREIGN KEY (reviewed_by) REFERENCES members(id) ON DELETE CASCADE;
+alter table "post_reviews" add constraint "post_reviews_reviewed_by_tenant_fkey" FOREIGN KEY (org_id, reviewed_by) REFERENCES members(org_id, id) ON DELETE CASCADE;

@@ -25,6 +25,7 @@ import {
   resetStorage,
   scopedKey,
   variantKey,
+  variantRevision,
 } from '@ultimat3/storage';
 import { assetRoutes, MEDIA_BASE_PATH } from './runtime-assets';
 import { AUTHORIZED_OBJECT_CACHE, STORAGE_READ_PERMISSION, storageRoutes } from './runtime-storage';
@@ -138,7 +139,13 @@ afterEach(() => {
 
 /** Rendered from the declaration rather than spelled, so an edit to the hint reaches these cases. */
 const AUTHORIZED = cacheControl(AUTHORIZED_OBJECT_CACHE);
-const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+/** The key a stored variant of `key` lives under, for the bytes it holds now. */
+const storedKey = async (key: string, width: number): Promise<string> => {
+  const object = await storage.disk().stat(key);
+  const revision = variantRevision(object?.etag ?? '');
+  return variantKey(key, { width, format: 'png', revision });
+};
 
 interface SurfaceCase {
   readonly label: string;
@@ -217,38 +224,33 @@ describe('unit · storage surfaces · one object, two routes, one verdict', () =
         expect(stored).toEqual({ kind: 'refused', code: sharedCode });
         return;
       }
-      // Served on both — and this is the one place the two legitimately differ: a shared key
-      // belongs to no tenant, so `/media` may still hand it to a CDN while `/_storage`
-      // revalidates. Who may read it is not negotiable; how long a cache may hold it is.
-      expect(media).toEqual({ kind: 'served', cacheControl: IMMUTABLE });
+      // Served on both, on one posture: a key names no bytes, so "shared" is not "immutable".
+      expect(media).toEqual({ kind: 'served', cacheControl: AUTHORIZED });
       expect(stored).toEqual({ kind: 'served', cacheControl: AUTHORIZED });
     });
   }
 });
 
 describe('unit · storage surfaces · what a shared cache may keep', () => {
-  test('a tenant-scoped object is never public or immutable on /media', async () => {
-    const media = await mediaVerdict(SCOPED_KEY, reader(['member'], 'org-a'));
-    expect(media.kind).toBe('served');
-    if (media.kind !== 'served') return;
-    // The bug this closes: `public, max-age=31536000, immutable` on one tenant's private object
-    // means any CDN or shared proxy serves it to every other tenant under the same URL for a year.
-    expect(media.cacheControl).not.toContain('public');
-    expect(media.cacheControl).not.toContain('immutable');
-  });
-
-  test('a shared object keeps the immutable hint the variant URL depends on', async () => {
-    const media = await mediaVerdict(SHARED_KEY, reader(['member'], 'org-a'));
-    expect(media).toEqual({
-      kind: 'served',
-      cacheControl: 'public, max-age=31536000, immutable',
+  for (const [label, key] of [
+    ['tenant-scoped', SCOPED_KEY],
+    ['shared', SHARED_KEY],
+  ] as const) {
+    test(`a ${label} object is never public or immutable on /media`, async () => {
+      const media = await mediaVerdict(key, reader(['member'], 'org-a'));
+      expect(media.kind).toBe('served');
+      if (media.kind !== 'served') return;
+      // `public, max-age=31536000, immutable` means any CDN or shared proxy serves it to anyone
+      // under the same URL for a year, and never refreshes it after an overwrite.
+      expect(media.cacheControl).not.toContain('public');
+      expect(media.cacheControl).not.toContain('immutable');
     });
-  });
+  }
 });
 
 describe('unit · storage surfaces · the transform is a write', () => {
   test('an unauthorized ?w= mints no object in the bucket', async () => {
-    const cached = variantKey(SCOPED_KEY, { width: 320, format: 'png' });
+    const cached = await storedKey(SCOPED_KEY, 320);
     const media = await mediaVerdict(SCOPED_KEY, anonymousActor(), '?w=320&f=png');
     expect(media.kind).toBe('refused');
     // The aggravator: `transformedVariant` ends in `disk.put`, so an unauthenticated transform is
@@ -258,7 +260,7 @@ describe('unit · storage surfaces · the transform is a write', () => {
 
   test('an authorized ?w= still caches its variant', async () => {
     // The fixture is 64 wide, so 64 is the one width a srcset mints for it (`usableWidths`).
-    const cached = variantKey(SCOPED_KEY, { width: 64, format: 'png' });
+    const cached = await storedKey(SCOPED_KEY, 64);
     const media = await mediaVerdict(SCOPED_KEY, reader(['member'], 'org-a'), '?w=64&f=png');
     expect(media.kind).toBe('served');
     expect(await storage.disk().exists(cached)).toBe(true);
@@ -268,7 +270,7 @@ describe('unit · storage surfaces · the transform is a write', () => {
     // This asked for `?w=320` and expected a stored `w320` variant — of a 64px image. The
     // pipeline never upscales, so that object held the 64px bytes again, and each of the eight
     // default widths would store its own copy: writes a reader drives, for URLs nothing mints.
-    const cached = variantKey(SCOPED_KEY, { width: 320, format: 'png' });
+    const cached = await storedKey(SCOPED_KEY, 320);
     const media = await mediaVerdict(SCOPED_KEY, reader(['member'], 'org-a'), '?w=320&f=png');
     expect(media.kind).toBe('served');
     expect(await storage.disk().exists(cached)).toBe(false);

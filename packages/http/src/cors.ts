@@ -23,6 +23,9 @@ export const DEFAULT_CORS: CorsConfig = {
   maxAgeSeconds: 600,
 };
 
+/** What `Origin` carries, and `URL.origin` answers, when there is no origin to name. */
+const OPAQUE_ORIGIN = 'null';
+
 /**
  * The one combination the browser refuses — `*` with credentials — refused HERE instead, at the
  * one moment an author can act on it. It used to resolve to "no CORS headers at all": the natural
@@ -33,6 +36,12 @@ export const assertCorsConfig = (config: CorsConfig): void => {
   if (config.origins.includes('*') && config.credentials) {
     throw corsConfigInvalid(
       "origins includes '*' while credentials is true — no browser accepts that pair",
+    );
+  }
+  if (config.origins.includes(OPAQUE_ORIGIN)) {
+    throw corsConfigInvalid(
+      "origins includes 'null', the origin every sandboxed iframe on the web sends, so any site could read the reply. URL.parse('localhost:3000').origin is that string",
+      "list the scheme too: configureHttp({ cors: { origins: ['http://localhost:3000'] } })",
     );
   }
 };
@@ -46,7 +55,7 @@ export const assertCorsConfig = (config: CorsConfig): void => {
  * this app allows" and let a cross-site form post through with the session cookie attached.
  */
 export const originListed = (config: CorsConfig, origin: string | null): boolean =>
-  origin !== null && config.origins.includes(origin);
+  origin !== null && origin !== OPAQUE_ORIGIN && config.origins.includes(origin);
 
 /**
  * The one answer to "may this origin READ our reply?" — the value of

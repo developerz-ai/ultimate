@@ -7,11 +7,14 @@ import { isUltimateError } from '@ultimat3/core';
 import { defineAuth } from './auth';
 import {
   configureAuthLimiters,
+  configureTotpReplay,
   installedLimiterCount,
   purgeAuthLimits,
   resetAuthLimiters,
+  resetTotpReplay,
 } from './limiter-install';
 import { type MemoryAuthAdapter, memoryAuthAdapter } from './memory-adapter';
+import { memoryTotpReplayGuard, type TotpReplayGuard } from './mfa';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
 import { DEFAULT_AUTH_RATE_LIMIT, memoryAuthLimiter } from './rate-limit';
 
@@ -53,6 +56,7 @@ const codeOf = (call: () => unknown): string => {
 
 afterEach(() => {
   resetAuthLimiters();
+  resetTotpReplay();
 });
 
 describe('configureAuthLimiters', () => {
@@ -214,5 +218,39 @@ describe('purgeAuthLimits', () => {
     configureAuthLimiters((policy) => tableLimiter(policy, 0));
     expect(await purgeAuthLimits()).toBe(0);
     expect(first.filter((limiter) => limiter.sweeps() > 0)).toEqual([]);
+  });
+});
+
+describe('configureTotpReplay', () => {
+  const installed: TotpReplayGuard = { claim: async () => true };
+
+  test('an app that declares nothing gets the host guard, not one process worth of memory', () => {
+    configureTotpReplay(() => installed);
+    expect(defineAuth({ adapter: adapter() }).totpReplay).toBe(installed);
+  });
+
+  test('an explicitly passed guard still wins over the installed factory', () => {
+    let calls = 0;
+    configureTotpReplay(() => {
+      calls += 1;
+      return installed;
+    });
+    const mine = memoryTotpReplayGuard();
+    expect(defineAuth({ adapter: adapter(), totpReplay: mine }).totpReplay).toBe(mine);
+    expect(calls).toBe(0);
+  });
+
+  test('with nothing installed, and after a reset, each Auth holds its own memory', () => {
+    configureTotpReplay(() => installed);
+    resetTotpReplay();
+    const first = defineAuth({ adapter: adapter() }).totpReplay;
+    expect(first).not.toBe(installed);
+    expect(first).not.toBe(defineAuth({ adapter: adapter() }).totpReplay);
+    expect(first).toHaveProperty('size', 0);
+  });
+
+  test('a factory that builds a guard of the old shape is refused too', () => {
+    configureTotpReplay(() => ({ isUsed: () => false }) as unknown as TotpReplayGuard);
+    expect(codeOf(() => defineAuth({ adapter: adapter() }))).toBe('X_CONFIG_INVALID');
   });
 });

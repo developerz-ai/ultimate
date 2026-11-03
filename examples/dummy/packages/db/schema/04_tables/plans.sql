@@ -7,6 +7,7 @@ create table "plans" (
   "monthly_currency" character(3) not null,
   "seats" integer not null,
   "monthly_scale" integer,
+  "tagline" text,
   constraint "plans_pkey" PRIMARY KEY (code, currency),
   constraint "plans_code_check" CHECK ((code = ANY (ARRAY['free'::text, 'team'::text, 'business'::text]))),
   constraint "plans_currency_check" CHECK ((currency = ANY (ARRAY['USD'::text, 'EUR'::text]))),

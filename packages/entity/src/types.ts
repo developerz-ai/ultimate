@@ -57,6 +57,12 @@ export type SearchWeight = 'A' | 'B' | 'C' | 'D';
 
 export interface ReferenceOptions {
   readonly onDelete?: OnDelete;
+  /**
+   * Why this edge may point into another tenant. Both ends tenant-scoped is a composite same-tenant
+   * key by default; a non-blank reason here makes it a plain one. Stated on an edge that was never
+   * same-tenant it is refused: a reason for nothing.
+   */
+  readonly crossTenant?: string;
 }
 
 /**
@@ -141,6 +147,8 @@ export interface ColumnMeta {
   /** A thunk: schema modules reference each other in a cycle. */
   readonly references?: () => AnyColumn;
   readonly onDelete?: OnDelete;
+  /** `references(target, { crossTenant })`: the reason, stated once, read only at describe time. */
+  readonly crossTenant?: string;
   /**
    * Presence is what puts this column in the entity's generated `tsvector`, and the value is its
    * weight. A modifier and not a column of its own: the vector is derived from every searchable

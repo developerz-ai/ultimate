@@ -3,13 +3,23 @@
 // The observer is an invariant — `$assert` runs in JS, in both drivers, before a statement exists —
 // so it can say WHEN the narrowing happened and not only that it had by the time the row landed.
 
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { type RecordingClient, recordingClient, setDbClient } from '@ultimat3/db';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  generateMigration,
+  type PgliteClient,
+  pgliteClient,
+  type RecordingClient,
+  raw,
+  recordingClient,
+  setDbClient,
+  statementsOf,
+} from '@ultimat3/db';
 import { money, text, uuid } from './columns';
+import { database, memoryDriver } from './database';
 import { entity } from './entity';
 import { invariant } from './invariants';
 import { memoryRepo } from './memory-repo';
-import { postgresRepo } from './pg-driver';
+import { postgresDriver, postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
 import type { Repo } from './repo';
 import type { RowWrite } from './types';
@@ -110,5 +120,81 @@ describe('a bigint minor unit is narrowed where the caller wrote it', () => {
     expect(values.every((value) => typeof value !== 'bigint')).toBe(true);
     // Narrowing copies; the row the caller built is theirs and is unchanged.
     expect(wide.total).toEqual({ minor: BigInt(AMOUNT), currency: 'EUR' });
+  });
+});
+
+/**
+ * A NULL test on a whole money property. Memory reads it off the property; Postgres has no column
+ * by that name and refused, so `where({ price: null })` was `1` in a test and `X_INVARIANT_VIOLATED`
+ * in production. `<p>.minor` is what both already answered for an amount.
+ */
+describe('a null test on a whole money property', () => {
+  const priced = entity('money_null_parity', {
+    columns: { id: uuid().primaryKey(), price: money().nullable() },
+  });
+  const ENTITIES = { priced };
+  const FREE = '00000000-0000-7000-8000-0000000000c1';
+  const PAID = '00000000-0000-7000-8000-0000000000c2';
+  let pglite: PgliteClient;
+
+  beforeAll(async () => {
+    pglite = pgliteClient();
+    setDbClient(pglite);
+    const migration = generateMigration({
+      entities: [priced.$describe()],
+      name: 'money null parity',
+      now: new Date('2026-11-02T00:00:00.000Z'),
+    });
+    for (const statement of statementsOf(migration.up)) await pglite.execute(raw(statement));
+    const db = database(ENTITIES, { driver: postgresDriver() });
+    await db.priced.insert({ id: FREE, price: null });
+    await db.priced.insert({ id: PAID, price: { minor: 100, currency: 'EUR' } });
+  }, 30_000);
+
+  afterAll(async () => {
+    setDbClient(undefined);
+    await pglite.close();
+  });
+
+  const on = async (driver: 'memory' | 'postgres') => {
+    if (driver === 'postgres') {
+      setDbClient(pglite);
+      return database(ENTITIES, { driver: postgresDriver() });
+    }
+    const db = database(ENTITIES, { driver: memoryDriver() });
+    await db.priced.insert({ id: FREE, price: null });
+    await db.priced.insert({ id: PAID, price: { minor: 100, currency: 'EUR' } });
+    return db;
+  };
+
+  for (const driver of ['memory', 'postgres'] as const) {
+    test(`${driver} · eq null`, async () => {
+      const db = await on(driver);
+      expect((await db.priced.where({ price: null }).all()).map((row) => row.id)).toEqual([FREE]);
+    });
+
+    test(`${driver} · neq null, is-null, is-not-null`, async () => {
+      const db = await on(driver);
+      const ids = async (op: 'neq' | 'is-null' | 'is-not-null'): Promise<readonly string[]> =>
+        (await db.priced.andWhere('price', op, null).all()).map((row) => row.id);
+      expect(await ids('neq')).toEqual([PAID]);
+      expect(await ids('is-null')).toEqual([FREE]);
+      expect(await ids('is-not-null')).toEqual([PAID]);
+    });
+
+    test(`${driver} · the part still answers`, async () => {
+      const db = await on(driver);
+      const rows = await db.priced.andWhere('price.minor' as never, 'is-null', null).all();
+      expect(rows.map((row) => row.id)).toEqual([FREE]);
+    });
+  }
+
+  test('postgres · a non-null amount on the whole property stays refused', async () => {
+    const db = await on('postgres');
+    const refused = await db.priced
+      .where({ price: { minor: 100, currency: 'EUR' } })
+      .all()
+      .catch((error: unknown) => error);
+    expect((refused as { code?: unknown }).code).toBe('X_INVARIANT_VIOLATED');
   });
 });

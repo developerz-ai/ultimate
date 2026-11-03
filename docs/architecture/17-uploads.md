@@ -46,7 +46,8 @@ name>`. Every local disk signs with the one `STORAGE_SIGNING_SECRET`, so without
 disk verified on its sibling with only the path segment edited. The origin is not signed (the
 verifying route is handed a path), and an absolute `baseUrl` is compared by its pathname.
 
-What it cannot cover is the bytes, which is why hop 3 re-counts them and re-sniffs them.
+What it cannot cover is the bytes, which is why they are re-counted and re-sniffed: at hop 3 on a
+local disk, by `promoteAttachment` on s3, where hop 3 is the provider's and reads nothing.
 `Content-Type` is attacker-controlled at every hop: the header must equal the signed type
 (otherwise `X_STORAGE_URL_INVALID`), and the magic bytes must agree with that type (otherwise
 `X_STORAGE_TYPE_REJECTED`). A `.png` that is really an HTML document is stored XSS the moment

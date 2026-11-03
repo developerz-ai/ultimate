@@ -180,8 +180,8 @@ Read tools are unrestricted in dev; write tools are scoped to branch environment
 
 | Task | Command |
 |---|---|
-| Framework version bump + codemods | `x upgrade` — **planned**, exits `X_NOT_IMPLEMENTED`. The shipped path is `bun update --latest && x verify`, then pin every `@ultimat3/*` to one exact version |
-| Check what a bump would change | nothing shipped does this. `x upgrade --dry-run` is worse than unimplemented: a planned command declares no flags, so it dies at the parser with `X_CLI_BAD_FLAG` instead of the honest `X_NOT_IMPLEMENTED`. Read `CHANGELOG.md` — `grep -c 'BREAKING —' <that section>` is the count, and it is `[Unreleased]`'s to change on any commit ([Upgrading](Upgrading)) |
+| Framework version bump | `x upgrade --json`, one major per run ([CLI reference](CLI-Reference#x-upgrade)). An app below 30.0.0 has no such command yet: `bunx @ultimat3/cli@latest upgrade --json` |
+| Check what a bump would change | `x upgrade --dry-run --json`: the pins, the Bun floor edits and the section to read. Writes nothing, runs no gate |
 | Remove dev state (embedded PG, storage, caches) | `rm -rf .x` |
 | Remove the CLI | it ships with the app; deleting the repo is the uninstall |
 

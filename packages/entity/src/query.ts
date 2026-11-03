@@ -7,17 +7,19 @@
 import type { Page } from '@ultimat3/core';
 import { pageOf } from '@ultimat3/core';
 import { assertBatchable, type BatchIterator, batchIterator } from './batch';
-import { entityNow } from './clock';
+import { overwrittenBy } from './bulk-write';
 import type { EntityCore } from './entity';
 import { searchUndeclared } from './feature-errors';
 import { checkedPredicate, type Operator } from './operator';
-import { assertFinitePageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
+import { assertFinitePageSize, DEFAULT_PAGE_SIZE } from './plan';
 import { preloaded, type RelatedTables } from './preload';
 import { type PreloadOptions, type PreloadRelation, preloadsWith } from './preload-ceiling';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
-import { copyRow, pickRow } from './sealed';
+import { pickRow } from './sealed';
 import { SEARCH_PROPERTY } from './search';
+import { type TableLocks, tableLocks } from './table-locks';
 import type { Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
+import { stampedColumns, touch } from './touch';
 import { type Move, transitionRow } from './transition';
 import type {
   ColumnMap,
@@ -181,7 +183,8 @@ export interface ReadBuilder<Row, S extends SealedKeySet = NoSealedKeys> {
 }
 
 export interface Table<Row, C extends ColumnMap = ColumnMap>
-  extends ReadBuilder<Row, SealedKeysOf<C>> {
+  extends ReadBuilder<Row, SealedKeysOf<C>>,
+    TableLocks<Row> {
   /**
    * Move one row through the state machine `column` declares, in ONE statement.
    *
@@ -439,26 +442,6 @@ const builder = <Source, Row>(
   };
 };
 
-/**
- * Columns declared `onUpdateNow()` are written by the framework, never by the caller. One helper,
- * so `update(id, patch)` and `updateWhere(filter, patch)` stamp the same columns at the same
- * moment — a second copy is how one of them ends up with a stale `updatedAt`.
- *
- * A patch that names nothing is returned untouched. Stamping `updatedAt` onto "the caller named no
- * columns" would turn that mistake into a real write on any entity that happens to declare the
- * column, and `X_PATCH_EMPTY` downstream would never see it — so whether the refusal fires would
- * depend on the schema rather than on the call.
- */
-const touch = <Row, Patch>(entity: EntityCore<Row>, patch: Patch): Patch => {
-  if (namedColumns(patch).length === 0) return patch;
-  const stamped: Record<string, unknown> = {};
-  for (const [property, column] of Object.entries(entity.$columns)) {
-    if (column.$meta.onUpdate !== undefined) stamped[property] = entityNow();
-  }
-  // `copyRow`, never `Object.assign({}, patch)`: a row passed back whole keeps its sealed properties.
-  return Object.assign(copyRow(patch as object), stamped) as Patch;
-};
-
 // Every write is `async`, matching the repository contract: a failing call rejects and never
 // throws synchronously. `$parse` throws — without the wrapper, a bad row escapes at call time
 // while a bad id rejects, and every call site would need two error paths for one mistake.
@@ -482,11 +465,21 @@ export const tableFor = <Row, C extends ColumnMap>(
   // `touch` and not `$parse` alone: an upsert that lands on a stored row IS an update, so an
   // `onUpdateNow()` column has to move exactly as `update(id, patch)` moves it — and stamping it
   // in a second place is how one of the two ends up writing a stale `updatedAt`.
-  upsertAll: async (rows, args) =>
-    repo.upsertAll(
+  // Asked of the caller's rows, BEFORE `$parse` makes every row name every column: otherwise a
+  // collision resets each column nobody mentioned to its default.
+  upsertAll: async (rows, args) => {
+    const overwrites =
+      args.onMatch === 'nothing'
+        ? undefined
+        : ([
+            ...overwrittenBy(entity, rows as readonly RowPatch<Row>[]),
+            ...stampedColumns(entity),
+          ] as (keyof Row & string)[]);
+    return repo.upsertAll(
       rows.map((row) => touch(entity, entity.$parse(row))),
-      args,
-    ),
+      overwrites === undefined ? args : { ...args, overwrites },
+    );
+  },
   update: async (id, patch, options) => repo.update(id, touch(entity, patch), options),
   delete: async (id, options) => repo.delete(id, options),
   deleteWhere: async (filter, options) => repo.deleteWhere(filter, options),
@@ -497,4 +490,5 @@ export const tableFor = <Row, C extends ColumnMap>(
   // the row moved, using the stamp already declared instead of a second one beside it.
   transition: async (column, id, move, options) =>
     transitionRow(entity, repo, column, id, move, (patch) => touch(entity, patch), options),
+  ...tableLocks(entity, repo),
 });

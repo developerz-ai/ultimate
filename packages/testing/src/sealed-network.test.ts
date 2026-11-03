@@ -177,6 +177,15 @@ describe(testName('unit', 'sealed network — sockets, not only fetch'), () => {
     }
   });
 
+  // These route through a translator or a relay, so a dial to one is egress the seal exists for.
+  test.each(['64:ff9b::7f00:1', '2002:7f00:1::', '::7f00:1', '::ffff:0:7f00:1'])(
+    'Bun.connect to %s, which only spells loopback, is sealed',
+    async (hostname) => {
+      const dial = () => Bun.connect({ hostname, port: 1, socket: { data() {} } });
+      expect((await socketRefusal(dial))?.code).toBe('X_TEST_NETWORK_SEALED');
+    },
+  );
+
   test('an allowed host reaches the REAL dial, and unseal hands the originals back', async () => {
     const realWebSocket = globalThis.WebSocket;
     const realConnect = Bun.connect;

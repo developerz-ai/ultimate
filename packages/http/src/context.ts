@@ -12,10 +12,12 @@ import {
   traceId as newTraceId,
   type Role,
   readCookie,
+  runWithContext,
   type ServiceBag,
   systemClock,
   useContext,
   uuidV7,
+  withChildContext,
 } from '@ultimat3/core';
 import { localeConfig } from '@ultimat3/i18n';
 import { timeConfig } from '@ultimat3/time';
@@ -264,6 +266,54 @@ export const requestContext = (init: RequestContextInit): RequestContext => {
  * action served over HTTP. Never reintroduce a cast — the type error IS the enforcement.
  */
 export const asCtx = (ctx: RequestContext): Ctx => ctx;
+
+/**
+ * Run `fn` as this request with nobody behind it: what a SHARED document (`isr`, `static`) renders
+ * in. A stored page is answered to every later visitor, so it may vary on what its key carries and
+ * nothing else: `url` (already narrowed by the caller to what the key holds) and the locale.
+ *
+ * Still a request, which is why this is not a bare `withChildContext({ actor })`: that builds a
+ * plain `ctxOf`, where `setRedirect()` and `useRequestHeader()` answer `X_NO_REQUEST`. And not a
+ * spread of `ctx` alone, whose services were built for the visitor: the same leak by another door.
+ * So the child supplies the rebuilt services, and the request's fields go over it, for the reason
+ * `requestContext` spreads in that order: a service named `url` never shadows the request's own.
+ * `ctx.services` is non-enumerable (`bindRequestServices`), so the spread leaves the child's.
+ *
+ * Everything the visitor put on the context goes, by allow-list where a list exists. The inbound
+ * headers are EMPTY, not filtered: `x-api-key`, `x-forwarded-email` and whatever a proxy adds next
+ * are not names a deny-list can know, and no header is in the key — `accept-language` already did
+ * its work as `ctx.locale`, which IS. The zone is the default, since an actor's or a cookie's is
+ * not in the key (`preferences.ts`). `locale` stays: bounded, keyed, and no secret.
+ *
+ * What `fn` writes is on `scope`: read a redirect back with `takeRedirect(scope)`, never `ctx`.
+ * `scope.headers` is `ctx.headers`, so a response header set inside still reaches the response.
+ */
+export const withAnonymousRequest = <T>(
+  ctx: RequestContext,
+  url: URL,
+  fn: (scope: RequestContext) => T,
+): T =>
+  runWithContext(asCtx(ctx), () => {
+    const tz = timeConfig().defaultZone;
+    return withChildContext({ actor: anonymousActor(), tz }, () => {
+      const child = useContext();
+      const scope: RequestContext = {
+        ...child,
+        ...ctx,
+        actor: child.actor,
+        tz,
+        url,
+        requestHeaders: new Headers(),
+        ip: null,
+        peer: null,
+        clientBuildId: null,
+        authz: undefined,
+        rateLimit: undefined,
+        readBody: undefined,
+      };
+      return runWithContext(asCtx(scope), () => fn(scope));
+    });
+  });
 
 /**
  * The ambient `Ctx`, WIDENED to the request shape and not yet proven to be one. Private for that

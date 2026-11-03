@@ -4,7 +4,7 @@
 // primitive out is a different way to NAME a tool, never a second way to run one.
 
 import type { AnyAction } from '@ultimat3/action';
-import { actionName, guardActionBeforeInput, invoke, isAction } from '@ultimat3/action';
+import { actionName, admitActionCaller, asCallerContext, invoke, isAction } from '@ultimat3/action';
 import {
   type Actor,
   actorOf,
@@ -15,7 +15,6 @@ import {
 import type { AnyQuery } from '@ultimat3/query';
 import { guardQueryBeforeInput, isQuery, queryName, readAnswer, sourceFor } from '@ultimat3/query';
 import { toWireOutputSchema, toWireSchema } from '@ultimat3/schema';
-import { asCallerContext } from './caller-context';
 import type { ProjectablePrimitive } from './from-action';
 import { takeIdempotencyKeyArg, withIdempotencyKeyArg } from './idempotency-arg';
 import type { JsonSchema } from './wire';
@@ -64,11 +63,7 @@ export function primitiveFromAction(target: AnyAction): ProjectablePrimitive {
     mutates: true,
     idempotent: keyed,
     // The same gate `invoke` opens with, asked by the server before it answers `invalid-args`.
-    admit: (actor: Actor) =>
-      asCallerContext(actor, () => {
-        const ctx = useContext();
-        guardActionBeforeInput(target.policy, { actor: actorOf(ctx), ctx, action: name }, 'mcp');
-      }),
+    admit: admitActionCaller(target, name),
     // The actor rides in on the options: `invoke` swaps it inside the one execution path.
     run: keyed
       ? ({ input: args, actor }) => {

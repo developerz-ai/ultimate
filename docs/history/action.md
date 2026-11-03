@@ -700,3 +700,32 @@ a current fact: the rules that still hold are in that file, and where the two di
   and looked the action's path up in it. It reads the registry-wide document now and compares
   `operationId`. **`Problem`** listed eight members while `toProblem` serves twelve, and pinned
   `code` to a pattern `factsOf` does not keep; `openapi-problem.test.ts` compares the two.
+
+## Moved out of `CLAUDE.md` for its ceiling (2026-11)
+
+- **`json-schema.ts`'s refusal names `introspect()`** (`normalizeJsonSchema`, test-only export).
+
+## 2026-11-02 — a finished scope refuses writes (plan 101, slice 02)
+
+For a reservation it created, `withIdempotency` calls `completeTransaction()` (through `tx-scope.ts`) and runs `run` in `runToCompletion`, so `invoke` reads the handler's `ctx` from `useContext()` inside it. An aborted signal would fail the vendor call and settle a failure that the key then replays. The escape removes every bound the request had, and an orphan counted by `beginWork()` until it settles leaked in-flight, held the key at 409 and burned each drain. So `runWithinCeiling` aborts it at `idempotencyCeilingMs()`, twice the request deadline (60 s by default, and with `requestTimeoutMs: 0`), and settles `X_IDEMPOTENCY_RUN_CEILING`; `configureIdempotency({ scope, ceilingMs })` changes it.
+
+Moved out of `CLAUDE.md` at its ceiling: records carry `name` + `primitive`, required (`type-pins.ts`); no `action` alias since 25.0.0. The `x_audit.action` column holds `name`.
+
+## Moved from `CLAUDE.md` at its ceiling, 2026-11-02
+
+- **The memory sink DROPS** — a ring at `DEFAULT_MAX_AUDIT_RECORDS`, oldest first, counting `dropped`;
+  no spelling of "unbounded".
+
+## Moved out 2026-11-02 (plan 101 wave 1, the `CLAUDE.md` ceiling)
+
+Verbatim from [`packages/action/CLAUDE.md`](../../packages/action/CLAUDE.md), which keeps the rule in one line.
+
+### Invariants — execution and authz
+
+- **The style is stated ONCE, on the server.** A browser never restates it: the document carries
+  `<meta name="ultimate-path-style">` (render's `clientPathStyleTags`, written only for a
+  non-default style) and core's `actionPath(name)` reads it for every caller naming none — `rpc`,
+  realtime's `useMutation` and the outbox replay. `client.ts` passes `options.pathStyle` through
+  and adds NO default of its own. `ClientOptions.pathStyle` is for a caller with no document; a
+  wrong one is answered `X_CONTRACT_DRIFT` (404) by `explainActionPathMiss`, never
+  `X_ROUTE_NOT_FOUND`. A pinned action and a path under the SERVED style are never explained.

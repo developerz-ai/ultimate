@@ -6,6 +6,9 @@
 /** The complete `Sec-Fetch-Site` vocabulary. Anything else was written by a non-browser. */
 const KNOWN_SITES = new Set(['same-origin', 'same-site', 'cross-site', 'none']);
 
+/** What `Origin` carries, and `URL.origin` answers, when there is no origin to name. */
+const OPAQUE_ORIGIN = 'null';
+
 export interface OriginEvidence {
   /** The origins this app is reached on. More than one when the scheme is not knowable here. */
   readonly selfOrigins: readonly string[];
@@ -27,19 +30,32 @@ export type OriginVerdict =
  * `Origin` second, so an app that lists a sibling origin keeps working. `same-site` is NOT proof:
  * a sibling subdomain is same-site, and a `SameSite=Lax` cookie rides its requests. A request with
  * neither header is refused — "we could not tell" is the case this exists for.
+ *
+ * `Origin: null` matches nothing, whatever a list holds: a sandboxed iframe, a `data:` page and a
+ * cross-origin redirect all send it, so it names everybody. It reaches a list by accident too —
+ * `URL.parse('localhost:3000').origin` is that same string.
  */
 export function proveSameOrigin(evidence: OriginEvidence): OriginVerdict {
   const site = evidence.secFetchSite;
   if (site === 'same-origin' || site === 'none') return { ok: true };
   const origin = evidence.origin;
-  if (origin !== null && evidence.selfOrigins.includes(origin)) return { ok: true };
-  if (origin !== null && evidence.listed(origin)) return { ok: true };
+  const opaque = origin === OPAQUE_ORIGIN;
+  if (origin !== null && !opaque) {
+    if (evidence.selfOrigins.includes(origin)) return { ok: true };
+    if (evidence.listed(origin)) return { ok: true };
+  }
   // Only the four values a browser can send are quoted back. Anything else is a client that
   // wrote the header itself, and echoing what it wrote is how a rejected value reaches the log
   // store and the response body.
   if (site !== null) {
     const known = KNOWN_SITES.has(site) ? site : 'a value no browser sends';
     return { ok: false, reason: `the request reported sec-fetch-site: ${known}` };
+  }
+  if (opaque) {
+    return {
+      ok: false,
+      reason: 'the request declared the opaque origin null, which no list can vouch for',
+    };
   }
   return {
     ok: false,

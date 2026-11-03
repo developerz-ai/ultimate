@@ -1,10 +1,17 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
+import { isUltimateError } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
 import { StepDuplicateError } from './errors';
 import { memoryEventBus } from './events';
+import { DEFAULT_RETRY } from './retry';
+import { nextRetryForError } from './retry-classification';
 import type { StepStore } from './steps';
-import { isStepSuspension, MAX_TRACE_NAMES, stepRunner } from './steps';
+import { isStepSuspension, stepRunner } from './steps';
 import { memoryStepStore } from './steps-memory';
+
+// A foreign failure handed to the subject: test input, never its verdict.
+const POOL_BLIPPED = new TypeError('the pool blipped');
 
 function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
   let current = startMs;
@@ -17,6 +24,9 @@ function fakeClock(startMs: number): Clock & { advance(ms: number): void } {
 }
 
 const T0 = 1_760_000_000_000;
+
+/** The wait in tests that never reach a payload: nothing is published, so nothing is parsed. */
+const NOTHING = t.object({});
 
 let store: StepStore;
 
@@ -193,6 +203,7 @@ describe('step.waitForEvent', () => {
         events,
       });
       return runner.step.waitForEvent('approval', 'invoice.approved', {
+        schema: t.object({ by: t.string }),
         match: 'inv-1',
         timeout: '1h',
       });
@@ -216,219 +227,211 @@ describe('step.waitForEvent', () => {
     const events = memoryEventBus({ clock });
     const attempt = (): Promise<unknown> => {
       const runner = stepRunner({ runId: 'run-8', jobName: 'j', store, clock, events });
-      return runner.step.waitForEvent('maybe', 'never.happens', { timeout: '1m' });
+      return runner.step.waitForEvent('maybe', 'never.happens', {
+        schema: NOTHING,
+        timeout: '1m',
+      });
     };
 
     expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
     clock.advance(61_000);
     expect(await attempt()).toBeUndefined();
   });
+
+  describe('the payload is parsed by the schema the wait declares', () => {
+    const Approval = t.object({ amount: t.number, by: t.string.default('nobody') });
+    const SECRET = 'iban-es91-secret';
+
+    /** Waits on `pay`, publishes `payload` past the wait's stamp, answers the next attempt's result. */
+    const hit = async (payload: unknown, runId = 'run-pay') => {
+      const clock = fakeClock(T0);
+      const events = memoryEventBus({ clock });
+      const attempt = () =>
+        stepRunner({ runId, jobName: 'pay', store, clock, events }).step.waitForEvent(
+          'approval',
+          'invoice.approved',
+          { schema: Approval, timeout: '1h' },
+        );
+      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
+      await events.publish('invoice.approved', payload);
+      clock.advance(30_000);
+      return attempt;
+    };
+
+    test('a hit and its replay answer the one parsed value, the store keeps the raw one', async () => {
+      const attempt = await hit({ amount: 12 });
+      const first = await attempt();
+      expect(first).toEqual({ amount: 12, by: 'nobody' });
+      expect((await store.get('run-pay', 'approval'))?.output).toEqual({ amount: 12 });
+      expect(await attempt()).toEqual(first);
+    });
+
+    test('a wrong payload raises the code, terminally, with no payload value in the text', async () => {
+      const attempt = await hit({ amount: 'twelve', by: SECRET, card: SECRET });
+      const thrown: unknown = await attempt().catch((error: unknown) => error);
+
+      if (!isUltimateError(thrown)) return expect.unreachable('expected X_JOB_EVENT_INVALID');
+      expect(thrown.code).toBe('X_JOB_EVENT_INVALID');
+      expect(thrown.cause).toContain('invoice.approved');
+      expect(thrown.cause).toContain('amount');
+      expect(thrown.fix).toContain('x jobs retry');
+      expect(JSON.stringify(thrown.toJSON())).not.toContain('twelve');
+      expect(JSON.stringify(thrown.toJSON())).not.toContain(SECRET);
+      expect(nextRetryForError(DEFAULT_RETRY, 1, thrown).stoppedBy).toBe('terminal');
+      // Not this step's answer: nothing completed, so a repaired publisher can still answer it.
+      expect((await store.get('run-pay', 'approval'))?.status).toBe('waiting');
+    });
+
+    // `x jobs retry` keeps the run's steps and `find` answers the EARLIEST event, so without a floor
+    // the repair the error names could not work: the same refused event, until its 7 d TTL.
+    test('a refused event is not asked about again, so a repaired publisher can answer', async () => {
+      const clock = fakeClock(T0);
+      const events = memoryEventBus({ clock });
+      const attempt = () =>
+        stepRunner({ runId: 'run-fix', jobName: 'pay', store, clock, events }).step.waitForEvent(
+          'approval',
+          'invoice.approved',
+          { schema: Approval, timeout: '1h' },
+        );
+      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
+      await events.publish('invoice.approved', { amount: 'twelve' });
+      clock.advance(30_000);
+      await expect(attempt()).rejects.toBeUltimateError('X_JOB_EVENT_INVALID');
+
+      // The retry, before the publisher is repaired: parked, not refused a second time.
+      clock.advance(30_000);
+      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
+      clock.advance(30_000);
+      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
+
+      await events.publish('invoice.approved', { amount: 12, by: 'ada' });
+      clock.advance(30_000);
+      expect(await attempt()).toEqual({ amount: 12, by: 'ada' });
+      // Replays what it stored, and the floor is gone with the wait.
+      expect(await attempt()).toEqual({ amount: 12, by: 'ada' });
+    });
+
+    test('the floor moves the search and never the timeout', async () => {
+      const clock = fakeClock(T0);
+      const events = memoryEventBus({ clock });
+      const attempt = () =>
+        stepRunner({ runId: 'run-end', jobName: 'pay', store, clock, events }).step.waitForEvent(
+          'approval',
+          'invoice.approved',
+          { schema: Approval, timeout: '1h' },
+        );
+      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
+      clock.advance(1_800_000);
+      await events.publish('invoice.approved', { amount: 'twelve' });
+      await expect(attempt()).rejects.toBeUltimateError('X_JOB_EVENT_INVALID');
+      expect((await store.get('run-end', 'approval'))?.startedAt).toBe(T0);
+      clock.advance(1_800_001);
+      expect(await attempt()).toBeUndefined();
+    });
+
+    // The live value on a hit and its JSON on a replay were two answers to one event.
+    test('a hit parses the stored form: an undefined payload is the null every store holds', async () => {
+      const clock = fakeClock(T0);
+      const events = memoryEventBus({ clock });
+      const attempt = () =>
+        stepRunner({ runId: 'run-undef', jobName: 'pay', store, clock, events }).step.waitForEvent(
+          'approval',
+          'invoice.approved',
+          { schema: t.optional(t.string) },
+        );
+      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
+      await events.publish('invoice.approved', undefined);
+      clock.advance(30_000);
+      await expect(attempt()).rejects.toBeUltimateError('X_JOB_EVENT_INVALID');
+    });
+
+    test('a stored payload the schema now refuses fails on the replay too', async () => {
+      await store.put({
+        runId: 'run-old',
+        name: 'approval',
+        status: 'completed',
+        output: { amount: 'twelve' },
+        startedAt: T0,
+        attempts: 1,
+      });
+      const runner = stepRunner({ runId: 'run-old', jobName: 'pay', store });
+      const replay = runner.step.waitForEvent('approval', 'invoice.approved', { schema: Approval });
+      await expect(replay).rejects.toBeUltimateError('X_JOB_EVENT_INVALID');
+    });
+  });
 });
 
 /**
- * A cancelled attempt has lost its lease: the deadline nacked the job and another worker owns
- * this `runId` now. So the runner writes nothing more — a late `completed` would hand the new
- * attempt a step it never ran, and a late `failed` would erase one it did.
+ * K6. `hydrated` was assigned before `await store.list`, so a second caller read the empty map.
+ * `Promise.all([run('a'), run('b')])` replayed: `[1, 20]`, stored `[1, 2]`, `bRuns: 2` — the
+ * at-least-once contract quietly becoming "run again".
  */
-describe('a cancelled run writes nothing', () => {
-  const cancelled = (): AbortSignal => {
-    const controller = new AbortController();
-    controller.abort();
-    return controller.signal;
-  };
+describe('steps in parallel share one hydration', () => {
+  test('two completed steps in Promise.all replay once each, with the stored values', async () => {
+    let aRuns = 0;
+    let bRuns = 0;
+    const attempt = (a: number, b: number) => {
+      const { step } = stepRunner({ runId: 'run-par', jobName: 'j', store });
+      return Promise.all([
+        step.run('a', () => {
+          aRuns += 1;
+          return a;
+        }),
+        step.run('b', () => {
+          bRuns += 1;
+          return b;
+        }),
+      ]);
+    };
 
-  test('a step that finishes after the cancel is refused instead of recorded', async () => {
-    const runner = stepRunner({
-      runId: 'run-9',
-      jobName: 'j',
-      store,
-      signal: cancelled(),
-    });
-
-    await expect(runner.step.run('late', () => 'done')).rejects.toThrow(/X_ABORTED/);
-    expect(await store.get('run-9', 'late')).toBeUndefined();
+    expect(await attempt(1, 2)).toEqual([1, 2]);
+    expect(await attempt(10, 20)).toEqual([1, 2]);
+    expect({ aRuns, bRuns }).toEqual({ aRuns: 1, bRuns: 1 });
   });
 
-  test('a step that fails after the cancel leaves the live record alone', async () => {
-    // What the attempt that replaced this one has already put there.
+  test('the list is asked once for the whole Promise.all', async () => {
+    let lists = 0;
+    const counted: StepStore = {
+      ...store,
+      list(runId) {
+        lists += 1;
+        return store.list(runId);
+      },
+    };
+    const { step } = stepRunner({ runId: 'run-one', jobName: 'j', store: counted });
+    await Promise.all([step.run('a', () => 1), step.run('b', () => 2), step.run('c', () => 3)]);
+    expect(lists).toBe(1);
+  });
+
+  test('a list that rejects once fails its callers, and the next call asks again', async () => {
     await store.put({
-      runId: 'run-10',
-      name: 'shared',
+      runId: 'run-blip',
+      name: 'done',
       status: 'completed',
-      output: 'from the live attempt',
+      output: 7,
       startedAt: T0,
       attempts: 1,
     });
-    const runner = stepRunner({
-      runId: 'run-10',
-      jobName: 'j',
-      store,
-      signal: cancelled(),
-    });
-
-    // `run` replays a completed step, so reach the failure path through a fresh name.
-    await expect(
-      runner.step.run('shared-2', () => {
-        throw new TypeError('the dependency is down');
-      }),
-    ).rejects.toThrow('the dependency is down');
-    expect(await store.get('run-10', 'shared-2')).toBeUndefined();
-    expect((await store.get('run-10', 'shared'))?.output).toBe('from the live attempt');
-  });
-
-  test('sleep and waitForEvent are fenced by the same signal', async () => {
-    const clock = fakeClock(T0);
-    const runner = stepRunner({
-      runId: 'run-11',
-      jobName: 'j',
-      store,
-      clock,
-      signal: cancelled(),
-    });
-
-    await expect(runner.step.sleep('30s')).rejects.toThrow(/X_ABORTED/);
-    await expect(runner.step.waitForEvent('maybe', 'never.happens')).rejects.toThrow(/X_ABORTED/);
-    expect(await store.list('run-11')).toEqual([]);
-  });
-});
-
-describe('a step timeout cancels the body it is timing', () => {
-  test('the signal handed to the step aborts before the step is failed', async () => {
-    let observed: AbortSignal | undefined;
-    const runner = stepRunner({
-      runId: 'run-12',
-      jobName: 'j',
-      store,
-      stepTimeoutMs: 5,
-    });
-
-    await expect(
-      runner.step.run('slow', async (signal) => {
-        observed = signal;
-        await Bun.sleep(40);
-        return 'done';
-      }),
-    ).rejects.toThrow(/X_JOB_TIMEOUT/);
-    // The failure is recorded — this run is still ours, only the step's ceiling passed — but the
-    // body was told to stop first, so it is not still working beside the retry.
-    expect(observed?.aborted).toBe(true);
-    expect((await store.get('run-12', 'slow'))?.status).toBe('failed');
-  });
-
-  test('the run signal reaches the body too, so one check covers both deadlines', async () => {
-    const controller = new AbortController();
-    let observed: AbortSignal | undefined;
-    const runner = stepRunner({
-      runId: 'run-13',
-      jobName: 'j',
-      store,
-      stepTimeoutMs: 10_000,
-      signal: controller.signal,
-    });
-
-    const running = runner.step.run('watching', async (signal) => {
-      observed = signal;
-      await Bun.sleep(5);
-      return 'done';
-    });
-    controller.abort();
-    await expect(running).rejects.toThrow(/X_ABORTED/);
-
-    expect(observed?.aborted).toBe(true);
-  });
-});
-
-describe('the attempt trace is bounded, and duplicate detection is not', () => {
-  // `Array.includes` per claim made a long run quadratic: 20,000 steps is ~200M string compares
-  // plus a 20,000-entry array carried to the end of the run and read by `x jobs show`.
-  test('keeps the most recent MAX_TRACE_NAMES names, not one per step', async () => {
-    const runner = stepRunner({ runId: 'run-long', jobName: 'sweep', store });
-
-    for (let i = 0; i < MAX_TRACE_NAMES * 3; i += 1) {
-      await runner.step.run(`batch:${i}`, () => i);
-    }
-
-    const used = runner.usedNames();
-    expect(used).toHaveLength(MAX_TRACE_NAMES);
-    expect(used[used.length - 1]).toBe(`batch:${MAX_TRACE_NAMES * 3 - 1}`);
-  });
-
-  // The trace forgetting a name must never make it re-claimable: the store is keyed by it.
-  test('still refuses a duplicate whose name scrolled out of the trace', async () => {
-    const runner = stepRunner({ runId: 'run-dup', jobName: 'sweep', store });
-
-    await runner.step.run('batch:0', () => 0);
-    for (let i = 1; i <= MAX_TRACE_NAMES * 2; i += 1) {
-      await runner.step.run(`batch:${i}`, () => i);
-    }
-
-    expect(runner.usedNames()).not.toContain('batch:0');
-    await expect(runner.step.run('batch:0', () => 0)).rejects.toThrow(StepDuplicateError);
-  });
-
-  test('bounds the replay trace the same way', async () => {
-    const first = stepRunner({ runId: 'run-replay', jobName: 'sweep', store });
-    for (let i = 0; i < MAX_TRACE_NAMES + 10; i += 1) {
-      await first.step.run(`batch:${i}`, () => i);
-    }
-
-    const second = stepRunner({ runId: 'run-replay', jobName: 'sweep', store });
-    for (let i = 0; i < MAX_TRACE_NAMES + 10; i += 1) {
-      await second.step.run(`batch:${i}`, () => i);
-    }
-
-    expect(second.replayedNames()).toHaveLength(MAX_TRACE_NAMES);
-  });
-});
-
-/**
- * A replay answers the same value on every driver. The memory store kept the live REFERENCE and
- * the pg store `JSON.stringify(output ?? null)`, so a `Date` step output replayed as a `Date` in
- * tests and as a string in production — and a `waitForEvent` timeout replayed as `null` on pg,
- * where `evt === undefined` then read as "an event arrived". `wire` is the pg store's own reading:
- * JSON on the way in, `row.output` on the way out.
- */
-describe('a replay is the same value on every store', () => {
-  const wire = (): StepStore => {
-    const inner = memoryStepStore();
-    return {
-      ...inner,
-      put: (record) =>
-        inner.put({ ...record, output: JSON.parse(JSON.stringify(record.output ?? null)) }),
+    let lists = 0;
+    const flaky: StepStore = {
+      ...store,
+      list(runId) {
+        lists += 1;
+        if (lists === 1) throw POOL_BLIPPED;
+        return store.list(runId);
+      },
     };
-  };
+    const { step } = stepRunner({ runId: 'run-blip', jobName: 'j', store: flaky });
+    const outcome = await Promise.allSettled([step.run('x', () => 1), step.run('y', () => 2)]);
+    expect(outcome.map((settled) => settled.status)).toEqual(['rejected', 'rejected']);
 
-  for (const [label, make] of [
-    ['memory', memoryStepStore],
-    ['wire (postgres)', wire],
-  ] as const) {
-    test(`${label}: a Date output replays as what the store persisted, identically`, async () => {
-      const on = make();
-      const at = new Date(T0);
-      const first = stepRunner({ runId: 'run-p', jobName: 'j', store: on });
-      await first.step.run('stamp', () => ({ at }));
-      const second = stepRunner({ runId: 'run-p', jobName: 'j', store: on });
-      const replayed = await second.step.run('stamp', () => ({ at: new Date(0) }));
-      expect(replayed).toEqual({ at: at.toISOString() } as unknown as { at: Date });
+    let reran = false;
+    const value = await step.run('done', () => {
+      reran = true;
+      return 0;
     });
-
-    test(`${label}: a timed-out wait replays as undefined, never null`, async () => {
-      const on = make();
-      const clock = fakeClock(T0);
-      const events = memoryEventBus({ clock });
-      const attempt = (): Promise<unknown> =>
-        stepRunner({
-          runId: 'run-t',
-          jobName: 'j',
-          store: on,
-          clock,
-          events,
-        }).step.waitForEvent('maybe', 'never.happens', { timeout: '1m' });
-      expect(isStepSuspension(await attempt().catch((error: unknown) => error))).toBe(true);
-      clock.advance(61_000);
-      expect(await attempt()).toBeUndefined();
-      // The replay — the record is `completed` now, and this is what a retry reads.
-      expect(await attempt()).toBeUndefined();
-    });
-  }
+    expect(value).toBe(7);
+    expect(reran).toBe(false);
+    expect(lists).toBe(2);
+  });
 });

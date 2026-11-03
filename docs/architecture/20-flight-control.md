@@ -25,7 +25,7 @@ that one is re-derived, and it finds a copy the header does not name.
 | Module | Export | Owns |
 |---|---|---|
 | `backoff.ts` | `backoffDelay(options)` | the one curve. `exponential \| linear \| fixed`, `full \| equal \| none` jitter, `random` injected |
-| `retry.ts` | `retryDecision(policy, attempt, error, random?)`, `retry(work, policy, deps)` | the executor `error-retry.ts`'s vocabulary never had |
+| `retry-loop.ts` + `retry.ts` | `retryDecision(policy, attempt, error, random?)`, `retry(work, policy, deps?)` | the executor `error-retry.ts`'s vocabulary never had. The loop reads no context, so `client-flight.ts` carries none; `retry` adds the ambient signal and deadline |
 | `retryable-status.ts` | `isRetryableStatus(status)`, `RETRYABLE_STATUSES` | `{408, 409, 425, 429}` ∪ `{>= 500}` |
 | `single-flight.ts` | `singleFlight(options?)` | N concurrent callers on one key are ONE run |
 | `flight-gate.ts` | `flightGate(limits, options?)`, `gateOverloaded(state)` | a ceiling, a bounded queue, and a refusal past it |

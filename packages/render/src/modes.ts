@@ -114,10 +114,10 @@ export function assertModeShape(config: RouteShape): void {
   }
 
   // isr: a CACHED document, so it may not be gated. The symmetry with `static` above is the
-  // point — an ISR route resolves `load` with the request's own `Ctx`, renders that actor's
-  // document, and the cache stores it under the pathname alone. Every later actor who passes the
-  // same policy is then served the first actor's HTML. Keying the cache on more is a trap, not a
-  // fix: the key would have to enumerate everything a policy and a `load` can read.
+  // point — both are rendered as NOBODY (`@ultimat3/http`'s `withAnonymousRequest`: no actor, no
+  // cookie, no `Authorization`), so `load` cannot put one visitor's answer in a stored page, and a
+  // policy would have no one to ask about. Keying the cache on more is a trap, not a fix: the key
+  // would have to enumerate everything a policy and a `load` can read. Per-visitor means `ssr`.
   if (config.render === 'isr' && config.policy !== undefined) {
     throw new RouteModeInvalidError(
       "render: 'isr' caches one document per URL and cannot be gated, but a `policy` was " +

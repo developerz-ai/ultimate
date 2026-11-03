@@ -102,8 +102,8 @@ export interface SignedUrlOptions {
    * Ceiling on a `PUT`, and **the one option whose enforcement is the driver's, not the caller's**.
    *
    * `localDriver` signs it into the URL, so `acceptSignedUpload` refuses a client that widens it.
-   * `s3Driver` CANNOT: S3 has no request header for a size and Bun's `presign` covers method,
-   * expiry and content type only — so the client PUTs straight into the bucket and nothing between
+   * `s3Driver` CANNOT: S3 has no request header for a size and Bun's `presign` binds method and
+   * expiry only — so the client PUTs straight into the bucket and nothing between
    * the grant and the object enforces this number. It is not refused there, because `grantUpload`
    * supplies it on every grant and refusing would break every s3 upload an app mints; the ceiling
    * a bucket-backed disk actually gets is a bucket rule or a post-upload check on `object.size`.
@@ -111,6 +111,11 @@ export interface SignedUrlOptions {
    */
   readonly maxBytes?: number | undefined;
   readonly contentType?: string | undefined;
+}
+
+export interface CopyOptions {
+  /** The source's `etag` as this disk reported it. */
+  readonly ifMatch?: string | undefined;
 }
 
 export interface StorageDriver {
@@ -152,9 +157,10 @@ export interface StorageDriver {
   /**
    * Bytes from one key to another without them passing through this process. Idempotent in the
    * destination and non-destructive in the source: the caller deletes the source afterwards if
-   * it wanted a move. `X_STORAGE_NOT_FOUND` when `from` is absent.
+   * it wanted a move. `X_STORAGE_NOT_FOUND` when `from` is absent. `ifMatch` copies only that
+   * revision: any other is `X_STORAGE_OBJECT_CHANGED` and writes nothing.
    */
-  copy(from: string, to: string): Promise<StorageObject>;
+  copy(from: string, to: string, options?: CopyOptions): Promise<StorageObject>;
   /**
    * Deleting an ABSENT key is not an error. Anything else is: a denied `s3:DeleteObject`, a
    * throttle, an expired credential and a read-only mount all raise `X_STORAGE_DELETE_FAILED`,

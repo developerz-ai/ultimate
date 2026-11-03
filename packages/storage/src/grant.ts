@@ -59,8 +59,10 @@ export interface GrantUploadInput {
 
 /**
  * Refuses before it signs. A URL only exists for a request the policy already accepted, so an
- * over-limit or disallowed upload costs one round trip instead of a full transfer — and the
- * signature then carries the same two constraints, so the client cannot widen either of them.
+ * over-limit or disallowed upload costs one round trip instead of a full transfer. On a disk that
+ * signs its own URLs the signature then carries the same two constraints, so the client cannot
+ * widen either. A provider's presigned PUT binds method and expiry only: there, an honest client
+ * sends what it was granted, and `promoteAttachment` is what holds a dishonest one to it.
  */
 export async function grantUpload(input: GrantUploadInput): Promise<UploadGrant> {
   const policy = input.policy ?? uploadPolicy();

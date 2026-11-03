@@ -18,6 +18,7 @@
     "manifest",
     "seo"
   ],
+  "rollingSince": "20261009144006_credentials_and_sessions_move_to_the_framework_auth_tables",
   "coverage": {
     "lines": 70,
     "funcs": 74,

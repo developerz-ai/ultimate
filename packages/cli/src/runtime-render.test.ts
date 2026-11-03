@@ -29,7 +29,7 @@ interface RouteFixture {
   readonly file: string;
   readonly render: RenderMode;
   readonly policy?: { readonly permission: string };
-  readonly revalidate?: { readonly ttl: string };
+  readonly revalidate?: { readonly ttl: string; readonly query?: readonly string[] };
   readonly component?: RouteComponent;
 }
 
@@ -181,7 +181,7 @@ describe('unit · x dev renders the app routes', () => {
     expect(await cacheControl('/blog/hello')).toContain('s-maxage=30');
     expect(await cacheControl('/feed')).toBe('private, no-store');
   });
-  test('two ISR URLs that differ only in their query are two documents, never one', async () => {
+  test('two ISR URLs that differ only in a DECLARED parameter are two documents, never one', async () => {
     // #171, the half a build error cannot close. `resultFor` keyed the ISR store on
     // `url.pathname`, so `?page=2` and `?page=3` were ONE entry: the first render was stored
     // under `/pricing` and every later query string was served that body.
@@ -189,7 +189,11 @@ describe('unit · x dev renders the app routes', () => {
     // ONE server for both requests: `serve()` builds a fresh `IsrController` per call, so a test
     // that used it twice could never observe a cache hit. The route's `meta` renders `data.url`,
     // so a collision is visible outside rather than inferred.
-    register({ file: 'apps/web/site/pricing/page.tsx', render: 'isr', revalidate: { ttl: '5m' } });
+    register({
+      file: 'apps/web/site/pricing/page.tsx',
+      render: 'isr',
+      revalidate: { ttl: '5m', query: ['page'] },
+    });
     const server = serve();
     const fetchOnce = async (path: string): Promise<string> =>
       await (await server.fetch(new Request(`http://dev.test${path}`))).text();

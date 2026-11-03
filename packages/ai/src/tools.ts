@@ -19,13 +19,14 @@
 // boundary error. Both packages describe the same structural contract.
 
 import type { AnyAction } from '@ultimat3/action';
-import { actionName, invoke, isAction } from '@ultimat3/action';
+import { actionName, admitActionCaller, invoke, isAction } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import { isMcpExposed, tryUseContext } from '@ultimat3/core';
+import { isMcpExposed, isUltimateError, stringField, tryUseContext } from '@ultimat3/core';
 import type { WireJsonSchema } from '@ultimat3/schema';
 import { toWireSchema } from '@ultimat3/schema';
 import { discloseFailure, discloseOwnFailure } from './failure-disclosure';
 import { takeToolIdempotencyKey, withToolIdempotencyKey } from './tool-idempotency';
+import { behindToolGate, passesToolGate } from './tools-gate';
 
 /**
  * The JSON Schema subset the framework emits for tool arguments — `@ultimat3/schema`'s
@@ -104,7 +105,7 @@ export type AgentTool = AnyAction | ProjectableAction;
  * projectable object it claims to be.
  */
 export function asProjectableAction(listed: AgentTool): ProjectableAction {
-  if (!isAction(listed)) return listed;
+  if (!isAction(listed)) return passesToolGate(listed) ? listed : behindToolGate(listed);
   const mcp = listed.mcp;
   // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than offering a tool called `''`:
   // a nameless tool is unaddressable by the model, by `runLlmToolCall` and by the author.
@@ -114,23 +115,24 @@ export function asProjectableAction(listed: AgentTool): ProjectableAction {
   // which files it under the action, the caller and the key. Until 25.0.0 this adapter dropped it,
   // so an action an external agent could retry safely was one an in-app agent could not.
   const keyed = listed.describe().idempotent;
-  return {
-    name,
-    ...(mcp === undefined ? {} : { mcp }),
-    ...(mcp?.description === undefined ? {} : { description: mcp.description }),
-    inputJsonSchema: keyed ? withToolIdempotencyKey(name, wire) : wire,
-    // The actor rides in on the options and `invoke` swaps it inside the one execution path —
-    // the action's own `policy` still decides, and its `input:` still parses what the model sent,
-    // which is what drops a `{ actor: 'admin' }` the model invented before any handler sees it.
-    // No `admit`: MCP's is its early gate ahead of ITS argument validation, and this surface has
-    // none — `invoke` asks the same policy before it reads the input, which is the same order.
-    run: keyed
-      ? ({ input: args, actor }) => {
-          const { input, idempotencyKey } = takeToolIdempotencyKey(args);
-          return invoke(listed, input, { surface: 'mcp', actor, idempotencyKey });
-        }
-      : ({ input, actor }) => invoke(listed, input, { surface: 'mcp', actor }),
-  };
+  return behindToolGate(
+    {
+      name,
+      ...(mcp === undefined ? {} : { mcp }),
+      ...(mcp?.description === undefined ? {} : { description: mcp.description }),
+      inputJsonSchema: keyed ? withToolIdempotencyKey(name, wire) : wire,
+      // The actor rides in on the options and `invoke` swaps it inside the one execution path —
+      // the action's own `policy` still decides, and its `input:` still parses what the model sent,
+      // which is what drops a `{ actor: 'admin' }` the model invented before any handler sees it.
+      run: keyed
+        ? ({ input: args, actor }) => {
+            const { input, idempotencyKey } = takeToolIdempotencyKey(args);
+            return invoke(listed, input, { surface: 'mcp', actor, idempotencyKey });
+          }
+        : ({ input, actor }) => invoke(listed, input, { surface: 'mcp', actor }),
+    },
+    admitActionCaller(listed, name),
+  );
 }
 
 /**
@@ -188,10 +190,13 @@ export async function runLlmToolCall(
   /** `discloseErrors: false` withholds every in-process tool's refusal (`agent({ discloseToolErrors })`). */
   options: { readonly discloseErrors?: boolean } = {},
 ): Promise<LlmToolResult> {
-  const action = actions.find((a) => a.name === call.name && isOfferedTool(a));
-  if (action === undefined) {
+  const found = actions.find((a) => a.name === call.name && isOfferedTool(a));
+  if (found === undefined) {
     return { toolUseId: call.id, content: `unknown tool: ${call.name}`, isError: true };
   }
+  // This function is exported and documented, so a hand-built tool can arrive unprojected. Its one
+  // pass through the gate is decided here, where the model's call actually runs.
+  const action = asProjectableAction(found);
   try {
     const output = await action.run({ input: call.input, actor });
     return resultOf(call.id, output);
@@ -266,5 +271,10 @@ function describeFailure(error: unknown, tool: ProjectableAction, disclose: bool
     });
   }
   const line = `${shown.code}: ${shown.cause ?? HIDDEN_TOOL_CAUSE}`;
-  return shown.fix === undefined ? line : `${line} (fix: ${shown.fix})`;
+  // The model is a caller: an error we built that says what a caller does says it here, as an app's
+  // MCP server does (`errorAudience: 'caller'`). `x policy explain` is not a command a model can run,
+  // and a pending confirmation's developer fix tells it to call a decision action it is not offered.
+  const callerFix = isUltimateError(error) ? stringField(error, 'callerFix') : undefined;
+  const fix = callerFix ?? shown.fix;
+  return fix === undefined ? line : `${line} (fix: ${fix})`;
 }

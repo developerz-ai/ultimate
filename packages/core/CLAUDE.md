@@ -68,8 +68,8 @@ top-level `UltimateError` use in `error-codes.ts`.
 | the values | `env.ts` | `checkEnv().values` holds REAL secrets — printing goes through `maskedEnvValues()` |
 | `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |
 | loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |
-| how long to wait, and whether to wait at all | `backoff.ts` + `retry.ts` | one curve, one executor; `jitter` is REQUIRED on a retry policy and defaults to `none` on the arithmetic. `attempt` is 1-based |
-| N callers on one key | `single-flight.ts` | identity-checked eviction, optional injected deadline |
+| how long to wait, and whether to wait at all | `backoff.ts` + `retry-loop.ts` + `retry.ts` | one curve, one loop (no context, for `client-flight.ts`), one executor over it that reads the ambient signal and deadline: the ONE place a loop meets its caller's lifetime, `runToCompletion` the one way out; `jitter` is REQUIRED on a retry policy and defaults to `none` on the arithmetic. `attempt` is 1-based |
+| N callers on one key | `single-flight.ts` | identity-checked eviction, optional injected deadline, optional injected `signal`: a live joiner re-leads after its leader's abort. Reads no context |
 | how many at once | `flight-gate.ts` | hand-over on release, refusal past `maxQueued`, injectable `overflow:` refusal |
 | whether an answer still applies | `generation-fence.ts` | `X_SUPERSEDED` / `isSuperseded` |
 | which HTTP statuses are worth repeating | `retryable-status.ts` | `>= 500` plus 408, 409, 425, 429 |
@@ -100,17 +100,9 @@ top-level `UltimateError` use in `error-codes.ts`.
   `X_SECRETS_KEY_MISMATCH`'s command carries no key id (it is read from a file). Its seven codes
   register through `registerErrorCodes()`, so `resetErrorCodes()` drops them — take
   `errorCodeSnapshot()` first. The envelope's `kid` lets *wrong key* and *edited file* be two codes.
-- **`seal.ts` adds no variable for the CURRENT key** — `findMasterKey()`, the same call
-  `installSecrets()` makes. Retired keys are `ULTIMATE_SECRETS_RETIRED_KEYS`, written into
-  `secrets.enc.json` by `x secrets rotate`; the ring memo is keyed by its source strings, never by
-  time. Constants, `parseMasterKey`, `masterKeyId`, `importKey` and the base64 codec are
-  `secrets.ts`'s — no second set. `seal-errors.ts` runs nothing at import: its titles are in
-  `CORE_CODE_TITLES` and its retry class in `CORE_ERROR_RETRY`, so it is no `sideEffects` anchor.
-  The wire form `x1.<keyId>.<iv>.<ciphertext+tag>` and the AAD string are persisted data: a change
-  is `x2`, never an edit.
+- **`seal.ts` adds no variable for the CURRENT key** (`findMasterKey()`). The wire form `x1.<keyId>.<iv>.<ciphertext+tag>` and the AAD string are persisted data: a change is `x2`, never an edit. Full rule: `docs/history/core.md`.
 - **`schema-error-codes.ts` registers `@ultimat3/schema`'s codes** (schema cannot call core), and
   derives their retry classification from the same set. It is a `SIDE_EFFECTS_ANCHORS` entry.
-- `timing-safe-equal.ts` is the one constant-time comparison (`auth`, `storage`).
 - **`canonical-json.ts`: `canonicalJson` is INJECTIVE and `fingerprint` is SHA-256/16 of it** — the
   hash every in-memory sharing key is taken over (`query`'s `queryHash`, `realtime`'s `qid`).
   `NaN`, `±Infinity` and `-0` are bare tokens; `Date`, `Map` and `Set` are TAGGED. Never a
@@ -121,9 +113,7 @@ top-level `UltimateError` use in `error-codes.ts`.
 - **`decimal-order.ts`'s `compareDecimalText` answers `undefined` for a non-decimal**, and only a
   caller that knows the column's kind may ask (`@ultimat3/entity`'s `compareByKind`) — never
   `@ultimat3/query`, whose `OrderKey` has no kind.
-- **`format-bytes.ts`: one `formatBytes(bytes)`, 1024-base, `b|kb|mb|gb`** for byte counts in error
-  messages. Not `@ultimat3/ui`'s locale-formatted decimal one. Unmechanised: review catches a third.
-- **The flight layer** (`backoff.ts`, `retry.ts`, `single-flight.ts`, `flight-gate.ts`,
+- **The flight layer** (`backoff.ts`, `retry-loop.ts`, `retry.ts`, `single-flight.ts`, `flight-gate.ts`,
   `generation-fence.ts`, `retryable-status.ts`, `client-flight.ts`, `client-wire.ts`) imports
   nothing but this package, runs nothing at import, and injects every source of non-determinism
   (roll, sleep, clock, timer). `classifyThrown` / `statedDelayMs` live beside `error-retry.ts`'s table.
@@ -188,18 +178,19 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
   them. The registration returns its unregister; `readinessCheckCount()` is the leak probe.
 - **`drain()`'s memo is published BEFORE the first hook runs** — a hook may re-enter `drain()`
   (`@ultimat3/http`'s `handle.stop()`), and `settleWithin` invokes hooks synchronously.
-- **The drain deadline is enforced**: `runPhase` races each hook against the time left before
-  `deadlineAt` (`lifecycle-deadline.ts`'s `settleWithin`) and ABANDONS an overrun, logging it
-  (`X_SHUTDOWN_TIMEOUT`, whose `fix:` names `configureLifecycle({ deadlineMs })`). The budget is the
-  WHOLE drain's; `DEFAULT_DEADLINE_MS` (25 s) always applies; it is real monotonic time
-  (`systemClock`), never the injected `clock`. `drainDeadlineMs()` is the one decision point.
-  `settleWithin` attaches a rejection handler unconditionally.
+- **The drain deadline is enforced** (`lifecycle-deadline.ts`): a hook overrunning the whole drain's budget is abandoned and logged (`X_SHUTDOWN_TIMEOUT`); real monotonic time, never the injected `clock`. Full rule: `docs/history/core.md`.
+- **`close` hooks run last-registered first; the other phases as registered** (`runPhase`). No fourth phase.
 - **Who a health endpoint tells what is ONE rule, here** (`health-disclosure.ts`): `healthBody` +
   `healthPeerListed`, called by http and by realtime's sync listener. Never a second copy.
+- **An address answers two questions** (`address-class.ts`): `classifyAddress` is where a DIAL lands
+  and reads through every embedded IPv4; `peerAddressClass` is what a CALLER or a local name may be
+  trusted as, and a transit form (`2002:7f00:1::`, `64:ff9b::7f00:1`) is never loopback there. A
+  check that grants something asks the second. Unmechanised: review catches a new `=== 'loopback'`.
 - **A readiness grace runs before the `accept` phase** (`lifecycle-grace.ts`): `/readyz` answers 503
   with the socket still open for `drain.readinessGraceMs`, ADDED to `deadlineMs` (a chart's
   `terminationGracePeriodSeconds` must exceed the sum — 5 s + 25 s by default). Unset: 0 in
   development/test, 5000 everywhere else including a process naming no environment (fail closed).
+- **`abandonment()`: a branded abort reason refuses writes** (`@ultimat3/db`); **`runToCompletion(fn)` is the one escape**, built by `derivedContext`. `run-to-completion.test.ts`.
 - `impersonate(actor, reason, fn)` is the ONE door through `withChildContext({ actor })`; it stamps
   `Actor.onBehalfOf` so `actorLabel` renders `service:eng-7→user:cust-99@org-3`. No second path.
 - Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **defaulting to

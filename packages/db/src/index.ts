@@ -193,6 +193,17 @@ export { BREAKER_COOLDOWN_MS, BREAKER_FAILURES, replicatedClient } from './repli
 export { type DbNode, isPlainRead } from './replica-route';
 export type { ReplicaScope } from './replica-scope';
 export { markScopeWrote, replicaScope, withReplicaReads } from './replica-scope';
+export { recordRetired } from './retired';
+export type { RollingUnsafeKind, RollingUnsafeStatement } from './rolling';
+export {
+  hasRollingUnsafeMarker,
+  ROLLING_UNSAFE_MARKER,
+  retiredColumnsIn,
+  rollingUnsafeStatements,
+  unretiredColumnsIn,
+} from './rolling';
+export { migrationRollingUnsafe } from './rolling-errors';
+export { sameTenantKeyName } from './same-tenant';
 export { SIBLING_SCOPE_WAIT_MS } from './sibling-turn';
 export { snapshotJson } from './snapshot-json';
 export { parseSnapshot } from './snapshot-parse';
@@ -213,8 +224,19 @@ export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode }
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';
-export { currentTx, liveTxConnection, outsideTransaction, withTransaction } from './transaction';
-export { commitUnknown, siblingScopeTimeout, transactionAborted } from './transaction-errors';
+export {
+  completeTransaction,
+  currentTx,
+  liveTxConnection,
+  outsideTransaction,
+  withTransaction,
+} from './transaction';
+export {
+  commitUnknown,
+  siblingScopeTimeout,
+  transactionAborted,
+} from './transaction-errors';
+export { refuseAbandoned } from './transaction-guard';
 export type { DbTx, IsolationLevel, TransactionOptions } from './transaction-options';
 export { beginStatement } from './transaction-options';
 export type { GeneratableForm } from './ungeneratable';

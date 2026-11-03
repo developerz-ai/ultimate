@@ -42,6 +42,20 @@ export interface DestructiveStatement {
 }
 
 /**
+ * Inside an `alter table`, a bare `drop <name>` is a column: every sub-clause that drops something
+ * the database can rebuild names itself, and all of them are listed here. One list, two readers:
+ * this file's regex and `rolling.ts`'s token walk.
+ */
+export const REBUILDABLE_DROP_CLAUSES: readonly string[] = [
+  'constraint',
+  'default',
+  'not',
+  'identity',
+  'expression',
+  'generated',
+];
+
+/**
  * The closed list. Four kinds, because a rail that tried to enumerate every Postgres foot-gun
  * would be a second SQL parser competing with the server's own — and every one of these is a
  * statement `generateMigration` can emit, so each has a generated case to hold it honest.
@@ -54,11 +68,11 @@ const RULES: readonly (readonly [DestructiveKind, RegExp])[] = [
   // Statement-leading only: `before truncate` in a trigger and `grant/revoke truncate` name the
   // operation to guard or permit it, and the rail read them as the operation itself (#522).
   ['truncate', /^\s*truncate\b/],
-  // Inside an `alter table`, a bare `drop <name>` is a column: every sub-clause that drops
-  // something the database can rebuild names itself, and all of them are listed here.
   [
     'drop-column',
-    /\balter\s+table\b[\s\S]*?\bdrop\s+(?!constraint\b|default\b|not\b|identity\b|expression\b|generated\b)/,
+    new RegExp(
+      `\\balter\\s+table\\b[\\s\\S]*?\\bdrop\\s+(?!${REBUILDABLE_DROP_CLAUSES.map((clause) => `${clause}\\b`).join('|')})`,
+    ),
   ],
   // Not "narrowing". Whether the new type is narrower is knowable only against the old one, and a
   // rewrite that fails on one row fails the whole migration whichever direction it went.

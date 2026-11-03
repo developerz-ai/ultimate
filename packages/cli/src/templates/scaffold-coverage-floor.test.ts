@@ -162,3 +162,11 @@ describe('AGENTS.md', () => {
     for (const guard of guards) expect(agents).toContain(`\`${guard}\``);
   });
 });
+
+describe('what x new writes about the rolling rail', () => {
+  test('rollingSince is "0", so every migration the app ever writes is judged', () => {
+    for (const example of [true, false]) {
+      expect(parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, example)).rollingSince).toBe('0');
+    }
+  });
+});

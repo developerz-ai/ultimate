@@ -65,7 +65,7 @@ export function recorder(): Recorder {
 
 export const START = Date.parse('2026-08-24T09:00:00Z');
 
-export interface Driver {
+export interface Driver<P = TestParams> {
   readonly clock: FrozenClock;
   readonly ctx: Ctx;
   readonly store: StepStore;
@@ -73,14 +73,11 @@ export interface Driver {
   readonly attempts: number;
   /** One attempt. Answers the report, or `undefined` when the run suspended on a sleep. */
   once(
-    handle: JobHandle<NotifyPayload<TestParams>>,
-    payload: NotifyPayload<TestParams>,
+    handle: JobHandle<NotifyPayload<P>>,
+    payload: NotifyPayload<P>,
   ): Promise<NotifyReport | undefined>;
   /** Attempts until the run completes, advancing the clock to each suspension's wake time. */
-  finish(
-    handle: JobHandle<NotifyPayload<TestParams>>,
-    payload: NotifyPayload<TestParams>,
-  ): Promise<NotifyReport>;
+  finish(handle: JobHandle<NotifyPayload<P>>, payload: NotifyPayload<P>): Promise<NotifyReport>;
 }
 
 export const RUN_ID = 'run-notify-1';
@@ -93,7 +90,9 @@ const MAX_ATTEMPTS = 20;
  * retry is — and what makes "a replayed attempt does not double-send" a real assertion rather than
  * a second first attempt.
  */
-export function driver(options: { store?: StepStore; runId?: string } = {}): Driver {
+export function driver<P = TestParams>(
+  options: { store?: StepStore; runId?: string } = {},
+): Driver<P> {
   const clock = frozenClock(START);
   const ctx = ctxOf({ clock });
   const store = options.store ?? memoryStepStore();
@@ -101,8 +100,8 @@ export function driver(options: { store?: StepStore; runId?: string } = {}): Dri
   let attempts = 0;
 
   const once = async (
-    handle: JobHandle<NotifyPayload<TestParams>>,
-    payload: NotifyPayload<TestParams>,
+    handle: JobHandle<NotifyPayload<P>>,
+    payload: NotifyPayload<P>,
   ): Promise<NotifyReport | undefined> => {
     attempts += 1;
     const runner = stepRunner({ runId, jobName: handle.name, store, clock });

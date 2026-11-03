@@ -206,7 +206,11 @@ describe(testName('unit', 'runJobs: each fixture has its own event bus'), () => 
       idempotencyKey: (input) => `k:${input.id}`,
       retry: { attempts: 1, jitter: false },
       run: async ({ step, input }) =>
-        step.waitForEvent('answer', 'prompt.answered', { match: input.id, timeout: '1h' }),
+        step.waitForEvent('answer', 'prompt.answered', {
+          schema: t.object({ answer: t.string }),
+          match: input.id,
+          timeout: '1h',
+        }),
     });
     const jobs = await worker();
     await publishEvent('prompt.answered', { answer: 'yes' }, { correlationKey: 'a' });

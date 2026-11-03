@@ -14,17 +14,26 @@ import {
   isUltimateError,
   logger,
   reportError,
+  runToCompletion,
   runWithContext,
   useContext,
   withChildContext,
 } from '@ultimat3/core';
 import type { ClaimedJob } from './driver';
+import { JobTimeoutError } from './errors';
 import { JobOnSettledFailedError } from './errors-operator';
 import type { AnyJobHandle } from './job';
+import { withStepTimeout } from './steps-timeout';
 import { jobRunActor } from './tenant';
 
 /** Tries the hook gets, back to back. Its own budget: it spends none of the job's attempts. */
 export const ON_SETTLED_ATTEMPTS = 3;
+
+/**
+ * The hook's ceiling unless the job declares `onSettledTimeout`, every try included. A notification
+ * is seconds of work, and this is what stops N hooks on a dead host wedging a worker of N slots.
+ */
+export const ON_SETTLED_TIMEOUT_MS = 30_000;
 
 interface JobSettledBase {
   /** The attempt that was the last. A refused run reports the attempts its body had had: 0. */
@@ -119,30 +128,62 @@ export async function announceSettled(options: AnnounceOptions): Promise<void> {
   if (!handle.declaresOnSettled) return;
   const run = options.run ?? unstartedRun(options);
   const identity = { attempt: claimed.attempt, jobId: claimed.id, runId: claimed.runId };
+  const timeoutMs = handle.onSettledTimeoutMs;
+  // One budget over every try, read by the hook as `ctx.signal`: past it, its writes refuse too.
+  const ceiling = new AbortController();
   const hook = (): Promise<void> =>
-    run.scope(() => {
-      const base = { ...identity, ctx: useContext() };
-      return handle.onSettled(
-        settlement.outcome === 'completed'
-          ? { ...base, ...settlement, input: run.input?.value }
-          : { ...base, ...settlement, input: run.input?.value },
-      );
-    });
+    // A live signal: the attempt's own `finally` aborted the run's before the ack, so every completed
+    // hook ran cancelled, its `fetch(url, { signal })` failing and its writes refused.
+    run.scope(() =>
+      runToCompletion(
+        () => {
+          const base = { ...identity, ctx: useContext() };
+          return handle.onSettled(
+            settlement.outcome === 'completed'
+              ? { ...base, ...settlement, input: run.input?.value }
+              : { ...base, ...settlement, input: run.input?.value },
+          );
+        },
+        { signal: ceiling.signal, deadlineAt: useContext().now().getTime() + timeoutMs },
+      ),
+    );
 
   let last: unknown;
-  for (let attempt = 1; attempt <= ON_SETTLED_ATTEMPTS; attempt += 1) {
-    try {
-      await hook();
-      return;
-    } catch (error) {
-      last = error;
+  let tries = 0;
+  const everyTry = async (): Promise<boolean> => {
+    while (tries < ON_SETTLED_ATTEMPTS && !ceiling.signal.aborted) {
+      tries += 1;
+      try {
+        await hook();
+        return true;
+      } catch (error) {
+        last = error;
+      }
     }
+    return false;
+  };
+  try {
+    const landed = await withStepTimeout(
+      everyTry(),
+      timeoutMs,
+      ceiling,
+      () =>
+        new JobTimeoutError({
+          job: handle.name,
+          step: 'onSettled',
+          timeoutMs,
+          fix: `job({ name: '${handle.name}', onSettledTimeout: '5m' })   # raises the hook's ceiling; or pass ctx.signal to what the hook waits on`,
+        }),
+    );
+    if (landed) return;
+  } catch (error) {
+    last = error;
   }
   const failure = new JobOnSettledFailedError({
     job: handle.name,
     jobId: claimed.id,
     outcome: settlement.outcome,
-    attempts: ON_SETTLED_ATTEMPTS,
+    attempts: tries,
     error: last,
   });
   logger.error('jobs.on-settled.failed', {

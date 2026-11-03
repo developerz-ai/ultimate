@@ -118,6 +118,7 @@ export type {
   InvariantDescription,
   ReferenceDescription,
   RegistryEntry,
+  SameTenantKey,
 } from './registry';
 export {
   clearRegistry,

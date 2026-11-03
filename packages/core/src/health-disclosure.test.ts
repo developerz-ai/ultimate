@@ -31,6 +31,24 @@ describe('healthBody', () => {
 });
 
 describe('healthPeerListed', () => {
+  // A 6to4 or NAT64 sender is across the network, whatever IPv4 its address spells. These are the
+  // forms a dial screen must read through and a caller check must not.
+  test.each(['64:ff9b::7f00:1', '2002:7f00:1::', '::127.0.0.1', '::ffff:0:7f00:1'])(
+    '%s is not the box',
+    (address) => {
+      expect(healthPeerListed(['loopback'], address)).toBe(false);
+      expect(healthPeerListed(DEFAULT_HEALTH_DETAIL_PEERS, address)).toBe(false);
+    },
+  );
+
+  test.each(['64:ff9b::a00:1', '2002:0a00:1::'])('%s is not the private network', (address) => {
+    expect(healthPeerListed(['private'], address)).toBe(false);
+  });
+
+  test('an operator naming that exact literal is still heard', () => {
+    expect(healthPeerListed(['64:ff9b::7f00:1'], '64:ff9b::7f00:1')).toBe(true);
+  });
+
   test('the default list is the box itself', () => {
     expect(DEFAULT_HEALTH_DETAIL_PEERS).toEqual(['loopback']);
     for (const local of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) {

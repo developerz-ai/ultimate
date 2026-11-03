@@ -5,6 +5,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
+import { t } from '@ultimat3/schema';
 import type { EmbeddedPg } from './embedded-pg-fixture';
 import { embeddedPg } from './embedded-pg-fixture';
 import type { EventBus } from './events';
@@ -102,7 +103,10 @@ describe('a wait against the stored bus is stamped by the database', () => {
         store,
         clock: frozenClock(at + aheadMs),
         events,
-      }).step.waitForEvent('otp', 'otp.entered', { timeout: '1h' });
+      }).step.waitForEvent('otp', 'otp.entered', {
+        schema: t.object({ code: t.number }),
+        timeout: '1h',
+      });
 
     expect(isStepSuspension(await attempt(5_000).catch((error: unknown) => error))).toBe(true);
     expect((await store.get('run-skew', 'otp'))?.startedAt).toBe(at);

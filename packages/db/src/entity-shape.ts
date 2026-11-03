@@ -45,6 +45,16 @@ export interface ColumnDescriptionLike {
    * is REPORTED as unrendered rather than dropped (`unrendered.ts`).
    */
   readonly default?: ColumnDefaultLike | undefined;
+  /**
+   * Both ends of this `references()` are tenant-scoped, so the key is composite: `(column, this) ->
+   * target (targetColumn, its key)`. Absent or `null` is the plain key every older description
+   * declares. `@ultimat3/entity` decides it (`describeReferences`), and only the two physical names
+   * cross, because the rest of the key is already on this column.
+   */
+  readonly sameTenant?:
+    | { readonly column: string; readonly targetColumn: string }
+    | null
+    | undefined;
 }
 
 /**
@@ -125,4 +135,9 @@ export interface EntityDescriptionLike {
    * Optional for the reason `invariants` is, and absent reads as "rows may change".
    */
   readonly appendOnly?: boolean | undefined;
+  /**
+   * `entity({ retired: ['legacy'] })`: physical columns old pods may still read and this release
+   * does not (`retired.ts`). Absent is none, for the reason `invariants` is optional.
+   */
+  readonly retired?: readonly string[] | undefined;
 }

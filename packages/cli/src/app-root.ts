@@ -1,6 +1,8 @@
 // Locating the app. `app.config.ts` is the one config file, so it is also the one root marker —
 // commands that need an app resolve it here and nowhere else, and the failure names the fix.
 
+// why: a refusal is synchronous and Bun.file reads are not; this is the one read on that path.
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { APP_CONFIG_FILE, appDirOf } from '@ultimat3/core';
 import { BunVersionError, NotInAppError } from './errors';
@@ -54,8 +56,42 @@ export function findAppRoot(from: string): AppRoot | undefined {
 
 export function requireAppRoot(command: string, from: string): AppRoot {
   const root = findAppRoot(from);
-  if (root === undefined) throw new NotInAppError({ command, from: resolve(from) });
+  if (root === undefined) {
+    const dir = resolve(from);
+    throw new NotInAppError({
+      command,
+      from: dir,
+      below: appDirsBelow(dir),
+      adopter: dependsOnFramework(dir),
+    });
+  }
   return root;
+}
+
+/** Bounded: this runs on a refusal, and `from` may be a home directory. */
+const APP_CONFIG_BELOW = ['*', '*/*', '*/*/*'].map(
+  (depth) => new Bun.Glob(`${depth}/${APP_CONFIG_FILE}`),
+);
+
+/** The app directories up to three levels under `from`, for a refusal to name. Never vendored. */
+export function appDirsBelow(from: string): readonly string[] {
+  try {
+    return APP_CONFIG_BELOW.flatMap((glob) => [...glob.scanSync({ cwd: from })])
+      .map((path) => path.replaceAll('\\', '/').slice(0, -`/${APP_CONFIG_FILE}`.length))
+      .filter((dir) => !dir.split('/').includes('node_modules'))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** Whether `from`'s own manifest names a framework package, read as text: a refusal must not throw. */
+function dependsOnFramework(from: string): boolean {
+  try {
+    return readFileSync(join(from, 'package.json'), 'utf8').includes('"@ultimat3/');
+  } catch {
+    return false;
+  }
 }
 
 /** Semver-lite compare, sufficient because both sides are plain `major.minor.patch`. */
