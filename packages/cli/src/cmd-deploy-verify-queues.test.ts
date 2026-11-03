@@ -179,6 +179,28 @@ describe('x deploy verify · the queues', () => {
     expect(closed).toBe(1);
   });
 
+  test('a served grade kept through failed reads never passes: success needs a current read', async () => {
+    const server = origin([
+      [200, BUILD],
+      [200, BUILD],
+      [200, BUILD],
+      [200, OLD],
+      [200, BUILD],
+    ]);
+    const result = await runDeployVerify(
+      contextFor(['--url', server.url, ...held], appRoot(), DB),
+      frozen(
+        queueDeps({
+          rows: (read) => (read === 1 ? [worker()] : new TypeError('connection reset')),
+        }),
+      ),
+    );
+    expect(result.ok).toBe(false);
+    expect(codes(result)).toEqual(['X_DB_UNAVAILABLE']);
+    // The detail of the last grade that landed is still reported.
+    expect(result.data).toMatchObject({ queues: { graded: true, served: ['mail'] } });
+  });
+
   test('a read that lands disarms its expiry: no timer outlives the verdict', async () => {
     const server = origin([[200, BUILD]]);
     const signals: AbortSignal[] = [];

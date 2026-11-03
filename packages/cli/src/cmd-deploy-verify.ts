@@ -144,6 +144,11 @@ interface QueuePlan {
 interface QueueRead {
   readonly grade: QueueGrade | undefined;
   readonly lastFailure: string | undefined;
+  /**
+   * The grade came from a read on THIS pass. A kept grade is detail for the report and never a
+   * pass: workers can go between a read that landed and the next that failed.
+   */
+  readonly current: boolean;
 }
 
 interface Verdict {
@@ -227,6 +232,8 @@ async function awaitVerdict(
   };
   try {
     for (;;) {
+      // Every pass starts with nothing current: a grade from an earlier pass is history.
+      if (read !== undefined) read = { ...read, current: false };
       let closed = await sample();
       if (closed && plan !== undefined) {
         // One --interval at most: the window's last sample is never older than that when the
@@ -240,16 +247,19 @@ async function awaitVerdict(
             bound,
             deps,
           );
-          read = { grade, lastFailure: read?.lastFailure };
+          read = { grade, lastFailure: read?.lastFailure, current: true };
         } catch (error) {
           // One reset connection is a read lost, never the verdict: the last grade stands.
-          read = { grade: read?.grade, lastFailure: renderThrowable(error) };
+          read = { grade: read?.grade, lastFailure: renderThrowable(error), current: false };
         }
         // Served is judged against web as it answers NOW: a sample taken after the read landed,
         // so a rollback during the read is red, never a green from the sample before it.
-        if ((read.grade?.unserved.length ?? 1) === 0) closed = await sample();
+        if (read.current && read.grade?.unserved.length === 0) closed = await sample();
       }
-      const served = plan === undefined || (read?.grade?.unserved.length ?? 1) === 0;
+      // The one success rule: this pass's sample holds the window and, with a plan, this pass's
+      // read landed and serves every queue. Nothing kept from an earlier pass counts.
+      const served =
+        plan === undefined || (read?.current === true && read.grade?.unserved.length === 0);
       const wait = { tally, closed, lastFailure };
       if ((closed && served) || left() <= 0) return { wait, read };
       await deps.sleep(Math.min(options.intervalMs, left()));
@@ -332,6 +342,13 @@ export async function runDeployVerify(
     });
   }
   const data = resultData(build, options.windowMs, wait.tally, queues);
+  // A kept grade that says served is not a pass: the read that would confirm it never landed.
+  if (queues.unserved.length === 0 && read?.current !== true) {
+    return failed('deploy', msg('cli.deploy.unverified', { build, count: 1 }), {
+      findings: [queueReadFinding(read?.lastFailure)],
+      data,
+    });
+  }
   if (queues.unserved.length > 0) {
     return failed(
       'deploy',
