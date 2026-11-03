@@ -13,7 +13,7 @@ Reproduced over raw `fetch` and core's parts: stalled body with a header-only de
 | Import path | `@ultimat3/core/outbound` only, never the barrel: `core` is in every bundle graph and this reads `Bun.dns` (axiom 6). Precedent `core/package.json:22` `./page` |
 | SSRF-vetted fetch | not a second function: `dial: 'public'`. `dial` is required, as `jitter` is on `RetryPolicy` (`core/src/retry.ts:30`): which network a URL may reach is a decision per call |
 | OAuth refresh | no hook. A 401 arrives as `X_OUTBOUND_REFUSED` with `meta.status`; the app's wrapper refreshes and calls again (axiom 8). Token storage and single-flight stay the app's |
-| Circuit breaker | no option. Deferred, [`90-deferred.md`](90-deferred.md) |
+| Circuit breaker | `breaker` option, see [`39-core-breaker.md`](39-core-breaker.md) |
 | Caller lifetime | one place: 03's `retry()` clamps to `ctx`. `outbound()` adds no second clamp |
 | Raw `fetch` | `outbound()` is the documented way. A server `fetch(` without a signal is a build error (guard below). With a signal it stays legal: a guard cannot prove the other properties, and a blanket ban would refuse the framework-internal cases in the table below |
 | `scraping/src/pinned-host.ts` | stops holding the screen. `dialTarget` (`:42`) and `jobs/src/webhook-target.ts:51` both call core's `screenDial`, and keep their own transport and codes (`X_SCRAPE_HOST_BLOCKED`, `X_WEBHOOK_ENDPOINT_INVALID`: stable) |

@@ -1,11 +1,11 @@
 plan: 101-absorb-reinvented-patterns
-title: "Improve Ultimate, end to end"
+title: "Make Ultimate the best framework for the world to build on"
 status: not_started        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
 worked_by: ""
 owner: sebi
 percent: 0
-current_focus: "sweep 1: security. Owner decisions listed in overview.md"
+current_focus: "sweep 1: security"
 slices:
   - file: 01-ai-tool-gate.md
     tier: 3
@@ -27,311 +27,571 @@ slices:
     sweep: "1"
     status: not_started
     percent: 0
+  - file: 04-db-migration-safety.md
+    tier: 1
+    sweep: "2"
+    status: not_started
+    percent: 0
   - file: 05-entity-tenant-and-locks.md
     tier: 1
     sweep: "2"
     status: not_started
     percent: 0
+  - file: 37-scrub-adopter-names.md
+    tier: 5
+    sweep: "3"
+    status: not_started
+    percent: 0
   - file: 02-db-entity-cancellation.md
     tier: 0
-    sweep: "3"
+    sweep: "5"
     status: not_started
     percent: 0
   - file: 03-core-lifetime-helpers.md
     tier: 0
-    sweep: "3"
+    sweep: "5"
     status: not_started
     percent: 0
   - file: 06-jobs-step-semantics.md
     tier: 3
-    sweep: "3"
+    sweep: "5"
     status: not_started
     percent: 0
   - file: 34-idea-jobs-event-wait.md
     tier: 3
-    sweep: "3"
+    sweep: "5"
     status: not_started
     percent: 0
   - file: 22-cli-upgrade.md
     tier: 5
-    sweep: "3"
-    status: not_started
-    percent: 0
-  - file: 04-db-migration-safety.md
-    tier: 1
-    sweep: "4"
+    sweep: "5"
     status: not_started
     percent: 0
   - file: 35-fix-logic.md
     tier: 1
-    sweep: "4"
+    sweep: "6"
     status: not_started
     percent: 0
   - file: 35-fix-concurrency.md
     tier: 1
-    sweep: "4"
+    sweep: "6"
     status: not_started
     percent: 0
   - file: 29-data-large-tables.md
     tier: 2
-    sweep: "4"
+    sweep: "6"
+    status: not_started
+    percent: 0
+  - file: 35-fix-isr-default.md
+    tier: 4
+    sweep: "6"
     status: not_started
     percent: 0
   - file: 29-data-pg-unanswered.md
     tier: 1
-    sweep: "5"
+    sweep: "7"
     status: not_started
     percent: 0
   - file: 29-data-pg-pooler.md
     tier: 1
-    sweep: "5"
+    sweep: "7"
     status: not_started
     percent: 0
   - file: 30-perf-jobs-claim-relay.md
     tier: 3
-    sweep: "5"
-    status: not_started
-    percent: 0
-  - file: 33-ops-worker-roll.md
-    tier: 0
-    sweep: "5"
-    status: not_started
-    percent: 0
-  - file: 07-render-stream-hole.md
-    tier: 4
-    sweep: "6"
-    status: not_started
-    percent: 0
-  - file: 08-testing-mock-fetch.md
-    tier: 5
-    sweep: "6"
-    status: not_started
-    percent: 0
-  - file: 36-dx-false-fixes.md
-    tier: 1
-    sweep: "6"
-    status: not_started
-    percent: 0
-  - file: 36-dx-generators.md
-    tier: 2
-    sweep: "6"
-    status: not_started
-    percent: 0
-  - file: 26-api-wire-fixes.md
-    tier: 0
     sweep: "7"
-    status: not_started
-    percent: 0
-  - file: 26-api-read-contract.md
-    tier: 3
-    sweep: "7"
-    status: not_started
-    percent: 0
-  - file: 24-web-i18n-mail-keys.md
-    tier: 1
-    sweep: "7"
-    status: not_started
-    percent: 0
-  - file: 25-pkg-storage-streams.md
-    tier: 1
-    sweep: "7"
-    status: not_started
-    percent: 0
-  - file: 28-assets-compression.md
-    tier: 2
-    sweep: "7"
-    status: not_started
-    percent: 0
-  - file: 28-assets-image-contents.md
-    tier: 5
-    sweep: "7"
-    status: not_started
-    percent: 0
-  - file: 09-core-define-error.md
-    tier: 0
-    sweep: "8"
-    status: not_started
-    percent: 0
-  - file: 12-core-error-fingerprint.md
-    tier: 0
-    sweep: "8"
-    status: not_started
-    percent: 0
-  - file: 10-schema-sensitive-and-rules.md
-    tier: 0
-    sweep: "8"
-    status: not_started
-    percent: 0
-  - file: 11-core-outbound.md
-    tier: 0
-    sweep: "8"
-    status: not_started
-    percent: 0
-  - file: 13-jobs-bulk-and-rate.md
-    tier: 2
-    sweep: "9"
-    status: not_started
-    percent: 0
-  - file: 14-jobs-inbound-webhooks.md
-    tier: 2
-    sweep: "9"
-    status: not_started
-    percent: 0
-  - file: 15-jobs-recipes.md
-    tier: 3
-    sweep: "9"
-    status: not_started
-    percent: 0
-  - file: 16-jobs-import-rows.md
-    tier: 0
-    sweep: "9"
     status: not_started
     percent: 0
   - file: 19-cli-deploy-verify.md
     tier: 3
-    sweep: "9"
+    sweep: "7b"
     status: not_started
     percent: 0
-  - file: 30-perf-gate.md
+  - file: 33-ops-worker-roll.md
     tier: 0
-    sweep: "9"
+    sweep: "7b"
     status: not_started
     percent: 0
-  - file: 20-cli-db-diagnostics.md
+  - file: 07-render-stream-hole.md
+    tier: 4
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 08-testing-mock-fetch.md
+    tier: 5
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 36-dx-false-fixes.md
     tier: 1
-    sweep: "10"
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 36-dx-generators.md
+    tier: 2
+    sweep: "8"
+    status: not_started
+    percent: 0
+  - file: 42-adopt-stability.md
+    tier: 5
+    sweep: "9"
     status: not_started
     percent: 0
   - file: 21-cli-verify-and-stop.md
     tier: 5
-    sweep: "10"
-    status: not_started
-    percent: 0
-  - file: 33-ops-ci.md
-    tier: 5
-    sweep: "10"
-    status: not_started
-    percent: 0
-  - file: 33-ops-deploy-proof.md
-    tier: 5
-    sweep: "10"
-    status: not_started
-    percent: 0
-  - file: 28-assets-deploy-skew.md
-    tier: 0
-    sweep: "10"
-    status: not_started
-    percent: 0
-  - file: 27-mcp-dual-era.md
-    tier: 4
-    sweep: "11"
-    status: not_started
-    percent: 0
-  - file: 27-agents-evals.md
-    tier: 1
-    sweep: "11"
-    status: not_started
-    percent: 0
-  - file: 18-ai-scripted-and-meter.md
-    tier: 4
-    sweep: "11"
-    status: not_started
-    percent: 0
-  - file: 17-entity-test-driver.md
-    tier: 1
-    sweep: "11"
-    status: not_started
-    percent: 0
-  - file: 24-web-client-errors.md
-    tier: 0
-    sweep: "11"
-    status: not_started
-    percent: 0
-  - file: 24-web-admin-audit-trail.md
-    tier: 5
-    sweep: "11"
-    status: not_started
-    percent: 0
-  - file: 23-ui-live-refresh.md
-    tier: 0
-    sweep: "12"
-    status: not_started
-    percent: 0
-  - file: 25-pkg-realtime-client-reads.md
-    tier: 3
-    sweep: "12"
-    status: not_started
-    percent: 0
-  - file: 23-ui-data-table.md
-    tier: 4
-    sweep: "12"
-    status: not_started
-    percent: 0
-  - file: 25-pkg-auth-sign-in.md
-    tier: 2
-    sweep: "12"
-    status: not_started
-    percent: 0
-  - file: 27-mcp-oauth-server.md
-    tier: 2
-    sweep: "13"
-    status: not_started
-    percent: 0
-  - file: 27-agents-checkpoint.md
-    tier: 4
-    sweep: "13"
-    status: not_started
-    percent: 0
-  - file: 27-agents-context-and-cache.md
-    tier: 4
-    sweep: "13"
-    status: not_started
-    percent: 0
-  - file: 29-data-redis-outage.md
-    tier: 1
-    sweep: "13"
-    status: not_started
-    percent: 0
-  - file: 29-data-raw-keyset.md
-    tier: 1
-    sweep: "13"
-    status: not_started
-    percent: 0
-  - file: 30-perf-entity-decode.md
-    tier: 2
-    sweep: "13"
-    status: not_started
-    percent: 0
-  - file: 25-pkg-scraping-wedge.md
-    tier: 4
-    sweep: "13"
-    status: not_started
-    percent: 0
-  - file: 31-test-file-boundary.md
-    tier: 5
-    sweep: "14"
-    status: not_started
-    percent: 0
-  - file: 31-test-false-green.md
-    tier: 0
-    sweep: "14"
+    sweep: "9"
     status: not_started
     percent: 0
   - file: 32-docs-false-claims.md
     tier: 5
-    sweep: "14"
+    sweep: "9"
     status: not_started
     percent: 0
-  - file: 32-docs-guards.md
+  - file: 42-adopt-first-hour.md
     tier: 5
-    sweep: "14"
+    sweep: "9"
     status: not_started
     percent: 0
   - file: 32-docs-findability.md
     tier: 4
+    sweep: "10"
+    status: not_started
+    percent: 0
+  - file: 42-adopt-agents.md
+    tier: 5
+    sweep: "10"
+    status: not_started
+    percent: 0
+  - file: 42-adopt-front-door.md
+    tier: 5
+    sweep: "10"
+    status: not_started
+    percent: 0
+  - file: 32-docs-guards.md
+    tier: 5
+    sweep: "10"
+    status: not_started
+    percent: 0
+  - file: 42-adopt-outsiders.md
+    tier: 2
+    sweep: "10"
+    status: not_started
+    percent: 0
+  - file: 26-api-wire-fixes.md
+    tier: 0
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 26-api-read-contract.md
+    tier: 3
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 24-web-i18n-mail-keys.md
+    tier: 1
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 25-pkg-storage-streams.md
+    tier: 1
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 28-assets-compression.md
+    tier: 2
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 28-assets-image-contents.md
+    tier: 5
+    sweep: "11"
+    status: not_started
+    percent: 0
+  - file: 09-core-define-error.md
+    tier: 0
+    sweep: "12"
+    status: not_started
+    percent: 0
+  - file: 12-core-error-fingerprint.md
+    tier: 0
+    sweep: "12"
+    status: not_started
+    percent: 0
+  - file: 10-schema-sensitive-and-rules.md
+    tier: 0
+    sweep: "12"
+    status: not_started
+    percent: 0
+  - file: 11-core-outbound.md
+    tier: 0
+    sweep: "12"
+    status: not_started
+    percent: 0
+  - file: 39-core-breaker.md
+    tier: 0
+    sweep: "13"
+    status: not_started
+    percent: 0
+  - file: 39-core-otlp-retry.md
+    tier: 0
+    sweep: "13"
+    status: not_started
+    percent: 0
+  - file: 39-testing-render-nodes.md
+    tier: 0
+    sweep: "13"
+    status: not_started
+    percent: 0
+  - file: 13-jobs-bulk-and-rate.md
+    tier: 2
     sweep: "14"
     status: not_started
     percent: 0
+  - file: 14-jobs-inbound-webhooks.md
+    tier: 2
+    sweep: "14"
+    status: not_started
+    percent: 0
+  - file: 15-jobs-recipes.md
+    tier: 3
+    sweep: "14"
+    status: not_started
+    percent: 0
+  - file: 16-jobs-import-rows.md
+    tier: 0
+    sweep: "14"
+    status: not_started
+    percent: 0
+  - file: 30-perf-gate.md
+    tier: 0
+    sweep: "14"
+    status: not_started
+    percent: 0
+  - file: 20-cli-db-diagnostics.md
+    tier: 1
+    sweep: "15"
+    status: not_started
+    percent: 0
+  - file: 33-ops-ci.md
+    tier: 5
+    sweep: "15"
+    status: not_started
+    percent: 0
+  - file: 28-assets-deploy-skew.md
+    tier: 0
+    sweep: "15"
+    status: not_started
+    percent: 0
+  - file: 33-ops-deploy-proof.md
+    tier: 5
+    sweep: "15"
+    status: not_started
+    percent: 0
+  - file: 18-ai-scripted-and-meter.md
+    tier: 4
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 27-mcp-dual-era.md
+    tier: 4
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 27-agents-evals.md
+    tier: 1
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 17-entity-test-driver.md
+    tier: 1
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 24-web-client-errors.md
+    tier: 0
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 24-web-admin-audit-trail.md
+    tier: 5
+    sweep: "16"
+    status: not_started
+    percent: 0
+  - file: 23-ui-live-refresh.md
+    tier: 0
+    sweep: "17"
+    status: not_started
+    percent: 0
+  - file: 25-pkg-realtime-client-reads.md
+    tier: 3
+    sweep: "17"
+    status: not_started
+    percent: 0
+  - file: 23-ui-data-table.md
+    tier: 4
+    sweep: "17"
+    status: not_started
+    percent: 0
+  - file: 25-pkg-auth-sign-in.md
+    tier: 2
+    sweep: "17"
+    status: not_started
+    percent: 0
+  - file: 39-testing-property.md
+    tier: 0
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 39-action-declared-errors.md
+    tier: 0
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 39-api-mount-paths.md
+    tier: 0
+    sweep: "18"
+    status: not_started
+    percent: 0
+  - file: 40-next-exercise-pass.md
+    tier: 5
+    sweep: "19"
+    status: not_started
+    percent: 0
+  - file: 40-next-tenant-proof.md
+    tier: 2
+    sweep: "19"
+    status: not_started
+    percent: 0
+  - file: 39-web-a11y-audit.md
+    tier: 5
+    sweep: "19"
+    status: not_started
+    percent: 0
+  - file: 41-add-reads.md
+    tier: 1
+    sweep: "20"
+    status: not_started
+    percent: 0
+  - file: 41-add-identity.md
+    tier: 2
+    sweep: "20"
+    status: not_started
+    percent: 0
+  - file: 41-add-row-security.md
+    tier: 1
+    sweep: "20"
+    status: not_started
+    percent: 0
+  - file: 39-jobs-event-wake.md
+    tier: 3
+    sweep: "21"
+    status: not_started
+    percent: 0
+  - file: 39-action-sagas.md
+    tier: 3
+    sweep: "21"
+    status: not_started
+    percent: 0
+  - file: 40-next-job-crash-proof.md
+    tier: 5
+    sweep: "21"
+    status: not_started
+    percent: 0
+  - file: 41-add-consumers.md
+    tier: 3
+    sweep: "21"
+    status: not_started
+    percent: 0
+  - file: 39-db-partitioned-tables.md
+    tier: 1
+    sweep: "22"
+    status: not_started
+    percent: 0
+  - file: 41-add-time-series.md
+    tier: 1
+    sweep: "22"
+    status: not_started
+    percent: 0
+  - file: 27-agents-checkpoint.md
+    tier: 4
+    sweep: "23"
+    status: not_started
+    percent: 0
+  - file: 27-agents-context-and-cache.md
+    tier: 4
+    sweep: "23"
+    status: not_started
+    percent: 0
+  - file: 29-data-redis-outage.md
+    tier: 0
+    sweep: "23"
+    status: not_started
+    percent: 0
+  - file: 29-data-raw-keyset.md
+    tier: 1
+    sweep: "23"
+    status: not_started
+    percent: 0
+  - file: 30-perf-entity-decode.md
+    tier: 2
+    sweep: "23"
+    status: not_started
+    percent: 0
+  - file: 25-pkg-scraping-wedge.md
+    tier: 4
+    sweep: "23"
+    status: not_started
+    percent: 0
+  - file: 41-add-operations.md
+    tier: 0
+    sweep: "24"
+    status: not_started
+    percent: 0
+  - file: 39-ops-chart-alerts.md
+    tier: 5
+    sweep: "24"
+    status: not_started
+    percent: 0
+  - file: 40-next-fault-drills.md
+    tier: 5
+    sweep: "24"
+    status: not_started
+    percent: 0
+  - file: 40-next-query-plans.md
+    tier: 2
+    sweep: "25"
+    status: not_started
+    percent: 0
+  - file: 40-next-subject-data.md
+    tier: 0
+    sweep: "25"
+    status: not_started
+    percent: 0
+  - file: 40-next-repro.md
+    tier: 0
+    sweep: "25"
+    status: not_started
+    percent: 0
+  - file: 41-add-entity-lifecycle.md
+    tier: 1
+    sweep: "25b"
+    status: not_started
+    percent: 0
+  - file: 41-add-agent-wire.md
+    tier: 0
+    sweep: "26"
+    status: not_started
+    percent: 0
+  - file: 39-mcp-inline-then-job.md
+    tier: 3
+    sweep: "26"
+    status: not_started
+    percent: 0
+  - file: 39-mcp-recipes.md
+    tier: 4
+    sweep: "26"
+    status: not_started
+    percent: 0
+  - file: 39-ai-prompt-cache.md
+    tier: 4
+    sweep: "26"
+    status: not_started
+    percent: 0
+  - file: 39-testing-cassettes.md
+    tier: 5
+    sweep: "26"
+    status: not_started
+    percent: 0
+  - file: 41-add-api-clients.md
+    tier: 0
+    sweep: "27"
+    status: not_started
+    percent: 0
+  - file: 41-add-uploads.md
+    tier: 0
+    sweep: "27"
+    status: not_started
+    percent: 0
+  - file: 41-add-locale-and-content.md
+    tier: 0
+    sweep: "27"
+    status: not_started
+    percent: 0
+  - file: 41-add-page-capture.md
+    tier: 1
+    sweep: "28"
+    status: not_started
+    percent: 0
+  - file: 40-next-app-graph.md
+    tier: 4
+    sweep: "28"
+    status: not_started
+    percent: 0
+  - file: 42-adopt-shapes.md
+    tier: 5
+    sweep: "28"
+    status: not_started
+    percent: 0
+  - file: 23-ui-chart-kit.md
+    tier: 4
+    sweep: "29"
+    status: not_started
+    percent: 0
+  - file: 23-ui-searchable-select.md
+    tier: 4
+    sweep: "29"
+    status: not_started
+    percent: 0
+  - file: 38-ui-commands.md
+    tier: 4
+    sweep: "30"
+    status: not_started
+    percent: 0
+  - file: 38-ui-navigation.md
+    tier: 4
+    sweep: "30"
+    status: not_started
+    percent: 0
+  - file: 38-ui-lists.md
+    tier: 4
+    sweep: "31"
+    status: not_started
+    percent: 0
+  - file: 38-ui-pickers.md
+    tier: 1
+    sweep: "31"
+    status: not_started
+    percent: 0
+  - file: 38-ui-drag-layout.md
+    tier: 4
+    sweep: "32"
+    status: not_started
+    percent: 0
+  - file: 38-ui-viewers.md
+    tier: 4
+    sweep: "32"
+    status: not_started
+    percent: 0
+  - file: 42-adopt-docs-site.md
+    tier: 5
+    sweep: "33"
+    status: not_started
+    percent: 0
+  - file: 31-test-file-boundary.md
+    tier: 5
+    sweep: "35"
+    status: not_started
+    percent: 0
+  - file: 31-test-false-green.md
+    tier: 0
+    sweep: "35"
+    status: not_started
+    percent: 0
+  - file: 42-adopt-proof.md
+    tier: 5
+    sweep: "35"
+    status: not_started
+    percent: 0
 evidence: []
-notes: "Slices stay numbered by area; execution order is by sweep. 35-fix-concurrency, 35-fix-logic and 30-perf-jobs-claim-relay land in two sweeps. 90-deferred.md is not a slice and has no row."
+notes: "Slices stay numbered by area; execution order is by sweep. 90-deferred.md is not a slice and has no row."
 last_updated: 2026-11-02

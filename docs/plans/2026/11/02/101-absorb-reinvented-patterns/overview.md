@@ -1,157 +1,239 @@
-# Improve Ultimate, end to end
+# Make Ultimate the best framework for the world to build on
 
 ## Goal
-Fix what is broken, absorb what adopters keep rebuilding, delete what nobody uses: security, data correctness, outages, upgrades, DX, API, MCP, agents, assets, cache, data stores, frontend, tests, docs, CI, deploys. Value first, so stopping after any sweep still leaves the most valuable work done.
+Ultimate is for the world; our own apps are the first users and the battle test. This plan fixes what is broken, adds what serious teams need, and removes what stops a stranger from adopting it. Nothing shipped is deleted. Value first, so stopping after any sweep still leaves the most valuable work done.
 
-Sources: nine adopters and about 30 other repositories (some only skimmed), a typed-effect library's docs and source, audits of this repository. As of 2026-11, at 29.4.0.
+The bar for every slice: would a serious team anywhere need this, and is it a mechanism? "Our apps didn't ask" is not an objection; our apps' pain raises priority.
+
+Sources: nine adopters and about 30 other repositories (some only skimmed), a typed-effect library's docs and source, audits of this repository, a stranger's clean-machine run. As of 2026-11, at 29.4.0.
 
 ## Context
 - Bun only, Postgres with no ORM, SolidJS 1.9.x, `@ultimat3/*` tiers 0–5. No new dependency anywhere in this plan.
-- No ninth primitive. New factories, both over `job`: `webhookReceiver()` ([14](14-jobs-inbound-webhooks.md)), `importRows()` ([16](16-jobs-import-rows.md)). Everything else is an option, helper or CLI command.
-- The typed-effect library is never a dependency. Guarantees taken: a finished scope refuses writes (02), retry inherits the caller's lifetime, finalizers run LIFO (03), durable step output has one form (06), redaction declared on the schema (10), an event answer tied to its transaction (34). Its programming model is rejected: [`90-deferred.md`](90-deferred.md).
-- Evidence: every slice's *Why* cites a probe run on 2026-11-02 or a measured adopter figure. Probes were throwaway; each slice's failing-first test is the durable copy.
+- No ninth primitive. New capabilities are factories over a primitive (`PRIMITIVE_FACTORIES`, `packages/core/src/registrar.ts`), options, helpers or CLI commands.
+- The typed-effect library is never a dependency: its guarantees are copied, its programming model is not ([`90-deferred.md`](90-deferred.md)).
+- Evidence: a slice's *Why* cites a probe run on 2026-11-02, a measured figure, or what a complete framework owes. Probes were throwaway; each slice's failing-first test is the durable copy.
 - Semver rule for every slice: a new red verdict in the gate, a compile break on an exported type, a required member on an exported interface or a changed exported constant is breaking. A `PRIMITIVE_FACTORIES` row is additive.
 
-## Tiers touched
-Land each sweep's lowest tier first. An import up or sideways is a design error. New legal edge: `jobs → http`, runtime, stated in 14.
+## Decisions, made
+An executor doesn't reopen these.
 
-| Tier | Packages | Main slices |
+| Decision | Call |
+|---|---|
+| Delete `notify`, RAG, unused `ui` components, stubs, `x pr`, unread exports | **No.** Keep all of it. K4 in `35-fix-concurrency` fixes `notify` |
+| OAuth authorization server | Build, in `auth` (`41-add-identity`) |
+| Old hashed assets survive a roll | Yes (`28-assets-deploy-skew`) |
+| `x verify` builds inside `budgets`, overruling `cli/src/verify-checks.ts:241` | Yes (`21-cli-verify-and-stop`) |
+| `isr` default keys on no query, as promised | Yes (`35-fix-isr-default`) |
+| Row security | Off by default, same `tenant:` declaration, a second enforcer (`41-add-row-security`) |
+| Scrub adopter names; guard reads names from a secret, never a committed file | Yes (`37-scrub-adopter-names`) |
+| Hold `UI_KEYS`-widening UI slices for v32 | Yes |
+| Docs site built by Ultimate, reversing `docs/idea/14-roadmap.md:45-46` | Yes (`42-adopt-docs-site`) |
+| Release schedule | Below (`42-adopt-stability`) |
+
+## Release schedule
+| Release | Contents | When |
 |---|---|---|
-| 0 | `core`, `schema` | 02, 03, 09, 10, 11, 12, `29-data-redis-outage` |
-| 1 | `db`, `cache`, `storage`, `i18n`, `time` | 04, 05, 20, `25-pkg-storage-streams`, `28-assets-stored-objects`, `29-data-*`, `35-fix-*` |
-| 2 | `entity`, `http`, `auth` | 02, 05, 17, `25-pkg-auth-*`, `26-api-*`, `28-assets-compression`, `35-fix-*` |
-| 3 | `action`, `query`, `jobs`, `realtime` | 01, 06, 13–16, 19, `25-pkg-realtime-client-reads`, `30-perf-jobs-claim-relay`, `33-ops-worker-roll`, `34-idea-jobs-event-wait`, `35-fix-*` |
-| 4 | `render`, `mcp`, `ai`, `ui`, `scraping` | 01, 07, 18, `23-ui-*`, `24-web-*`, `25-pkg-scraping-wedge`, `27-*`, `35-fix-*` |
-| 5 | `admin`, `testing`, `cli` | 08, 19–22, `24-web-admin-audit-trail`, `28-assets-image-contents`, `30-perf-gate`, `31-test-*`, `33-ops-*`, `36-dx-*` |
+| v30 | Sweeps 1–2: security and tenancy | As soon as they land, by 2026-11-30, when a model id in the docs retires |
+| v31 | Corruption, outages, DX, core mechanisms. `42-adopt-stability` merges first | When those land. The 90-day clock starts here and `next` is cut |
+| v32 | Everything else breaking | v31 + 90 days. A late row waits for v33 |
+| Minors | Everything additive | Weekly from `main`. A mixed slice splits into two PRs |
+| Security after v31 | Patch on `release/31.x`; only a fix that cannot be non-breaking takes the major exception | As needed |
+
+Each release needs a bump PR, and merging it is the release. **Stop and ask the owner** only for what the slices mark as the final owner step, all outward-facing: publishing the docs site, DNS, repo description, enabling discussions, signing governance, filing issues, asking npm about the name `x`.
+
+## Tiers touched
+All of them; each slice's header names its own. Land each sweep's lowest tier first. An import up or sideways is a design error. New legal edges, stated in their slices: `jobs → http` (14). A new subpath, `@ultimat3/core/render-nodes` (`39-testing-render-nodes`).
 
 ## Sweeps (one PR each, ≤ 4 agents, ≤ 100 files, merged before the next)
-File counts are estimates. Lock rule: each slice's *Files to change* is its agent's exclusive set. Before dispatch, intersect the sets in a sweep; two slices sharing a file go to one agent. An agent finishing early is re-tasked with `SendMessage`, never a fifth spawn.
+File counts are estimates, about 2,800 in all. Split anything over 100 at dispatch. Lock rule: each slice's *Files to change* is its agent's exclusive set. Before dispatch, intersect the sets in a sweep; two slices sharing a file go to one agent, in the listed order. An agent finishing early is re-tasked with `SendMessage`, never a fifth spawn.
 
-| Sweep | Batch | Slices | Agents | Est. files | Tiers |
-|---|---|---|---|---|---|
-| 1 Security | A | 01; 28-stored, then 35-fix-security; 25-totp; the model-id edit from 27-evals (retires 2026-11-30) | 3: gate · storage and render · auth | 71 | 1–5 |
-| 2 Tenancy | A | 05 | 2: `db` · `entity` | 14 + regenerated | 1–5 |
-| 3 Silent corruption | B | 02, then 03; 06, 35-concurrency K3 K6; 34; 22 | 4: scope · lifetime · jobs · upgrade | 62 | 0–5 |
-| 4 Silent corruption | B | 04; 35-logic except L11, L12; 35-concurrency K2 K5 K7; 29-large | 4: migrations · entity and action · realtime and auth · bulk | 73 | 0–5 |
-| 5 Outages | C | 29-unanswered, 29-pooler; 30-claim half; 33-roll | 3: `db` · jobs claim · worker roll | 81 | 1–5 |
-| 6 Rendering and DX | C | 07, L11; 08; 36-false-fixes; 36-generators | 4 | 94 | 1–5 |
-| 7 Wire and assets | C | 26-wire; 26-read; 24-i18n; 25-streams; 28-compression; 28-image | 4: API · i18n · storage and compression · image | 78 | 1–5 |
-| 8 Core mechanisms | C | 09, 12; 10; 11 | 3: errors · schema · outbound | 95 | 0–5 |
-| 9 Jobs | D | 13, 30-relay half; 14; 15; 16; 19; 30-gate | 4: enqueue · inbound · import and recipes · CLI | 78 | 0–5 |
-| 10 Gate and deploys | D | 20; 21; 33-ci; 33-proof; 28-skew | 4 | 90 | 1–5 |
-| 11 AI and web | D | 27-dual; 27-evals; 18; 17; 24-errors; 24-admin | 4 | 93 | 1–5 |
-| 12 Frontend and sign-in | D | 23-refresh, then 25-reads; 23-table; 25-sign-in | 3 | 85 | 2–5 |
-| 13 Later | E | 27-oauth (owner); 27-checkpoint; 27-context; 29-redis; 29-keyset; 30-decode; 25-scraping | 4 | 87 | 0–5 |
-| 14 Tests and docs | E | 31-boundary; 31-false-green; 32-claims; 32-guards; 32-findability | 3 | 72 | 5, docs |
+| Sweep | Focus | Release | Slices, in order | Est. files |
+|---|---|---|---|---|
+| 1 | Security | v30 | `01-ai-tool-gate`, `28-assets-stored-objects`, `35-fix-security`, `25-pkg-auth-totp-replay` | 71 |
+| 2 | Tenancy | v30 | `04-db-migration-safety`, `05-entity-tenant-and-locks` | 30 |
+| 3 | Name scrub, docs and source | patch | `37-scrub-adopter-names` | 54 |
+| 4 | Name scrub, tests and guard | patch | continues the sweep above | 65 |
+| 5 | Silent corruption | v31 | `02-db-entity-cancellation`, `03-core-lifetime-helpers`, `06-jobs-step-semantics`, `34-idea-jobs-event-wait`, `22-cli-upgrade` | 62 |
+| 6 | Silent corruption | v31 | `35-fix-logic`, `35-fix-concurrency`, `29-data-large-tables`, `35-fix-isr-default` | 60 |
+| 7 | Outages | v31 | `29-data-pg-unanswered`, `29-data-pg-pooler`, `30-perf-jobs-claim-relay` | 53 |
+| 7b | Deploys | v31 | `19-cli-deploy-verify`, `33-ops-worker-roll` | 49 |
+| 8 | Rendering and DX | v31 | `07-render-stream-hole`, `08-testing-mock-fetch`, `36-dx-false-fixes`, `36-dx-generators` | 94 |
+| 9 | First hour | v31 | `42-adopt-stability`, `21-cli-verify-and-stop`, `32-docs-false-claims`, `42-adopt-first-hour` | 99 |
+| 10 | Front door | minor | `32-docs-findability`, `42-adopt-agents`, `42-adopt-front-door`, `32-docs-guards`, `42-adopt-outsiders` | 96 |
+| 11 | Wire and assets | v31 | `26-api-wire-fixes`, `26-api-read-contract`, `24-web-i18n-mail-keys`, `25-pkg-storage-streams`, `28-assets-compression`, `28-assets-image-contents` | 78 |
+| 12 | Core mechanisms | v31 | `09-core-define-error`, `12-core-error-fingerprint`, `10-schema-sensitive-and-rules`, `11-core-outbound` | 95 |
+| 13 | Core mechanisms | v31 | `39-core-breaker`, `39-core-otlp-retry`, `39-testing-render-nodes` | 92 |
+| 14 | Jobs | v32 | `13-jobs-bulk-and-rate`, `14-jobs-inbound-webhooks`, `15-jobs-recipes`, `16-jobs-import-rows`, `30-perf-gate` | 48 |
+| 15 | Gate and deploys | v32 | `20-cli-db-diagnostics`, `33-ops-ci`, `28-assets-deploy-skew`, `33-ops-deploy-proof` | 57 |
+| 16 | AI and web | v32 | `18-ai-scripted-and-meter`, `27-mcp-dual-era`, `27-agents-evals`, `17-entity-test-driver`, `24-web-client-errors`, `24-web-admin-audit-trail` | 93 |
+| 17 | Live frontend, sign-in | v32 | `23-ui-live-refresh`, `25-pkg-realtime-client-reads`, `23-ui-data-table`, `25-pkg-auth-sign-in` | 85 |
+| 18 | Contract | v32 | `39-testing-property`, `39-action-declared-errors`, `39-api-mount-paths` | 83 |
+| 19 | The gate attacks | v32 | `40-next-exercise-pass`, `40-next-tenant-proof`, `39-web-a11y-audit` | 94 |
+| 20 | Identity and tenancy | v32 | `41-add-reads`, `41-add-identity`, `41-add-row-security` | 88 |
+| 21 | Durable jobs | v32 | `39-jobs-event-wake`, `39-action-sagas`, `40-next-job-crash-proof`, `41-add-consumers` | 86 |
+| 22 | Data modelling | v32 | `39-db-partitioned-tables`, `41-add-time-series` | 30 |
+| 23 | Resilience | v32 | `27-agents-checkpoint`, `27-agents-context-and-cache`, `29-data-redis-outage`, `29-data-raw-keyset`, `30-perf-entity-decode`, `25-pkg-scraping-wedge` | 71 |
+| 24 | Production insight | v32 | `41-add-operations`, `39-ops-chart-alerts`, `40-next-fault-drills` | 79 |
+| 25 | Plans, data, repro | v32 | `40-next-query-plans`, `40-next-subject-data`, `40-next-repro` | 99 |
+| 25b | Entity lifecycle | v32 | `41-add-entity-lifecycle` | 20 |
+| 26 | Agents and MCP | minor | `41-add-agent-wire`, `39-mcp-inline-then-job`, `39-mcp-recipes`, `39-ai-prompt-cache`, `39-testing-cassettes` | 82 |
+| 27 | Clients, uploads, content | minor | `41-add-api-clients`, `41-add-uploads`, `41-add-locale-and-content` | 88 |
+| 28 | Capture, graph, shapes | v32 | `41-add-page-capture`, `40-next-app-graph`, `42-adopt-shapes` | 86 |
+| 29 | UI kit | v32 | `23-ui-chart-kit`, `23-ui-searchable-select` | 82 |
+| 30 | UI kit | v32 | `38-ui-commands`, `38-ui-navigation` | 91 |
+| 31 | UI kit | v32 | `38-ui-lists`, `38-ui-pickers` | 82 |
+| 32 | UI kit | v32 | `38-ui-drag-layout`, `38-ui-viewers` | 88 |
+| 33 | Docs site app | minor | `42-adopt-docs-site` | 100 |
+| 34 | Docs site wiring | minor | continues the sweep above | 40 |
+| 35 | Tests and proof | minor | `31-test-file-boundary`, `31-test-false-green`, `42-adopt-proof` | 44 |
 
-- Batch = what shares a release, so adopters upgrade once. A carries the live security holes; B and C the major correctness work; D and E what's left. Whether each batch gets a major, and when, is the owner's.
 - Coordinator-only, every sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `wiki/Upgrading.md`, `framework.manifest.json` (`bun run manifest`, once), `bun.lock`, `status.yml`, any package's `src/index.ts`, `README.md`, `CLAUDE.md`, and any wiki page two agents both edit. Workers report their text.
 - Each PR: `bun run verify`, `bun run scripts/reference-app-gate.ts`, CI green, reviews addressed, merged, `main` pulled. A change to `examples/dummy` budgets regenerates its `x.manifest.json` first.
-- A slice with two halves in two sweeps (35-concurrency, 35-logic, 30-claim) stays `in_progress` until both land.
+- Slices landing across sweeps stay `in_progress` until done: `37-scrub-adopter-names` (sweeps 3, 4), `42-adopt-docs-site` (33, 34), `35-fix-concurrency` (K3, K6 in 5, the rest in 6), `35-fix-logic` (L11 in 8, L12 before 18), `30-perf-jobs-claim-relay` (relay half in 14, after 13), `27-agents-evals` (its model-id edit in sweep 1).
+- A slice in phases, such as `40-next-exercise-pass` or `40-next-repro`, ships its minor phases first where that helps.
 
 ## Plan files
-| Slice | Covers | Semver |
-|---|---|---|
-| [`01-ai-tool-gate`](01-ai-tool-gate.md) | **Security.** The confirmation gate binds in-app agents | breaking |
-| [`02-db-entity-cancellation`](02-db-entity-cancellation.md) | A write after the deadline or a finished transaction is refused; `runToCompletion` | breaking |
-| [`03-core-lifetime-helpers`](03-core-lifetime-helpers.md) | `retry()` lifetime, joiners survive a leader's abort, LIFO close | breaking |
-| [`04-db-migration-safety`](04-db-migration-safety.md) | `NOT VALID`, lock retries, deferred key phase, zero-downtime column drop | breaking |
-| [`05-entity-tenant-and-locks`](05-entity-tenant-and-locks.md) | **Security.** Same-tenant composite keys by default; row and key locks | breaking |
-| [`06-jobs-step-semantics`](06-jobs-step-semantics.md) | `step.run` gives the stored form on every attempt, and its type says so | breaking |
-| [`07-render-stream-hole`](07-render-stream-hole.md) | `<Hole>`, so `stream` streams; the generated default | breaking |
-| [`08-testing-mock-fetch`](08-testing-mock-fetch.md) | `mockFetch` by method, in order; `requestLog` | breaking |
-| [`09-core-define-error`](09-core-define-error.md) | One declaration for a code, status and class | minor |
-| [`10-schema-sensitive-and-rules`](10-schema-sensitive-and-rules.md) | `.sensitive()`, stable issue `rule`, `$view` issues bind | minor |
-| [`11-core-outbound`](11-core-outbound.md) | One outbound call: deadlines, caps, safe retry, `dial: 'public'` | minor |
-| [`12-core-error-fingerprint`](12-core-error-fingerprint.md) | `errorFingerprint()`: one group for one fault | minor |
-| [`13-jobs-bulk-and-rate`](13-jobs-bulk-and-rate.md) | `enqueueMany`; the rate budget that exists, documented | breaking |
-| [`14-jobs-inbound-webhooks`](14-jobs-inbound-webhooks.md) | `webhookReceiver()`: exact bytes, durable enqueue, fast ack | minor |
-| [`15-jobs-recipes`](15-jobs-recipes.md) | Consumer and cursor-walk recipes pinned by tests; doc corrections | minor |
-| [`16-jobs-import-rows`](16-jobs-import-rows.md) | `importRows()`, the twin of `exportRows()` | minor |
-| [`17-entity-test-driver`](17-entity-test-driver.md) | The handle follows the migrated test database | minor |
-| [`18-ai-scripted-and-meter`](18-ai-scripted-and-meter.md) | `scriptedProvider`, `meteredRun` | minor |
-| [`19-cli-deploy-verify`](19-cli-deploy-verify.md) | `x deploy verify`: this build, stable, queues served | breaking |
-| [`20-cli-db-diagnostics`](20-cli-db-diagnostics.md) | `x db diagnostics`: blockers, slow queries, unused indexes | minor |
-| [`21-cli-verify-and-stop`](21-cli-verify-and-stop.md) | `x verify` alone is the gate, no stale budgets; `x stop` | breaking |
-| [`22-cli-upgrade`](22-cli-upgrade.md) | `x upgrade`: one major per run, a section pointer, the gate | minor |
-| [`23-ui-live-refresh`](23-ui-live-refresh.md) | `refresh()` keeps focus; polling pauses hidden, stops on session loss | see slice |
-| [`23-ui-data-table`](23-ui-data-table.md) | `rowKey` keys, `Pagination` type, list URL state, `Sparkline` `null` | breaking |
-| [`24-web-client-errors`](24-web-client-errors.md) | Browser errors reach `ErrorReporter` | breaking |
-| [`24-web-i18n-mail-keys`](24-web-i18n-mail-keys.md) | Mail and push keys visible to the gate | see slice |
-| [`24-web-admin-audit-trail`](24-web-admin-audit-trail.md) | `/admin/audit` filters and paging | see slice |
-| [`25-pkg-auth-totp-replay`](25-pkg-auth-totp-replay.md) | **Security.** TOTP replay across replicas | see slice |
-| [`25-pkg-auth-sign-in`](25-pkg-auth-sign-in.md) | `x g sign-in`, `jwtBearerResolver` | breaking |
-| [`25-pkg-realtime-client-reads`](25-pkg-realtime-client-reads.md) | `everyMs` over `visibleInterval`; hold only if persisted | see slice |
-| [`25-pkg-scraping-wedge`](25-pkg-scraping-wedge.md) | A wedge fire quits; verbs count as activity | breaking |
-| [`25-pkg-storage-streams`](25-pkg-storage-streams.md) | `streamRange`, `putStream` | see slice |
-| [`26-api-read-contract`](26-api-read-contract.md) | `rows:` in OpenAPI, mount cuts in `contract-diff` | see slice |
-| [`26-api-wire-fixes`](26-api-wire-fixes.md) | Mount rate limit honoured, CORS headers, `retry` member, `requestId` | see slice |
-| [`27-agents-checkpoint`](27-agents-checkpoint.md) | `onCheckpoint`, crash resume | see slice |
-| [`27-agents-context-and-cache`](27-agents-context-and-cache.md) | Compaction from reported usage, overflow recovery | see slice |
-| [`27-agents-evals`](27-agents-evals.md) | `defineEval({ agent })`; stale model ids, pulled forward | breaking |
-| [`27-mcp-dual-era`](27-mcp-dual-era.md) | Serve MCP `2026-07-28` beside legacy; Origin and version checks | breaking |
-| [`27-mcp-oauth-server`](27-mcp-oauth-server.md) | **Owner decision.** OAuth authorization server | breaking |
-| [`28-assets-compression`](28-assets-compression.md) | Gzip public text, bounded, never private | breaking |
-| [`28-assets-deploy-skew`](28-assets-deploy-skew.md) | **Owner decision on retention.** Old hashed assets survive a roll | see slice |
-| [`28-assets-image-contents`](28-assets-image-contents.md) | Tests and docs stay out of the image | see slice |
-| [`28-assets-stored-objects`](28-assets-stored-objects.md) | **Security.** Variant fixes, `objectResponse`, `/media` cache headers | see slice |
-| [`29-data-large-tables`](29-data-large-tables.md) | Atomic wide bulk write | see slice |
-| [`29-data-pg-pooler`](29-data-pg-pooler.md) | Pooler modes, `LISTEN`, idle-in-transaction | breaking |
-| [`29-data-pg-unanswered`](29-data-pg-unanswered.md) | Unanswered statements; plain-statement acquire bound | breaking |
-| [`29-data-raw-keyset`](29-data-raw-keyset.md) | `keyset()` for raw joins | see slice |
-| [`29-data-redis-outage`](29-data-redis-outage.md) | A dead Redis no longer blocks or strands. No adopter runs this tier yet | breaking |
-| [`30-perf-entity-decode`](30-perf-entity-decode.md) | Row decode cost | see slice |
-| [`30-perf-gate`](30-perf-gate.md) | `errors` step re-masking; split `cli` coverage | see slice |
-| [`30-perf-jobs-claim-relay`](30-perf-jobs-claim-relay.md) | Claim scales with due rows; outbox relay | see slice |
-| [`31-test-false-green`](31-test-false-green.md) | Skips can't read as green; tests for surviving mutants | minor |
-| [`31-test-file-boundary`](31-test-file-boundary.md) | `mock.module` undone at the file boundary | breaking |
-| [`32-docs-false-claims`](32-docs-false-claims.md) | Wrong Known-Gaps rows, era stamps, tutorials | patch |
-| [`32-docs-findability`](32-docs-findability.md) | `x docs` retrieval, `Upgrading.md` usable | see slice |
-| [`32-docs-guards`](32-docs-guards.md) | Guards that stop those drifts recurring | see slice |
-| [`33-ops-ci`](33-ops-ci.md) | Tested-tree reuse, named flakes | see slice |
-| [`33-ops-deploy-proof`](33-ops-deploy-proof.md) | Proof covers a held job, a migration, six deploys | see slice |
-| [`33-ops-worker-roll`](33-ops-worker-roll.md) | Retire on by default, `queue_demand` gauge | breaking |
-| [`34-idea-jobs-event-wait`](34-idea-jobs-event-wait.md) | A rolled-back publish wakes nobody; event payload checked | breaking |
-| [`35-fix-security`](35-fix-security.md) | **Security.** ISR identity and Host, S3 grants, sniffing, origin, head | breaking |
-| [`35-fix-concurrency`](35-fix-concurrency.md) | Parallel replay, cache flights, live-query desync, JWKS | breaking |
-| [`35-fix-logic`](35-fix-logic.md) | Replay re-judged, patches unvalidated, parity bugs | breaking |
-| [`36-dx-false-fixes`](36-dx-false-fixes.md) | Every false `fix:` the audit hit | breaking |
-| [`36-dx-generators`](36-dx-generators.md) | Generators stop inventing entities | breaking |
-| [`90-deferred`](90-deferred.md) | Not a slice. Every idea deferred or killed, and what brings it back | n/a |
-
-## Owner decisions
-An executor never guesses these. Each row names the recommendation; nothing moves without a yes.
-
-| Decision | Recommendation | If yes |
-|---|---|---|
-| Release batch A right after sweep 2, as a major | yes: live holes | an outward-facing act: ask first |
-| Delete `notify` (0 of 8 adopter repos import it; about 5,600 LOC) | yes, in batch B before 06 | K4 and 06's notify rows go. Also `registrar.ts:88`, runtime schema and purge, tier tables |
-| Delete RAG and vector (`ai/src/rag.ts` and friends, about 2,900 LOC; no adopter) | yes. Check `llm-cache.ts` first; it may need `Embedder` | 11's `remote-embedder.ts` row and part of 27-evals go |
-| Delete unused `ui` components (8 named; 25 have no tracked use) | decide before sweep 12 | scope of `23-ui-*` changes |
-| Delete the rest: `cmd-planned.ts` stubs, `x pr`, `testing/src/harness.ts`, `admin/src/ai-panes.ts`, `time/src/schedule.ts`, `flags/src/projection.ts`, `database.driver`; merge the two fence guards | yes; no slice yet, one PR in batch B | `cmd-planned.ts` before 22. Adopters on old versions may simply not have reached these, so a zero is weaker for newer APIs |
-| Prune 1,679 barrel names with no reader | later, name by name | own PR |
-| Build the OAuth server (five adopters, 1,000–1,600 LOC each) | yes: security code nobody should rewrite five times, though it's a subsystem and reverses `mcp/src/app-tools.ts:174` | `27-mcp-oauth-server` |
-| Keep old hashed assets across a roll | yes, for the zero-downtime goal; no adopter asked | retention half of `28-assets-deploy-skew`; `33-ops-deploy-proof` step 6 needs it |
-| `x verify` builds inside `budgets` (21 overrules `cli/src/verify-checks.ts:241`) | yes | `21-cli-verify-and-stop` |
-| Adopter names in public docs and source (about 60 non-test lines) | scrub. No slice: a plan cannot list them. The list is the executor's to regenerate with a grep | one PR, then a guard |
+| Slice | Covers | Sweep | Semver |
+|---|---|---|---|
+| [`01-ai-tool-gate`](01-ai-tool-gate.md) | The confirmation gate reaches in-app agents | 1 | breaking |
+| [`02-db-entity-cancellation`](02-db-entity-cancellation.md) | A finished scope refuses writes | 5 | breaking |
+| [`03-core-lifetime-helpers`](03-core-lifetime-helpers.md) | Lifetimes in core: retry, joiners, close order | 5 | minor |
+| [`04-db-migration-safety`](04-db-migration-safety.md) | Migrations a rolling deploy survives | 2 | breaking |
+| [`05-entity-tenant-and-locks`](05-entity-tenant-and-locks.md) | Same-tenant foreign keys; row and key locks | 2 | breaking |
+| [`06-jobs-step-semantics`](06-jobs-step-semantics.md) | A step answers what it stored | 5 | breaking |
+| [`07-render-stream-hole`](07-render-stream-hole.md) | `<Hole>`: the marker `stream` has been waiting for | 8 | breaking |
+| [`08-testing-mock-fetch`](08-testing-mock-fetch.md) | `mockFetch` that can answer a retry test | 8 | breaking |
+| [`09-core-define-error`](09-core-define-error.md) | `defineError`: one declaration for a code, its title, its status and its class | 12 | minor |
+| [`10-schema-sensitive-and-rules`](10-schema-sensitive-and-rules.md) | Schema facts the framework already wants: `.sensitive()` and an issue's `rule` | 12 | minor |
+| [`11-core-outbound`](11-core-outbound.md) | One outbound HTTP call | 12 | minor |
+| [`12-core-error-fingerprint`](12-core-error-fingerprint.md) | `errorFingerprint()`: one group for one fault | 12 | minor |
+| [`13-jobs-bulk-and-rate`](13-jobs-bulk-and-rate.md) | Jobs: bulk enqueue, and the fleet rate budget that already exists | 14 | breaking |
+| [`14-jobs-inbound-webhooks`](14-jobs-inbound-webhooks.md) | Inbound webhooks | 14 | minor |
+| [`15-jobs-recipes`](15-jobs-recipes.md) | Long-lived jobs: the pins and doc corrections a consumer rests on | 14 | minor |
+| [`16-jobs-import-rows`](16-jobs-import-rows.md) | `importRows()` | 14 | minor |
+| [`17-entity-test-driver`](17-entity-test-driver.md) | The handle follows the migrated test database | 16 | minor |
+| [`18-ai-scripted-and-meter`](18-ai-scripted-and-meter.md) | `scriptedProvider` and `meteredRun` | 16 | minor |
+| [`19-cli-deploy-verify`](19-cli-deploy-verify.md) | `x deploy verify`: production serves this build and stays there | 7b | breaking |
+| [`20-cli-db-diagnostics`](20-cli-db-diagnostics.md) | `x db diagnostics` | 15 | minor |
+| [`21-cli-verify-and-stop`](21-cli-verify-and-stop.md) | `x verify` alone is the gate; `x stop` ends this checkout's `x dev` | 9 | breaking |
+| [`22-cli-upgrade`](22-cli-upgrade.md) | `x upgrade`: one major per run, a pointer to its section, the gate | 5 | minor |
+| [`23-ui-chart-kit`](23-ui-chart-kit.md) | Charts a live, mobile dashboard can stand on | 29 | breaking |
+| [`23-ui-data-table`](23-ui-data-table.md) | A table that survives live rows and the framework's own pages | 17 | breaking |
+| [`23-ui-live-refresh`](23-ui-live-refresh.md) | A server-rendered page that stays true | 17 | minor |
+| [`23-ui-searchable-select`](23-ui-searchable-select.md) | Choosing one of many, by value | 29 | breaking |
+| [`24-web-admin-audit-trail`](24-web-admin-audit-trail.md) | `/admin/audit` is a trail one can search and page | 16 | minor |
+| [`24-web-client-errors`](24-web-client-errors.md) | Browser failures reach the one `ErrorReporter` | 16 | breaking |
+| [`24-web-i18n-mail-keys`](24-web-i18n-mail-keys.md) | A catalog key only a mail or a push names is seen by the gate; a mail with a miss is not sent | 11 | breaking |
+| [`25-pkg-auth-sign-in`](25-pkg-auth-sign-in.md) | Sign-in that a deployed app can actually use | 17 | breaking |
+| [`25-pkg-auth-totp-replay`](25-pkg-auth-totp-replay.md) | A spent TOTP code stays spent across replicas | 1 | breaking |
+| [`25-pkg-realtime-client-reads`](25-pkg-realtime-client-reads.md) | Client reads: `useQuery({ everyMs })`, no pointless hold | 17 | minor |
+| [`25-pkg-scraping-wedge`](25-pkg-scraping-wedge.md) | The scrape watchdog ends the run on an attached browser | 23 | breaking |
+| [`25-pkg-storage-streams`](25-pkg-storage-streams.md) | Storage: a ranged stream and a streamed write | 11 | breaking |
+| [`26-api-read-contract`](26-api-read-contract.md) | A read's rows and a mount's cut are published contract | 11 | breaking |
+| [`26-api-wire-fixes`](26-api-wire-fixes.md) | Four wire defects and one missing fact | 11 | breaking |
+| [`27-agents-checkpoint`](27-agents-checkpoint.md) | `onCheckpoint`: an agent run survives a dead worker | 23 | minor |
+| [`27-agents-context-and-cache`](27-agents-context-and-cache.md) | Compaction reads what the provider reported; a real overflow recovers | 23 | breaking |
+| [`27-agents-evals`](27-agents-evals.md) | `defineEval({ agent })`, and current model ids in the examples | 16 | breaking |
+| [`27-mcp-dual-era`](27-mcp-dual-era.md) | MCP: serve the current protocol revision beside the old ones | 16 | breaking |
+| [`28-assets-compression`](28-assets-compression.md) | Public text responses are gzipped | 11 | breaking |
+| [`28-assets-deploy-skew`](28-assets-deploy-skew.md) | Hashed assets survive a deploy | 15 | minor |
+| [`28-assets-image-contents`](28-assets-image-contents.md) | The scaffolded image carries no tests | 11 | minor |
+| [`28-assets-stored-objects`](28-assets-stored-objects.md) | A stored object's variants and its one response | 1 | breaking |
+| [`29-data-large-tables`](29-data-large-tables.md) | Large tables: bulk writes all-or-nothing | 6 | minor |
+| [`29-data-pg-pooler`](29-data-pg-pooler.md) | Postgres through a connection pooler | 7 | breaking |
+| [`29-data-pg-unanswered`](29-data-pg-unanswered.md) | A statement nobody answers | 7 | breaking |
+| [`29-data-raw-keyset`](29-data-raw-keyset.md) | Keyset paging for a raw join | 23 | minor |
+| [`29-data-redis-outage`](29-data-redis-outage.md) | Redis down is a slow read, not a hang | 23 | breaking |
+| [`30-perf-entity-decode`](30-perf-entity-decode.md) | Perf: row decode stops re-deriving column names | 23 | patch |
+| [`30-perf-gate`](30-perf-gate.md) | Perf: the gate re-masks every file, and one unit sets CI's wall clock | 14 | patch |
+| [`30-perf-jobs-claim-relay`](30-perf-jobs-claim-relay.md) | Perf: the claim seeks, the relay publishes in batches | 7 | minor |
+| [`31-test-false-green`](31-test-false-green.md) | Where a green test run says less than it reads | 35 | minor |
+| [`31-test-file-boundary`](31-test-file-boundary.md) | The file boundary undoes `mock.module` | 35 | breaking |
+| [`32-docs-false-claims`](32-docs-false-claims.md) | Docs: the claims a cold read proved false | 9 | patch |
+| [`32-docs-findability`](32-docs-findability.md) | Docs: finding the one way to do X, offline | 10 | minor |
+| [`32-docs-guards`](32-docs-guards.md) | Docs: a guard per class of drift that survived the existing ones | 10 | none |
+| [`33-ops-ci`](33-ops-ci.md) | CI under five minutes, no tested bytes retested, no named flake left | 15 | minor |
+| [`33-ops-deploy-proof`](33-ops-deploy-proof.md) | Prove what zero-downtime claims: jobs, a migration, six deploys | 15 | none |
+| [`33-ops-worker-roll`](33-ops-worker-roll.md) | A deploy never cuts a running job, and scaling reads real demand | 7b | breaking |
+| [`34-idea-jobs-event-wait`](34-idea-jobs-event-wait.md) | An event wait: atomic answer, parsed payload | 5 | breaking |
+| [`35-fix-concurrency`](35-fix-concurrency.md) | Concurrency fixes: replays, stale joins, quiet subscribers | 6 | breaking |
+| [`35-fix-isr-default`](35-fix-isr-default.md) | An `isr` route keys on no query unless it says so | 6 | breaking |
+| [`35-fix-logic`](35-fix-logic.md) | Logic fixes: drivers that disagree, retries refused, wrong bills | 6 | breaking |
+| [`35-fix-security`](35-fix-security.md) | Security fixes: one visitor's answer served to another, unchecked bytes | 1 | breaking |
+| [`36-dx-false-fixes`](36-dx-false-fixes.md) | A `fix:` that is false is a bug | 8 | breaking |
+| [`36-dx-generators`](36-dx-generators.md) | Generators: green on arrival, no invented tables, a loop that fails | 8 | breaking |
+| [`37-scrub-adopter-names`](37-scrub-adopter-names.md) | Adopter names out of the public tree, and kept out | 3 | none |
+| [`38-ui-commands`](38-ui-commands.md) | Confirmations, hotkeys and a palette that works by itself | 30 | breaking |
+| [`38-ui-drag-layout`](38-ui-drag-layout.md) | Reordering, boards and panes | 32 | breaking |
+| [`38-ui-lists`](38-ui-lists.md) | Long lists, trees, timelines and facts | 31 | breaking |
+| [`38-ui-navigation`](38-ui-navigation.md) | The mobile frame and the ways around an app | 30 | breaking |
+| [`38-ui-pickers`](38-ui-pickers.md) | Dates, windows and bounded values | 31 | breaking |
+| [`38-ui-viewers`](38-ui-viewers.md) | Reading what agents and machines write | 32 | breaking |
+| [`39-action-declared-errors`](39-action-declared-errors.md) | `errors:` on an action and a query, closed by a red build | 18 | minor |
+| [`39-action-sagas`](39-action-sagas.md) | Durable compensation and at-most-once steps | 21 | breaking |
+| [`39-ai-prompt-cache`](39-ai-prompt-cache.md) | Prompt-cache rows an app can declare | 26 | minor |
+| [`39-api-mount-paths`](39-api-mount-paths.md) | Path parameters: `http.path` is the one spelling | 18 | minor |
+| [`39-core-breaker`](39-core-breaker.md) | `breaker()`: one state machine, the trigger stays the caller's | 13 | minor |
+| [`39-core-otlp-retry`](39-core-otlp-retry.md) | OTLP export survives a transient failure | 13 | minor |
+| [`39-db-partitioned-tables`](39-db-partitioned-tables.md) | Partitioned tables are tables | 22 | minor |
+| [`39-jobs-event-wake`](39-jobs-event-wake.md) | A published event wakes its waiter | 21 | breaking |
+| [`39-mcp-inline-then-job`](39-mcp-inline-then-job.md) | A long tool that answers inline when it can | 26 | minor |
+| [`39-mcp-recipes`](39-mcp-recipes.md) | MCP recipes that cannot go stale | 26 | minor |
+| [`39-ops-chart-alerts`](39-ops-chart-alerts.md) | Alert rules an app gets from its chart | 24 | minor |
+| [`39-testing-cassettes`](39-testing-cassettes.md) | Cassettes over `mockFetch`, with the written bytes checked | 26 | minor |
+| [`39-testing-property`](39-testing-property.md) | Generated inputs inside the `contract` step | 18 | breaking |
+| [`39-testing-render-nodes`](39-testing-render-nodes.md) | Public `renderNodes`, from a tier that can be imported | 13 | minor |
+| [`39-web-a11y-audit`](39-web-a11y-audit.md) | Every e2e page audited by the browser's own accessibility tree | 19 | breaking |
+| [`40-next-app-graph`](40-next-app-graph.md) | `x graph` and `x impact`: the app as one typed graph | 28 | minor |
+| [`40-next-exercise-pass`](40-next-exercise-pass.md) | Every primitive runs once, with no test written | 19 | minor, then breaking |
+| [`40-next-fault-drills`](40-next-fault-drills.md) | `x drill`: real roles, real services, every failure this plan found | 24 | minor |
+| [`40-next-job-crash-proof`](40-next-job-crash-proof.md) | Every job is killed at every step boundary, and races run from a seed | 21 | minor, then breaking |
+| [`40-next-query-plans`](40-next-query-plans.md) | A statement no index can serve fails the build, with zero rows | 25 | breaking |
+| [`40-next-repro`](40-next-repro.md) | `x repro <id>`: a production failure becomes a failing test | 25 | minor, then breaking |
+| [`40-next-subject-data`](40-next-subject-data.md) | `subjectExport()`, `subjectErase()`: one person's data, provably found | 25 | minor |
+| [`40-next-tenant-proof`](40-next-tenant-proof.md) | The gate attacks every action, query and job from another tenant | 19 | breaking |
+| [`41-add-agent-wire`](41-add-agent-wire.md) | Agents on the wire: tokens to the client, other servers' tools, recall under a filter | 26 | minor |
+| [`41-add-api-clients`](41-add-api-clients.md) | One OpenAPI compiler: a client for your customers, a client for your vendors | 27 | minor |
+| [`41-add-consumers`](41-add-consumers.md) | `consumer()` and a backfill over a remote source | 21 | minor |
+| [`41-add-entity-lifecycle`](41-add-entity-lifecycle.md) | Declared on the entity: how long a row lives, what it was, how many it has | 25b | minor |
+| [`41-add-identity`](41-add-identity.md) | Identity: an authorization server, third-party grants, more purposes, a fake provider | 20 | breaking |
+| [`41-add-locale-and-content`](41-add-locale-and-content.md) | What a site says: `llms.txt`, mail previews, grammatical choice, amounts typed by a person, the visitor's zone | 27 | minor |
+| [`41-add-operations`](41-add-operations.md) | Knowing production: real-user timings, a trace across a live query, error groups, an honest rollback | 24 | breaking |
+| [`41-add-page-capture`](41-add-page-capture.md) | Pages as files: PDF, social cards, and images a static site can actually serve | 28 | breaking |
+| [`41-add-reads`](41-add-reads.md) | A read's freshness: conditional answers, a null's lease, a replica that has caught up, a bound per read | 20 | minor |
+| [`41-add-row-security`](41-add-row-security.md) | The database refuses another tenant's row | 20 | minor, then breaking |
+| [`41-add-time-series`](41-add-time-series.md) | Time buckets, rollups, and views the framework can read | 22 | minor |
+| [`41-add-uploads`](41-add-uploads.md) | Large uploads that resume, and objects that expire | 27 | minor |
+| [`42-adopt-agents`](42-adopt-agents.md) | Adoption: any vendor's coding agent, cold | 10 | minor |
+| [`42-adopt-docs-site`](42-adopt-docs-site.md) | Adoption: a docs site, built by Ultimate | 33 | none |
+| [`42-adopt-first-hour`](42-adopt-first-hour.md) | Adoption: a stranger's first hour, through the first deploy | 9 | minor |
+| [`42-adopt-front-door`](42-adopt-front-door.md) | Adoption: 30 seconds on the README, the npm page, the wiki home | 10 | none |
+| [`42-adopt-outsiders`](42-adopt-outsiders.md) | Adoption: contributors, governance, telemetry, third-party packages | 10 | breaking |
+| [`42-adopt-proof`](42-adopt-proof.md) | Adoption: comparison pages, migration guides, benchmarks anyone can re-run | 35 | none |
+| [`42-adopt-shapes`](42-adopt-shapes.md) | Adoption: starters for the common app shapes | 28 | minor |
+| [`42-adopt-stability`](42-adopt-stability.md) | Adoption: a stability promise, and slower majors | 9 | none |
+| [`90-deferred`](90-deferred.md) | Not a slice. What was rejected, and why | n/a | n/a |
 
 ## Done when
 - Each slice's *Done when*, and its failing-first test failed before the change.
 - Reproduced holes refused: an in-app agent on a gated tool, an anonymous visitor on a signed-in user's ISR page, a cross-tenant reference on both drivers, TOTP replay on a second replica.
-- Reproduced corruption gone: a write after a 504 or a rollback; parallel steps re-running; a partial `insertAll`.
+- Reproduced corruption gone: a write after a 504 or a rollback, parallel steps re-running, a partial `insertAll`.
+- A stranger on a clean machine goes from nothing to a deployed app with no edit by hand, and the first page, first feature and first deploy are timed in CI.
+- The gate attacks: every action, query and job runs with no test written and from another tenant, and every job is killed at each step boundary.
 - Each new code carries a `fix:` and a `wiki/Error-Codes.md` row. Each convention names its build error.
 - `wiki/Known-Gaps.md` true and current.
 - `bun run verify` green, all 20 steps; `bun run scripts/reference-app-gate.ts` green; `scaffold-smoke` green twice per shape.
 
 ## Risks / open questions
-- **Upgrade load.** Batches cost adopters real edits, and all six surveyed are behind (^6 to ^28). That's why 22 lands in sweep 3, not with the CLI work. An old app's first `x upgrade` is a re-exec of the newest CLI: test it.
+- **Churn against adoption.** 29 majors in 78 days is itself a blocker. The schedule above caps it, and `x upgrade` lands in sweep 5 so each hop is one command. Adopters' existing apps take real edits: an old app's first `x upgrade` is a re-exec of the newest CLI, so test it.
+- **Scope.** This is a very large plan, far past what one release cycle holds. Order is the protection: sweeps 1–13 are what the world would hold against us if missing. Later sweeps can land over months.
+- **New kit surface carries a cost.** Every new component and factory is API under semver, forever. Each slice has one idiomatic use in `examples/dummy` so it can't rot silently.
 - **05 can find real data.** A validate failing `X_DB_FOREIGN_KEY_VIOLATION` means rows already cross tenants: a finding for the app's owner.
 - **02 changes what lands.** A write past `requestTimeoutMs` now rolls back. Accepted cost: a keyed handler's raw `fetch` under `runToCompletion` has no deadline until it uses `outbound()`.
 - **07's `async` hydration** rests on HTML semantics. Its enforced-CSP e2e test is the proof; if it fails, the generated default must not flip.
-- **S4 refuses XML over 64 KiB at promotion**, because active markup needs the whole body.
-- **Slice size.** Sweep totals are estimates from each slice's list. Over 100 at dispatch: split.
-- **Evidence limits.** Absence claims come from greps backed by source reads. Probes ran on a loaded shared box with RAM-disk Postgres, so trust ratios over absolutes. Not exercised: live S3, CDN, NATS blackhole, real replica lag, helm or kind, end-to-end `x dev` under load. Adopters on old versions understate demand for newer APIs.
-- **Reviewed, not reproduced as bugs:** `x dev` failing to start, the `sync` role dying in `startMetricsEndpoint`, `/feed` and `/runs` 500 in the perf probe. Read as probe environment (second role on one host; `APP_URL` not matching `PORT`). Retest with `APP_URL` set; a row in 36 corrects the metrics fix text.
-- **Not covered:** tutorials 1, 5, 6; `docs/ops` claims; realtime multi-node internals; `e2e` and `eval` test quality; hydration mismatches; `Drawer`, `Menu`, `Popover` focus; other frameworks' docs.
-- **Open:** `defineFactory` has zero uses in four adopters; `realtime/src/socket-wire.test.ts:10` failed 6 of 6 on one loaded box, and its premise depends on `tcp_wmem`. Worth a look with 31.
-- **Claims the code disproved, not planned:** a renamed code passing `contract-diff`; `llm()` reporting no usage; no per-session streaming route; a missing rate budget; `x.verify.json` steps being needed (a guard can spawn).
+- **Row security, sagas and the event-wake race** were designed from code but not fully run: `39-action-sagas` unprobed, the wake race not run, `41-add-row-security` needs a non-superuser role on every engine. Their first tests are the proof.
+- **The exercise step's budget is unmeasured.** `40-next-exercise-pass` and `39-testing-property` must fit the gate's time target or lower their run count.
+- **Evidence limits.** Absence claims come from greps backed by source reads. Probes ran on a loaded shared box with RAM-disk Postgres, so trust ratios over absolutes. Not exercised: live S3, CDN, NATS blackhole, real replica lag, helm or kind, macOS and Windows first runs, host recipes.
+- **Reviewed, not reproduced as bugs:** `x dev` failing to start and `/feed`, `/runs` 500 in the perf probe, read as probe environment (`APP_URL` not matching `PORT`). Retest. A row in 36 fixes the `sync` metrics port message.
+- **Not covered:** tutorials 5, 6; realtime multi-node internals; hydration mismatches; other frameworks' docs (only the typed-effect library was read).
+- **Open:** `realtime/src/socket-wire.test.ts:10` failed 6 of 6 on one loaded box, and its premise depends on `tcp_wmem`. Worth a look with 31.
