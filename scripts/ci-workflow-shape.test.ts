@@ -147,6 +147,8 @@ describe('unit · ci.yml · the gate kill-switch is above the gate deadline', ()
   test('the merge step judges even when the part listing refuses', () => {
     // `bash -e` is the default shell: an unguarded listing exit aborted the step BEFORE the
     // merge, and the run carried no verdict at all. The listing is a report; the merge judges.
+    // The POSITION is not the proof — `|| exit 1` satisfies every assertion below and then
+    // aborts the step before the merge. `ci-workflow-shape-merge.test.ts` EXECUTES the block.
     const joined = runsOf(job('verify')).replace(/\\\n\s*/g, ' ');
     const lines = joined.split('\n');
     // The listing's POSITION, not its text: `findIndex` answers -1 when the line is absent, and

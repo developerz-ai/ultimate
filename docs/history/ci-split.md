@@ -204,7 +204,8 @@ part's slow step into a named finding instead of a missing shard.
 one GitHub's `ubuntu-latest` is documented to read (31–35 ms, `verify-pace.ts`, `As of 2026-10-19`) —
 a core reading 65–90 ms would stretch the deadline to ~20.6 min, still inside the kill-switch.
 
-Two rules follow, and both are held by `scripts/ci-workflow-shape.test.ts`:
+Two rules follow. The first is held by `scripts/ci-workflow-shape.test.ts`; the second by
+`scripts/ci-workflow-shape-merge.test.ts`, which EXECUTES the merge step instead of reading it:
 
 1. **The job's kill-switch must exceed the pace-stretched step deadline plus the job overhead.**
    The step deadline is what names a slow step (`X_VERIFY_STEP_TIMEOUT`); the job timeout is only a
@@ -216,4 +217,7 @@ Two rules follow, and both are held by `scripts/ci-workflow-shape.test.ts`:
    refuses (exit 1) when the download holds no part document or one that names no attempt. Under
    the default `bash -e` that refusal aborted the `verify` step before the merge ran, so the run
    carried no verdict at all. The listing is now guarded; the merge judges, and its own refusal —
-   over no document — is a verdict by name.
+   over no document — is a verdict by name. The guard is proved by RUNNING the step's own block:
+   `ci-workflow-shape-merge.test.ts` executes it with a listing that refuses and a merge that
+   records, and holds that the merge is reached — the static assertions read the block's text,
+   which `|| exit 1` satisfies and then aborts the step before the merge.
