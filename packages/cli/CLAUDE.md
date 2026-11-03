@@ -78,6 +78,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | File | Job |
 |---|---|
 | `cmd-generate.ts` / `generate-files.ts` / `generate-kinds.ts` / `generate-write.ts` | argv → pure file list → writes (conflict-checked, `merge: 'json'` / `'if-absent'`) |
+| `write-generated.ts` | `x new`'s writer: a `link` file is a relative symlink, a copy only on a refusing win32 |
 | `generate-feature.ts` | a `--feature` naming no slice is `X_FEATURE_UNKNOWN`; nothing invents an entity |
 | `generate-shadow.ts` | a name whose type spelling a planned file also uses as a global or local type (`promise`, `row`), or whose camel VALUE a planned file both imports and declares (`x g job job`, TS2440), is `X_CLI_BAD_FLAG`, decided on the planned files |
 | `generate-plural.ts` | a planned `entity.ts` in an already-plural slice (`posts` → `postses`) is `X_CLI_BAD_FLAG`; the fix names the singular |
@@ -120,14 +121,14 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `app-openapi.ts` | `openapi.json` (complete when `defineApi({ openapi })` is declared) and each bearer mount's own document; staleness for all of them |
 | `script-csp.ts` / `style-csp.ts` / `style-bundle.ts` / `page-sync.ts` / `worker-bundle.ts` | CSP hashes, the CSS file, the page's sync target and worker |
 | `page-navigation.ts` | the client router for `navigation.client` surfaces — built, routed and named ONCE for `x dev`, the container and the static export; none opted in builds nothing |
-| `page-speculation.ts` | Speculation Rules for documents WITHOUT the router (`navigation.speculation`): the allow-list of pure-read pages, the one tag, and its `script-src` hash — composed once for all three writers. An allow-list, never "every link but": a prefetch is a real GET with cookies |
+| `page-speculation.ts` | Speculation Rules for documents WITHOUT the router (`navigation.speculation`): an allow-list of pure-read pages. Full rule: `docs/history/cli.md` |
 | `static-document.ts` | a served `static` page: `304` on a matching `If-None-Match`, and (container only, `memoStatic`) the document kept after its first render. Never `x dev` — a save moves the stylesheet URL the kept document names |
 | `island-bundle.ts` / `island-store.ts` / `island-sources.ts` / `island-realtime.ts` / `island-realtime-state.ts` / `island-runtime.ts` / `solid-loader.ts` | islands: one `Bun.build` each, source-addressed; the image build writes a verified store, and an edit since the build is a rebuild, never the old chunk. Full rule: `docs/history/cli.md` |
 | `local-cli.ts` / `local-cli-handoff.ts` | a global `x` hands over to the app's own CLI (`local-cli.ts` decides whether; `x upgrade` alone stays when the app's is strictly older — `upgrade-handover.test.ts`). Full rule: `docs/history/cli.md` |
 | `serve-prebuilt.ts` / `serve-prebuilt-paths.ts` | the image's prebuilt store (`node_modules/.cache/ultimate`, never `.x/` — state, tmpfs): every role adopts its compiled stylesheets before importing the app; a boot that built an island or ran Sass logs `X_IMAGE_NOT_PREBUILT` once |
 | `dev-*.ts` | `x dev` only: dashboard sources, traces, the N+1 ledger, the watcher, the reload, the lock, the port |
 | `cmd-stop.ts` / `cmd-stop-spec.ts` | `x stop`: the lock's pid only (its recorded start time must match), SIGTERM, then wait for pid gone and lock clear; Windows clears the lock (`drained: false`); `X_DEV_STOP_TIMEOUT` |
-| `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x` answers a loopback `Host` only (`X_DEV_HOST_REFUSED`, 421 — DNS rebinding); the SQL panel runs on a same-origin `POST /_x/db` only, through admin's `readOnlySql`. Checked in the route, never left to the app's `csrf` config |
+| `dev-dashboard-guard.ts` / `loopback-host.ts` | `/_x` answers a loopback `Host` only (`X_DEV_HOST_REFUSED`, 421 — DNS rebinding); the SQL panel runs on a same-origin `POST /_x/db` only, through admin's `readOnlySql`. Full rule: `docs/history/cli.md` |
 | `doctor-pooler.ts` / `runtime-statement-bound.ts` | the applied bound on demand (`data.statementBound`), a pooler's refusal as the one database finding; the one boot line, total. `startDb` hands `poolerFromEnv(env)` to both pools |
 
 ### Build and data
@@ -152,7 +153,7 @@ Commands: `bun test packages/cli` (from the repo root — the test preload lives
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for any code |
 | `cmd-docs.ts` / `docs-sources.ts` / `docs-section.ts` | `x docs`: the app's `@ultimat3` scope plus the CLI's own (Bun's isolated layout), the wiki at `<cli>/wiki` (tarball) or `<cli>/../../wiki` (checkout); `Page#anchor` prints a whole section |
 | `cmd-env-init.ts` / `env-production.ts` / `cmd-deploy-preflight.ts` | `x env init --production`, the one writer of `.env.production` (values from `cmd-deploy-compose.ts`); compose's pre-flight (`X_DEPLOY_ENV_MISSING`) and a failed step's container line |
-| `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; declares no `requiresApp` (`upgrade-root.ts`), and with no app runs the root's `typecheck`/`test` scripts and says so in `data.proof`. Full rule: `docs/history/cli.md` |
+| `cmd-upgrade.ts` / `upgrade-*.ts` | `x upgrade`: one major per run; declares no `requiresApp` (`upgrade-root.ts`), and with no app runs the root's `typecheck`/`test` scripts and says so in `data.proof`; `upgrade-agents-link.ts`: `data.agentsMd`. Full rule: `docs/history/cli.md` |
 | `cmd-deploy-verify.ts` / `deploy-verify-*.ts` | `x deploy verify`: the wait (samples, window, queues), the pure verdict, flags refused before a sample, the `--json` shape, the real sources (lazy, so the build verdict loads neither). `DATABASE_URL` from the env only, never `resolveServices` (full rule: history) |
 
 ## Adding a command

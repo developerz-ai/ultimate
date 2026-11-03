@@ -43,11 +43,21 @@ describe('unit · the generated brain names bun run verify as the gate', () => {
       expect(String(file.contents)).not.toContain('bun run check');
   });
 
-  test("CLAUDE.md's Gate bullet is bun run verify, and points at the CI that runs it", () => {
-    const bullet = doc('CLAUDE.md')
+  test('one file under two names: AGENTS.md is a link to CLAUDE.md, carrying the same text', () => {
+    const agents = docsFiles(app).find((file) => file.path === 'AGENTS.md');
+    if (agents === undefined) return expect.unreachable('x new writes no AGENTS.md');
+    expect(agents.merge === undefined ? agents.link : undefined).toBe('CLAUDE.md');
+    expect(doc('AGENTS.md')).toBe(doc('CLAUDE.md'));
+    // The target is planned first, so `writeNewApp` never links to a file not yet on disk.
+    const order = docsFiles(app).map((file) => file.path);
+    expect(order.indexOf('CLAUDE.md')).toBeLessThan(order.indexOf('AGENTS.md'));
+  });
+
+  test('the gate row names the CI that runs the same two commands', () => {
+    const row = doc('CLAUDE.md')
       .split('\n')
-      .find((line) => line.startsWith('- Gate:'));
-    expect(bullet).toContain('bun run verify');
+      .find((line) => line.startsWith('| One gate |'));
+    expect(row).toContain('bun run setup && bun run verify');
     expect(doc('CLAUDE.md')).toContain('.github/workflows/ci.yml');
   });
 

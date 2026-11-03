@@ -1,4 +1,5 @@
 {
+  "agentsMdMaxBytes": 28672,
   "steps": [
     "typecheck",
     "lint",

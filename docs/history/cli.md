@@ -1767,3 +1767,11 @@ The runtime HTTP surface row, whole, as it stood:
 `db-schema-dump.ts`: the replay runs on a scratch database, embedded and snapshot-cached under `.x/cache`; a real Postgres only when a migration creates an extension PGlite cannot link.
 
 `doctor-pooler.ts`: `wake off` on a `worker` under `transaction`. A served role never runs `defaultClient()`.
+
+## Moved out 2026-11-03 (`AGENTS.md` as a symlink, the `CLAUDE.md` ceiling)
+
+`page-speculation.ts`: the allow-list, the one tag and its `script-src` hash are composed once for all three writers. An allow-list, never "every link but": a prefetch is a real GET with cookies.
+
+`dev-dashboard-guard.ts`: the loopback `Host` and the same-origin `POST /_x/db` are checked in the route, never left to the app's `csrf` config.
+
+`upgrade-agents-link.ts`: an `AGENTS.md` byte-identical to `CLAUDE.md` becomes a relative symlink to it during the hop; a different one is reported as `data.agentsMd: "differs"` and left, because which half is right is the author's call.

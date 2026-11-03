@@ -17,6 +17,7 @@ import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
 import { posixRelative } from './posix-path';
+import { applyAgentsLink, planAgentsLink } from './upgrade-agents-link';
 import type { BunEdit, BunManual } from './upgrade-bun-floor';
 import { editBunSites, floorOf, isBunSite } from './upgrade-bun-floor';
 import { repoScripts, runHopGate, runRepoScripts } from './upgrade-gate';
@@ -197,7 +198,8 @@ export const createUpgradeCommand = (write: (line: string) => void): CliCommand 
     });
     const held = manifests.find((manifest) => manifest.file === 'package.json')?.text ?? '';
     const bunFrom = /"engines"\s*:\s*\{[^}]*?"bun"\s*:\s*"([^"]*)"/.exec(held)?.[1] ?? null;
-    const shared = { hop, pins, bunFrom, bunTo: bunRange ?? null, writes, app };
+    const agentsMd = await planAgentsLink(root);
+    const shared = { hop, pins, bunFrom, bunTo: bunRange ?? null, writes, app, agentsMd };
     const scriptNames = app ? [] : repoScripts(held);
 
     if (dryRun) {
@@ -212,7 +214,7 @@ export const createUpgradeCommand = (write: (line: string) => void): CliCommand 
           scripts: named,
           then,
         }),
-        lines: humanLines({ hop, writes, gate: undefined, scripts: named, then }),
+        lines: humanLines({ hop, writes, gate: undefined, scripts: named, then, agentsMd }),
       });
     }
 
@@ -221,6 +223,7 @@ export const createUpgradeCommand = (write: (line: string) => void): CliCommand 
         await Bun.write(path, text);
       }),
     );
+    await applyAgentsLink(root, agentsMd);
     const { gate, scripts } = await withHeartbeat(write, async (stageReached) => {
       stageReached('install');
       await install(ctx.runner, root, hop.to);
@@ -245,7 +248,7 @@ export const createUpgradeCommand = (write: (line: string) => void): CliCommand 
     const then = thenLine({ hop, dryRun: false, app, gate, scripts });
     const extra = {
       data: report({ ...shared, done, dryRun: false, gate, scripts, then }),
-      lines: humanLines({ hop, writes, gate, scripts, then }),
+      lines: humanLines({ hop, writes, gate, scripts, then, agentsMd }),
     };
     const span = { from: hop.from, to: hop.to };
     if (gate !== undefined) {

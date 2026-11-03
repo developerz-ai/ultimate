@@ -2,7 +2,7 @@
 // the bin/ scripts and the optional dev compose. Separated from the config half so neither file has
 // to be scrolled to find the other — one file, one job applies to templates too. The image, its
 // ignore file, the production topology and the deploy page are `scaffold-container.ts`; the
-// `.claude/` harness that reads AGENTS.md is `scaffold-claude.ts`; the one workflow is
+// `.claude/` harness that reads CLAUDE.md is `scaffold-claude.ts`; the one workflow is
 // `github/ci.yml.ts`.
 
 import { LINE_CEILING } from '../workspace-checks';
@@ -15,10 +15,15 @@ import { containerFiles } from './scaffold-container';
 import { mcpJsonFile } from './scaffold-mcp-json';
 import { testServicesFiles } from './scaffold-test-services';
 
-const agents = (app: NameSet): string => `# AGENTS.md
+/**
+ * The one convention file, under two names: `CLAUDE.md` holds it and `AGENTS.md` is a relative
+ * symlink to it (the owner's ruling, 2026-11-03), so there is no second copy to drift. Every word
+ * stays vendor-neutral, because every agent reads it — `scaffold-agents-md.test.ts` refuses one.
+ */
+const conventions = (app: NameSet): string => `# ${app.pascal}
 
-Human-authored, short, stable. Facts live in \`x.manifest.json\`; this file holds only what an
-agent cannot infer from the code.
+Human-authored, short, stable — one file under two names, \`AGENTS.md\` being a symlink to it.
+Facts live in \`x.manifest.json\`; this file holds only what an agent cannot infer from the code.
 
 Every row below names what refuses it. A rule with nothing in the last column is a rule that does
 not exist — five of these had an empty column and were each measured green on \`bunx x verify\`.
@@ -30,7 +35,7 @@ Before stating or working around a framework limit, ask the installed framework:
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
+| One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. CI runs the same two commands as your terminal: \`bun run setup && bun run verify\` | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
 | One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
@@ -107,6 +112,16 @@ Commands: \`bun run setup\`, \`bun run dev\`, \`bun run verify\`, \`bunx x g <pr
 \`bunx x g guard <name>\`, \`bunx x db branch create <name>\`, \`bunx x doctor\`. \`setup\` is
 \`bin/setup.ts\`, a file Bun runs, so all three are the same command in PowerShell, cmd and bash.
 
+- \`bunx x g --help\` lists every generator kind, and is the only place that list is stated.
+- Destructive database work goes in a branch, \`bunx x db branch create <name>\`, never the shared
+  dev database.
+- \`bunx x db gen\` also writes \`packages/db/schema/\`, the whole schema as SQL, one file per
+  table: read it, never edit it. \`bunx x verify\` fails with \`X_SCHEMA_DUMP_DRIFT\` when it is not
+  what the migrations produce, and \`bunx x db gen\` rewrites it.
+- \`bunx x doctor\` explains a broken environment and prints the fix for every finding.
+- \`.claude/\` holds a harness that reads this file: \`/feature\`, \`/planx\`, \`/verify\` and four
+  boundary-scoped subagents. \`.claude/README.md\` says what each costs; every file is deletable.
+
 ## Agent tools
 
 | Tool | What it answers | How to reach it |
@@ -119,32 +134,6 @@ Commands: \`bun run setup\`, \`bun run dev\`, \`bun run verify\`, \`bunx x g <pr
 | \`.claude/commands/verify.md\` | run the gate and fix what it reports | the same |
 
 Project notes for ${app.kebab}: replace this line with the conventions a newcomer could not guess.
-`;
-
-const claude = (app: NameSet): string => `# CLAUDE.md
-
-${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in the same order.
-
-- Gate: \`bun run verify\` (add \`--json\` for machine output). It is \`bunx x verify\`, which
-  builds what its \`budgets\` step weighs. \`.github/workflows/ci.yml\` runs
-  \`bun run setup && bun run verify\` on every push and pull request, so CI and your terminal run
-  the same two commands.
-- No global \`x\`: every command is \`bunx x …\`, the CLI this app installs.
-- Before stating or working around a framework limit: \`bunx x docs "<question>"\`, and
-  \`bunx x errors explain <CODE>\` for an error code.
-- Scaffold, do not hand-write: \`bunx x g <kind> <name>\` — \`bunx x g --help\` lists every kind,
-  and is the only place that list is stated.
-- Destructive DB work goes in a branch: \`bunx x db branch create <name>\`, never the shared dev DB.
-- \`bunx x db gen\` also writes \`packages/db/schema/\` — the whole schema as SQL, one file per
-  table. Read it; never edit it. \`bunx x verify\` fails with \`X_SCHEMA_DUMP_DRIFT\` when it is not
-  what the migrations produce, and \`bunx x db gen\` rewrites it.
-- \`bunx x doctor\` explains a broken environment and prints the fix command for every finding.
-- MCP: \`.mcp.json\` starts the dev tools; \`apps/web/mcp.ts\` is the app's own \`POST /mcp\`.
-  AGENTS.md's "Agent tools" says what each answers.
-
-\`.claude/\` holds the harness that reads this file: \`/feature\`, \`/planx\`, \`/verify\` and four
-boundary-scoped subagents. It is yours — \`.claude/README.md\` says what each one costs, and every
-file in it is deletable.
 `;
 
 const readme = (app: NameSet): string => `# ${app.pascal}
@@ -242,8 +231,10 @@ volumes:
 export function docsFiles(app: NameSet): readonly GeneratedFile[] {
   return [
     { path: 'README.md', contents: readme(app) },
-    { path: 'AGENTS.md', contents: agents(app) },
-    { path: 'CLAUDE.md', contents: claude(app) },
+    { path: 'CLAUDE.md', contents: conventions(app) },
+    // A link, after its target. \`contents\` is the copy written only where the OS refuses a
+    // symlink (Windows without the privilege): \`write-generated.ts\` decides, never this list.
+    { path: 'AGENTS.md', contents: conventions(app), link: 'CLAUDE.md' },
     // The one MCP client config — what AGENTS.md's "Agent tools" block names first.
     mcpJsonFile(app),
     // The script `bun run setup` runs — TypeScript, so one file per OS.

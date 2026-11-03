@@ -46,7 +46,7 @@ Everything from here down is this checkout's: the framework's packages, its scri
 - **Can it run on a box with no Docker and no services**: [wiki/Bare-VM.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Bare-VM.md) — `bunx create-ultimate demo --no-git`, `cd demo`, `bun run setup`, `bun run verify` on a fresh Ubuntu box with bun and git. An empty `DATABASE_URL` selects the embedded database ([packages/db/src/pglite.ts](https://raw.githubusercontent.com/developerz-ai/ultimate/main/packages/db/src/pglite.ts)), and its absence is `X_DB_UNAVAILABLE` with a runnable `fix:`, never a silent skip.
 - **Is it the right size for my project**: [docs/idea/21-the-range.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/21-the-range.md) — homework assignment to very large product, one framework and no lite mode: the small end measured on a fresh scaffold, the large end anchored to the scale ladder, the tier boundaries and the 20-step gate, and why enforced conventions and executable `fix:` lines pay more the cheaper the model.
 - **Why a decision was made**: [docs/idea/](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/README.md). **How it actually works**: [docs/architecture/](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/README.md).
-- **The rules I must not break while editing this repo**: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/CLAUDE.md) and [AGENTS.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/AGENTS.md); the full coding contract is [docs/architecture/00-conventions.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/00-conventions.md).
+- **The rules I must not break while editing this repo**: [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/CLAUDE.md) (`AGENTS.md` is a symlink to it, and a raw URL serves a link as its target's name); the full coding contract is [docs/architecture/00-conventions.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/00-conventions.md).
 - **How to cut a breaking release**: [docs/architecture/19-cutting-a-major.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/19-cutting-a-major.md), then [PUBLISHING.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/PUBLISHING.md).
 
 ## Start here
@@ -56,7 +56,6 @@ Everything from here down is this checkout's: the framework's packages, its scri
 - [The eight primitives](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/idea/02-primitives.md): canonical shape and rules for each. Read before writing any app code. A new capability arrives as a factory over an existing primitive — `llm()` returns an action, `backfill()` returns a job — never as a ninth kind.
 - [Adding a feature](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/15-adding-a-feature.md): the end-to-end walkthrough an agent should follow.
 - [CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/CLAUDE.md): boundaries, dependencies, commands and non-negotiables for working inside this repo.
-- [AGENTS.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/AGENTS.md): short, human-authored conventions an agent cannot infer. Never generated.
 - [Docs index](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/README.md): the map of idea, architecture and ops docs.
 
 ## The gate
@@ -206,7 +205,7 @@ Recommendations, not requirements: the framework depends on none of it (axiom 7,
 
 - [examples/dummy](https://raw.githubusercontent.com/developerz-ai/ultimate/main/examples/dummy/README.md): the reference app — every primitive, once, idiomatically.
 - [examples/dummy/app.config.ts](https://raw.githubusercontent.com/developerz-ai/ultimate/main/examples/dummy/app.config.ts): the one config file, every field in context.
-- [examples/dummy/AGENTS.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/examples/dummy/AGENTS.md): what a generated app tells its agents.
+- [examples/dummy/CLAUDE.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/examples/dummy/CLAUDE.md): what a generated app tells its agents — its `AGENTS.md` is a symlink to it.
 - [dummy/social-media-clone](https://raw.githubusercontent.com/developerz-ai/ultimate/main/dummy/social-media-clone/README.md): the deployed demo. Read it with [its own gate pins](https://raw.githubusercontent.com/developerz-ai/ultimate/main/scripts/lib/gated-apps.ts) — each pinned step is a named, deliberate red.
 
 ## Wiki — the reference manual

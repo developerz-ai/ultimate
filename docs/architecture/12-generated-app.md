@@ -26,8 +26,8 @@ myapp/
   docker/                 # compose (dev) + per-role compose (prod) + Dockerfile
   app.config.ts           # the one config file
   x.manifest.json         # GENERATED: routes, entities, actions, jobs, policies
-  AGENTS.md               # short, human-authored
-  CLAUDE.md
+  CLAUDE.md               # short, human-authored conventions
+  AGENTS.md               # a symlink to CLAUDE.md: one source for every agent
 ```
 
 ## Why each directory
@@ -50,7 +50,7 @@ myapp/
 | `docker/` | dev compose + per-role prod compose + one Dockerfile | drift between what you tested and what runs ([`13-topology-runtime.md`](./13-topology-runtime.md)) |
 | `app.config.ts` | one config file, typed, validated at boot | five config files and an env scavenger hunt |
 | `x.manifest.json` | generated facts, drift-checked | prose docs an agent trusts and shouldn't ([`11-ai-surface.md`](./11-ai-surface.md)) |
-| `AGENTS.md` / `CLAUDE.md` | short, human-authored conventions | LLM-generated context that reduces task success |
+| `CLAUDE.md`, and `AGENTS.md` a symlink to it | short, human-authored conventions, one file | LLM-generated context that reduces task success |
 
 ## The `packages/` model
 

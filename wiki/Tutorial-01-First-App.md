@@ -223,7 +223,7 @@ myapp/
 │                            Every name in SHIPPED_GUARD_NAMES ships; `x doctor`
 │                            lists any missing. Delete one by deleting its file
 ├── bin/                     setup.ts — `bun run setup`; `dev` and `verify` are x's own
-└── AGENTS.md  CLAUDE.md     the two files an agent reads first
+└── CLAUDE.md  AGENTS.md     what an agent reads first: one file, AGENTS.md a symlink
 ```
 
 Boundaries are a build error, not a note — but `boundaries` is a **step of `x verify`**, not a top-level command. `bunx x boundaries` exits `X_CLI_UNKNOWN_COMMAND`. Run `bunx x verify` and read the `boundaries` line. Full model: [Project layout](Project-Layout).

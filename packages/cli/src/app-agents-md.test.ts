@@ -15,6 +15,7 @@ import { checkAgentsMd } from './app-agents-md';
 import { VERIFY_STEPS } from './cmd-verify';
 import { exec } from './exec';
 import { scaffoldVariants } from './scaffold-fixture';
+import { readVerifyFloor } from './verify-floor';
 
 const withRoot = async (run: (root: string) => Promise<void>): Promise<void> => {
   const root = await mkdtemp(join(tmpdir(), 'x-agents-md-'));
@@ -114,7 +115,11 @@ describe('the manifest step runs it', () => {
   });
 
   test("this repo's own AGENTS.md satisfies the gate it now ships", async () => {
-    expect(await checkAgentsMd(REPO_ROOT)).toMatchObject({ findings: [] });
+    // Under the budget the gate reads: `AGENTS.md` is a symlink to `CLAUDE.md`, whose own ceiling
+    // (16 KB, `scripts/claude-md-size.ts`) is what root `x.verify.json` declares.
+    const floor = await readVerifyFloor(REPO_ROOT);
+    expect(floor?.agentsMdMaxBytes).toBeGreaterThan(AGENTS_MD_MAX_BYTES);
+    expect(await checkAgentsMd(REPO_ROOT, floor?.agentsMdMaxBytes)).toMatchObject({ findings: [] });
   });
 
   // `x new`'s output has to pass `x verify` unmodified. Dropping AGENTS.md from the templates

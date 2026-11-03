@@ -20,6 +20,7 @@ import { quoteArg } from './shell-quote';
 import type { GeneratedFile } from './templates';
 import { appFiles, names, repoFiles, resourceFiles } from './templates';
 import { loadVersion } from './version-loader';
+import { writeGenerated } from './write-generated';
 
 export interface NewAppOptions {
   readonly name: string;
@@ -174,7 +175,8 @@ export interface WrittenApp {
  */
 export async function writeNewApp(target: string, options: NewAppOptions): Promise<WrittenApp> {
   const files = planNewApp(options);
-  for (const file of files) await Bun.write(join(target, file.path), file.contents);
+  // In order, so a link's target (`CLAUDE.md` before `AGENTS.md`) is on disk when it lands.
+  for (const file of files) await writeGenerated(target, file);
   return { dir: target, files: files.map((file) => file.path) };
 }
 

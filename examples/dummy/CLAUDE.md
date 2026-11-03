@@ -26,6 +26,10 @@ app. Both apps must pass independently. Idiom is decided here.)
 | one test type | `x test unit\|contract\|live\|job\|e2e\|eval` |
 | manifest | `x manifest --json` (regenerated every build; never edited) |
 
+`AGENTS.md` is a symlink to this file. Facts (routes, actions, policies, jobs) are
+`x.manifest.json`'s, always right; this file holds what code cannot say. Point an MCP client at
+the dev server: `routes.list`, `schema.describe`, `policies.list` answer faster than grep.
+
 ## Layout
 
 ```
@@ -98,6 +102,9 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   exports anywhere; Biome fails the build on them.
 - Every route sets `render`, `offline`, `hydrate`, `meta`. `site/` routes need `meta.description`
   (50–160 chars) or the build fails.
+- A feature is a folder under `apps/web/app/<feature>/`. Never a `lib/`, `utils/` or `helpers/`
+  directory: those names mean the code has no owner. Logic two apps need goes to `packages/core`.
+- One way per thing: deleting the alternative is the fix, never documenting both.
 - Entities live in `packages/db`; a feature's `entity.ts` owns only that feature's view schemas.
 - One authz definition. `policy.ts` predicates are reused verbatim by HTTP, live queries, jobs,
   MCP tools, and admin. Never re-check authz inside `handle`.
@@ -117,7 +124,10 @@ plus `backfills/<name>.ts` for a one-pass table sweep.
   call.
 - Colours are `var(--color-*)` from `@ultimat3/ui` tokens. A raw hex fails lint.
 - User-facing strings come from `t('<feature>.<key>')`. A missing key renders `⟦key⟧` and fails
-  `x verify`.
+  `x verify`. A new key goes in **both** `packages/i18n/catalogs/en.json` and `es.json`: an English
+  fallback in the Spanish catalog is worse than a loud `⟦key⟧`.
+- A new action sets `mcp: { expose: true }` unless it must never be agent-callable, and then a
+  comment says why (`runs/actions/issue-run-key.ts`).
 - `idempotencyKey` on every job is required by the type. Keys derive from `input` only. A
   `backfill()` supplies its own — the sweep's `name` — so one live pass runs per name, forced or
   not, and a second kick is the same pass rather than a second writer on one table.
@@ -294,6 +304,11 @@ The two guards measured here, and their repairs, are recorded in
   `local` is by definition the half that runs in the tab, so the file a browser can load is its one
   home. Two copies is two declarations of one intent.
 - A live query must be bounded (`orderBy` + `limit`) or `x verify` rejects it.
+- `publishPost` and `likePost` look alike on purpose: `publishPost` is an `action`
+  (server-authoritative, no local twin), `likePost` a `mutator` because likes work offline. The
+  primitive encodes the difference; never merge them.
+- `X_DB_DRIFT` means an entity changed with no migration: run the `fix:` it prints, never edit SQL.
+- The digest's DST cases in `packages/core/src/digest-schedule.test.ts` are its scheduling spec.
 - The digest schedules per (org, zone), never per org alone — timezone is a member column, so one
   org spanning two zones is two deliveries at two instants. The unit is a group and not a member
   because the post window is org-scoped and bounded by the group's own slot: reading it once per

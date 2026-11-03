@@ -105,6 +105,8 @@ really does have clients to keep a promise to.
 
 `checkAgentsMd()` / `assertAgentsMd()` verify that a **hand-written** `AGENTS.md` exists and
 is under 12kB. They do not generate prose, and there is deliberately no generator to point at.
+`x new` writes `AGENTS.md` as a relative symlink to `CLAUDE.md` (one source), and the check reads
+through the link — so the budget holds that one file; `agentsMdMaxBytes` in `x.verify.json` raises it.
 
 Research shows LLM-generated context files *reduce* task success and add steps: the prose
 reads plausibly, drifts from reality the moment anything changes, and an agent trusts it over

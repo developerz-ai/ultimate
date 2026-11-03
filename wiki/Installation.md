@@ -85,7 +85,7 @@ What `x new` writes, and who owns it afterwards:
 | `app.config.ts` | yours | the one config file; validated at boot ([Configuration](Configuration)) |
 | `x.manifest.json` | generated every build | routes, entities, actions, jobs, policies, tags, MCP tools, budgets. Never hand-edited; drift fails `x verify` |
 | `openapi.json` | generated | HTTP surface from `action` / `query` declarations |
-| `AGENTS.md` / `CLAUDE.md` | **human-authored stubs** | short, terse. Ultimate never generates prose docs at runtime |
+| `CLAUDE.md`, and `AGENTS.md` a symlink to it | **human-authored stub**, one file | short, terse; a copy only where Windows refuses the link. Ultimate never generates prose docs at runtime |
 | `.github/workflows/ci.yml` | generated | `bun run setup` then `bun run verify`, on push and pull request — yours to edit, and the same two commands the app's `README.md` opens with |
 | `docker/` | generated | dev compose + per-role prod compose + Dockerfile ([Deployment](Deployment)) |
 | `packages/db/migrations/` | **not written at all** | `x db gen` is its only writer, `As of 2026-08`. First commands in a new app: `x db gen "initial"`, then `x db migrate` — `bun run setup` runs both. Until the first one has, `x verify`'s `drift` step is red and names it, for any app declaring an entity; `--no-example` declares none, and zero against zero is agreement |
