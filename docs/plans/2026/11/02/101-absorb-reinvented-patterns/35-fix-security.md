@@ -1,10 +1,10 @@
 # 35 — Security fixes: one visitor's answer served to another, unchecked bytes
 
-> Part of [`overview.md`](overview.md). Depends on: [`28-assets-stored-objects.md`](28-assets-stored-objects.md), which lands first (S4). S2 lands before the `isr` key flip in [`32-docs-false-claims.md`](32-docs-false-claims.md). S2 and S1 touch the same function, one agent. Tier: 0 (`core`), 1 (`storage`), 2 (`http`), 3 (`realtime`), 4 (`render`), 5 (`cli`).
+> Part of [`overview.md`](overview.md). Depends on: [`28-assets-stored-objects.md`](28-assets-stored-objects.md), which lands first (S4). S2 lands before the `isr` key flip in [`35-fix-isr-default.md`](35-fix-isr-default.md). S2 and S1 touch the same function, one agent. Tier: 0 (`core`), 1 (`storage`), 2 (`http`), 3 (`realtime`), 4 (`render`), 5 (`cli`).
 
 ## Why
 Each row reproduced 2026-11-02 by a throwaway probe over the real modules. S1 is the serious one: an anonymous request received a signed-in visitor's row, with public cache headers.
-Owner decision: S1 is a live hole and breaking. Recommended: release beside [`01`](01-ai-tool-gate.md), same question as the overview's security release timing.
+S1 is a live hole and breaking: it ships in v30, beside [`01`](01-ai-tool-gate.md), per [`42-adopt-stability.md`](42-adopt-stability.md).
 
 ## Fixes
 | # | Sev | Site | Failure, as printed | Smallest fix | Failing-first test |
@@ -42,7 +42,7 @@ Not in [`90-deferred.md`](90-deferred.md) yet: coordinator's file.
 5. `render/src/modes.ts:115` comment states the rule. `wiki/Routes-And-Render-Modes.md:137,215`: a shared document is rendered as nobody; per-visitor means `ssr`.
 
 ## S2, the order
-S2 lands first, in the security release. The `isr` default flip ([`32-docs-false-claims.md`](32-docs-false-claims.md), owner's pick) lands after, in its own major, and touches only the `query === null` branch of `isrRequestUrl` (`render/src/render-isr-key.ts:35`). Each moves every key once, so two releases mean two re-renders, no conflict.
+S2 lands first, in the security release. The `isr` default flip ([`35-fix-isr-default.md`](35-fix-isr-default.md)) lands after, in the next major, and touches only the `query === null` branch of `isrRequestUrl` (`render/src/render-isr-key.ts:35`). Each moves every key once, so two releases mean two re-renders, no conflict.
 
 ## S4 and S7, the head window
 | Question | Answer |

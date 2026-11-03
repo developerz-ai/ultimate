@@ -11,7 +11,7 @@
 | `wiki/Known-Gaps.md:43` | `error-render` cannot see a `catch` binding | closed: `scripts/error-render.ts:441-457` joins `catchRenderFindings`. Move to Closed |
 | `wiki/Known-Gaps.md:60` | `x manifest diff` cannot see `readonly`, `matching` or `count` | closed: `packages/manifest/src/diff-admin.ts:49,130`; B29 is closed. Check the permission noun, keep only what is still true |
 | `wiki/Known-Gaps.md:82` | milestone 11 still open | closed: `docs/idea/14-roadmap.md:27,37`, `ci.yml:815`. Move to Closed |
-| `wiki/Known-Gaps.md:36,130` | default flips "in the next major" | two majors have passed and `packages/render/src/render-isr-key.ts:22` still keys on the whole query. Owner picks: flip in the next major with an Upgrading row, or move the row to *Open by decision*. A flip lands after S2 of [`35-fix-security.md`](35-fix-security.md), which also edits this file, and changes only the `query === null` branch (`:35`) |
+| `wiki/Known-Gaps.md:36,130` | default flips "in the next major" | two majors have passed and `packages/render/src/render-isr-key.ts:22` still keys on the whole query. Decided: flip, in [`35-fix-isr-default.md`](35-fix-isr-default.md), which removes these rows |
 | `wiki/Known-Gaps.md:125,129-139` | `main`, no published release | stamp each with its release from `CHANGELOG.md` (first checked: 27.8.1) |
 | `wiki/Known-Gaps.md:3,90,94` | whole-page stamp `As of 2026-10-07` | per-row stamps already exist; drop the page stamp, it reads as a promise about every row |
 | `wiki/MCP-And-AI.md:224` | `As of Unreleased` | shipped, `CHANGELOG.md:5542`. Stamp the version |
@@ -30,7 +30,7 @@
 2. Decide what the count means. `scripts/generator-counts.ts` measures `generate(...).length`, and the CLI also writes `package.json`, the catalog and the wiring. State the count the CLI prints; [`32-docs-guards.md`](32-docs-guards.md) moves the guard onto it.
 3. Fix the table above. Each move to Closed names its release and its pinned-below workaround, in the page's own format.
 4. Replace each adopter-name mention with a neutral example or "one adopter" (the list is held outside this plan). Sites: wiki pages, package READMEs and CLAUDE.md files, shipped source comments, the generated templates' comments, `examples/dummy`. Test fixtures use a neutral name.
-5. `CHANGELOG.md` and `docs/history/` also carry those names. Owner decision before editing them, since the published history keeps them anyway; the forward rule is [`32-docs-guards.md`](32-docs-guards.md).
+5. `CHANGELOG.md` and `docs/history/` also carry those names. They stay: their records stand, and the published history keeps them anyway. The forward rule is [`37-scrub-adopter-names.md`](37-scrub-adopter-names.md).
 
 ## Error codes
 None new here; the guards slice carries them.
@@ -40,9 +40,9 @@ None new here; the guards slice carries them.
 - Renaming fixtures in tests: run each touched file, e.g. `bun test packages/action/src/openapi-complete.test.ts`.
 
 ## Semver
-Patch, docs only. If the owner flips the `isr` default, that one row is breaking, belongs in its own sweep after S2 of [`35-fix-security.md`](35-fix-security.md), and carries: "An `isr` route with no `revalidate.query` now keys on none of its query: declare the parameters it reads."
+Patch, docs only.
 
 ## Done when
 - `git grep -n 'As of Unreleased\|| .main. |' wiki/` answers nothing.
 - A fresh scaffold following tutorials 1–4 ends with the outputs the pages print.
-- The private-name guard reports zero outside what the owner chose to keep.
+- The private-name guard reports zero outside the paths [`37-scrub-adopter-names.md`](37-scrub-adopter-names.md) excludes.

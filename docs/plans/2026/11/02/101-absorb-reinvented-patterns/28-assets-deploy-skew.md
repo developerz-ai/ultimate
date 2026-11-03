@@ -1,6 +1,6 @@
 # 28 — Hashed assets survive a deploy
 
-> Part of [`overview.md`](overview.md). Depends on: none. Tier: 0 (`core`), 5 (`cli`). **OWNER DECISION for the retention half (`assets.retain`): no adopter has hand-rolled it; it rests on the zero-downtime goal. The doc fix stands regardless: `docs/idea/12-build-deploy.md` promises a window that does not exist.** [`33-ops-deploy-proof.md`](33-ops-deploy-proof.md) step 6 depends on the retention half.
+> Part of [`overview.md`](overview.md). Depends on: none. Tier: 0 (`core`), 5 (`cli`). **Decided: build it, both the doc fix and the retention half (`assets.retain`). No adopter has hand-rolled retention; it rests on the zero-downtime goal. `docs/idea/12-build-deploy.md` promises a window that does not exist.** [`33-ops-deploy-proof.md`](33-ops-deploy-proof.md) step 6 depends on the retention half.
 
 ## Why
 `docs/idea/12-build-deploy.md:170` promises "the previous build's assets are still served under the N-deploy retention window", and `:133` repeats it. No such window exists. Each process serves only what it built:

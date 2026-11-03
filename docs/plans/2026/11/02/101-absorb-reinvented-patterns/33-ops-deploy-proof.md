@@ -1,6 +1,6 @@
 # 33-ops-deploy-proof — Prove what zero-downtime claims: jobs, a migration, six deploys
 
-> Part of [`overview.md`](overview.md). Depends on: [`33-ops-worker-roll`](33-ops-worker-roll.md), [`19`](19-cli-deploy-verify.md), [`04`](04-db-migration-safety.md); step 6 and the M8 flip on the retention half of [`28-assets-deploy-skew`](28-assets-deploy-skew.md), an owner decision. Tier: 5 (`cli`), plus `docker/deploy-proof` and workflows.
+> Part of [`overview.md`](overview.md). Depends on: [`33-ops-worker-roll`](33-ops-worker-roll.md), [`19`](19-cli-deploy-verify.md), [`04`](04-db-migration-safety.md); step 6 and the M8 flip on the retention half of [`28-assets-deploy-skew`](28-assets-deploy-skew.md). Tier: 5 (`cli`), plus `docker/deploy-proof` and workflows.
 
 ## Why
 `deploy-proof` is green (0 of 9,028 requests failed, `docs/idea/14-roadmap.md:37`) and measures only HTTP against two images that differ by `BUILD_ID` alone (`docker/deploy-proof/run.sh:64-66`). So:
@@ -37,7 +37,7 @@
 3. Assert, by `kubectl exec` into Postgres: exactly one attempt row, state `done`, `claimed_by` a worker of v1; a second job enqueued after the roll is claimed by a v2 worker; `x_job_workers` lists a v2 worker for the queue; `drain.deadlineSeconds` (25) is well under the job's 60 s, so a pass cannot be the old behaviour.
 4. Assert the old pod's exit was the retire: `jobs.worker.retired` in its log, read before it goes.
 5. Refusals in the existing `refuse` shape, each naming the fix file, and `failed` still must be 0.
-6. **Only if the owner takes `28`'s retention half; otherwise skip this step and the M8 flip, and M8's row names the decision.** Six-deploy e2e, with 28's `assets.retain` set on a local disk: open a tab on build 0 with an `interaction` island not yet booted. Six rounds: edit the island, `update()`. Click. Assert the island runs build 0's code, its chunk answered 200, no 404 in the request log, and the page saw `AppUpdateAvailable`. Same run without `retain`: asserts the dead island, so it can fail.
+6. Six-deploy e2e, with 28's `assets.retain` set on a local disk: open a tab on build 0 with an `interaction` island not yet booted. Six rounds: edit the island, `update()`. Click. Assert the island runs build 0's code, its chunk answered 200, no 404 in the request log, and the page saw `AppUpdateAvailable`. Same run without `retain`: asserts the dead island, so it can fail.
 7. Demo: `served` needs slice 19 and two minutes for the updater; `--timeout` covers it.
 
 ## Error codes

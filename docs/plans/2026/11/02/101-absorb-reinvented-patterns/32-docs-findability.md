@@ -36,7 +36,7 @@ Measured, 20 task questions on a scaffold, right package in the top 3: 11 of 20.
 5. Keep `Error-Codes.md` out of the index, since `x errors explain` is the one way. Its `docs:` URL stays.
 6. Scaffold lines, Upgrading links, Contributing pointer.
 
-Considered and killed: a second search command; a hosted docs site (`docs/idea/14-roadmap.md:45` removed it from the roadmap); per-major wiki pages (28 sidebar rows, and the changelog guard rewritten for a cost the section read removes).
+Considered and killed: a second search command; a hosted docs site here ([`42-adopt-docs-site.md`](42-adopt-docs-site.md) owns that, and reuses this ranker); per-major wiki pages (28 sidebar rows, and the changelog guard rewritten for a cost the section read removes).
 
 ## Error codes
 None. An unreadable wiki directory in an install is the existing `X_CLI_UNEXPECTED` branch in `cmd-docs.ts`, which keeps its `fix:`.
