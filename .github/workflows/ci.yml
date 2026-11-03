@@ -212,8 +212,10 @@ jobs:
           SHARD: ${{ matrix.shard }}
           # The private adopter names `scripts/private-names.ts` refuses, handed only to the part that
           # runs `boundaries`. A secret, so no committed file holds the list; a fork's PR reads it
-          # empty and skips, a push to main without it is red (`X_PRIVATE_NAMES_UNSET`).
+          # empty and skips. The REQUIRED flag, set on that part on a push to main only, makes an
+          # empty secret red (`X_PRIVATE_NAMES_UNSET`); every other step reaching the guard skips.
           ULTIMATE_PRIVATE_NAMES: ${{ contains(matrix.only, 'boundaries') && secrets.ULTIMATE_PRIVATE_NAMES || '' }}
+          ULTIMATE_PRIVATE_NAMES_REQUIRED: ${{ contains(matrix.only, 'boundaries') && github.event_name == 'push' && github.ref == 'refs/heads/main' && '1' || '' }}
         run: |
           parts="$RUNNER_TEMP/parts"
           mkdir -p "$parts"
