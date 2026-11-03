@@ -89,9 +89,33 @@ const outcome = suiteOutcome(url, Bun.which('psql'));
 /** This run's gate: the database, and never the host tool. */
 const gated = suiteRuns(url);
 
-/** The `-c` argument of a `fix:` line, with the shell's quoting undone. */
-const shellWord = (fix: string): string | undefined =>
-  /^psql "\$DATABASE_URL" -c '(.*?)' {3}# /.exec(fix)?.[1]?.replaceAll("'\\''", "'");
+/** The line, through `sh`, with NOTHING putting the schema on the search_path. */
+const run = async (line: string): Promise<readonly [number, string, string]> => {
+  const shell = Bun.spawn(['sh', '-c', line], {
+    env: { ...Bun.env, DATABASE_URL: url ?? '', PGOPTIONS: '' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [out, err] = await Promise.all([
+    new Response(shell.stdout).text(),
+    new Response(shell.stderr).text(),
+  ]);
+  return [await shell.exited, out, err];
+};
+
+/**
+ * The `-c` argument of a `fix:` line, as the SHELL hands it to `psql`: a stub `psql` prints the
+ * word it was called with, and the line is read by the shell that would run it.
+ *
+ * A regex over the line cannot answer this. A fix whose own quoting is broken — a `'` the writer
+ * did not escape — reads as ONE SQL and hands `psql` ANOTHER: the quote closed the word, and the
+ * text after it became more words. A query run on the line's text then passes while the pasted fix
+ * sends something else, which is the whole subject of this suite.
+ */
+const shellWord = async (fix: string): Promise<string | undefined> => {
+  const [, out] = await run(`psql() { printf '%s' "$3"; }; ${fix}`);
+  return out === '' ? undefined : out;
+};
 
 /** The meta-command a fix names: `\dT+ "schema"."name"`, `\d "schema"."table"`. */
 interface ShowTarget {
@@ -156,28 +180,16 @@ describe('the object-drift live suite’s own gate', () => {
     // condition that asked for `psql` would take every kind in `SHOWS` down with it.
     const source = readFileSync(`${import.meta.dir}/object-drift.live.test.ts`, 'utf8');
     const skip = /describe\.skipIf\(([^)]*)\)/.exec(source)?.[1] ?? '';
-    expect(skip).not.toContain('psql');
-    expect(skip).not.toContain('Bun.which');
+    // The WHOLE expression, not a scan for a tool name: a skip that asked for a renamed helper
+    // (`!runnable`) names no tool at all, so the scan called that healthy. The expression IS the
+    // gate, so the expression is what is pinned.
+    expect(skip).toBe('!gated');
   });
 });
 
 describe.skipIf(!gated)('live · postgres · an unexpected-object fix runs as written', () => {
   let admin: PostgresClient;
   let live: CatalogDescription;
-
-  /** The line, through `sh`, with NOTHING putting the schema on the search_path. */
-  const run = async (line: string): Promise<readonly [number, string, string]> => {
-    const shell = Bun.spawn(['sh', '-c', line], {
-      env: { ...Bun.env, DATABASE_URL: url ?? '', PGOPTIONS: '' },
-      stdout: 'pipe',
-      stderr: 'pipe',
-    });
-    const [out, err] = await Promise.all([
-      new Response(shell.stdout).text(),
-      new Response(shell.stderr).text(),
-    ]);
-    return [await shell.exited, out, err];
-  };
 
   /** The name of the object a difference names, out of its cause: `trigger "x" on table "y"`. */
   const named = (cause: string): string => /"([^"]+)"/.exec(cause)?.[1] ?? '';
@@ -237,6 +249,18 @@ describe.skipIf(!gated)('live · postgres · an unexpected-object fix runs as wr
     await admin.close();
   });
 
+  test('the -c argument is the SHELL’s word, not the line’s text', async () => {
+    // A fix whose own quoting is broken: the LINE reads `select 'x' as y`, and the shell hands
+    // `psql` `select x as y` — the unescaped quote closed the word, and the text after it became
+    // more words. A capture that read the line would hand the database SQL the pasted fix never
+    // sends, and the query would pass while the fix was broken.
+    const broken = `psql "$DATABASE_URL" -c 'select 'x' as y'   # a comment`;
+    expect(await shellWord(broken)).toBe('select x as y');
+    // And a well-formed fix: the shell undoes the `'\''` escaping and hands over the SQL itself.
+    const wellFormed = `psql "$DATABASE_URL" -c 'select 1'   # a comment`;
+    expect(await shellWord(wellFormed)).toBe('select 1');
+  });
+
   test('each kind: the command exits 0, says nothing on stderr, and prints its definition', async () => {
     const differences = unexpectedObjects(live, emptyCatalog(SCHEMA));
     const seen: string[] = [];
@@ -255,7 +279,7 @@ describe.skipIf(!gated)('live · postgres · an unexpected-object fix runs as wr
       // No `psql` on this machine: the SAME fix, resolved against the live catalog. A function's
       // command is plain SQL and runs verbatim; a meta-command names its target, and the catalog
       // holds that target's own definition.
-      const argument = shellWord(difference.fix);
+      const argument = await shellWord(difference.fix);
       expect(argument, subject).toBeDefined();
       if (argument === undefined) continue;
       if (argument.startsWith('select ')) {
@@ -285,7 +309,7 @@ describe.skipIf(!gated)('live · postgres · an unexpected-object fix runs as wr
       return;
     }
     // The decoy lives in `public`; the fix's own SQL names the schema, and it is run verbatim.
-    const argument = shellWord(fix);
+    const argument = await shellWord(fix);
     expect(argument).toBeDefined();
     const rows = await admin.query<Record<string, unknown>>(raw(argument ?? ''));
     expect(singleValue(rows[0])).toContain('return new');
