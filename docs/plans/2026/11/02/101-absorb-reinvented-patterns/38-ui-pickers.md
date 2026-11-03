@@ -67,7 +67,7 @@ Motion: none in the grid; month change swaps at once, popover uses token duratio
 - `packages/ui/src/ui-catalog.test.ts`: new keys reachable. Command `bun test packages/ui/src/components/calendar-view.test.ts`.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, one row.** `UI_KEYS` gains keys. Upgrading: "Add `ui.date.*`, `ui.range.*` to any `Record<UiKey, string>`." Everything else is additive.
 
 ## Done when

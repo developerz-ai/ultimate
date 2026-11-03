@@ -26,20 +26,16 @@ An executor doesn't reopen these.
 | `isr` default keys on no query, as promised | Yes (`35-fix-isr-default`) |
 | Row security | Off by default, same `tenant:` declaration, a second enforcer (`41-add-row-security`) |
 | Scrub adopter names; guard reads names from a secret, never a committed file | Yes (`37-scrub-adopter-names`) |
-| Hold `UI_KEYS`-widening UI slices for v32 | Yes |
 | Docs site built by Ultimate, reversing `docs/idea/14-roadmap.md:45-46` | Yes (`42-adopt-docs-site`) |
 | Release schedule | Below (`42-adopt-stability`) |
 
 ## Release schedule
-| Release | Contents | When |
-|---|---|---|
-| v30 | Sweeps 1–2: security and tenancy | As soon as they land, by 2026-11-30, when a model id in the docs retires |
-| v31 | Corruption, outages, DX, core mechanisms. `42-adopt-stability` merges first | When those land. The 90-day clock starts here and `next` is cut |
-| v32 | Everything else breaking | v31 + 90 days. A late row waits for v33 |
-| Minors | Everything additive | Weekly from `main`. A mixed slice splits into two PRs |
-| Security after v31 | Patch on `release/31.x`; only a fix that cannot be non-breaking takes the major exception | As needed |
+**One new major, v30, carrying the whole plan.** Breaking changes are fine. PRs merge to `main` in sweep order, and no bump is cut until the last sweep lands.
 
-Each release needs a bump PR, and merging it is the release. **Stop and ask the owner** only for what the slices mark as the final owner step, all outward-facing: publishing the docs site, DNS, repo description, enabling discussions, signing governance, filing issues, asking npm about the name `x`.
+- Before v30: a non-breaking fix to a live hole, and the model-id edit (that id retires 2026-11-30), ship as a patch on `release/29.x`.
+- After v30: `42-adopt-stability` applies, with at most one major per 90 days and minors weekly.
+
+Merging the bump PR is the release. **Stop and ask the owner** only for what the slices mark as the final owner step, all outward-facing: publishing the docs site, DNS, repo description, enabling discussions, signing governance, filing issues, asking npm about the name `x`.
 
 ## Tiers touched
 All of them; each slice's header names its own. Land each sweep's lowest tier first. An import up or sideways is a design error. New legal edges, stated in their slices: `jobs → http` (14). A new subpath, `@ultimat3/core/render-nodes` (`39-testing-render-nodes`).
@@ -53,39 +49,39 @@ File counts are estimates, about 2,800 in all. Split anything over 100 at dispat
 | 2 | Tenancy | v30 | `04-db-migration-safety`, `05-entity-tenant-and-locks` | 30 |
 | 3 | Name scrub, docs and source | patch | `37-scrub-adopter-names` | 54 |
 | 4 | Name scrub, tests and guard | patch | continues the sweep above | 65 |
-| 5 | Silent corruption | v31 | `02-db-entity-cancellation`, `03-core-lifetime-helpers`, `06-jobs-step-semantics`, `34-idea-jobs-event-wait`, `22-cli-upgrade` | 62 |
-| 6 | Silent corruption | v31 | `35-fix-logic`, `35-fix-concurrency`, `29-data-large-tables`, `35-fix-isr-default` | 60 |
-| 7 | Outages | v31 | `29-data-pg-unanswered`, `29-data-pg-pooler`, `30-perf-jobs-claim-relay` | 53 |
-| 7b | Deploys | v31 | `19-cli-deploy-verify`, `33-ops-worker-roll` | 49 |
-| 8 | Rendering and DX | v31 | `07-render-stream-hole`, `08-testing-mock-fetch`, `36-dx-false-fixes`, `36-dx-generators` | 94 |
-| 9 | First hour | v31 | `42-adopt-stability`, `21-cli-verify-and-stop`, `32-docs-false-claims`, `42-adopt-first-hour` | 99 |
-| 10 | Front door | minor | `32-docs-findability`, `42-adopt-agents`, `42-adopt-front-door`, `32-docs-guards`, `42-adopt-outsiders` | 96 |
-| 11 | Wire and assets | v31 | `26-api-wire-fixes`, `26-api-read-contract`, `24-web-i18n-mail-keys`, `25-pkg-storage-streams`, `28-assets-compression`, `28-assets-image-contents` | 78 |
-| 12 | Core mechanisms | v31 | `09-core-define-error`, `12-core-error-fingerprint`, `10-schema-sensitive-and-rules`, `11-core-outbound` | 95 |
-| 13 | Core mechanisms | v31 | `39-core-breaker`, `39-core-otlp-retry`, `39-testing-render-nodes` | 92 |
-| 14 | Jobs | v32 | `13-jobs-bulk-and-rate`, `14-jobs-inbound-webhooks`, `15-jobs-recipes`, `16-jobs-import-rows`, `30-perf-gate` | 48 |
-| 15 | Gate and deploys | v32 | `20-cli-db-diagnostics`, `33-ops-ci`, `28-assets-deploy-skew`, `33-ops-deploy-proof` | 57 |
-| 16 | AI and web | v32 | `18-ai-scripted-and-meter`, `27-mcp-dual-era`, `27-agents-evals`, `17-entity-test-driver`, `24-web-client-errors`, `24-web-admin-audit-trail` | 93 |
-| 17 | Live frontend, sign-in | v32 | `23-ui-live-refresh`, `25-pkg-realtime-client-reads`, `23-ui-data-table`, `25-pkg-auth-sign-in` | 85 |
-| 18 | Contract | v32 | `39-testing-property`, `39-action-declared-errors`, `39-api-mount-paths` | 83 |
-| 19 | The gate attacks | v32 | `40-next-exercise-pass`, `40-next-tenant-proof`, `39-web-a11y-audit` | 94 |
-| 20 | Identity and tenancy | v32 | `41-add-reads`, `41-add-identity`, `41-add-row-security` | 88 |
-| 21 | Durable jobs | v32 | `39-jobs-event-wake`, `39-action-sagas`, `40-next-job-crash-proof`, `41-add-consumers` | 86 |
-| 22 | Data modelling | v32 | `39-db-partitioned-tables`, `41-add-time-series` | 30 |
-| 23 | Resilience | v32 | `27-agents-checkpoint`, `27-agents-context-and-cache`, `29-data-redis-outage`, `29-data-raw-keyset`, `30-perf-entity-decode`, `25-pkg-scraping-wedge` | 71 |
-| 24 | Production insight | v32 | `41-add-operations`, `39-ops-chart-alerts`, `40-next-fault-drills` | 79 |
-| 25 | Plans, data, repro | v32 | `40-next-query-plans`, `40-next-subject-data`, `40-next-repro` | 99 |
-| 25b | Entity lifecycle | v32 | `41-add-entity-lifecycle` | 20 |
-| 26 | Agents and MCP | minor | `41-add-agent-wire`, `39-mcp-inline-then-job`, `39-mcp-recipes`, `39-ai-prompt-cache`, `39-testing-cassettes` | 82 |
-| 27 | Clients, uploads, content | minor | `41-add-api-clients`, `41-add-uploads`, `41-add-locale-and-content` | 88 |
-| 28 | Capture, graph, shapes | v32 | `41-add-page-capture`, `40-next-app-graph`, `42-adopt-shapes` | 86 |
-| 29 | UI kit | v32 | `23-ui-chart-kit`, `23-ui-searchable-select` | 82 |
-| 30 | UI kit | v32 | `38-ui-commands`, `38-ui-navigation` | 91 |
-| 31 | UI kit | v32 | `38-ui-lists`, `38-ui-pickers` | 82 |
-| 32 | UI kit | v32 | `38-ui-drag-layout`, `38-ui-viewers` | 88 |
-| 33 | Docs site app | minor | `42-adopt-docs-site` | 100 |
-| 34 | Docs site wiring | minor | continues the sweep above | 40 |
-| 35 | Tests and proof | minor | `31-test-file-boundary`, `31-test-false-green`, `42-adopt-proof` | 44 |
+| 5 | Silent corruption | v30 | `02-db-entity-cancellation`, `03-core-lifetime-helpers`, `06-jobs-step-semantics`, `34-idea-jobs-event-wait`, `22-cli-upgrade` | 62 |
+| 6 | Silent corruption | v30 | `35-fix-logic`, `35-fix-concurrency`, `29-data-large-tables`, `35-fix-isr-default` | 60 |
+| 7 | Outages | v30 | `29-data-pg-unanswered`, `29-data-pg-pooler`, `30-perf-jobs-claim-relay` | 53 |
+| 7b | Deploys | v30 | `19-cli-deploy-verify`, `33-ops-worker-roll` | 49 |
+| 8 | Rendering and DX | v30 | `07-render-stream-hole`, `08-testing-mock-fetch`, `36-dx-false-fixes`, `36-dx-generators` | 94 |
+| 9 | First hour | v30 | `42-adopt-stability`, `21-cli-verify-and-stop`, `32-docs-false-claims`, `42-adopt-first-hour` | 99 |
+| 10 | Front door | v30 | `32-docs-findability`, `42-adopt-agents`, `42-adopt-front-door`, `32-docs-guards`, `42-adopt-outsiders` | 96 |
+| 11 | Wire and assets | v30 | `26-api-wire-fixes`, `26-api-read-contract`, `24-web-i18n-mail-keys`, `25-pkg-storage-streams`, `28-assets-compression`, `28-assets-image-contents` | 78 |
+| 12 | Core mechanisms | v30 | `09-core-define-error`, `12-core-error-fingerprint`, `10-schema-sensitive-and-rules`, `11-core-outbound` | 95 |
+| 13 | Core mechanisms | v30 | `39-core-breaker`, `39-core-otlp-retry`, `39-testing-render-nodes` | 92 |
+| 14 | Jobs | v30 | `13-jobs-bulk-and-rate`, `14-jobs-inbound-webhooks`, `15-jobs-recipes`, `16-jobs-import-rows`, `30-perf-gate` | 48 |
+| 15 | Gate and deploys | v30 | `20-cli-db-diagnostics`, `33-ops-ci`, `28-assets-deploy-skew`, `33-ops-deploy-proof` | 57 |
+| 16 | AI and web | v30 | `18-ai-scripted-and-meter`, `27-mcp-dual-era`, `27-agents-evals`, `17-entity-test-driver`, `24-web-client-errors`, `24-web-admin-audit-trail` | 93 |
+| 17 | Live frontend, sign-in | v30 | `23-ui-live-refresh`, `25-pkg-realtime-client-reads`, `23-ui-data-table`, `25-pkg-auth-sign-in` | 85 |
+| 18 | Contract | v30 | `39-testing-property`, `39-action-declared-errors`, `39-api-mount-paths` | 83 |
+| 19 | The gate attacks | v30 | `40-next-exercise-pass`, `40-next-tenant-proof`, `39-web-a11y-audit` | 94 |
+| 20 | Identity and tenancy | v30 | `41-add-reads`, `41-add-identity`, `41-add-row-security` | 88 |
+| 21 | Durable jobs | v30 | `39-jobs-event-wake`, `39-action-sagas`, `40-next-job-crash-proof`, `41-add-consumers` | 86 |
+| 22 | Data modelling | v30 | `39-db-partitioned-tables`, `41-add-time-series` | 30 |
+| 23 | Resilience | v30 | `27-agents-checkpoint`, `27-agents-context-and-cache`, `29-data-redis-outage`, `29-data-raw-keyset`, `30-perf-entity-decode`, `25-pkg-scraping-wedge` | 71 |
+| 24 | Production insight | v30 | `41-add-operations`, `39-ops-chart-alerts`, `40-next-fault-drills` | 79 |
+| 25 | Plans, data, repro | v30 | `40-next-query-plans`, `40-next-subject-data`, `40-next-repro` | 99 |
+| 25b | Entity lifecycle | v30 | `41-add-entity-lifecycle` | 20 |
+| 26 | Agents and MCP | v30 | `41-add-agent-wire`, `39-mcp-inline-then-job`, `39-mcp-recipes`, `39-ai-prompt-cache`, `39-testing-cassettes` | 82 |
+| 27 | Clients, uploads, content | v30 | `41-add-api-clients`, `41-add-uploads`, `41-add-locale-and-content` | 88 |
+| 28 | Capture, graph, shapes | v30 | `41-add-page-capture`, `40-next-app-graph`, `42-adopt-shapes` | 86 |
+| 29 | UI kit | v30 | `23-ui-chart-kit`, `23-ui-searchable-select` | 82 |
+| 30 | UI kit | v30 | `38-ui-commands`, `38-ui-navigation` | 91 |
+| 31 | UI kit | v30 | `38-ui-lists`, `38-ui-pickers` | 82 |
+| 32 | UI kit | v30 | `38-ui-drag-layout`, `38-ui-viewers` | 88 |
+| 33 | Docs site app | v30 | `42-adopt-docs-site` | 100 |
+| 34 | Docs site wiring | v30 | continues the sweep above | 40 |
+| 35 | Tests and proof | v30 | `31-test-file-boundary`, `31-test-false-green`, `42-adopt-proof` | 44 |
 
 - Coordinator-only, every sweep: `CHANGELOG.md`, `wiki/Error-Codes.md`, `wiki/Upgrading.md`, `framework.manifest.json` (`bun run manifest`, once), `bun.lock`, `status.yml`, any package's `src/index.ts`, `README.md`, `CLAUDE.md`, and any wiki page two agents both edit. Workers report their text.
 - Each PR: `bun run verify`, `bun run scripts/reference-app-gate.ts`, CI green, reviews addressed, merged, `main` pulled. A change to `examples/dummy` budgets regenerates its `x.manifest.json` first.
@@ -225,8 +221,8 @@ File counts are estimates, about 2,800 in all. Split anything over 100 at dispat
 - `bun run verify` green, all 20 steps; `bun run scripts/reference-app-gate.ts` green; `scaffold-smoke` green twice per shape.
 
 ## Risks / open questions
-- **Churn against adoption.** 29 majors in 78 days is itself a blocker. The schedule above caps it, and `x upgrade` lands in sweep 5 so each hop is one command. Adopters' existing apps take real edits: an old app's first `x upgrade` is a re-exec of the newest CLI, so test it.
-- **Scope.** This is a very large plan, far past what one release cycle holds. Order is the protection: sweeps 1–13 are what the world would hold against us if missing. Later sweeps can land over months.
+- **Upgrade cost.** v30 is one large hop for existing apps. `x upgrade` lands in sweep 5, and its first run on an old app re-execs the newest CLI: test it. `wiki/Upgrading.md` needs v30 entries a reader can follow.
+- **Live holes until v30.** Breaking security rows reach users only with v30, so sweeps 1–2 go first and v30 should not wait on anything optional.
 - **New kit surface carries a cost.** Every new component and factory is API under semver, forever. Each slice has one idiomatic use in `examples/dummy` so it can't rot silently.
 - **05 can find real data.** A validate failing `X_DB_FOREIGN_KEY_VIOLATION` means rows already cross tenants: a finding for the app's owner.
 - **02 changes what lands.** A write past `requestTimeoutMs` now rolls back. Accepted cost: a keyed handler's raw `fetch` under `runToCompletion` has no deadline until it uses `outbound()`.

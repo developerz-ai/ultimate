@@ -64,7 +64,7 @@ A phone-first dashboard needs a thumb-reach destination bar, a sidebar with grou
 - `packages/cli/src/templates/scaffold-shell.test.ts`: frame renders with one current item. Command `bun test packages/ui/src/components/nav-list-view.test.ts`.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, one row.** `UI_KEYS` gains keys. Upgrading: "Add `ui.step`, `ui.refresh.*` to any `Record<UiKey, string>`." `TabsProps` becomes a union: additive for callers, a reader typing `TabsProps['onChange']` as required gets `| undefined`, in the same note.
 
 ## Done when

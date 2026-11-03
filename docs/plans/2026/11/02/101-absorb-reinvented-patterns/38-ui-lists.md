@@ -67,7 +67,7 @@ A non-finite `estimate` or `overscan` is `finiteOption`'s assertion (`core/src/f
 - `scripts/ui-barrel-bytes.test.ts`: `Timeline` retains no observer module.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, one row.** `UI_KEYS` gains keys. Upgrading: "Add `ui.list.toEnd`, `ui.tree.loading` to any `Record<UiKey, string>`." The rest is additive.
 
 ## Done when

@@ -52,7 +52,7 @@ No adopter renders `DataTable` on a real list. Four wrote a table or a table kit
 - `scripts/ui-barrel-bytes.test.ts`: `listUrl` adds nothing to a component-only island.
 
 ## Semver
-breaking; lands in v32.
+breaking; lands in v30.
 **Breaking, two rows.** `UI_KEYS` gains `first`, so the exported `UiKey` union widens: a `Record<UiKey, string>` in an app stops compiling. A duplicate `rowKey`, which rendered before, now throws.
 Upgrading: "Add `ui.first` to any `Record<UiKey, string>`. Two rows answering one `rowKey` are `X_UI_INVALID_VALUE`: make the key unique. A cursor-mode `Pagination` with no `prevCursor` no longer draws a disabled Previous." Prop widenings, `Sparkline`'s `null` and `listUrl` are additive.
 
