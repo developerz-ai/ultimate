@@ -28,7 +28,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_CLI_FLAG_UNREAD:
     'bun test packages/cli/src/flag-reads.test.ts   # the finding names the flag and the file to read it in',
   X_VERIFY_FAILED: 'x verify --json',
-  X_NOT_IN_APP: 'x new myapp --json && cd myapp',
+  // Outside an app `x` is on no PATH, and `bunx x` fetches an unrelated npm package named `x`.
+  X_NOT_IN_APP: 'bunx create-ultimate myapp --json && cd myapp',
   X_BUN_VERSION: 'bun upgrade',
   X_NOT_IMPLEMENTED: 'x doctor --json',
   // Core's three env codes, answered by the command that covers each. `X_CONFIG_INVALID` gets
@@ -345,6 +346,12 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'load: async () => { setCookie(name, value); return data; },   // in defineRoute, never inside a Hole',
   X_QUERY_SLICE_ENTITY:
     'x queries list --json   # then declare the read by hand over the entity the slice declares',
+  X_DEPLOY_ENV_MISSING: 'x env init --production --json',
+  X_ENV_FILE_EXISTS:
+    'NODE_ENV=production x env check --json   # the file is kept: edit a value in it by hand',
+  X_DEV_STOP_TIMEOUT:
+    'x stop --timeout 2m --json   # still running: kill -9 the pid its cause names, then x dev --json',
+  X_DEV_STOP_DENIED: 'cat .x/dev.lock   # then, as the user who owns that pid: x stop --json',
 };
 
 const isCliCode = (code: string): code is CliErrorCode =>

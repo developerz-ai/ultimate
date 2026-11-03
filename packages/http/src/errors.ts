@@ -408,7 +408,7 @@ export const requestTimedOut = (method: string, pathname: string, timeoutMs: num
   new HttpError({
     code: 'X_TIMEOUT',
     cause: `${method} ${pathname} did not finish within ${timeoutMs}ms`,
-    fix: 'pass ctx.signal to every outbound call (fetch(url, { signal: ctx.signal })) and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/. A write past the deadline is refused: wrap work that must land whole, runToCompletion(() => withTransaction(fn)), never a statement inside the transaction, whose COMMIT stays refused',
+    fix: 'make every vendor call with outbound({ url, vendor, dial, deadlineMs }) from @ultimat3/core/outbound, which hears ctx.signal and the deadline, and call throwIfAborted(ctx) before expensive work, or call configureHttp({ requestTimeoutMs: 60_000 }) at module scope in a file under apps/*/. A write past the deadline is refused: wrap work that must land whole, runToCompletion(() => withTransaction(fn)), never a statement inside the transaction, whose COMMIT stays refused',
     meta: { timeoutMs },
   });
 

@@ -2,6 +2,8 @@
 
 The `route` primitive and the four render modes.
 
+`bun add @ultimat3/render` · guide: [Routes And Render Modes](https://github.com/developerz-ai/ultimate/wiki/Routes-And-Render-Modes)
+
 | Mode | Behavior | Use |
 |---|---|---|
 | `static` | built once, served as a file | marketing, docs |
@@ -105,7 +107,7 @@ returns its data through `withStatus(404, data)`. The same object comes back, so
 `load`'s type, `meta`'s `data` or the page's props changes; every render mode reads the status off
 it (`routeStatusOf`), and a 4xx or 5xx is `robots: noindex` by construction, applied by the
 descriptor's `meta` after the route's own ran. Not a throw: a throw is the framework's error page,
-outside the app's shell, and `As of 2026-09-07` that was the only way to a 404 — ai-maxxing's
+outside the app's shell, and `As of 2026-09-07` that was the only way to a 404 — one adopter's
 `/fleet/nope` rendered the right page and answered 200. A 3xx is `X_ROUTE_STATUS_INVALID`. A
 redirect is `setRedirect(location, status)` from `@ultimat3/http`, called inside `load`: the page
 path answers that 3xx before rendering a document, `private, no-store` unless the route declares a

@@ -3,7 +3,7 @@
 // Booting an embedded Postgres (PGlite) from a migrated template costs 2.4-7 s of CPU on a
 // 12-core box (measured, 64 MB template: 2.7-7.2 s cold, 2.4-2.9 s with the WASM module and fs
 // bundle already compiled — the untar and the postgres start are the cost, not the compile). A
-// suite that boots one per file pays that in every file: notificado.co's unit tier has 236 such
+// suite that boots one per file pays that in every file: one adopter's unit tier has 236 such
 // files, ~700 s of CPU, which is most of its wall time at any width.
 //
 // Since 22.7 a worker runs many files in one process (no `--isolate`), so the database can outlive

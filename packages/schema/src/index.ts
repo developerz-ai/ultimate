@@ -43,6 +43,7 @@ export {
   isSchemaError,
   SchemaError,
   SchemaUnsupportedError,
+  SensitiveOutputError,
   ValidationFailedError,
 } from './errors';
 // Exported for `@ultimat3/time`'s `fromIso`: one ISO-shape rule, whichever door a date comes in by.
@@ -75,6 +76,10 @@ export {
   schemaProvider,
   tryIntrospect,
 } from './provider';
+export { recordSchema } from './record-schema';
+export type { IssueRuleFacts, SchemaIssueParams, SchemaRule } from './schema-rules';
+export { issueRuleFacts, SCHEMA_RULES } from './schema-rules';
+export { assertNoSensitiveOutput, maskSensitive } from './sensitive';
 export type {
   FormattableIssue,
   InferInput,
@@ -114,7 +119,6 @@ export {
   nullableSchema,
   objectSchema,
   optionalSchema,
-  recordSchema,
   refineSchema,
   unionSchema,
 } from './validators';

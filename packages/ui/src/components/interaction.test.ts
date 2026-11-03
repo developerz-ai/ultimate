@@ -3,21 +3,21 @@
 // it holds; what it never covered is the WIRING, so a component could pass the wrong selector to a
 // correct helper, or never hand a dropped file to the input it renders, and nothing noticed.
 //
-// The tree comes from `jsx-probe` (the props an element carries) and the DOM from `fake-dom` (a
+// The tree comes from `@ultimat3/core/render-nodes` (the props an element carries) and the DOM from `fake-dom` (a
 // focus that a disabled control refuses). `document` is installed only around the keyboard
 // dispatch: a DOM present during a render is what `solid()` reads as "client", and it throws.
 
 import { describe, expect, test } from 'bun:test';
-import { FakeElement, installFakeDom, keydown } from '../fake-dom-fixture';
 import {
   attachRef,
   byTag,
   fire,
   one,
-  type ProbeNode,
+  type RenderNode,
   renderNodes,
   withAttr,
-} from '../jsx-probe-fixture';
+} from '@ultimat3/core/render-nodes';
+import { FakeElement, installFakeDom, keydown } from '../fake-dom-fixture';
 import { MENU_ITEM_SELECTOR } from '../roving';
 import { Button } from './Button';
 import { Checkbox } from './Checkbox';
@@ -47,7 +47,7 @@ const menuProps = (items: readonly Record<string, unknown>[]): Record<string, un
   label: 'Actions',
 });
 
-const tabindexes = (nodes: readonly ProbeNode[], role: string): unknown[] =>
+const tabindexes = (nodes: readonly RenderNode[], role: string): unknown[] =>
   withAttr(nodes, 'role', role).map((node) => node.props['tabindex']);
 
 describe('component keyboard and form wiring', () => {
@@ -210,7 +210,7 @@ describe('component keyboard and form wiring', () => {
 
     const buttons = byTag(nodes, 'button');
     expect(buttons).toHaveLength(2);
-    fire(buttons[1] as ProbeNode, 'onClick', {});
+    fire(buttons[1] as RenderNode, 'onClick', {});
     // The inverted selector called onPage(3) and dropped the cursor on the floor.
     expect(cursors).toEqual(['c1']);
     expect(pages).toEqual([]);
@@ -224,7 +224,7 @@ describe('component keyboard and form wiring', () => {
       onPage: (page: number) => pages.push(page),
     });
     expect(withAttr(nodes, 'aria-live')).toHaveLength(1);
-    fire(byTag(nodes, 'button')[1] as ProbeNode, 'onClick', {});
+    fire(byTag(nodes, 'button')[1] as RenderNode, 'onClick', {});
     expect(pages).toEqual([3]);
   });
 

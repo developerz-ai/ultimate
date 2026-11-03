@@ -332,17 +332,28 @@ describe('unit · ci.yml · what a red part prints', () => {
 });
 
 describe('unit · ci.yml · what the split may not change', () => {
-  test('free runners only: ubuntu-latest, and windows-latest for the windows job alone', () => {
-    // `windows-latest` is free because the repository is public; it is admitted for the one job
-    // whose question is the platform, never as a second place to run a Linux job.
-    const allowed = (name: string): string =>
-      name === 'windows' ? 'windows-latest' : 'ubuntu-latest';
+  test('free runners only: ubuntu-latest, and windows-latest / macos-latest for their own jobs', () => {
+    // `windows-latest` and `macos-latest` are free because the repository is public; each is
+    // admitted for the one job whose question is the platform, never as a second Linux job.
+    const platforms: Readonly<Record<string, string>> = {
+      windows: 'windows-latest',
+      macos: 'macos-latest',
+    };
+    const allowed = (name: string): string => platforms[name] ?? 'ubuntu-latest';
     const runners = Object.entries(ci.jobs ?? {}).map(([name, target]) => [
       name,
       target['runs-on'],
     ]);
     expect(runners.filter(([name, runner]) => runner !== allowed(name ?? ''))).toEqual([]);
     expect(job('windows')['runs-on']).toBe('windows-latest');
+    expect(job('macos')['runs-on']).toBe('macos-latest');
+  });
+
+  // The two questions a stranger's first hour asks of CI (plan 101, 42-adopt-first-hour): does a
+  // fresh scaffold's Compose deploy boot, and does the scaffold gate green on a Mac.
+  test('a fresh scaffold is deployed with Compose, and gated on macOS', () => {
+    expect(runsOf(job('compose-deploy'))).toContain('bash docker/deploy-proof/compose.sh');
+    expect(runsOf(job('macos'))).toContain('scripts/scaffold-gate.ts');
   });
 
   test('a missing browser is a refusal in CI, never a skip', () => {
@@ -369,8 +380,10 @@ describe('unit · ci.yml · what the split may not change', () => {
       'reference-app-verify',
       'scaffold-smoke',
       'container',
+      'compose-deploy',
       'packages',
       'windows',
+      'macos',
     ]) {
       expect(job(name).needs, `${name} must not wait on another job`).toBeUndefined();
     }

@@ -2,6 +2,16 @@
   "name": "@ultimat3/mcp",
   "version": "29.4.0",
   "description": "MCP server, dev tools, and the action-to-tool projection \u2014 one authz system, two surfaces",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "mcp",
+    "model-context-protocol",
+    "agents",
+    "ai"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/MCP-And-AI",
   "license": "MIT",
   "type": "module",
   "repository": {

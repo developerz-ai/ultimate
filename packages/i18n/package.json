@@ -2,6 +2,16 @@
   "name": "@ultimat3/i18n",
   "version": "29.4.0",
   "description": "Dependency-free translator, catalog flattening, locale negotiation and loud missing-key rendering",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "i18n",
+    "l10n",
+    "translation",
+    "intl"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/I18n",
   "license": "MIT",
   "type": "module",
   "sideEffects": [

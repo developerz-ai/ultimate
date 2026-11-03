@@ -37,9 +37,15 @@ export const SOURCE_GLOBS: readonly string[] = ['packages/*/src/**/*.ts', 'scrip
  * be the convention this file exists to stop relying on.
  */
 const RETURNS_ERROR = [
-  /export (?:function|const) (\w+)[^\n=]*?[):]\s*(?:[A-Z]\w*)?(?:Error|Fault)\b/g,
-  /export const (\w+)\s*=\s*\([^)]*\):\s*(?:[A-Z]\w*)?(?:Error|Fault)\b/g,
+  /export (?:function|const) (\w+)[^\n=]*?[):]\s*((?:[A-Z]\w*)?(?:Error|Fault))\b/g,
+  /export const (\w+)\s*=\s*\([^)]*\):\s*((?:[A-Z]\w*)?(?:Error|Fault))\b/g,
 ];
+
+/**
+ * An interface whose first member is a construct signature: the CLASS, never an instance —
+ * `defineError()` answers `DefinedError<P>`, and a returned class fails a `toThrow`.
+ */
+const CONSTRUCTOR_TYPE = /export interface (\w+)(?:<[^>{]*>)?\s*\{\s*new\s*\(/g;
 
 /**
  * The opening `(` of an exported function's parameter list, however long the list runs. Both
@@ -51,24 +57,28 @@ const RETURNS_ERROR = [
  */
 const PARAMETERS_OPEN =
   /export (?:function (\w+)\s*(?:<[^>(]*>)?|const (\w+)\s*=\s*(?:async\s*)?)\(/g;
-const RETURN_TYPE = /^\s*:\s*(?:[A-Z]\w*)?(?:Error|Fault)\b/;
+const RETURN_TYPE = /^\s*:\s*((?:[A-Z]\w*)?(?:Error|Fault))\b/;
 
-function wrappedFactories(source: string): readonly string[] {
+function wrappedFactories(source: string, classes: ReadonlySet<string>): readonly string[] {
   const names: string[] = [];
   for (const match of source.matchAll(PARAMETERS_OPEN)) {
     const close = balancedClose(source, match.index + match[0].length - 1);
-    if (close < 0 || !RETURN_TYPE.test(source.slice(close + 1, close + 200))) continue;
+    const type = close < 0 ? null : RETURN_TYPE.exec(source.slice(close + 1, close + 200));
+    if (type === null || classes.has(type[1] ?? '')) continue;
     names.push(match[1] ?? match[2] ?? '');
   }
   return names;
 }
 
 export function errorFactoriesIn(source: string): readonly string[] {
+  const classes = new Set([...source.matchAll(CONSTRUCTOR_TYPE)].map((match) => match[1] ?? ''));
   const names = [
     ...RETURNS_ERROR.flatMap((pattern) =>
-      [...source.matchAll(pattern)].map((match) => match[1] ?? ''),
+      [...source.matchAll(pattern)]
+        .filter((match) => !classes.has(match[2] ?? ''))
+        .map((match) => match[1] ?? ''),
     ),
-    ...wrappedFactories(source),
+    ...wrappedFactories(source, classes),
   ];
   return [...new Set(names)].filter((name) => name !== '');
 }

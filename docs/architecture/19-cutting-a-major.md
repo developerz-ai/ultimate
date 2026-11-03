@@ -101,10 +101,27 @@ other.
 
 ## What a major covers
 
-`wiki/Upgrading.md`'s `## What semver covers` is the definition — five surfaces, and it is the
-public promise. Do not restate it here, in a changelog entry, or in a package README: a second copy
-is a second answer. A change is a major when it changes one of those five in a way that stops
+[`wiki/Stability.md`](../../wiki/Stability.md)'s `## What is covered` is the definition, and it is
+the public promise. Do not restate it here, in a changelog entry, or in a package README: a second
+copy is a second answer. A change is a major when it changes a covered surface in a way that stops
 compiling, or stops meaning what it meant.
+
+## When a major may ship
+
+From v30, at most one major per 90 days, counted between the dated `## X.0.0 - YYYY-MM-DD`
+headings in `CHANGELOG.md` (`scripts/lib/major-window.ts`). Until the window opens a break lands on
+`next`, never `main` (`X_BREAKING_ON_MAIN`); when it opens, `next` merges into `main` and the bump
+is the major. A removal ships its `@deprecated` alias on `main` for at least one minor first
+(`scripts/deprecation-window.ts`, `X_RELEASE_UNDEPRECATED_REMOVAL`). The only exception is a
+security fix that cannot be non-breaking: `bun run scripts/release.ts --bump major --security
+GHSA-xxxx-xxxx-xxxx`, which records the advisory under the section heading. At a major, cut
+`release/<major>.x` from the release commit by hand (a convention; no script does it): the previous major's security patches merge there,
+and merging their bump PR is that release, published under `maint-<major>`
+(`scripts/dist-tag.ts`).
+
+Every release section from 30.0.0 opens with `### Highlights`, at most five plain bullets: the
+GitHub Release body is those, the Upgrading anchor and a link to the full section
+(`scripts/release-notes.ts`, `X_CHANGELOG_HIGHLIGHTS_MISSING`).
 
 ## Lockstep
 
@@ -121,6 +138,10 @@ releasing it is then a two-word deletion rather than a page to write under time 
 | every `wiki/` table renders as a table | `scripts/wiki-tables.ts` | `manifest` |
 | exactly one page stamps a version, and it is the shipped one | `scripts/version-stamps.ts` | `manifest` |
 | all 31 workspaces at the tag's version before the first publish | `scripts/release.ts --check <version>` | the release workflow, not the gate |
+| one major per 90 days from v30 | `scripts/release.ts`, and `scripts/lib/stability-findings.ts` on the dated headings | `boundaries` |
+| no `BREAKING —` on `main` while the window is closed | `scripts/lib/changelog-highlights.ts` | `boundaries` |
+| a removed export was `@deprecated` at the previous tag | `scripts/deprecation-window.ts` | `boundaries` |
+| every release from 30.0.0 opens with Highlights | `scripts/lib/changelog-highlights.ts` | `boundaries` |
 | **a major has a `wiki/Upgrading.md` section** | nothing | — |
 | **the summary table's counts match `CHANGELOG.md`** | nothing | — |
 | **every `BREAKING —` entry names an edit** | nothing | — |

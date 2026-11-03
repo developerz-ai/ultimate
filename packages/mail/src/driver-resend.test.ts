@@ -384,3 +384,16 @@ test('a real timeout still builds a driver that sends', async () => {
   });
   expect((await driver.send(messageFixture())).id).toBe('re_1');
 });
+
+test('a 503 is retried under the same Idempotency-Key, and the send lands', async () => {
+  const keys: (string | null)[] = [];
+  const fetch: MailFetch = async (_input, init) => {
+    keys.push(new Headers(init.headers).get('idempotency-key'));
+    return keys.length === 1 ? new Response('', { status: 503 }) : Response.json({ id: 'em_1' });
+  };
+  const driver = resendMailDriver({ apiKey: API_KEY, from: FROM, fetch });
+  const sent = await driver.send(messageFixture());
+  expect(sent.id).toBe('em_1');
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+});

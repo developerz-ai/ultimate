@@ -264,7 +264,7 @@ Long form: [`docs/history/jobs.md`](../../docs/history/jobs.md), "Moved 2026-10-
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |
 | `events.ts` | stored event bus for `step.waitForEvent` |
-| `inspect.ts` | `--json` introspection |
+| `inspect.ts` | `--json` introspection. `operatorInput`: no registered handle gives `[redacted]` whole; otherwise `redactInput(maskSensitive(handle.input, …))` |
 | `inspect-operator.ts` | the verbs `x jobs` binds: remove, promote, pause, resume |
 | `introspection.ts` | `JobIntrospection`, every operator type, and the bounds |
 | `counters.ts` | bucket arithmetic, `nackOutcome`, the memory counters |

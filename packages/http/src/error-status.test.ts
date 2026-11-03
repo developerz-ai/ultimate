@@ -1,7 +1,13 @@
 // The app's half of the status table, and a code that is also a name on `Object.prototype`.
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { defineError, describeErrorCode, errorCodeSnapshot } from '@ultimat3/core';
 import { factsOf, toProblem } from './error-facts';
-import { registerErrorStatus, resetErrorStatus, statusFor } from './error-status';
+import {
+  declaredStatusFor,
+  registerErrorStatus,
+  resetErrorStatus,
+  statusFor,
+} from './error-status';
 
 describe('an app declares the status for its own codes', () => {
   afterEach(resetErrorStatus);
@@ -69,5 +75,57 @@ describe('a code that is also a name on Object.prototype', () => {
     // so an app whose own code collided with a prototype name could never register one at all.
     registerErrorStatus({ toString: 401 });
     expect(statusFor('toString')).toBe(401);
+  });
+});
+
+// `defineError` (core) writes the same app table `registerErrorStatus` does: core may not import
+// this package, so the table moved down and both writers meet there. The framework table is still
+// read first, which is what keeps a definition from moving a framework code.
+describe('a code declared with defineError', () => {
+  let restoreCodes: () => void = () => {};
+  beforeEach(() => {
+    restoreCodes = errorCodeSnapshot();
+  });
+  afterEach(() => {
+    restoreCodes();
+    resetErrorStatus();
+  });
+
+  test('answers the status it declared', () => {
+    defineError({
+      code: 'X_HTTP_TEST_POST_NOT_FOUND',
+      title: 'no such post',
+      status: 404,
+      cause: 'no post',
+      fix: 'x queries list --json',
+    });
+    expect(statusFor('X_HTTP_TEST_POST_NOT_FOUND')).toBe(404);
+    expect(declaredStatusFor('X_HTTP_TEST_POST_NOT_FOUND')).toBe(404);
+    expect(toProblem({ code: 'X_HTTP_TEST_POST_NOT_FOUND' }).status).toBe(404);
+  });
+
+  test('cannot declare a framework code at all, so its status cannot move', () => {
+    expect(() =>
+      defineError({
+        code: 'X_FORBIDDEN',
+        title: describeErrorCode('X_FORBIDDEN').title,
+        status: 200,
+        cause: 'c',
+        fix: 'x policy explain',
+      }),
+    ).toThrow('X_ERROR_CODE_DUPLICATE');
+    expect(statusFor('X_FORBIDDEN')).toBe(403);
+    expect(declaredStatusFor('X_FORBIDDEN')).toBe(403);
+  });
+
+  test('and registerErrorStatus disagreeing with it is refused, either way round', () => {
+    defineError({ code: 'X_HTTP_TEST_A', title: 'a', status: 404, cause: 'c', fix: 'x verify' });
+    expect(() => registerErrorStatus({ X_HTTP_TEST_A: 409 })).toThrow('X_ERROR_STATUS_INVALID');
+    registerErrorStatus({ X_HTTP_TEST_A: 404 });
+    registerErrorStatus({ X_HTTP_TEST_B: 409 });
+    expect(() =>
+      defineError({ code: 'X_HTTP_TEST_B', title: 'b', status: 404, cause: 'c', fix: 'x verify' }),
+    ).toThrow('X_ERROR_CODE_DUPLICATE');
+    expect(statusFor('X_HTTP_TEST_B')).toBe(409);
   });
 });

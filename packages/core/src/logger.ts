@@ -361,7 +361,7 @@ function timestamp(clock: Clock): string {
  * `LOG_LEVEL`, and the default where there is no environment to read it from.
  *
  * A BROWSER has no `process` binding at all, and this read runs at MODULE INIT — `logger` at the
- * foot of this file is `structuredLogger()` evaluated when the module is. Measured on ai-maxxing's
+ * foot of this file is `structuredLogger()` evaluated when the module is. Measured on one adopter's
  * session console island: `@ultimat3/realtime`'s `channel.ts` calls `logger.warn`, so the shaker
  * keeps `logger`, and the island's chunk died on `ReferenceError: process is not defined` before a
  * line of the app's own code ran — the wrapper rendered `data-x-failed="process is not defined"`

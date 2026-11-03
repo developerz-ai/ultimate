@@ -8,7 +8,7 @@ git is what commits the scaffold, and `--no-git` is the form that skips it.
 bunx create-ultimate demo --no-git
 cd demo
 bun run setup
-bun run check
+bun run verify
 ```
 
 | Command | What it needs from the box |
@@ -16,9 +16,9 @@ bun run check
 | `bunx create-ultimate demo --no-git` | bun, and a network the npm registry answers on. `--no-git` skips `git init`, which is the form an automated provisioner uses; without it the scaffold is committed, and that is git's only job here |
 | `cd demo` | — |
 | `bun run setup` | bun. Six steps: `bun install`, an `.env.development.local` touch, `x db gen "initial"` when `packages/db/migrations` holds no `.sql`, `x db migrate`, `x db seed`, `x manifest` |
-| `bun run check` | bun. `x build --target static`, then `x verify` — the build first, because `budgets` weighs `.x/build-stats.json` and the build is that file's only writer |
+| `bun run verify` | bun. `x verify`, the whole gate: its `budgets` step runs `x build --target static` itself, because `.x/build-stats.json` does not exist yet on a fresh box (`As of 30.0`) |
 
-`x new` installs nothing, so `bun run setup` is not optional and `cd demo && bun run check` stops on
+`x new` installs nothing, so `bun run setup` is not optional and `cd demo && bun run verify` stops on
 `X_BUILD_FAILED` naming `bun install` ([Installation](Installation)).
 
 ## Why no service is needed
@@ -54,7 +54,7 @@ question too: does the peer **resolve** from the app root — a resolve, never a
 loading it boots the WASM and takes the single-writer lock the next command needs. Red only where
 `DATABASE_URL` is unset *and* the peer is unresolvable ([CLI reference](CLI-Reference)).
 
-`bun run check`'s `live`, `job` and `e2e` steps need no service of their own in a generated app: the
+The gate's `live`, `job` and `e2e` steps need no service of their own in a generated app: the
 queue is Postgres (`SELECT … FOR UPDATE SKIP LOCKED`), the fanout is in-process, and both resolve
 through the table above.
 
@@ -72,6 +72,10 @@ Reach for the dev compose file only when you want parity against a real Postgres
 ([Deployment](Deployment)). Nothing on this page uses it.
 
 ## Wall time
+
+Both tables predate 30.0 and time `bun run check`, the scaffold's old wrapper: `x build --target
+static`, then `x verify`. `bun run verify` does the same work in one command, the build inside
+`budgets`, so the figures are its order of magnitude, not its measurement.
 
 On a **WSL2 developer box — not a bare VM, and not a CI runner** — on a Bun the CLI's own floor
 accepts (`x doctor`), against real `x new` scaffolds, first pass, nothing waived and no fix-follow,
@@ -98,8 +102,8 @@ the checkout, `As of 2026-09-12`:
 | `bun run check` | **7,279ms** | **4,886ms** |
 | the first `bun run check`'s verdict | **green, 20 of 20 steps pass** | **green, 20 of 20 steps pass** |
 
-`budgets` is green on that first pass on every one of those runs, because `bun run check` builds before
-it verifies — nothing is waived to get there, and no printed `fix:` is followed before the verdict
+`budgets` is green on that first pass on every one of those runs, because the gate builds before
+it weighs — nothing is waived to get there, and no printed `fix:` is followed before the verdict
 is taken. The job prints the table itself, one row per command and one per gate step, so the run is
 its own measurement rather than a number this page asserts: read it from the job's log when you want
 today's.

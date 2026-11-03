@@ -14,7 +14,7 @@ const SECRETS = [
   'sk-live-51H8xQ2eZvKYlo2C',
   '4111111111111111',
   '078-05-1120',
-  'dev.admin@tesote.com',
+  'dev.admin@example.com',
   'Bearer eyJhbGciOiJIUzI1NiJ9.body.sig',
 ] as const;
 

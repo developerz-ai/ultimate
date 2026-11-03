@@ -4,18 +4,18 @@
 // no control that needs a script, because an admin screen never hydrates.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
-import { iconMenu } from '@ultimat3/ui/icons/menu';
-import type { AdminApp } from './admin';
 import {
   byComponent,
   byTag,
-  type InertNode,
+  nodesOf,
   one,
-  renderShallowNodes,
-  shallowNodesOf,
+  type RenderNode,
+  renderNodes,
   withAttr,
-} from './inert-jsx-fixture';
+} from '@ultimat3/core/render-nodes';
+import { registerCatalog, resetCatalogs } from '@ultimat3/i18n';
+import { iconMenu } from '@ultimat3/ui/icons/menu';
+import type { AdminApp } from './admin';
 import type { NavGroup } from './nav';
 import { adminBranding, type ThemeTokenRef, themeAttributes } from './theme';
 
@@ -59,16 +59,20 @@ const appWith = (over: Partial<AdminApp> = {}): AdminApp =>
     ...over,
   }) as AdminApp;
 
-type Nodes = ReturnType<typeof renderShallowNodes>;
+type Nodes = ReturnType<typeof renderNodes>;
 
 const render = (over: Record<string, unknown> = {}): Nodes =>
-  renderShallowNodes(AdminLayout, {
-    app: appWith(),
-    nav: NAV,
-    currentPath: '/back-office/posts',
-    children: 'the page body',
-    ...over,
-  });
+  renderNodes(
+    AdminLayout,
+    {
+      app: appWith(),
+      nav: NAV,
+      currentPath: '/back-office/posts',
+      children: 'the page body',
+      ...over,
+    },
+    { components: 'stop' },
+  );
 
 const root = (nodes: Nodes): ReturnType<typeof one> =>
   one(withAttr(nodes, 'data-admin'), 'the root');
@@ -237,8 +241,9 @@ describe('nothing in the shell needs a script', () => {
  * test below holds: the panel is only hidden where something can open it.
  */
 describe('below md the sidebar is a panel a menu button opens, with no script', () => {
-  const side = (nodes: Nodes): InertNode => one(byTag(nodes, 'aside'), '<aside>');
-  const inside = (nodes: Nodes): Nodes => shallowNodesOf(side(nodes).props['children']);
+  const side = (nodes: Nodes): RenderNode => one(byTag(nodes, 'aside'), '<aside>');
+  const inside = (nodes: Nodes): Nodes =>
+    nodesOf(side(nodes).props['children'], { components: 'stop' });
 
   test('the aside is a popover, and the menu button names it by id', () => {
     const nodes = render();
@@ -255,7 +260,8 @@ describe('below md the sidebar is a panel a menu button opens, with no script', 
     expect(opener.props['type']).toBe('button');
     expect(opener.props['children']).toContain('Menu (probe)');
     expect(
-      one(byComponent(shallowNodesOf(opener.props['children']), 'Icon'), 'icon').props['glyph'],
+      one(byComponent(nodesOf(opener.props['children'], { components: 'stop' }), 'Icon'), 'icon')
+        .props['glyph'],
     ).toBe(iconMenu);
     // The opener is outside the panel it opens — inside, it could never be reached while closed.
     expect(byTag(inside(nodes), 'button').includes(opener)).toBe(false);

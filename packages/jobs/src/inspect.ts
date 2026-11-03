@@ -2,7 +2,8 @@
 // object so `x jobs ... --json` and the MCP tool share one shape — an agent debugging a stuck
 // queue reads exactly what the dashboard renders.
 
-import { NotImplementedError } from '@ultimat3/core';
+import { NotImplementedError, REDACTED } from '@ultimat3/core';
+import { maskSensitive } from '@ultimat3/schema';
 import type { BackfillProgress } from './backfill-inspect';
 import { backfillForRun } from './backfill-inspect';
 import type { WhenBusy } from './concurrency';
@@ -78,8 +79,10 @@ export interface JobTrace {
   /** The thrown value's stack for `lastError`, bounded. `null` when the failure carried none. */
   readonly stack: string | null;
   /**
-   * The stored payload, with every key the app declared secret (`redactKeys`) replaced. App data
-   * all the same: a surface that shows it gates it like any other read of a tenant's rows.
+   * The stored payload, with every `.sensitive()` field of the job's schema and every key the app
+   * declared secret (`redactKeys`) replaced — `[redacted]` whole for a job whose declaration is
+   * gone. App data all the same: a surface that shows it gates it like any other read of a
+   * tenant's rows.
    */
   readonly input: unknown;
   /** What the body last reported through `progress()`; `null` until it reports. */
@@ -129,6 +132,16 @@ function concurrencyKeyOf(handle: AnyJobHandle | undefined, record: JobRecord): 
   }
 }
 
+/**
+ * The stored payload as an operator may read it: the job's own `.sensitive()` fields masked by its
+ * schema, THEN `redactKeys`. A job this process has not registered has no schema to say which keys
+ * are sensitive, so its input is hidden whole — never shown on the hope that none were.
+ */
+function operatorInput(handle: AnyJobHandle | undefined, record: JobRecord): unknown {
+  if (handle === undefined) return REDACTED;
+  return redactInput(maskSensitive(handle.input, record.input, REDACTED));
+}
+
 function toStepTrace(record: StepRecord): StepTrace {
   return {
     name: record.name,
@@ -160,7 +173,7 @@ export async function inspectJob(driver: JobDriver, jobId: string): Promise<JobT
     runAt: new Date(record.runAt).toISOString(),
     lastError: record.lastError ?? null,
     stack: record.lastErrorStack ?? null,
-    input: redactInput(record.input),
+    input: operatorInput(handle, record),
     progress: record.progress ?? null,
     tenantId: record.tenantId ?? null,
     traceparent: record.traceparent ?? null,

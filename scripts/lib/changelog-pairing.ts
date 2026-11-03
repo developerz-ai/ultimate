@@ -23,7 +23,7 @@ const LISTED = 8;
  */
 export const FIRST_PAIRED_MAJOR = 23;
 
-interface BreakingLine {
+export interface BreakingLine {
   readonly line: number;
   readonly key: number | undefined;
 }
@@ -230,18 +230,51 @@ function rangeGaps(walk: Walkthrough): readonly PairingGap[] {
   return gaps;
 }
 
+/** A walkthrough and the CHANGELOG lines it pairs against. */
+export interface PairedSection {
+  readonly walk: Walkthrough;
+  readonly lines: readonly BreakingLine[];
+}
+
+/** The major one past the newest released `## X.Y.Z` heading: the major [Unreleased] is building. */
+function inFlightMajor(sections: ReadonlyMap<string, readonly BreakingLine[]>): number | undefined {
+  const majors = [...sections.keys()]
+    .map((version) => /^(\d+)\.\d+\.\d+$/.exec(version)?.[1])
+    .flatMap((major) => (major === undefined ? [] : [Number.parseInt(major, 10)]));
+  return majors.length === 0 ? undefined : Math.max(...majors) + 1;
+}
+
+/**
+ * Every walkthrough with the section it migrates. The in-flight major's walkthrough is headed with
+ * the version it WILL be (`29.x → 30.0.0`) while its lines still sit under [Unreleased]; read by
+ * its heading alone it paired with nothing, so drift there surfaced only at the release commit.
+ * A released section of that version wins, and only the major right after the newest released
+ * one is in flight: a walkthrough two majors ahead is a typo, not a plan.
+ */
+export function pairedSections(changelog: string, upgrading: string): readonly PairedSection[] {
+  const sections = breakingBySection(changelog);
+  const next = inFlightMajor(sections);
+  const out: PairedSection[] = [];
+  for (const walk of parseWalkthroughs(upgrading)) {
+    const major = Number.parseInt(walk.section, 10);
+    if (walk.section !== 'unreleased' && !(major >= FIRST_PAIRED_MAJOR)) continue;
+    const own = sections.get(walk.section);
+    const pending = own === undefined && major === next && /^\d+\.0\.0$/.test(walk.section);
+    const resolved = pending ? { ...walk, section: 'unreleased' } : walk;
+    const lines = sections.get(resolved.section);
+    if (lines === undefined || lines.length === 0) continue;
+    out.push({ walk: resolved, lines });
+  }
+  return out;
+}
+
 /**
  * Pure. Pairs every walkthrough whose CHANGELOG section is still in the file — an archived major
  * has nothing to pair against, which is the retention rule `changelog-check.ts` already states.
  */
 export function checkPairing(changelog: string, upgrading: string): readonly PairingGap[] {
-  const sections = breakingBySection(changelog);
   const gaps: PairingGap[] = [];
-  for (const walk of parseWalkthroughs(upgrading)) {
-    const major = Number.parseInt(walk.section, 10);
-    if (walk.section !== 'unreleased' && !(major >= FIRST_PAIRED_MAJOR)) continue;
-    const lines = sections.get(walk.section);
-    if (lines === undefined || lines.length === 0) continue;
+  for (const { walk, lines } of pairedSections(changelog, upgrading)) {
     if (walk.entries.length === 0) {
       gaps.push({
         kind: 'unpaired',

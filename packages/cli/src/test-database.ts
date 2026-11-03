@@ -72,7 +72,7 @@ async function buildTemplate(
     await applyFrameworkSchema((statement) => client.execute(raw(statement)));
     await migrate({ migrations: await readMigrations(root), client, lock: false });
     // Without a checkpoint every boot from the template replays the migrations' WAL as crash
-    // recovery (~130 ms of each ~600 ms boot, measured on notificado.co).
+    // recovery (~130 ms of each ~600 ms boot, measured on one adopter's app).
     await client.execute(raw('CHECKPOINT'));
     const captured = driver as DumpablePglite | undefined;
     assert(

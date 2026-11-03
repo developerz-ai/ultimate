@@ -3,6 +3,16 @@
 SEO is **enforced, not documented**: every rule below is an `assert*` that throws a coded
 `SeoError` with the route file and the exact edit, never a lint warning.
 
+`bun add @ultimat3/seo` · guide: [SEO](https://github.com/developerz-ai/ultimate/wiki/SEO)
+
+```ts
+import { buildSitemap, type RouteRecord } from '@ultimat3/seo';
+
+declare const routes: readonly RouteRecord[];
+
+await buildSitemap(routes, { baseUrl: 'https://example.com', locales: ['en'], defaultLocale: 'en' });
+```
+
 `x verify`'s **`seo`** step (`packages/cli/src/verify-checks.ts`) runs `validateMeta` over every
 `site/` route, so missing, duplicate and over-long meta fail the gate `As of 2026-09-23`. Canonical
 checks are skipped there — an app declares no base URL — and JSON-LD, sitemaps and robots are
@@ -86,7 +96,7 @@ import { buildSitemap, type RouteRecord } from '@ultimat3/seo';
 declare const routes: readonly RouteRecord[];
 
 await buildSitemap(routes, {
-  baseUrl: 'https://notificado.co',
+  baseUrl: 'https://example.com',
   locales: ['es-co', 'en'],
   defaultLocale: 'es-co',
   maxUrls: 1000,                                      // page size; default 50,000

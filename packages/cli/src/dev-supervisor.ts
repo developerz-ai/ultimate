@@ -7,7 +7,7 @@
 
 import type { StalePin } from './app-reload-graph';
 import { devSpec } from './cmd-dev-spec';
-import type { DevChildGone, DevDrainMessage } from './dev-child-watch';
+import type { DevChildLeaving, DevDrainMessage } from './dev-child-watch';
 import {
   DEV_SUPERVISOR_PID_ENV,
   devHardExitMs,
@@ -267,7 +267,7 @@ export function childRestart(
   if (env[DEV_CHILD_ENV] !== '1') {
     return { options: {}, exit: () => undefined, adopt: () => undefined };
   }
-  let leaving: 'restart' | DevChildGone | undefined;
+  let leaving: 'restart' | DevChildLeaving | undefined;
   let worker: RetiringWorker | null = null;
   let restarting = false;
   const watched =
@@ -279,6 +279,9 @@ export function childRestart(
   return {
     options: {
       onRestart: (pins) => {
+        // Already stopping for a signal (`x stop`, Ctrl-C) or a gone supervisor or root: a save
+        // landing during that drain must not respawn a child its operator asked to end.
+        if (leaving !== undefined && leaving !== 'restart') return;
         writeErrorLine(msg('cli.dev.restart', { reason: restartReason(root, pins) }));
         leaving ??= 'restart';
         watched?.stopping(DEV_RESTART_EXIT_CODE);

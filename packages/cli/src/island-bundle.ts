@@ -130,7 +130,7 @@ export async function discoverIslands(root: string): Promise<readonly string[]> 
 /**
  * One `Bun.build` over `files`. With `splitting`, a module two of them import becomes one shared
  * chunk, fetched once by a page that renders both — a page rendering two islands that shared an
- * upload helper downloaded it twice without (notificado.co, 2026-09-29: 55.5 kB for ~34 kB of
+ * upload helper downloaded it twice without (one adopter, 2026-09-29: 55.5 kB for ~34 kB of
  * code). Without, `files` is one island and its chunk is self-contained. Either way a route's cost
  * is the graph walk `measureDocumentJs` does off the emitted files.
  */

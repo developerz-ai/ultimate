@@ -10,7 +10,6 @@
   "scripts": {
     "setup": "bun bin/setup.ts",
     "dev": "x dev",
-    "check": "bun bin/check.ts",
     "verify": "x verify",
     "typecheck": "tsc -b --pretty",
     "lint": "biome check .",

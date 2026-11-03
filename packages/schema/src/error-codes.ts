@@ -28,4 +28,5 @@ export const SCHEMA_ERROR_CODES: Readonly<Record<string, SchemaErrorCodeDeclarat
     },
     X_SCHEMA_DEFAULT_INVALID: { title: 'a schema default fails its own schema' },
     X_SCHEMA_BOUNDS_INVALID: { title: 'an array bound no array can satisfy' },
+    X_SCHEMA_SENSITIVE_OUTPUT: { title: 'a sensitive field is reachable from an output' },
   });

@@ -1,7 +1,7 @@
 // The backing services a new app's suites run against: `docker/docker-compose.test.yml` and the
 // one env file that points the suites at it. In RAM, durability off, silent — the framework's own
 // `docker/docker-compose.test.yml`, cut to what an app has. Ports sit apart from the dev stack's
-// so both can run at once; `ci.yml` starts this file before `bun run check`.
+// so both can run at once; `ci.yml` starts this file before `bun run verify`.
 
 import type { GeneratedFile, NameSet } from './naming';
 import { S3_GATEWAY_IMAGE } from './pinned-images';
@@ -18,7 +18,7 @@ const composeTest = (
 #
 #   docker compose -f ${TEST_COMPOSE_PATH} up -d --wait
 #   set -a; . ${TEST_ENV_PATH}; set +a
-#   bun run check
+#   bun run verify
 #
 # \`--wait\` returns once every healthcheck passes. CI runs the same lines (.github/workflows/ci.yml).
 # None of it is required: with no TEST_* variable set the unit suite runs on the in-memory driver,

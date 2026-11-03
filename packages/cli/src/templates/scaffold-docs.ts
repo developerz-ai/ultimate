@@ -12,6 +12,7 @@ import { S3_GATEWAY_IMAGE } from './pinned-images';
 import { binFiles } from './scaffold-bin';
 import { claudeFiles } from './scaffold-claude';
 import { containerFiles } from './scaffold-container';
+import { mcpJsonFile } from './scaffold-mcp-json';
 import { testServicesFiles } from './scaffold-test-services';
 
 const agents = (app: NameSet): string => `# AGENTS.md
@@ -20,17 +21,23 @@ Human-authored, short, stable. Facts live in \`x.manifest.json\`; this file hold
 agent cannot infer from the code.
 
 Every row below names what refuses it. A rule with nothing in the last column is a rule that does
-not exist — five of these had an empty column and were each measured green on \`x verify\`.
+not exist — five of these had an empty column and were each measured green on \`bunx x verify\`.
+
+There is no global \`x\`: every command here is \`bunx x …\`, the CLI this app installs.
+
+Before stating or working around a framework limit, ask the installed framework:
+\`bunx x docs "<question>"\`, and \`bunx x errors explain <CODE>\` for an error code.
 
 | Rule | Detail | Refused by |
 |---|---|---|
-| One gate | \`bun run check\` — \`x build\` and then \`x verify\`. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
+| One gate | \`bun run verify\` — \`bunx x verify\`, which builds what its \`budgets\` step weighs. Green means shippable; never merge red. | the gate itself, and \`.github/workflows/ci.yml\` on every push and pull request; \`.github/workflows/image.yml\` publishes only a commit it passed |
 | Coverage | the unit suite covers 95% of the lines and functions of this app's own source — every file under \`apps/\` and \`packages/\`, one no test loads counted at 0%. A floor, not the goal: a test added to raise it is proven by mutation — break the source, watch it go red, restore | \`X_COVERAGE_BELOW_FLOOR\` on the \`unit\` step; \`coverage\` in \`x.verify.json\` states the floor, and it only rises |
-| One way | generators, not hand-rolled files: \`x g resource\`, \`x g action\`, \`x g route\` | review |
+| One way | generators, not hand-rolled files: \`bunx x g resource\`, \`bunx x g action\`, \`bunx x g route\` | review |
 | Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
 | Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
 | Repos | a \`repo.ts\` reads through the typed handle, never a \`sql\` literal the handle can express | \`guards/repo-raw-sql.ts\` |
-| Errors | never \`throw new Error\` — subclass \`UltimateError\` with a code, a cause and a fix | \`guards/bare-error.ts\` |
+| Vendors | a server \`fetch(\` carries a \`signal\` in its own options — better, it is \`outbound()\` from \`@ultimat3/core/outbound\`: a deadline, the caller's signal, safe-only retry | \`guards/raw-fetch.ts\` |
+| Errors | never \`throw new Error\` — declare each code once, \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core\`, and throw its class; never a handwritten \`UltimateError\` subclass | \`guards/bare-error.ts\`, \`guards/error-declared.ts\` |
 | Money | \`{ minor, currency }\`, never a float — \`money()\` on the column | the type: \`price: 19.99\` is TS2322, \`number\` is not \`MoneyInput\` |
 | Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |
 | Strings | every user-facing string goes through \`t()\` | \`guards/untranslated-string.ts\` |
@@ -46,11 +53,11 @@ not exist — five of these had an empty column and were each measured green on 
 | Focus | \`outline: none\` replaces the ring in the same rule or the one beside it, or it does not remove it | \`guards/focus-visible.ts\` |
 | Images | every image carries width + height or an aspect-ratio, and the priority one is never \`loading="lazy"\` | \`guards/image-dimensions.ts\` |
 | Motion | animate \`transform\` and \`opacity\` — never a layout property, never \`transition: all\` | \`guards/animated-layout-property.ts\` |
-| Islands | every \`*.island.tsx\` has a sibling \`*.island.states.ts\`, so \`x shot --island\` can photograph its failures | \`guards/island-without-states.ts\` |
+| Islands | every \`*.island.tsx\` has a sibling \`*.island.states.ts\`, so \`bunx x shot --island\` can photograph its failures | \`guards/island-without-states.ts\` |
 | Size | one file, one job — ${LINE_CEILING} lines of reviewable logic, and split past it | \`X_FILE_TOO_LONG\` |
 
-\`guards/\` is yours: each file is one rule, discovered by \`x verify\` and run inside its
-\`boundaries\` step. Delete one to drop the rule, and \`x g guard <name>\` writes the next.
+\`guards/\` is yours: each file is one rule, discovered by \`bunx x verify\` and run inside its
+\`boundaries\` step. Delete one to drop the rule, and \`bunx x g guard <name>\` writes the next.
 
 The last five rows are about what this app is like to USE, and each is decidable from the file
 alone — which is why they are those five and not the many that are not. A role is a promise:
@@ -59,21 +66,21 @@ already does. Only \`transform\` and \`opacity\` animate without a layout pass. 
 moves everything under it when its bytes land.
 
 Size is a hard line and not a style note: past ${LINE_CEILING} lines a file has stopped being the
-unit of review, and \`x verify\` refuses it. The one exemption is a file that is nothing but re-exports —
+unit of review, and \`bunx x verify\` refuses it. The one exemption is a file that is nothing but re-exports —
 it has one job by construction, and its length tracks the API's size rather than its complexity;
 one statement of logic in such a file re-arms the ceiling on the same save.
 
 Coverage counts execution, not validation: 100% is reachable with zero assertions, and a covered
 branch whose test cannot fail is worse than an uncovered one, because it reads as done. An
 \`exclude\` entry under \`coverage\` is for code a unit test cannot execute — an island's
-browser-only mount, a container entry point — carries its \`why\`, and is printed by \`x doctor\`.
+browser-only mount, a container entry point — carries its \`why\`, and is printed by \`bunx x doctor\`.
 
 Every test the scaffold and the generators write is the idiom to copy. All of them run on the
 \`unit\` step — in process, on the in-memory driver, with no database, browser or server.
 
 A suite that needs a real server reads it from \`docker/test-services.env\`: Postgres 18, Redis, NATS
 and S3 from \`docker/docker-compose.test.yml\`, in RAM, with durability and logging off — CI starts
-it before \`bun run check\`, a laptop with \`docker compose -f docker/docker-compose.test.yml up -d
+it before \`bun run verify\`, a laptop with \`docker compose -f docker/docker-compose.test.yml up -d
 --wait\` then \`set -a; . docker/test-services.env; set +a\`. A resource a test opens is held with
 \`await using\` — \`await using db = await acquireWorkerDatabase()\` drops its database however
 the test ends:
@@ -84,7 +91,7 @@ the test ends:
 | a component | \`renderView(Component, props)\` | \`apps/web/shared/shell.test.ts\` |
 | an island | \`mountIsland\`, once per state its \`*.island.states.ts\` declares | \`apps/web/shared/theme-toggle.island.test.ts\` |
 | an action or a query | \`target.as(actor, input)\` — the refusal first, then what it answers | \`apps/web/api/health.test.ts\` |
-| a job, a task, a backfill | \`test('…', async ({ runJobs }) => …)\` — a worker in this process; assert on \`trace.steps\` and each run's \`outcome\` | what \`x g job\` writes |
+| a job, a task, a backfill | \`test('…', async ({ runJobs }) => …)\` — a worker in this process; assert on \`trace.steps\` and each run's \`outcome\` | what \`bunx x g job\` writes |
 | a repo, a seed | as an actor, \`runWithContext(ctxOf({ actor }), …)\`, with \`driver.reset?.()\` after each | \`packages/db/src/seed.test.ts\` |
 
 Money is the one row with no guard, deliberately: a float has no static signature a text rule can
@@ -92,20 +99,24 @@ see, and the type already fires — measured, \`price: 19.99\` in a seed is
 \`TS2322: Type 'number' is not assignable to type 'MoneyInput'\`. A guard that pretended to check
 it would be worse than the type that really does.
 
-\`bun run check\` is the gate and \`x verify\` is only its second half: the first is
-\`x build --target static\`, and the build is what writes the \`.x/build-stats.json\` the
-\`budgets\` step measures. Run \`x verify\` on a tree nobody has built and \`budgets\` is red with
-X_BUDGET_UNMEASURED — the gate reporting on a file that does not exist, not on your code.
+\`bun run verify\` is \`bunx x verify\`, the whole gate: its \`budgets\` step runs
+\`bunx x build --target static\` itself when \`.x/build-stats.json\` is missing or older than the
+source, so nothing has to be built first.
 
-The platform's \`.dz/\` is ADDITIVE, in both directions. developerz.ai keeps its own files under
-\`.dz/maintainer/\` and \`.dz/pipeline/\`; nothing \`x new\` writes lands under \`.dz/\` and nothing
-here is generated from it. So the scaffold never clobbers a maintainer policy, the platform never
-clobbers \`AGENTS.md\`, \`bin/\`, \`.claude/\` or \`.github/\`, and deleting either side leaves the
-other exactly as it was.
+Commands: \`bun run setup\`, \`bun run dev\`, \`bun run verify\`, \`bunx x g <primitive>\`,
+\`bunx x g guard <name>\`, \`bunx x db branch create <name>\`, \`bunx x doctor\`. \`setup\` is
+\`bin/setup.ts\`, a file Bun runs, so all three are the same command in PowerShell, cmd and bash.
 
-Commands: \`bun run setup\`, \`bun run dev\`, \`bun run check\`, \`x g <primitive>\`,
-\`x g guard <name>\`, \`x db branch create <name>\`, \`x doctor\`. \`setup\` and \`check\` are
-\`bin/*.ts\` files Bun runs, so all three are the same command in PowerShell, cmd and bash.
+## Agent tools
+
+| Tool | What it answers | How to reach it |
+|---|---|---|
+| \`x.manifest.json\` | every route, action, query, job and policy, generated — read it before searching the tree | \`bunx x manifest\` rewrites it |
+| \`.mcp.json\` | the dev tools over MCP: routes, schema, policies, the database, tests, the gate — \`bunx x mcp tools\` lists them | a client that reads \`.mcp.json\` starts it; from any other, run \`bunx @ultimat3/cli mcp serve --transport stdio\` here |
+| \`POST /mcp\` | this app's own tools — every action declaring \`mcp: { expose: true }\` — for a remote agent | \`apps/web/mcp.ts\`; under \`bun run dev\`, \`Authorization: Bearer dev-agent.admin\`, else an API key |
+| \`.claude/commands/feature.md\` | build or fix one thing end to end, done when \`bun run verify\` is green | plain markdown: any agent can read one and follow it |
+| \`.claude/commands/planx.md\` | write a plan to \`docs/plans/\` for another agent to execute | the same |
+| \`.claude/commands/verify.md\` | run the gate and fix what it reports | the same |
 
 Project notes for ${app.kebab}: replace this line with the conventions a newcomer could not guess.
 `;
@@ -114,19 +125,22 @@ const claude = (app: NameSet): string => `# CLAUDE.md
 
 ${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in the same order.
 
-- Gate: \`bun run check\` (add \`--json\` for machine output — it reaches both halves). It is
-  \`x build --target static\` and then \`x verify\`; \`x verify\` alone leaves \`budgets\` with
-  nothing to measure. \`.github/workflows/ci.yml\` runs \`bun run setup && bun run check\` on
-  every push and pull request, so CI and your terminal run the same two commands.
-- \`.dz/\` belongs to the developerz.ai platform and is additive both ways: the scaffold writes
-  nothing there, and nothing there is generated from this repo. Neither side clobbers the other.
-- Scaffold, do not hand-write: \`x g <kind> <name>\` — \`x g --help\` lists every kind, and is the
-  only place that list is stated.
-- Destructive DB work goes in a branch: \`x db branch create <name>\`, never the shared dev DB.
-- \`x db gen\` also writes \`packages/db/schema/\` — the whole schema as SQL, one file per table.
-  Read it; never edit it. \`x verify\` fails with \`X_SCHEMA_DUMP_DRIFT\` when it is not what the
-  migrations produce, and \`x db gen\` rewrites it.
-- \`x doctor\` explains a broken environment and prints the fix command for every finding.
+- Gate: \`bun run verify\` (add \`--json\` for machine output). It is \`bunx x verify\`, which
+  builds what its \`budgets\` step weighs. \`.github/workflows/ci.yml\` runs
+  \`bun run setup && bun run verify\` on every push and pull request, so CI and your terminal run
+  the same two commands.
+- No global \`x\`: every command is \`bunx x …\`, the CLI this app installs.
+- Before stating or working around a framework limit: \`bunx x docs "<question>"\`, and
+  \`bunx x errors explain <CODE>\` for an error code.
+- Scaffold, do not hand-write: \`bunx x g <kind> <name>\` — \`bunx x g --help\` lists every kind,
+  and is the only place that list is stated.
+- Destructive DB work goes in a branch: \`bunx x db branch create <name>\`, never the shared dev DB.
+- \`bunx x db gen\` also writes \`packages/db/schema/\` — the whole schema as SQL, one file per
+  table. Read it; never edit it. \`bunx x verify\` fails with \`X_SCHEMA_DUMP_DRIFT\` when it is not
+  what the migrations produce, and \`bunx x db gen\` rewrites it.
+- \`bunx x doctor\` explains a broken environment and prints the fix command for every finding.
+- MCP: \`.mcp.json\` starts the dev tools; \`apps/web/mcp.ts\` is the app's own \`POST /mcp\`.
+  AGENTS.md's "Agent tools" says what each answers.
 
 \`.claude/\` holds the harness that reads this file: \`/feature\`, \`/planx\`, \`/verify\` and four
 boundary-scoped subagents. It is yours — \`.claude/README.md\` says what each one costs, and every
@@ -142,7 +156,7 @@ Built with [Ultimate](https://github.com/developerz-ai/ultimate). Bun-only, Post
 \`\`\`sh
 bun run setup   # prerequisites, deps, env, the first migration, migrate, seed, the manifest
 bun run dev     # all roles in one process, embedded Postgres, /_x mounted
-bun run check   # the gate: a static build, then typecheck, lint, boundaries, tests, drift, budgets
+bun run verify  # the gate: typecheck, lint, boundaries, tests, drift, budgets (it builds to weigh)
 \`\`\`
 
 Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, as CI runs them:
@@ -150,7 +164,7 @@ Tests against real servers — Postgres 18, Redis, NATS, S3, in RAM and silent, 
 \`\`\`sh
 docker compose -f docker/docker-compose.test.yml up -d --wait
 set -a; . docker/test-services.env; set +a
-bun run check
+bun run verify
 \`\`\`
 
 \`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bun run setup\` runs
@@ -169,7 +183,9 @@ with \`X_DB_DRIFT\`, and that is the fix it names.
 | \`packages/*\` | domain, db, i18n, ui, mcp |
 | \`app.config.ts\` | the one config file |
 | \`x.manifest.json\` | generated facts: routes, actions, jobs, policies |
-| \`.github/workflows/ci.yml\` | \`bun run setup\` then \`bun run check\`, on push and pull request |
+| \`.mcp.json\` | MCP client config: the dev tools, \`bunx @ultimat3/cli mcp serve --transport stdio\` |
+| \`apps/web/mcp.ts\` | the app's own \`POST /mcp\`: exposed actions, behind a bearer token |
+| \`.github/workflows/ci.yml\` | \`bun run setup\` then \`bun run verify\`, on push and pull request |
 | \`.github/workflows/image.yml\` | after a green \`ci\` on the default branch: \`docker/Dockerfile\` to \`ghcr.io\`, tagged \`sha-<7>\`, always on \`ubuntu-latest\` (bash and Docker). \`ci.yml\` runs on \`vars.CI_RUNNER\`, default \`ubuntu-latest\` |
 `;
 
@@ -228,7 +244,9 @@ export function docsFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'README.md', contents: readme(app) },
     { path: 'AGENTS.md', contents: agents(app) },
     { path: 'CLAUDE.md', contents: claude(app) },
-    // The scripts `bun run setup` and `bun run check` run — TypeScript, so one file per OS.
+    // The one MCP client config — what AGENTS.md's "Agent tools" block names first.
+    mcpJsonFile(app),
+    // The script `bun run setup` runs — TypeScript, so one file per OS.
     ...binFiles(),
     { path: 'docker/docker-compose.dev.yml', contents: composeDev(app) },
     // What the suites run against — in RAM, silent; ci.yml starts it before the gate.

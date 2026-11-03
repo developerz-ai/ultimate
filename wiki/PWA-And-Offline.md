@@ -169,7 +169,7 @@ its page (`x-ultimate-navigation: soft`), which is no browser navigation, so off
 `prefetch` still gets the `503`, so the offline page is never cached as a later click's answer.
 
 **Islands are precached only for precached pages**, `As of 22.3.3`. Every island chunk was precached,
-so a first anonymous visit downloaded every island the app has (~1 MB on notificado.co). Now a chunk
+so a first anonymous visit downloaded every island the app has (~1 MB on one adopter). Now a chunk
 is precached only when a precached page (or the offline document) boots it — the static export reads
 the rendered documents, the container each route's declared `island()`s. Every other chunk is cached
 the first time a page asks for it: `/islands/` is a `cache-first` runtime rule.
@@ -193,7 +193,7 @@ From `app.config.ts` plus **one** source icon (SVG or >=1024px PNG). **Emitted a
 ```ts
 // app.config.ts — every member optional; text is a string or one per locale
 pwa: {
-  enabled: true, name: 'Notificado', offline: { fallback: '/offline' }, colors: { … },
+  enabled: true, name: 'Acme', offline: { fallback: '/offline' }, colors: { … },
   id: '/',                                     // default: '/'
   description: { 'es-co': '…', en: '…' },
   categories: ['business', 'productivity'],

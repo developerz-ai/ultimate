@@ -16,7 +16,9 @@ import { readBuildStats } from './budgets';
 import { isRuntimeChunk } from './island-runtime';
 import { prerenderSite } from './prerender';
 import { processRoot } from './process-root-fixture';
+import { newestSourceMtime } from './source-mtime';
 import { serviceWorkerRegistration } from './sw-artifacts';
+import { VERIFY_STATIC_OUT } from './verify-budgets-build';
 
 // Its own directory: `prerender.test.ts` and `prerender-islands.test.ts` wrote the SAME root, and
 // under the gate's parallel workers each file's build read the other's `app.config.ts` and output.
@@ -104,7 +106,7 @@ describe('x build --target static · the framework`s bytes are counted, never ch
     const out = join(ROOT, 'static');
     await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
     const first = (await readBuildStats(ROOT))?.routes.find((route) => route.path === '/');
-    // Second pass over the SAME directory, exactly as `bin/check` run twice does. Nothing was
+    // Second pass over the SAME directory, exactly as a gate run twice does. Nothing was
     // cleaned, so the previous `/x-sw-register.js` is sitting there.
     expect(await Bun.file(join(out, 'x-sw-register.js')).exists()).toBe(true);
     await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
@@ -220,5 +222,67 @@ export function mount(): void {
 
     expect(urls.some(isRuntimeChunk)).toBe(true);
     expect(urls.some((url) => url.startsWith('/_x/assets/page-boot/'))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// `x verify`'s budgets step builds when the stats are unusable, with no origin anyone declared:
+// `--out .x/verify-static`, and `SITE_ORIGIN` unset on a fresh tree. The origin shapes canonical
+// and og:url, never a script, so the bytes it records are the deployable build's, and the
+// deployable `.x/static` is not the gate's to replace (plan 101, 21).
+// ---------------------------------------------------------------------------------------------
+describe('x build --target static · the gate`s own build weighs what a deploy build weighs', () => {
+  const ORIGIN_KEYS = ['APP_URL', 'SITE_ORIGIN'] as const;
+  const PLAIN_ISLAND = `
+export function mount(el: HTMLElement): void {
+  el.textContent = 'ready';
+}
+`;
+  const Plain = island({ src: './plain.island.tsx' });
+
+  test('no origin anywhere: stats are written, at the bytes an origin-set build records', async () => {
+    const saved = ORIGIN_KEYS.map((key) => [key, process.env[key]] as const);
+    for (const key of ORIGIN_KEYS) delete process.env[key];
+    try {
+      // No `site.origin` either: the config names the app and nothing else.
+      await Bun.write(join(ROOT, 'app.config.ts'), "export const config = { name: 'fixture' };\n");
+      await Bun.write(join(ROOT, 'apps/web/site/plain/plain.island.tsx'), PLAIN_ISLAND);
+      registerRoute({
+        file: 'apps/web/site/plain/page.tsx',
+        config: defineRoute({
+          render: 'static',
+          hydrate: 'idle',
+          offline: 'precache',
+          budget: { js: '20kb' },
+          meta: () => ({ title: 'Plain', description: 'one island' }),
+        }),
+        component: (): unknown => Plain({ children: '…' }),
+      });
+      const deployed = join(ROOT, '.x', 'static', 'index.html');
+      await Bun.write(deployed, '<!-- the deployable build, origin https://real.example -->');
+
+      expect(await readBuildStats(ROOT)).toBeUndefined();
+      await prerenderSite({ root: ROOT, out: join(ROOT, VERIFY_STATIC_OUT) });
+      // What the build read, recorded in the stats: `budgets` judges a later save against it.
+      expect((await readBuildStats(ROOT))?.sourcesAt).toBe(await newestSourceMtime(ROOT));
+      const unset = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/plain');
+      await prerenderSite({
+        root: ROOT,
+        out: join(ROOT, 'static'),
+        origin: 'https://real.example',
+      });
+      const set = (await readBuildStats(ROOT))?.routes.find((one) => one.path === '/plain');
+
+      expect(unset?.jsBytes).toBeGreaterThan(0);
+      expect(unset?.jsBytes).toBe(set?.jsBytes ?? -1);
+      expect(await Bun.file(deployed).text()).toBe(
+        '<!-- the deployable build, origin https://real.example -->',
+      );
+    } finally {
+      for (const [key, value] of saved) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 });

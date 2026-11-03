@@ -6,6 +6,13 @@
 export type { CoreErrorCode } from '../core-error-codes';
 export { CORE_ERROR_CODES } from '../core-error-codes';
 export type {
+  DefinedError,
+  DefinedErrorExtra,
+  DefineErrorSpec,
+  ErrorText,
+} from '../define-error';
+export { defineError } from '../define-error';
+export type {
   ErrorCodeDeclaration,
   ErrorCodeDescriptor,
   ErrorCodeEntry,

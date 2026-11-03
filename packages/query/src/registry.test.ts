@@ -80,3 +80,23 @@ describe('query registry', () => {
     expect(getQuery('liveFeed')).toBeUndefined();
   });
 });
+
+describe('a .sensitive() field in rows', () => {
+  beforeEach(() => {
+    resetQueries();
+  });
+
+  test('is refused at registration, and a sensitive input field is not', () => {
+    const leaky = query({
+      input: t.object({ ssn: t.string.sensitive() }),
+      rows: t.object({ id: t.uuid, ssn: t.string.sensitive() }),
+      policy: can('payer:read'),
+      sql: () => from<{ id: string; ssn: string }>('payers', []).limit(1),
+    });
+    expect(() => registerQuery('payerBySsn', leaky)).toThrow(
+      'query "payerBySsn" rows reaches the .sensitive() field ssn',
+    );
+    expect(getQuery('payerBySsn')).toBeUndefined();
+    expect(registerQuery('feed', defineFeed()).name).toBe('feed');
+  });
+});

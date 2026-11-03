@@ -35,7 +35,8 @@ one adds, the other adds.
 | `openai-messages.ts` | the format mapping's request half: `AiMessage` blocks → OpenAI messages, `LlmTool` → functions, `tool_choice` |
 | `openai-body.ts` | one chat-completions body, and the per-model reasoning mapping |
 | `openai-wire.ts` | its response half: one completion, and `ChatCompletionStream` (fragmented tool calls, trailing usage, `[DONE]`) |
-| `gateway.ts` | routing, retries, cache, budget wiring |
+| `gateway.ts` | routing, cache, budget wiring |
+| `gateway-providers.ts` | the retry loop across providers, `backoffMs`, `isRetryable`, the breakers |
 | `budget.ts` | token ledgers per request/actor/org, ALS carrier |
 | `prompt.ts` | `definePrompt`, `promptHash`, version registry |
 | `prompt-fence.ts` | a template's data fences: which tag pairs enclose each slot (`promptFences`), and the closer-breaking `render` applies inside one |
@@ -150,6 +151,12 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 - **`X_AI_PROVIDER_UNAVAILABLE` is the one code classified `retryable`** (`AI_ERROR_RETRY`);
   `AiProviderUnavailableError({ unserved: true })` carries a per-instance `terminal`. Six
   deterministic failures are `terminal` (`errors-retry.ts`); the rest stay UNREGISTERED on purpose.
+- **One breaker per provider** (`gateway-providers.ts`, `DEFAULT_GATEWAY_BREAKER` `{ failures: 5,
+  cooldownMs: 30_000 }`, `breaker: 'off'` declines). `failed()` fires once per exhausted pass; a coded
+  throw settles through the breaker's `judge` (a caller's abort gives the probe back); a
+  non-retryable failure is `succeeded()`. Every settle carries the `admit()` ticket, so only the
+  probe closes or frees a half-open breaker. A stream takes the first admitted provider and records
+  on its first chunk or throw (`gateway-breaker.test.ts`).
 - **The retry SCHEDULE is core's (`backoffDelay`, `isRetryableStatus`); the LOOP is this package's** —
   core's `retry()` retries unclassified throws, so it would retry a 400 (`gateway-backoff.test.ts`).
 - Every non-2xx and every in-band `error` frame is `AiTransportError` with a real `status`.
@@ -267,18 +274,7 @@ Why each is shaped this way: [`docs/history/ai.md`](../../docs/history/ai.md#llm
 
 ## Invariants — provider prompt caching
 
-- **`GenerateRequest.promptCache` is the one switch; what it sends is a ROW in `PROMPT_CACHE_RULES`**
-  (wire, host, model prefix → marks, session carrier), never an `if`. An unnamed endpoint gets
-  NOTHING. At most 3 `cache_control`, a caller's own counted first (cap 4), never on a blank text
-  block; never a `provider` routing object.
-- **`agent()` defaults `'auto'`, `llm()` `'off'`.** The stable system part (`prompt.system` +
-  `system().stable`) is sent FIRST; the mark follows the tail. The hint is not in `promptCacheKey`.
-- **Usage**: chat-completions `prompt_tokens` INCLUDES read and written tokens; both are subtracted,
-  clamped. A budget debits all four counters; the estimate prices a WRITE only where a provider
-  would mark (`marksPromptCache`), at the dearer rate.
-- **`maxRepeatedToolCalls` compares calls AND results over cycles of 1–3 turns**; `deadlineMs` has no
-  default and rides the request's AND each tool's signal; both stops are `terminal`
-  (`errors-retry.ts`).
+One switch (`GenerateRequest.promptCache`), one rule table (`PROMPT_CACHE_RULES`); `agent()` defaults `'auto'`, `llm()` `'off'`. In full: [`docs/history/ai.md`](../../docs/history/ai.md#moved-out-2026-11-03-plan-101-wave-3-the-claudemd-ceiling).
 
 ## Invariants — evals, retrieval, fix lines
 

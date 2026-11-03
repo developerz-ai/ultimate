@@ -194,6 +194,11 @@ describe('unit · sectionFor', () => {
     );
   });
 
+  // The same section, offline: `x docs <local>` prints it whole from the wiki the CLI ships.
+  test('local is the x docs topic for the same anchor', () => {
+    expect(sectionFor(29).local).toBe('wiki.Upgrading#28x--2900-entry-by-entry');
+  });
+
   test('the three recorded exceptions', () => {
     expect(sectionFor(5).title).toBe('4.1.0 → 5.0.0, entry by entry');
     expect(sectionFor(4).title).toBe('3.0.0 → 4.0.0, entry by entry');

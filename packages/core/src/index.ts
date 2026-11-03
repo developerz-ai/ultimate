@@ -90,6 +90,14 @@ export {
 } from './aws-sigv4';
 export type { BackoffCurve, BackoffOptions, JitterMode, Random } from './backoff';
 export { backoffDelay, jitterStatedDelay } from './backoff';
+export type {
+  Breaker,
+  BreakerOptions,
+  BreakerState,
+  BreakerTicket,
+  BreakerVerdict,
+} from './breaker';
+export { breaker, settleWith } from './breaker';
 export { isCompiledBundle } from './bunfs';
 export type { CacheEvictionOptions } from './cache-eviction';
 export { CACHE_TEMP_GRACE_MS, evictCacheFiles } from './cache-eviction';
@@ -327,11 +335,15 @@ export {
 export type {
   CodedErrorInit,
   CoreErrorCode,
+  DefinedError,
+  DefinedErrorExtra,
+  DefineErrorSpec,
   ErrorAudience,
   ErrorCodeDeclaration,
   ErrorCodeDescriptor,
   ErrorCodeEntry,
   ErrorRetry,
+  ErrorText,
   FormatErrorOptions,
   UltimateErrorInit,
   UltimateErrorJSON,
@@ -342,6 +354,7 @@ export {
   classifyThrown,
   DEFAULT_ERROR_RETRY,
   declaredErrorRetry,
+  defineError,
   deniedCallerFix,
   describeErrorCode,
   describeValue,
@@ -455,6 +468,7 @@ export {
   defaultSampler,
   ERROR_SOURCES,
   ErrorReporterDsnInvalidError,
+  errorFingerprint,
   errorReport,
   exportMetrics,
   gauge,
@@ -476,6 +490,7 @@ export {
   noopErrorReporter,
   noopExporter,
   noopMetricExporter,
+  OTLP_RETRY_STATUSES,
   OtlpEndpointInvalidError,
   OtlpHeadersInvalidError,
   OtlpProtocolUnsupportedError,

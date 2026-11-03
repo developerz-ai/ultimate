@@ -1,6 +1,6 @@
 // TEST-ONLY. Compiles a stylesheet with the compiler an app's build uses, so a test can read what
 // Sass EMITS — a media query, a `clamp()`, the class list a mixin generates, an `@error` — instead
-// of the source it was written as. Never exported from `index.ts`, like `jsx-probe-fixture.ts`.
+// of the source it was written as. Never exported from `index.ts`, like `fake-dom.ts`.
 
 /** The two members of Sass's API this file calls; the package itself is not a dependency of `ui`. */
 interface SassApi {
@@ -35,6 +35,38 @@ export async function compileScss(source: string, path: string): Promise<string>
 /** Compile a stylesheet that exists on disk. */
 export async function compileScssFile(path: string): Promise<string> {
   return compileScss(await Bun.file(path).text(), path);
+}
+
+const SHEET_MARK = /\/\*! @sheet \d+ \*\/\n?/;
+
+/**
+ * Every `*.module.scss` in `dir`, compiled, by file name — in ONE compile. Each separate compile
+ * re-evaluates the token library from scratch (~15 ms of every ~25 ms a sheet costs), so a test
+ * that compiled all 65 component sheets one by one spent ~1.5 s idle and passed Bun's 5 s default
+ * under a loaded `--parallel` gate. `meta.load-css` evaluates a shared `@use` once per compile and
+ * emits each sheet at its own marker, which is where the output is cut. Memoised per directory:
+ * the sheets do not change inside one test process.
+ */
+export function compileSheets(dir: string): Promise<ReadonlyMap<string, string>> {
+  const cached = sheetsByDir.get(dir);
+  if (cached !== undefined) return cached;
+  const compiled = compileSheetsOnce(dir);
+  sheetsByDir.set(dir, compiled);
+  return compiled;
+}
+
+const sheetsByDir = new Map<string, Promise<ReadonlyMap<string, string>>>();
+
+async function compileSheetsOnce(dir: string): Promise<ReadonlyMap<string, string>> {
+  const names = [...new Bun.Glob('*.module.scss').scanSync({ cwd: dir })].sort();
+  const loads = names.map(
+    (name, at) =>
+      `/*! @sheet ${String(at)} */\n@include meta.load-css(${JSON.stringify(name.slice(0, -5))});\n`,
+  );
+  const batch = Bun.fileURLToPath(new URL('__sheets.scss', Bun.pathToFileURL(`${dir}/`)));
+  const css = await compileScss(`@use 'sass:meta';\n${loads.join('')}`, batch);
+  const parts = css.split(SHEET_MARK).slice(1);
+  return new Map(names.map((name, at) => [name, parts[at] ?? '']));
 }
 
 /**

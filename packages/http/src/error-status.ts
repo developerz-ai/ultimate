@@ -1,6 +1,15 @@
 // Reading the status table: the framework's row for a code through `Object.hasOwn`, the app's
 // own codes beside it (`registerErrorStatus`), and the answer a response gets. The table itself is
-// `error-map.ts`; split out when the table outgrew the file that also read it.
+// `error-map.ts`; the app's half lives in core (`error-status-declared.ts`), where `defineError`
+// writes it too.
+//
+// The table's internal seam, never the barrel: an app's writers are `defineError` and this module's
+// `registerErrorStatus`, and nothing else may write or read the app's half directly.
+import {
+  appErrorStatus,
+  declareAppErrorStatus,
+  resetAppErrorStatus,
+} from '@ultimat3/core/internal/error-status';
 import { ERROR_STATUS } from './error-map';
 import { errorStatusInvalid } from './errors';
 
@@ -21,19 +30,19 @@ const BY_CODE: Readonly<Record<string, number>> = ERROR_STATUS;
 const frameworkStatus = (code: string): number | undefined =>
   Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : undefined;
 
-/**
- * Statuses for codes the APP owns. The table above is closed — it has to be, it is the
- * framework's own contract — and every code outside it fell to 500, so a wrong password was an
- * incident: `pipeline.ts` reports `status >= 500` to the error monitor, and a user's typo paged
- * whoever was on call. This is the app's half of the same table, kept separate so a registration
- * can never move `X_FORBIDDEN` off 403.
+/*
+ * Statuses for codes the APP owns live in `@ultimat3/core`'s `error-status-declared.ts`. The table
+ * above is closed — it has to be, it is the framework's own contract — and every code outside it
+ * fell to 500, so a wrong password was an incident: `pipeline.ts` reports `status >= 500` to the
+ * error monitor, and a user's typo paged whoever was on call. The app's half is kept separate so a
+ * registration can never move `X_FORBIDDEN` off 403, and it sits in core because `defineError`,
+ * the one declaration of an app code, writes it from there.
  */
-const APP_ERROR_STATUS = new Map<string, number>();
 
 /**
- * Declare the status for the codes this app throws. Call it once at boot, beside the module
- * that declares the codes — importing that module IS the registration, the convention
- * `registerActions` and `registerErrorCodes` already use.
+ * Declare the status for codes this app throws but does not DECLARE — a code it re-raises from a
+ * library, say. A code the app owns is declared with core's `defineError`, which takes its status
+ * in the same call. Call this once at boot; importing the module that calls it IS the registration.
  *
  * ```ts
  * registerErrorStatus({ X_CREDENTIALS_INVALID: 401, X_SIGNUP_CLOSED: 403 });
@@ -53,16 +62,16 @@ export const registerErrorStatus = (statuses: Readonly<Record<string, number>>):
     if (framework !== undefined) {
       throw errorStatusInvalid(code, `the framework already maps it to ${framework}`);
     }
-    const existing = APP_ERROR_STATUS.get(code);
+    const existing = appErrorStatus(code);
     if (existing !== undefined && existing !== status) {
       throw errorStatusInvalid(code, `already registered as ${existing} by this app`);
     }
-    APP_ERROR_STATUS.set(code, status);
+    declareAppErrorStatus(code, status);
   }
 };
 
 /** Test seam. Production registers once at boot and never unregisters. */
-export const resetErrorStatus = (): void => APP_ERROR_STATUS.clear();
+export const resetErrorStatus = (): void => resetAppErrorStatus();
 
 /**
  * The status SOMEBODY declared for a code — the framework or the app — or `undefined` when
@@ -73,10 +82,10 @@ export const resetErrorStatus = (): void => APP_ERROR_STATUS.clear();
  * Framework table first: `registerErrorStatus` already refuses those codes, so the order is
  * belt-and-braces — but it is the belt that makes "the framework's statuses are fixed" true
  * even if a future caller reaches the map some other way.
- * `APP_ERROR_STATUS` is a `Map`, which is why its half never had `frameworkStatus`'s defect —
- * prefer one for anything keyed by a value a caller chose.
+ * The app's half is a `Map`, which is why it never had `frameworkStatus`'s defect — prefer one for
+ * anything keyed by a value a caller chose.
  */
 export const declaredStatusFor = (code: string): number | undefined =>
-  frameworkStatus(code) ?? APP_ERROR_STATUS.get(code);
+  frameworkStatus(code) ?? appErrorStatus(code);
 
 export const statusFor = (code: string): number => declaredStatusFor(code) ?? DEFAULT_STATUS;

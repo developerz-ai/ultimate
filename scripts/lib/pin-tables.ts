@@ -126,6 +126,7 @@ export const SCRIPT_PIN_TABLES: readonly ScriptPinTable[] = [
     line: reasonSectionLine,
   },
   { path: 'scripts/wiki-fences-backlog.ts', table: 'WIKI_FENCE_BACKLOG' },
+  { path: 'scripts/package-front.ts', table: 'README_SHAPE_PINS' },
 ];
 
 /** Every file `pin-raises` reads: the glob, then each script holding one table. */

@@ -2,6 +2,7 @@
 // is the finding with the nearest slug in its fix, and a run that read no link is not a pass.
 
 import { describe, expect, test } from 'bun:test';
+import { githubSlug as slugOf } from '@ultimat3/manifest';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import type { WikiPage } from './wiki-anchors';
 import {
@@ -10,7 +11,6 @@ import {
   deadAnchorFinding,
   deadAnchors,
   readWikiPages,
-  slugOf,
   wikiAnchorFindings,
 } from './wiki-anchors';
 

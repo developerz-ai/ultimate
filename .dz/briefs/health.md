@@ -16,6 +16,7 @@ issue or PR announces. One ask per unhealthy signal; a no-verdict row is always 
 | Dependabot is not stuck | `gh pr list --app dependabot --limit 5 --state open --json number,createdAt,updatedAt,statusCheckRollup` | green checks healthy regardless of age; failed checks healthy until >7 days since `updatedAt` (exactly 7 not over), unhealthy after. Completed CheckRuns with `SUCCESS`, `NEUTRAL` or `SKIPPED`, and StatusContexts with `SUCCESS`, are green; terminal failures are red. Pending, missing, malformed or unknown evidence = unverdicted, including mixed rollups; missing or invalid `updatedAt` is unverdicted, never replaced by `createdAt`. Only a SHORT page files: a returned count equal to `--limit` (5) is truncated — raise `--limit`, file nothing until the page is short. A confirmed stuck PR files even when a different PR on the page carries pending or unreadable evidence — `unverdicted` is for pages with no confirmed failure, never a mute on a confirmed one. Re-run unresolved evidence before filing. `--state open` excludes merged or closed PRs; `createdAt` is context only, never inactivity |
 | the deployed demo shipped | `gh run list --workflow deploy-social-demo.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt` | `conclusion` `success` on a `workflow_run` = healthy. Null `conclusion` = still building — read `status` first and re-run before filing. `skipped` = the `ci.yml` completion was not a green push (the deploy job's `if:`); row 1 already files a red main, so with row 1 green, check for a non-push `ci.yml` run. `workflow_dispatch` = an operator's run, not a push publish — `headBranch` names the ref. Any other non-success: name the guard the run log's `::error::` line names. A failure's ask body carries `url`, `createdAt`, `databaseId`, `displayTitle` and `headBranch` |
 | the GitHub Release exists | `t=$(git describe --tags --abbrev=0 --match 'v[0-9]*' origin/main)`, then `gh release view "$t" --json tagName,isDraft,publishedAt` | healthy = `isDraft` false AND `publishedAt` non-null; draft = unhealthy; non-draft without `publishedAt` = unhealthy. Missing Release = unhealthy — gh prints `release not found` and no JSON document: the message is the signal, not the exit code. Any other unreadable answer = `cannot tell` for the whole checkup (`X_HEALTH_ROW_UNREADABLE`), never a silent healthy; re-run before filing |
+| the tutorials run as written | `gh run list --workflow tutorial-run.yml --limit 1 --json databaseId,event,status,conclusion,headBranch,displayTitle,url,createdAt` | `conclusion` `success` = healthy; no run yet = healthy (the workflow is paths-filtered, so nothing has diverged). Null `conclusion` or `cancelled` (superseded by a newer push) = re-run before filing. Any other conclusion = a tutorial no longer runs as written: the ask names the run `url` and `bun run scripts/tutorial-run.ts --json`, whose `X_DOC_TUTORIAL_DIVERGED` names the page and line |
 
 ## What to file
 
@@ -44,12 +45,12 @@ verbatim): file that, never a verdict over an unread row. `ok: true` carries `da
 `RowVerdict` per row in this table's order — branch on each row's fields:
 
 - `unhealthy` — one ask per row, exactly as the table above prescribes; a row that reads a run
-  (1, 2, 4 and 8) carries that run's `conclusion`, `status`, `headSha`, `url`, `createdAt`, `id`
-  and `title` — plus `event` and `headBranch` where its command asks for them (2 and 8; row 4's
+  (1, 2, 4, 8 and 10) carries that run's `conclusion`, `status`, `headSha`, `url`, `createdAt`, `id`
+  and `title` — plus `event` and `headBranch` where its command asks for them (2, 8 and 10; row 4's
   asks for the commit it ran at instead), with the `expectedSha` it judged against on rows 1 and 2;
   `issues[]`/`prs[]` are the lists rows 6 and 7 file from.
 - `unverdicted` — no verdict: re-run the row's command before filing, never unhealthy.
-- `healthy` — nothing to file. `data.healthy` is true only when all nine rows read healthy.
+- `healthy` — nothing to file. `data.healthy` is true only when all ten rows read healthy.
 
 This table stays the definition of each row's healthy condition; the script is its machine reading,
 never a second definition.
@@ -65,5 +66,6 @@ never a second definition.
 - `dependabot-not-stuck` — row 7: Dependabot is not stuck
 - `demo-shipped` — row 8: the deployed demo shipped
 - `release-exists` — row 9: the GitHub Release exists
+- `tutorials-run` — row 10: the tutorials run as written
 
-<!-- 8460 characters; checkup cap 10000 -->
+<!-- 9538 characters; checkup cap 10000 -->

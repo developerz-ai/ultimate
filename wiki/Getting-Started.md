@@ -14,9 +14,9 @@ it does not work: `x new` writes files and installs nothing, so the app has no `
 of its own, and `x dev` stops on `X_BUILD_FAILED` — *"Could not resolve `@ultimat3/ui`. Maybe you
 need to `bun install`?"*
 
-**PowerShell and cmd run the same commands.** `bun run setup` and `bun run check` run the app's
-`bin/setup.ts` and `bin/check.ts` — TypeScript that Bun executes, no bash and no WSL — and
-`bun run dev` is `x dev`. Windows PowerShell 5.1 has no `&&`: type the commands one per line there
+**PowerShell and cmd run the same commands.** `bun run setup` runs the app's `bin/setup.ts` —
+TypeScript that Bun executes, no bash and no WSL — and `bun run dev` and `bun run verify` are
+`x dev` and `x verify`. Windows PowerShell 5.1 has no `&&`: type the commands one per line there
 (PowerShell 7 and cmd take the line as written).
 
 No Docker daemon, no `.env` scavenger hunt, no service to provision — `.env.development` ships
@@ -64,7 +64,7 @@ Measured on a fresh scaffold, `As of 2026-08-23`.
 | Landing page | `apps/web/site/page.tsx` | `render: 'static'`, `hydrate: 'never'`, `budget: { js: '0kb' }`, real meta + JSON-LD |
 | Dashboard | `apps/web/app/dashboard/page.tsx` | `render: 'stream'`, `hydrate: 'visible'`, `budget: { js: '64kb' }` (one island, the theme toggle), behind `policy: { permission: 'dashboard:read' }`. A `<Hole>` is the next read it does not wait for ([Routes and render modes](Routes-And-Render-Modes#what-a-hole-does)) |
 | Admin app | `apps/admin/` | one `ssr` page; your actions reach an agent through `mcp: { expose: true }` and `x mcp serve`, not through this app |
-| Green gate | `bun run check` — `x build --target static`, then `x verify` | 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `budgets` weighs `.x/build-stats.json`, which only `x build --target static` writes — reaching the gate through `bun run check` is what makes that step measurable, and a bare `x verify` on an app nobody has built reports `X_BUDGET_UNMEASURED`. The first-run verdict on a fresh scaffold is measured by CI, never asserted here |
+| Green gate | `bun run verify` — `x verify` | 20 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, policy, manifest, roadmap. `budgets` weighs `.x/build-stats.json` and runs `x build --target static` itself when that file is missing or older than the source, so `x verify` alone is the gate on an app nobody has built (`As of 30.0`). The first-run verdict on a fresh scaffold is measured by CI, never asserted here |
 
 `x dev` runs **every role in one process** with isolation simulated, not skipped: separate ALS contexts, a real Postgres queue, real logical replication, a real SIGTERM drain on `x dev restart`. Nothing in the framework branches on `if (dev)` — only the drivers differ.
 
@@ -177,6 +177,7 @@ Introspection an agent should use instead of grepping:
 | is this protected | `x policy explain publishPost --json` | none — `policies.list` returns the catalog, not the per-declaration matrix |
 | the whole app as data | `x manifest --json` | `manifest.read` |
 | what an `X_*` code means | `x errors explain X_FORBIDDEN` | `errors.explain` |
+| how the framework does X — **ask this first**, before stating a limit | `x docs "send email"` (offline: the installed packages and this wiki) | none |
 
 ## 4. `x verify`
 

@@ -1755,3 +1755,15 @@ Verbatim from [`packages/cli/CLAUDE.md`](../../packages/cli/CLAUDE.md), which ke
 | | |
 |---|---|
 | Public API | `src/index.ts`, explicit re-exports only. Every name there is a semver promise; a name nothing outside this package reads is not exported (22.0.0 pruned 236) |
+
+## Moved out 2026-11-03 (plan 101 wave 3, the `CLAUDE.md` ceiling)
+
+The runtime HTTP surface row, whole, as it stood:
+
+| `runtime-render.ts` / `runtime-render-document.ts` / `runtime-isr-outcome.ts` / `route-islands.ts` / `runtime-assets.ts` / `runtime-storage.ts` / `runtime-hooks.ts` / `api-routes.ts` | the HTTP surface: pages (an `isr` hit never runs `load`, and a `load` redirect is answered per request, never stored or shared — `runtime-isr-outcome.ts`; `isr` and `static` render as nobody, http's `withAnonymousRequest` — `runtime-render-shared-actor.test.ts`; `route-islands.ts` is a render's island collector and realtime boot), `/icons` + `/media`, `/_storage` (both answered by http's `objectResponse`; `/media` stats the source before it keys a variant), authz, the app's API — plus its bearer mounts (`apiMountRoutes`) and pages' bound `POST`s (`pagePostRoutes`), mounted by BOTH boots `route-islands.ts`'s `streamScripts` re-runs the whole runtime in every chunk once ANY hole recorded an island: a hole records while running and reveals in completion order. `stream-hole-scope.ts`'s `enterHole`: a hole's children run in the request context FORWARDED through a Proxy (a rebuilt `ctxOf` loses `useRequestHeader`), `signal` the hole's, `headers` sealed and `redirect` refused (`X_STREAM_ALREADY_FLUSHED`) |
+
+`x deploy verify`: It reads `DATABASE_URL` off the env directly, never through `resolveServices`, which would fall back to the embedded database and grade an empty one; with none it passes `graded: false`.
+
+`db-schema-dump.ts`: the replay runs on a scratch database, embedded and snapshot-cached under `.x/cache`; a real Postgres only when a migration creates an extension PGlite cannot link.
+
+`doctor-pooler.ts`: `wake off` on a `worker` under `transaction`. A served role never runs `defaultClient()`.

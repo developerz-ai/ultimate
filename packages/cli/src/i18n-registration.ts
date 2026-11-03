@@ -105,7 +105,7 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
       duplicate === undefined
         ? { ...finding, ...unregisteredFix(gap.locale, index), at: catalogPath(gap.locale) }
         : // The registry's own fix names a source edit — move the `defineCatalogs()` call — that an
-          // agent following it performs on a file that is already right (ai-maxxing, 2026-09-05).
+          // agent following it performs on a file that is already right (one adopter, 2026-09-05).
           // With a duplicate on disk the cause IS the install, so the finding says so and the fix
           // is the one the duplicate carries.
           {

@@ -26,7 +26,7 @@ describe('automatic hreflang — refusals', () => {
     const tags = renderMeta(
       { title: 'x' },
       {
-        baseUrl: 'https://notificado.co',
+        baseUrl: 'https://example.com',
         path: '/precios',
         localization: {
           locale: 'es-co',
@@ -43,7 +43,7 @@ describe('automatic hreflang — refusals', () => {
   test('a route that declares its own alternates is not second-guessed', () => {
     const tags = renderMeta(
       { title: 'x', alternates: [{ hreflang: 'fr', href: '/fr' }] },
-      { baseUrl: 'https://notificado.co', path: '/precios', localization },
+      { baseUrl: 'https://example.com', path: '/precios', localization },
     );
     expect(links(tags).map(([hreflang]) => hreflang)).toEqual(['fr', 'x-default']);
   });
@@ -61,23 +61,23 @@ describe('automatic hreflang', () => {
   test('three alternates, absolute, BCP 47 region form, x-default → the default locale', () => {
     const tags = renderMeta(
       { title: 'x' },
-      { baseUrl: 'https://notificado.co', path: '/en/precios', localization },
+      { baseUrl: 'https://example.com', path: '/en/precios', localization },
     );
     expect(links(tags)).toEqual([
-      ['es-CO', 'https://notificado.co/precios'],
-      ['en', 'https://notificado.co/en/precios'],
-      ['x-default', 'https://notificado.co/precios'],
+      ['es-CO', 'https://example.com/precios'],
+      ['en', 'https://example.com/en/precios'],
+      ['x-default', 'https://example.com/precios'],
     ]);
   });
 
   test('canonical and og:url are absolute against the base URL', () => {
     const tags = renderMeta(
       { title: 'x' },
-      { baseUrl: 'https://notificado.co', path: '/en/precios', localization },
+      { baseUrl: 'https://example.com', path: '/en/precios', localization },
     );
     const canonical = tags.find((tag) => tag.attrs['rel'] === 'canonical');
-    expect(canonical?.attrs['href']).toBe('https://notificado.co/en/precios');
-    expect(property(tags, 'og:url')).toEqual(['https://notificado.co/en/precios']);
+    expect(canonical?.attrs['href']).toBe('https://example.com/en/precios');
+    expect(property(tags, 'og:url')).toEqual(['https://example.com/en/precios']);
   });
 
   test('og:locale is the document locale, og:locale:alternate every other one', () => {

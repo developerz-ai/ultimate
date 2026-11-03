@@ -10,7 +10,7 @@ Series: **1** · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth
 
 | Need | Version | Check |
 |---|---|---|
-| Bun | ≥ 1.4.0 | `bun --version` |
+| Bun | ≥ 1.4.4 | `bun --version` |
 | Docker | only for [tutorial 5](Tutorial-05-Deploy-Free) | `docker --version` |
 | Postgres | never, locally | — |
 
@@ -24,99 +24,110 @@ bunx create-ultimate myapp
 **Unpinned on purpose.** Pinning the tutorial to a version pins readers to a scaffold that stops matching this page on the next tag; `README.md` and `llms.txt` drop the pin for the same reason. To reproduce a specific release, add `@<version>` and read that release's tag of this page.
 
 ```text
-  161 files in /tmp/tmp.XXXXXXXX/myapp
+  213 files in /tmp/tmp.XXXXXXXX/myapp
 ✓ created myapp — next: cd myapp && bun run setup && bun run dev
 ```
+
+`As of 2026-11-03`; `--no-example` writes 181.
 
 Counts are a derived fact — `x new --dry-run --json` lists every file, and one added template moves the number.
 
 ```bash
-cd myapp && bun install
+cd myapp && bun run setup
 ```
+
+```text
+setup complete — next: bun run dev
+```
+
+`bun run setup` is `bun install`, an `.env.development.local` touch, `x db gen "initial"`, `x db migrate`, `x db seed`, then `x manifest` — so the database is migrated and `x.manifest.json` exists before the gate asks for either. `x new` installs nothing, so this is not optional.
 
 `x` is a workspace dependency, not a global install. `bunx x <command>` resolves `node_modules/.bin/x`; the `package.json` scripts (`bun run verify`, `bun run dev`) resolve the same binary. A globally installed `x` (`bun link`, `bun add -g`) run inside the app **hands over** to that same file, `As of 2026-09-05`, and says so on stderr: a global copy carries its own `@ultimat3/entity` with an empty registry, and it wrote a zero-entity manifest under a green exit code before it did. `ULTIMATE_KEEP_GLOBAL_CLI=1` is the opt-out — [`@ultimat3/cli`'s README](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/README.md) has the measurement.
 
 ### Two shapes, one generator
 
 Counts are derived, never quoted here — `x new --dry-run --json | jq '.data.files | length'`, per
-shape. The verdicts are `ci.yml`'s `scaffold-smoke` job, `As of 2026-09-12`:
+shape. Measured on fresh scaffolds of this tree, `As of 2026-11-03`:
 
-| Invocation | `bun run setup && bun run check` on run one |
+| Invocation | `bun run setup && bun run verify` on run one |
 |---|---|
-| `bunx create-ultimate myapp` | **green, 20 of 20 steps pass** — `budgets` among them |
-| `bunx create-ultimate myapp --no-example` | **green, 20 of 20 steps pass** — one fewer route to weigh |
+| `bunx create-ultimate myapp` | **green, 19 of 20 steps pass** — `budgets` among them; `roadmap` skipped (a framework-repo step) |
+| `bunx create-ultimate myapp --no-example` | **green, 16 of 20 steps pass** — `live`, `job`, `e2e` skipped (no such test yet) and `roadmap` |
 
 `--no-example` omits the `post` feature slice and its route. Pick it when an agent is about to write the real feature anyway — [tutorial 2](Tutorial-02-First-Feature) starts there. Pick the default when you want a worked example to read.
 
 ## The gate, first thing
 
 ```bash
-bun run check
+bun run verify
 ```
 
-The app's own gate: `x build --target static`, then `x verify`. The build first, because the
-`budgets` step weighs `.x/build-stats.json` and that build is its only writer.
+The app's own gate is `x verify`, alone. Its `budgets` step weighs `.x/build-stats.json`, and on a
+fresh scaffold no such file exists yet, so the step runs `x build --target static` itself first
+(into `.x/verify-static`, never over `.x/static`).
 
-`--no-example`, verbatim, from `ci.yml`'s `scaffold-smoke` job on an `ubuntu-latest` runner,
-`As of 2026-09-23` (CI run 35892087181, `main` at `9b8feafc`) — the whole gate, in the order it runs:
+The default scaffold, after `bun run setup`, with no `.x/build-stats.json` beforehand,
+`As of 2026-11-03`: the whole gate, in the order it runs:
 
 ```text
-  ✓ typecheck
-  ✓ lint
-  ✓ boundaries
-  ✓ filesize
-  ✓ package-shape
-  ✓ errors
-  ✓ unit
-  ✓ contract
-  - live
-  - job
-  - e2e
-  ✓ eval
-  ✓ drift
-  ✓ contract-diff
-  ✓ budgets
-  ✓ seo
-  ✓ i18n
-  ✓ policy
-  ✓ manifest
-  - roadmap
-  wall time
-    ✓ bun run setup  6911ms
-    ✓ bun run check  6474ms
-✓ bun run setup in 6911ms, bun run check green in 6474ms — 20 of 20 steps pass
+  ✓ typecheck          3064ms
+  ✓ lint               232ms
+  ✓ boundaries         844ms
+  ✓ filesize           906ms
+  ✓ package-shape      402ms
+  ✓ errors             951ms
+  ✓ unit               2790ms  3 workers (budget 4.0 GB)
+  ✓ contract           1233ms  3 workers (budget 4.0 GB)
+  ✓ live               840ms  serial
+  ✓ job                345ms  1 of 3 workers (budget 4.0 GB)
+  ✓ e2e                12124ms  serial
+  ✓ eval               91ms
+  ✓ drift              1486ms
+  ✓ contract-diff      78ms
+  ✓ budgets            6336ms
+  ✓ seo                40ms
+  ✓ i18n               63ms
+  ✓ policy             75ms
+  ✓ manifest           1131ms
+  - roadmap            0ms
+✓ 19 of 20 steps passed in …ms — 1 skipped: roadmap
 ```
 
-`-` is skipped, not passed: a `--no-example` app has no live query, job or e2e test yet, so those
-steps have nothing to weigh, and `roadmap` is a framework-repo step. **Without `--no-example`**, the
-default scaffold ships its example slice with a live test, a job test and an e2e test, so `live`,
-`job` and `e2e` are ticks on run one — the same CI job shows all three passing on that app. `contract` is **not** among them — the scaffold
+`-` is skipped, not passed: `roadmap` is a framework-repo step. The default scaffold ships its
+example slice with a live test, a job test and an e2e test, so `live`, `job` and `e2e` are ticks on
+run one; **with `--no-example`** there is no such test yet, and those three are dashes too. `contract` is **not** among them — the scaffold
 ships `apps/web/api/health.contract.test.ts`, which is what makes it a tick on run one. The summary
 names every skip, so a gate that is green because a suite does not exist says so on the one line you
 read. [Tutorial 2](Tutorial-02-First-Feature) turns more of those dashes into ticks.
 
-Reach the gate through `bun run check` and `budgets` is a tick too, for the reason below. The list is
+The list is
 `VERIFY_STEP_NAMES` ([`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts)), whole or not at all: the same steps run here and in the framework repo.
 
-### `budgets`, and why you reach the gate through `bun run check`
+### `budgets` builds before it weighs
 
-`budgets` is green on the first pass when you run `bun run check`, because `bun run check` is
-`x build --target static` and then `x verify` — the build writes the `.x/build-stats.json` the step
-weighs. Run `x verify` on its own, on an app nobody has built, and you get one finding per route
-with a declared budget instead — measured `As of 2026-08-23`:
+`budgets` took 6.3 s above because it built first. Delete the stats and `--verbose` prints the line
+that says so; run it again and it reads the stats it just wrote:
 
-```text
-  ✗ budgets            14ms
-      X_BUDGET_UNMEASURED (/)
-        cause: / declares a JS budget and no build has written .x/build-stats.json in this repo
-        fix:   x build --target static --json && x verify --json
+```bash
+rm .x/build-stats.json
+bunx x verify --only budgets --verbose
+bunx x verify --only budgets
 ```
 
-Three routes with `--no-example` (`/`, `/admin`, `/dashboard`), four with the example slice (plus `/posts`).
+```text
+  ✓ budgets            7320ms
+      | built first: build stats were missing — x build --target static --out .x/verify-static (6968ms)
+✓ NOT A GATE RUN — all 1 steps passed in …ms
+  ✓ budgets            324ms
+✓ NOT A GATE RUN — all 1 steps passed in …ms
+```
 
-**Not a scaffold defect, and no template change closes it — the order of the two commands does.** Every generated route declares a `budget:`, and the `budgets` step reads its measurement out of `.x/build-stats.json`, a file only `x build --target static` writes, through `apps/web/prerender.ts`. A bare `x build` defaults to `docker` and writes no stats. So a gate run with nothing built ahead of it reports every budget unmeasured, and running the step's own `fix:` is what a reader used to do by hand.
+It builds when `.x/build-stats.json` is missing, written by an earlier measurement rule, or older
+than the newest app source file (tests excluded), and never otherwise: run the gate again with
+nothing edited and the step reads the stats it has. After an edit, the gate pays one static build.
+A build that fails is the step's verdict, under the build's own code and `fix:`.
 
-`bun run check` does it for you, and CI asserts the result: `scaffold-smoke` runs a fresh app's own `bun run setup && bun run check` **once, with no waiver and no fix-follow** (`As of 2026-09`), and `budgets` must come back **green** rather than merely not-red — a skip would mean the static build bought nothing. The `--allow-red budgets` allowance that used to sit in that job is gone, and nothing replaced it ([`scripts/scaffold-gate.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/scaffold-gate.ts)).
+CI asserts the result: `scaffold-smoke` runs a fresh app's own scripts **once, with no waiver and no fix-follow**, and `budgets` must come back **green** rather than merely not-red — a skip would mean the static build bought nothing ([`scripts/scaffold-gate.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/scaffold-gate.ts)).
 
 ### The invariant block is typed from your columns
 
@@ -135,6 +146,7 @@ What still ships broken: [Known gaps](Known-Gaps).
 
 ## Run it
 
+<!-- no-run: a server that runs until stopped; the --once fence below is its smoke test -->
 ```bash
 bunx x dev
 ```
@@ -146,16 +158,20 @@ bunx x dev --once --port 3100
 ```
 
 ```text
-{"ts":"2026-08-11T17:01:45.774Z","level":"info","msg":"ultimate web listening on http://localhost:3100"}
-{"ts":"2026-08-11T17:01:45.783Z","level":"info","msg":"sync node ready","buildId":"d5912e63ac22b7e4","path":"/_x/sync"}
-{"ts":"2026-08-11T17:01:45.793Z","level":"info","msg":"jobs.worker.started","workerId":"worker-019ff1c5-…","queues":["default"]}
-{"ts":"2026-08-11T17:01:45.793Z","level":"info","msg":"jobs.scheduler.started","tasks":0}
+{"ts":"2026-11-03T16:48:57.124Z","level":"info","msg":"ultimate web listening on http://localhost:3100"}
+{"ts":"2026-11-03T16:48:57.118Z","level":"info","msg":"sync node ready","buildId":"e6af64a2077e5d60","path":"/_x/sync"}
+{"ts":"2026-11-03T16:48:57.134Z","level":"info","msg":"jobs.worker.started","workerId":"worker-01a1a250-…","queues":["myapp-default","default"]}
+{"ts":"2026-11-03T16:48:57.137Z","level":"info","msg":"jobs.scheduler.started","tasks":1}
+{"ts":"2026-11-03T16:48:57.142Z","level":"info","msg":"live feed in-process","detail":"the embedded database has no walsender; repository writes in this process reach subscribers"}
   roles web, sync, worker, scheduler
   panels routes, timeline, live, jobs, db, mail, cache, policy, manifest, services, boundaries
   manifest /tmp/…/myapp/x.manifest.json
   introspect http://localhost:3100/_x
-✓ dev ready on http://localhost:3100 — /_x mounted (11 panels), db=embedded events=embedded storage=embedded mail=embedded cdn=none
+  mcp POST /mcp
+✓ dev ready on http://localhost:3100 — /_x mounted (11 panels), db=embedded events=embedded storage=embedded mail=embedded cdn=none live=in-process
 ```
+
+An excerpt, `As of 2026-11-03`: the boot also logs the dev viewer warning, the metrics port and the drain `--once` ends with.
 
 Four roles in one process, isolation simulated rather than skipped. `replicator` is opt-in via `--role`; `migrate` is not a dev role.
 
@@ -206,7 +222,7 @@ myapp/
 ├── guards/                  one rule per file, run by `x verify`'s boundaries step.
 │                            Every name in SHIPPED_GUARD_NAMES ships; `x doctor`
 │                            lists any missing. Delete one by deleting its file
-├── bin/                     setup, dev, check
+├── bin/                     setup.ts — `bun run setup`; `dev` and `verify` are x's own
 └── AGENTS.md  CLAUDE.md     the two files an agent reads first
 ```
 
@@ -259,7 +275,7 @@ A read that should not hold up the page goes in a `<Hole>` on a `stream` page ([
 
 | Want | Command |
 |---|---|
-| is it shippable | `bun run check` (add `--json`; it reaches both halves) |
+| is it shippable | `bun run verify` (add `--json`) |
 | what is wrong with my environment | `bunx x doctor --json` |
 | what does this error code mean | `bunx x errors explain X_FORBIDDEN` |
 | what does this app contain | `bunx x manifest --json` |

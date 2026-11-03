@@ -44,6 +44,7 @@ import { scanSiteMeta } from './seo-meta';
 import { quoteArg } from './shell-quote';
 import { readStaticReport } from './static-report';
 import { unknownToolGateFindings } from './tool-gate-names';
+import { measureIfStale } from './verify-budgets-build';
 import { floorProblemFindings, readVerifyFloor } from './verify-floor';
 import { roleLoadFindings } from './verify-role-load';
 import type { VerifyStep } from './verify-step';
@@ -237,17 +238,21 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     // no stylesheet registry to read; there is nothing for either half to weigh.
     applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
     async run(ctx) {
-      // No stats file is NOT "nothing to weigh" — it is every declared budget unmeasured, which is
-      // the case `checkBudgets` already names per route (`X_BUDGET_UNMEASURED`). Skipping the half
-      // entirely is how a step that has never run once reported green: `.x/` is gitignored, so no
-      // CI run and neither gated app has ever had a `build-stats.json` for it to read.
+      // No stats file is NOT "nothing to weigh" — it is every declared budget unmeasured. So the
+      // step MEASURES first, whenever the stats are missing, of an earlier rule, or older than the
+      // newest app source (`verify-budgets-build.ts`): `x verify` alone is the gate, on a fresh
+      // tree too, and a heavier island is never weighed at the bytes of a build before it.
       //
-      // Handed over as `undefined` and never as `?? { routes: [] }`: "no build has run here" and
-      // "a build ran and could not weigh this route" are two different instructions, and only the
-      // caller knows which of them is true. The step still does not BUILD — measuring here would
-      // make `x verify` a static build on every run (8.2s on `dummy/social-media-clone`, and 5.9s
-      // to a hard `X_PRERENDER_FAILED` on `examples/dummy`), and it would be a second builder
-      // beside `apps/web/prerender.ts`, which is where an app reads `SITE_ORIGIN`.
+      // Only then, never on every run: an unedited tree pays nothing, and a rebuild after an edit costs
+      // one static build (8.2 s on `dummy/social-media-clone`, As of 2026-11). The builder is
+      // `x build`, spawned through `ctx.runner` so it is a tagged child under this step's deadline
+      // (`stepTimeoutMs.budgets` overrides). A failing build — `examples/dummy`'s old 5.9 s was a
+      // hard `X_PRERENDER_FAILED` — is red under the build's own findings, unchanged. `SITE_ORIGIN`
+      // shapes canonical and og:url, never script bytes, and the build writes `.x/verify-static`,
+      // so a deployable `.x/static` built with the real origin is never replaced.
+      // A failed build's findings stand in for the per-route weighing below, which would only
+      // repeat them as `X_BUDGET_UNMEASURED` per route; the other riders still answer.
+      const measured = await measureIfStale(ctx);
       const stats = await readBuildStats(ctx.root);
       // The report beside the stats, for the one thing `checkBudgets` reads off it: a route the
       // build rendered and could not weigh because its island was handed props over the cap is
@@ -267,13 +272,17 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...(await liveRouteFindings(ctx.root)),
         // The fourth: a data read in an async Page rather than in `load` (`async-pages.ts`).
         ...asyncPageFindings(),
-        ...checkBudgets(manifest, stats, report?.unmeasured),
+        ...(measured.findings.length > 0
+          ? measured.findings
+          : checkBudgets(manifest, stats, report?.unmeasured)),
       ]);
       // What no build can weigh, said out loud rather than dropped (`measure-paths.ts`).
       const notes = (report?.unmeasured ?? [])
         .filter((one) => one.weighable === false)
         .map((one) => `not weighed: ${one.reason}`);
-      const output = [outcome.output, ...notes].filter((line) => line !== undefined).join('\n');
+      const output = [measured.output, outcome.output, ...notes]
+        .filter((line) => line !== undefined)
+        .join('\n');
       return output === '' ? outcome : { ...outcome, output };
     },
   },

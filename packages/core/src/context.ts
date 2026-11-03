@@ -356,7 +356,8 @@ export function abandonment(): UltimateError | undefined {
 /**
  * Run `fn` to its end whatever happens to the scope around it: a FRESH signal nothing aborts and no
  * deadline, same request id and actor, managed services rebuilt over it. The one escape from
- * `abandonment()`, which then has no special case; `retry()` and `outbound()` inside keep working.
+ * `abandonment()`, which then has no special case; `retry()` and `outbound()` inside keep working,
+ * and both honour a `bound`'s signal and deadline as they do the request's.
  * Unbounded by default, and work left hanging holds its slot for good: a caller owning work it cannot
  * trust passes `bound` (`withIdempotency`'s `ceilingMs`, `onSettled`'s timeout), whose coded abort is
  * abandonment again. Inside an open transaction wrap the whole `withTransaction`: its COMMIT is
@@ -422,7 +423,7 @@ export function throwIfAborted(ctx: Ctx = useContext()): void {
   throw new UltimateError({
     code: 'X_ABORTED',
     cause: `request ${ctx.requestId} was aborted by the caller`,
-    fix: 'add throwIfAborted(ctx) before expensive work, or pass fetch(url, { signal: ctx.signal }) — the caller is gone, so unwind instead of finishing',
+    fix: 'add throwIfAborted(ctx) before expensive work, and make each vendor call with outbound({ url, vendor, dial, deadlineMs }) from @ultimat3/core/outbound, which hears ctx.signal — the caller is gone, so unwind instead of finishing',
     meta: { requestId: ctx.requestId },
   });
 }

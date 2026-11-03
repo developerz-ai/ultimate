@@ -88,7 +88,6 @@ describe('the barrel re-exports the modules themselves, never copies', () => {
     expect(barrel.h).toBe(jsx.h);
     expect(barrel.Fragment).toBe(jsx.Fragment);
     expect(barrel.isJsxNode).toBe(jsx.isJsxNode);
-    expect(barrel.JSX_NODE).toBe(jsx.JSX_NODE);
   });
 
   test('the registry and the island primitive are the same objects', async () => {

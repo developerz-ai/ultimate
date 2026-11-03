@@ -285,16 +285,11 @@ export {
   unknownTokenError,
 } from './errors';
 // --- forms: the binding between an action's input schema and Field's error slot ---------------
-export type { FieldPathSegment, IssuePathSegment } from './form/field-path';
-export { fieldSelector, formatFieldPath, MAX_FIELD_INDEX, parseFieldPath } from './form/field-path';
+export type { FieldPathSegment } from './form/field-path';
+export { fieldSelector, MAX_FIELD_INDEX, parseFieldPath } from './form/field-path';
 export type { FormBinding, FormBindingOptions } from './form/form-binding';
 export { formBinding } from './form/form-binding';
-export type {
-  FormIssue,
-  FormSchema,
-  FormValidationIssue,
-  FormValidationResult,
-} from './form/form-issue';
+export type { FormIssue } from './form/form-issue';
 export { issuesFromRejection, issuesFromValidation } from './form/form-issue';
 export type { FormErrors, FormState, FormStatus } from './form/form-state';
 export {

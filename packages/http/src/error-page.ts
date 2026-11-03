@@ -12,14 +12,14 @@ import { OVERLAY_STYLE } from './overlay-style';
 import { html } from './response';
 
 /**
- * Where "Built with Ultimate" goes. Two literals and not a derivation off `ERROR_DOCS_URL`: the
- * wiki page it points at is a different destination that merely shares a prefix today. They live
- * here, next to their one renderer — a second surface that wants them (a CLI banner, a scaffolded
- * footer) is what would move them to `@ultimat3/core`.
+ * Where "Built with Ultimate" goes. A literal and not a derivation off `ERROR_DOCS_URL`: the wiki
+ * page it points at is a different destination that merely shares a prefix today. It is the one
+ * outside link: this page reaches every app without a page of its own, so a vendor homepage here
+ * was an advert on a stranger's site (removed in 30.0.0). A second surface that wants it is what
+ * would move it to `@ultimat3/core`.
  */
-export const ERROR_PAGE_LINKS = Object.freeze<Record<'repository' | 'homepage', string>>({
+export const ERROR_PAGE_LINKS = Object.freeze<Record<'repository', string>>({
   repository: 'https://github.com/developerz-ai/ultimate',
-  homepage: 'https://www.developerz.ai',
 });
 
 /** One key group in the framework catalog's `errors.*` namespace, which is what this page renders. */
@@ -175,7 +175,6 @@ export function renderErrorPage(input: ErrorPageInput): string {
   </section>
   <footer class="card">
     ${link(ERROR_PAGE_LINKS.repository, t('errors.page.builtWith'))}
-    ${link(ERROR_PAGE_LINKS.homepage, 'developerz.ai')}
   </footer>
 </main>
 </body>

@@ -77,6 +77,7 @@ jobs:
       actions: read
     outputs:
       version: ${{ steps.release.outputs.version }}
+      dist_tag: ${{ steps.dist_tag.outputs.tag }}
     steps:
       # First, before checkout: `workflow_dispatch` accepts any ref the Actions UI will list, and
       # `github.ref` is the only thing that says which one this is. A release published for a tag
@@ -136,6 +137,24 @@ jobs:
         env:
           VERSION: ${{ steps.release.outputs.version }}
         run: bun run scripts/release.ts --check "$VERSION" --json
+
+      # The npm dist-tag this version earns (wiki/Stability.md): the current major is `latest`, a
+      # patch to the previous one is `maint-<major>`, a prerelease is `next`. `npm publish` with no
+      # `--tag` moves `latest` to whatever it publishes, so a 29.x patch after 30.0.0 would have
+      # handed every install the older major. Fails closed when the registry does not answer.
+      - name: the dist-tag this version publishes under
+        id: dist_tag
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="$(bun run scripts/dist-tag.ts --version "$VERSION" --json | jq -r '.data.tag')"
+          if [ -z "$tag" ] || [ "$tag" = null ]; then
+            echo "::error::scripts/dist-tag.ts named no tag for $VERSION — run it locally: bun run scripts/dist-tag.ts --version $VERSION --json"
+            exit 1
+          fi
+          echo "publishing $VERSION under dist-tag $tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       # The gate's verdict on THIS commit, read — never re-run. This job used to run
       # `scripts/verify.ts` itself, on a runner with no Postgres, NATS or Redis and no
@@ -259,10 +278,11 @@ jobs:
       - name: publish, tier by tier
         env:
           VERSION: ${{ needs.check.outputs.version }}
+          DIST_TAG: ${{ needs.check.outputs.dist_tag }}
         run: |
           set -euo pipefail
-          if [ -z "${VERSION:-}" ]; then
-            echo "::error::the check job produced no version — it must succeed before this job can run"
+          if [ -z "${VERSION:-}" ] || [ -z "${DIST_TAG:-}" ]; then
+            echo "::error::the check job produced no version or no dist-tag — it must succeed before this job can run"
             exit 1
           fi
           plan="$(bun run scripts/list-workspaces.ts --json | jq -r '
@@ -287,7 +307,7 @@ jobs:
                 continue
               fi
               echo "::group::npm publish — tier $tier: $name"
-              if ! out="$(npm publish -w "$name" 2>&1)"; then
+              if ! out="$(npm publish -w "$name" --tag "$DIST_TAG" 2>&1)"; then
                 echo "$out"
                 # npm STAGES a publish before `npm view` can see it, so an attempt that raced a
                 # previous one meets its own staged copy. That version is already this release's.
@@ -355,5 +375,5 @@ jobs:
           grep -q "\"@ultimat3/cli\": \"^${VERSION}\"" package.json
           bun install
           bun run setup
-          bun run check
+          bun run verify
           docker build -f docker/Dockerfile -t "npmapp:${VERSION}" .

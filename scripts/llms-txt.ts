@@ -158,13 +158,52 @@ export async function renderLlmsTxt(root: string) {
   return { current, ...filled, findings: llmsDrift(current, filled.text, filled.missing) };
 }
 
+/** The section an app author's agent reads first, and the one every repository command lives under. */
+export const APP_HEADING = 'Building an app';
+export const REPO_HEADING = 'Working on this repository';
+/** Commands that exist in this checkout and in no app: the reason the app section comes first. */
+const REPO_ONLY = /bun run scripts\/|bun run x --|bun run manifest\b/;
+
+const orderFinding = (cause: string): Finding => ({
+  code: 'X_LLMS_TXT_DRIFT',
+  cause: `${LLMS_TXT} ${cause}`,
+  fix: `grep -n '^## ' llms.txt   # "## ${APP_HEADING}" first (bunx create-ultimate, bunx x, the wiki), every repository command under "## ${REPO_HEADING}" after it`,
+  at: LLMS_TXT,
+});
+
 /**
- * The gate's half: every drift `--write` would repair, as findings. A root with no `llms.txt` is
- * not this repository — a host-check fixture — and is not judged; `llms-txt.test.ts` holds the
- * real file to existing, so an absent one here cannot be a silent pass.
+ * The order rule, which no `--write` repairs because it is about prose: `README.md` sends every
+ * agent here, most of them build an app, and a first block of `bun run scripts/…` is commands an
+ * app does not have. The app section is first and carries none; the repository heading follows it.
  */
-export const llmsTxtFindings = async (root: string): Promise<readonly Finding[]> =>
-  (await Bun.file(`${root}/${LLMS_TXT}`).exists()) ? (await renderLlmsTxt(root)).findings : [];
+export function appFirstFindings(text: string): readonly Finding[] {
+  const headings = [...text.matchAll(/^## (.+)$/gm)];
+  const first = headings[0];
+  if (first?.[1]?.trim() !== APP_HEADING) {
+    return [orderFinding(`opens with "## ${first?.[1] ?? ''}" rather than "## ${APP_HEADING}"`)];
+  }
+  const repo = headings.find((heading) => heading[1]?.trim() === REPO_HEADING);
+  if (repo === undefined) return [orderFinding(`has no "## ${REPO_HEADING}" heading`)];
+  const leaked = REPO_ONLY.exec(text.slice(0, repo.index));
+  return leaked === null
+    ? []
+    : [
+        orderFinding(
+          `names "${leaked[0]}" above "## ${REPO_HEADING}", where an app's agent reads it`,
+        ),
+      ];
+}
+
+/**
+ * The gate's half: every drift `--write` would repair, as findings, and the order rule. A root
+ * with no `llms.txt` is not this repository — a host-check fixture — and is not judged;
+ * `llms-txt.test.ts` holds the real file to existing, so an absent one cannot be a silent pass.
+ */
+export const llmsTxtFindings = async (root: string): Promise<readonly Finding[]> => {
+  if (!(await Bun.file(`${root}/${LLMS_TXT}`).exists())) return [];
+  const rendered = await renderLlmsTxt(root);
+  return [...rendered.findings, ...appFirstFindings(rendered.current)];
+};
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
@@ -172,7 +211,8 @@ if (import.meta.main) {
   const rendered = await renderLlmsTxt(root);
   const write = flagBool(args, 'write') && rendered.missing.length === 0;
   if (write) await Bun.write(`${root}/${LLMS_TXT}`, rendered.text);
-  const findings = write ? [] : rendered.findings;
+  // `--write` repairs the lists, never the order: that is prose, and its finding outlives a write.
+  const findings = [...(write ? [] : rendered.findings), ...appFirstFindings(rendered.text)];
   report(
     {
       ok: findings.length === 0,

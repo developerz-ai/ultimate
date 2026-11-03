@@ -15,6 +15,7 @@ import {
   stringField,
 } from '@ultimat3/core';
 import type { ValidationIssue } from '@ultimat3/schema';
+import { issueRuleFacts } from '@ultimat3/schema';
 import { declaredStatusFor, statusFor } from './error-status';
 import { HTTP_ERROR_TITLES } from './errors';
 import { type ProblemMeta, problemMetaKeysFor, wireMeta } from './problem-meta';
@@ -206,6 +207,9 @@ function issuesOf(error: unknown): readonly ValidationIssue[] | undefined {
         // Forced, never copied. See the paragraph above.
         received: '',
         message,
+        // The rule a translator keys on, and its declared params — schema's one reader, which
+        // keeps a string `rule` and scalar `params` only, member by member.
+        ...issueRuleFacts(entry),
       });
     }
     return issues;

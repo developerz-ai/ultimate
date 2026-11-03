@@ -150,9 +150,16 @@ export {
   resetEvals,
 } from './evals';
 export type { AiFetch } from './fetch-seam';
-export type { Gateway, GatewayCache, ProviderGatewayInput, RetryPolicy } from './gateway';
+export type {
+  Gateway,
+  GatewayBreakerOption,
+  GatewayCache,
+  ProviderGatewayInput,
+  RetryPolicy,
+} from './gateway';
 export {
   backoffMs,
+  DEFAULT_GATEWAY_BREAKER,
   DEFAULT_GATEWAY_RETRY,
   isRetryable,
   promptCacheKey,

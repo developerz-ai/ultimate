@@ -13,12 +13,29 @@ import {
   tierProblem,
   withPackageReference,
 } from './new-package';
+import { frontFindingsFor, WIKI_ROOT } from './package-front';
 
 const fileNamed = (name: string, tier: number, path: string): string => {
   const file = packageTemplates(name, tier, 'one line').find((entry) => entry.path === path);
   if (file === undefined) expect.unreachable(`no ${path} in the templates`);
   return file.contents;
 };
+
+describe('unit · a scaffolded package opens its npm page the way the gate asks', () => {
+  // `scripts/package-front.ts` refuses a publishable package with no keywords or whose README's
+  // first screen lacks an install line, an example and its wiki page — so the scaffold writes them.
+  test('its README and package.json pass the npm-page rule on the day they are written', () => {
+    const manifest = JSON.parse(fileNamed('widgets', 1, 'package.json')) as Record<string, unknown>;
+    const pkg = {
+      dir: 'widgets',
+      name: '@ultimat3/widgets',
+      readme: fileNamed('widgets', 1, 'README.md'),
+      manifest,
+    };
+    expect(frontFindingsFor(pkg, {})).toEqual([]);
+    expect(manifest['homepage']).toBe(WIKI_ROOT);
+  });
+});
 
 describe('unit · a scaffolded package documents its OWN boundary', () => {
   // `allowedTiersFor(name)` resolved through `tierOf('widgets')` -> UNLISTED_TIER (6), so every

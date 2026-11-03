@@ -25,7 +25,7 @@ export function factoriesFor<TRegistry extends EntityRegistry>(
       ...(seed === undefined ? {} : { seed }),
       defaults: (index, ids): Record<string, unknown> => {
         const row: Record<string, unknown> = {};
-        for (const column of Object.keys(entity.columns)) {
+        for (const column of Object.keys(entity.$columns)) {
           row[column] = defaultFor(column, index, ids);
         }
         return row;

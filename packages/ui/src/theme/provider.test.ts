@@ -5,10 +5,10 @@
 // tree exists rather than during it.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { renderNodes } from '@ultimat3/core/render-nodes';
 import type { Locale, Translator } from '@ultimat3/i18n';
 import type { TimeZone } from '@ultimat3/time';
 import { UI_ERROR_CODES } from '../errors';
-import { renderNodes } from '../jsx-probe-fixture';
 import type { UiContextValue } from './context';
 import { UI_DEFAULT_CURRENCY, UI_DEFAULT_LOCALE, UI_DEFAULT_TIME_ZONE } from './context';
 import { UiProvider } from './provider';

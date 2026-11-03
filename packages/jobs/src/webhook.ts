@@ -24,6 +24,7 @@ import {
   throwIfAborted,
   WEBHOOK_FIELD_MAX,
 } from '@ultimat3/core';
+import { resolveDialHost } from '@ultimat3/core/outbound';
 import { t } from '@ultimat3/schema';
 import type { DurationInput } from './clock';
 import { nowMs } from './clock';
@@ -44,7 +45,7 @@ import {
 } from './webhook-errors';
 import type { WebhookLedger } from './webhook-ledger';
 import type { WebhookResolve } from './webhook-target';
-import { resolveWebhookHost, webhookTarget } from './webhook-target';
+import { webhookTarget } from './webhook-target';
 
 /**
  * Consecutive failures before an endpoint stops taking deliveries. Ten is roughly a day of a
@@ -175,7 +176,7 @@ export interface WebhookDefinition {
   readonly allowPrivate?: boolean;
   /** Which environment decides whether `http:` is allowed. Defaults to `process.env`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
-  /** How a hostname is resolved. Defaults to `Bun.dns.lookup`; injected in tests. */
+  /** How a hostname is resolved. Defaults to core's `resolveDialHost`; injected in tests. */
   readonly resolve?: WebhookResolve;
   readonly queue?: string;
   readonly retry?: RetryPolicy;
@@ -194,7 +195,9 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
     'disableAfter',
     definition.disableAfter ?? DEFAULT_WEBHOOK_DISABLE_AFTER,
   );
-  const send = definition.fetch ?? ((url, init) => fetch(url, init));
+  // The attempt's signal, spelled: `webhook-attempt.ts` always sets it (the job's `ctx.signal`).
+  const send =
+    definition.fetch ?? ((url, init) => fetch(url, { ...init, signal: init.signal ?? null }));
 
   // Named so `run` can read the deadline `job()` resolved — one parse of `timeout`, never two.
   const handle: JobHandle<WebhookDeliveryInput> = job<WebhookDeliveryInput>({
@@ -249,7 +252,7 @@ export function webhook(definition: WebhookDefinition): JobHandle<WebhookDeliver
         url,
         allowPrivate: definition.allowPrivate === true,
         env: definition.env,
-        resolve: definition.resolve ?? resolveWebhookHost,
+        resolve: definition.resolve ?? resolveDialHost,
       });
 
       const event = await definition.event({ eventId: input.eventId, orgId: input.orgId, ctx });

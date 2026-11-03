@@ -3,6 +3,8 @@
 Postgres access for Ultimate: parameterised SQL, transactions, migrations, drift detection,
 branch databases, and a read-only client for anything an LLM drives.
 
+`bun add @ultimat3/db` · guide: [Entities And Migrations](https://github.com/developerz-ai/ultimate/wiki/Entities-And-Migrations)
+
 Tier 1. Imports `@ultimat3/core` only. No runtime dependencies; `@electric-sql/pglite` is an
 **optional peer**, loaded at first query and only by the embedded driver. **No ORM backs any of
 this** — `@ultimat3/entity`'s hand-written `postgresDriver()` compiles every statement out of the

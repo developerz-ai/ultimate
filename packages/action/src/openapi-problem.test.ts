@@ -46,14 +46,30 @@ describe('the published Problem schema against the document @ultimat3/http serve
     expect(problemSchema().properties['meta']).toEqual({ type: 'object' });
   });
 
-  test('issues is typed as the four members a ValidationIssue carries', () => {
+  test('issues is typed as the four members a ValidationIssue requires, plus rule and params', () => {
     const issues = problemSchema().properties['issues'] as unknown as {
       type: string;
       items: { required: string[]; properties: Record<string, unknown> };
     };
     expect(issues.type).toBe('array');
     expect([...issues.items.required].sort()).toEqual(Object.keys(ISSUE).sort());
-    expect(Object.keys(issues.items.properties).sort()).toEqual(Object.keys(ISSUE).sort());
+    expect(Object.keys(issues.items.properties).sort()).toEqual(
+      [...Object.keys(ISSUE), 'params', 'rule'].sort(),
+    );
+  });
+
+  test('a served issue carrying rule and params names only declared members', () => {
+    const ruled = { ...ISSUE, rule: 'string.format', params: { format: 'uuid' } };
+    const served = wire(new InputInvalidError('publishPost', 'input.postId: not a uuid', [ruled]));
+    const entry = (served['issues'] as Record<string, unknown>[])[0] ?? {};
+    expect(entry).toMatchObject({ rule: 'string.format', params: { format: 'uuid' } });
+    const items = (
+      problemSchema().properties['issues'] as unknown as {
+        items: { properties: Record<string, unknown> };
+      }
+    ).items;
+    for (const member of Object.keys(entry))
+      expect(Object.keys(items.properties)).toContain(member);
   });
 
   test('a code the framework did not mint still satisfies the published `code`', () => {

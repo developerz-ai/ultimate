@@ -56,7 +56,7 @@ The rule did not relax. Every key of a script must still hash to one slot; the l
 
 | Behaviour | What it does | Knob |
 |---|---|---|
-| **Single-flight** | N concurrent misses on one key are one `load()`. Joiners share the leader's write-back too, so 200 readers produce one `set` per tier. A rejection clears the entry, so one failure is never cached as a permanent rejection ([`single-flight.ts`](../../packages/cache/src/single-flight.ts)) | none — always on |
+| **Single-flight** | N concurrent misses on one key are one `load()`. Joiners share the leader's write-back too, so 200 readers produce one `set` per tier. A rejection clears the entry, so one failure is never cached as a permanent rejection ([`single-flight.ts`](../../packages/core/src/single-flight.ts)) | none — always on |
 | **TTL jitter** | A rolling restart warms 40,000 keys in 30 seconds on identical leases, and they all expire in the same 30-second window five minutes later; single-flight only merges the loads that overlap. Shaving a random slice off each lease turns the cliff into a ramp. Folded into `assertTtl`, the one choke point no tier can bypass | `jitterFraction`, default `0.05`; `0` disables |
 | **Tag-bucket lease** | A tag set with no expiry is unbounded: value keys die on their TTL, membership did not, so `SMEMBERS` on a month-old bucket returned millions of dead keys and one publish became an outage. `SADD` + a conditional `EXPIRE` in one script gives each bucket its newest member's TTL plus 60s grace, **raised only when longer** — a short-lived member must never shorten a bucket a long-lived one is in | grace is fixed at 60s |
 

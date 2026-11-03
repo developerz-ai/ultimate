@@ -139,13 +139,13 @@ export function sortModulePaths(paths: readonly string[]): string[] {
  * Every module path the app globs match, SORTED — with the API index first. `Bun.Glob` answers in
  * directory order, which is the filesystem's — ext4 hashes names with a per-filesystem seed — so
  * two pods of one image imported the app in two orders, registered its stylesheets in two orders,
- * and served two different `/styles/<hash>.css` for one page (notificado.co, 22.3.2). Import order
+ * and served two different `/styles/<hash>.css` for one page (one adopter, 22.3.2). Import order
  * is the stylesheet cascade's order, so it must be the same everywhere.
  *
  * The API index leads because `defineApi({ http: { pathStyle } })` is what every action URL is
  * derived under: sorted, `apps/admin/**` evaluated before it, and a module-level
  * `derivePath('signOut').path` there captured the default style's `/api/outs/sign` — a form
- * posting to a URL no route served (notificado.co, 22.6.0). Anything still evaluated before the
+ * posting to a URL no route served (one adopter, 22.6.0). Anything still evaluated before the
  * declaration (the index's own imports) is refused at it, `X_ACTION_PATH_DERIVED_EARLY`.
  */
 export async function appModulePaths(root: string): Promise<readonly string[]> {

@@ -1,14 +1,13 @@
-// The two scripts a scaffolded app is driven by — `bun run setup` and `bun run check` — written as
-// TypeScript that Bun runs, never as shell. A bash `bin/setup` was the first thing a PowerShell or
-// cmd user hit after `x new`, and it failed there; a `.ts` file run by the Bun the app already
-// requires is the same script on every OS. `bun run dev` needs no file: it is `x dev`.
+// The script a scaffolded app is set up by — `bun run setup` — written as TypeScript that Bun runs,
+// never as shell. A bash `bin/setup` was the first thing a PowerShell or cmd user hit after `x new`,
+// and it failed there. `bun run dev` and `bun run verify` need no file: they are `x dev` and
+// `x verify`, and `x verify` builds what its budgets step weighs (no `bin/check`, plan 101 21).
 
 import type { GeneratedFile } from './naming';
 
 /** Where each script lands, and what the root `package.json`'s `scripts` run — named once. */
 export const BIN_SCRIPTS = {
   setup: 'bin/setup.ts',
-  check: 'bin/check.ts',
 } as const;
 
 /** The `package.json` script line that runs a bin file: Bun itself, so no shell interprets it. */
@@ -70,53 +69,7 @@ await x('manifest');
 console.log('setup complete — next: bun run dev');
 `;
 
-const binCheck =
-  (): string => `// The gate. Same steps as CI, because a check that lives only in CI cannot be run locally.
-// \`bun run check\` — Bun runs this file, so it is the same gate under PowerShell, cmd or bash.
-import { join } from 'node:path';
-
-const root = join(import.meta.dir, '..');
-const args = process.argv.slice(2);
-
-/** The app's own CLI, as \`bunx x\` resolves it, from the app root; resolves to its exit code. */
-const x = async (...argv: string[]): Promise<number> => {
-  const child = Bun.spawn([process.execPath, 'x', 'x', ...argv], {
-    cwd: root,
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
-  // The terminal already hands Ctrl-C to the child; this process only waits for its verdict. A
-  // SIGTERM is forwarded, so a CI timeout stops the gate instead of orphaning it mid-step.
-  const wait = (): void => {};
-  const stop = (): void => {
-    child.kill('SIGTERM');
-  };
-  process.on('SIGINT', wait);
-  process.on('SIGTERM', stop);
-  const code = await child.exited;
-  process.off('SIGINT', wait);
-  process.off('SIGTERM', stop);
-  return code;
-};
-
-// The build FIRST, and not as a convenience: \`x verify\`'s budgets step compares declared limits
-// against measured bytes in .x/build-stats.json, so with no build it reports X_BUDGET_UNMEASURED
-// and the very first gate anyone runs on a brand-new app is red for a reason that has nothing to
-// do with their code.
-//
-// \`--json\` is forwarded to BOTH, or the contract breaks: the build's human renderer followed by
-// the gate's JSON is neither on stdout. Both commands emit one object; a reader takes the last line.
-// \`--no-preflight\`: the build's own preflight is x verify's first six steps (typecheck, lint,
-// boundaries, filesize, package-shape, errors), and the gate below runs them anyway.
-const json = args.some((arg) => arg === '--json' || arg === '-j') ? ['--json'] : [];
-const built = await x('build', '--target', 'static', '--no-preflight', ...json);
-if (built !== 0) process.exit(built);
-process.exit(await x('verify', ...args));
-`;
-
 /** The bin scripts, in the order a newcomer runs them. */
 export function binFiles(): readonly GeneratedFile[] {
-  return [
-    { path: BIN_SCRIPTS.setup, contents: binSetup() },
-    { path: BIN_SCRIPTS.check, contents: binCheck() },
-  ];
+  return [{ path: BIN_SCRIPTS.setup, contents: binSetup() }];
 }

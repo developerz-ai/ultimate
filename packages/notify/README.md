@@ -3,6 +3,8 @@
 Notifications as one declaration: channel fan-out, a preference gate, a digest window, a delivery
 ledger and an in-app inbox.
 
+`bun add @ultimat3/notify` · guide: [Notify](https://github.com/developerz-ai/ultimate/wiki/Notify)
+
 `notifier()` is a **job factory** — it returns a `JobHandle`, so a notification inherits retry, the
 dead-letter path, cancellation, `x jobs show` and its manifest row. It is not a ninth primitive.
 

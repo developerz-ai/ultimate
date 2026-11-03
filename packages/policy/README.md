@@ -6,6 +6,8 @@ wrong, and nobody finds out until it is a CVE. This package exists so a second o
 never necessary. Every MCP tool, live query, job and route resolves the *same* policy
 object through the *same* `evaluate()`.
 
+`bun add @ultimat3/policy` · guide: [Policies And Authz](https://github.com/developerz-ai/ultimate/wiki/Policies-And-Authz)
+
 ```ts
 export const publishPost = action({
   policy: can('post:publish', ({ input, actor }) => ownsPost(actor, input.postId)),

@@ -95,6 +95,16 @@ describe('unit · the tsconfig.json x new writes', () => {
     expect(manifest.scripts?.['typecheck']).toBe('tsc -p . --pretty');
   });
 
+  // One gate, one name (plan 101, 21): `x verify` builds what its budgets step weighs, so a
+  // `check` script beside `verify` would be a second name for the gate.
+  test('its gate script is verify, x verify, and there is no check script beside it', () => {
+    const manifest = JSON.parse(emitted('package.json')) as {
+      readonly scripts?: Readonly<Record<string, string>>;
+    };
+    expect(manifest.scripts?.['verify']).toBe('x verify');
+    expect(Object.keys(manifest.scripts ?? {})).not.toContain('check');
+  });
+
   // A bare `bun test` runs every file in ONE process, where a module-scope registration from one
   // file (the admin app's routes) is visible to another's contract test, and the demo app went
   // red six tests at a time under a script the gate never runs. `--isolate` gives each file its own
@@ -123,6 +133,14 @@ describe('unit · the tsconfig.json x new writes', () => {
 
   test('.gitignore covers the buildinfo the flag produces', () => {
     expect(emitted('.gitignore')).toContain('*.tsbuildinfo');
+  });
+
+  // `x env init --production` writes the deploy's secrets file in the app root; a fresh app that
+  // ran it showed `.env.production` as an untracked file a `git add .` would commit.
+  test('.gitignore covers the .env.production x env init --production writes', () => {
+    const lines = emitted('.gitignore').split('\n');
+    expect(lines).toContain('.env.production');
+    expect(lines).not.toContain('.env.development');
   });
 });
 
@@ -169,7 +187,7 @@ describe('unit · the first commands a scaffold tells its author to run exist on
   const linesOf = (path: string): readonly string[] => emitted(path).split('\n');
 
   test('no bin/ script invokes a bare `x`', () => {
-    const offenders = ['bin/setup.ts', 'bin/check.ts'].flatMap((path) =>
+    const offenders = ['bin/setup.ts'].flatMap((path) =>
       linesOf(path).flatMap((line, index) =>
         RUNNABLE.test(line) && !line.includes('bunx x') && !line.trimStart().startsWith('//')
           ? [`${path}:${index + 1}`]

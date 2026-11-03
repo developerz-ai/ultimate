@@ -2,7 +2,7 @@
 // under the query that imports it, the query DEFINING a primitive — is served by a fresh child on
 // the same port. A `live` test for the reason `cmd-dev.live.test.ts` gives: it spawns `x dev` and
 // boots an embedded Postgres, twice. Until 22.12 the process logged "reloaded" and kept serving the
-// first service until someone restarted it by hand (notificado.co, 2026-09-29).
+// first service until someone restarted it by hand (one adopter, 2026-09-29).
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises'; // why: Bun has no recursive remove, only a per-file delete.

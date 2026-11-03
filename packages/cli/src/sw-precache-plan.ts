@@ -49,7 +49,7 @@ const spell = (path: string, locale: string, locales: RoutedLocales): string =>
  * The route table, as the service worker sees it — once per routed locale. The server strips a
  * `/en/` prefix before it matches (`@ultimat3/http`'s `locale-prefix.ts`), and the worker matches
  * pathnames: with one spelling per route, no `/en/…` URL had a rule, so the English site was never
- * cached and never offline (notificado.co, 22.3.2). Only the fields a browser can act on cross,
+ * cached and never offline (one adopter, 22.3.2). Only the fields a browser can act on cross,
  * plus — for a spelling this build rendered — the content hash and byte count of its document.
  */
 export function pwaRoutes(
@@ -106,7 +106,7 @@ export interface PrecacheAssetInput {
 /**
  * The island chunks a PRECACHED page boots, every surface stylesheet and every framework script.
  * Every island in the app was precached, so a first anonymous visit to a marketing page downloaded
- * the admin, KYC and payment islands too — 43 chunks, ~1 MB on notificado.co (22.3.2). The rest are
+ * the admin, KYC and payment islands too — 43 chunks, ~1 MB on one adopter (22.3.2). The rest are
  * cached the first time a page asks for one (`ISLAND_BASE_PATH` is a runtime asset prefix).
  *
  * Two readers of "which islands", because only one of them exists per build: the static export

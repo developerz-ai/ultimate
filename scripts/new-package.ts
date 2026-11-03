@@ -17,6 +17,7 @@ import { flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ABOVE_TABLE, allowedTiersFor, TIER_OF, TIERS, tierOf } from './lib/tiers';
+import { WIKI_ROOT } from './package-front';
 
 /**
  * The grant, copied rather than referenced. npm packs a `files` entry per package directory and
@@ -50,6 +51,10 @@ export function packageJson(name: string, description: string): string {
       name: `@ultimat3/${name}`,
       version: frameworkVersion(),
       description,
+      // `scripts/package-front.ts` refuses a publishable package without both. The wiki's front page
+      // until the package has a page of its own; then point it there, and the README's link with it.
+      keywords: ['ultimate', 'bun', 'framework', name],
+      homepage: WIKI_ROOT,
       license: 'MIT',
       type: 'module',
       repository: {
@@ -100,6 +105,18 @@ export function packageTemplates(name: string, tier: number, description: string
       contents: `# @ultimat3/${name}
 
 ${description}
+
+\`\`\`sh
+bun add @ultimat3/${name}
+\`\`\`
+
+\`\`\`ts
+import { ${upper(name)}_ERROR_CODES } from '@ultimat3/${name}';
+
+console.log(${upper(name)}_ERROR_CODES); // replace with the package's smallest real use
+\`\`\`
+
+Guide: [the wiki](${WIKI_ROOT}).
 
 ## What it owns
 

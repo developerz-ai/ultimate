@@ -4,7 +4,7 @@
 // the plan says so and keeps compose's stop-first recreate. The sequence itself: cmd-deploy-start-first.test.ts.
 
 import { describe, expect, test } from 'bun:test';
-import { composeStrategies } from './cmd-deploy-compose';
+import { composeDatabase, composeRequiredVars, composeStrategies } from './cmd-deploy-compose';
 
 const COMPOSE = `
 x-common: &common
@@ -82,5 +82,33 @@ ${ports}
         expect(strategies.get(role)?.kind ?? 'stop-first').toBe('stop-first');
       }
     }
+  });
+});
+
+describe('unit · what the compose file demands of .env.production', () => {
+  test('every :? and ? interpolation once, in order; a comment and a :- default are not demands', () => {
+    const text = [
+      `# \${HEADER:?prose only}`,
+      'services:',
+      `  web: { environment: ["A=\${A:?set A}", "B=\${B?}", "C=\${C:-x}", "A2=\${A:?again}"] }`,
+    ].join('\n');
+    expect(composeRequiredVars(text)).toEqual(['A', 'B']);
+  });
+
+  test('the db role and database, from either environment spelling, else the image defaults', () => {
+    expect(composeDatabase('services: { db: { environment: { POSTGRES_DB: shop } } }')).toEqual({
+      user: 'postgres',
+      database: 'shop',
+    });
+    expect(
+      composeDatabase('services: { db: { environment: [POSTGRES_USER=app, POSTGRES_DB=main] } }'),
+    ).toEqual({ user: 'app', database: 'main' });
+    expect(composeDatabase('services: { db: { image: postgres } }')).toEqual({
+      user: 'postgres',
+      database: 'postgres',
+    });
+    expect(composeDatabase('services: { web: {} }')).toBeUndefined();
+    expect(composeDatabase('services: [')).toBeUndefined();
+    expect(composeDatabase(undefined)).toBeUndefined();
   });
 });

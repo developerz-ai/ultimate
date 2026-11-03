@@ -2,6 +2,7 @@
 // order it produces is a function of its input alone, and a scan plus a search is reproducible.
 
 import type { DocEntry } from './docs-scan';
+import { stem, tokenize } from './docs-tokens';
 
 /**
  * The tie-break, in CODE UNITS. Never `localeCompare`: with no locale argument it answers from the
@@ -11,77 +12,6 @@ import type { DocEntry } from './docs-scan';
  * is restated rather than imported because that package is not below this one on the tier table.
  */
 const byTopic = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-/**
- * Words that carry no signal in a question about an API. Deliberately tiny: every word removed
- * here is a word an agent cannot search for, and `get`, `set`, `run` and `new` are all real
- * symbol names in this framework.
- */
-const STOPWORDS: ReadonlySet<string> = new Set([
-  'a',
-  'an',
-  'and',
-  'are',
-  'as',
-  'at',
-  'be',
-  'but',
-  'by',
-  'can',
-  'do',
-  'does',
-  'for',
-  'from',
-  'how',
-  'i',
-  'if',
-  'in',
-  'is',
-  'it',
-  'its',
-  'me',
-  'my',
-  'no',
-  'not',
-  'of',
-  'on',
-  'or',
-  'the',
-  'to',
-  'use',
-  'using',
-  'was',
-  'what',
-  'when',
-  'where',
-  'which',
-  'why',
-  'with',
-  'you',
-  'your',
-]);
-
-/**
- * Split on non-alphanumerics, then split camelCase — so `nextRetry` answers a query for `retry`
- * and `retry` answers one for `nextRetry`. The joined original is kept alongside its parts so an
- * exact symbol name can still score as an exact hit.
- */
-export function tokenize(query: string): readonly string[] {
-  const out: string[] = [];
-  const push = (token: string): void => {
-    if (token.length < 2 || STOPWORDS.has(token) || out.includes(token)) return;
-    out.push(token);
-  };
-  // Case is load-bearing until after the split: lowercasing first erases the boundary in
-  // `nextRetry`, which is the one this exists to find.
-  for (const word of query.split(/[^a-zA-Z0-9]+/)) {
-    if (word === '') continue;
-    const parts = word.split(/(?<=[a-z0-9])(?=[A-Z])/);
-    for (const part of parts) push(part.toLowerCase());
-    if (parts.length > 1) push(word.toLowerCase());
-  }
-  return out;
-}
 
 /**
  * A question about rationale wants the prose a human wrote, not the declaration site: "why is
@@ -125,49 +55,78 @@ const MAX_TEXT_SCORE = 6;
 /** Applied once, to a guide entry, when the question asks for rationale rather than an API. */
 const RATIONALE_BONUS = 5;
 
+/** Every lowercased view of one entry a token is compared against, computed once per entry. */
+interface Prepared {
+  readonly symbolsLower: readonly string[];
+  readonly topicStems: readonly string[];
+  readonly packageStem: string;
+  readonly titleLower: string;
+  readonly textLower: string;
+}
+
+/**
+ * Keyed on the entry object, so the memo can never answer for a different entry and an entry
+ * nobody holds is collected. Twenty questions over the shipped tree recomputed these 56,000 times;
+ * the result is a function of the entry alone, so this file stays pure.
+ */
+const PREPARED = new WeakMap<DocEntry, Prepared>();
+
+function prepare(entry: DocEntry): Prepared {
+  const known = PREPARED.get(entry);
+  if (known !== undefined) return known;
+  const prepared: Prepared = {
+    symbolsLower: entry.symbols.map((symbol) => symbol.toLowerCase()),
+    topicStems: tokenize(entry.topic).map(stem),
+    packageStem: stem(entry.package.split('/').at(-1)?.toLowerCase() ?? ''),
+    titleLower: entry.title.toLowerCase(),
+    textLower: entry.text.toLowerCase(),
+  };
+  PREPARED.set(entry, prepared);
+  return prepared;
+}
+
 function scoreEntry(
   entry: DocEntry,
   tokens: readonly string[],
   rationale: boolean,
 ): DocHit | undefined {
-  const symbolsLower = entry.symbols.map((symbol) => symbol.toLowerCase());
-  const topicTokens = tokenize(entry.topic);
-  const packageToken = entry.package.split('/').at(-1)?.toLowerCase() ?? '';
-  const titleLower = entry.title.toLowerCase();
-  const textLower = entry.text.toLowerCase();
+  const { symbolsLower, topicStems, packageStem, titleLower, textLower } = prepare(entry);
   const matched: string[] = [];
   let score = 0;
   let textScore = 0;
 
   let covered = 0;
-  for (const token of tokens) {
+  for (const word of tokens) {
     const before = score + textScore;
+    // The stem, not the word, against every name and every line of prose: `upgrade` has to reach
+    // `Upgrading`, and `jobs` the `job` module. A symbol stays exact-or-substring on the word.
+    const root = stem(word);
     // Symbol, topic and package name are three views of ONE fact — "this thing is called that".
-    // Summing them let a token that is a package name, its module name and its exported type
+    // Summing them let a word that is a package name, its module name and its exported type
     // (`money`) out-score three genuinely independent hits, so the strongest view wins alone.
-    const exact = symbolsLower.indexOf(token);
-    const partial = exact >= 0 ? -1 : symbolsLower.findIndex((symbol) => symbol.includes(token));
+    const exact = symbolsLower.indexOf(word);
+    const partial = exact >= 0 ? -1 : symbolsLower.findIndex((symbol) => symbol.includes(word));
     const symbolScore = exact >= 0 ? EXACT_SYMBOL : partial >= 0 ? PARTIAL_SYMBOL : 0;
     const nameScore = Math.max(
       symbolScore,
-      topicTokens.includes(token) ? TOPIC : 0,
-      packageToken === token ? PACKAGE : 0,
+      topicStems.includes(root) ? TOPIC : 0,
+      packageStem === root ? PACKAGE : 0,
     );
     score += nameScore;
     const named = entry.symbols[exact >= 0 ? exact : partial];
     if (symbolScore > 0 && named !== undefined) matched.push(named);
-    else if (nameScore > 0 && !matched.includes(token)) matched.push(token);
+    else if (nameScore > 0 && !matched.includes(word)) matched.push(word);
 
-    // Prose is independent evidence of the same token, and is counted on top — capped, so a long
+    // Prose is independent evidence of the same word, and is counted on top — capped, so a long
     // document cannot out-argue the declaration it describes.
-    if (titleLower.includes(token)) {
+    if (titleLower.includes(root)) {
       score += TITLE;
-      if (!matched.includes(token)) matched.push(token);
-    } else if (textLower.includes(token)) {
+      if (!matched.includes(word)) matched.push(word);
+    } else if (textLower.includes(root)) {
       textScore += TEXT;
-      if (!matched.includes(token)) matched.push(token);
+      if (!matched.includes(word)) matched.push(word);
     }
-    // Counted per query token, not per hit: a token that matched a symbol AND the prose is still
+    // Counted per query word, not per hit: a word that matched a symbol AND the prose is still
     // one of the question's words accounted for.
     if (score + textScore > before) covered += 1;
   }
@@ -182,11 +141,18 @@ function scoreEntry(
 }
 
 /**
+ * At an equal score, prose a human wrote about the task beats the header of a file that mentions
+ * it: the guide says how to do the thing, the module only that it exists.
+ */
+const byKind = (a: DocHit, b: DocHit): number =>
+  a.entry.kind === b.entry.kind ? 0 : a.entry.kind === 'guide' ? -1 : 1;
+
+/**
  * Ranked answers to a question, best first. A query that earns no points anywhere returns an
  * empty list rather than the corpus: a search that always answers teaches an agent to trust an
  * answer that was never about its question.
  *
- * Ties break on topic, never on scan order, so the corpus can be assembled in any order and the
+ * Ties break on kind (guide first), then on topic, never on scan order, so the corpus can be assembled in any order and the
  * ranking still reproduces.
  */
 export function searchDocs(
@@ -203,7 +169,7 @@ export function searchDocs(
     const hit = scoreEntry(entry, tokens, rationale);
     if (hit !== undefined && hit.covered >= required) hits.push(hit);
   }
-  hits.sort((a, b) => b.score - a.score || byTopic(a.entry.topic, b.entry.topic));
+  hits.sort((a, b) => b.score - a.score || byKind(a, b) || byTopic(a.entry.topic, b.entry.topic));
   return hits.slice(0, limit);
 }
 
@@ -221,11 +187,11 @@ export function nearestTopics(
   for (const entry of entries) {
     const topic = entry.topic.toLowerCase();
     let score = 0;
-    for (const token of tokens) {
-      if (topic.includes(token)) score += 2;
+    for (const word of tokens) {
+      if (topic.includes(word)) score += 2;
       // A prefix, so `retries` still reaches `retry` and `caching` reaches `cache`. Four
       // characters, because three matches almost everything.
-      else if (token.length >= 4 && topic.includes(token.slice(0, 4))) score += 1;
+      else if (word.length >= 4 && topic.includes(word.slice(0, 4))) score += 1;
     }
     if (score > 0) scored.push({ topic: entry.topic, score });
   }

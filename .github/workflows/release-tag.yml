@@ -1,6 +1,7 @@
 name: release-tag
 
 # Merging the release PR IS the release. When ci.yml passes on the push of a RELEASE COMMIT to main
+# (or to a `release/<major>.x` maintenance branch, wiki/Stability.md)
 # — its subject matches `scripts/lib/release-subject.ts` (`chore: release X.Y.Z (#N)`) — and the
 # version it stamps has no tag yet, this workflow cuts that release as a maintainer used to by hand: the ANNOTATED tag on the commit ci.yml judged, the GitHub Release with that version's
 # CHANGELOG.md section as its notes, and a dispatch of release.yml at the tag.
@@ -30,7 +31,7 @@ on:
   workflow_run:
     workflows: [ci]
     types: [completed]
-    branches: [main]
+    branches: [main, 'release/*']
 
 # One release cut at a time, and never cancelled: a tag without its Release, or a Release without
 # its dispatch, is a half-cut release a human then has to finish.
@@ -50,7 +51,7 @@ jobs:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.head_branch == 'main' || startsWith(github.event.workflow_run.head_branch, 'release/')) &&
       github.event.workflow_run.head_repository.full_name == github.repository &&
       (startsWith(github.event.workflow_run.head_commit.message, 'chore: release ') ||
        startsWith(github.event.workflow_run.head_commit.message, 'release: '))

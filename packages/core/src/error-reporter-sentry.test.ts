@@ -4,6 +4,7 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
+import { errorFingerprint } from './error-fingerprint';
 import { configureErrorReporting, errorReport, resetErrorReporting } from './error-reporter';
 import {
   ErrorReporterDsnInvalidError,
@@ -115,6 +116,16 @@ describe('sentryEnvelope', () => {
         },
       ],
     });
+  });
+
+  test('the envelope names its group: the fingerprint is errorFingerprint(report)', () => {
+    const built = report();
+    const envelope = sentryEnvelope(built, {
+      dsn: 'https://abc123@errors.example.com/42',
+      eventId: 'f'.repeat(32),
+    });
+    const payload = JSON.parse(envelope.split('\n')[2] as string) as Record<string, unknown>;
+    expect(payload['fingerprint']).toEqual([errorFingerprint(built)]);
   });
 });
 

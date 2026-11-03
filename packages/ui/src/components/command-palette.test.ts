@@ -2,7 +2,14 @@
 // asked of the component; the rules have their own tests in `command-palette-view.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, fire, one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
+import {
+  byTag,
+  fire,
+  one,
+  type RenderNode,
+  renderNodes,
+  withAttr,
+} from '@ultimat3/core/render-nodes';
 import { CommandPalette } from './CommandPalette';
 
 const labels = {
@@ -59,8 +66,8 @@ describe('CommandPalette', () => {
       onHoverItem: (id: string) => hovered.push(id),
     });
     const [first] = byTag(nodes, 'button');
-    fire(first as ProbeNode, 'onClick', {});
-    fire(first as ProbeNode, 'onMouseEnter', {});
+    fire(first as RenderNode, 'onClick', {});
+    fire(first as RenderNode, 'onMouseEnter', {});
     expect(ran).toEqual(['new']);
     expect(hovered).toEqual(['new']);
   });

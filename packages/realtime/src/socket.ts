@@ -199,7 +199,7 @@ export class SyncSocket {
    * The `hello` frame is the documented place a client names its build, and until 2026-09-07 the
    * node never read it: `clientBuildId` came from the dial's `?build=` alone and defaulted to this
    * node's OWN id when the query was absent — so a client that said `hello` from any build at all
-   * was deemed current forever, and `update-available` never came. Measured on ai-maxxing: a page
+   * was deemed current forever, and `update-available` never came. Measured on one adopter: a page
    * sending `buildId: "dev"` in every hello to a node on `46db23f57d6ef969`. The last word wins,
    * and the hello is the later one; `?build=` still works for a dial that carries it.
    */

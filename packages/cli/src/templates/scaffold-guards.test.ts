@@ -53,15 +53,17 @@ async function findingsWith(
 
 const codes = (findings: readonly Finding[]): readonly string[] => findings.map((f) => f.code);
 
-/** Every guard `x new` writes, spelled out: an eighteenth arriving unannounced fails here. */
-const SEVENTEEN: readonly string[] = [
+/** Every guard `x new` writes, spelled out: a nineteenth arriving unannounced fails here. */
+const NINETEEN: readonly string[] = [
   'guards/animated-layout-property.ts',
   'guards/bare-error.ts',
+  'guards/error-declared.ts',
   'guards/focus-visible.ts',
   'guards/image-dimensions.ts',
   'guards/island-without-states.ts',
   'guards/raw-breakpoint.ts',
   'guards/raw-colour.ts',
+  'guards/raw-fetch.ts',
   'guards/raw-length.ts',
   'guards/raw-motion.ts',
   'guards/raw-shadow.ts',
@@ -77,7 +79,7 @@ const SEVENTEEN: readonly string[] = [
 describe('unit · x new · the guards it ships', () => {
   test('every guard is a file the gate discovers, and each has its own test', () => {
     const paths = scaffoldGuardFiles().map((file) => file.path);
-    expect(paths.filter((path) => !path.endsWith('.test.ts'))).toEqual([...SEVENTEEN]);
+    expect(paths.filter((path) => !path.endsWith('.test.ts'))).toEqual([...NINETEEN]);
     for (const rule of paths.filter((path) => !path.endsWith('.test.ts'))) {
       expect(paths).toContain(rule.replace(/\.ts$/, '.test.ts'));
     }
@@ -89,7 +91,7 @@ describe('unit · x new · the guards it ships', () => {
     const dir = mkdtempSync(join(tmpdir(), 'x-guards-'));
     try {
       await scaffoldInto(dir);
-      expect(await guardPaths(dir)).toEqual([...SEVENTEEN]);
+      expect(await guardPaths(dir)).toEqual([...NINETEEN]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -201,7 +203,18 @@ describe('unit · x new · each shipped guard refuses the mistake it names', () 
     });
     expect(codes(findings)).toEqual(['X_BARE_ERROR']);
     expect(findings[0]?.cause).toContain(':2');
-    expect(findings[0]?.fix).toContain('UltimateError');
+    expect(findings[0]?.fix).toContain('defineError');
+  }, 30_000);
+
+  test('a handwritten UltimateError subclass is X_ERROR_DECLARED', async () => {
+    const findings = await findingsWith({
+      'apps/web/app/post/errors.ts':
+        "import { UltimateError } from '@ultimat3/core';\n" +
+        'export class PostGone extends UltimateError {}\n',
+    });
+    expect(codes(findings)).toEqual(['X_ERROR_DECLARED']);
+    expect(findings[0]?.cause).toContain('apps/web/app/post/errors.ts:2');
+    expect(findings[0]?.fix).toContain('defineError');
   }, 30_000);
 
   test('a typed JSX string beside a t() call is X_UNTRANSLATED_STRING', async () => {

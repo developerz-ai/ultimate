@@ -5,7 +5,7 @@
 // WHY THERE IS MORE THAN ONE PROCESS, `As of 2026-09-27`. A `--parallel` worker is not freed file
 // by file: it keeps its heap for the life of the `bun test` process and it GROWS with every file it
 // is handed (JIT, module-resolution caches, PGlite heaps the collector has not yet returned). On
-// notificado.co's unit corpus (768 files, PGlite per file, 12-core box, Bun 1.4.0), whole-tree RSS
+// one adopter's unit corpus (768 files, PGlite per file, 12-core box, Bun 1.4.0), whole-tree RSS
 // at 12 workers:
 //
 //   | form                                        | peak tree RSS | wall   |

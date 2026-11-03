@@ -105,9 +105,11 @@ const OF_TOTAL = /\b(\d+)\s+of\s+(\d+)\s+steps\b/g;
  * TWO shapes, not one loose pattern. `N red of M` is unambiguous wherever it appears. A bare tally
  * is only read when nothing follows it — a lowercase word after the second numeral makes it a count
  * of that noun (`24 of 30 packages`, `29 of 30 package tsconfigs`), which is three sentences in
- * this tree and none of them about the gate.
+ * this tree and none of them about the gate. A separator and digit after the second numeral make
+ * it one larger number (`0 of 9,028 requests`), never a tally of 9.
  */
-const OF_TOTAL_LOOSE = /\b(\d+)\s+red\s+of\s+(\d+)\b|\b(\d+)\s+of\s+(\d+)\b(?!\s*[a-z])/g;
+const OF_TOTAL_LOOSE =
+  /\b(\d+)\s+red\s+of\s+(\d+)\b(?![,.]\d)|\b(\d+)\s+of\s+(\d+)\b(?![,.]\d)(?!\s*[a-z])/g;
 
 /** A line that says `step` is talking about steps — the context the loose tally needs. */
 const STEP_WORD = /\bsteps?\b/i;

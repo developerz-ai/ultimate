@@ -10,6 +10,7 @@ import { flagString, parseScriptArgs } from './lib/args';
 import { BASE_REF, baseRef, FETCH_MAIN, type GitRunner } from './lib/base-ref';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
+import { nextMajorWindow } from './lib/major-window';
 import { gh } from './lib/release-due-gh';
 import { git } from './lib/release-due-git';
 import type { DueDecision, DueInput, WindowCommit } from './lib/release-due-rule';
@@ -320,6 +321,7 @@ export async function decideAt(
   const changelog = await Bun.file(`${root}/CHANGELOG.md`)
     .text()
     .catch(() => '');
+  const opensOn = nextMajorWindow(changelog)?.opensOn;
   const facts: DueInput = {
     tagged,
     stamped,
@@ -329,6 +331,7 @@ export async function decideAt(
     settleHours,
     ships: (path) => shippingPackage(path, files),
     headSha,
+    ...(opensOn === undefined ? {} : { majorWindowOpensOn: opensOn }),
   };
   // The rule computes `next`, so the lookups can only follow it. `releaseDue` is pure and cheap,
   // and only a `due` decision ever reads a twin, so the second pass happens on that path.

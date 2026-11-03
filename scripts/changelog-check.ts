@@ -19,6 +19,20 @@
 // under the wrong heading is invisible to a whole-file count, because a misplaced entry only makes
 // the number smaller. Per-section is the entire point of this file.
 //
+// HOW THE TOTAL ON wiki/Upgrading.md IS COUNTED (moved here from that page, a reader's page):
+// - `[Unreleased]` is cut by the awk deliberately: a whole-file grep agrees only while that section
+//   is empty, so it moved on every PR that landed a breaking change and moved BACK when the release
+//   promoted the section. Corrected 2026-08-26, after it failed exactly that way.
+// - The total is SMALLER than the entries that page walks: CHANGELOG.md keeps the recent releases
+//   (`git show v10.0.0:CHANGELOG.md` has the rest) and the page keeps every major's row. The oldest
+//   `## X.Y.Z` heading still in the changelog is the retention boundary (`retentionBoundary`); no
+//   count is asked for below it.
+// - At a TAGGED commit `[Unreleased]` holds no `BREAKING —` line
+//   (X_DOC_CHANGELOG_UNRELEASED_BREAKING): the release promotes the section, never appends one.
+// - One row's count: `sed -n '<start>,<end>p' CHANGELOG.md | grep -cE '^(- \*\*|### )BREAKING —'`
+//   with bounds from `grep -n '^## ' CHANGELOG.md`. Line numbers are never written down.
+// - Both directions are compared: each row against its OWN section, the total against the file.
+//
 //   bun run scripts/changelog-check.ts [--json]
 
 import { parseScriptArgs } from './lib/args';
@@ -38,6 +52,7 @@ import {
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
+import { stabilityChangelogFindings, todayUtc } from './lib/stability-findings';
 import { claimGaps, treeClaims } from './lib/unreleased-claims';
 
 const SCRIPT = 'changelog-check';
@@ -289,7 +304,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       cause: `${gap.at} ${gap.detail}`,
       // The row does not exist, so there is no count to set — the edit is to write the row. A
       // literal path, never an interpolation: the fix-line rule reads these statically.
-      fix: 'add a row to the summary table in wiki/Upgrading.md for the version the cause names, whose third cell reads "the `X.Y.Z` section, in order", then rerun: bun run scripts/changelog-check.ts --json',
+      fix: 'add a row to the summary table in wiki/Upgrading.md for the version the cause names, whose third cell reads "[the `X.Y.Z` section](#anchor-of-its-heading), in order", then rerun: bun run scripts/changelog-check.ts --json',
       at: UPGRADING_PATH,
     };
   }
@@ -316,7 +331,7 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       code: 'X_DOC_MIGRATION_UNSCANNED',
       cause: `${gap.at} ${gap.detail}`,
       // A literal path, never an interpolation: the fix-line rule reads these statically.
-      fix: 'restore the summary table in wiki/Upgrading.md — each row reads "the `X.Y.Z` section, in order"',
+      fix: 'restore the summary table in wiki/Upgrading.md — each row reads "[the `X.Y.Z` section](#anchor-of-its-heading), in order"',
       at: UPGRADING_PATH,
     };
   }
@@ -361,6 +376,8 @@ export const changelogFindings = async (root: string): Promise<readonly Finding[
     ),
     ...checkPairing(changelog, upgrading).map(pairingFinding),
     ...claimGaps(await treeClaims(root, changelog)),
+    // wiki/Stability.md's changelog rules: the major window, Highlights, no break on main.
+    ...stabilityChangelogFindings(changelog, Bun.env, todayUtc()),
   ];
 };
 

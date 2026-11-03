@@ -2,20 +2,20 @@
 // the geometry has its own tests in `bar-chart-view.test.ts` and `sparkline-view.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe-fixture';
-import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
+import type { RenderNode } from '@ultimat3/core/render-nodes';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { BarChart } from './BarChart';
 import { Sparkline } from './Sparkline';
 
-const cellText = (node: ProbeNode | undefined): string =>
+const cellText = (node: RenderNode | undefined): string =>
   [node?.props['children']]
     .flat()
     .filter((c) => typeof c === 'string')
     .join('');
 /** The data cells of the fallback table's BODY — the corner cell is not a datum. */
-const bodyCells = (nodes: ProbeNode[]): string[] =>
+const bodyCells = (nodes: RenderNode[]): string[] =>
   byTag(nodesOf(one(byTag(nodes, 'tbody'), 'tbody').props['children']), 'td').map(cellText);
-const titleText = (nodes: ProbeNode[]): string[] =>
+const titleText = (nodes: RenderNode[]): string[] =>
   byTag(nodes, 'title').map((t) => [t.props['children']].flat().join(''));
 
 const points = [

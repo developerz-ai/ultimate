@@ -380,9 +380,11 @@ describe('this repository', () => {
       );
 
       expect(measured.get('packages/core')).toEqual([
+        'src/breaker.ts',
         'src/context.ts',
         'src/core-error-codes.ts',
         'src/lifecycle-errors.ts',
+        'src/outbound-errors.ts',
         'src/schema-error-codes.ts',
         'src/secrets-errors.ts',
       ]);

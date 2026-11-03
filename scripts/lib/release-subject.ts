@@ -159,6 +159,32 @@ export const askTwin = (issues: readonly AskIssue[], version: string): AskIssue 
   return ask.open ? issues.find((issue) => issue.title === ask.twin) : undefined;
 };
 
+/**
+ * The `--json number,title` answer, read tolerantly: the lookup only decorates a report that has
+ * to print either way, so anything that is not the rows gh promised — an error line, a truncated
+ * answer, some future gh's new shape — is simply no ask. Malformed rows drop out of an array;
+ * anything else answers empty-handed.
+ */
+export const parseAskIssues = (output: string): readonly AskIssue[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const isAskIssue = (row: unknown): row is AskIssue =>
+    typeof row === 'object' &&
+    row !== null &&
+    typeof (row as { number?: unknown }).number === 'number' &&
+    typeof (row as { title?: unknown }).title === 'string';
+  return parsed.filter(isAskIssue);
+};
+
+/** The one line a failed lookup earns: the close link is unconfirmed, and nothing else moves. */
+export const askLookupFailedLine = (version: string): string =>
+  `  ask       lookup failed — could not confirm whether \`Release ${version}\` is open; \`Fixes #<n>\` belongs in the PR body only if one is`;
+
 /** One CLI pull-request row, `{number,title}`: the bump PR, which a report may name by its number
  * as well as by its title. */
 export interface AskPr {
@@ -187,8 +213,8 @@ export const askPrArgs = (version: string): readonly string[] => [
 ];
 
 /**
- * The `--json number,title` answer, read tolerantly — the mirror of `parseAskIssues` in
- * `scripts/release.ts`: anything that is not the rows the CLI promised (an error line, a truncated
+ * The `--json number,title` answer, read tolerantly — the mirror of `parseAskIssues` above:
+ * anything that is not the rows the CLI promised (an error line, a truncated
  * answer, some future version's new shape) is no PR at all, and a malformed row drops out of the
  * array rather than failing the decision.
  */

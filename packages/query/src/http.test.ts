@@ -291,7 +291,7 @@ describe('the typed client against the route', () => {
  * `?_first=` and `?_after=` — the page controls the route reads OFF the search string before the
  * schema sees it, answering `query.page()`'s own envelope. Without one the answer is the bare
  * array it has always been: every client written before the controls existed keeps reading rows.
- * Before this the page marker had nowhere to ride but on a row (`olderCursor`, ai-maxxing's
+ * Before this the page marker had nowhere to ride but on a row (`olderCursor`, one adopter's
  * `sessionMessages`), which is a cursor on the wrong side of the envelope.
  */
 describe('a paged read over the route', () => {

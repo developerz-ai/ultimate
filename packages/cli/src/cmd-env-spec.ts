@@ -8,11 +8,18 @@ import type { CommandSpec } from './parse';
 export const envSpec: CommandSpec = {
   name: 'env',
   summary: `the typed environment declared by ${ENV_SCHEMA_EXPORT} in ${APP_CONFIG_FILE}`,
-  usage: 'x env [check|example] [--json]',
+  usage: 'x env [check|example] [--json] | x env init --production [--json]',
   requiresApp: true,
-  subcommands: ['check', 'example'],
+  subcommands: ['check', 'example', 'init'],
   // The bare `x env` answers the question the fix line on every `X_ENV_MISSING` in this
   // framework already tells its reader to run.
   defaultSubcommand: 'check',
-  flags: [],
+  flags: [
+    {
+      name: 'production',
+      type: 'boolean',
+      summary: 'write .env.production: what x deploy --method compose reads, secrets generated',
+      subcommands: ['init'],
+    },
+  ],
 };

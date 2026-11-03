@@ -3,7 +3,7 @@
 // emits: a pinned cell with a transparent background shows the scrolled cells through it.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, one, renderNodes } from '../jsx-probe-fixture';
+import { byTag, one, renderNodes } from '@ultimat3/core/render-nodes';
 import { compileScssFile } from '../sass-probe-fixture';
 import { Table } from './Table';
 

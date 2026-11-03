@@ -43,13 +43,13 @@ const extraction: Extraction = {
 /** `applies` never runs a command; a runner that would fail loudly if one did. */
 const unusedRunner = () => expect.unreachable('applies must not spawn a process');
 
-/** An app that loads and registers nothing — the shape castlefight.online shipped. */
+/** An app that loads and registers nothing — the shape one adopter shipped. */
 const loadsNothing = async () => ({ findings: [], locales: UNDECLARED_LOCALES });
 
 /** No second copy anywhere — what every install but one has answered. */
 const oneCopy = async () => [];
 
-/** ai-maxxing, 2026-09-05: the root and the CLI on 19.1.0, `packages/i18n` still on 19.0.0. */
+/** One adopter, 2026-09-05: the root and the CLI on 19.1.0, `packages/i18n` still on 19.0.0. */
 const twoCopies: DuplicateInstall = {
   pkg: '@ultimat3/i18n',
   copies: [

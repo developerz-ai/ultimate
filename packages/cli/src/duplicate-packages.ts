@@ -4,7 +4,7 @@
 // `packages/i18n` workspace pinned `@ultimat3/i18n@19.0.0` while its root had 19.1.0 registered
 // every catalog into the workspace's copy, the CLI read the root's, and `x i18n check` answered
 // `X_CATALOG_UNREGISTERED` with a fix that said to move a `defineCatalogs()` call that was already
-// exactly where the fix said to put it (ai-maxxing, 2026-09-05). The same split is the one
+// exactly where the fix said to put it (one adopter, 2026-09-05). The same split is the one
 // `local-cli.ts` hands over for — a global `x` is a second copy of `@ultimat3/entity` — except this
 // one lives inside the app's own `node_modules`, where no hand-over can reach it.
 

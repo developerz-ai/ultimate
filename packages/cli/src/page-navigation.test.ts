@@ -307,9 +307,9 @@ describe('unit · loadNavigation', () => {
       expect(await loadNavigation(root)).toEqual({ app: 'app', surfaces: [] });
       await writeFile(
         join(root, 'app.config.ts'),
-        "export const config = { name: 'notificado', navigation: { client: ['app'] } };\n",
+        "export const config = { name: 'acme', navigation: { client: ['app'] } };\n",
       );
-      expect(await loadNavigation(root)).toEqual({ app: 'notificado', surfaces: ['app'] });
+      expect(await loadNavigation(root)).toEqual({ app: 'acme', surfaces: ['app'] });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -320,7 +320,7 @@ describe('unit · loadNavigation', () => {
     try {
       await writeFile(
         join(root, 'app.config.ts'),
-        "export const config = { name: 'notificado', navigation: { client: ['app', 'api'] } };\n",
+        "export const config = { name: 'acme', navigation: { client: ['app', 'api'] } };\n",
       );
       const error: unknown = await loadNavigation(root).then(
         () => undefined,

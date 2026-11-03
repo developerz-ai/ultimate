@@ -230,7 +230,7 @@ const CHARSET_HEAD = /^\uFEFF?(?:@charset\s+"[^"]*"\s*;\s*)?/u;
  * decoded as UTF-8 by every browser. It is wrong about a fragment. The registry concatenates
  * modules verbatim, so every module after the first that holds a `content: '·'` began with a BOM
  * glued to its first selector — `\uFEFF.dashboard_256ee8e0{display:grid}` — which the browser reads
- * as an unparseable selector and drops with its whole rule. Measured on ai-maxxing's home
+ * as an unparseable selector and drops with its whole rule. Measured on one adopter's home
  * stylesheet, 2026-09-06: seven modules, seven first rules gone, the dashboard's grid container
  * painting `display: block` with only the UA rule in Chrome's matched styles. The bundle is served
  * `text/css; charset=utf-8` by the route, so no sheet needs to claim its encoding at all.

@@ -205,7 +205,7 @@ export function clearStylesheets(): void {
  * THE ORDER IS A FUNCTION OF THE SHEETS, NEVER OF THEIR ARRIVAL (22.3.5). A sheet registers in Bun's
  * `onLoad`, which runs as the loader fetches a module's dependencies — in parallel — and an island
  * build's too: the arrival order differed on every boot of one image, and so did the joined bytes
- * and the `/styles/<hash>.css` minted from them (notificado.co, 22.3.2–22.3.4: two pods, two URLs,
+ * and the `/styles/<hash>.css` minted from them (one adopter, 22.3.2–22.3.4: two pods, two URLs,
  * each the other's 404). `stylesheetOrder` is the whole rule:
  *
  * | key | first | why |

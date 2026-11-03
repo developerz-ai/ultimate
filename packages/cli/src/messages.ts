@@ -97,6 +97,13 @@ const CATALOG = {
   'cli.dev.introspect': '  introspect {url}',
   'cli.dev.manifest': '  manifest {path}',
   'cli.dev.mcp': '  mcp POST {path}',
+  // `x stop` (`cmd-stop.ts`): the lock's holder, and only it.
+  'cli.stop.none': 'no x dev is running in this checkout',
+  'cli.stop.stale':
+    'the dev.lock names a pid another process now holds — nothing signalled; the next x dev clears the lock',
+  'cli.stop.stopped': 'stopped x dev (pid {pid}, port {port}) in {ms}ms',
+  'cli.stop.terminated':
+    'terminated x dev (pid {pid}, port {port}) in {ms}ms — Windows stops a process without a drain',
   'cli.deploy.plan': 'containers only: {images} image, roles {roles}',
   'cli.deploy.verified':
     'build {build} held {windowMs} ms over {samples} sample(s); queues: {served} served, {idle} idle',
@@ -181,7 +188,7 @@ const CATALOG = {
   'cli.mcp.serving': 'mcp {transport} serving {tools} tools',
   'cli.mcp.scopes': '  scopes {scopes}',
   // `bun run setup` and nothing else: the scaffold ships it (`bin/setup.ts`), `README.md` and
-  // `bun run check` both name it, and it is the only spelling that is right on a fresh clone — it
+  // the generated `ci.yml` both name it, and it is the only spelling that is right on a fresh clone — it
   // installs, writes `.env.development.local`, runs `x db gen "initial"` (the scaffold writes no
   // migration, so the drift step is red until it has), migrates and seeds. The four-command line
   // this replaced named `x dev` off a tree where nothing had installed the CLI yet, and skipped the
@@ -203,6 +210,8 @@ const CATALOG = {
   // command is a broken one — the same split `Finding.fix` already makes.
   'cli.new.wrote': '  {count} files in {dir}',
   'cli.new.noRepository': '  no repository — {problem}',
+  // `git init` ran and the commit did not: `.git` exists, so "no repository" was false.
+  'cli.new.uncommitted': '  repository initialised, nothing committed — {problem}',
   'cli.policy.count':
     '{permissions} permission(s), {roles} role(s), {enforced} enforced by a declaration',
   // One row per (declaration, actor) pair, never per role: a permission two declarations enforce
@@ -329,6 +338,9 @@ const CATALOG = {
   'cli.verify.notAGateRun': 'NOT A GATE RUN — {summary}',
   'cli.verify.pass': 'all {count} steps passed in {ms}ms',
   'cli.verify.fail': '{failed} of {count} steps failed',
+  // The budgets step built before it weighed (`verify-budgets-build.ts`): which stats state made it.
+  'cli.verify.budgets.built':
+    'built first: build stats were {state} — x build --target static --out {out} ({ms}ms)',
   // A skipped step is not a passed one, so the two counts never share a sentence — and the skipped
   // ones are named, because "which suite has nothing to run here?" is the question a green gate
   // over a missing suite has to answer on its own line. Whole sentences per case rather than a
@@ -372,6 +384,8 @@ const CATALOG = {
   'cli.env.checkedAsProduction': 'checked as production: no ULTIMATE_ENV named',
   'cli.env.wrote': 'wrote {path} — {count} declared variable(s)',
   'cli.env.fresh': '{path} already matches the declaration',
+  'cli.env.initialised': 'wrote {path} — {count} value(s), secrets generated and never printed',
+  'cli.env.unfilled': '  {key} is required and empty — set it in {path}',
   'cli.secrets.init': 'sealed {path} — master key {kid}, and .gitignore now covers the key file',
   'cli.secrets.deploy': '  carry the key into a deploy with {env}="$(cat {keyPath})"',
   'cli.secrets.redeploy': '  set {env}="$(cat {keyPath})" in every deploy before the next release',

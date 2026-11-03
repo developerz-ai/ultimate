@@ -26,7 +26,7 @@ const strings = (value: unknown): readonly string[] =>
 /**
  * The manifests' locales, off `appLocaleSet`'s answer (`@ultimat3/i18n/app-catalogs`) — an app
  * with no catalogs is `UNDECLARED_LOCALES`, the framework default alone. The manifest's `lang` was
- * the generator's hardcoded `'en'` for an `es-co` app (notificado.co, 22.3.2). Deduplicated by URL
+ * the generator's hardcoded `'en'` for an `es-co` app (one adopter, 22.3.2). Deduplicated by URL
  * segment, the unit a locale prefix is spelled in.
  */
 export function appLocales(set: AppLocaleSet): AppLocales {

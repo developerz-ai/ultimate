@@ -132,7 +132,7 @@ describe('hidden is not forbidden', () => {
     expect(response?.error?.code).toBe(METHOD_NOT_FOUND);
     // The message carries the ONE instruction that is safe on both branches — read `tools/list`
     // — because a hidden tool and an absent one answer it identically, and neither says which.
-    // Measured through ai-maxxing's `POST /mcp` on 2026-09-07: `tool not found: <name>` and
+    // Measured through one adopter's `POST /mcp` on 2026-09-07: `tool not found: <name>` and
     // nothing else, so a box agent holding a stale name had no next step.
     expect(response?.error?.message).toBe(
       'tool not found: admin.only — call tools/list to read the catalog this caller may use',

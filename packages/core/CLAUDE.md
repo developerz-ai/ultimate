@@ -7,7 +7,7 @@ change to every package.
 | Rule | |
 |---|---|
 | Deps | `@ultimat3/schema` only (`bun-types`: types) |
-| Errors | subclass `UltimateError`; never `throw new Error` |
+| Errors | never `throw new Error`. A FRAMEWORK code: `bun run new-error-code` (a class, `CORE_CODE_TITLES` or the package's `errors.ts`, a `--status`/`--off-socket` decision, a wiki row). An APP code: `defineError()` (`define-error.ts`), which registers title, status and retry in one call and needs no wiki row; its own module, so an `UltimateError`-only chunk never retains it (`define-error-bytes.test.ts`) |
 | Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
 | A value in a `fix:` a shell READS | `renderFixShellArg(value, placeholder)` — `renderFixLiteral`'s double quotes leave `$(…)`, `` ` `` and `${…}` live. An ordinary path or URL passes through; anything a shell would read becomes the placeholder |
 | Whether that value TRAVELS | `isFixShellSafe(value)`, the predicate `renderFixShellArg` is built on. A placeholder is not a runnable command, so a `fix:` whose value sits mid-command asks this first and emits PROSE when the answer is no (`@ultimat3/auth`'s `jwks.ts`, `@ultimat3/scraping`'s `profileLocked`) |
@@ -19,7 +19,7 @@ change to every package.
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
 | A value ambient across an `await` | `asyncContext<T>(subject)` from `async-context.ts`, in **every** package — never `new AsyncLocalStorage` |
-| Exports | explicit in `src/index.ts`; no `export *`. ONE subpath, `@ultimat3/core/page` (`src/page.ts`): the page handle, the principal fence and the page's shared names, because any barrel import retains the error registry (~7.6 kB). `page-bundle.test.ts` pins the retained module set and a 1.5 kB ceiling; nothing that constructs an error may join it. `src/exports/` groups three subjects; every name is still written out in `index.ts` |
+| Exports | explicit in `src/index.ts`; no `export *`. FOUR public subpaths. `./page` (`page.ts`): the page handle, the principal fence and the page's shared names, because any barrel import retains the error registry (~7.6 kB); `page-bundle.test.ts` pins the retained set and a 1.5 kB ceiling, and nothing that constructs an error may join it. `./outbound` (`outbound-subpath.ts`): server-only, reads `Bun.dns`. `./render-node` (`render-node.ts`): the node brands, a leaf with no import, read by `render`. `./render-nodes` (`render-nodes.ts`): the test walker, imported by no non-test source (`render-nodes-subpath.test.ts`). One INTERNAL subpath, `./internal/error-status` (`error-status-declared.ts`, the app half of the status table): imported by `define-error.ts` and `@ultimat3/http` only, refused on the barrel by `error-status-declared.test.ts`. `src/exports/` groups three subjects; every name is still written out in `index.ts` |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 | Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests |
 
@@ -89,6 +89,9 @@ top-level `UltimateError` use in `error-codes.ts`.
 | the text direction of a locale | `locale-direction.ts` (`directionOf`, `isRtl`, `Direction`) | import from here, never `@ultimat3/i18n`; here so `@ultimat3/ui` skips the i18n barrel |
 | the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
 | ONE sealed value | `seal.ts` (`seal`, `open`, `openText`, `sealAll`) + `seal-keys.ts` (the ring) + `seal-errors.ts` | the framework's one AES call above the envelope: `entity`'s sealed column and `scraping`'s stored session call it, never WebCrypto. `purpose` is required and is AAD |
+| one outbound HTTP call | `outbound.ts` + `outbound-attempt.ts` / `-hops.ts` / `-read.ts` / `-dial.ts` / `-errors.ts` / `-types.ts`, entry `outbound-subpath.ts` | never on the barrel (`outbound-subpath.test.ts`). `retry()` owns the clamp to `ctx`, so no second clamp. Its ten codes register their retry class in `outbound-errors.ts`, NOT `error-retry.ts`'s table, which rides every page. `screenDial` holds the framework's one `Bun.dns.lookup` |
+| is a dependency down | `breaker.ts` | the machine only; the trigger is `classify` or a hand-called `failed()`. Every settle takes the `admit()` ticket. `X_BREAKER_OPEN` registers its class here |
+| what an element carries, for a test | `render-nodes.ts` (`renderNodes`, `nodesOf`, selectors) + `render-node.ts` (`JSX_NODE`, `ISLAND_NODE`, `HOLE_NODE`) | the one walker: `ui`, `admin` and apps import the subpath, never a copy. Islands and holes are branded ARRAYS, tested before `Array.isArray`; a hole is walked as `fallback` and `error`, never its deferred `children` |
 
 - **`installSecrets()` is the ONLY path from `secrets.enc.json` to an app value**, landing in
   `process.env` before `defineEnv` reads it. The real environment always wins.
@@ -117,20 +120,10 @@ top-level `UltimateError` use in `error-codes.ts`.
   `generation-fence.ts`, `retryable-status.ts`, `client-flight.ts`, `client-wire.ts`) imports
   nothing but this package, runs nothing at import, and injects every source of non-determinism
   (roll, sleep, clock, timer). `classifyThrown` / `statedDelayMs` live beside `error-retry.ts`'s table.
-- **`backoffDelay` REFUSES a non-finite bound**: `attempt`, `base`, `max` and `factor` go through
-  `finiteOption` before the clamps. The trailing `return 0` is reachable only by `factor` overflow.
-  It clamps to `max` **before** jitter.
 - **`finiteOption` / `finiteCount` (`finite-option.ts`) are the framework's ONE screen for a numeric
   option.** `finiteCount(subject, option, value, min)` takes `min: 0 | 1` because only the caller
   knows what zero means. `bun run finite-bounds` recognises a repair by the call's shape, so a
   package screen carries `Finite` in its name.
-- **`flightGate` HANDS its slot to a waiter** rather than releasing it. `X_FLIGHT_GATE_OVERLOADED`
-  is core's own code (tier 0 cannot borrow http's `X_OVERLOADED`); `overflow:` lets a caller throw its own.
-- **`client-flight.ts` INVERTS `retryDecision`'s unclassified default** through its `transient:`
-  predicate: a bare `TypeError` (dead network) and an `AbortError` (the caller's cancellation) are
-  indistinguishable by class. Never "simplify" it back.
-- **`ClientFlight` stays `import type`-only in `action`'s and `query`'s `client.ts`** — a value import
-  pulls the whole flight layer into every caller's chunk.
 - **`mcp-exposure.ts`'s `isMcpExposed` is the ONE answer to "did this opt into MCP?"**, read by
   `action`, `query`, `mcp`, `ai`, `manifest`. `@ultimat3/cli`'s `mcp-exposure-pin.test.ts` checks
   it; `@ultimat3/admin`'s own catalog is the one opt-OUT exception (`mcp-tools.ts`).
@@ -150,6 +143,7 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 | `recordQueueDepth` | `@ultimat3/jobs` `worker.ts`, throttled inside `tick()` |
 | `recordJob` | `@ultimat3/jobs` `worker.ts`, the outcome branch inside `tick()` (`JOB_OUTCOME_LABELS` drops `suspended`) |
 | `recordLeaseLost` | `@ultimat3/jobs` `heartbeat.ts`, once per lapsed lease |
+| `recordBreakerTransition` | `breaker.ts`, on every state change |
 
 - Tracing is three files: `telemetry.ts` builds spans, `sampler.ts` decides, `otlp*.ts` exports.
   `span.end()` returns early when `traceFlags & 1` is 0. The default sampler reads
@@ -159,6 +153,14 @@ server-only, never on `page.ts`. One call site per recorder; a second is the bug
 - The OTLP exporters are built, not wrapped ([`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md)).
   `otlpTraceRequest` / `otlpMetricsRequest` are pure. **gRPC (`:4317`) is out of scope**:
   `X_OTLP_PROTOCOL_UNSUPPORTED` names `:4318`; a boot that must not throw asks `tryOtlpEndpoint(signal)`.
+- **`postOtlp` (`otlp-post.ts`) retries `OTLP_RETRY_STATUSES` (429, 502, 503, 504) and a transport
+  failure only**, never `isRetryableStatus`: a validating collector's 400 or 500 repeats forever. It
+  calls `retryLoop`, not `retry()`, so a batch flushed inside a request outlives that request's
+  signal. `timeoutMs` is the whole export; the retryable marker is a private `X_DRAINING` instance
+  that never leaves the function. One log line per batch, never per attempt.
+- **`errorFingerprint` (`error-fingerprint.ts`) is a function, never an `ErrorReport` field**:
+  `code`, `source`, `scope.operation`, plus the top app frame for `X_INTERNAL` only. Never `cause`,
+  `meta`, ids or `release`. Total over hostile getters; the Sentry envelope's `fingerprint`.
 - **Three OTLP variables, three codes** — `X_OTLP_ENDPOINT_INVALID`, `X_OTLP_HEADERS_INVALID`,
   `X_OTLP_PROTOCOL_UNSUPPORTED`. A header KEY is in the cause/fix/meta; its VALUE never is.
 - `error-reporter.ts`: `ErrorReporter`, no-op default, memory reporter for tests, Sentry transport (`error-reporter-sentry.ts`, optional export). Full rule: `docs/history/core.md`.
@@ -197,26 +199,7 @@ bun run typecheck
 The root is load-bearing: Bun reads `bunfig.toml` (its preload installs `@ultimat3/testing`'s
 matchers) from the cwd.
 
-Gotchas:
-- `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
-- `noPropertyAccessFromIndexSignature` is on — `ctx.services['mail']`, not `.mail`.
-- `Ctx` carries a string index signature so apps can augment `CtxServices`; the cost is that
-  `ctx.anything` type-checks as `unknown`. Deleting it is a breaking change, measured to compile
-  core clean; land it alone, with a full `bun run verify`.
-- **`Ctx extends CtxFacts, CtxServices`, and `ctxOf` holds the framework's ONE irreducible
-  `as Ctx`.** `CtxFacts` is what the framework sets (and what a `ServiceFactory` receives); an
-  augmentation's named members are required of every `Ctx`, and no framework function can obtain
-  them. `@ultimat3/http`'s `requestContext` composes `ctxOf()` and has no assertion.
-  Refused alternatives: the file header. The repair is a major, with the index-signature deletion.
-- Tests that touch the registry, the lifecycle or the listener table call `resetErrorCodes()` /
-  `resetLifecycle()` / `resetListeners()` — and a registry reset takes `errorCodeSnapshot()` first
-  and restores it in `afterAll`, or every earlier package's titles render humanised for the run.
-- `onShutdown`'s return value is the unregister, owned by every caller that can start twice
-  (`@ultimat3/http`'s `server.ts`, `@ultimat3/realtime`'s `listenSyncNode`, `@ultimat3/jobs`' worker,
-  `@ultimat3/cli`'s `hold.ts`). `shutdownHookCount()` is the leak probe.
-- Tests calling `configureCursorSigning()` restore the previous secret or call
-  `resetCursorSigning()`. The secret is read inside `sign()`, never at module scope; new secrets
-  follow the same call-time rule.
+Gotchas (`exactOptionalPropertyTypes`, `Ctx`'s index signature, registry resets, `onShutdown`'s unregister, cursor-secret restore): [`docs/history/core.md`](../../docs/history/core.md#moved-out-2026-11-03-plan-101-wave-3-the-claudemd-ceiling).
 
 Why each rule above is shaped the way it is: [`docs/history/core.md`](../../docs/history/core.md).
 - `drain-deadline.ts` also owns `WORKER_RETIRE_DEFAULT_MS` and `workerRetireIssue`.

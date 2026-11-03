@@ -1,9 +1,8 @@
 // The brain a generated app is born with, held to one thing: it must name the gate the app
-// actually has. `AGENTS.md`, `CLAUDE.md` and `.claude/commands/verify.md` all said `x verify`,
-// which is HALF of `bun run check` — the build comes first and is what writes the
-// `.x/build-stats.json` the `budgets` step measures, so an agent that followed the brain ran the
-// gate, watched `budgets` go red with X_BUDGET_UNMEASURED, and started debugging its own code.
-// A brain that names the wrong command is worse than one that names none: it is confidently wrong.
+// actually has. It named `bun run check` (a build, then `x verify`) until `x verify` learned to
+// build what its `budgets` step weighs and the `check` script was deleted (plan 101, 21). A brain
+// that names a script the app no longer has is worse than one that names none: it is confidently
+// wrong, and the agent's first command fails.
 
 import { describe, expect, test } from 'bun:test';
 import { names } from './naming';
@@ -25,66 +24,90 @@ const emitted = (
 
 const doc = (path: string): string => emitted(docsFiles(app), path);
 
-describe('unit · the generated brain names bun run check as the gate', () => {
+describe('unit · the generated brain names bun run verify as the gate', () => {
   // One row, and it is the row an agent reads first. Matched on the row rather than on the file,
-  // so a `bun run check` mentioned three paragraphs down cannot make this pass.
-  test("AGENTS.md's gate row is bun run check, and it says what the first half is", () => {
+  // so a `bun run verify` mentioned three paragraphs down cannot make this pass.
+  test("AGENTS.md's gate row is bun run verify, and it says the build is the gate's own", () => {
     const rows = doc('AGENTS.md')
       .split('\n')
       .filter((line) => line.startsWith('| One gate |'));
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toContain('bun run check');
-    // The build is the half `x verify` does not do. Named, or the row is just a different word
-    // for the same misunderstanding.
-    expect(doc('AGENTS.md')).toContain('X_BUDGET_UNMEASURED');
+    expect(rows[0]).toContain('bun run verify');
+    expect(rows[0]).toContain('budgets');
   });
 
-  test("CLAUDE.md's Gate bullet is bun run check, and points at the CI that runs it", () => {
+  test('no convention file names the deleted check script', () => {
+    for (const path of ['AGENTS.md', 'CLAUDE.md', 'README.md'])
+      expect(doc(path)).not.toContain('bun run check');
+    for (const file of claudeCommandFiles(app))
+      expect(String(file.contents)).not.toContain('bun run check');
+  });
+
+  test("CLAUDE.md's Gate bullet is bun run verify, and points at the CI that runs it", () => {
     const bullet = doc('CLAUDE.md')
       .split('\n')
       .find((line) => line.startsWith('- Gate:'));
-    expect(bullet).toContain('bun run check');
+    expect(bullet).toContain('bun run verify');
     expect(doc('CLAUDE.md')).toContain('.github/workflows/ci.yml');
   });
 
-  test('/verify runs bun run check — the command whose whole job is the gate', () => {
+  test('/verify runs bun run verify — the command whose whole job is the gate', () => {
     const verify = emitted(claudeCommandFiles(app), '.claude/commands/verify.md');
     const instruction = verify.split('\n').find((line) => line.startsWith('Run '));
-    expect(instruction).toContain('bun run check');
-    expect(instruction).not.toContain('x verify');
+    expect(instruction).toBe('Run `bun run verify`.');
   });
 
   test('/feature reports the same gate it tells the agent to run', () => {
     const feature = emitted(claudeCommandFiles(app), '.claude/commands/feature.md');
-    expect(feature).toContain('**Done means `bun run check` green.**');
-    expect(feature).toContain('Gate:       bun run check');
+    expect(feature).toContain('**Done means `bun run verify` green.**');
+    expect(feature).toContain('Gate:       bun run verify');
   });
 
-  // The README is the human's copy of the same fact, and it is the file `bun run check` is documented
-  // in. A build that is not mentioned there is a build nobody knows the gate depends on.
-  test('README.md describes bun run check as a build and then the checks', () => {
+  test('README.md names bun run verify as the gate', () => {
     const line = doc('README.md')
       .split('\n')
-      .find((text) => text.startsWith('bun run check'));
-    expect(line).toContain('build');
+      .find((text) => text.startsWith('bun run verify'));
+    expect(line).toContain('the gate');
   });
 });
 
-describe('unit · the generated brain states that .dz/ is additive', () => {
-  // The developerz.ai platform moves a repo's config under `.dz/` (`.dz/maintainer/maintainer.yml`,
-  // `.dz/pipeline/agent-pipeline.json`). Nothing `x new` writes lands there and nothing here is
-  // generated from it — but an agent with no statement either way has to guess, and the two guesses
-  // are "delete the platform's file" and "do not touch AGENTS.md".
-  test('AGENTS.md names the directory, both owners, and that neither clobbers the other', () => {
-    const text = doc('AGENTS.md');
-    expect(text).toContain('.dz/maintainer/');
-    expect(text).toContain('ADDITIVE');
-    expect(text).toContain('clobber');
+describe('unit · the generated brain speaks to any agent, in commands that run', () => {
+  // A stranger's app is not a hosting platform's: two paragraphs about one platform's `.dz/`
+  // directory were in every scaffold's AGENTS.md and CLAUDE.md, context spent on a product the
+  // author never chose. And `x` is on no PATH in a fresh app, so a bare `x g` is a first command
+  // that fails — `bunx x` runs the CLI the app installed.
+  test('neither convention file mentions .dz/ or the platform behind it', () => {
+    for (const path of ['AGENTS.md', 'CLAUDE.md']) {
+      expect(doc(path)).not.toContain('.dz/');
+      expect(doc(path)).not.toContain('developerz.ai');
+    }
   });
 
-  test('CLAUDE.md says it too, since it is the file a Claude session reads first', () => {
-    const text = doc('CLAUDE.md');
-    expect(text).toContain('.dz/');
-    expect(text).toContain('clobber');
+  test('no command is spelled with a bare x', () => {
+    for (const path of ['AGENTS.md', 'CLAUDE.md']) {
+      expect(doc(path)).not.toMatch(/`x g\b/);
+      expect(doc(path)).not.toMatch(/`x [a-z]/);
+      expect(doc(path)).toContain('`bunx x g ');
+    }
+  });
+
+  test('AGENTS.md has an Agent tools block naming .mcp.json, the manifest and the workflows', () => {
+    const text = doc('AGENTS.md');
+    const block = text.slice(text.indexOf('## Agent tools'));
+    expect(text).toContain('## Agent tools');
+    for (const named of [
+      '`.mcp.json`',
+      '`x.manifest.json`',
+      '`POST /mcp`',
+      '`.claude/commands/feature.md`',
+      '`.claude/commands/planx.md`',
+      '`.claude/commands/verify.md`',
+    ]) {
+      expect(block).toContain(named);
+    }
+  });
+
+  test('the files the block names are files x new writes', () => {
+    expect(docsFiles(app).some((file) => file.path === '.mcp.json')).toBe(true);
   });
 });

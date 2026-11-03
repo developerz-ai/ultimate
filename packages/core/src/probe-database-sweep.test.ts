@@ -123,7 +123,7 @@ describe('probeDatabaseAlive', () => {
 describe('sweepStaleProbeDatabases', () => {
   const OTHER = `x_other_suite_300_${OLD}_cccccccc`;
   const FRESH = `x_suite_400_${YOUNG}_dddddddd`;
-  const USERS = 'notificado_dev';
+  const USERS = 'acme_dev';
 
   test('drops every dead, idle, old probe of any prefix; nothing else', async () => {
     const server = fakeServer([

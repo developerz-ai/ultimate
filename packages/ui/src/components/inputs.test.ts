@@ -4,8 +4,8 @@
 // than an attribute.
 
 import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { FakeElement, installFakeDom } from '../fake-dom-fixture';
-import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Input } from './Input';
 import { Radio } from './Radio';
 import { Textarea } from './Textarea';

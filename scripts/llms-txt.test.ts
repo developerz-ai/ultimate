@@ -2,11 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { SIDEWAYS_ALLOW } from './lib/tiers';
 import {
+  APP_HEADING,
+  appFirstFindings,
   fillBlocks,
   homeSummaries,
   llmsDrift,
   llmsTxtFindings,
   packageLine,
+  REPO_HEADING,
   sidewaysLines,
   wikiLines,
 } from './llms-txt';
@@ -80,6 +83,44 @@ describe('unit · llms.txt lists are generated, and drift is refused', () => {
     const filled = fillBlocks('# no markers\n', { packages: ['- x'], wiki: [], sideways: [] });
     expect(filled.missing).toEqual(['packages', 'wiki', 'sideways']);
     expect(llmsDrift('# no markers\n', filled.text, filled.missing)).toHaveLength(3);
+  });
+});
+
+// `README.md` sends every agent to llms.txt, and most of them are building an app, not this repo.
+// Its first block was `bun run scripts/…` — commands an app does not have.
+describe('unit · llms.txt leads with the app author', () => {
+  const APP = `## ${APP_HEADING}\n\n- \`bunx create-ultimate myapp\`\n`;
+  const REPO = `## ${REPO_HEADING}\n\n- \`bun run scripts/list-workspaces.ts\`\n`;
+
+  test('app section first, repository section after it, is clean', () => {
+    expect(appFirstFindings(`# t\n\n> s\n\n${APP}\n${REPO}`)).toEqual([]);
+  });
+
+  test('a repository command before the app section is refused', () => {
+    const causes = appFirstFindings(`# t\n\n${REPO}\n${APP}`).map((f) => f.cause);
+    expect(causes.some((cause) => cause.includes(`rather than "## ${APP_HEADING}"`))).toBe(true);
+  });
+
+  test('a repository-only command inside the app section is refused, naming it', () => {
+    const leaky = `## ${APP_HEADING}\n\n- \`bun run scripts/release.ts\`\n\n${REPO}`;
+    const findings = appFirstFindings(leaky);
+    expect(findings.map((f) => f.code)).toEqual(['X_LLMS_TXT_DRIFT']);
+    expect(findings[0]?.cause).toContain('bun run scripts/');
+  });
+
+  test('no repository heading at all is refused', () => {
+    expect(appFirstFindings(`# t\n\n${APP}`)).toHaveLength(1);
+  });
+
+  test('the real file passes, and its first section holds no bun run scripts/', async () => {
+    const text = await Bun.file(`${repoRoot()}/llms.txt`).text();
+    expect(appFirstFindings(text)).toEqual([]);
+    const first = text.slice(
+      text.indexOf('\n## '),
+      text.indexOf('\n## ', text.indexOf('\n## ') + 1),
+    );
+    expect(first).toContain(APP_HEADING);
+    expect(first).not.toContain('bun run scripts/');
   });
 });
 

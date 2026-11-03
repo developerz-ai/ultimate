@@ -357,6 +357,23 @@ lands; step 1 renames that heading to the version and opens a fresh empty `[Unre
 A release with nothing under `[Unreleased]` and no commit since the previous tag is **refused**
 (`X_DOC_CHANGELOG_SECTION_INVALID`), never published as an empty section.
 
+**The major window** ([`wiki/Stability.md`](wiki/Stability.md)): from v30, at most one major per 90
+days, counted between the dated `## X.0.0` headings. `--bump major` (or `--version X.0.0`) inside it
+is refused before a file moves (`X_RELEASE_MAJOR_WINDOW`), `--check` refuses it again before a tag,
+and the gate refuses a dated section that broke it. A break waits on `next`; the only exception is
+a security fix that cannot be non-breaking, `--bump major --security GHSA-xxxx-xxxx-xxxx`, which
+records the advisory under the heading and owes `Security-Exception: <id>` in the commit body.
+Every section from 30.0.0 opens with `### Highlights` (at most five bullets), which is the Release
+body with the Upgrading anchor and a link to the full section.
+
+**Branches and dist-tags.** `main` ships minors and patches under `latest`; `next` holds the breaks
+and is gated on push; merging `main` into it weekly is a convention, by hand. At each major, cut `release/<major>.x` from the release commit by hand (a convention: no script cuts or checks it). A bump PR
+merged to `release/<major>.x` is released exactly as on `main` (`release-tag.yml` runs on both), and
+`release.yml` publishes it with `npm publish --tag` from `scripts/dist-tag.ts`: `latest` while that
+major is current, `maint-<major>` once its successor ships, `next` for a prerelease — so a
+maintenance release never moves `latest`. `bun run scripts/registry-audit.ts` audits `latest` and
+every `maint-*` tag.
+
 0. **On a major only:** `wiki/Upgrading.md` already carries a `## <previous major>.x → <new major>`
    section, written when the first breaking change landed — releasing it is deleting `unreleased`
    from its heading and updating the summary table's counts. If the section does not exist, stop and
@@ -467,6 +484,7 @@ Every field of `DueDecision` in `scripts/lib/release-due-rule.ts`, one row each:
 | `notes` | array | what `[Unreleased]` owes first — a Dependabot-only window: a `### Changed` line per bumped dependency |
 | `breaking` | array | the verbatim `BREAKING —` lines and `!:` subjects that forced a major, empty on every other decision, and the list the maintainer issue pastes |
 | `headSha` | string | HEAD's SHA when the decision resolved, the anchor an ask body quotes |
+| `windowOpensOn` | string | `YYYY-MM-DD`, on a `major_needs_a_maintainer` decision made before the next major window opens ([Stability](wiki/Stability.md)); the maintainer's call waits for that date |
 
 No `vX.Y.Z` tag reachable — a shallow or tagless clone — is `X_RELEASE_TAG_UNREACHABLE`. HEAD
 not at `origin/main`'s tip is `X_RELEASE_HEAD_NOT_MAIN`: the script fetches `origin/main` when
@@ -539,8 +557,9 @@ published is the signal; `bun run scripts/registry-audit.ts --json` names each g
 | `publishConfig.access: public` + `provenance: true` | every package.json |
 | a real `LICENSE` per package, tests excluded from `files` | enforced by the `package-shape` step |
 | `concurrency.cancel-in-progress: false` | an npm publish cannot be undone |
-| `release-tag.yml` on ci.yml's green push run of the release commit to `main` | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
-| `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version — see below |
+| `release-tag.yml` on ci.yml's green push run of the release commit to `main` or a `release/*` branch | merging the release PR is the release, and only the release commit is tagged: a read-only `prepare` job, then a `cut` job with no checkout and no install — an annotated tag, a Release from the changelog section with `--verify-tag`, a dispatch of this workflow — held by `scripts/release-tag-workflow-shape.test.ts` |
+| `scripts/release.ts --check <version>` in the `check` job | the tag and the manifests must be the same version, and a major is inside its window — see below |
+| `npm publish --tag "$DIST_TAG"`, the tag from `scripts/dist-tag.ts` in the `check` job | a maintenance release of an older major never moves `latest`; held by `scripts/release-workflow-shape.test.ts` |
 | ci.yml's whole run `success` on the tagged commit | nothing reaches the registry unverified: the framework gate (`verify`, the merge of every `gate` part) AND every tracked app, scaffold, per-package coverage bar and container build of the same run. It read the `verify` job alone until 2026-10, so a tag with a red app gate published. The workflow used to re-run `verify` itself with no services: the 21.0.0 run executed 10 of 342 live tests |
 | a package already on npm at the version is skipped | a failed publish is resumable (`gh run rerun <run-id> --failed`) |
 
@@ -593,3 +612,25 @@ app's `packages/*` never reach a registry.
 Don't. npm allows it for 72 hours and it breaks every lockfile that already resolved the version.
 Publish a patch instead, and if a version is genuinely dangerous, `npm deprecate` it with the
 version to move to.
+
+## Publication history
+
+Moved here from the wiki's front page and its FAQ, `As of 2026-11`: a stranger's first screen
+answers what and how, and this is where how each release reached npm is kept. Resolve the present
+rather than reading the past: `bun run scripts/registry-audit.ts --json`.
+
+| Release | How it was published |
+|---|---|
+| 1.0.0 | the manual bootstrap every package needs before a trusted publisher can attach |
+| 2.0.0 | by hand, with no trusted publisher attached for the OIDC exchange to verify against: its tarballs carry **no attestation** and `_npmUser: sebyx07` |
+| 3.0.0 on | through [`release.yml`](.github/workflows/release.yml) over OIDC, each tarball attested, `_npmUser: GitHub Actions` |
+
+- `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages; both were
+  closed by the one-time manual bootstrap, `@ultimat3/scraping` at 2.0.0.
+- No publication holes since 2026-08-20: all 31 workspaces resolve at one version, and
+  [`registry-audit.yml`](.github/workflows/registry-audit.yml) files an issue on the day that stops
+  being true.
+- A wiki row that says "fixed in <version>" means fixed in a release you can install; an "on 1.2.0,
+  do X" column beside one is for readers still pinned to 1.x.
+- Every major so far was a correctness sweep and none shipped a codemod, so each `BREAKING —` entry
+  names its own manual edit ([`wiki/Upgrading.md`](wiki/Upgrading.md)).

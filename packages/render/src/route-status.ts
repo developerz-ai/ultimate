@@ -1,6 +1,6 @@
 // The one way a loader answers a response STATUS while still rendering the route's own page.
 //
-// Measured in ai-maxxing, 2026-09-07: `/fleet/nope` — a host id the fleet does not have — rendered
+// Measured in one adopter, 2026-09-07: `/fleet/nope` — a host id the fleet does not have — rendered
 // the app's own "Not found" page inside its shell, the right page, and answered **200**. The only
 // route to a 404 was throwing, and a throw renders the framework's error page OUTSIDE the shell.
 // So an app that did the right thing for its visitor could not do the right thing for a crawler,

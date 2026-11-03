@@ -18,6 +18,9 @@
       "path": "../money"
     },
     {
+      "path": "../schema"
+    },
+    {
       "path": "../time"
     }
   ]

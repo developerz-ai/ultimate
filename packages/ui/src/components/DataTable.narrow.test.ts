@@ -4,17 +4,17 @@
 // Bare, as `index.ts` imports it: the server's `useUi()` reader (issue #490).
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
-import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
-import { UI_KEYS } from '../i18n-keys';
 import {
   byTag,
-  isProbeNode,
+  isRenderNode,
   nodesOf,
   one,
-  type ProbeNode,
+  type RenderNode,
   renderNodes,
   withAttr,
-} from '../jsx-probe-fixture';
+} from '@ultimat3/core/render-nodes';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
+import { UI_KEYS } from '../i18n-keys';
 import { DataTable } from './DataTable';
 
 const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
@@ -35,7 +35,7 @@ const COLUMNS = [
   { key: 'total', header: 'Total', cell: (row: Row): string => String(row.total), numeric: true },
 ];
 
-const table = (extra: Record<string, unknown> = {}): ProbeNode[] =>
+const table = (extra: Record<string, unknown> = {}): RenderNode[] =>
   renderNodes(DataTable, {
     caption: 'Invoices',
     columns: COLUMNS,
@@ -182,7 +182,7 @@ describe('DataTable, stickyFirstColumn', () => {
 });
 
 /** The visible text of a header, whether it is plain text or a sort control. */
-function labelText(th: ProbeNode): unknown {
+function labelText(th: RenderNode): unknown {
   const children = th.props['children'];
   if (typeof children === 'string') return children;
   const control = nodesOf(children).find((node) => node.type === 'button' || node.type === 'a');
@@ -191,10 +191,10 @@ function labelText(th: ProbeNode): unknown {
 }
 
 /** A cell's content with its card label taken out. */
-function cellValue(cell: ProbeNode): unknown {
+function cellValue(cell: RenderNode): unknown {
   const children = cell.props['children'];
   const rest = (Array.isArray(children) ? children : [children]).filter(
-    (child) => !(isProbeNode(child) && child.props['data-label'] !== undefined),
+    (child) => !(isRenderNode(child) && child.props['data-label'] !== undefined),
   );
   return rest.length === 1 ? rest[0] : rest;
 }

@@ -1,7 +1,7 @@
 // A content-addressed disk cache for one Sass compilation: keyed by the compiler, the file and its
 // source, and valid only while every file that compilation READ still hashes the same. Sass has no
 // cache across compilations, so every `.module.scss` re-parses `@ultimat3/ui/tokens` — measured on
-// notificado.co (140 modules), 3.7 s wall and 12 s CPU of `x manifest --check`'s 6.5 s wall.
+// one adopter's app (140 modules), 3.7 s wall and 12 s CPU of `x manifest --check`'s 6.5 s wall.
 
 // why: `compileStylesheet` is synchronous — Bun's loader `onLoad` path calls it inline — and Bun
 // ships no synchronous file read, write or rename; `node:fs` is the only sync file API.

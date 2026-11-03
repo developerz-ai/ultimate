@@ -3,6 +3,8 @@
 The LLM gateway primitive. Every model call in an Ultimate app goes through it, so budgets
 and cost accounting cannot be bypassed by a stray `fetch`.
 
+`bun add @ultimat3/ai` · guide: [MCP And AI](https://github.com/developerz-ai/ultimate/wiki/MCP-And-AI)
+
 **Register your models, pick your provider.** The framework ships the mechanism — the `Provider`
 contract, two wire-format adapters, the gateway, budgets, `registerModel` — and no vendor choice
 and no vendor data: no default model, no catalogue row, no price. Which models an app runs, at what
@@ -152,6 +154,7 @@ default store at `replicas: 6` is six ledgers of twenty million, which is a budg
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
 | A cache hit reads zero `usage`, `cost` and `costExact`, in the same currency | it is not debited, so a meter summing the stored figures read more than the budget beside it |
 | Retries use **full jitter**, from core's one curve | synchronised retries from N workers reproduce the rate limit. `backoffMs` is `@ultimat3/core`'s `backoffDelay` with the gateway's field names mapped onto it, and the roll is `providerGateway({ random })` — injectable, so the schedule is a unit test rather than a range |
+| **One breaker per provider**, on by default: `{ failures: 5, cooldownMs: 30_000 }` (`DEFAULT_GATEWAY_BREAKER`) | a provider that ran out its retries five passes in a row is skipped, no call and no sleep, until one probe after the cooldown answers; without it every call re-spent every attempt on a dead provider. `providerGateway({ breaker })` takes `GatewayBreakerOption`, `((provider) => Breaker) \| 'off'`: your own core `breaker({ … })` per provider, or `'off'` for the old behaviour. A stream goes to the first provider whose breaker admits it |
 | A 4xx is never retried **except 408, 409 and 425** | the same body gets the same rejection and burns the budget — but a request the server stopped reading (408), a round a concurrent writer won (409) and a handshake that had not finished (425) are transient by construction, and core's `isRetryableStatus` is the one table that says so |
 
 ## Streaming

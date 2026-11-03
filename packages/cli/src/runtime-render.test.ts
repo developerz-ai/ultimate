@@ -88,7 +88,7 @@ describe('unit · x dev renders the app routes, whatever ran before', () => {
 
 describe('unit · x dev renders the app routes', () => {
   test('a loader that answers withStatus(404) is a 404 with the route’s own page, in every mode', async () => {
-    // Measured in ai-maxxing 2026-09-07: `/fleet/nope` rendered the app's "Not found" page inside
+    // Measured in one adopter 2026-09-07: `/fleet/nope` rendered the app's "Not found" page inside
     // its own shell and answered 200, because the only route to a 404 was a throw.
     for (const render of ['ssr', 'static', 'stream', 'isr'] as const) {
       clearRoutes();

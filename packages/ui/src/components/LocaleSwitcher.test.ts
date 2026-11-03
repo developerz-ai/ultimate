@@ -7,10 +7,10 @@
 // components by their module paths (issue #490).
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
+import { byTag, fire, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import type { Locale } from '@ultimat3/i18n';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { LocaleSwitcher, localeLabel } from './LocaleSwitcher';
 
 /**

@@ -2,6 +2,8 @@
 
 Three tiers, one ladder, one protocol. Climbing a rung is a config change, never a rewrite.
 
+`bun add @ultimat3/realtime` · guide: [Realtime](https://github.com/developerz-ai/ultimate/wiki/Realtime)
+
 ## The ladder
 
 | Tier | What it gives you | What it costs you |

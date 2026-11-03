@@ -4,6 +4,7 @@
  * identifier the source file uses.
  */
 import { registerPrimitiveRegistrar } from '@ultimat3/core';
+import { assertNoSensitiveOutput } from '@ultimat3/schema';
 import { QueryDuplicateError, QueryPolicyMissingError } from './errors';
 import type { AnyQuery, QueryDescriptor } from './query';
 import { isQuery, nameQuery } from './query';
@@ -28,6 +29,9 @@ export function registerQuery<Q extends AnyQuery>(name: string, target: Q): Q {
   if (target.policy === undefined || target.policy === null) {
     throw new QueryPolicyMissingError(name);
   }
+  // Rows are sent back, which `.sensitive()` (`writeOnly`) forbids. PII read back and only hidden
+  // in logs is `redactKeys`, not this flag.
+  if (target.rows !== undefined) assertNoSensitiveOutput(`query "${name}" rows`, target.rows);
   const named = nameQuery(target, name);
   registry.set(name, named);
   return named;

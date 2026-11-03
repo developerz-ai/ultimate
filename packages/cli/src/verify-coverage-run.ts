@@ -13,7 +13,7 @@
 // ORDER, NOT MEMBERSHIP, FOLLOWS THE CLOCK. Each slice also writes a junit report; its per-file
 // durations go into the run's timings cache (`TEST_TIMINGS_FILE`, `test-timings.ts`) and the NEXT
 // run starts the slices longest-first from it. The slices themselves stay a pure function of the
-// file list — the coverage a slice measures never depends on a cache. Measured on bank-integrations
+// file list — the coverage a slice measures never depends on a cache. Measured on one adopter's app
 // (1 192 files, 102 slices, 8 processes): sorted order 64.1 s, longest-first 56.3 s, the floor
 // 56.1 s — the pool used to start its 50 s slice last.
 

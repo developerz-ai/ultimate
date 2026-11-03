@@ -234,7 +234,8 @@
           "credential": {
             "maxLength": 200,
             "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "writeOnly": true
           },
           "exit": {
             "maxLength": 200,
@@ -1073,10 +1074,16 @@
                 "message": {
                   "type": "string"
                 },
+                "params": {
+                  "type": "object"
+                },
                 "path": {
                   "type": "string"
                 },
                 "received": {
+                  "type": "string"
+                },
+                "rule": {
                   "type": "string"
                 }
               },

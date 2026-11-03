@@ -20,11 +20,10 @@ interface Post {
   views: number;
 }
 
-const orgs: EntityLike = { kind: 'entity', table: 'orgs', columns: { id: 0, name: 0 } };
+const orgs: EntityLike = { $table: 'orgs', $columns: { id: 0, name: 0 } };
 const posts: EntityLike = {
-  kind: 'entity',
-  table: 'posts',
-  columns: { id: 0, title: 0, orgId: 0, published: 0, views: 0 },
+  $table: 'posts',
+  $columns: { id: 0, title: 0, orgId: 0, published: 0, views: 0 },
 };
 
 const orgFactory = () =>

@@ -2,6 +2,8 @@
 
 Named disks. **Call sites name a disk, never a driver.**
 
+`bun add @ultimat3/storage` · guide: [Storage And Uploads](https://github.com/developerz-ai/ultimate/wiki/Storage-And-Uploads)
+
 ```ts
 import { defineStorage, disk, localDriver, s3Driver, scopedKey } from '@ultimat3/storage';
 

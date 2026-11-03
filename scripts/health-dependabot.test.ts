@@ -61,7 +61,8 @@ const healthyReaders: HealthOverrides = {
       kind: 'found',
       release: { tagName: 'v3.0.0', isDraft: false, publishedAt: '2026-01-01T00:00:00Z' },
     },
-  }),
+  }), // Row 10 likewise: the real reader would spawn gh.
+  'tutorials-run': async () => ({ runs: [{ conclusion: 'success', status: 'completed' }] }),
 };
 
 describe('unit · health · Dependabot activity and checks', () => {

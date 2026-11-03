@@ -8,9 +8,9 @@
 // components by their module paths (issue #490).
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
+import { byTag, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { Avatar, initialsOf } from './Avatar';
 import { Badge } from './Badge';
 import { Skeleton } from './Skeleton';

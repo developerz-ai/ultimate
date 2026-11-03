@@ -197,7 +197,7 @@ describe('a property named __proto__ is a key, never a prototype', () => {
 });
 
 /**
- * Asked by ai-maxxing on 2026-09-07: does a per-argument `.describe()` reach `tools/list`? It does
+ * Asked by one adopter on 2026-09-07: does a per-argument `.describe()` reach `tools/list`? It does
  * — `@ultimat3/schema`'s `convert` carries `node.description` and `toWireSchema` keeps
  * `description` — so a catalog whose arguments carry no descriptions is a catalog whose actions
  * never called `.describe()`. Pinned here so the answer stays measured rather than remembered.

@@ -4,8 +4,14 @@
 
 import { join } from 'node:path';
 import { ERROR_DOCS_URL } from '@ultimat3/core';
+import { loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
-import { type ComposeStrategy, composeStrategies, readComposeFile } from './cmd-deploy-compose';
+import {
+  type ComposeStrategy,
+  composeStrategies,
+  DEFAULT_IMAGE,
+  readComposeFile,
+} from './cmd-deploy-compose';
 import { readHelmDrainOverrides } from './cmd-deploy-drain';
 import {
   type HelmTarget,
@@ -15,6 +21,7 @@ import {
   readReleaseName,
   readRollout,
 } from './cmd-deploy-helm';
+import { composeEnvPreflight, lastLine, roleLastLogLine } from './cmd-deploy-preflight';
 import { deploySpec } from './cmd-deploy-spec';
 import { runStartFirst, startFirstUp } from './cmd-deploy-start-first';
 import type { CliCommand, CommandContext } from './command';
@@ -348,7 +355,7 @@ export const deployCommand: CliCommand = {
       return (await import('./cmd-deploy-verify')).runDeployVerify(ctx);
     }
     const root = requireAppRoot('deploy', ctx.cwd).dir;
-    const image = flagString(ctx.args, 'image') ?? 'ultimate-app:dev';
+    const image = flagString(ctx.args, 'image') ?? DEFAULT_IMAGE;
     // No "is there a chart?" branch. It threw X_NOT_IMPLEMENTED — "this build does not implement
     // helm" — over a build that implements it completely (`planDeploy` above); what was missing was
     // a FILE, and its fix said to copy it from the framework repository, which `packages/cli`'s
@@ -359,15 +366,12 @@ export const deployCommand: CliCommand = {
     const request = await readDeployRequest(ctx, method, root);
     // Read before the plan, because the plan IS the rollout: which compose roles can start their
     // new container first is a fact of the app's compose file, and a dry run reports it too.
+    const composeText =
+      request.method === 'compose' ? await readComposeFile(composeFileOf(root)) : undefined;
     const plan =
       request.method === 'helm'
         ? planDeploy(image, 'helm', root, request)
-        : planDeploy(
-            image,
-            'compose',
-            root,
-            composeStrategies(await readComposeFile(composeFileOf(root))),
-          );
+        : planDeploy(image, 'compose', root, composeStrategies(composeText));
     // What the helm flags resolved to — the release above all, which is read off `app.config.ts`
     // and so is not something the operator typed. Absent on compose, which has no release.
     const target: { readonly [key: string]: JsonValue } =
@@ -408,11 +412,28 @@ export const deployCommand: CliCommand = {
         ),
       };
     }
+    // Before the first step: a compose step without its env file fails as `exited 1` and says no
+    // more, so the variables it lacks are named here, and nothing runs.
+    const preflight =
+      request.method === 'compose'
+        ? await composeEnvPreflight(root, composeText, ctx.env, await loadEnvSchema(root))
+        : undefined;
+    if (preflight !== undefined) {
+      return {
+        ok: false,
+        command: 'deploy',
+        summary: msg('cli.deploy.plan', { images: 1, roles }),
+        findings: [preflight],
+        data: planJson,
+      };
+    }
     // helm prints its release record (`--output json`), so the report carries helm's own verdict
     // and revision rather than an exit code standing in for one. Compose has no such record.
     let rollout: { readonly [key: string]: JsonValue } = {};
     for (const step of plan.steps) {
       const options = { cwd: root, env: plan.env };
+      // A one-shot's container output is its step's own; a serving role's is read off its log.
+      let output = '';
       // A start-first step is a sequence — list, scale up, wait, stop the old — and reports the
       // command of the sub-step that failed, so the fix line below is still the one to rerun.
       const outcome =
@@ -431,11 +452,20 @@ export const deployCommand: CliCommand = {
           : await ctx.runner(step.command, options).then((result) => {
               if (request.method === 'helm')
                 rollout = { rollout: { ...readRollout(request, result.stdout) } };
+              if (!result.ok) output = lastLine(result);
               return result.ok
                 ? { ok: true as const }
                 : { ok: false as const, code: result.code, command: step.command };
             });
       if (!outcome.ok) {
+        if (output === '' && request.method === 'compose' && !ONE_SHOT_ROLES.includes(step.role)) {
+          output = await roleLastLogLine({
+            base: composeBase(root),
+            role: step.role,
+            runner: ctx.runner,
+            options,
+          });
+        }
         return {
           ok: false,
           command: 'deploy',
@@ -443,7 +473,7 @@ export const deployCommand: CliCommand = {
           findings: [
             {
               code: 'X_DEPLOY_FAILED',
-              cause: `role "${step.role}" step exited ${outcome.code}${cleanupNote(outcome)}`,
+              cause: `role "${step.role}" step exited ${outcome.code}${output === '' ? '' : `: ${output}`}${cleanupNote(outcome)}`,
               fix: `${stepLine(plan.env, outcome.command)}   # run it directly to see the full output`,
               docs: ERROR_DOCS_URL,
             },

@@ -3,6 +3,8 @@
 Durable background work. Steps that replay, a transactional outbox, and one driver interface so
 a job's code never names a backend.
 
+`bun add @ultimat3/jobs` · guide: [Jobs And Workflows](https://github.com/developerz-ai/ultimate/wiki/Jobs-And-Workflows)
+
 ```ts
 import { job, t } from '@ultimat3/jobs';
 
@@ -1300,6 +1302,10 @@ export const syncAccountWatched = job({
 `inspectQueues`, `inspectJob` (per-step trace, the redacted `input`, the failure's `stack`, the
 last `progress`), `inspectDeadLetters`, `retryFromStep`, `cancelJob`, `removeJob`, `promoteJob`,
 `pauseQueue`, `resumeQueue`, `inspectManifest` — all `--json`-shaped, shared by `/_x`, the CLI and the MCP tools.
+
+`inspectJob`'s `input` masks every `.sensitive()` field of the job's own `input:` schema, then every
+`redactKeys` key. A job this process has not registered — its declaration deleted or renamed —
+answers `input: '[redacted]'` whole: with no schema nothing can say which keys were sensitive.
 
 `cancelJob(driver, id, reason?)` is the answer to a runaway pass. A queued row becomes `cancelled`
 immediately; a RUNNING one stops at its next heartbeat, which no longer matches its own row and

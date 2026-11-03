@@ -59,7 +59,7 @@ export function bareThrows(files: readonly SourceFile[]): readonly Finding[] {
       findings.push({
         code: CODE,
         cause: \`\${file.path}:\${line} throws a bare \${thrown} — it reaches its reader as a stack trace with no code, no cause and nothing to run\`,
-        fix: \`subclass UltimateError in \${file.path} with an X_SCREAMING_SNAKE code, a cause and a fix naming a command, then: x verify\`,
+        fix: \`declare the failure in \${file.path} with defineError({ code, title, status, cause, fix }) from @ultimat3/core — an X_SCREAMING_SNAKE code and a fix naming a command — and throw its class, then: x verify\`,
         at: file.path,
       });
     }
@@ -115,7 +115,7 @@ unitTest('every builtin Error class is the same rule', () => {
   expect(bareThrows(file("throw new MyTypeError('x');"))).toEqual([]);
 });
 
-unitTest('an UltimateError subclass is what the rule asks for', () => {
+unitTest('a declared error is what the rule asks for', () => {
   expect(bareThrows(file('throw new PostError(missingPost(id));'))).toEqual([]);
 });
 

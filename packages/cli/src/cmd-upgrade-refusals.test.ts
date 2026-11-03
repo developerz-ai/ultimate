@@ -153,7 +153,7 @@ describe('unit · x upgrade, the states with no hop', () => {
   });
 });
 
-describe('unit · x upgrade with no app.config.ts: pins and no app (ggrts)', () => {
+describe('unit · x upgrade with no app.config.ts: pins and no app (one adopter)', () => {
   test('hops, runs what scripts it has, and says x verify did not run', async () => {
     const dir = await fixtureWithoutApp();
     const { runner, spawned } = recording();

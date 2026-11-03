@@ -76,7 +76,7 @@ describe('unit · x g reads the slice it writes into', () => {
 });
 
 describe('unit · x g backfill into a slice whose entity is named otherwise', () => {
-  // notificado.co's `deadline` slice declares `holidays` and `court_closures`, no `deadlines`: the
+  // One adopter's `deadline` slice declares `holidays` and `court_closures`, no `deadlines`: the
   // generator wrote `import type { Deadline }` and `db.deadlines`, plus admin labels for a table
   // that does not exist — files that cannot compile, or a crash (X_CLI_UNEXPECTED on 22.15).
   const OTHER = `import { entity, text, uuid } from '@ultimat3/entity';

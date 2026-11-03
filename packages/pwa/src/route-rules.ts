@@ -118,7 +118,7 @@ function toPattern(path: string): string {
  * `runtimeAssets` as rules, AHEAD of every page rule: a prefix like `/islands/` names
  * content-addressed chunks, so the first copy is the only copy and `cache-first` is exact. They are
  * what the precache leaves out — every island in the app was precached, so a first anonymous visit
- * downloaded the admin, KYC and payment islands too (~1 MB on notificado.co, 22.3.2).
+ * downloaded the admin, KYC and payment islands too (~1 MB on one adopter's app, 22.3.2).
  */
 export function assetRules(prefixes: readonly string[], scope: string): readonly RouteRule[] {
   return [...new Set(prefixes)].sort(byCodeUnit).map((prefix) => {

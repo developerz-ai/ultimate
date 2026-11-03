@@ -9,7 +9,7 @@ import { expandRoute, expandRoutePages } from './routes';
 import { buildSitemap, sitemapUrls } from './sitemap';
 import { sitemapDatetime } from './sitemap-datetime';
 
-const ORIGIN = 'https://notificado.co';
+const ORIGIN = 'https://example.com';
 const NOW = new Date('2026-10-11T12:00:00.000Z');
 const BASE = { baseUrl: ORIGIN, now: NOW } as const;
 const LOCALES = { locales: ['es-co', 'en'], defaultLocale: 'es-co' } as const;

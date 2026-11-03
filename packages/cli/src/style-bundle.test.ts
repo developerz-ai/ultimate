@@ -33,7 +33,7 @@ afterEach(async () => {
 describe('styleBundle', () => {
   // A document rendered a minute ago, and the worker's boot-time precache, name the URL this process
   // minted then. When a late import moves the registry, that URL must still answer — a 404 there is
-  // a page with no CSS and an install that never completes (notificado.co, 22.3.2).
+  // a page with no CSS and an install that never completes (one adopter, 22.3.2).
   test('a stylesheet this process minted keeps answering after the registry moves', () => {
     loadStylesheet(SITE, '.hero{color:red}');
     const first = styleBundle().hrefFor('site') ?? '';
@@ -163,7 +163,7 @@ describe('styleBundle, for an app served from /app', () => {
 });
 
 /**
- * Two pods of one image, two different `/styles/<hash>.css` for one page (notificado.co, 22.3.2).
+ * Two pods of one image, two different `/styles/<hash>.css` for one page (one adopter, 22.3.2).
  * Built in two separate PROCESSES, with the island sheets arriving in two different orders, the
  * surface stylesheet — and so its URL — is the same.
  */

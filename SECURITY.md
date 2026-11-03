@@ -4,18 +4,19 @@
 
 Framework packages move in lockstep, so "supported version" is one number covering all 31 — the 30 `@ultimat3/*` packages and the unscoped `create-ultimate`. Re-derive the list with `bun run scripts/release-workflow.ts --json`.
 
-| Version | Supported |
-|---|---|
-| the latest major — `npm view @ultimat3/core version` | ✅ security fixes |
-| every earlier major | ❌ upgrade — see [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) |
+| Version | Supported | npm dist-tag |
+|---|---|---|
+| the current major — `npm view @ultimat3/core version` | ✅ every fix | `latest` |
+| the previous major, until 6 months after the current major's `## X.0.0` date in `CHANGELOG.md` | ✅ security fixes, as patches cut from `release/<major>.x` | `maint-<major>` — `npm view @ultimat3/core dist-tags` |
+| every older major | ❌ upgrade — see [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading) | |
 
-Only the latest major gets fixes. A fix ships as a patch to every package in one release, on the [same lockstep rule as any other release](PUBLISHING.md); there are no per-package security branches and no backports. Report against the latest major the table above names.
+The window applies from v30 ([Stability](https://github.com/developerz-ai/ultimate/wiki/Stability)); before it, only the latest major got fixes. A fix ships as a patch to every package in one release, on the [same lockstep rule as any other release](PUBLISHING.md); there are no per-package security branches. A fix that cannot be non-breaking may ship a major inside the 90-day window under its advisory id: `bun run scripts/release.ts --bump major --security GHSA-xxxx-xxxx-xxxx`. Report against the newest major in the table you run.
 
 ## Reporting a vulnerability
 
 Report privately via [GitHub Security Advisories](https://github.com/developerz-ai/ultimate/security/advisories/new). Do not open a public issue for a vulnerability.
 
-Include: the affected package and version, a reproduction, the impact, and any suggested fix. We acknowledge within 3 business days.
+Include: the affected package and version, a reproduction, the impact, and any suggested fix. GitHub delivers a private advisory to this repository's administrators, the `developerz-ai` organisation ([`GOVERNANCE.md`](GOVERNANCE.md)). The aim is to acknowledge within 3 business days; the fix then ships as a patch on the rule above.
 
 ## Security posture of the framework
 
@@ -32,7 +33,7 @@ Design decisions that carry security weight, so you know what to audit:
 | **Admin** | Every admin mutation is appended to an audit log with actor, before/after diff, and request id. Destructive actions require re-confirmation. |
 | **Preview deploys** | Any environment but `production` serves `Disallow: /` in `robots.txt` and no sitemap (`isIndexable` in `@ultimat3/seo`), Service-worker caches are namespaced by build ID (`cacheNamespace` in `@ultimat3/pwa`), so a preview isolates its cache from production only on a different build ID or a different origin. |
 | **CSP** | Locked defaults. The theme inline script ships with its sha256 hash so no `unsafe-inline` is needed. |
-| **Egress in tests** | Sealed by default — `sealNetwork()` replaces global `fetch`, and any unmocked outbound request throws `X_TEST_NETWORK_SEALED` naming the URL and the line that allows it. Opting out is an env var (`ULTIMATE_TEST_ALLOW_NET=1`), never an API, so no test file can quietly unseal the network for itself. **One documented exception**: a caller that swallows the refusal defeats the seal, and `@ultimat3/scraping`'s `/robots.txt` read is one — `robotsFetcher`'s `catch { return undefined }` turns "sealed" into "unreadable", which the robots gate reads as allow-everything, so an offline `fakeBrowser`/`fixtureBrowser` scrape attempts one real request per origin and the suite is green either way. Verified 2026-08-19; tracked in [`wiki/Known-Gaps.md`](wiki/Known-Gaps.md). |
+| **Egress in tests** | Sealed by default, `As of 2026-11-03` — `sealNetwork()` replaces global `fetch` under `bun test`, and any request no `mockFetch(match, answer)` registered throws `X_TEST_NETWORK_SEALED` naming the URL and the line that allows it; `requestLog()` reads what was sent. Opting out is an env var (`ULTIMATE_TEST_ALLOW_NET=1`), never an API, so no test file can quietly unseal the network for itself. A caller that swallowed the refusal used to defeat the seal, and `@ultimat3/scraping`'s `/robots.txt` read was one; an unreachable robots.txt now refuses the scrape with `X_SCRAPE_ROBOTS_DISALLOWED` (`packages/scraping/src/robots.ts`, `verdictOf`), so under `bun test` an unmocked read goes red instead of green. Outside `bun test` an offline `fakeBrowser`/`fixtureBrowser` scrape still sends one robots request per origin ([`wiki/Known-Gaps.md`](wiki/Known-Gaps.md)). In app source, the `raw-fetch` guard `x new` ships refuses a server `fetch(` with no `signal` (`X_RAW_FETCH`); a vendor call is `outbound()` from `@ultimat3/core/outbound`. |
 
 ## Known gaps
 

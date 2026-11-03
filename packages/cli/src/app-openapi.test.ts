@@ -96,7 +96,7 @@ describe('the complete document and a mount document', () => {
   });
 
   test('declared, openapi.json is complete and openapi.v1.json holds only the cut', () => {
-    declare({ title: 'Notificado API', version: '1.0.0' });
+    declare({ title: 'Acme API', version: '1.0.0' });
     const [main, v1] = openApiArtifacts(manifest);
     expect(main?.file).toBe('openapi.json');
     expect(v1?.file).toBe('openapi.v1.json');
@@ -104,14 +104,14 @@ describe('the complete document and a mount document', () => {
       info: unknown;
       paths: Record<string, { post: { responses: Record<string, unknown> } }>;
     };
-    expect(mainDoc.info).toEqual({ title: 'Notificado API', version: '1.0.0' });
+    expect(mainDoc.info).toEqual({ title: 'Acme API', version: '1.0.0' });
     expect(Object.keys(mainDoc.paths['/api/create-case']?.post.responses ?? {})).toContain('401');
     const v1Doc = JSON.parse(v1?.text ?? '{}') as { paths: Record<string, unknown> };
     expect(Object.keys(v1Doc.paths)).toEqual(['/v1/create-case']);
   });
 
   test('openapi.v1.json secures each operation with the scope the mount maps it to', () => {
-    declare({ title: 'Notificado API', version: '1.0.0' });
+    declare({ title: 'Acme API', version: '1.0.0' });
     const v1 = openApiArtifacts(manifest).find((artifact) => artifact.file === 'openapi.v1.json');
     const v1Doc = JSON.parse(v1?.text ?? '{}') as {
       paths: Record<string, { post?: { security?: unknown } }>;
@@ -124,7 +124,7 @@ describe('the complete document and a mount document', () => {
   });
 
   test('a declared mount document that was never written is stale', async () => {
-    declare({ title: 'Notificado API', version: '1.0.0' });
+    declare({ title: 'Acme API', version: '1.0.0' });
     const root = join(tmpdir(), `x-app-openapi-${process.pid}`);
     await rm(root, { recursive: true, force: true });
     try {

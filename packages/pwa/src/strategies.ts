@@ -64,7 +64,7 @@ export interface PwaRoute {
  * they are `immutable` in the browser's HTTP cache. `static: 'cache-first'` and
  * `isr`/`stream: 'stale-while-revalidate'` answered an ONLINE navigation from the copy the old
  * worker held, and that copy is the old HTML naming the old hashed CSS and islands, so a visitor saw
- * a deploy only after Shift+F5 (measured on notificado.co, 22.3.1). A precached or pages-cached
+ * a deploy only after Shift+F5 (measured on one adopter's app, 22.3.1). A precached or pages-cached
  * document is the OFFLINE answer, which `networkFirst` already is on a failed fetch; the render
  * mode still decides WHERE that copy lives (`cacheFor`: precache or pages), not whether it is
  * served while the network answers. A per-route `strategy` is still the override.

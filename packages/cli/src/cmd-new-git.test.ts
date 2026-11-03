@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 // why: Bun exposes no path-join primitive; Bun.file and import() take one already joined.
 import { join } from 'node:path';
 import { REQUIRED_BUN } from './app-root';
-import { initRepository, newCommand, SKIPPED } from './cmd-new';
+import { initRepository, newCommand, repositoryFix, SKIPPED } from './cmd-new';
 import type { CommandContext } from './command';
 import type { Runner } from './exec';
 import { exec } from './exec';
@@ -107,8 +107,44 @@ describe('unit · x new · the repository it initializes', () => {
       });
       const target = join(parent, 'unsigned-app');
       expect(written.ok).toBe(true);
+      // `.git` exists by then: "no repository" sent the reader to a `git init` already done, and
+      // the commit it then ran met the same missing identity.
       expect(written.lines?.slice(1)).toEqual([
-        '  no repository — git commit -m x new: Author identity unknown',
+        '  repository initialised, nothing committed — git commit -m x new: Author identity unknown',
+        `  run: cd ${target} && git config user.name '<your name>' && git config user.email '<you@example.com>' && git add -A && git commit -m 'x new'`,
+      ]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('a commit refused for another reason is handed back without the identity lines', () => {
+    expect(repositoryFix({ initialized: true, committed: false, problem: 'disk full' })).toBe(
+      "git add -A && git commit -m 'x new'",
+    );
+  });
+
+  test('an init that failed still reads "no repository", with the init in the commands', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-new-git-'));
+    try {
+      const runner: Runner = async (command) => ({
+        command,
+        code: 1,
+        ok: false,
+        stdout: '',
+        stderr: 'permission denied',
+        durationMs: 0,
+      });
+      const written = await newCommand.run({
+        args: parseArgs(['new', 'uninit-app', '--no-example'], SPECS),
+        cwd: parent,
+        runner,
+        env: {},
+        bunVersion: REQUIRED_BUN,
+      });
+      const target = join(parent, 'uninit-app');
+      expect(written.lines?.slice(1)).toEqual([
+        '  no repository — git init: permission denied',
         `  run: cd ${target} && git init && git add -A && git commit -m 'x new'`,
       ]);
     } finally {

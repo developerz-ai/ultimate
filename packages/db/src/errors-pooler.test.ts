@@ -152,7 +152,7 @@ describe('every pooler fix is a command a shell runs', () => {
 
     expect(fix).toStartWith('export DATABASE_POOLER=transaction && psql "$(printf');
     // The pooler refused the connection for an option in the URL: psql must not send it again.
-    expect(fix).toContain(`sed -E 's/([?&])options=[^&]*(&|$)/\\1/; s/[?&]$//'`);
+    expect(fix).toContain(`sed -E 's/^([^?]*\\?([^&]*&)*)options=[^&]*(&|$)/\\1/; s/[?&]$//'`);
     expect(fix).toContain(
       `-c "alter role <user> set statement_timeout = '10s'" -c "alter role <user> set idle_in_transaction_session_timeout = '30s'"`,
     );

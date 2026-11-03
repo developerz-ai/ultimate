@@ -56,7 +56,7 @@ describe('navigationGate — what a router request may not reach', () => {
 
 describe('locationFor — what x-ultimate-location says', () => {
   // Behind a TLS-terminating proxy this process sees `http://internal…`; the visitor is on https.
-  const internal = new URL('http://www.notificado.co/r/tok/d/1');
+  const internal = new URL('http://www.example.com/r/tok/d/1');
 
   test('a target on this origin is its path, query and fragment — never a scheme to get wrong', () => {
     expect(locationFor(internal.href, internal)).toBe('/r/tok/d/1');
@@ -69,8 +69,8 @@ describe('locationFor — what x-ultimate-location says', () => {
       'https://pay.test/checkout?ref=7',
     );
     // The public https origin is ANOTHER origin to a process that sees http: kept as written.
-    expect(locationFor('https://www.notificado.co/panel', internal)).toBe(
-      'https://www.notificado.co/panel',
+    expect(locationFor('https://www.example.com/panel', internal)).toBe(
+      'https://www.example.com/panel',
     );
   });
 
@@ -185,7 +185,7 @@ describe('through the pipeline', () => {
 
   test('behind a TLS proxy (the process sees http), the hand-back names no scheme at all', async () => {
     const answer = await server.fetch(
-      new Request('http://www.notificado.co/evidence?t=1', {
+      new Request('http://www.example.com/evidence?t=1', {
         headers: { ...soft, 'x-forwarded-proto': 'https' },
       }),
     );

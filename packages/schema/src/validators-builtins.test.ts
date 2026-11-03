@@ -152,7 +152,7 @@ describe('builtinT.uuid', () => {
 
 describe('builtinT.email', () => {
   test('accepts a valid email address', () => {
-    expect(validate(builtinT.email, 'dev@tesote.com').issues).toBeUndefined();
+    expect(validate(builtinT.email, 'dev@example.com').issues).toBeUndefined();
   });
 
   test('rejects a malformed email address', () => {

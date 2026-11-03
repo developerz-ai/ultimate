@@ -23,11 +23,17 @@ export const CONNECTION_PAGE = 50;
 export const ConnectionView = connections.$view(['id', 'label', 'createdAt']);
 export type ConnectionView = typeof ConnectionView.$row;
 
-/** What a caller supplies to connect a site. `id`, `orgId` and `createdAt` are the server's. */
+/**
+ * What a caller supplies to connect a site. `id`, `orgId` and `createdAt` are the server's.
+ * `credential` is `.sensitive()` — sent in, never written down, never sent back: an audit record
+ * or `x jobs show` holding this input masks it, `openapi.json` publishes it `writeOnly`, and an
+ * output that reached it would be `X_SCHEMA_SENSITIVE_OUTPUT` at boot. Last in the chain, because
+ * it answers a plain `Schema` with no `.max()` after it.
+ */
 export const ConnectInput = t.object({
   orgId: t.uuid,
   label: t.string.min(1).max(CONNECTION_LABEL_MAX),
-  credential: t.string.min(1).max(CONNECTION_CREDENTIAL_MAX),
+  credential: t.string.min(1).max(CONNECTION_CREDENTIAL_MAX).sensitive(),
   exit: t.optional(t.string.max(CONNECTION_EXIT_MAX)),
 });
 export type ConnectInput = Infer<typeof ConnectInput>;

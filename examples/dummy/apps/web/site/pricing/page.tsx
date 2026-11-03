@@ -118,7 +118,12 @@ export const config = defineRoute({
    * refusal off `action/src/error-titles.ts`, and the two new codes' titles
    * (`X_IDEMPOTENCY_OUTPUT_UNSERIALIZABLE`, `X_IDEMPOTENCY_RUN_CEILING`) are the bytes that crossed it.
    */
-  budget: { js: '25kb' },
+  // measured: 26156 B (2026-11-03; x build --target static, against main's 24,912) — why:
+  // core's shared refusal-title table gained wave 3's 12 codes (`X_OUTBOUND_*`, `X_BREAKER_OPEN`,
+  // `X_ERROR_DECLARATION_INVALID`, `X_SCHEMA_SENSITIVE_OUTPUT`: 878 B of titles), so a refusal
+  // with one of them reaching the island is still titled, and a refusal's issues carry the `rule` and `params` a form translates
+  // on (plan 101 slice 10) — raised 25kb → 26kb (30.0.0): contact-sales island +1,244 B.
+  budget: { js: '26kb' },
   /**
    * One `Product` per plan, not one product carrying three offers: `ld.Product` takes a single
    * offer, and three plans genuinely are three things a visitor can buy. Every price and every

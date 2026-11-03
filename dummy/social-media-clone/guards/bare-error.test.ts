@@ -30,7 +30,7 @@ unitTest('every builtin Error class is the same rule', () => {
   expect(bareThrows(file("throw new MyTypeError('x');"))).toEqual([]);
 });
 
-unitTest('an UltimateError subclass is what the rule asks for', () => {
+unitTest('a declared error is what the rule asks for', () => {
   expect(bareThrows(file('throw new PostError(missingPost(id));'))).toEqual([]);
 });
 

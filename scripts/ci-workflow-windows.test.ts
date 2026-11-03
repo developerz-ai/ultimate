@@ -96,12 +96,12 @@ describe('unit · ci.yml · the windows job runs in PowerShell, from a default-a
     expect(missing).toEqual([]);
   });
 
-  test('the scaffold smoke runs in order: new, overrides, setup, check, binary, /healthz', () => {
+  test('the scaffold smoke runs in order: new, overrides, setup, verify, binary, /healthz', () => {
     const order = [
       'x -- new',
       'scripts/scaffold-smoke-overrides.ts',
       'bun run setup',
-      'bun run check --json',
+      'bun run verify --json',
       'build --target binary',
       '/healthz',
     ].map(at);

@@ -2,6 +2,17 @@
 
 **Two dashboards live here. They are not the same thing — and they have two doors.**
 
+`bun add @ultimat3/admin` · guide: [Admin Dashboard](https://github.com/developerz-ai/ultimate/wiki/Admin-Dashboard)
+
+```ts
+import { staticAuthz } from '@ultimat3/admin';
+import { defaultDevSources, devDashboard } from '@ultimat3/admin/dev';
+
+const authz = staticAuthz(['admin:read']);
+const actors = [{ id: 'dev-admin', roles: ['admin'] }];
+export const dev = devDashboard({ sources: defaultDevSources({ authz, actors }) }); // /_x
+```
+
 | | `/_x` — framework dev dashboard | `admin` — generated app admin |
 |---|---|---|
 | Import | `@ultimat3/admin/dev` | `@ultimat3/admin` |

@@ -208,7 +208,12 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   }
   if (probe.root === undefined) {
     findings.push(
-      finding('X_NOT_IN_APP', 'no app.config.ts at or above the working directory', 'x new myapp'),
+      // Not `x new`: outside an app `x` is on no PATH, and `bunx x` fetches an unrelated npm package.
+      finding(
+        'X_NOT_IN_APP',
+        'no app.config.ts at or above the working directory',
+        'bunx create-ultimate myapp && cd myapp',
+      ),
     );
     return findings;
   }

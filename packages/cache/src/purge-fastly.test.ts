@@ -132,7 +132,8 @@ describe('fastlyPurgeDriver.purge', () => {
 
 describe('fastlyPurgeDriver failures', () => {
   const failureOf = async (response: Response, keys: readonly string[] = ['post']) => {
-    const { fetch } = recorder(() => response);
+    // A clone per call: a 5xx is now retried, and a Response body is read once.
+    const { fetch } = recorder(() => response.clone());
     return await driverWith(fetch)
       .purge(keys)
       .then(

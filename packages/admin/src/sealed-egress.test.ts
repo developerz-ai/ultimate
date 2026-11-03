@@ -13,7 +13,8 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, database, entity, memoryDriver, text, uuid } from '@ultimat3/entity';
-import { inspectJob, memoryJobDriver } from '@ultimat3/jobs';
+import { inspectJob, job, memoryJobDriver, resetJobs } from '@ultimat3/jobs';
+import { t } from '@ultimat3/schema';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
 import type { CrudCtx } from './crud';
@@ -66,6 +67,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   clearRegistry();
+  resetJobs();
 });
 
 const clean = (bytes: string): void => {
@@ -89,12 +91,31 @@ describe('unit · a sealed column on an operator surface', () => {
   test("a job's stored input, as `x jobs show` and the dev panel render it", async () => {
     const [row] = await table.all();
     expect(row?.credential).toBe(CANARY);
+    // Registered, because `x jobs show` hides a job with no declaration whole — and its schema
+    // marks both secrets `.sensitive()`, the path that masks a plain copy the row's server-only
+    // property no longer guards (`pasted` below). `contact` is the load-bearing one: `credential`
+    // is also a `redactKeys` name, `contact` is in no table, so only the schema hides it.
+    const Account = t.object({
+      name: t.string,
+      credential: t.string.sensitive().optional(),
+      contact: t.string.sensitive().optional(),
+    });
+    job({
+      tenant: 'none',
+      name: 'rotateCredential',
+      input: t.object({ account: Account, accounts: t.array(Account), pasted: Account }),
+      idempotencyKey: () => 'rotate:1',
+      retry: { attempts: 1, backoff: 'linear', delay: 1_000 },
+      run: () => Promise.resolve(),
+    });
+    const pasted = { name: 'Ada', credential: CANARY, contact: LOOKUP_CANARY };
     const driver = memoryJobDriver();
     const { id: jobId } = await driver.enqueue({
       name: 'rotateCredential',
       queue: 'default',
-      // The mistake this pins: the ROW as a payload, where the id was meant.
-      input: { account: row, accounts: [row] },
+      // The mistake this pins: the ROW as a payload, where the id was meant — and a plain copy of
+      // its secrets, which only the schema's `.sensitive()` can catch.
+      input: { account: row, accounts: [row], pasted },
       idempotencyKey: 'rotate:1',
       maxAttempts: 1,
     });

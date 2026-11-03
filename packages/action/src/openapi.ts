@@ -110,6 +110,9 @@ const PROBLEM_SCHEMA: JsonSchemaObject = {
           expected: { type: 'string' },
           received: { type: 'string' },
           message: { type: 'string' },
+          // `SCHEMA_RULES` is the vocabulary; typed `string` because it grows (add, never rename).
+          rule: { type: 'string' },
+          params: { type: 'object' },
         },
       },
     },

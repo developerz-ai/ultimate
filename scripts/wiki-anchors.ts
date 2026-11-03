@@ -14,6 +14,7 @@
 //   bun run scripts/wiki-anchors.ts [--json]
 
 import { nearestName } from '@ultimat3/core';
+import { wikiHeadings } from '@ultimat3/manifest';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -29,24 +30,9 @@ export interface WikiPage {
 }
 
 const FENCE = /^\s*(?:```|~~~)/;
-const HEADING = /^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 const HTML_ANCHOR = /<a\s+(?:[^>]*\s)?(?:id|name)=["']([^"']+)["']/g;
 const LINK = /\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g;
 const CODE_SPAN = /(`+)(?:[^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
-
-/** A heading's text as GitHub renders it: links become their text, markup and tags are dropped. */
-const renderedText = (heading: string): string =>
-  heading
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/<[^>]+>/g, '')
-    .replaceAll('`', '');
-
-/** GitHub's heading slug, before the duplicate suffix. */
-export const slugOf = (heading: string): string =>
-  renderedText(heading)
-    .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, '')
-    .replaceAll(' ', '-');
 
 /** The lines outside fenced blocks, with their 1-based numbers. */
 function proseLines(text: string): readonly { readonly line: number; readonly text: string }[] {
@@ -63,17 +49,12 @@ function proseLines(text: string): readonly { readonly line: number; readonly te
 }
 
 /** Every fragment a link may land on in `text`: heading slugs, numbered as GitHub numbers them. */
+// The slug and its numbering are `@ultimat3/manifest`'s `wikiHeadings` — the same anchors `x docs`
+// prints as `wiki.<Page>#<anchor>`, so a topic it returns and a link this rule accepts cannot drift.
 export function anchorsOf(text: string): ReadonlySet<string> {
-  const anchors = new Set<string>();
-  const seen = new Map<string, number>();
+  const anchors = new Set<string>(wikiHeadings(text).map((heading) => heading.anchor));
   for (const { text: line } of proseLines(text)) {
     for (const match of line.matchAll(HTML_ANCHOR)) anchors.add(match[1] ?? '');
-    const heading = HEADING.exec(line)?.[1];
-    if (heading === undefined) continue;
-    const base = slugOf(heading);
-    const count = seen.get(base) ?? 0;
-    seen.set(base, count + 1);
-    anchors.add(count === 0 ? base : `${base}-${count}`);
   }
   return anchors;
 }

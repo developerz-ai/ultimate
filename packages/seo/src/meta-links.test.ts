@@ -1,5 +1,5 @@
 // `RouteMeta.links` — the one way a route puts a `<link>` in `<head>` beyond canonical and hreflang:
-// a font preload, a preconnect, a feed. notificado.co had to put its font preload in `<body>`,
+// a font preload, a preconnect, a feed. One adopter had to put its font preload in `<body>`,
 // where it is discovered after the stylesheet it exists to race. Pins the render, the order, and
 // the refusal of an href that is script rather than a URL.
 

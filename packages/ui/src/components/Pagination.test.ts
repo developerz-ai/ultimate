@@ -3,7 +3,7 @@
 // because a `<button>` with an `href`-shaped prop would read the same in a snapshot of labels.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, one, renderNodes } from '../jsx-probe-fixture';
+import { byTag, one, renderNodes } from '@ultimat3/core/render-nodes';
 import { Pagination, type PaginationProps } from './Pagination';
 
 const hrefFor = (cursor: string, direction: 'next' | 'prev'): string =>

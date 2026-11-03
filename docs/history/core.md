@@ -640,3 +640,39 @@ Verbatim from [`packages/core/CLAUDE.md`](../../packages/core/CLAUDE.md), which 
   `@ultimat3/http` `stages.ts` (`status >= 500`), `@ultimat3/jobs` `execute.ts`, `@ultimat3/realtime`
   `sync-node.ts` and `sync-upgrade.ts`, `@ultimat3/flags` `runtime.ts`. `configureErrorReporting({
   release })` takes the build id `serve.ts` computed. Trace and span resolve as a PAIR.
+
+## Moved out 2026-11-03 (plan 101 wave 3, the `CLAUDE.md` ceiling)
+
+Gotchas:
+- `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
+- `noPropertyAccessFromIndexSignature` is on — `ctx.services['mail']`, not `.mail`.
+- `Ctx` carries a string index signature so apps can augment `CtxServices`; the cost is that
+  `ctx.anything` type-checks as `unknown`. Deleting it is a breaking change, measured to compile
+  core clean; land it alone, with a full `bun run verify`.
+- **`Ctx extends CtxFacts, CtxServices`, and `ctxOf` holds the framework's ONE irreducible
+  `as Ctx`.** `CtxFacts` is what the framework sets (and what a `ServiceFactory` receives); an
+  augmentation's named members are required of every `Ctx`, and no framework function can obtain
+  them. `@ultimat3/http`'s `requestContext` composes `ctxOf()` and has no assertion.
+  Refused alternatives: the file header. The repair is a major, with the index-signature deletion.
+- Tests that touch the registry, the lifecycle or the listener table call `resetErrorCodes()` /
+  `resetLifecycle()` / `resetListeners()` — and a registry reset takes `errorCodeSnapshot()` first
+  and restores it in `afterAll`, or every earlier package's titles render humanised for the run.
+- `onShutdown`'s return value is the unregister, owned by every caller that can start twice
+  (`@ultimat3/http`'s `server.ts`, `@ultimat3/realtime`'s `listenSyncNode`, `@ultimat3/jobs`' worker,
+  `@ultimat3/cli`'s `hold.ts`). `shutdownHookCount()` is the leak probe.
+- Tests calling `configureCursorSigning()` restore the previous secret or call
+  `resetCursorSigning()`. The secret is read inside `sign()`, never at module scope; new secrets
+  follow the same call-time rule.
+
+- **`flightGate` HANDS its slot to a waiter** rather than releasing it. `X_FLIGHT_GATE_OVERLOADED`
+  is core's own code (tier 0 cannot borrow http's `X_OVERLOADED`); `overflow:` lets a caller throw its own.
+
+- **`client-flight.ts` INVERTS `retryDecision`'s unclassified default** through its `transient:`
+  predicate: a bare `TypeError` (dead network) and an `AbortError` (the caller's cancellation) are
+  indistinguishable by class. Never "simplify" it back.
+
+- **`backoffDelay` REFUSES a non-finite bound**: `attempt`, `base`, `max` and `factor` go through
+  `finiteOption` before the clamps. The trailing `return 0` is reachable only by `factor` overflow.
+  It clamps to `max` **before** jitter.
+- **`ClientFlight` stays `import type`-only in `action`'s and `query`'s `client.ts`** — a value import
+  pulls the whole flight layer into every caller's chunk.

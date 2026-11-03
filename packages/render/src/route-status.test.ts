@@ -1,5 +1,5 @@
 // The one way a loader answers a response STATUS while still rendering the route's own page.
-// Measured in ai-maxxing on 2026-09-07: `/fleet/nope` rendered the app's own "Not found" page,
+// Measured in one adopter on 2026-09-07: `/fleet/nope` rendered the app's own "Not found" page,
 // inside its shell, and answered 200 — because the only route to a 404 was throwing, which renders
 // the framework's error page OUTSIDE the shell. These pin the seam that closes that.
 import { describe, expect, test } from 'bun:test';

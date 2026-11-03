@@ -3,6 +3,7 @@
 // Zod and Valibot are all first-class without a line of adapter code.
 
 import { SchemaUnsupportedError, ValidationFailedError, type ValidationIssue } from './errors';
+import { issueRuleFacts, type SchemaIssueParams } from './schema-rules';
 
 export interface StandardSchemaV1<Input = unknown, Output = Input> {
   readonly '~standard': StandardSchemaProps<Input, Output>;
@@ -39,6 +40,13 @@ export interface StandardPathSegment {
 export interface StandardIssue {
   readonly message: string;
   readonly path?: readonly (PropertyKey | StandardPathSegment)[] | undefined;
+  /**
+   * Ultimate's extension: which rule refused, from `SCHEMA_RULES` (`string.min`). Optional, since
+   * a conforming library has none — a translator keys on it, never on the English `message`.
+   */
+  readonly rule?: string | undefined;
+  /** The declared facts the rule names (`{ min: 3 }`), for the translator to interpolate. */
+  readonly params?: SchemaIssueParams | undefined;
 }
 
 export type InferInput<S extends StandardSchemaV1> = NonNullable<S['~standard']['types']>['input'];
@@ -93,6 +101,7 @@ export function toValidationIssues(issues: readonly StandardIssue[]): readonly V
     expected: issue.message,
     received: '',
     message: issue.message,
+    ...issueRuleFacts(issue),
   }));
 }
 

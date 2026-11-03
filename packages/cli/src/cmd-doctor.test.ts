@@ -160,7 +160,7 @@ describe('unit · x doctor', () => {
   test('running outside an app stops after the one finding that explains everything', async () => {
     const findings = await runDoctor(probe({ root: undefined, exists: () => false }));
     expect(findings.map((finding) => finding.code)).toEqual(['X_NOT_IN_APP']);
-    expect(findings[0]?.fix).toBe('x new myapp');
+    expect(findings[0]?.fix).toBe('bunx create-ultimate myapp && cd myapp');
   });
 
   test('an old Bun is reported first, because it explains the rest', async () => {

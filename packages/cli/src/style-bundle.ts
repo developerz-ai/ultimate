@@ -3,7 +3,7 @@
 // asset over (`island-bundle.ts`), because the two answer the same question — "what does this
 // document make the browser fetch, and can it keep it?" — and one mechanism is the whole point.
 //
-// Why it stopped being an inline `<style>`: measured against ai-maxxing on 2026-09-06, every
+// Why it stopped being an inline `<style>`: measured against one adopter's app on 2026-09-06, every
 // `app/` document carried one 156,738-byte block — 1,336 rules from 406 module sources, byte
 // identical across `/`, `/fleet`, `/fleet/[host]` and the session page — inside a response the
 // pipeline sends `Cache-Control: private, no-store`. 92% of the dashboard document and 89% of the

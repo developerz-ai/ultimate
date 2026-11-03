@@ -1,6 +1,6 @@
-// The build that precedes each tracked app's gate, in `bin/check`'s shape: `x build --target
-// static`, then `x verify`. `budgets` weighs `.x/build-stats.json` and the static build is its only
-// writer, so a gate that verified without building measured a file that was never produced.
+// The build that precedes each tracked app's gate: `x build --target static`, then `x verify`.
+// `budgets` would build on its own when the stats are stale (plan 101, 21); building first keeps a
+// failed build this script's finding, and leaves `budgets` fresh stats so it never builds twice.
 
 // why: `rm -r` on a directory — Bun.file().delete() removes one file and never a tree.
 import { rm } from 'node:fs/promises';
@@ -31,7 +31,7 @@ const reproduceBuild = (app: GatedApp): string => {
 
 /**
  * Clear the stale outputs and build the app. `undefined` when the build succeeded; a failed build
- * is the app regressing — `bin/check` stops there, and so does a scaffolded app's CI — never a
+ * is the app regressing — the gate's own build would stop there too — never a
  * red `budgets` step for the reader to trace back to it.
  */
 export const buildApp = async (

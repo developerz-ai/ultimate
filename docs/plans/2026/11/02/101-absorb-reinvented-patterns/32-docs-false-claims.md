@@ -43,6 +43,6 @@ None new here; the guards slice carries them.
 Patch, docs only.
 
 ## Done when
-- `git grep -n 'As of Unreleased\|| .main. |' wiki/` answers nothing.
+- `` git grep -nE 'As of Unreleased|^\| [^|]+ \| `main` \|' -- wiki/ ':!wiki/Error-Codes.md' `` answers nothing: a `main` in a table's second column (Known-Gaps' "Fixed in"), never a flag's `--base` default in the third; `wiki/Error-Codes.md` names the phrase in `X_DOC_UNRELEASED_STALE`'s row.
 - A fresh scaffold following tutorials 1–4 ends with the outputs the pages print.
 - The private-name guard reports zero outside the paths [`37-scrub-adopter-names.md`](37-scrub-adopter-names.md) excludes.

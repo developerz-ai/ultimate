@@ -22,6 +22,8 @@ export KUBECONFIG="$WORK/kubeconfig"
 
 refuse() { echo "::error title=deploy proof::$1"; exit 1; }
 step() { echo "── $1"; }
+# shellcheck source=docker/deploy-proof/scaffold.sh
+. "$REPO/docker/deploy-proof/scaffold.sh"
 
 for tool in docker kind helm kubectl bun jq timeout; do
   command -v "$tool" >/dev/null || refuse "$tool is not on PATH. fix: install $tool, then re-run bash docker/deploy-proof/run.sh"
@@ -33,23 +35,7 @@ cleanup() {
 trap cleanup EXIT
 
 step "x new proofapp, on this tree's packages"
-(cd "$REPO" && bun run x -- new proofapp --dir "$WORK" --json >/dev/null)
-mkdir -p "$APP/vendor"
-for dir in "$REPO"/packages/*/; do
-  name="$(jq -r '.name // ""' "$dir/package.json")"
-  # A nameless workspace would fall through the case below and ship the npm copy instead of this tree's.
-  [ -n "$name" ] || refuse "$dir/package.json has no name, so it cannot be packed into the proof app. fix: give it its @ultimat3/<pkg> name"
-  case "$name" in @ultimat3/*) (cd "$dir" && bun pm pack --destination "$APP/vendor" --quiet >/dev/null) ;; esac
-done
-(cd "$APP" && bun -e '
-  const pkg = await Bun.file("package.json").json();
-  pkg.overrides = {};
-  for (const file of new Bun.Glob("vendor/ultimat3-*.tgz").scanSync(".")) {
-    const name = file.slice("vendor/ultimat3-".length).replace(/-\d+\.\d+\.\d+(-[\w.]+)?\.tgz$/, "");
-    pkg.overrides[`@ultimat3/${name}`] = `file:./${file}`;
-  }
-  await Bun.write("package.json", `${JSON.stringify(pkg, null, 2)}\n`);
-' && bun install >/dev/null)
+scaffold_proof_app "$REPO" "$WORK"
 
 step "x db gen initial, bounded"
 # Bounded, so a hang is this step's named failure and not the job's silent 15-minute cancel: an

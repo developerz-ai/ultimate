@@ -2,6 +2,16 @@
   "name": "@ultimat3/policy",
   "version": "29.4.0",
   "description": "The one authz rule, evaluated identically in every surface",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "authorization",
+    "authz",
+    "policy",
+    "rbac"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Policies-And-Authz",
   "license": "MIT",
   "type": "module",
   "repository": {

@@ -2,11 +2,11 @@
 // `donut-chart-view.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import type { ProbeNode } from '../jsx-probe-fixture';
-import { byTag, nodesOf, one, renderNodes, withAttr } from '../jsx-probe-fixture';
+import type { RenderNode } from '@ultimat3/core/render-nodes';
+import { byTag, nodesOf, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { DonutChart } from './DonutChart';
 
-const text = (node: ProbeNode | undefined): string =>
+const text = (node: RenderNode | undefined): string =>
   [node?.props['children']]
     .flat()
     .filter((c) => typeof c === 'string')
@@ -70,7 +70,7 @@ describe('DonutChart', () => {
   });
 
   test('the centre reads the total by default, or the caller’s figure and line', () => {
-    const centre = (nodes: ProbeNode[]) =>
+    const centre = (nodes: RenderNode[]) =>
       byTag(nodes, 'p').flatMap((p) => byTag(nodesOf(p.props['children']), 'span').map(text));
     expect(centre(renderNodes(DonutChart, base))).toEqual(['100']);
     expect(

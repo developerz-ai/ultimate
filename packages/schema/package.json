@@ -2,6 +2,16 @@
   "name": "@ultimat3/schema",
   "version": "29.4.0",
   "description": "Ultimate's validation seam: Standard Schema interface, the t namespace, JSON Schema output",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "validation",
+    "schema",
+    "standard-schema",
+    "json-schema"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/The-Eight-Primitives",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,

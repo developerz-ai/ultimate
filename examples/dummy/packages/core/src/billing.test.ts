@@ -1,6 +1,7 @@
 /** unit — no DB, no I/O. Every assertion is in minor units; nothing here formats money. */
 
 import { expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import { addMs, daysBetween, fromIso, toIso } from '@ultimat3/time';
 import {
   assertSeatsAvailable,
@@ -9,14 +10,13 @@ import {
   quoteUpgrade,
   seatsRemaining,
 } from './billing';
-import type { CoreError } from './errors';
 
 const codeOf = (run: () => unknown): string | undefined => {
   try {
     run();
     return undefined;
   } catch (error) {
-    return (error as CoreError).code;
+    return isUltimateError(error) ? error.code : undefined;
   }
 };
 

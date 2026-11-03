@@ -11,18 +11,18 @@
 // anti-bot systems look for.
 
 import { finiteCount, readWithinLimit } from '@ultimat3/core';
+import { type DeadlineTimer, deadlineSignal, resolveDialHost } from '@ultimat3/core/outbound';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { ScrapeClock } from './clock';
 import { cookieHeaderFor } from './cookie-scope';
-import { type DeadlineTimer, deadlineSignal } from './deadline-signal';
 import { bodyTooLarge, hostBlocked, httpFailed, redirectLoop, scrapeTimeout } from './error-throws';
 import type { RedirectHop } from './http-redirect';
 import { MAX_REDIRECT_HOPS, redirectHop } from './http-redirect';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict } from './intercept';
 import type { DialTarget, HostResolve } from './pinned-host';
-import { dialTarget, resolveHost } from './pinned-host';
+import { dialTarget } from './pinned-host';
 import type { NetworkRing } from './rings';
 import type { RobotsGate } from './robots';
 import type { ScrapeSecrets } from './secrets';
@@ -279,7 +279,7 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
    * The three gates, in one place, so the initial URL and hop seven are screened by the same code
    * in the same order. A second copy for redirects is how the two drift.
    */
-  const resolve = init.resolve ?? resolveHost;
+  const resolve = init.resolve ?? resolveDialHost;
   const screen = async (target: string): Promise<DialTarget> => {
     if (interceptVerdict(target, 'fetch', init.rules) !== 'allow') {
       throw hostBlocked(target, init.rules.allowHosts);

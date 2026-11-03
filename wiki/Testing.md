@@ -270,6 +270,31 @@ unitTest('the dashboard counts the posts of the org that is looking', async () =
 `actor` runs `load` and the page inside a request context holding that actor. `renderView` refuses
 a component that renders an `island()` — its hydration timing is a route's. `As of 2026-10`.
 
+## Asserting on what an element carries
+
+A string cannot say whether a node carries `aria-live`, or what its `onKeyDown` does. Walk the tree
+instead, imported from the package that declares it, `@ultimat3/core/render-nodes`:
+
+```ts
+import { fire, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
+import { Menu, type MenuItem } from '@ultimat3/ui';
+
+declare const items: readonly MenuItem[];
+const menu = one(withAttr(renderNodes(Menu, { items }), 'role', 'menu'), 'the menu');
+fire(menu, 'onKeyDown', { key: 'ArrowDown', preventDefault: () => undefined });
+```
+
+| Question | Use |
+|---|---|
+| what a reader sees: markup, text, islands, `meta` | `renderRoute` / `renderView` (`@ultimat3/testing`) |
+| what an element holds: handlers, refs, props no string can carry | `renderNodes` / `nodesOf` (`@ultimat3/core/render-nodes`) |
+
+`nodesOf(value, { components })`: `'expand'` (default) calls components and keeps host nodes only;
+`'keep'` keeps each component node beside its output, so `byComponent(nodes, 'DateTime')` reads
+the props a view handed it; `'stop'` never calls one. An island's server shell is walked; a hole is
+its first flush, `fallback` and `error`, and its deferred `children` are never called. `one()`, `attachRef()` and `fire()` refuse with `X_INVARIANT`, naming what they sought.
+The worked example: `examples/dummy/apps/web/app/settings/page.test.ts`. `As of 2026-11`.
+
 ## Running a mutator's local half
 
 ```ts
@@ -525,13 +550,32 @@ One row shape per entity, deterministic, with named variations. `defineFactory` 
 
 ```ts
 import { associate, defineFactory } from '@ultimat3/testing';
+import { boolean, entity, integer, text, uuid } from '@ultimat3/entity';
+
+const org = entity('orgs', { columns: { id: uuid().primaryKey(), name: text() } });
+const post = entity('posts', {
+  columns: {
+    id: uuid().primaryKey(),
+    orgId: uuid().references(() => org.id).tenant(), // the column `associations` fills
+    title: text(),
+    published: boolean().default(false),
+    views: integer().default(0),
+  },
+});
 
 const orgFactory = defineFactory(org, {
   defaults: (index, ids) => ({ id: ids.uuid(), name: `org-${index}` }),
 });
 
 const postFactory = defineFactory(post, {
-  defaults: (index, ids) => ({ id: ids.uuid(), title: `post-${index}`, published: false, views: 0 }),
+  // `defaults` names every column; `associations` replaces `orgId` with the parent's id.
+  defaults: (index, ids) => ({
+    id: ids.uuid(),
+    orgId: '',
+    title: `post-${index}`,
+    published: false,
+    views: 0,
+  }),
   traits: {
     published: { published: true },
     popular: (index) => ({ views: index * 100 }),
@@ -658,7 +702,7 @@ Measured, `As of 2026-09-27`, 12-core box, whole process tree sampled every 200 
 
 | run | workers | wall | peak RSS |
 |---|---|---|---|
-| notificado.co `x test unit` (768 files), 22.6.2 default (isolated) | 14 (+parent) | 193 s | 13.1 GB |
+| one adopter's `x test unit` (768 files), 22.6.2 default (isolated) | 14 (+parent) | 193 s | 13.1 GB |
 | the same, 22.7 default (16 GB+ box), test DB on `reusableDatabase` | 3 | 90-93 s | 3.7-3.9 GB |
 | the same, 2 workers (an 8 GB box's default) | 2 | 150 s | 2.6 GB |
 | framework `x test unit` (1620 files), no isolation | 3 | 115-125 s | 2.9-3.0 GB |
@@ -667,7 +711,7 @@ Measured, `As of 2026-09-27`, 12-core box, whole process tree sampled every 200 
 The framework repository itself opts back into `"isolate": true`: its suites exercise the
 process-global registries on purpose (fixture apps per test, empty permission sets), and without
 isolation a handful of files fail depending on which worker ran what before them. Apps do not
-need it — notificado.co's unit, contract and job tiers pass without isolation.
+need it — one adopter's unit, contract and job tiers pass without isolation.
 
 A worker on the embedded database (PGlite) cannot go much below 1 GB: one booted PGlite holds
 0.9-1.1 GB RSS even after `close()` and a full GC.

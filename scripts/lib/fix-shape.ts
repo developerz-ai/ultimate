@@ -20,6 +20,7 @@ const RUNNABLE: ReadonlySet<string> = new Set([
   'ls',
   'grep',
   'kill',
+  'ps',
   'pg_dump',
   'pg_restore',
   'echo',

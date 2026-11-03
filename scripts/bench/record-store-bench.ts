@@ -1,4 +1,4 @@
-// The page record store under the load bank-integrations' panel puts on it (2026-10-29): what one
+// The page record store under the load one adopter's panel puts on it (2026-10-29): what one
 // live record costs each island reading a projection. Counts, per scenario, the notifications the
 // hooks raised (each one a re-run of every effect reading the accessor, i.e. a render), the times
 // an answer's `data` came back as a NEW array (what defeats a memo's `===`), and the wall time.
@@ -190,7 +190,7 @@ const allScenarios = async (): Promise<ScenarioResult[]> => [
     };
   }),
   await scenario('board-throttled', () => {
-    // 10 frames a second for 20 s, the board reading with `throttleMs: 1000` (bank-integrations'
+    // 10 frames a second for 20 s, the board reading with `throttleMs: 1000` (one adopter's
     // hand-written `throttle.ts`, ROWS_MS): a manual timer advanced 100 ms per frame.
     const s = pageHarnessStore();
     const rows: Record<string, Row> = {};

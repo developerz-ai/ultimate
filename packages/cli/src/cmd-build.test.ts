@@ -152,6 +152,20 @@ test("a failed build's own output reaches --json, not only the terminal", () => 
   expect(failed.lines?.join('\n')).toContain('failed to solve');
 });
 
+// `x verify`'s budgets step runs this build and reports its findings unchanged (plan 101, 21), so
+// a static failure whose fix was `x verify --json` sent the reader round the loop it came from.
+test('a failed static build points at the build, whose --json carries the builder output', () => {
+  const failed = buildResult({
+    target: 'static',
+    artifact: '.x/static',
+    command: ['bun', 'run', 'apps/web/prerender.ts'],
+    result: exec(false),
+  });
+  expect(failed.findings?.map((finding) => finding.fix)).toEqual([
+    'x build --target static --json',
+  ]);
+});
+
 test('a build blocked by the static gate still reports as the build command', () => {
   const verify: CommandResult = {
     ok: false,

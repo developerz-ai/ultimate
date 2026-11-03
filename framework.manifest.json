@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "70e79fbdd05fc2f35c47e6d3fb3bbf367440bf569d2614ee72d4be0609ca9822",
+  "buildId": "bc14d6602277dbd082007ce7d49df89469bbf2b5bdeb40483ab04c5e369e6372",
   "tiers": {
     "0": [
       "core",
@@ -680,6 +680,16 @@
       "at": "packages/db/src/errors.ts"
     },
     {
+      "code": "X_BREAKER_OPEN",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_BREAKING_ON_MAIN",
+      "owner": "scripts",
+      "at": "scripts/lib/changelog-highlights.ts"
+    },
+    {
       "code": "X_BROWSER_SERVER_BARREL",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -860,6 +870,11 @@
       "at": "packages/testing/src/e2e-error-codes.ts"
     },
     {
+      "code": "X_CHANGELOG_HIGHLIGHTS_MISSING",
+      "owner": "scripts",
+      "at": "scripts/lib/changelog-highlights.ts"
+    },
+    {
       "code": "X_CHANNEL_DECLARATION_INVALID",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
@@ -903,6 +918,16 @@
       "code": "X_CLI_FLAG_UNREAD",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CLI_OUTBOUND_ALLOWANCE_STALE",
+      "owner": "scripts",
+      "at": "scripts/cli-outbound.ts"
+    },
+    {
+      "code": "X_CLI_OUTBOUND_UNDECLARED",
+      "owner": "scripts",
+      "at": "scripts/cli-outbound.ts"
     },
     {
       "code": "X_CLI_UNEXPECTED",
@@ -1280,6 +1305,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_DEPLOY_ENV_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_DEPLOY_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1326,6 +1356,16 @@
     },
     {
       "code": "X_DEV_STATE_UNWRITABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEV_STOP_DENIED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEV_STOP_TIMEOUT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1462,7 +1502,7 @@
     {
       "code": "X_DOC_RELEASE_FACT_STALE",
       "owner": "scripts",
-      "at": "scripts/release-facts.ts"
+      "at": "scripts/lib/stability-findings.ts"
     },
     {
       "code": "X_DOC_RELEASE_FACT_UNSCANNED",
@@ -1478,6 +1518,11 @@
       "code": "X_DOC_SETUP_COMMANDS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/setup-commands.ts"
+    },
+    {
+      "code": "X_DOC_TUTORIAL_DIVERGED",
+      "owner": "scripts",
+      "at": "scripts/tutorial-run.ts"
     },
     {
       "code": "X_DOC_UID_STALE",
@@ -1497,7 +1542,7 @@
     {
       "code": "X_DOC_UNRELEASED_STALE",
       "owner": "scripts",
-      "at": "scripts/lib/unreleased-claims.ts"
+      "at": "scripts/doc-unreleased.ts"
     },
     {
       "code": "X_DRAINING",
@@ -1590,6 +1635,11 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_ENV_FILE_EXISTS",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_ENV_MISSING",
       "owner": "core",
       "at": "packages/core/src/core-error-codes.ts"
@@ -1633,6 +1683,11 @@
       "code": "X_ERROR_CODE_UNTHROWN_STALE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ERROR_DECLARATION_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
     },
     {
       "code": "X_ERROR_FIX_INVALID",
@@ -1728,6 +1783,21 @@
       "code": "X_FEATURE_UNKNOWN",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_FETCH_DEADLINE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/fetch-deadline.ts"
+    },
+    {
+      "code": "X_FETCH_DEADLINE_PIN_UNEXPLAINED",
+      "owner": "scripts",
+      "at": "scripts/fetch-deadline.ts"
+    },
+    {
+      "code": "X_FETCH_UNBOUNDED",
+      "owner": "scripts",
+      "at": "scripts/fetch-deadline.ts"
     },
     {
       "code": "X_FILE_TOO_LONG",
@@ -2258,6 +2328,16 @@
       "code": "X_KNOWN_GAP_LINK_MALFORMED",
       "owner": "scripts",
       "at": "scripts/known-gaps-links.ts"
+    },
+    {
+      "code": "X_KNOWN_GAP_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/known-gaps-pins.ts"
+    },
+    {
+      "code": "X_KNOWN_GAP_UNPINNED",
+      "owner": "scripts",
+      "at": "scripts/known-gaps-pins.ts"
     },
     {
       "code": "X_KNOWN_GAP_UNSCANNED",
@@ -2925,6 +3005,56 @@
       "at": "packages/core/src/core-error-codes.ts"
     },
     {
+      "code": "X_OUTBOUND_BODY_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_HOST_BLOCKED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_REDIRECTED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_REFUSED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_RETRY_UNSAFE",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_THROTTLED",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_TIMEOUT",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_TOO_LARGE",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_UNAVAILABLE",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
+      "code": "X_OUTBOUND_UNREACHABLE",
+      "owner": "core",
+      "at": "packages/core/src/core-error-codes.ts"
+    },
+    {
       "code": "X_OUTBOX_NO_TX",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
@@ -2943,6 +3073,16 @@
       "code": "X_PACKAGE_DUPLICATED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PACKAGE_KEYWORDS_MISSING",
+      "owner": "scripts",
+      "at": "scripts/package-front.ts"
+    },
+    {
+      "code": "X_PACKAGE_README_SHAPE",
+      "owner": "scripts",
+      "at": "scripts/package-front.ts"
     },
     {
       "code": "X_PACKAGE_SHAPE",
@@ -3058,6 +3198,16 @@
       "code": "X_PRERENDER_FAILED",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
+    },
+    {
+      "code": "X_PRIVATE_NAME",
+      "owner": "scripts",
+      "at": "scripts/private-names.ts"
+    },
+    {
+      "code": "X_PRIVATE_NAMES_UNSET",
+      "owner": "scripts",
+      "at": "scripts/private-names.ts"
     },
     {
       "code": "X_PROBE_DATABASE_FIXED",
@@ -3345,6 +3495,11 @@
       "at": "scripts/readme-fences.ts"
     },
     {
+      "code": "X_README_SAMPLE_DRIFT",
+      "owner": "scripts",
+      "at": "scripts/readme-sample.ts"
+    },
+    {
       "code": "X_REALTIME_PRODUCER_CONFLICT",
       "owner": "realtime",
       "at": "packages/realtime/src/error-titles.ts"
@@ -3422,7 +3577,7 @@
     {
       "code": "X_REGISTRY_UNREACHABLE",
       "owner": "scripts",
-      "at": "scripts/registry-audit.ts"
+      "at": "scripts/dist-tag.ts"
     },
     {
       "code": "X_REGISTRY_VERSION_BEHIND",
@@ -3445,14 +3600,24 @@
       "at": "scripts/release-due.ts"
     },
     {
+      "code": "X_RELEASE_MAJOR_WINDOW",
+      "owner": "scripts",
+      "at": "scripts/lib/major-window.ts"
+    },
+    {
       "code": "X_RELEASE_TAG_UNREACHABLE",
       "owner": "scripts",
-      "at": "scripts/release-due.ts"
+      "at": "scripts/deprecation-window.ts"
     },
     {
       "code": "X_RELEASE_TREE_DIRTY",
       "owner": "scripts",
       "at": "scripts/lib/release-preflight.ts"
+    },
+    {
+      "code": "X_RELEASE_UNDEPRECATED_REMOVAL",
+      "owner": "scripts",
+      "at": "scripts/deprecation-window.ts"
     },
     {
       "code": "X_RELEASE_UNRELEASED_MISSING",
@@ -3462,7 +3627,7 @@
     {
       "code": "X_RELEASE_VERSION_INVALID",
       "owner": "scripts",
-      "at": "scripts/release.ts"
+      "at": "scripts/lib/dist-tag.ts"
     },
     {
       "code": "X_RELEASE_VERSION_SKEW",
@@ -3472,7 +3637,7 @@
     {
       "code": "X_RELEASE_VERSION_UNSTATED",
       "owner": "scripts",
-      "at": "scripts/release.ts"
+      "at": "scripts/lib/release-version.ts"
     },
     {
       "code": "X_RELEASE_WINDOW_UNREADABLE",
@@ -3683,6 +3848,11 @@
       "code": "X_SCHEMA_DUMP_DRIFT",
       "owner": "db",
       "at": "packages/db/src/errors.ts"
+    },
+    {
+      "code": "X_SCHEMA_SENSITIVE_OUTPUT",
+      "owner": "schema",
+      "at": "packages/schema/src/error-codes.ts"
     },
     {
       "code": "X_SCHEMA_UNSUPPORTED",

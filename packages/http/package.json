@@ -2,6 +2,16 @@
   "name": "@ultimat3/http",
   "version": "29.4.0",
   "description": "Owned request lifecycle over Bun.serve: router, ordered pipeline, problem+json errors",
+  "keywords": [
+    "ultimate",
+    "bun",
+    "framework",
+    "http",
+    "router",
+    "server",
+    "problem-json"
+  ],
+  "homepage": "https://github.com/developerz-ai/ultimate/wiki/Routes-And-Render-Modes",
   "license": "MIT",
   "type": "module",
   "sideEffects": [

@@ -4,7 +4,7 @@
 
 | Requirement | Version | Needed for | Notes |
 |---|---|---|---|
-| Bun | **>= 1.3** (target 2.0) | everything | the only runtime. No Node, Deno, or workerd support — ever |
+| Bun | **>= 1.4.4** (`engines.bun`; target 2.0) | everything | the only runtime. No Node, Deno, or workerd support — ever |
 | Postgres | 16+ | prod, parity checks | **optional in dev** — `x dev` embeds one in `.x/pg` |
 | Docker | any | parity checks, prod images | never required for `x dev`; `x build --target docker` needs it |
 | Redis | 7+ | cache tier 3 in prod | dev uses an in-process map behind the same interface |
@@ -15,11 +15,22 @@ Bun below the floor fails before anything else runs:
 
 ```
 X_BUN_VERSION: bun version is below the framework floor
-  cause: Bun 1.3.12 is older than the required >=1.4.0
+  cause: Bun 1.4.3 is older than the required 1.4.4
   fix:   bun upgrade
 ```
 
-`x doctor --json` checks the runtime, the embedded Postgres, ports, and the resolved env, and runs outside an app directory.
+`x doctor --json` checks the runtime, the embedded Postgres, ports, and the resolved env. Outside an app, `x` is on no `PATH` and `bunx x` fetches an **unrelated** npm package named `x`: spell it `bunx @ultimat3/cli doctor --json` there, and start an app with `bunx create-ultimate myapp`.
+
+| Platform | Status | Proved by |
+|---|---|---|
+| Linux x64 | supported | every CI job; `scaffold-smoke` gates a fresh scaffold twice per shape |
+| macOS | supported | the `macos` CI job: a fresh scaffold's `bun run setup` and its gate on `macos-latest` |
+| Windows, native (PowerShell, cmd) | supported | the `windows` CI job: lint, typecheck, a path-heavy unit subset and a scaffold's gate, in pwsh |
+
+| Without Docker | Works |
+|---|---|
+| `bun run dev`, `bun run setup`, `bun run verify` (the gate) | yes — the database is embedded and no service is dialled ([Bare VM](Bare-VM)) |
+| a deploy | takes an image (`x build --target docker` needs Docker, or a host that builds the Dockerfile — [Deploy recipes](Deploy-Recipes)), or `x build --target binary` with no container runtime |
 
 ## Create an app
 
@@ -29,9 +40,9 @@ bunx create-ultimate myapp && cd myapp && bun run setup && bun run dev
 
 `create-ultimate` is a thin front for `x new`. Inside an existing workspace, use `x new` directly.
 
-**PowerShell and cmd run the same commands.** `bun run setup` and `bun run check` run the app's
-`bin/setup.ts` and `bin/check.ts` — TypeScript that Bun executes, no bash and no WSL — and
-`bun run dev` is `x dev`. Windows PowerShell 5.1 has no `&&`: type the commands one per line there
+**PowerShell and cmd run the same commands.** `bun run setup` runs the app's `bin/setup.ts` —
+TypeScript that Bun executes, no bash and no WSL — and `bun run dev` and `bun run verify` are
+`x dev` and `x verify`. Windows PowerShell 5.1 has no `&&`: type the commands one per line there
 (PowerShell 7 and cmd take the line as written).
 
 **`bun run setup` is not optional.** `x new` writes files and installs nothing, so `cd myapp && x dev`
@@ -75,7 +86,7 @@ What `x new` writes, and who owns it afterwards:
 | `x.manifest.json` | generated every build | routes, entities, actions, jobs, policies, tags, MCP tools, budgets. Never hand-edited; drift fails `x verify` |
 | `openapi.json` | generated | HTTP surface from `action` / `query` declarations |
 | `AGENTS.md` / `CLAUDE.md` | **human-authored stubs** | short, terse. Ultimate never generates prose docs at runtime |
-| `.github/workflows/ci.yml` | generated | `bun run setup` then `bun run check`, on push and pull request — yours to edit, and the same two commands the app's `README.md` opens with |
+| `.github/workflows/ci.yml` | generated | `bun run setup` then `bun run verify`, on push and pull request — yours to edit, and the same two commands the app's `README.md` opens with |
 | `docker/` | generated | dev compose + per-role prod compose + Dockerfile ([Deployment](Deployment)) |
 | `packages/db/migrations/` | **not written at all** | `x db gen` is its only writer, `As of 2026-08`. First commands in a new app: `x db gen "initial"`, then `x db migrate` — `bun run setup` runs both. Until the first one has, `x verify`'s `drift` step is red and names it, for any app declaring an entity; `--no-example` declares none, and zero against zero is agreement |
 
@@ -143,20 +154,24 @@ Stated cost: no native-addon packages, and Bun's long-running-process maturity i
 
 ## Editor and agent setup
 
-The MCP server is `x mcp serve`, and **`x dev` does not start one** — measured `As of 2026-08-23`,
-`/mcp` on the dev server answers 404 and nothing listens on 9229 until this command runs. It prints
-the bearer token and the scopes the caller gets:
+Two MCP servers, and an app ships both. The **dev tools** are `x mcp serve` — `x dev` does not
+start them, and nothing listens on 9229 until this command runs. A new app's `.mcp.json` already
+names the stdio form, as `bunx @ultimat3/cli mcp serve --transport stdio`, so a client that reads
+that file starts it with no setup; [MCP and AI](MCP-And-AI#client-config) says what to give one that does not.
+The **app's own tools** are `POST /mcp` on the app (`apps/web/mcp.ts`), mounted by `x dev` and the
+web role, refusing any request without a bearer token. The HTTP form below prints its token:
 
 ```
-x mcp serve --transport stdio                  # a client that spawns the server
-x mcp serve --transport http --port 9229       # POST /mcp; the bearer token is printed at boot
+bunx x mcp serve --transport stdio              # a client that spawns the server
+bunx x mcp serve --transport http --port 9229   # POST /mcp; the bearer token is printed at boot
 ```
 
 `stdio` and `http` are the two transports (`x help mcp`) — there is no `ws` transport, and this page
 told readers to configure one until 2026-08-23. Register the URL and the printed token with whatever
 MCP client you use; a request without the token is answered 401 with no catalog.
 
-Thirteen tools, `As of 2026-08` — the full catalog, and the exact names to call:
+The catalog is `bunx x mcp tools --json`: every tool's exact name and description, read off the
+server itself rather than counted here. The core of it:
 
 | Tool | Replaces the agent's usual guess |
 |---|---|
@@ -185,4 +200,6 @@ Read tools are unrestricted in dev; write tools are scoped to branch environment
 | Remove dev state (embedded PG, storage, caches) | `rm -rf .x` |
 | Remove the CLI | it ships with the app; deleting the repo is the uninstall |
 
-Version pinning: `As of 2026-08`, Bun 1.3 is the floor and 2.0 the target; SolidJS 2 is in beta and is pinned exactly, and its upgrade is framework work, not app work. There is no ArkType or Drizzle pin to carry — `@ultimat3/schema` ships its own dependency-free validators and `@ultimat3/entity` its own `postgresDriver()`. Details and codemod inventory in [Upgrading](Upgrading). Boot failures and port conflicts in [Troubleshooting](Troubleshooting).
+Framework ranges: an app declares every `@ultimat3/*` package at `^<version>`, as `x new` writes it, and `bun.lock` pins the exact build. Keep them on one version: the packages move in lockstep, and `x upgrade` moves them together. A third-party wrapper declares them as `peerDependencies` at `^<major>` ([Publish it](Building-Your-Own-Base#publish-it)).
+
+Version pinning: `As of 2026-11`, the Bun floor is the one stated at the top of this page and 2.0 the target; SolidJS 2 is in beta and is pinned exactly, and its upgrade is framework work, not app work. There is no ArkType or Drizzle pin to carry — `@ultimat3/schema` ships its own dependency-free validators and `@ultimat3/entity` its own `postgresDriver()`. Details and codemod inventory in [Upgrading](Upgrading). Boot failures and port conflicts in [Troubleshooting](Troubleshooting).

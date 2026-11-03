@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "a317740eb8828bc7",
+  "buildId": "50519dfd6bb5060c",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -2936,6 +2936,10 @@
       "package": "guards/bare-error.ts"
     },
     {
+      "code": "X_ERROR_DECLARED",
+      "package": "guards/error-declared.ts"
+    },
+    {
       "code": "X_FOCUS_VISIBLE",
       "package": "guards/focus-visible.ts"
     },
@@ -2954,6 +2958,10 @@
     {
       "code": "X_RAW_COLOUR",
       "package": "guards/raw-colour.ts"
+    },
+    {
+      "code": "X_RAW_FETCH",
+      "package": "guards/raw-fetch.ts"
     },
     {
       "code": "X_RAW_LENGTH",

@@ -4,7 +4,7 @@
 // Since 22.7 `x test` / `x verify` run each worker WITHOUT `--isolate`: one global and one module
 // registry per worker, reused across every file it runs (2-5x faster, measured in
 // `@ultimat3/cli`'s `test-workers.ts`). What a file leaves on `globalThis` then reaches every
-// later file on that worker. Measured on notificado.co: one island test that never disposed its
+// later file on that worker. Measured on one adopter's app: one island test that never disposed its
 // mount left the fake `window`/`document` installed, PGlite then took the process for a browser
 // (`window.location.pathname` of undefined), and 264 unrelated tests failed.
 //

@@ -3,7 +3,7 @@
 // `Popover` already answers `undefined` while closed; this is the same rule for the same reason.
 
 import { describe, expect, test } from 'bun:test';
-import { renderNodes, withAttr } from '../jsx-probe-fixture';
+import { renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { Menu } from './Menu';
 
 type Control = Readonly<Record<string, unknown>>;

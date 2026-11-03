@@ -251,20 +251,18 @@ function parseWikiTiers(
 const mayImportOf = (tier: number): string =>
   tier === 0 ? 'nothing internal' : tier === 1 ? 'tier 0' : `tier 0–${tier - 1}`;
 
-// The two wiki copies were hand-written and went stale together: `flags`, `notify` and `scraping`
-// missing, `ui` still at tier 5 two majors after it moved.
-describe.each(['wiki/Contributing.md', 'wiki/Project-Layout.md'])(
-  'the tier table in %s',
-  (page) => {
-    test('every tier lists exactly the packages `TIERS` lists, and what it may import', async () => {
-      const rows = parseWikiTiers(await Bun.file(`${import.meta.dir}/../${page}`).text());
-      expect(rows.size).toBe(Object.keys(TIERS).length);
-      for (const [tier, packages] of Object.entries(TIERS)) {
-        expect(rows.get(tier), `${page} tier ${tier}`).toEqual({
-          packages: [...packages],
-          mayImport: mayImportOf(Number(tier)),
-        });
-      }
-    });
-  },
-);
+// The wiki copies were hand-written and went stale together: `flags`, `notify` and `scraping`
+// missing, `ui` still at tier 5 two majors after it moved. `wiki/Contributing.md` is a pointer at
+// CONTRIBUTING.md since plan 101 slice 32, so Project-Layout carries the one wiki copy.
+describe.each(['wiki/Project-Layout.md'])('the tier table in %s', (page) => {
+  test('every tier lists exactly the packages `TIERS` lists, and what it may import', async () => {
+    const rows = parseWikiTiers(await Bun.file(`${import.meta.dir}/../${page}`).text());
+    expect(rows.size).toBe(Object.keys(TIERS).length);
+    for (const [tier, packages] of Object.entries(TIERS)) {
+      expect(rows.get(tier), `${page} tier ${tier}`).toEqual({
+        packages: [...packages],
+        mayImport: mayImportOf(Number(tier)),
+      });
+    }
+  });
+});

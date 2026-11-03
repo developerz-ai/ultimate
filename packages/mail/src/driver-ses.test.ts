@@ -3,7 +3,15 @@
 // throws on any real request — and freezes the clock, so the SigV4 signature is a known answer.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock, isUltimateError, signAwsRequest, type UltimateError } from '@ultimat3/core';
+import {
+  ctxOf,
+  frozenClock,
+  isUltimateError,
+  runWithContext,
+  signAwsRequest,
+  type UltimateError,
+  UltimateError as UltimateErrorClass,
+} from '@ultimat3/core';
 import { nextRetryForError } from '@ultimat3/jobs';
 import type { MailMessage } from './driver';
 import type { MailFetch } from './driver-resend';
@@ -210,7 +218,9 @@ describe('sesMailDriver — SES errors onto X_MAIL_SEND_FAILED', () => {
     const { fetch } = stub(() => new Response('slow down', { status: 429 }));
     const error = await rejection(driverWith(fetch).send(message()));
     expect(error.retry).toBe('retryable');
-    expect(error.cause).toContain('HTTP 429: slow down');
+    // Raw text is never kept by `outbound()`: the status table still answers.
+    expect(error.cause).toContain('HTTP 429');
+    expect(error.cause).not.toContain('slow down');
   });
 
   test('a fetch that never answers is a retryable egress failure naming the endpoint', async () => {
@@ -384,5 +394,27 @@ describe('sesMailDriver — a sink that never settles', () => {
       },
     }).send(message());
     expect(result.id).toBe('ses-47');
+  });
+});
+
+describe('sesMailDriver — through outbound()', () => {
+  test("the job's own signal ends the send: a drained worker sends nothing, and keeps its reason", async () => {
+    let calls = 0;
+    const reason = new UltimateErrorClass({ code: 'X_DRAINING', cause: 'draining', fix: 'retry' });
+    const controller = new AbortController();
+    controller.abort(reason);
+    const thrown = await runWithContext(ctxOf({ signal: controller.signal }), () =>
+      driverWith(async () => {
+        calls += 1;
+        return Response.json({ MessageId: 'm' });
+      })
+        .send(message())
+        .then(
+          () => expect.unreachable('a send under an aborted signal went out'),
+          (error: unknown) => error,
+        ),
+    );
+    expect(thrown).toBe(reason);
+    expect(calls).toBe(0);
   });
 });

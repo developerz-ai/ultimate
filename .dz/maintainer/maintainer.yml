@@ -2,14 +2,16 @@
 # developerz.ai maintainer policy for developerz-ai/ultimate.
 #
 # Ultimate is feature-complete and fully AI-maintained: the platform bot looks after it the way a
-# human OSS maintainer would. Owner ruling 2026-10-23, "wurk and ultimate should be full ai
+# human OSS maintainer would. Owner ruling 2026-10-23, "… and ultimate should be full ai
 # maintained", reverses the 2026-10-14 split that left org members' work to its authors:
 #
 #   everyone          outside users, org members and collaborators alike: issues are triaged, junk
 #                     is closed, real bugs are fixed by the fleet, and pull requests are driven to
 #                     green and merged
 #   Dependabot        driven to green and merged, majors included — CI is the verdict
-#   breaking changes  the bot's call too (`escalate.ask_before_acting: []`); only the platform's
+#   breaking changes  the bot's call too (`escalate.ask_before_acting: []`), inside the major
+#                     window (wiki/Stability.md: from v30 one major per 90 days, refused by
+#                     scripts/release.ts; a break waits on `next`); only the platform's
 #                     hardcoded asks (security, license, CLA) reach a human
 #   releases          the bot judges weekly whether one is needed (`.dz/briefs/release-due.md`;
 #                     `scripts/release-due.ts` gathers its facts), opens the bump PR, and merging it
@@ -35,7 +37,7 @@ tone:
   language: en
 
 triage:
-  # No `skip_project_members` (schema default false; owner ruling 2026-10-23: "wurk and ultimate
+  # No `skip_project_members` (schema default false; owner ruling 2026-10-23: "… and ultimate
   # should be full ai maintained"). An issue opened by an org member or an invited collaborator is
   # triaged, picked up from the backlog and stale-swept like anyone's; the 2026-10-14 rule that left
   # it to its author is reversed.
@@ -67,7 +69,7 @@ pr:
   # The verdict job; `ci.yml`'s header says why it is the one that answers for the run.
   required_checks: [verify]
   auto_merge: true
-  # WHOSE pull requests the bot merges and babysits: every author's (owner ruling 2026-10-23: "wurk
+  # WHOSE pull requests the bot merges and babysits: every author's (owner ruling 2026-10-23: "…
   # and ultimate should be full ai maintained"; it reverses the 2026-10-14 `not_project` scope that
   # left members' PRs to their authors). `any`: its own, the dependency bots', outside
   # contributors', and org members' and collaborators' alike — reviewed, babysat, merged on green.
@@ -103,10 +105,13 @@ release:
   channels: []
 
 escalate:
-  # Nothing held (owner ruling 2026-10-23: "wurk and ultimate should be full ai maintained"; it
+  # Nothing held (owner ruling 2026-10-23: "… and ultimate should be full ai maintained"; it
   # empties the 2026-10-14 `[breaking_change]`). A breaking change is the bot's call too: a major
   # is a migration for every app (wiki/Upgrading.md), so the bot weighs that cost itself rather than
-  # parking the PR for a member who looks in once or twice a year. Also not held: a first-time
+  # parking the PR for a member who looks in once or twice a year. Its call sits inside the major
+  # window (wiki/Stability.md): from v30 a breaking PR targets `next`, `scripts/release.ts` refuses
+  # a second major inside 90 days, and `changelog-check` refuses a break on `main` (X_BREAKING_ON_MAIN).
+  # Also not held: a first-time
   # contributor's PR (CodeRabbit + this bot's review + the full gate decide it, as for anyone), a
   # large PR, and a major dependency bump (CI is the verdict; `bun run verify` covers every package
   # that imports it). The platform's hardcoded asks (security, license, CLA) still apply; this list

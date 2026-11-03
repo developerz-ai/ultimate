@@ -3,12 +3,23 @@
 Tier 0. The foundation every other Ultimate package imports and none of them may bypass.
 Zero dependencies, zero `@ultimat3/*` imports.
 
+`bun add @ultimat3/core` · guide: [Configuration](https://github.com/developerz-ai/ultimate/wiki/Configuration)
+
+```ts
+import { secret } from '@ultimat3/core';
+
+const dsn = secret('postgres://app:hunter2@db/app', 'DATABASE_URL');
+JSON.stringify({ dsn }); // the value never prints: a Secret redacts by value, at any depth
+```
+
 | Owns | Module |
 |---|---|
 | `UltimateError`, the 3-line rendering, `--json` shape | `errors.ts` |
 | rendering an app's value into a `cause` / `fix` without throwing | `error-render.ts` |
 | a thrown value's stack, its `name: message` line restored when Bun dropped it — `failureStack` | `error-stack.ts` |
 | code → `{ title, docs }` registry, `registerErrorCodes()` | `error-codes.ts` |
+| an APP code's one declaration — title, HTTP status, retry and class — `defineError()` | `define-error.ts` |
+| the app's half of the HTTP status table, written by `defineError` and `@ultimat3/http`'s `registerErrorStatus` — internal, on `@ultimat3/core/internal/error-status` only | `error-status-declared.ts` |
 | the one lazy `AsyncLocalStorage`, every ambient scope in the framework | `async-context.ts` |
 | request context on that seam | `context.ts` |
 | `Actor` (`user \| service \| agent \| anonymous`) | `actor.ts` |
@@ -61,11 +72,13 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
 | the sampling decision, and `OTEL_TRACES_SAMPLER*` | `sampler.ts` |
 | OTLP/HTTP JSON: endpoint, headers, value encoding | `otlp.ts` |
+| one OTLP POST, retried on the specification's transient answers | `otlp-post.ts` |
 | `SpanExporter` on the wire, batched | `otlp-span-exporter.ts` |
 | `MetricExporter` on the wire | `otlp-metric-exporter.ts` |
 | may a caller read this 5xx code's `cause`? `hasPublicCause(code)` — one predicate for the HTTP problem document, MCP error data and an agent `tool_result` | `public-cause.ts` |
 | `reportError` + the `ErrorReporter` seam, no-op by default | `error-reporter.ts` |
 | that seam on the wire, Sentry's envelope and DSN | `error-reporter-sentry.ts` |
+| which reports are one fault (`errorFingerprint`) | `error-fingerprint.ts` |
 | OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
 | the `/metrics` scrape body | `metrics-text.ts` |
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
@@ -147,6 +160,37 @@ indistinguishable from that default and is read as unclassified — register the
 Your package declares its own codes in `src/errors.ts` and registers them once:
 `registerErrorCodes({ X_DB_DRIFT: { title: 'schema differs from migrations' } })`.
 Registering a code twice throws `X_ERROR_CODE_DUPLICATE`.
+
+### An app's own codes: `defineError`
+
+A framework package registers codes as above, through `bun run new-error-code`. An APP declares
+each of its codes once, and gets the class back:
+
+```ts
+import { defineError } from '@ultimat3/core';
+
+export const PostNotFound = defineError<{ readonly ref: string }>({
+  code: 'X_POST_NOT_FOUND',
+  title: "no such post in the actor's organisation",
+  status: 404, // or offSocket: true, for a code no response carries — exactly one of the two
+  cause: (p) => `no post ${p.ref} in the actor's organisation`,
+  fix: 'x queries list --json, then pass an id the post read returns',
+});
+
+const error = new PostNotFound({ ref: 'hello' }, { sourceError: undefined });
+PostNotFound.is(error); // the brand plus the code, never `instanceof`
+```
+
+The one call registers the title (`registerErrorCodes`), the status (read by `@ultimat3/http`'s
+`statusFor`, framework table first, so no app declaration moves a framework code) and, when given,
+`retry` (`registerErrorRetry`). The same declaration twice is a no-op — a module re-evaluated
+under `x dev`; a different title or status is `X_ERROR_CODE_DUPLICATE`. A malformed one — both or
+neither of `status`/`offSocket`, a status outside 100-599, a code that is not `X_SCREAMING_SNAKE` —
+is `X_ERROR_DECLARATION_INVALID`. A code some package already registered — a framework code,
+under its own title or not — is `X_ERROR_CODE_DUPLICATE`: its status is not the app's to give. The
+table itself is INTERNAL (`@ultimat3/core/internal/error-status`, read by `@ultimat3/http`): an app
+declares through `defineError`, and a re-raised library code through `registerErrorStatus`. A
+scaffolded app's `guards/error-declared.ts` refuses a handwritten `UltimateError` subclass.
 
 `isUltimateError()` is duck-typed on `Symbol.for('ultimate.error')`, not `instanceof` — that is
 how `@ultimat3/schema` (tier 0, cannot import core) still produces matching errors.
@@ -237,6 +281,7 @@ a job boundary the class is gone and the `code` is what survives — match on th
 | `SecretsPlaintextInvalidError` | `X_SECRETS_PLAINTEXT_INVALID` | `src/secrets-errors.ts` |
 | `SecretsTamperedError` | `X_SECRETS_TAMPERED` | `src/secrets-errors.ts` |
 | `UltimateError` | any registered code — every class in the framework extends it | `src/errors.ts` |
+| what `defineError()` returns | the code it declared — `.code`, `.status`, `.is()` | `src/define-error.ts` |
 
 ## Context
 
@@ -498,6 +543,9 @@ match with `sealAll()`; uniqueness cannot be held across keys.
   `tryOtlpEndpoint('traces')` answers `undefined` when nobody configured one, so a boot can skip
   the exporter instead of throwing. **gRPC (`:4317`) is out of scope** and says so with
   `X_OTLP_PROTOCOL_UNSUPPORTED`.
+- **A transient export is sent again** (`postOtlp`, `otlp-post.ts`): 429, 502, 503, 504 or a
+  transport failure, `OTLP_RETRY_STATUSES`, on core's retry loop (3 attempts, full jitter,
+  `Retry-After` honoured) inside `timeoutMs`, which is the whole export. One log line per batch.
 - Metrics are the same shape one signal over: `counter()`, `gauge()`, `histogram()`, aggregated
   in process, free until `configureMetrics({ exporter })`. See below.
 - `onShutdown(name, hook, { phase })` with phases `accept → inflight → close` under one
@@ -612,6 +660,7 @@ reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'P
 | Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName? })` |
 | Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEnvelope(report, { dsn, eventId })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
 | `errorReport(error, options)` | the normalisation on its own, for a transport's test or a surface that enriches before sending |
+| `errorFingerprint(report)` | 16 hex, which reports are one fault: `code`, `source`, `scope.operation`, and for `X_INTERNAL` the top application frame (function and root-relative path, no line). Never `cause`, `meta`, an id or `release`. Total; the Sentry envelope sends it as `fingerprint` |
 
 `As of 2026-08` four packages call `reportError`, seven call sites in all: `@ultimat3/http`'s
 `stages.ts` (`status >= 500` only), `@ultimat3/jobs`' `executeJob` — the one frame still holding the
@@ -773,6 +822,19 @@ cause and a runnable `fix:` with the fact that something was retried, which no r
 `classifyThrown` and `statedDelayMs` live in `error-retry.ts`, one import away from the table they
 read; `@ultimat3/jobs` re-exports both rather than keeping a second pair.
 
+## One outbound HTTP call, and the breaker in front of it
+
+Server-only, on its own subpath: `import { outbound, screenDial } from '@ultimat3/core/outbound'`
+(the barrel exports neither, `outbound-subpath.test.ts`). `breaker` is on the barrel. Full page:
+[Outbound HTTP](https://github.com/developerz-ai/ultimate/wiki/Outbound-HTTP).
+
+| Export | The one answer | The question it settles |
+|---|---|---|
+| `outbound({ url, vendor, dial, deadlineMs, method?, headers?, body?, idleMs?, maxBytes?, redirect?, retry?, idempotent?, read?, breaker? }, deps?)` | a vendor call | a whole-call deadline clamped by the ambient request, `ctx.signal` (its reason unchanged), core's `retry()` for safe methods only (`X_OUTBOUND_RETRY_UNSAFE`), `Retry-After`, an idle watchdog and a byte cap on the body, `redirect: 'error'` by default, and ten `X_OUTBOUND_*` codes whose causes carry no query and no header. `deps` injects `fetch`, `resolve`, `sleep`, `now`, `random`, `timer`, `env` |
+| `screenDial(url, { resolve?, allowPrivate? })` → `{ pin } \| { refused } \| { unresolved }` | where a dial may land | every resolved address classified by `classifyAddress`, the connection pinned with `tls.serverName`. The framework's one `Bun.dns.lookup` (`resolveDialHost`); `@ultimat3/jobs`' webhook target and `@ultimat3/scraping` call it and keep their own codes |
+| `deadlineSignal(ms, outer?, timer?)` | one attempt's signal | a deadline plus the caller's signal, undone on dispose (no listener left on `outer`, no timer armed) |
+| `breaker({ name, failures, cooldownMs, classify?, clock? })` → `admit`, `succeeded`, `failed`, `released`, `state`, `failures`, `judge`, `refusal`, `run` | is a dependency down | one state machine, the trigger stays the caller's. One probe in `half-open`, lapsing after `cooldownMs`; `X_BREAKER_OPEN` names `retryAfterSeconds`; `breaker_transitions_total{name,to}`. Per process |
+
 ## One browser seam — transport, records, page handle, principal fence
 
 | Export | The one answer | The question it settles |
@@ -789,6 +851,18 @@ read; `@ultimat3/jobs` re-exports both rather than keeping a second pair.
 `clientTransport` does not value-import `clientFlight` or `traceHeaders()` — measured sizes
 are in its file header. A server-side caller that propagates a trace passes `traceHeaders()` in
 `headers` itself.
+
+## A component's node tree, for a test — two subpaths, off the barrel
+
+| Export | Subpath | What |
+|---|---|---|
+| `JSX_NODE`, `ISLAND_NODE`, `HOLE_NODE` | `@ultimat3/core/render-node` | the render node brands, one `Symbol.for` each; a leaf with no import. `@ultimat3/render` imports and re-exports all three |
+| `renderNodes(component, props?, { components? })`, `nodesOf(value, { components? })` | `@ultimat3/core/render-nodes` | every node in the tree, depth first: `'expand'` (default) calls components and keeps host nodes, `'keep'` keeps component nodes beside their output, `'stop'` calls none. Thunks are called; an island's server shell and a hole's `fallback`/`error` are walked, a hole's deferred `children` never called; a value no factory built is nothing |
+| `byTag`, `byComponent`, `withAttr`, `one`, `attachRef`, `fire`, `isRenderNode`, `RenderNode`, `RenderComponent`, `ComponentMode`, `NodesOfOptions` | `@ultimat3/core/render-nodes` | selectors over those nodes. `one()` refuses zero and two, `attachRef`/`fire` a missing prop, all `X_INVARIANT` naming what was sought |
+
+`render-nodes` is imported by tests only, pinned by `render-nodes-subpath.test.ts` with the barrel
+holding none of these names. `renderView` (`@ultimat3/testing`) answers what a reader sees; this
+answers what an element carries.
 
 ## One image pipeline, everywhere
 

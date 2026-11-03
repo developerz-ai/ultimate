@@ -2,8 +2,9 @@
 // not that shape is an empty cell — never a thrown render, except money, where a float is a bug.
 
 import { describe, expect, test } from 'bun:test';
+import { byComponent, byTag, nodesOf, one } from '@ultimat3/core/render-nodes';
 import { registerCatalog } from '@ultimat3/i18n';
-import { byComponent, byTag, nodesOf, one, renderHtml } from './inert-jsx-fixture';
+import { renderHtml } from './inert-jsx-fixture';
 import { computedRow } from './registry';
 import type { AdminComputedColumn, AdminRenderer } from './resource-list';
 import type { WidgetContext } from './widget-value';
@@ -27,36 +28,56 @@ const html = (render: AdminRenderer, value: unknown): string => renderHtml(cell(
 describe('unit · the closed renderer set', () => {
   test('badge: text, or a label with a tone — and a tone that is not one is neutral', () => {
     const toned = one(
-      byComponent(nodesOf(cell('badge', { label: 'Paid', tone: 'success' })), 'Badge'),
+      byComponent(
+        nodesOf(cell('badge', { label: 'Paid', tone: 'success' }), { components: 'keep' }),
+        'Badge',
+      ),
       '<Badge>',
     );
     expect(toned.props['tone']).toBe('success');
     expect(toned.props['children']).toBe('Paid');
-    const plain = one(byComponent(nodesOf(cell('badge', 'draft')), 'Badge'), '<Badge>');
+    const plain = one(
+      byComponent(nodesOf(cell('badge', 'draft'), { components: 'keep' }), 'Badge'),
+      '<Badge>',
+    );
     expect(plain.props['tone']).toBe('neutral');
     expect(
-      one(byComponent(nodesOf(cell('badge', { label: 'x', tone: 'purple' })), 'Badge'), '<Badge>')
-        .props['tone'],
+      one(
+        byComponent(
+          nodesOf(cell('badge', { label: 'x', tone: 'purple' }), { components: 'keep' }),
+          'Badge',
+        ),
+        '<Badge>',
+      ).props['tone'],
     ).toBe('neutral');
     expect(html('badge', null)).toContain('EMPTY(probe)');
   });
 
   test('relative-time: a Date or an ISO instant, in the actor’s zone and locale', () => {
     const node = one(
-      byComponent(nodesOf(cell('relative-time', '2026-01-01T00:00:00.000Z')), 'RelativeTime'),
+      byComponent(
+        nodesOf(cell('relative-time', '2026-01-01T00:00:00.000Z'), { components: 'keep' }),
+        'RelativeTime',
+      ),
       '<RelativeTime>',
     );
     expect(node.props['timeZone']).toBe('Europe/Madrid');
     expect(node.props['locale']).toBe('en-GB');
-    expect(byComponent(nodesOf(cell('relative-time', new Date(0))), 'RelativeTime')).toHaveLength(
-      1,
-    );
+    expect(
+      byComponent(
+        nodesOf(cell('relative-time', new Date(0)), { components: 'keep' }),
+        'RelativeTime',
+      ),
+    ).toHaveLength(1);
     expect(html('relative-time', 42)).toContain('EMPTY(probe)');
   });
 
   test('money: integer minor units and a currency; a float is refused, as everywhere', () => {
     const node = one(
-      byComponent(nodesOf(cell('money', { minor: 1250, currency: 'EUR' })), 'Money'),
+      byComponent(
+        nodesOf(cell('money', { minor: 1250, currency: 'EUR' }), { components: 'keep' }),
+        'Money',
+      ),
       '<Money>',
     );
     expect(node.props['value']).toEqual({ minor: 1250, currency: 'EUR' });
@@ -67,7 +88,10 @@ describe('unit · the closed renderer set', () => {
   test('truncate: cut at the limit, with the whole value on `title`', () => {
     expect(html('truncate', 'short')).toBe('<span>short</span>');
     const long = 'x'.repeat(TRUNCATE_AT + 5);
-    const cut = one(byTag(nodesOf(cell('truncate', long)), 'span'), '<span>');
+    const cut = one(
+      byTag(nodesOf(cell('truncate', long), { components: 'keep' }), 'span'),
+      '<span>',
+    );
     expect(cut.props['title']).toBe(long);
     expect(cut.props['children']).toBe(`${'x'.repeat(TRUNCATE_AT)}…`);
     expect(html('truncate', 7)).toBe('<span>7</span>');

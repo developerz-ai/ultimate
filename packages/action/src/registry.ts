@@ -5,7 +5,7 @@
  */
 
 import type { ActionPathStyle } from '@ultimat3/core';
-import { SchemaUnsupportedError, toWireSchema } from '@ultimat3/schema';
+import { assertNoSensitiveOutput, SchemaUnsupportedError, toWireSchema } from '@ultimat3/schema';
 import type { ActionDescriptor, AnyAction } from './action';
 import { isAction, nameAction } from './action';
 import { resetApiDeclaration } from './api-declaration';
@@ -58,6 +58,9 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
     throw new ActionPolicyMissingError(name);
   }
   assertProjectable(name, target);
+  // An output is sent back, which `.sensitive()` (`writeOnly`) forbids: refused at boot, once.
+  const output = defOf(target).output;
+  if (output !== undefined) assertNoSensitiveOutput(`action "${name}" output`, output);
   const pin = defOf(target).http?.path;
   if (pin !== undefined) assertPinnedPath(name, pin);
   const { path } = routeFor(name, pin);

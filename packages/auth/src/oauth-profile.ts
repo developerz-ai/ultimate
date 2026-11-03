@@ -4,6 +4,7 @@
 // decides whether this login may attach itself to an existing account by address.
 
 import { logger, renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
 import { isRecord } from './json';
 import type { OAuthProviderId } from './oauth';
@@ -53,7 +54,9 @@ async function getJson(
   accessToken: string,
   options: OAuthProfileOptions,
 ): Promise<{ ok: true; body: unknown } | { ok: false; status: number; detail: string }> {
-  const doFetch: OAuthFetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const doFetch: OAuthFetch =
+    options.fetch ??
+    ((input, init) => globalThis.fetch(input, { ...init, signal: init.signal ?? null }));
   // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
   // catch around this fetch renders every throw as a provider failure — so a typo in the app's
   // own config read as the identity provider being unreachable.
@@ -65,15 +68,23 @@ async function getJson(
   );
   let response: Response;
   try {
-    response = await doFetch(url, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        'User-Agent': OAUTH_USER_AGENT,
+    // Through core's `outbound()`: `timeoutMs` bounds the whole call, the ambient request's signal
+    // ends it, a GET's 5xx is retried inside that bound (a POST never is), a 3xx is never followed.
+    response = await outboundResponse(
+      {
+        url: url,
+        vendor: provider,
+        dial: 'named',
+        deadlineMs: timeoutMs,
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          'User-Agent': OAUTH_USER_AGENT,
+        },
       },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+      { fetch: doFetch },
+    );
   } catch (error) {
     // `renderThrowable`, never `error.message` behind an `instanceof`: `fetch` is INJECTED here,
     // so the rejection is whatever a driver or a proxy threw — and `instanceof` runs the value's

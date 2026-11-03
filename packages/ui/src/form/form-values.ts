@@ -4,8 +4,9 @@
 //
 // A form is user input reaching an object graph, so a name is refused, never repaired.
 
+import { formatPath } from '@ultimat3/schema';
 import { conflictingFieldNameError, invalidFieldPathError } from '../errors';
-import { type FieldPathSegment, formatFieldPath, parseFieldPath } from './field-path';
+import { type FieldPathSegment, parseFieldPath } from './field-path';
 
 type Container = Record<string, unknown> | readonly unknown[];
 
@@ -52,7 +53,7 @@ function place(
   const [head, ...rest] = segments;
   // `parseFieldPath` never answers an empty list, so this is the type's obligation, not a case.
   if (head === undefined) return;
-  const at = (): string => formatFieldPath([...prefix, head]);
+  const at = (): string => formatPath([...prefix, head]);
   const existing = childOf(container, head);
   const next = rest[0];
 

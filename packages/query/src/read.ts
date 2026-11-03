@@ -13,6 +13,7 @@ import {
   ctxOf,
   finiteOption,
   logger,
+  REDACTED,
   runWithContext,
   tryUseContext,
   useContext,
@@ -20,7 +21,7 @@ import {
   withSpan,
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
-import { formatPath, validateAsync } from '@ultimat3/schema';
+import { formatPath, maskSensitive, validateAsync } from '@ultimat3/schema';
 import type { ReadAudit, ReadTrace } from './audit-gate';
 import { audited, auditedBuild, readAuditFor } from './audit-gate';
 import {
@@ -312,7 +313,9 @@ async function admit(
     } catch (denial) {
       // The record still names what was attempted, as an action's does: the denial is already
       // decided, so parsing now tells the CALLER nothing, and an unparseable payload is no input.
-      if (trace !== null) trace.input = await parsedOrNothing(def.input, raw);
+      if (trace !== null) {
+        trace.input = maskSensitive(def.input, await parsedOrNothing(def.input, raw), REDACTED);
+      }
       throw denial;
     }
   }
@@ -330,7 +333,8 @@ async function admit(
     });
   }
   const input = await validate(def.input, raw, name);
-  if (trace !== null) trace.input = input;
+  // The audit record's copy, masked by THIS read's own schema — never a key table (`action`'s rule).
+  if (trace !== null) trace.input = maskSensitive(def.input, input, REDACTED);
   if (unenforced === undefined) {
     guardQuery(
       def.policy,

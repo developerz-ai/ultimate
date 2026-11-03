@@ -232,7 +232,7 @@ function serializeRules(rules: readonly RouteRule[]): string {
  * of the page that was precached, and online every precached byte is downloaded a second time.
  * Each entry is fetched and stored on its own, `As of 22.3.4`: `addAll`'s all-or-nothing was meant
  * to stop a half-populated precache from activating, and instead one 404 blocked every install
- * of every deploy (notificado.co, 22.3.2) — a stuck worker is worse than a missing offline copy.
+ * of every deploy (one adopter, 22.3.2) — a stuck worker is worse than a missing offline copy.
  *
  * The separator in front of `v=` is chosen per entry, because `PrecacheAsset.url` is public API
  * and a bundler emits a query of its own: a fixed `?` built `...?locale=en?v=<rev>`, and a single
@@ -248,7 +248,7 @@ function serializeRules(rules: readonly RouteRule[]): string {
  * navigation is answered network-first by the new worker.
  *
  * The fill is THROTTLED to `PRECACHE_CONCURRENCY` requests in flight: `Promise.all` over every
- * entry opened them all at once (72 entries, 2.9 MB on notificado.co), on the visitor's first
+ * entry opened them all at once (72 entries, 2.9 MB on one adopter's app), on the visitor's first
  * visit, against the same connection their first click needs. Nothing waits on the fill but the
  * worker's own activation, so slower is free.
  */

@@ -6,7 +6,7 @@
 import type { GeneratedFile, NameSet } from './naming';
 
 const feature = (app: NameSet): string => `---
-description: Build or fix one thing in ${app.kebab} end to end — name the primitive, generate it, wire it inside the boundaries, gate it with \`bun run check\`.
+description: Build or fix one thing in ${app.kebab} end to end — name the primitive, generate it, wire it inside the boundaries, gate it with \`bun run verify\`.
 argument-hint: <what you want built or fixed, plain language>
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, Skill
 ---
@@ -16,7 +16,7 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, Skill
 You are a senior engineer on **${app.kebab}**, an Ultimate app. Read \`AGENTS.md\` before designing
 anything — it is the short form of every rule below, and it wins where the two disagree.
 
-**Done means \`bun run check\` green.** A passing unit test is not done. A working \`x dev\` is not done.
+**Done means \`bun run verify\` green.** A passing unit test is not done. A working \`bunx x dev\` is not done.
 Report what you actually ran, never what you assume passed.
 
 ## Request
@@ -49,15 +49,15 @@ obvious, hand the request to the \`shape\` subagent — that pass is the whole r
 ## 2. Generate it — do not hand-write it
 
 \`\`\`sh
-x g <kind> <name> --feature <slice>     # x g --help is the only list of kinds
+bunx x g <kind> <name> --feature <slice>     # bunx x g --help is the only list of kinds
 \`\`\`
 
 The generator writes the source, its test and its i18n keys as one unit and registers it. A
-hand-written primitive compiles and then goes missing from \`x routes\`, \`x actions\`, \`x queries\`,
-\`x jobs\`, \`x tasks\`, \`x policy list\` and \`x.manifest.json\` — every surface that is supposed to
+hand-written primitive compiles and then goes missing from \`bunx x routes\`, \`bunx x actions\`, \`bunx x queries\`,
+\`bunx x jobs\`, \`bunx x tasks\`, \`bunx x policy list\` and \`x.manifest.json\` — every surface that is supposed to
 project it. Edit what the generator wrote; never reproduce it.
 
-Schema changes are generated too: edit \`entity.ts\`, then \`x db gen "what changed"\`. Never hand-write
+Schema changes are generated too: edit \`entity.ts\`, then \`bunx x db gen "what changed"\`. Never hand-write
 SQL into \`packages/db/migrations/\`.
 
 ## 3. Wire it inside the boundaries
@@ -72,23 +72,21 @@ SQL into \`packages/db/migrations/\`.
 | routes | call actions and queries, never a repo | policy skipped |
 
 Route files: \`page.tsx\` under \`site/\`/\`app/\`, and none under \`api/\`. **The directory is the URL** —
-the filename never is. One interactive control on a 0kb page is an island: \`x g island <name> --at <dir>\`.
+the filename never is. One interactive control on a 0kb page is an island: \`bunx x g island <name> --at <dir>\`.
 
 ## 4. Gate it
 
 \`\`\`sh
-bun run check           # the gate. green = shippable
-bun run check --json    # the same, machine-readable
+bun run verify          # the gate. green = shippable
+bun run verify --json   # the same, machine-readable
 \`\`\`
 
-\`bun run check\` is \`x build --target static\` and THEN \`x verify\`, and the order is the whole point:
-the \`budgets\` step measures \`.x/build-stats.json\`, which only a build writes, so \`x verify\` on
-its own reports X_BUDGET_UNMEASURED on a tree that is fine. \`--json\` is forwarded to both halves;
-a machine consumer takes the last line. CI runs this same script — \`.github/workflows/ci.yml\` is
-\`bun run setup\` and then \`bun run check\`, nothing else.
+\`bun run verify\` is \`bunx x verify\`, the whole gate: its \`budgets\` step builds what it weighs when
+\`.x/build-stats.json\` is missing or older than the source. CI runs this same script —
+\`.github/workflows/ci.yml\` is \`bun run setup\` and then \`bun run verify\`, nothing else.
 
 Red is instructions, not a verdict: **every finding carries an executable \`fix:\` — run it verbatim
-before improvising**, and \`x errors explain <CODE>\` expands any code it names. Never narrow the gate
+before improvising**, and \`bunx x errors explain <CODE>\` expands any code it names. Never narrow the gate
 to make it pass: there is no \`--only\` and no \`--skip\`, on purpose, and disabling a lint rule or
 loosening a compiler flag is the same move wearing a different hat.
 
@@ -98,15 +96,16 @@ While you iterate, narrow the *feedback*, not the gate:
 |---|---|
 | one test file | \`bun test <path>/<file>.test.ts\` |
 | one test by name | \`bun test -t '<name>'\` |
-| a whole type | \`x test unit\` · \`x test contract\` · \`x test e2e\` |
+| a whole type | \`bunx x test unit\` · \`bunx x test contract\` · \`bunx x test e2e\` |
 | lint the files you touched | \`bunx biome check --write <paths>\` |
 | types, once, when otherwise done | \`bun run typecheck\` |
-| a broken environment | \`x doctor\` |
+| a broken environment | \`bunx x doctor\` |
 
 ## 5. Hard rules
 
-Never a bare \`throw new Error\` — subclass \`UltimateError\` with a stable code, a cause and a
-runnable \`fix:\`. No \`any\`; use \`unknown\` and parse. Named exports only. \`import type\` for types.
+Never a bare \`throw new Error\` — declare each code once with \`defineError\` from \`@ultimat3/core\`:
+a stable code, a title, a status, a cause and a runnable \`fix:\`.
+No \`any\`; use \`unknown\` and parse. Named exports only. \`import type\` for types.
 Tests next to the source as \`<file>.test.ts\`, failure case first — a test that cannot fail is not a
 test. One file, one job. Every user-facing string through \`t()\`. Semantic tokens, never a raw
 colour. Every date formatted with an explicit IANA time zone. Money is integer minor units plus an
@@ -118,7 +117,7 @@ ISO code, never a float. Bun only.
 Primitive:  <which of the eight>    Slice: <dir>
 Generated:  <the x g invocations you ran>
 Changed:    <files>
-Gate:       bun run check ✓ | ✗ <failing steps>
+Gate:       bun run verify ✓ | ✗ <failing steps>
 Deferred:   <what you did not do, and why>      [never omit this line]
 \`\`\`
 `;
@@ -166,13 +165,13 @@ slice it lives in. If it fits none, the design is wrong — say so here instead 
 - \`path:line\` — what changes, and why.
 
 ## Steps
-1. Ordered, concrete. Name the \`x g\` invocation where one applies. Point at code, do not paste it.
+1. Ordered, concrete. Name the \`bunx x g\` invocation where one applies. Point at code, do not paste it.
 
 ## Tests
 - What to add, next to the source as \`<file>.test.ts\`. Command to run it.
 
 ## Done when
-- Acceptance criteria, ending in \`bun run check\` green.
+- Acceptance criteria, ending in \`bun run verify\` green.
 
 ## Risks
 - Anything the executor must decide, and every claim in the ask the code disproves.
@@ -185,7 +184,7 @@ slice it lives in. If it fits none, the design is wrong — say so here instead 
 - No checkboxes. The plan is a map, not a tracker.
 - The plan must obey the app's own rules — one way to do each thing, generators over hand-written
   files, imports that never cross a surface boundary, a stable error code with a runnable \`fix:\` for
-  every new failure, and \`bun run check\` green as the last line of *Done when*.
+  every new failure, and \`bun run verify\` green as the last line of *Done when*.
 
 ## Output
 
@@ -202,18 +201,16 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 # /verify
 
-Run \`bun run check\`.
+Run \`bun run verify\`.
 
-It is \`x build --target static\` and then \`x verify\`, and it is THE gate — the one CI runs
-(\`.github/workflows/ci.yml\`) and the one \`README.md\` names. \`x verify\` alone is half of it:
-the \`budgets\` step measures \`.x/build-stats.json\`, which only the build writes, so a bare
-\`x verify\` reports X_BUDGET_UNMEASURED on a tree with nothing wrong with it.
+It is \`bunx x verify\`, and it is THE gate — the one CI runs (\`.github/workflows/ci.yml\`) and the
+one \`README.md\` names. Its \`budgets\` step builds what it weighs, so nothing runs before it.
 
 Green: say so and stop.
 
 Red: fix every finding, then re-run until green. Each finding carries a stable code, a cause and an
-executable \`fix:\` — **run the \`fix:\` verbatim before improvising**, and use \`x errors explain <CODE>\`
-when the cause is not enough. \`bun run check --json\` gives the same steps machine-readably; \`x doctor\`
+executable \`fix:\` — **run the \`fix:\` verbatim before improvising**, and use \`bunx x errors explain <CODE>\`
+when the cause is not enough. \`bun run verify --json\` gives the same steps machine-readably; \`bunx x doctor\`
 covers the case where the environment, not the code, is what is broken.
 
 Do not narrow the gate to make it pass. There is no \`--only\` and no \`--skip\`; disabling a lint rule,

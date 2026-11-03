@@ -1,5 +1,6 @@
-// The two scripts a scaffolded app runs through `bun run`, held to their one promise: the same
-// behaviour on every OS, which means no shell anywhere in them. Each is EXECUTED here against a
+// The script a scaffolded app runs through `bun run setup`, held to its one promise: the same
+// behaviour on every OS, which means no shell anywhere in it. The gate has no script of its own:
+// `x verify` builds what `budgets` weighs, so a `bin/check` would be a second name for it. Each is EXECUTED here against a
 // stand-in `x` that records its argv, so a dropped step, a lost `--json` or a swallowed exit code
 // is a failing assertion rather than something a newcomer meets on PowerShell.
 
@@ -34,7 +35,7 @@ afterEach(() => {
 });
 
 /**
- * An app root with both scripts, a `package.json` with no dependencies (so the real `bun install`
+ * An app root with the bin scripts, a `package.json` with no dependencies (so the real `bun install`
  * resolves nothing and touches no network) and a stand-in `node_modules/.bin/x` that appends its argv to
  * `x.log` — exiting with `X_EXIT` when its first argument is `X_FAIL_ON`.
  */
@@ -98,8 +99,8 @@ const runScript = (
 };
 
 describe('unit · the bin scripts are TypeScript, never shell', () => {
-  test('exactly the two files package.json runs, with no shebang and no shell syntax', () => {
-    expect(binFiles().map((file) => file.path)).toEqual([BIN_SCRIPTS.setup, BIN_SCRIPTS.check]);
+  test('exactly the one file package.json runs, with no shebang and no shell syntax', () => {
+    expect(binFiles().map((file) => file.path)).toEqual([BIN_SCRIPTS.setup]);
     for (const path of Object.values(BIN_SCRIPTS)) {
       const text = source(path);
       expect({ path, shebang: text.startsWith('#!') }).toEqual({ path, shebang: false });
@@ -111,39 +112,6 @@ describe('unit · the bin scripts are TypeScript, never shell', () => {
         });
       }
     }
-  });
-});
-
-// A stand-in `x` is a shebang file, which only POSIX execs; on Windows `bun install` would need a
-// `.exe` shim in its place. The scripts themselves are what the Windows CI job runs for real.
-describe.skipIf(process.platform === 'win32')('unit · bin/check.ts, executed', () => {
-  test('builds, then verifies, from the app root whatever the caller’s cwd', () => {
-    const root = appRoot();
-    const run = runScript(root, BIN_SCRIPTS.check);
-    expect(run.code).toBe(0);
-    expect(run.calls).toEqual(['build --target static --no-preflight', 'verify']);
-  });
-
-  test('--json reaches BOTH halves, and every argument reaches the gate', () => {
-    const root = appRoot();
-    const run = runScript(root, BIN_SCRIPTS.check, ['--json', '--full']);
-    expect(run.calls).toEqual([
-      'build --target static --no-preflight --json',
-      'verify --json --full',
-    ]);
-  });
-
-  test('a red build stops the gate and is the exit code', () => {
-    const root = appRoot();
-    const run = runScript(root, BIN_SCRIPTS.check, [], { X_FAIL_ON: 'build', X_EXIT: '3' });
-    expect(run.code).toBe(3);
-    expect(run.calls).toEqual(['build --target static --no-preflight']);
-  });
-
-  test('a red gate is the exit code', () => {
-    const root = appRoot();
-    const run = runScript(root, BIN_SCRIPTS.check, [], { X_FAIL_ON: 'verify', X_EXIT: '4' });
-    expect(run.code).toBe(4);
   });
 });
 

@@ -4,8 +4,8 @@
 // that queues effects and runs them after the tree exists is what makes them reachable.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { byTag, fire, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
 import { clearSolidRuntime, setSolidRuntime } from '../theme/runtime-slot';
 import type { SolidContext, SolidRuntime } from '../theme/solid-adapter';
 import type { Theme, ThemeEnv } from '../theme/theme';

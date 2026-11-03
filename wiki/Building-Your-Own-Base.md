@@ -13,11 +13,13 @@ MCP, `x verify`.
 repository's own `tsconfig.base.json` (`strict`, `exactOptionalPropertyTypes`,
 `noUncheckedIndexedAccess`, `verbatimModuleSyntax`), and both compile errors quoted under
 [Two caveats](#two-caveats) are `tsc`'s verbatim words at that setting. The `tenantEntity` example
-was executed as well — `getEntity('invoices').describe()` answers columns `id, memo, orgId,
+was executed as well, and again `As of 2026-11-03` — `getEntity('invoices').describe()` answers columns `id, memo, orgId,
 createdAt`, one index `invoices_org_id_idx` on `org_id`, `orgScoped: true`, and
-`invoices.$tenantColumn` is `'orgId'`. What was **not** re-run: the manifest, admin and MCP
-projections over a factory-built primitive — those rest on the registry facts in
-[Why nothing downstream notices](#why-nothing-downstream-notices), not on a run.
+`invoices.$tenantColumn` is `'orgId'`. The projections are run too, on every gate:
+`packages/cli/src/third-party-wrapper.test.ts` installs a factory-built entity, an MCP-exposed
+action and a job from a package under `node_modules/`, re-exports them from an app, and asserts
+`x entities`, the manifest and `tools/list` hold them, the action's policy refuses a caller without
+the grant, and the job runs. It fails the day any of those learns where a primitive came from.
 
 Put the factory in a surface both `app/` and `api/` may import — `apps/web/shared/base/` in the
 generated layout ([Project layout](Project-Layout)).
@@ -123,6 +125,58 @@ Both will bite. Both are the app's job, one line each.
 |---|---|
 | **A factory must add its own index for a column it injects.** `IndexInit` is keyed on the *caller's* columns — correctly, since a call site cannot name a column it did not declare. `tenantEntity('invoices', { indexes: [{ on: ['orgId'] }] })` is a compile error: `Type '"orgId"' is not assignable to type '"id" \| "memo"'` | put the index inside the factory, next to the column it belongs to — as `tenantEntity` above does |
 | **A factory building a derived schema must be generic over `AnySchema`**, exported from `@ultimat3/schema`. `<TOut extends StandardSchemaV1>` is *not* assignable to `AnySchema`, so `t.object({ data: out })` fails with `Type 'TOut' is not assignable to type 'AnySchema'` | constrain to `AnySchema`. `StandardSchemaV1` is the interop contract; `AnySchema` is the framework's own supertype and the one `t.object` accepts |
+
+## An error code is declared, not wrapped
+
+A primitive is wrapped; an error code is not. Declare each code at its own call site with
+`defineError({ code: 'X_INVOICE_NOT_FOUND', title, status: 404, cause, fix })` from
+`@ultimat3/core` — the title, the HTTP status and the class in one call. The `errors` step and the
+manifest read the `code:` literal where it is written, so a factory that takes the code as a
+parameter hides it (`X_ERROR_CODE_UNRESOLVED`). A family of codes is a prefix (`X_BILLING_*`),
+never a base class: `guards/error-declared.ts` refuses `extends UltimateError`, and
+`InvoiceNotFound.is(error)` matches the code where `instanceof` cannot — a browser's rebuilt
+refusal included.
+
+## Publish it
+
+A base that two of your apps share, or that strangers could use, is an npm package. Nothing
+registers it: the app re-exports what it wants, and the framework sees primitives.
+
+| Rule | Why |
+|---|---|
+| name it `ultimate-<name>`, unscoped, with the keyword `ultimate-package` | `npm search keywords:ultimate-package` is the directory. There is no marketplace, registry or plugin API (axiom 8). `@ultimat3/` is reserved for the framework |
+| `@ultimat3/*` in `peerDependencies` at `^<major>`, for every package it imports — never `dependencies` | the app's own install is the one copy of each registry; a second copy is a second registry the app's gate never reads |
+| ship JavaScript (or `.ts` Bun can run) with `exports` | a consumer's `bun install` is the whole integration |
+| no `tier` | tiers order the framework's own packages (`scripts/lib/tiers.ts`); a third-party package sits beside the app, below nothing |
+| guards are copied, not imported | an app's `guards/*.ts` are its own files and `x verify` runs only those. A package that ships a guard ships it as a file the README tells the author to copy |
+
+```json
+{
+  "name": "ultimate-acme-log",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": { ".": "./index.js" },
+  "keywords": ["ultimate-package"],
+  "peerDependencies": {
+    "@ultimat3/action": "^30.0.0",
+    "@ultimat3/entity": "^30.0.0",
+    "@ultimat3/jobs": "^30.0.0",
+    "@ultimat3/policy": "^30.0.0"
+  }
+}
+```
+
+The app takes what it wants by re-export, in the surface the primitive belongs to: one line,
+`export { acmeLog } from 'ultimate-acme-log';`, in `apps/web/app/acme/entity.ts`.
+
+What a consumer's `x verify` sees: the package's entity in `drift` (its table needs a migration,
+`x db gen`), its actions and jobs in `manifest` and `contract-diff`, its permissions in `policy`
+(the app's roles grant them), its MCP tools in the tool list. It
+does **not** see the package's own tests, lint or guards: those are the package's to run.
+
+A **starter** (a whole app shape, not a factory) is not a package: it is a repository a person
+copies, and its README says so. Once one exists, a community list is a wiki page added by pull
+request.
 
 ## The honest limit
 

@@ -83,11 +83,14 @@ describe('validateInput carries the issues, not only the line', () => {
    * The security half. `describeValue` keeps the rejected value out of a MESSAGE; this keeps a
    * foreign library's own members — some of which hold the value — out of the list entirely.
    */
-  test('carries only the four members Ultimate mints, never a library’s own', async () => {
+  test('carries only the members Ultimate mints, never a library’s own', async () => {
     const failure = await refusalOf({ postId: 'not-a-uuid', title: '' });
 
     for (const issue of failure.issues ?? []) {
-      expect(Object.keys(issue).sort()).toEqual(['expected', 'message', 'path', 'received']);
+      // The four, plus the `rule` a translator keys on and its declared `params` (`SCHEMA_RULES`).
+      const keys = Object.keys(issue).filter((key) => key !== 'rule' && key !== 'params');
+      expect(keys.sort()).toEqual(['expected', 'message', 'path', 'received']);
+      expect(typeof issue.rule).toBe('string');
       expect(issue.received).toBe('');
       expect(issue.message).not.toContain('not-a-uuid');
     }

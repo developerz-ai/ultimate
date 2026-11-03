@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 // Enforce, as a gate step, that every file count a doc states about a generator is a number that
-// generator still produces. The counts are DERIVED here, from the same pure planners `--dry-run`
-// calls — never restated — so a template that adds a file makes the prose red on the same commit.
+// generator still prints. The counts are DERIVED here — `x new`'s from its planner, `x g`'s from the
+// command itself run on a scaffold — never restated, so a template that adds a file makes the
+// prose red on the same commit.
 //
 // The gap this closes: `x new` 125, `--no-example` 99, `x g resource` 27, `--live --admin` 29 and
 // `x g action` 9 were a convention held by nobody. Five had gone stale and were corrected in #209
@@ -11,19 +12,26 @@
 //
 //   bun run scripts/generator-counts.ts [--json]
 
-import { generate, planNewApp } from '@ultimat3/cli';
+// why: a scratch scaffold for `x g` to run in; Bun has no temporary-directory or path API.
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { dispatch, planNewApp, writeNewApp } from '@ultimat3/cli';
 import { readDocPages } from './doc-commands';
 import { parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import { ScriptError } from './lib/script-error';
 
 /** One spelling of one generator, and the file count it really emits. */
 export interface GeneratorVariant {
   /** The flags that select it, as a reader writes them. Empty is the default spelling. */
   readonly flags: readonly string[];
   readonly files: number;
+  /** Where the count holds, as a finding names it: `the default scaffold, after setup`. */
+  readonly shape?: string;
 }
 
 export interface GeneratorFacts {
@@ -33,25 +41,93 @@ export interface GeneratorFacts {
 }
 
 /**
- * Measured, not declared. `planNewApp` and `generate` are the pure planners `x new --dry-run` and
- * `x g --dry-run` both call (`cmd-new.ts`, `cmd-generate.ts`), so this is the identical list a
- * reader re-deriving the number with `--dry-run --json` would count — and it costs ~30ms rather
- * than the ~4.5s five subprocesses would.
+ * The two files `bun run setup` leaves that `x g` reads: their presence is what makes a real run
+ * re-project them, and count them. The rest of setup (install, migrate, seed) changes no count.
  */
+export const SETUP_ARTIFACTS: readonly string[] = ['x.manifest.json', 'openapi.json'];
+
+const DryRun = (value: unknown): { files: number; refreshes: number } | undefined => {
+  if (typeof value !== 'object' || value === null || !('data' in value)) return undefined;
+  const data: unknown = value.data;
+  if (typeof data !== 'object' || data === null || !('files' in data)) return undefined;
+  const files: unknown = data.files;
+  const refreshes: unknown = 'refreshes' in data ? data.refreshes : [];
+  if (!Array.isArray(files) || !Array.isArray(refreshes)) return undefined;
+  return { files: files.length, refreshes: refreshes.length };
+};
+
+/**
+ * What `x g resource` PRINTS, measured by running it: `x g resource widget [--admin] --dry-run
+ * --json` in each scaffold shape, holding setup's two artifacts. Tutorial 1 makes the default
+ * app and Tutorial 2 generates into it; a `--no-example` app prints more, because the example
+ * slice already made two `package.json` edits a bare app still owes. Two numbers per spelling and
+ * shape: `data.files` is what a dry run and a real run before setup print, and a real run after
+ * setup adds `data.refreshes`, the projections it rewrites.
+ *
+ * `generate()`'s array was measured here until 2026-11-03, and it is not what the command prints:
+ * the command also edits the role map, the API index, the db handle and two `package.json` files,
+ * so every page quoting the planner's 33 named a number no run of `x g` has ever shown.
+ */
+const SHAPES = [
+  { example: true, shape: 'the default scaffold' },
+  { example: false, shape: 'a --no-example scaffold' },
+] as const;
+
+async function resourceVariants(): Promise<readonly GeneratorVariant[]> {
+  const variants: GeneratorVariant[] = [];
+  for (const one of SHAPES) variants.push(...(await shapeVariants(one.example, one.shape)));
+  return variants;
+}
+
+async function shapeVariants(
+  example: boolean,
+  shape: string,
+): Promise<readonly GeneratorVariant[]> {
+  const dir = await mkdtemp(join(tmpdir(), 'generator-counts-'));
+  try {
+    await writeNewApp(dir, { name: 'probe', example });
+    for (const file of SETUP_ARTIFACTS) await Bun.write(join(dir, file), '{}\n');
+    const variants: GeneratorVariant[] = [];
+    for (const flags of [[], ['--admin']]) {
+      const out: string[] = [];
+      const argv = ['g', 'resource', 'widget', ...flags, '--dry-run', '--json'];
+      const code = await dispatch({
+        argv,
+        cwd: dir,
+        env: {},
+        bunVersion: Bun.version,
+        write: (line) => out.push(line),
+      });
+      const run = code === 0 ? DryRun(JSON.parse(out.join('\n'))) : undefined;
+      if (run === undefined) {
+        throw new ScriptError({
+          code: 'X_DOC_FILE_COUNT_UNSCANNED',
+          cause: `x ${argv.join(' ')} in ${shape} exited ${String(code)} without a file list`,
+          fix: `bun run scripts/generator-counts.ts --json   # then run x ${argv.join(' ')} in a fresh \`x new probe\` app (and one with --no-example) and fix what it reports`,
+        });
+      }
+      variants.push(
+        { flags, files: run.files, shape: `${shape}, before setup` },
+        { flags, files: run.files + run.refreshes, shape: `${shape}, after setup` },
+      );
+    }
+    return variants;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 /**
  * `x g action` is deliberately absent, and the reason is a property of the generator rather than an
  * omission. `writeFiles` SKIPS a slice module that already exists (`cmd-generate.ts`), so an
  * action's count depends on how much of the slice is already there — `wiki/CLI-Reference.md:233`
  * says "exactly its own 3 files" into a finished slice and `wiki/Tutorial-02` says 8 into a bare
- * one, both correct English about different states. `generate()` returns the full plan and can
- * derive neither, so modelling it would report findings on prose that is right.
+ * one, both correct English about different states.
  *
- * `x new` and `x g resource` have no such dimension: one creates the repository and the other
- * creates its own slice, so their plans ARE their counts.
+ * `x new` has no such dimension, and its planner IS its count: `cmd-new.ts` writes every planned
+ * file and prints that list. `x g resource` creates its own slice, so one scaffold per shape measures it.
  */
-export function generatorFacts(): readonly GeneratorFacts[] {
-  const resource = (over: { admin?: boolean }): number =>
-    generate({ kind: 'resource', name: 'widget', ...over }).length;
+export async function generatorFacts(): Promise<readonly GeneratorFacts[]> {
   return [
     {
       id: 'x new',
@@ -60,13 +136,7 @@ export function generatorFacts(): readonly GeneratorFacts[] {
         { flags: ['--no-example'], files: planNewApp({ name: 'probe', example: false }).length },
       ],
     },
-    {
-      id: 'x g resource',
-      variants: [
-        { flags: [], files: resource({}) },
-        { flags: ['--admin'], files: resource({ admin: true }) },
-      ],
-    },
+    { id: 'x g resource', variants: await resourceVariants() },
   ];
 }
 
@@ -190,10 +260,23 @@ export interface CountGap {
   readonly detail: string;
 }
 
-const variantFor = (facts: GeneratorFacts, claim: CountClaim): GeneratorVariant | undefined =>
+/**
+ * What a finding says the generator prints: each count with the shape it holds in, so a page that
+ * states one shape's number is told which number that shape prints, never a bare list of every one.
+ */
+export const emits = (variants: readonly GeneratorVariant[]): string => {
+  if (variants.every((variant) => variant.shape === undefined)) {
+    return `emits ${[...new Set(variants.map((variant) => variant.files))].join(' or ')} files`;
+  }
+  const parts = variants.map((one) => `${String(one.files)} in ${one.shape ?? 'any shape'}`);
+  return `emits ${parts.join(', or ').replace(/^(\d+) in/, '$1 files in')}`;
+};
+
+/** Every variant a `N with --flag` claim names: a spelling can print two counts, before and after setup. */
+const variantsFor = (facts: GeneratorFacts, claim: CountClaim): readonly GeneratorVariant[] =>
   claim.associated && claim.flags.length > 0
-    ? facts.variants.find((variant) => variant.flags.some((flag) => claim.flags.includes(flag)))
-    : undefined;
+    ? facts.variants.filter((variant) => variant.flags.some((flag) => claim.flags.includes(flag)))
+    : [];
 
 /**
  * Which generator a claim is about: the invocation NEAREST BEFORE it on the line, and when none
@@ -246,7 +329,7 @@ export function checkGeneratorCounts(input: CountGapInput): readonly CountGap[] 
           generator: facts.id,
           claimed: spoken.value,
           expected: every,
-          detail: `emits ${every.join(' or ')} files`,
+          detail: emits(facts.variants),
         });
       }
       const mentions = readMentions(line);
@@ -257,8 +340,8 @@ export function checkGeneratorCounts(input: CountGapInput): readonly CountGap[] 
         if (facts === undefined) continue;
         claims += 1;
         const every = facts.variants.map((variant) => variant.files);
-        const variant = variantFor(facts, claim);
-        const expected = variant === undefined ? every : [variant.files];
+        const named = variantsFor(facts, claim);
+        const expected = named.length === 0 ? every : named.map((variant) => variant.files);
         if (expected.includes(claim.value)) continue;
         gaps.push({
           kind: 'stale',
@@ -267,9 +350,9 @@ export function checkGeneratorCounts(input: CountGapInput): readonly CountGap[] 
           claimed: claim.value,
           expected,
           detail:
-            variant === undefined
-              ? `emits ${every.join(' or ')} files`
-              : `emits ${String(variant.files)} files with ${variant.flags.join(' ')}`,
+            named.length === 0
+              ? emits(facts.variants)
+              : `${emits(named)} with ${named[0]?.flags.join(' ') ?? ''}`,
         });
       }
     }
@@ -290,7 +373,7 @@ export function checkGeneratorCounts(input: CountGapInput): readonly CountGap[] 
 const staleFinding = (gap: CountGap): Finding => ({
   code: 'X_DOC_FILE_COUNT_STALE',
   cause: `${gap.at} says ${gap.generator} produces ${String(gap.claimed)} files, and it ${gap.detail}`,
-  fix: `set the count at ${gap.at} to ${gap.expected.join(' or ')}, or re-derive it with \`x g --dry-run --json\` / \`x new --dry-run --json\` and count data.files`,
+  fix: `set the count at ${gap.at} to ${gap.expected.join(' or ')}, or re-derive it with \`x g --dry-run --json\` / \`x new --dry-run --json\` and count data.files (a real run after setup adds data.refreshes)`,
   at: gap.at,
 });
 
@@ -304,17 +387,31 @@ const vacuousFinding = (gap: CountGap): Finding => ({
 export const generatorCountFindingFor = (gap: CountGap): Finding =>
   gap.kind === 'vacuous' ? vacuousFinding(gap) : staleFinding(gap);
 
-export const generatorCountGaps = async (root: string): Promise<readonly CountGap[]> =>
-  checkGeneratorCounts({ pages: await readDocPages(root), facts: generatorFacts() });
+export const generatorCountGaps = async (
+  root: string,
+  facts?: readonly GeneratorFacts[],
+): Promise<readonly CountGap[]> =>
+  checkGeneratorCounts({
+    pages: await readDocPages(root),
+    facts: facts ?? (await generatorFacts()),
+  });
 
 /** What this repo contributes to `x verify`'s `manifest` step. */
-export const generatorCountFindings = async (root: string): Promise<readonly Finding[]> =>
-  (await generatorCountGaps(root)).map(generatorCountFindingFor);
+export const generatorCountFindings = async (root: string): Promise<readonly Finding[]> => {
+  try {
+    return (await generatorCountGaps(root)).map(generatorCountFindingFor);
+  } catch (error) {
+    // A scaffold `x g` could not run in is a rule that read nothing: its own finding, never a throw
+    // out of the gate step every other rule shares.
+    if (error instanceof ScriptError) return [error.toFinding()];
+    throw error;
+  }
+};
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const gaps = await generatorCountGaps(repoRoot());
-  const facts = generatorFacts();
+  const facts = await generatorFacts();
+  const gaps = await generatorCountGaps(repoRoot(), facts);
   report(
     {
       ok: gaps.length === 0,

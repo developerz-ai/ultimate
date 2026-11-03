@@ -106,6 +106,8 @@ describe('unit · the deploy plan', () => {
 function appRoot(): string {
   const dir = made(mkdtempSync(join(tmpdir(), 'x-deploy-')));
   writeFileSync(join(dir, 'app.config.ts'), "export const config = { name: 'demo-app' };\n");
+  // What the pre-flight reads before any step (`cmd-deploy-preflight.test.ts` covers its refusal).
+  writeFileSync(join(dir, '.env.production'), 'ULTIMATE_ENV=production\n');
   return dir;
 }
 
@@ -237,11 +239,12 @@ describe('unit · x deploy actually runs the plan it printed', () => {
     // the output. Without the `IMAGE=` prefix the rerun reads `docker-compose.prod.yml`'s default
     // image, so the line handed back would diagnose a different deployment than the one that broke.
     expect(finding?.fix).toBe(
-      `IMAGE=repo/app:1.2.3 ${(ran.at(-1) ?? []).join(' ')}   # run it directly to see the full output`,
+      `IMAGE=repo/app:1.2.3 ${(ran.at(-2) ?? []).join(' ')}   # run it directly to see the full output`,
     );
-    // and nothing after `worker` was attempted.
-    expect(ran.at(-1)?.at(-1)).toBe('worker');
-    expect(ran).toHaveLength(DEPLOY_ROLES.indexOf('worker') + 1);
+    // and nothing after `worker` was attempted but the read of its log, for the finding.
+    expect(ran.at(-2)?.at(-1)).toBe('worker');
+    expect(ran.at(-1)?.slice(-3)).toEqual(['--tail', '50', 'worker']);
+    expect(ran).toHaveLength(DEPLOY_ROLES.indexOf('worker') + 2);
   });
 
   test('the plan carries no field nothing reads — `critical` is not in it', async () => {

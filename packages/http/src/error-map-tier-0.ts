@@ -59,4 +59,24 @@ export const TIER_0_ERROR_STATUS = {
   X_INTERNAL: 500,
   // @ultimat3/core — a Set-Cookie value would be dropped, misread or injectable
   X_COOKIE_INVALID: 500,
+  // @ultimat3/core — an outbound HTTP call passed its deadline or went idle
+  X_OUTBOUND_TIMEOUT: 504,
+  // @ultimat3/core — an outbound HTTP call got no response
+  X_OUTBOUND_UNREACHABLE: 503,
+  // @ultimat3/core — an outbound HTTP call was told to wait
+  X_OUTBOUND_THROTTLED: 503,
+  // @ultimat3/core — an outbound HTTP call answered a retryable status
+  X_OUTBOUND_UNAVAILABLE: 502,
+  // @ultimat3/core — an outbound HTTP call answered a non-retryable status
+  X_OUTBOUND_REFUSED: 502,
+  // @ultimat3/core — an outbound HTTP response body passed its byte cap
+  X_OUTBOUND_TOO_LARGE: 502,
+  // @ultimat3/core — an outbound HTTP call refused the address it would reach
+  X_OUTBOUND_HOST_BLOCKED: 400,
+  // @ultimat3/core — an outbound HTTP call answered a redirect
+  X_OUTBOUND_REDIRECTED: 502,
+  // @ultimat3/core — an outbound HTTP response did not match its schema
+  X_OUTBOUND_BODY_INVALID: 502,
+  // @ultimat3/core — a circuit breaker is open and refused the call
+  X_BREAKER_OPEN: 503,
 } satisfies Readonly<Record<string, number>>;

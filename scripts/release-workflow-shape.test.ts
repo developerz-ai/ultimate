@@ -61,12 +61,16 @@ describe('unit · release.yml refuses before anyone is asked to approve', () => 
 
 describe('unit · release.yml reads the gate rather than re-running it', () => {
   // The re-run had no Postgres, NATS or Redis: the 21.0.0 run ran 10 of 342 live tests.
+  // `npm-scaffold` is not a re-run: it gates a FRESH app scaffolded from the published packages, with
+  // that app's own `bun run verify` (`x verify`, whose budgets step builds — plan 101, 21).
   test('no job re-runs verify', () => {
     const every = Object.keys(workflow.jobs ?? {})
+      .filter((name) => name !== 'npm-scaffold')
       .map(runs)
       .join('\n');
     expect(every).toContain('npm publish');
     expect(every).not.toMatch(/scripts\/verify\.ts|\bx verify\b|run verify\b/);
+    expect(runs('npm-scaffold')).toMatch(/cd npmapp[\s\S]*\nbun run verify\n/);
   });
 
   // The RUN's conclusion, never one job's: `verify` is the framework gate alone, and a tag whose
@@ -121,5 +125,19 @@ describe('unit · release.yml queues releases and never cancels one', () => {
   test('one fixed group for every release, and cancel-in-progress is false', () => {
     expect(workflow.concurrency?.group).toBe('release');
     expect(workflow.concurrency?.['cancel-in-progress']).toBe(false);
+  });
+});
+
+describe('unit · release.yml publishes under the tag its version earns', () => {
+  // `npm publish` with no `--tag` moves `latest` to whatever it publishes, so a 29.x patch cut after
+  // 30.0.0 handed every install the older major. The tag is decided once, in `check`, by
+  // `scripts/dist-tag.ts`, and every publish passes it (wiki/Stability.md's support row).
+  test('check derives the dist-tag and every npm publish passes it', () => {
+    expect(runs('check')).toContain('scripts/dist-tag.ts --version "$VERSION" --json');
+    const publishes = [...runs('publish').matchAll(/npm publish -w[^\n]*/g)].map(
+      (match) => match[0],
+    );
+    expect(publishes.length).toBeGreaterThan(0);
+    for (const line of publishes) expect(line).toContain('--tag "$DIST_TAG"');
   });
 });

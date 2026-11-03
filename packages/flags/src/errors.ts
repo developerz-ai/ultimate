@@ -94,8 +94,8 @@ export const flagSubjectRequired = (init: {
     code: 'X_FLAG_SUBJECT_REQUIRED',
     cause: `${init.key} decides by the "${init.kind}" subject (targeting.${init.via}) but the evaluation context carries no ${init.kind} id for actor "${init.actorId}", so there is nothing to decide about`,
     // Every app-supplied string goes through JSON.stringify, and the kind becomes a COMPUTED key:
-    // a `bank-integration` kind — the realistic shape, next to treasury's `bank_integration:` ids
-    // — is not a valid identifier, so `{ bank-integration: … }` would hand the reader a fix that
+    // a `payments-provider` kind — the realistic shape, next to one adopter's `<kind>:<name>` ids
+    // — is not a valid identifier, so `{ payments-provider: … }` would hand the reader a fix that
     // does not parse. Axiom 4: an instruction that cannot be run is not one.
     fix:
       init.kind === 'org'

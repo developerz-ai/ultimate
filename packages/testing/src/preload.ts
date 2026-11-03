@@ -7,7 +7,7 @@
 
 // A green run prints the reporter and nothing else: the process logger's lines go to a sink.
 import './quiet-logs';
-import { installDeterminism } from './determinism';
+import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import { registerFrameworkFixtures } from './framework-fixtures';
 import './matchers';
 import { onFileBoundary } from './file-boundary';
@@ -31,6 +31,11 @@ installDeterminism({
 });
 
 registerFrameworkFixtures();
+
+// And the CLOCK, per FILE: the frozen instant is one process', so a file that advanced it and never
+// put it back handed every later file on the worker a moved clock (`clock-file-boundary.test.ts`).
+const installedClock = captureDeterminism();
+onFileBoundary(() => restoreCapturedDeterminism(installedClock));
 
 // Inside a test process the machine's test slots are already accounted for — by the `x test` /
 // `x verify` that spawned it, or by nobody when `bun test` ran bare. An `x test` a test runs in
@@ -81,10 +86,10 @@ releasePluginsAfterIsolatedFile();
 // Every `.tsx` compiles with the framework's JSX factory from the first file on, in every test
 // process — an app root or any workspace below it. Bun's own compile of a `.tsx` is wrong on every
 // Bun (`@ultimat3/render`'s `module-loader.ts`): through 1.4.2 a cached `React.createElement`
-// (`React is not defined`, 18 notificado.co tests), from 1.4.3 a link-time `SyntaxError: Export
+// (`React is not defined`, 18 of one adopter's tests), from 1.4.3 a link-time `SyntaxError: Export
 // named 'jsxDEV' not found` in any file that merely imports a component (issue #883). It was
 // installed only where `app.config.ts` sat beside the run, so a workspace package's own tests
-// needed a hand-written preload (castlefight.online, ai-maxxing).
+// needed a hand-written preload (one adopter, and another).
 const { installRenderLoader } = await import('@ultimat3/render/server');
 installRenderLoader();
 

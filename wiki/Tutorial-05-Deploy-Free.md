@@ -2,7 +2,7 @@
 
 The framework ships **no** platform primitives — no buildpack, no `app.json`, no `fly.toml`, no adapter. It does not need to: every PaaS builds a Dockerfile, and every one of them wants the same three behaviours the scaffolded image already has.
 
-`As of 2026-08`. Every command and every output on this page was executed against a `create-ultimate@1.1.0` app and its own `docker/Dockerfile`, with Docker 28 on Linux.
+`As of 2026-11-03`. Every command on this page down to [When one instance is not enough](#when-one-instance-is-not-enough) was re-run on a fresh `x new myapp --no-example` app carrying the tutorial 2–4 slices, with Docker 29 on Linux, its framework packed from this tree into `vendor/` the way `docker/deploy-proof/run.sh` packs it. `ROLE=migrate` ran against a real Postgres. **Not run: anything on a platform** — no host was used, so the platform table, the free-tier behaviour and the `x deploy` without `--dry-run` are still read, not measured. `scripts/tutorial-run.ts` does not run this page.
 
 Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · **5** · [6 — growing up](Tutorial-06-Growing-Up)
 
@@ -16,7 +16,7 @@ Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutori
 | sends `SIGTERM`, then `SIGKILL` | drains in three phases: stop accepting, finish in-flight, close |
 | wants one artifact per release | one image, `ROLE` selects the process |
 
-Set `DATABASE_URL`. Point the platform at `docker/Dockerfile`. That is the integration.
+Set `DATABASE_URL` and the three signing secrets below. Point the platform at `docker/Dockerfile`. That is the integration.
 
 ## Build
 
@@ -29,25 +29,33 @@ bunx x build --target docker --tag myapp:dev
 ```
 
 ```text
-myapp:dev  194MB
+myapp:dev  300MB
 ```
+
+`300MB` is a 29.4.0 scaffold's image, measured 2026-11-03 (the 1.1.0 image was 194MB).
 
 `x build` runs the static gate steps first — `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors` — and exits non-zero without building if any fail. A build that would fail `x verify` produces no artifact.
 
-The scaffolded image is `oven/bun:1.4-alpine`, runs as the non-root `bun` user, and its `ENTRYPOINT` is `["bun", "apps/web/server.ts"]`. There is no build stage and no second gate inside it: re-running `tsc` and `biome` there would need the devDependencies the `--production` install deliberately omits.
+The scaffolded image is `oven/bun:1.4-alpine`, pinned by digest, in three stages (`manifests`, `deps` with `bun install --frozen-lockfile --production`, `runtime`). It runs as `USER 1000:1000`, and its `ENTRYPOINT` is `["bun", "apps/web/server.ts"]`. There is no compile stage and no second gate inside it: re-running `tsc` and `biome` there would need the devDependencies the `--production` install deliberately omits.
 
-> `docs/ops/README.md` describes a distroless, single-binary, ~80MB image. That is not what `x new` writes at 1.1.0 — read the scaffolded [`docker/Dockerfile`](https://github.com/developerz-ai/ultimate/blob/main/docker/Dockerfile) as the authority.
+> `docs/ops/README.md` also describes a distroless, single-binary image. That is **this repo's own** CLI image (`docker/Dockerfile` in the framework repository), not what `x new` writes — your app's `docker/Dockerfile` is the authority for your image.
 
 ## Run it, locally, exactly as the platform will
 
 ```bash
-docker run -d --name myapp-web -e ROLE=web -e PORT=8080 -p 8085:8080 myapp:dev
+docker run -d --name myapp-web -e ROLE=web -e PORT=8080 -p 8085:8080 \
+  -e SESSION_SECRET=$(openssl rand -hex 32) -e ULTIMATE_CURSOR_SECRET=$(openssl rand -hex 32) \
+  -e STORAGE_SIGNING_SECRET=$(openssl rand -hex 32) myapp:dev
 ```
 
 ```text
-{"ts":"2026-08-11T17:12:04.499Z","level":"info","msg":"ultimate web listening on http://0.0.0.0:8080"}
-{"ts":"2026-08-11T17:12:04.502Z","level":"info","msg":"ultimate started","role":"web","url":"http://0.0.0.0:8080","buildId":"ed71a3fe16aa534e","bus":"in-process"}
+{"ts":"2026-11-03T16:23:42.394Z","level":"info","msg":"ultimate metrics listening","url":"http://0.0.0.0:9090/metrics"}
+{"ts":"2026-11-03T16:23:46.918Z","level":"info","msg":"app mcp mounted","method":"POST","path":"/mcp"}
+{"ts":"2026-11-03T16:23:46.961Z","level":"info","msg":"ultimate web listening on http://0.0.0.0:8080"}
+{"ts":"2026-11-03T16:23:46.962Z","level":"info","msg":"ultimate started","role":"web","url":"http://0.0.0.0:8080","buildId":"edca46484ed2b43f","bus":"in-process"}
 ```
+
+Without the secrets it exits at boot, one refusal at a time: `X_CURSOR_SECRET_DEV` names `ULTIMATE_CURSOR_SECRET`, then `X_ENV_MISSING` names `STORAGE_SIGNING_SECRET` (an image with no `S3_ENDPOINT` stores uploads on its own disk). `ULTIMATE_ENV=production bunx x env check` lists them all before you build.
 
 ```bash
 curl http://127.0.0.1:8085/readyz
@@ -65,15 +73,20 @@ count and the check names. From inside the container it is loopback, and they ar
 docker exec myapp-web bun --eval "fetch('http://127.0.0.1:8080/readyz').then(r=>r.text()).then(console.log)"
 ```
 
-The image's own `HEALTHCHECK` reports `healthy` within the 30s start period. Prove that locally before you debug it on a platform.
+```json
+{"state":"ready","ready":true,"uptimeMs":5236,"inflight":0,"buildId":"edca46484ed2b43f","checks":{"database":"ok"},"registered":1,"role":"web"}
+```
 
-### The three env vars that matter
+The image's own `HEALTHCHECK` (`/readyz` every 10s, a 30s start period) reported `healthy` 5s after the start. Prove that locally before you debug it on a platform.
+
+### The env vars that matter
 
 | Key | Unset means | Set it to |
 |---|---|---|
 | `ROLE` | `web` | `web` for the service, `migrate` for the release phase |
 | `PORT` | 3000 | whatever the platform injects — leave it to the platform |
 | `DATABASE_URL` | **embedded PGlite** — never in production | the managed Postgres connection string |
+| `SESSION_SECRET`, `ULTIMATE_CURSOR_SECRET`, `STORAGE_SIGNING_SECRET` | the shipped development keys, which a production boot refuses | `openssl rand -hex 32` each, in the platform's secret store |
 
 A real `DATABASE_URL` env var wins over anything baked into the image; verified by pointing a container at an unreachable host and getting `X_DB_UNAVAILABLE` rather than a silent PGlite fallback.
 
@@ -96,10 +109,12 @@ docker run --rm -e ROLE=migrate -e DATABASE_URL=postgres://… myapp:dev
 ```
 
 ```json
-{"ts":"2026-08-11T17:12:23.681Z","level":"info","msg":"ultimate migrate applied","applied":3,"available":3,"appVersion":"dev"}
+{"ts":"2026-11-03T16:24:07.231Z","level":"info","msg":"ultimate migrate applied","applied":2,"available":2,"appVersion":"dev"}
 ```
 
 It applies every pending migration in `packages/db/migrations` under a Postgres advisory lock, records each in the `x_migrations` ledger with its checksum, and exits 0. Concurrent migrators serialise — the second waits up to 60s for the lock, then exits non-zero with `X_MIGRATE_CONCURRENT` rather than hanging the release; a checksum that no longer matches an applied migration stops the release rather than corrupting it.
+
+Every setting each host asks for, and which were executed: [Deploy recipes](Deploy-Recipes).
 
 | Platform | Where the command goes |
 |---|---|
@@ -112,7 +127,7 @@ It applies every pending migration in `packages/db/migrations` under a Postgres 
 
 **No release phase on your free tier?** Several platforms gate pre-deploy commands behind a paid plan. Run the one-off yourself against the same image and the same `DATABASE_URL` before promoting the release — that is what every row above ultimately is.
 
-`x db migrate` is deliberately absent from that table: it is the developer's command, it needs the toolchain, and at 1.1.0 it is [broken in a scaffolded app](Tutorial-02-First-Feature#migrations) anyway. The release phase runs the shipped image and nothing else.
+`x db migrate` is deliberately absent from that table: it is the developer's command, and it needs the toolchain ([tutorial 2](Tutorial-02-First-Feature#migrations)). The release phase runs the shipped image and nothing else.
 
 ## What a free tier costs you
 
@@ -137,12 +152,14 @@ Do not paper over it with an external pinger: keeping a free instance awake arou
 
 ## Drain
 
+`docker stop -t 20 myapp-web`:
+
 ```text
-{"ts":"…","level":"info","msg":"draining","signal":"SIGTERM","deadlineMs":15000,"inflight":0}
-{"ts":"…","level":"info","msg":"stopped","signal":"SIGTERM"}
+{"ts":"2026-11-03T16:23:52.649Z","level":"info","msg":"draining","signal":"SIGTERM","deadlineMs":25000,"readinessGraceMs":5000,"inflight":0}
+{"ts":"2026-11-03T16:23:57.656Z","level":"info","msg":"stopped","signal":"SIGTERM"}
 ```
 
-`/readyz` flips to 503 **before** the socket closes, which is what makes a rolling restart drain instead of drop. With zero in-flight work the whole drain completes in a millisecond and the socket is simply gone — do not expect to observe the 503 on an idle process.
+`/readyz` flips to 503 **before** the socket closes, and stays 503 for `readinessGraceMs` (5s) with the listener still open, so a load balancer polling it stops sending traffic before the socket goes — that is what makes a rolling restart drain instead of drop. An idle process stops at the end of the grace: 5s here.
 
 Full role-by-role handoff table: [Deployment](Deployment).
 
@@ -153,10 +170,11 @@ bunx x build --target static --out .x/static
 ```
 
 ```text
+  skipped  /todos      app/ surface — server-rendered, not prerendered; app/ allows stream | ssr, so no route on it can ever reach the artifact
 ✓ built static
 ```
 
-One HTML file per `render: 'static'` route — with the default scaffold that is `.x/static/index.html`. Every other render mode needs a running app and is reported as skipped, never emitted. Serve it from a CDN or an object store with no process behind it; set `SITE_ORIGIN` so `canonical` and `og:url` are built against the real host.
+One HTML file per `render: 'static'` route — with this scaffold, `.x/static/index.html` beside `404.html`, the `offline` page, the manifest, icons, islands and styles. Every other render mode needs a running app and is listed as `skipped` (one line per route), never emitted. Serve it from a CDN or an object store with no process behind it; set `SITE_ORIGIN` so `canonical` and `og:url` are built against the real host.
 
 `apps/web/prerender.ts` also writes **`sitemap.xml` and `robots.txt`** into the same directory, because a static export has no process to answer them at request time. `robots.txt` **fails closed**: anything that is not `ULTIMATE_ENV=production` emits `Disallow: /` and advertises no sitemap, so a preview build cannot outrank the real site.
 
@@ -182,8 +200,8 @@ bunx x deploy --image myapp:dev --dry-run
   migrate    IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml run --rm migrate
   web        IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d web
   sync       IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d sync
-  worker     IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d worker
-  scheduler  IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d scheduler
+  worker     IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d --no-deps --no-recreate --wait --wait-timeout 300 --scale worker=2 worker
+  scheduler  IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml up -d --no-deps --no-recreate --wait --wait-timeout 300 --scale scheduler=2 scheduler
   backfill   IMAGE=myapp:dev docker compose --env-file …/.env.production -f …/docker/docker-compose.prod.yml run --rm backfill
 ✓ containers only: 1 image, roles migrate,web,sync,worker,scheduler,backfill
 ```
@@ -192,7 +210,7 @@ Migrate to completion, then the serving roles, then the one-shot `backfill`. `--
 
 **`--env-file` is what fills the `${VAR:?…}` guards.** Compose interpolates `SYNC_URL`, `APP_URL` and `POSTGRES_PASSWORD` from the shell and `--env-file` only, never from a service's `env_file:`. So all three go in `.env.production` — `APP_URL=http://<host>:3000` is the origin your pages are served on, and the only one besides its own that `sync` admits a socket from, and every step reads that file. A variable set in the shell still wins over it.
 
-**One replica each for `web` and `sync`, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both are `replicas: 1`. Leave them there — this tutorial's rung is one box. `worker` publishes no port and scales freely, so `deploy: { replicas: 4 }` on it is the knob you actually have here.
+**At most one replica each for `web` and `sync`, and the file says so** `As of 2026-11-03`. Both publish a host port, and one host port has exactly one binder: `web` is `replicas: 1`, and `sync` is `replicas: 0` — off — until the app turns realtime on with a replicator and NATS (the comment above it in `docker/docker-compose.prod.yml` is the recipe), then `1`. Leave them there — this tutorial's rung is one box. `worker` publishes no port and scales freely, so `deploy: { replicas: 4 }` on it is the knob you actually have here; the plan rolls `worker` and `scheduler` by starting a second copy beside the first (`--scale <role>=2 --wait`).
 
 Scaling the two serving roles is the next rung, and it is not an edit to this file: put a reverse proxy of your own on the compose network and drop their `ports:` lines, or move to the chart's per-role HPA → [6 · Growing up](Tutorial-06-Growing-Up).
 
@@ -204,7 +222,7 @@ Scaling the two serving roles is the next rung, and it is not an edit to this fi
 | `x logs tail` | planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix |
 | `x status` | planned — `x doctor --json` is the shipped answer |
 | OTLP export, on by default | the exporter **ships** — `otlpSpanExporter()` / `otlpMetricExporter()`, OTLP/HTTP JSON — but the default is still the no-op, so nothing leaves the process until you register one: `configureTelemetry({ exporter: otlpSpanExporter() })` with `OTEL_EXPORTER_OTLP_ENDPOINT` set to a collector's HTTP receiver (`:4318` — `:4317` is gRPC and is refused) |
-| a Helm chart in your app | **`x new` writes one** `As of 2026-08-19` — `docker/helm`, 8 files — so `x deploy --method helm` works here. On 3.0.0 and below it writes none: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo, or stay on `--method compose` |
+| a Helm chart in your app | **`x new` writes one** `As of 2026-11-03` — `docker/helm`, 10 files — so `x deploy --method helm` works here. On 3.0.0 and below it writes none: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo, or stay on `--method compose` |
 
 ## Next
 

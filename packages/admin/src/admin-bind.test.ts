@@ -287,7 +287,7 @@ describe('unit · policyAuthz decides an unmapped permission by the role map', (
   test('a declared permission with a scoped resource (`admin:support:write`) is decided too', () => {
     // `can()` takes `${string}:${string}`, colons in the resource included; the role map refused
     // every such name as "not a declared resource:verb permission" though `definePermissions`
-    // declared it and a role granted it (notificado.co: every `admin:<area>:<verb>` screen).
+    // declared it and a role granted it (one adopter: every `admin:<area>:<verb>` screen).
     defineAdmin({ entities: [posts], db });
     definePermissions(['admin_bind:support:write']);
     defineRoles({ ...previousRoles, bind_support: { grants: ['admin_bind:support:write'] } });

@@ -4,6 +4,7 @@
 // judgement, and two copies of it would drift into two answers for the same 429.
 
 import { renderFixShellArg, renderThrowable } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import { CacheDriverUnavailableError, CachePurgeFailedError } from './errors';
 
 /** Just the call. `typeof fetch` also carries `preconnect`, which no test double should have to. */
@@ -21,10 +22,11 @@ const MAX_DETAIL_LENGTH = 200;
 // Both purge drivers import it from core; it is not re-exported here (`X_HELPER_COPY`).
 
 /**
- * A bare reference to `globalThis.fetch` risks "Illegal invocation" on some hosts; closing over
- * the call keeps it detached from any receiver, in production and in tests alike.
+ * The platform's `fetch`, closed over so it is detached from any receiver ("Illegal invocation").
+ * `outbound()` always hands it the attempt's signal.
  */
-export const defaultPurgeFetch: PurgeFetch = (input, init) => globalThis.fetch(input, init);
+export const defaultPurgeFetch: PurgeFetch = (input, init) =>
+  globalThis.fetch(input, { ...init, signal: init.signal ?? null });
 
 /**
  * Providers cap keys per request. A bust of 300 tags is still one purge — several requests.
@@ -169,30 +171,41 @@ export interface PurgePostInput {
 }
 
 /**
- * One POST, with the transport failure already translated. A request that never got a status —
- * DNS, TLS, a reset, the deadline — is retryable by definition: nothing at the edge has seen it.
+ * One POST through core's `outbound()`, with the transport failure already translated. A purge is
+ * idempotent by nature — purging a key twice clears it once — so a 5xx or a throttle is retried
+ * inside the deadline (`timeoutMs`, the WHOLE call), and the final answer comes back as a
+ * `Response` for the drivers' own status table. A request that never got a status — DNS, TLS, a
+ * reset, the deadline — is retryable by definition: nothing at the edge has seen it.
  */
 export async function purgePost(input: PurgePostInput): Promise<Response> {
   try {
-    return await input.fetch(input.url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...input.headers },
-      body: JSON.stringify(input.body),
-      signal: AbortSignal.timeout(input.timeoutMs),
-    });
+    return await outboundResponse(
+      {
+        url: input.url,
+        vendor: input.driver,
+        dial: 'named',
+        method: 'POST',
+        idempotent: true,
+        deadlineMs: input.timeoutMs,
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          ...input.headers,
+        },
+        body: JSON.stringify(input.body),
+      },
+      { fetch: input.fetch },
+    );
   } catch (error) {
-    // `renderThrowable`, never `error.message` behind an `instanceof`: `fetch` is INJECTED here,
-    // so the rejection is whatever a driver or a test double threw — and `instanceof` itself
-    // throws on a `Proxy` whose `getPrototypeOf` does, which would replace the coded refusal this
-    // catch exists to raise with a bare `TypeError` from inside it. Same rule as `invalidate.ts`.
+    // `renderThrowable`: an injected fetch rejects with anything, and `outbound()`'s own codes
+    // render a cause that names no query string.
     const reason = renderThrowable(error);
     throw new CachePurgeFailedError({
       driver: input.driver,
       detail: `${reason} — nothing left this host for ${input.url} (egress, DNS or TLS)`,
       retryable: true,
       // The endpoint comes from `.env.production` (`purge-env.ts`), so it is operator data in a
-      // COMMAND position: `$(…)` and a backtick substitute before `curl` is reached. The URL is
-      // already in the `detail` above, which is read rather than pasted.
+      // COMMAND position: `$(…)` and a backtick substitute before `curl` is reached.
       fix: `curl -sS -m 5 -o /dev/null ${renderFixShellArg(input.url, '<the purge endpoint the cause names>')}`,
     });
   }

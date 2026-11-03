@@ -18,15 +18,19 @@
 // design system's rules a scaffolded app's gate held.
 //
 // And one is about DATA: a `repo.ts` reads through the typed handle. It ships because the generator
-// used to emit string SQL, and every app that started from it copied the shape.
+// used to emit string SQL, and every app that started from it copied the shape. One is about the
+// NETWORK: a server `fetch(` carries a signal, or is `outbound()` from `@ultimat3/core/outbound`. `error-declared`
+// is `bare-error`'s second half: an app code is declared once, with core's `defineError`.
 
 import { animatedLayoutPropertyGuardFiles } from './guard-animated-layout-property';
 import { bareErrorGuardFiles } from './guard-bare-error';
+import { errorDeclaredGuardFiles } from './guard-error-declared';
 import { focusVisibleGuardFiles } from './guard-focus-visible';
 import { imageDimensionsGuardFiles } from './guard-image-dimensions';
 import { islandWithoutStatesGuardFiles } from './guard-island-without-states';
 import { rawBreakpointGuardFiles } from './guard-raw-breakpoint';
 import { rawColourGuardFiles } from './guard-raw-colour';
+import { rawFetchGuardFiles } from './guard-raw-fetch';
 import { rawLengthGuardFiles } from './guard-raw-length';
 import { rawMotionGuardFiles } from './guard-raw-motion';
 import { rawShadowGuardFiles } from './guard-raw-shadow';
@@ -48,11 +52,13 @@ import type { GeneratedFile } from './naming';
 const SHIPPED: readonly (readonly [string, () => readonly GeneratedFile[]])[] = [
   ['animated-layout-property', animatedLayoutPropertyGuardFiles],
   ['bare-error', bareErrorGuardFiles],
+  ['error-declared', errorDeclaredGuardFiles],
   ['focus-visible', focusVisibleGuardFiles],
   ['image-dimensions', imageDimensionsGuardFiles],
   ['island-without-states', islandWithoutStatesGuardFiles],
   ['raw-breakpoint', rawBreakpointGuardFiles],
   ['raw-colour', rawColourGuardFiles],
+  ['raw-fetch', rawFetchGuardFiles],
   ['raw-length', rawLengthGuardFiles],
   ['raw-motion', rawMotionGuardFiles],
   ['raw-shadow', rawShadowGuardFiles],

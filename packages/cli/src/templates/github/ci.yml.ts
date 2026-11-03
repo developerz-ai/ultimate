@@ -3,11 +3,11 @@
 //
 // Nothing under `templates/` emitted `.github` until this file, so every scaffolded app started
 // life with a gate that ran on exactly one machine — the author's. The two commands are
-// `bun run setup` and `bun run check` and NOT a restatement of their steps: a workflow that spelled
-// out `bun install`, `x db migrate`, `x build` and `x verify` is a second definition of the gate,
+// `bun run setup` and `bun run verify` and NOT a restatement of their steps: a workflow that spelled
+// out `bun install`, `x db migrate` and `x verify`'s steps is a second definition of the gate,
 // free to drift from the scripts a human runs, and axiom 1 has one way to do each thing.
-// `bun run check` is also not a synonym for `x verify` — it BUILDS first, and the build is what makes the gate's `budgets` step
-// measurable rather than X_BUDGET_UNMEASURED.
+// `bun run verify` is `x verify` alone: its `budgets` step builds when the stats are missing or
+// older than the source (plan 101, 21), so no build step runs before it.
 
 import { REQUIRED_BUN } from '../../app-root';
 import type { GeneratedFile, NameSet } from '../naming';
@@ -35,10 +35,9 @@ const ci = (app: NameSet): string => `name: ${CI_WORKFLOW_NAME}
 # order, on a machine that has never seen this repository. A check that exists only in CI is one
 # nobody can reproduce locally, and a CI file that restates the gate's steps is a second gate.
 #
-# \`bun run check\` is \`x build --target static\` and THEN \`x verify\`. The build is not a
-# convenience: the gate's \`budgets\` step compares declared limits against measured bytes in
-# \`.x/build-stats.json\`, so a run with no build reports X_BUDGET_UNMEASURED. Run \`x verify\` here
-# instead and this workflow is red for a reason that has nothing to do with the commit.
+# \`bun run verify\` is \`x verify\`, the whole gate. Its \`budgets\` step runs
+# \`x build --target static\` itself when \`.x/build-stats.json\` is missing or older than the source,
+# which on a fresh runner it always is, so no build step comes first.
 #
 # \`bun run setup\` brings up embedded Postgres in-process; the TEST services come from
 # \`docker/docker-compose.test.yml\` — Postgres 18, Redis, NATS and S3 in RAM, durability and logs
@@ -94,7 +93,7 @@ jobs:
       # \`--wait\` returns once every healthcheck passes; the env file points the suites at them.
       - run: docker compose -f ${TEST_COMPOSE_PATH} up -d --wait
       - run: cat ${TEST_ENV_PATH} >> "$GITHUB_ENV"
-      - run: bun run check
+      - run: bun run verify
 `;
 
 /** The CI a new app is born with, in the order a reader meets it: the gate, then the image. */

@@ -200,7 +200,12 @@ function endpointRoutes(route: Descriptor, path: string, index: number): readonl
           origin: selfOrigin(ctx.url, ctx.https),
           address: ctx.ip ?? undefined,
         }),
-      meta: { name, auth: 'public', enforcedBy: 'handler' },
+      // `authenticate` answers nobody: the route's ONE credential is the bearer `resolveToken`
+      // reads, so a session cookie authenticates nothing here. Without it the app's authenticator
+      // made a cookie-carrying (or, under `x dev`, any) request a user's, and CSRF then refused a
+      // token-less MCP client 403 where it is owed the 401 and its challenge. No cookie identifies
+      // anyone, so there is no ambient credential for a forged request to ride.
+      meta: { name, auth: 'public', enforcedBy: 'handler', authenticate: () => null },
     },
     ...metadata,
   ];

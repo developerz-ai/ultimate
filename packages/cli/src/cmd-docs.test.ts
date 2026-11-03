@@ -138,6 +138,31 @@ describe('live · x docs against the installed framework', () => {
     expect(matchesOf(result).length).toBe(2);
   });
 
+  // The section read, end to end: the topic a search returns, handed back, prints that section
+  // whole — every entry of that major — and not one line of the major beside it.
+  test('Upgrading#<anchor> prints that whole section and nothing past it', async () => {
+    const result = await run(['docs', 'Upgrading#28x--2900-entry-by-entry']);
+    expect(result.ok).toBe(true);
+    const text = String(matchesOf(result)[0]?.['text']);
+    expect(text).toStartWith('## 28.x → 29.0.0, entry by entry');
+    expect(text).toContain('### ');
+    expect(text).not.toContain('## 27.x → 28.0.0');
+    expect(text).not.toContain('## 29.x → 30.0.0');
+    expect(matchesOf(result)[0]?.['topic']).toBe('wiki.Upgrading#28x--2900-entry-by-entry');
+  });
+
+  test('an anchor the page does not carry falls back to a search, never the whole page', async () => {
+    const result = await run(['docs', 'Upgrading#no-such-section-anywhere']);
+    expect(matchesOf(result).every((match) => String(match['text']).length < 2_000)).toBe(true);
+  });
+
+  test('a task question reaches the wiki and the package it is about', async () => {
+    const upgrade = matchesOf(await run(['docs', 'upgrade to the next major']));
+    expect(String(upgrade[0]?.['topic'])).toStartWith('wiki.Upgrading');
+    const email = matchesOf(await run(['docs', 'send email']));
+    expect(String(email[0]?.['topic'])).toStartWith('mail.');
+  });
+
   test('the answer carries the version it was read from, so a stale answer is visible', async () => {
     const result = await run(['docs', 'how does job() retry']);
     const matches = matchesOf(result);

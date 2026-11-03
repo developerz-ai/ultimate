@@ -46,7 +46,7 @@ describe('loadAppRuntime', () => {
   // The production boot: `runRole` reads `runtime.ts` FIRST, before anything on `@ultimat3/cli/serve`'s
   // static graph has imported `@ultimat3/render/server`, so a component that file reaches was
   // compiled by Bun's own loader — `jsx: "preserve"` → `React.createElement` — and cached that way
-  // for every page that imports it later (notificado.co, 27.2.0: `React is not defined`). Its own
+  // for every page that imports it later (one adopter, 27.2.0: `React is not defined`). Its own
   // process, because this test process's preload has the loader installed long before any import.
   test('a component runtime.ts imports is compiled by the framework JSX loader, not React', async () => {
     const root = await fixture('jsx', {

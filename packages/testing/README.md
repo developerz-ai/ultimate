@@ -3,6 +3,18 @@
 The harness. Never mock the database — clone it. Never assert on wall-clock time — advance the
 frozen clock. Never let a test reach the network unmocked — it fails by design.
 
+`bun add @ultimat3/testing` · guide: [Testing](https://github.com/developerz-ai/ultimate/wiki/Testing)
+
+```ts
+import { expect, unitTest } from '@ultimat3/testing';
+
+unitTest('the clock moves only when the test moves it', ({ clock }) => {
+  const before = clock.now().getTime();
+  clock.advance('1h');
+  expect(clock.now().getTime() - before).toBe(3_600_000);
+});
+```
+
 ## What it owns
 
 | Module | Owns |

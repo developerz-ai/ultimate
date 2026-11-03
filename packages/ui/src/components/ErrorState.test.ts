@@ -7,9 +7,9 @@
 import '../theme/ambient';
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
+import { byTag, renderNodes } from '@ultimat3/core/render-nodes';
 import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
-import { byTag, renderNodes } from '../jsx-probe-fixture';
 import { ErrorState, errorParts } from './ErrorState';
 
 /**

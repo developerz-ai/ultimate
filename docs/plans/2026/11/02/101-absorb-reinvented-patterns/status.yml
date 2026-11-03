@@ -4,7 +4,7 @@ status: in_progress        # not_started | in_progress | blocked | complete | su
 created_by: sebi
 worked_by: sebi + claude
 owner: sebi
-percent: 25
+percent: 39
 current_focus: "wave 3"
 slices:
   - file: 01-ai-tool-gate.md
@@ -40,8 +40,8 @@ slices:
   - file: 37-scrub-adopter-names.md
     tier: 5
     sweep: "3"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 02-db-entity-cancellation.md
     tier: 0
     sweep: "5"
@@ -135,48 +135,48 @@ slices:
   - file: 42-adopt-stability.md
     tier: 5
     sweep: "9"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 21-cli-verify-and-stop.md
     tier: 5
     sweep: "9"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 32-docs-false-claims.md
     tier: 5
     sweep: "9"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 42-adopt-first-hour.md
     tier: 5
     sweep: "9"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 32-docs-findability.md
     tier: 4
     sweep: "10"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 42-adopt-agents.md
     tier: 5
     sweep: "10"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 42-adopt-front-door.md
     tier: 5
     sweep: "10"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 32-docs-guards.md
     tier: 5
     sweep: "10"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 42-adopt-outsiders.md
     tier: 2
     sweep: "10"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 26-api-wire-fixes.md
     tier: 0
     sweep: "11"
@@ -210,38 +210,38 @@ slices:
   - file: 09-core-define-error.md
     tier: 0
     sweep: "12"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 12-core-error-fingerprint.md
     tier: 0
     sweep: "12"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 10-schema-sensitive-and-rules.md
     tier: 0
     sweep: "12"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 11-core-outbound.md
     tier: 0
     sweep: "12"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-core-breaker.md
     tier: 0
     sweep: "13"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-core-otlp-retry.md
     tier: 0
     sweep: "13"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 39-testing-render-nodes.md
     tier: 0
     sweep: "13"
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 13-jobs-bulk-and-rate.md
     tier: 2
     sweep: "14"

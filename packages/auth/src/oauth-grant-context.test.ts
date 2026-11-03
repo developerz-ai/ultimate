@@ -77,10 +77,10 @@ describe('resolveGrants sees what the IdP said, not only the profile', () => {
   test('a grant that lives on /userinfo only reaches the seam, read with the access token', async () => {
     const { seen, login } = google({
       sub: 'google-sub',
-      allowed_oauth_apps: ['bank-integrations'],
+      allowed_oauth_apps: ['ledger'],
     });
     const result = await login(async (_profile, context) => {
-      const allowed = allowedApps(await context.userinfo()).includes('bank-integrations');
+      const allowed = allowedApps(await context.userinfo()).includes('ledger');
       return { orgId: allowed ? 'org-1' : null, roles: allowed ? ['member'] : [] };
     });
 
@@ -121,7 +121,7 @@ describe('resolveGrants sees what the IdP said, not only the profile', () => {
   });
 
   test("a userinfo naming another subject is not this identity's, and mints no session", async () => {
-    const { login } = google({ sub: 'someone-else', allowed_oauth_apps: ['bank-integrations'] });
+    const { login } = google({ sub: 'someone-else', allowed_oauth_apps: ['ledger'] });
     const grantsFromUserinfo = async (_p: unknown, context: OAuthGrantContext) => {
       await context.userinfo();
       return { roles: ['admin'] };

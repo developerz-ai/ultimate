@@ -32,7 +32,8 @@ export const requestFriendship = async (
 
   // They asked first. Answering their row is the only move that keeps the pair on one row — and it
   // is a move this actor can make, which is what makes the refusal an instruction.
-  if (reverse !== null) throw new FriendMirrorExistsError(reverse.requesterId, reverse.status);
+  if (reverse !== null)
+    throw new FriendMirrorExistsError({ requesterId: reverse.requesterId, status: reverse.status });
 
   if (forward?.status === 'pending') return forward;
 

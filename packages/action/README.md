@@ -3,6 +3,8 @@
 One declaration → six artifacts. Five are projected here; the MCP tool is `@ultimat3/mcp`'s
 (tier 4), from the same declaration.
 
+`bun add @ultimat3/action` · guide: [Actions](https://github.com/developerz-ai/ultimate/wiki/Actions)
+
 | # | Artifact | Reach it with | Guarantees |
 |---|---|---|---|
 | 1 | HTTP route `POST /api/<resource>/<verb>` | `toRoute(publishPost)` — the server mounts it | policy + validation + idempotency + invalidation, non-optional |
@@ -231,9 +233,9 @@ export const api = defineApi({
   // (cookie; bearer when a mount exists), 401 + 429 (Retry-After) on every authenticated
   // operation, RateLimit-* on rate-limited ones. Absent, the bytes are what they were.
   openapi: {
-    title: 'Notificado API',
+    title: 'Acme API',
     version: '1.0.0',
-    servers: [{ url: 'https://www.notificado.co' }],
+    servers: [{ url: 'https://www.example.com' }],
     sessionCookie: 'session',
   },
 });

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 // Enforce, as a gate rule, that every `packages/…`, `scripts/…` or `docs/…` path a published page
-// names in backticks exists in this tree, unless the page says it is history.
+// names in backticks, and every relative `](target)` it links, exists in this tree, unless the page
+// says it is history.
 //
 // The gap this closes: 22.0.0 renamed the CLI's `dev-*` boot modules to `runtime-*`, and eight
 // package CLAUDE.md files kept sending their reader to `dev-cache.ts`, `dev-queue.ts`, `dev-storage.ts`
@@ -14,7 +15,8 @@
 // reads any glob, so the file set was the only thing keeping it outside a rule that already knew
 // how to judge it.
 //
-// WHAT IS READ. Inline code spans, outside fences. Inside a fence, only a file-header comment —
+// WHAT IS READ. Inline code spans and markdown link targets, outside fences. A link resolves from
+// the page's own directory, a bare name on a `wiki/` page is that wiki page (`lib/doc-link-targets.ts`). Inside a fence, only a file-header comment —
 // a line that is nothing but `//`, `/*`, `#` or `--` and a path — because that line claims where
 // the block lives; every other fenced line is program text or a transcript of an app's tree.
 // A path resolves against the repo root or either tracked app (`examples/dummy`,
@@ -36,6 +38,7 @@ import { join } from 'node:path';
 import { parseScriptArgs } from './lib/args';
 import type { MarkdownFile } from './lib/doc-citations';
 import { readMarkdown } from './lib/doc-citations';
+import { linkTargetsIn, resolveLinkTarget } from './lib/doc-link-targets';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -120,6 +123,11 @@ export function scanDocPaths(file: MarkdownFile): readonly DocPathRef[] {
     for (const token of raw) {
       const path = normalizePath(token);
       if (path !== undefined) found.push({ line: index + 1, path });
+    }
+    if (fenced) return;
+    for (const target of linkTargetsIn(line)) {
+      const path = resolveLinkTarget(file.path, target);
+      if (path !== undefined && !BUILD_OUTPUT.test(path)) found.push({ line: index + 1, path });
     }
   });
   return found;

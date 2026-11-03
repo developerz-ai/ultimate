@@ -127,7 +127,12 @@ export const config = defineRoute({
   // measured: 72807 B (x build --target static) — why: a remote error carries the server's
   // `requestId` (core's `withRequestId`, in the transport this island sends through) — raised
   // 71kb → 72kb (30.0.0): settings island + inline runtime +370, the client router −36.
-  budget: { js: '72kb' },
+  // measured: 74051 B (2026-11-03; x build --target static, against main's 72,807) — why:
+  // core's shared refusal-title table gained wave 3's 12 codes (`X_OUTBOUND_*`, `X_BREAKER_OPEN`,
+  // `X_ERROR_DECLARATION_INVALID`, `X_SCHEMA_SENSITIVE_OUTPUT`: 878 B of titles), so a refusal
+  // with one of them reaching the island is still titled, and a refusal's issues carry the `rule` and `params` a form translates
+  // on (plan 101 slice 10) — raised 72kb → 72.5kb (30.0.0): settings island +1,244 B.
+  budget: { js: '72.5kb' },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 

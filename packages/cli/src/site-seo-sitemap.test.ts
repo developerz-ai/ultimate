@@ -27,7 +27,7 @@ const route = (file: string, patch: Partial<RouteConfig> = {}): void => {
   });
 };
 
-const BASE = 'https://notificado.co';
+const BASE = 'https://example.com';
 const ROOT = processRoot(join(import.meta.dir, '..', '.site-seo-sitemap-fixture'));
 /**
  * What an app writes: `defineCatalogs()` in its catalog module, which `siteSeo` reads through

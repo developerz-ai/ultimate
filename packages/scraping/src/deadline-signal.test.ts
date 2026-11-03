@@ -3,8 +3,8 @@
 // of every request for the life of the run, and an armed timer per request behind it.
 
 import { describe, expect, test } from 'bun:test';
+import { type DeadlineTimer, deadlineSignal } from '@ultimat3/core/outbound';
 import { testScrapeClock } from './clock';
-import { type DeadlineTimer, deadlineSignal } from './deadline-signal';
 import { httpOverFetch } from './http';
 import type { NetworkEntry } from './rings';
 import { boundedRing } from './rings';

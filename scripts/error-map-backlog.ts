@@ -32,6 +32,8 @@ export const OFF_SOCKET: Pins = {
     'X_SERVICE_DUPLICATE',
     'X_SHUTDOWN_TIMEOUT',
     'X_SECRETS_KEY_ACL_FAILED',
+    'X_OUTBOUND_RETRY_UNSAFE',
+    'X_ERROR_DECLARATION_INVALID',
   ],
   // tier 1 — a tier's ceiling or similarity floor, screened where `app.config.ts` names it: raised
   // by `new LruCache(...)` and `memorySemanticCache(...)`, which a boot builds once.
@@ -227,7 +229,7 @@ export const OFF_SOCKET: Pins = {
     'X_SCRAPE_YIELD_COLLAPSED',
     'X_SCRAPE_YIELD_HISTORY_MISSING',
   ],
-  schema: ['X_SCHEMA_BOUNDS_INVALID'],
+  schema: ['X_SCHEMA_BOUNDS_INVALID', 'X_SCHEMA_SENSITIVE_OUTPUT'],
 };
 
 /**
@@ -477,10 +479,8 @@ export const UNDECIDED: Pins = {
 
 const merged = (...lists: readonly Pins[]): Pins => {
   const out = new Map<string, readonly string[]>();
-  for (const list of lists) {
-    for (const [owner, codes] of Object.entries(list)) {
-      out.set(owner, [...(out.get(owner) ?? []), ...codes]);
-    }
+  for (const [owner, codes] of lists.flatMap((list) => Object.entries(list))) {
+    out.set(owner, [...(out.get(owner) ?? []), ...codes]);
   }
   return Object.fromEntries(out);
 };
@@ -489,9 +489,8 @@ const merged = (...lists: readonly Pins[]): Pins => {
 export const ERROR_STATUS_BACKLOG: Pins = merged(OFF_SOCKET, UNDECIDED);
 
 /** Every pinned code, flat. The owner grouping is for the reader; the rule is per code. */
-export const backlogCodes = (
-  backlog: Readonly<Record<string, readonly string[]>> = ERROR_STATUS_BACKLOG,
-): ReadonlySet<string> => new Set(Object.values(backlog).flat());
+export const backlogCodes = (backlog: Pins = ERROR_STATUS_BACKLOG): ReadonlySet<string> =>
+  new Set(Object.values(backlog).flat());
 
 /** Which group an entry sits in, so a `fix:` can name the exact line to delete. */
 export const backlogGroupOf = (

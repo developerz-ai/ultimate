@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { Fragment, h, isJsxNode, JSX_NODE } from './jsx';
+import { JSX_NODE } from '@ultimat3/core/render-node';
+import { Fragment, h, isJsxNode } from './jsx';
 
 describe('h', () => {
   test('marks the node so a renderer can tell it from a plain object', () => {
@@ -7,6 +8,12 @@ describe('h', () => {
     expect(isJsxNode(node)).toBe(true);
     expect(isJsxNode({ type: 'div', props: {} })).toBe(false);
     expect(node[JSX_NODE]).toBe(true);
+  });
+
+  test('the brand is the GLOBAL symbol, so every copy of a walker agrees on a node', () => {
+    // Widened: `toBe` takes the `unique symbol` type of its subject, which no `Symbol.for` has.
+    const brand: symbol = JSX_NODE;
+    expect(brand).toBe(Symbol.for('ultimate.render.jsx'));
   });
 
   test('a single child is stored unwrapped, several become an array', () => {

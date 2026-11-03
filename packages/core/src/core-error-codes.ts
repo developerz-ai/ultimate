@@ -72,6 +72,18 @@ const CORE_CODE_TITLES = {
   X_UNREACHABLE: 'unreachable branch was reached',
   X_SECRETS_KEY_ACL_FAILED: 'key file ACL not owner-only',
   X_COOKIE_INVALID: 'a Set-Cookie value would be dropped, misread or injectable',
+  X_OUTBOUND_TIMEOUT: 'an outbound HTTP call passed its deadline or went idle',
+  X_OUTBOUND_UNREACHABLE: 'an outbound HTTP call got no response',
+  X_OUTBOUND_THROTTLED: 'an outbound HTTP call was told to wait',
+  X_OUTBOUND_UNAVAILABLE: 'an outbound HTTP call answered a retryable status',
+  X_OUTBOUND_REFUSED: 'an outbound HTTP call answered a non-retryable status',
+  X_OUTBOUND_TOO_LARGE: 'an outbound HTTP response body passed its byte cap',
+  X_OUTBOUND_HOST_BLOCKED: 'an outbound HTTP call refused the address it would reach',
+  X_OUTBOUND_REDIRECTED: 'an outbound HTTP call answered a redirect',
+  X_OUTBOUND_RETRY_UNSAFE: 'a retry was asked for on a write that is not idempotent',
+  X_OUTBOUND_BODY_INVALID: 'an outbound HTTP response did not match its schema',
+  X_BREAKER_OPEN: 'a circuit breaker is open and refused the call',
+  X_ERROR_DECLARATION_INVALID: 'a defineError declaration is malformed',
 } as const;
 
 export type CoreErrorCode = keyof typeof CORE_CODE_TITLES;

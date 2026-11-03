@@ -15,6 +15,8 @@ export interface UpgradePin {
 export interface UpgradeSection {
   readonly title: string;
   readonly url: string;
+  /** The same section as an `x docs` topic, answered whole from the wiki the CLI tarball ships. */
+  readonly local: string;
 }
 
 export interface UpgradeHop {
@@ -79,7 +81,7 @@ export function sectionFor(major: number): UpgradeSection {
     .toLowerCase()
     .replace(/[^a-z0-9 _-]/g, '')
     .replaceAll(' ', '-');
-  return { title, url: `${WIKI_PAGE}#${anchor}` };
+  return { title, url: `${WIKI_PAGE}#${anchor}`, local: `wiki.Upgrading#${anchor}` };
 }
 
 const newestOfMajor = (major: number, released: readonly string[]): string | undefined =>

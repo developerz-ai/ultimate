@@ -3,6 +3,7 @@
 // is documented and several self-hostable monitors ingest it. Nothing here names a host, a project
 // or an organisation — the DSN is the app's own typed env, passed in at wiring time.
 
+import { errorFingerprint } from './error-fingerprint';
 import { renderThrowable } from './error-render';
 import type { ErrorReport, ErrorReporter, ErrorSeverity } from './error-reporter';
 import { type CodedErrorInit, UltimateError } from './errors';
@@ -89,6 +90,9 @@ function payloadOf(report: ErrorReport, eventId: string): Record<string, unknown
     server_name: report.resource.serviceName,
     ...(report.release === null ? {} : { release: report.release }),
     ...(report.scope.operation === undefined ? {} : { transaction: report.scope.operation }),
+    // The group. Without it the monitor groups on its own reading of the exception, which is the
+    // code, so every unclassified throw in the app was one issue (`errorFingerprint`).
+    fingerprint: [errorFingerprint(report)],
     // Tags are the monitor's facets, so only bounded values go here — the same rule metric labels
     // follow. `requestId` and `actorId` are unbounded and live in `extra`.
     tags: {

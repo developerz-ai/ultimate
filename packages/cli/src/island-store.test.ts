@@ -201,7 +201,7 @@ describe('unit · the island store is stale once a source it was built from chan
     }
   });
 
-  // notificado.co's admin islands are `export { mountActionMenu as mount } from '…/menu-client'`:
+  // One adopter's admin islands are `export { mountActionMenu as mount } from '…/menu-client'`:
   // a file with no code of its own, so the source map names the module it re-exports and never the
   // entry. The check took that for paths that stopped landing in the root and refused the build.
   test('a pure re-export island is written, and an edit to it is stale', async () => {
@@ -269,7 +269,7 @@ describe('unit · the island store is stale once a source it was built from chan
 /**
  * A container that served the stored chunks never ran the island build, so an island's own
  * `.module.scss` never registered: its rules were missing from every pod that read the store, and
- * present on any that rebuilt — two surface stylesheets for one image (notificado.co, 22.3.2).
+ * present on any that rebuilt — two surface stylesheets for one image (one adopter, 22.3.2).
  */
 // The document renderer asks two things of every island a page renders: does it reach realtime
 // (the page boot), and has it state to restore (the hold). Both were answered by the BUILD, in the

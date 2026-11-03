@@ -1,5 +1,5 @@
 // The API index is the first module the scan evaluates, so a path derived at another module's top
-// level is derived under the app's declared `pathStyle` — the notificado.co 22.6.0 adoption, where
+// level is derived under the app's declared `pathStyle` — one adopter's 22.6.0 adoption, where
 // `apps/admin/**` sorted before `apps/web/api/index.ts` and an admin sign-out form captured the
 // default style's `/api/outs/sign` while the server served `/api/sign-out`.
 

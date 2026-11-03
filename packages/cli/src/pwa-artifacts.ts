@@ -180,7 +180,7 @@ export async function loadPwaArtifacts(root: string): Promise<PwaArtifacts | und
  * `/assets/pwa/wide.png` — answers the content-hashed URL the site actually serves, exactly as
  * `asset()` does in a page. The site serves an asset ONLY at its hashed URL, and the manifest took
  * `src` verbatim, so an app had to hash its own screenshots to avoid shipping a 404 in the install
- * sheet (notificado.co's `pwa-install.ts`). A missing file is `X_ASSET_MISSING` at boot, never a
+ * sheet (one adopter's `pwa-install.ts`). A missing file is `X_ASSET_MISSING` at boot, never a
  * broken image in an install prompt; any other `src` passes untouched — an absolute path outside
  * `/assets/`, an already hashed one, or a shortcut icon's off-site URL (core screens screenshots and
  * shortcut urls to absolute paths, not icon sources).

@@ -8,7 +8,7 @@
 // — `x g` for every kind the CLI offers, then the migration those thirteen entities earn.
 //
 // The generators all exit 0 even when what they emit cannot resolve an import, so this sweep is not
-// itself the catch: the `bun run check` that follows it is (`TS2307: Cannot find module '../repo'`
+// itself the catch: the `bun run verify` that follows it is (`TS2307: Cannot find module '../repo'`
 // was invisible to every exit code in this job). This is what gives that gate something to
 // typecheck.
 //
@@ -66,7 +66,7 @@ const SOLO_SLICE = 'smoke-solo';
 /**
  * A slice single-tenant by the edit `x g entity`'s own comment describes, written by hand because no
  * generator writes one: no `tenant`, no `orgId`. What `SECOND_SHAPES` generates into it must hold
- * no `orgId` and still gate, so the `bun run check` after this sweep is what proves it.
+ * no `orgId` and still gate, so the `bun run verify` after this sweep is what proves it.
  */
 export const SOLO_SLICE_FILES: Readonly<Record<string, string>> = {
   [`apps/web/app/${SOLO_SLICE}/entity.ts`]: `// A table with no tenant, so \`x g action\` and \`x g mutator\` read this file and write no org.

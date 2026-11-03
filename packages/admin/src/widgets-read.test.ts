@@ -7,9 +7,10 @@
 // is ui's and changes without this package changing.
 
 import { describe, expect, test } from 'bun:test';
+import { byComponent, byTag, isRenderNode, nodesOf, one } from '@ultimat3/core/render-nodes';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
-import { byComponent, byTag, isInertNode, nodesOf, one, renderHtml } from './inert-jsx-fixture';
+import { renderHtml } from './inert-jsx-fixture';
 import type { WidgetContext } from './widget-value';
 
 // `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never
@@ -58,7 +59,7 @@ describe('the premise: these views compile to a factory this file understands', 
   // walks to `[]` and serialises to `"[object Object]"` — 30 assertions that pass or fail on the
   // run's file order, silently. Fail here instead, naming it.
   test('a widget returns a node, not an opaque object', () => {
-    expect(isInertNode(read({}, { minor: 1, currency: 'EUR' }))).toBe(true);
+    expect(isRenderNode(read({}, { minor: 1, currency: 'EUR' }))).toBe(true);
   });
 });
 
@@ -80,7 +81,7 @@ describe('an absent value renders the empty marker, never a blank cell', () => {
 
 describe('money', () => {
   test('the row value reaches <Money> whole — minor units and currency together', () => {
-    const nodes = nodesOf(read({}, { minor: 1999, currency: 'EUR' }));
+    const nodes = nodesOf(read({}, { minor: 1999, currency: 'EUR' }), { components: 'keep' });
     const money = one(byComponent(nodes, 'Money'), '<Money>');
     expect(money.props['value']).toEqual({ minor: 1999, currency: 'EUR' });
   });
@@ -96,6 +97,7 @@ describe('datetime', () => {
   test('an instant carries the actor zone and ui default formatting', () => {
     const nodes = nodesOf(
       read({ widget: 'datetime', type: 'timestamptz' }, '2026-08-18T23:30:00.000Z'),
+      { components: 'keep' },
     );
     const when = one(byComponent(nodes, 'DateTime'), '<DateTime>');
     expect(when.props['value']).toBe('2026-08-18T23:30:00.000Z');
@@ -105,7 +107,9 @@ describe('datetime', () => {
   });
 
   test('a calendar date is formatted by the zone-independent formatter, not the ambient one', () => {
-    const nodes = nodesOf(read({ widget: 'datetime', type: 'date' }, '2026-08-18'));
+    const nodes = nodesOf(read({ widget: 'datetime', type: 'date' }, '2026-08-18'), {
+      components: 'keep',
+    });
     const when = one(byComponent(nodes, 'DateTime'), '<DateTime>');
     expect(when.props['format']).toBe(formatCalendarDate);
   });
@@ -151,9 +155,13 @@ describe('select', () => {
   });
 
   test('an enum value is a BADGE — a state reads as one; a locale or a zone stays text', () => {
-    const state = nodesOf(read({ widget: 'select', type: 'enum', values: ['draft'] }, 'draft'));
+    const state = nodesOf(read({ widget: 'select', type: 'enum', values: ['draft'] }, 'draft'), {
+      components: 'keep',
+    });
     expect(byComponent(state, 'Badge')).toHaveLength(1);
-    const zone = nodesOf(read({ widget: 'timezone-picker', type: 'timezone' }, 'Europe/Paris'));
+    const zone = nodesOf(read({ widget: 'timezone-picker', type: 'timezone' }, 'Europe/Paris'), {
+      components: 'keep',
+    });
     expect(byComponent(zone, 'Badge')).toHaveLength(0);
   });
 });
@@ -175,6 +183,7 @@ describe('reference', () => {
       read(relation as Partial<AdminField>, 'c_9', {
         hrefFor: (entity, id) => `/back-office/${entity}/${id}`,
       }),
+      { components: 'keep' },
     );
     const link = one(byTag(nodes, 'a'), '<a>');
     // `/customers/c_9` — pluralisation by concatenation, and it drops basePath. The route table
@@ -200,6 +209,7 @@ describe('reference', () => {
         hrefFor: (entity, id) => `/back-office/${entity}/${id}`,
         labelFor: (entity, id) => (entity === 'customer' && id === 'c_9' ? 'Acme' : undefined),
       }),
+      { components: 'keep' },
     );
     const link = one(byTag(nodes, 'a'), '<a>');
     expect(link.props['href']).toBe('/back-office/customer/c_9');
@@ -207,18 +217,21 @@ describe('reference', () => {
     // A row the page read no label for — one this actor may not see — keeps its id.
     const other = nodesOf(
       read(relation as Partial<AdminField>, 'c_1', { labelFor: () => undefined }),
+      { components: 'keep' },
     );
     expect(renderHtml(other)).toContain('c_1');
   });
 
   test('without a route table it is plain text — a wrong link is worse than no link', () => {
-    const nodes = nodesOf(read(relation as Partial<AdminField>, 'c_9'));
+    const nodes = nodesOf(read(relation as Partial<AdminField>, 'c_9'), { components: 'keep' });
     expect(byTag(nodes, 'a')).toHaveLength(0);
     expect(renderHtml(read(relation as Partial<AdminField>, 'c_9'))).toContain('c_9');
   });
 
   test('an hrefFor that answers null for this row also renders plain text', () => {
-    const nodes = nodesOf(read(relation as Partial<AdminField>, 'c_9', { hrefFor: () => null }));
+    const nodes = nodesOf(read(relation as Partial<AdminField>, 'c_9', { hrefFor: () => null }), {
+      components: 'keep',
+    });
     expect(byTag(nodes, 'a')).toHaveLength(0);
   });
 });
@@ -227,6 +240,7 @@ describe('upload', () => {
   test('a stored file renders its name behind its url', () => {
     const nodes = nodesOf(
       read({ widget: 'upload', type: 'file' }, { url: 'https://cdn.test/a.pdf', name: 'a.pdf' }),
+      { components: 'keep' },
     );
     const link = one(byTag(nodes, 'a'), '<a>');
     expect(link.props['href']).toBe('https://cdn.test/a.pdf');
@@ -237,6 +251,7 @@ describe('upload', () => {
     const nodes = nodesOf(
       // eslint-disable-next-line no-script-url -- the value under test
       read({ widget: 'upload', type: 'file' }, { url: 'javascript:alert(1)', name: 'evil' }),
+      { components: 'keep' },
     );
     const link = one(byTag(nodes, 'a'), '<a>');
     expect(link.props['href']).toBeUndefined();

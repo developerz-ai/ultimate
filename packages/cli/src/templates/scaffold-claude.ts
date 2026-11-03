@@ -9,6 +9,7 @@ import { claudeCommandFiles } from './scaffold-claude-commands';
 
 /**
  * Read-only commands and the two write commands whose blast radius is a file the gate checks.
+ * Spelled `bunx x`, the form that runs with no global `x` and the one the generators print.
  * Deliberately absent: `x db reset`, `x db backfill --write`, `x secrets`, `x deploy` — each is
  * destructive or reaches production, and an allowlist that covers them is a prompt nobody reads.
  *
@@ -23,26 +24,28 @@ const settings = (): string => `{
       "Bash(bun test:*)",
       "Bash(bun run typecheck)",
       "Bash(bun run lint)",
+      "Bash(bun run verify:*)",
       "Bash(bunx biome check:*)",
-      "Bash(x verify:*)",
-      "Bash(x test:*)",
-      "Bash(x doctor:*)",
-      "Bash(x g:*)",
-      "Bash(x routes:*)",
-      "Bash(x actions:*)",
-      "Bash(x queries:*)",
-      "Bash(x entities:*)",
-      "Bash(x jobs list:*)",
-      "Bash(x jobs show:*)",
-      "Bash(x tasks:*)",
-      "Bash(x policy:*)",
-      "Bash(x i18n check:*)",
-      "Bash(x errors:*)",
-      "Bash(x env check:*)",
-      "Bash(x manifest:*)",
-      "Bash(x db gen:*)",
-      "Bash(x db migrate:*)",
-      "Bash(x db branch:*)",
+      "Bash(bunx x verify:*)",
+      "Bash(bunx x test:*)",
+      "Bash(bunx x doctor:*)",
+      "Bash(bunx x g:*)",
+      "Bash(bunx x routes:*)",
+      "Bash(bunx x actions:*)",
+      "Bash(bunx x queries:*)",
+      "Bash(bunx x entities:*)",
+      "Bash(bunx x jobs list:*)",
+      "Bash(bunx x jobs show:*)",
+      "Bash(bunx x tasks:*)",
+      "Bash(bunx x policy:*)",
+      "Bash(bunx x i18n check:*)",
+      "Bash(bunx x errors:*)",
+      "Bash(bunx x docs:*)",
+      "Bash(bunx x env check:*)",
+      "Bash(bunx x manifest:*)",
+      "Bash(bunx x db gen:*)",
+      "Bash(bunx x db migrate:*)",
+      "Bash(bunx x db branch:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)"
@@ -68,7 +71,7 @@ const readme = (app: NameSet): string => `# .claude/
 
 What Claude Code reads when it works on ${app.kebab}. Written by \`x new\`, owned by you from the
 moment it lands: edit any file, or delete any file, and nothing in the app breaks. Nothing here is
-enforced by \`x verify\`, and nothing here reaches outside this repository.
+enforced by \`bunx x verify\`, and nothing here reaches outside this repository.
 
 One thing in it does *write*: the \`PostToolUse\` hook in \`settings.json\` reformats each file an agent
 edits, in place, the moment it is saved. That is the only thing here that touches your code on its
@@ -86,7 +89,7 @@ So the whole bundle is three description lines of standing cost. The rest is pai
 
 | File | For |
 |---|---|
-| \`commands/feature.md\` | \`/feature\` — build or fix one thing end to end, gated on \`x verify\` |
+| \`commands/feature.md\` | \`/feature\` — build or fix one thing end to end, gated on \`bun run verify\` |
 | \`commands/planx.md\` | \`/planx\` — write a plan to \`docs/plans/\` for another agent to execute |
 | \`commands/verify.md\` | \`/verify\` — run the gate and fix what it reports |
 | \`agents/shape.md\` | the idea-stage pass: which primitive, which slice, or "do not build this" |
@@ -99,7 +102,7 @@ a line it may not cross. That is what makes two of them safe to run at once.
 
 ## What is deliberately not here
 
-**No command that wraps \`x g\`.** \`x g <kind> <name>\` already is that command, and \`x g --help\` is
+**No command that wraps \`bunx x g\`.** \`bunx x g <kind> <name>\` already is that command, and \`bunx x g --help\` is
 the only list of kinds — a slash command restating it is a second copy that drifts the first time a
 kind is added.
 
@@ -113,7 +116,7 @@ means it rewrites that file in place** — the same safe fixes \`biome check --w
 repo-wide, but your working tree does change after every agent edit. Scoped to one file, so it costs
 milliseconds, and it settles formatting arguments before they reach a diff.
 
-It is not a typecheck, because a *scoped* one does not exist: \`tsc\` needs the project, and \`x verify\`
+It is not a typecheck, because a *scoped* one does not exist: \`tsc\` needs the project, and \`bunx x verify\`
 takes no \`--only\` and no \`--skip\` by design — narrowing the gate would make "green" mean whatever
 the caller chose. If you want types on every edit, \`bun run typecheck\` is the whole project and you
 are choosing to pay for it.

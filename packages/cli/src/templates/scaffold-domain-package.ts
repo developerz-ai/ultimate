@@ -18,28 +18,32 @@ const domainIndex = (
 ): string => `// Pure types and constants. No I/O of any kind: no fs, no network, no database, no env reads.
 // \`Money\` is @ultimat3/schema's, re-exported and never restated: one declaration of
 // { minor, currency } is what makes an entity column, a form field and this module the same type.
-import { UltimateError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core';
 import type { MoneyValue as Money } from '@ultimat3/schema';
 
 export type { MoneyValue as Money } from '@ultimat3/schema';
 
+interface CurrencyPair {
+  readonly left: string;
+  readonly right: string;
+}
+
 /**
  * Never a bare Error: an agent reading the failure needs the code, the cause and the exact command
  * that resolves it. Adding across currencies is a bug in the caller's data, not a runtime hiccup,
- * so the fix names the conversion that has to happen first.
- *
- * No \`docs:\`: \`UltimateError\` resolves the link from the code's registered descriptor, so it has
- * one home. A per-code URL written here is a page that does not exist.
+ * so it answers 422 and the fix names the conversion that has to happen first. One declaration
+ * — \`defineError\` — holds the title, the status and the class; \`guards/error-declared.ts\` keeps
+ * it the only way. No \`docs:\`: the link resolves from the code's registered descriptor.
  */
-export class ${app.pascal}CurrencyMismatchError extends UltimateError {
-  constructor(input: { readonly left: string; readonly right: string }) {
-    super({
-      code: '${currencyCode(app)}',
-      cause: \`cannot add \${input.left} to \${input.right}: Money is only additive inside one currency\`,
-      fix: \`bun test packages/domain/src/index.test.ts   # add() is defined only inside one currency — convert \${input.right} to \${input.left} before calling it\`,
-    });
-  }
-}
+export const ${app.pascal}CurrencyMismatchError = defineError<CurrencyPair>({
+  code: '${currencyCode(app)}',
+  title: 'money added across two currencies',
+  status: 422,
+  cause: (pair) =>
+    \`cannot add \${pair.left} to \${pair.right}: Money is only additive inside one currency\`,
+  fix: (pair) =>
+    \`bun test packages/domain/src/index.test.ts   # add() is defined only inside one currency — convert \${pair.right} to \${pair.left} before calling it\`,
+});
 
 export const zero = (currency: string): Money => ({ minor: 0, currency });
 

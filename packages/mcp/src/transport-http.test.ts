@@ -329,7 +329,7 @@ describe('mcpHttpRoute.handle: the body is capped while it is read', () => {
     expect(res.status).toBe(413);
     const payload = await res.json();
     // The envelope a JSON-RPC client already parses — `id: null`, `-32600` — so nothing a
-    // consumer pinned moves; what was missing is the instruction. Measured through ai-maxxing's
+    // consumer pinned moves; what was missing is the instruction. Measured through one adopter's
     // `POST /mcp` on 2026-09-07: a box agent sending a large `promptSession` got a number and
     // no next step, while the 401, 403 and 429 beside it all carried `{ code, cause, fix }`.
     expect(payload.id).toBeNull();

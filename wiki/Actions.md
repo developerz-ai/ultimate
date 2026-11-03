@@ -24,7 +24,7 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | Field | Type | Required | Meaning |
 |---|---|---|---|
 | `input` | Standard Schema (`t` from `@ultimat3/schema`) | yes | parsed before anything else runs; drives the TS type, JSON Schema, OpenAPI request body, MCP tool schema. `t` is the shipped dependency-free builtin provider; ArkType, Zod and Valibot are optional swaps behind `configureSchemaProvider` and ship no adapter |
-| `output` | Standard Schema | yes | the response contract; drives the typed client return type and the OpenAPI response |
+| `output` | Standard Schema | yes | the response contract; drives the typed client return type and the OpenAPI response. A `.sensitive()` field reachable from it is `X_SCHEMA_SENSITIVE_OUTPUT` at registration: an output is sent back |
 | `policy` | `Policy` from `can(...)` | yes | the one authz decision, evaluated on every surface. Omitting it is a build error |
 | `cache.invalidates` | `readonly CacheTag[]` | no | tags dropped from every cache tier after `handle` settles — and, for an action invoked inside `withTransaction`, only once the root transaction **commits** (never on rollback). Unknown tag = compile error |
 | `mcp.expose` | `boolean` | no (opt-in) | only a literal `true` makes the action a tool; silence exposes nothing. One predicate answers it everywhere — the tool, the LLM tool list, `describe().mcp.expose`, and `openapi.json`'s `x-ultimate.mcpTool` (which is `null` when there is no tool). Listing an un-exposed action in `defineAppMcp` is `X_MCP_TOOL_UNDECLARED` at boot |
@@ -34,6 +34,14 @@ Declared one per file in a feature's `actions/` (`actions/publish-post.ts`, what
 | `idempotent` | `boolean` | no — **required `true` on a `mutator`** | marks the action safe to retry with an `Idempotency-Key` header — over MCP, the tool's optional `idempotencyKey` argument. Inside a transaction the Postgres store settles the record with the write's own `COMMIT`, so a rollback never leaves a `settled` record behind. A field core redacts by name (`apiKey`, `password`, `*Token`…) or a `Secret` is stored as `[redacted]`, and the replay of such an answer is `X_IDEMPOTENT_REPLAY_REDACTED` |
 | `http.path` | `string` | no | pins the URL whatever the app's `pathStyle` derives — for a path a vendor holds (`'/api/webhooks/wompi'`). Static, lowercase, no params, never `/_x` (`X_ACTION_HTTP_PATH_INVALID`) |
 | `handle({ input, ctx })` | `(args) => Promise<Output>` | yes | the body. Parsed `input`, ambient `ctx`. Returns `output`-shaped data |
+
+**`.sensitive()` on an input field** — `cardPan: t.string.sensitive()` — means sent in, never
+written down by the framework, never sent back (JSON Schema `writeOnly`). Reach, exactly: the
+`audit: true` record's `input` and `x jobs show` hold `[redacted]`, read from THIS action's own
+schema, so another action's `cardPan` and the idempotency store are untouched. Not your own
+`logger.info('x', input)`: that line holds no schema — use `redactKeys` or a `Secret` there.
+A refusal's issue carries `rule` (`string.min`, `enum`, … — `SCHEMA_RULES`) and `params`
+(`{ min: 3 }`) on the wire, so a form translates on the rule, never the English message.
 
 `ctx` members an action may use:
 
@@ -175,6 +183,26 @@ X_ACTION_POLICY_MISSING: action registered without a policy
 ```
 
 Every code carries the same `{ code, cause, fix, docs }` in the terminal, the dev overlay, the HTTP body, `--json`, and the MCP tool error. Full list: [Error codes](Error-Codes).
+
+A handler's OWN refusals are app codes, each declared once with `defineError` from `@ultimat3/core`
+— the title, the status the HTTP projection answers and the class `handle` throws:
+
+```ts
+import { defineError } from '@ultimat3/core';
+
+export const PostNotFound = defineError<string>({
+  code: 'X_POST_NOT_FOUND',
+  title: "no such post in the actor's organisation",
+  status: 404,
+  cause: (ref) => `no post ${ref} in the actor's organisation`,
+  fix: 'x queries list --json, then pass an id the post read returns',
+});
+
+// in handle: throw new PostNotFound(input.postId);
+```
+
+A code with no status answers 500 and hides its cause from the caller; `offSocket: true` declares a
+code no response carries. `guards/error-declared.ts` refuses a handwritten `UltimateError` subclass.
 
 ## Introspection
 

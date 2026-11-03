@@ -7,7 +7,7 @@ import type { GeneratedFile, NameSet } from './naming';
 
 const shape = (app: NameSet): string => `---
 name: shape
-description: Use BEFORE writing any code, at the idea stage — turns a product request into the one decision that governs everything after it: which of the eight primitives each piece is, which slice and surface it lives in, and the exact \`x g\` invocations. Read-only; it decides, it never builds. Also use when a request seems to need something the framework does not have.
+description: Use BEFORE writing any code, at the idea stage — turns a product request into the one decision that governs everything after it: which of the eight primitives each piece is, which slice and surface it lives in, and the exact \`bunx x g\` invocations. Read-only; it decides, it never builds. Also use when a request seems to need something the framework does not have.
 tools: Read, Glob, Grep, Bash
 ---
 
@@ -45,8 +45,8 @@ stop; that answer is worth more than a plan built on a shape the app cannot hold
 | \`packages/db/\` | schema, migrations, seed |
 | \`packages/ui/\` | components with no feature knowledge |
 
-Read the tree before you place anything. \`x routes\`, \`x actions\`, \`x queries\`, \`x entities\`,
-\`x jobs\`, \`x tasks\` and \`x policy list\` are the registries — check whether the thing already
+Read the tree before you place anything. \`bunx x routes\`, \`bunx x actions\`, \`bunx x queries\`, \`bunx x entities\`,
+\`bunx x jobs\`, \`bunx x tasks\` and \`bunx x policy list\` are the registries — check whether the thing already
 exists before proposing it, and add \`--json\` to any of them.
 
 ## Report
@@ -54,7 +54,7 @@ exists before proposing it, and add \`--json\` to any of them.
 \`\`\`
 Build:      yes | no — <one line>
 Pieces:     <primitive> <name> → <dir>          (one line each)
-Generate:   x g <kind> <name> --feature <slice> (one line each, in dependency order)
+Generate:   bunx x g <kind> <name> --feature <slice> (one line each, in dependency order)
 Existing:   <what already covers part of this>
 Refused:    <anything that fits no primitive, and why>
 \`\`\`
@@ -72,17 +72,17 @@ feature slice. Nothing else. A change outside that set is a collision — report
 | Rule | Detail |
 |---|---|
 | The entity is the schema | columns, invariants, indexes and tenancy are declared there, never in SQL |
-| Migrations are generated | edit \`entity.ts\`, then \`x db gen "what changed"\`. Never hand-write a file into \`packages/db/migrations/\` |
+| Migrations are generated | edit \`entity.ts\`, then \`bunx x db gen "what changed"\`. Never hand-write a file into \`packages/db/migrations/\` |
 | Destructive is declared | a migration that drops, truncates or retypes carries \`-- destructive: true\`, or the gate refuses it |
 | \`repo.ts\` is the only door | every read and write goes through it; a raw statement anywhere else is authz bypassed |
-| Branch before you break things | \`x db branch create <name>\`, never the shared dev database |
+| Branch before you break things | \`bunx x db branch create <name>\`, never the shared dev database |
 | Money | \`{ minor, currency }\` — integer minor units and an ISO code, both, always. Never a float |
 | Time | store UTC; a formatted date always names an explicit IANA time zone |
 
-Inspect before you change: \`x entities list\`, \`x entities show <name>\`, both with \`--json\`.
+Inspect before you change: \`bunx x entities list\`, \`bunx x entities show <name>\`, both with \`--json\`.
 
 Checks: \`bun test <path>/entity.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
-once when you are otherwise done. Never \`x verify\` — that belongs to whoever coordinates you.
+once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
 const server = (app: NameSet): string => `---
@@ -97,19 +97,19 @@ renders. A change outside that set is a collision — report it, do not make it.
 
 | Rule | Detail |
 |---|---|
-| Generate, then edit | \`x g <kind> <name> --feature <slice>\` for every one of them — a hand-written primitive is missing from every registry that projects it |
+| Generate, then edit | \`bunx x g <kind> <name> --feature <slice>\` for every one of them — a hand-written primitive is missing from every registry that projects it |
 | One authz object | the policy decides; a route or a UI that re-checks is a second answer that will drift |
 | Data through the repo | an action calls \`repo.ts\`, never the database |
-| Errors are instructions | never \`throw new Error\` — subclass \`UltimateError\` with a stable \`X_SCREAMING_SNAKE\` code, a cause and a \`fix:\` a caller can actually run |
+| Errors are instructions | never \`throw new Error\` — declare each code once with \`defineError({ code, title, status, cause, fix })\` from \`@ultimat3/core\`: a stable \`X_SCREAMING_SNAKE\` code, a cause and a \`fix:\` a caller can actually run. \`guards/error-declared.ts\` refuses a handwritten \`UltimateError\` subclass |
 | Jobs run at least once | a handler must be idempotent — an upsert or a statement whose second run changes nothing, never \`count + 1\` |
 | Tasks name a time zone | a cron schedule with an ambient zone is a different time twice a year |
 | No \`any\` | \`unknown\` plus a schema parse |
 
-Inspect before you change: \`x actions show <name>\`, \`x queries show <name>\`, \`x jobs list\`,
-\`x tasks list\`, \`x policy explain <subject>\` — every one takes \`--json\`.
+Inspect before you change: \`bunx x actions show <name>\`, \`bunx x queries show <name>\`, \`bunx x jobs list\`,
+\`bunx x tasks list\`, \`bunx x policy explain <subject>\` — every one takes \`--json\`.
 
 Checks: \`bun test <path>/<file>.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
-once when you are otherwise done. Never \`x verify\` — that belongs to whoever coordinates you.
+once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
 const web = (app: NameSet): string => `---
@@ -124,7 +124,7 @@ calls. A change outside that set is a collision — report it, do not make it.
 
 | Rule | Detail |
 |---|---|
-| \`site/\` is 0kb JS | and may not import from \`app/\`. One interactive control on a static page is an island: \`x g island <name> --at <dir>\` |
+| \`site/\` is 0kb JS | and may not import from \`app/\`. One interactive control on a static page is an island: \`bunx x g island <name> --at <dir>\` |
 | \`shared/\` is a leaf | tokens, primitives, the actor type. It imports nothing of yours |
 | The directory is the URL | \`page.tsx\` under \`site/\`/\`app/\`; \`api/\` holds no route file, only \`defineApi()\`'s actions and queries. The filename is never the path |
 | Every string through \`t()\` | a literal in a component is a string no locale can ever translate |
@@ -135,16 +135,16 @@ calls. A change outside that set is a collision — report it, do not make it.
 | The focus ring is replaced | \`outline: none\` on its own leaves a keyboard user with nothing. \`@include tokens.focus-ring\`, or a \`:focus-visible\` box-shadow beside it |
 | Every image has a box | width + height, or an aspect-ratio. An unsized image moves everything under it when its bytes land, and the priority one is never \`loading="lazy"\` |
 | Animate transform and opacity | nothing else composites: a \`top\`, a \`width\` or a \`box-shadow\` costs a layout pass every frame, and \`transition: all\` animates properties nobody chose. \`tokens.duration()\` / \`tokens.easing()\` are the values |
-| An island declares its states | a sibling \`<name>.island.states.ts\`, so \`x shot --island <name> --json\` can photograph the failures nobody can click to |
+| An island declares its states | a sibling \`<name>.island.states.ts\`, so \`bunx x shot --island <name> --json\` can photograph the failures nobody can click to |
 
-Every one of the last five is a build error, not a preference — \`guards/\` holds them and \`x verify\`'s
+Every one of the last five is a build error, not a preference — \`guards/\` holds them and \`bunx x verify\`'s
 \`boundaries\` step runs them. Read the guard rather than guessing at the rule.
 
-Inspect before you change: \`x routes --json\`, \`x i18n check\` for catalog gaps, and
-\`x shot <route> --json\` when you need to see what you built.
+Inspect before you change: \`bunx x routes --json\`, \`bunx x i18n check\` for catalog gaps, and
+\`bunx x shot <route> --json\` when you need to see what you built.
 
 Checks: \`bun test <path>/page.test.ts\`, \`bunx biome check --write <paths>\`, and \`bun run typecheck\`
-once when you are otherwise done. Never \`x verify\` — that belongs to whoever coordinates you.
+once when you are otherwise done. Never \`bunx x verify\` — that belongs to whoever coordinates you.
 `;
 
 /** One agent per boundary, plus the read-only one that runs before there is a boundary to hold. */

@@ -9,6 +9,7 @@ import {
   askIssueArgs,
   askLookupFailedLine,
   BUMPS,
+  bumpWindowFindings,
   nextVersion,
   parseAskIssues,
   RELEASE_FLAGS,
@@ -292,8 +293,10 @@ describe('unit · the version to publish is decided, never guessed', () => {
   // tuple narrows `toContain`'s parameter to the union and stops compiling, and asserting the
   // constant against itself would prove nothing anyway. Every invocation PUBLISHING.md prints.
   test('every flag the docs tell a reader to pass is accepted', () => {
-    expect(unknownReleaseFlags(['version', 'bump', 'check', 'dry-run', 'json'])).toEqual([]);
-    expect(RELEASE_FLAGS.length).toBe(5);
+    expect(
+      unknownReleaseFlags(['version', 'bump', 'check', 'dry-run', 'json', 'security']),
+    ).toEqual([]);
+    expect(RELEASE_FLAGS.length).toBe(6);
   });
 
   test('the fix line is a command a shell can run verbatim', () => {
@@ -373,6 +376,32 @@ describe('unit · the commands a release prints are the safe form', () => {
     expect(
       releaseInvocation({ explicit: '1.3.0', bump: undefined, dryRun: true, json: false }),
     ).toBe('bun run scripts/release.ts --version 1.3.0 --dry-run');
+  });
+
+  // A dirty-tree refusal's fix used to drop `--security`, so its rerun asked for the major the
+  // window refuses without the advisory that excused it.
+  test('the rerun carries --security, already held to an advisory id', () => {
+    expect(
+      releaseInvocation({
+        explicit: undefined,
+        bump: 'major',
+        dryRun: true,
+        json: true,
+        security: 'GHSA-2c8m-p4fq-w9xr',
+      }),
+    ).toBe(
+      'bun run scripts/release.ts --bump major --security GHSA-2c8m-p4fq-w9xr --dry-run --json',
+    );
+  });
+
+  test('an id that is no advisory is refused on any bump, before it can reach a fix line', () => {
+    const findings = bumpWindowFindings({
+      version: '31.0.0',
+      changelog: '# Changelog\n\n## 30.0.0 - 2026-01-01\n\n- x\n',
+      today: '2026-11-03',
+      security: 'x; rm -rf /',
+    });
+    expect(findings.map((one) => one.code)).toEqual(['X_CLI_BAD_FLAG']);
   });
 });
 

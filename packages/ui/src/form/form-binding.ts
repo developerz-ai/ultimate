@@ -5,14 +5,10 @@
 // produced in exactly one place — after the caller's `submit` resolves — and the local parse's
 // VALUE is discarded, so a client cannot decide either that a form is valid or what it said.
 
+import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { invalidFieldPathError } from '../errors';
 import { parseFieldPath } from './field-path';
-import {
-  type FormIssue,
-  type FormSchema,
-  issuesFromRejection,
-  issuesFromValidation,
-} from './form-issue';
+import { type FormIssue, issuesFromRejection, issuesFromValidation } from './form-issue';
 import {
   distributeIssues,
   errorOf,
@@ -43,9 +39,10 @@ export interface FormBindingOptions<TValues, TResult> {
   /**
    * The action's `input`. Optional, and a LATENCY optimisation only: the action re-parses on the
    * server on every path, so omitting this changes when the user hears about a bad value, never
-   * whether it is rejected.
+   * whether it is rejected. Any Standard Schema; its OUTPUT is never read, so a browser cannot
+   * choose what the server is asked to store.
    */
-  readonly schema?: FormSchema | undefined;
+  readonly schema?: StandardSchemaV1 | undefined;
   /** Called on every transition — how a reactive shell mirrors the state into a signal. */
   readonly onState?: ((state: FormState<TResult>) => void) | undefined;
   /**

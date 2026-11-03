@@ -80,7 +80,7 @@ than an honest stub.
   generator owns.
 - Leave each handler as the generated stub. Do **not** fill in business logic here.
 - `x db gen "<message>"` for the entities, then `x db migrate`.
-- `bun run check`. The generated shape must be green before anyone builds on it.
+- `bun run verify`. The generated shape must be green before anyone builds on it.
 
 ## Report
 

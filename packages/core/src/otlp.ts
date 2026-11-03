@@ -1,11 +1,9 @@
 // Single responsibility: the pieces both OTLP exporters share — endpoint resolution from the env
-// an operator already sets, header parsing, the OTLP/JSON value encoding, and one POST that never
-// throws. A serialisation, not a vendor (axiom 7), exactly as `metrics-text.ts` is to Prometheus.
+// an operator already sets, header parsing, the OTLP/JSON value encoding, and (from `otlp-post.ts`) one POST that
+// never throws. A serialisation, not a vendor (axiom 7), exactly as `metrics-text.ts` is to Prometheus.
 
 import { assert } from './assert';
-import { renderThrowable } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
-import { logger } from './logger';
 import type { AttributeValue, SpanResource } from './telemetry';
 
 export class OtlpEndpointInvalidError extends UltimateError {
@@ -270,36 +268,5 @@ export function otlpResource(resource: SpanResource): {
 /** The instrumentation scope every signal this package emits belongs to. */
 export const OTLP_SCOPE = Object.freeze({ name: '@ultimat3/core' });
 
-export interface OtlpPostOptions {
-  readonly url: string;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: string;
-  readonly timeoutMs: number;
-  readonly fetch: typeof globalThis.fetch;
-}
-
-/**
- * Never throws and never rejects. Telemetry delivery is not the request: a collector that is down
- * must not become the app's outage, and the alternative — an unhandled rejection from a `void`ed
- * promise — takes the process with it on Bun.
- */
-export async function postOtlp(options: OtlpPostOptions): Promise<void> {
-  try {
-    const response = await options.fetch(options.url, {
-      method: 'POST',
-      headers: { ...options.headers },
-      body: options.body,
-      signal: AbortSignal.timeout(options.timeoutMs),
-    });
-    if (!response.ok) {
-      logger.warn('otlp export rejected', { url: options.url, status: response.status });
-    }
-  } catch (failure) {
-    logger.warn('otlp export failed', {
-      url: options.url,
-      // `renderThrowable`: the read that renders a caught value must not itself throw, or the
-      // export failure this catch exists to swallow escapes as an unhandled rejection.
-      error: renderThrowable(failure),
-    });
-  }
-}
+// Delivery, retry included, is its own module; re-exported so the exporters' one import stays.
+export { OTLP_RETRY_STATUSES, type OtlpPostOptions, postOtlp } from './otlp-post';

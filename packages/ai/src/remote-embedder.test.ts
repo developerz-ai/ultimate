@@ -148,17 +148,30 @@ describe('RemoteEmbedder', () => {
   test('a non-2xx body is read only as far as the detail needs, never whole', async () => {
     const calls: Call[] = [];
     let pulled = 0;
-    const endless = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        pulled += 1;
-        controller.enqueue(new TextEncoder().encode('x'.repeat(1024)));
-      },
-    });
-    const failure = await embedder(calls, () => new Response(endless, { status: 503 }))
+    // One stream per call: a 503 is now retried, and each attempt reads only its detail's prefix.
+    const endless = (): ReadableStream<Uint8Array> =>
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled += 1;
+          controller.enqueue(new TextEncoder().encode('x'.repeat(1024)));
+        },
+      });
+    const failure = await embedder(calls, () => new Response(endless(), { status: 503 }))
       .embed(['a'])
       .catch((error: unknown) => error);
     expect(failure).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE', status: 503 });
     expect(pulled).toBeLessThan(10);
+  });
+
+  test('a 503 is retried inside the deadline: an embedding is a pure read of its input', async () => {
+    const calls: Call[] = [];
+    const vectors = await embedder(calls, (_call, index) =>
+      index === 0
+        ? new Response('', { status: 503 })
+        : Response.json({ data: [{ index: 0, embedding: [3, 4] }] }),
+    ).embed(['a']);
+    expect(calls).toHaveLength(2);
+    expect(vectors).toHaveLength(1);
   });
 
   test('no key names the env var instead of reaching the network', async () => {

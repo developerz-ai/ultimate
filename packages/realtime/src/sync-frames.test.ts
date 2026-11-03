@@ -154,7 +154,7 @@ describe('one sid is one lane, so a drop cannot overtake the add it ends', () =>
  * upgrade URL's `?build=` (what `sync-upgrade.ts` records) and the `hello` frame's `buildId` (the
  * documented one, `HelloFrame`). Until 2026-09-07 only the URL was read: a socket upgraded without
  * `?build=` defaulted to the node's OWN id, so a client that said `hello` with any build at all was
- * deemed current forever — measured on ai-maxxing, a page sending `buildId: "dev"` in every hello
+ * deemed current forever — measured on one adopter, a page sending `buildId: "dev"` in every hello
  * to a node on `46db23f57d6ef969`, and no `update-available` ever came. Either channel works now.
  */
 describe('a hello names the build the client is on', () => {

@@ -3,6 +3,11 @@
 Ultimate has **one blessed path per job**. A contribution that adds a second way to do something
 that already works will be declined — that ambiguity is the tax agents pay.
 
+Something small to start with: issues labelled
+[`good first issue`](https://github.com/developerz-ai/ultimate/labels/good%20first%20issue), each
+naming its file and the failing test to write. Who reviews and merges, and what the maintainer bot
+may decide: [GOVERNANCE.md](GOVERNANCE.md). Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ## 🚀 Setup
 
 ```sh
@@ -31,7 +36,7 @@ directory.
 checklist and no CI-only step.
 
 It **is** `x verify`, run at the repo root: one step list, defined once in
-`packages/cli/src/cmd-verify.ts`, so a contributor and a user see the same steps. A step that has
+`VERIFY_STEP_NAMES` in `packages/cli/src/verify-step.ts`, so a contributor and a user see the same steps. A step that has
 nothing to check here is reported as skipped (`-`), never as passed.
 
 | Step | Fails on |
@@ -95,6 +100,17 @@ needs a reviewer, not a convenience.
 Style: single quotes, semicolons, 2-space indent, 100-column lines, trailing commas. Biome owns
 all of it — do not argue with the formatter, run `bunx biome check --write .`.
 
+A new error code is one command, which writes the registration, its `wiki/Error-Codes.md` row and
+its HTTP status decision together (tier ≤ 4 takes exactly one of `--status`/`--off-socket`, tier 5
+neither). Shipped codes never change:
+
+```sh
+bun run new-error-code X_FOO_BAR --package <pkg> --title '…' --cause '…' --fix '…' (--status <n> | --off-socket)
+```
+
+Docs style: lead with the rule, fragments over sentences, tables for any structure of three rows
+or more, no meta-framing, no trailing summary. Date a load-bearing claim: `As of 2026-11`.
+
 ## 🧪 Tests
 
 Every package ships at least **two tests that would catch a real regression**. `expect(true)` is
@@ -147,7 +163,8 @@ chore(deps): bump biome to 2.4.16
 ```
 
 Types: `feat` `fix` `perf` `refactor` `docs` `test` `chore` `ci`. A `!` after the scope marks a
-breaking change, which for this repo means a minor bump before 1.0 and a note in the changelog.
+breaking change, which for this repo means a major, a `BREAKING —` changelog line and a section in
+`wiki/Upgrading.md` ([cutting a major](docs/architecture/19-cutting-a-major.md)).
 
 Branch from `main`, keep the PR to one change, fill in the checklist in the PR template — including
 the error-code table for any new `X_*` code.

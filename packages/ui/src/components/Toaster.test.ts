@@ -4,7 +4,7 @@
 // element passes every one of them.
 
 import { describe, expect, test } from 'bun:test';
-import { byTag, fire, one, renderNodes, withAttr } from '../jsx-probe-fixture';
+import { byTag, fire, one, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { TOAST_MAX_VISIBLE, type ToastHold } from '../toast/toast-state';
 import { INERT_TOAST_ENV, type ToastStore, toastStore } from '../toast/toast-store';
 import { ToastRegion } from './Toast';

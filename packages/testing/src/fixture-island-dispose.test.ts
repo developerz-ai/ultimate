@@ -14,7 +14,7 @@ import { testName } from './test-types';
 describe(testName('unit', 'the island fixture disposes what it mounted'), () => {
   /**
    * Restoring the globals was the whole of the teardown until 2026-09-07, so an island whose
-   * `mount` started an interval kept ticking after the DOM was gone. Measured in ai-maxxing as
+   * `mount` started an interval kept ticking after the DOM was gone. Measured in one adopter as
    * "Unhandled error between tests: `document is not defined`" — the tick reading a `document`
    * the fixture had already taken back — and as a fetch stub in one file receiving POSTs from
    * another file's island.

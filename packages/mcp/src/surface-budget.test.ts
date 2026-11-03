@@ -74,7 +74,7 @@ describe('measureMcpSurface', () => {
   });
 });
 
-// A catalog at the scale #590 measured (Notificado: 65 actions in 14 resources, 15,173 characters
+// A catalog at the scale #590 measured (one adopter: 65 actions in 14 resources, 15,173 characters
 // of `list_resources` at 22.13 against a 12k budget). Not a copy of that app: names, descriptions
 // of real length, 1–10 params with enums, writes that confirm, and BOTH scope shapes — a resource
 // one token scope covers (`one`) and one split into `:read`/`:write` (`split`) — so every rendering

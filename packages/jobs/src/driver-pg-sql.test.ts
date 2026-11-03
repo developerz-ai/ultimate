@@ -51,4 +51,14 @@ describe('pg queue SQL', () => {
   test('the scheduler leader uses a session advisory lock', () => {
     expect(SQL_TRY_ADVISORY_LOCK).toContain('pg_try_advisory_lock');
   });
+
+  // The Known-Gaps pin for "an org-scoped operator's runs list reads x_jobs with no index on
+  // tenant_id": the day an index leads with it, this fails and sends its author to close the row.
+  test('no x_jobs index leads with tenant_id: an org-scoped runs list scans', () => {
+    const leading = [...SQL_JOBS_TABLE.matchAll(/on x_jobs \(\s*\(?\s*(?:coalesce\()?(\w+)/g)].map(
+      (match) => match[1],
+    );
+    expect(leading.length).toBeGreaterThan(0);
+    expect(leading).not.toContain('tenant_id');
+  });
 });

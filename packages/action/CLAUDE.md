@@ -188,6 +188,9 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   | `rpc` | 22,423 B (+183 B over this branch's HEAD, 22,240 B, wave 2 edits included) |
   | `rpc` + core's `clientFlight` | 30,891 B (+184 B over 30,707 B) |
 
+  `issueRuleFacts` in `wire-issues.ts` adds +296 B to the `rpc` entry (23,752 to 24,048 B,
+  `Bun.build --minify` over a different entry, 2026-11-03): re-measure the table above with it.
+
 - **`sideEffects` is `["./src/error-titles.ts"]`**, never `false` (drops its bare imports): the
   titles ride into every barrel chunk (`problemError` decodes by code), `errors.ts`'s classes do
   not. An http refusal needs no http module: core's decoders take its title off the body and its
@@ -257,6 +260,9 @@ Owns the `action` + `mutator` primitives and five projections. Tier 3. The MCP t
   DENIED attempt is recorded. No audit entity, retention, hash chain or "who" convention. The
   vocabulary matches `@ultimat3/admin`'s by name (tier 5, no edge); admin's `AuditSink` is a known
   duplicate that unifying would need core for.
+- **`invoke` masks `trace.input` with `maskSensitive(def.input, …, REDACTED)` only when `audit: true`**;
+  `registerAction` calls `assertNoSensitiveOutput` on `output`. `wire-issues.ts` and
+  `PROBLEM_SCHEMA` carry `rule` and `params` (the four members stay `required`).
 - **A durable sink writes what `audit-input.ts` allows**: input redacted through core's
   `isRedactedKey` (the table `defineEnv({ secret: true })` extends) plus `isSecret` by value, and
   always JSON-representable (named markers, cycle detection; `toJSON` never called).

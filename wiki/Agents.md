@@ -194,10 +194,18 @@ No new run outcome and no deferred tool. The call is a `tool_result` flagged `is
 
 ```ts
 import { inProcessTool } from '@ultimat3/ai';
-import { UltimateError } from '@ultimat3/core';
+import { defineError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 
 declare function loadDoc(id: string): Promise<{ id: string; body: string } | undefined>;
+
+const KbDocNotFound = defineError<string>({
+  code: 'X_KB_DOC_NOT_FOUND',
+  title: 'no such knowledge-base document',
+  status: 404,
+  cause: (id) => `no knowledge-base document has the id "${id}"`,
+  fix: 'kbList()   # call it first and pass one of the ids it returns',
+});
 
 export const kbRead = inProcessTool({
   name: 'kbRead',
@@ -205,13 +213,7 @@ export const kbRead = inProcessTool({
   input: t.object({ id: t.string }),
   execute: async ({ input }) => {
     const doc = await loadDoc(input.id);
-    if (doc === undefined) {
-      throw new UltimateError({
-        code: 'X_KB_DOC_NOT_FOUND',
-        cause: `no knowledge-base document has the id "${input.id}"`,
-        fix: 'kbList()   # call it first and pass one of the ids it returns',
-      });
-    }
+    if (doc === undefined) throw new KbDocNotFound(input.id);
     return doc;
   },
 });
@@ -858,3 +860,32 @@ Full list: [Error codes](Error-Codes).
 - `idempotencyKey` dedupes the enqueue, never the attempt — every tool an agent may call must be idempotent, and nothing checks it for you.
 
 Source: [`packages/ai/src`](https://github.com/developerz-ai/ultimate/blob/main/packages/ai/src)
+
+## The coding agent building your app: a cold-start check
+
+The rest of this page is `agent()`, an agent inside your app. This section is the other one — the
+coding agent that builds the app — and the check a maintainer runs once per major, with any vendor's
+agent, on a fresh scaffold. Nothing here claims "works with every agent"; the claim is what CI
+tests: `AGENTS.md`'s commands resolve (`scaffold-agents-md.test.ts`), `.mcp.json`'s command answers
+`initialize` and `tools/list`, and `POST /mcp` refuses a request with no token
+(`scripts/scaffold-agent.ts`, in `scaffold-smoke`).
+
+1. `bunx create-ultimate notes-cold && cd notes-cold && bun run setup`, in a shell with no global `x`.
+2. Start the agent in that directory with no other context, and give it exactly this prompt:
+
+   ```text
+   Add a notes feature to this app: a signed-in member can create a note with a title and a body,
+   list their own notes, and delete one. Make the gate green. Read AGENTS.md first.
+   ```
+
+3. Record, per agent and per major:
+
+| Measure | How |
+|---|---|
+| commands before the first green gate | count every shell command the agent ran until `bunx x verify` was green |
+| wrong guesses | a command that does not exist, a bare `x`, a hand-written primitive `bunx x g` would have written, a file path that is not there |
+| files read before the first edit | the agent's own transcript |
+| did it find the tools | whether it read `x.manifest.json`, used `.mcp.json`, or followed `.claude/commands/feature.md` |
+
+Each wrong guess is a defect in what the scaffold says, not in the agent: fix the file that misled
+it. Results stay out of this repository unless they form a vendor-neutral table.

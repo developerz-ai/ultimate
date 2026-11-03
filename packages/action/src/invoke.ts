@@ -16,12 +16,14 @@ import {
   anonymousActor,
   ctxOf,
   isUltimateError,
+  REDACTED,
   runWithContext,
   tryUseContext,
   useContext,
   withChildContext,
   withSpan,
 } from '@ultimat3/core';
+import { maskSensitive } from '@ultimat3/schema';
 import type { AnyAction, AnyActionDef, InvokeOptions } from './action';
 import type { AuditRecord } from './audit';
 import {
@@ -237,7 +239,9 @@ async function perform(
   } catch (denial) {
     // The audit record still names what was attempted — the denial is already decided, so parsing
     // now tells the CALLER nothing, and an unparseable payload is a record with no input.
-    if (def.audit === true) trace.input = await parsedOrNothing(def.input, raw);
+    if (def.audit === true) {
+      trace.input = maskSensitive(def.input, await parsedOrNothing(def.input, raw), REDACTED);
+    }
     throw denial;
   }
   // The ONE place a declared `rateLimit:` is spent, so every surface draws on the same bucket.
@@ -271,7 +275,9 @@ async function perform(
   if (spentEarly) await spend();
 
   const input = await validateInput(def.input, raw, name);
-  trace.input = input;
+  // The audit record's copy, `.sensitive()` fields masked by THIS action's own schema — never a
+  // key table, so a `cardPan` flagged here changes nothing another action records or stores.
+  if (def.audit === true) trace.input = maskSensitive(def.input, input, REDACTED);
   // The one place a row-level rule gets its row. Once per invocation, never per row:
   // that asymmetry is what lets the predicate stay synchronous, so a live query can
   // re-evaluate the same policy per subscriber without a query per change event. An

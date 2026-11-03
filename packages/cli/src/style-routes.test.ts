@@ -73,7 +73,7 @@ describe('surface stylesheets over HTTP', () => {
 
     expect(response.status).toBe(404);
     // A content-hashed URL that misses is never cacheable: a CDN holding this 404 for a minute
-    // pinned the miss after the file appeared (it was `public, s-maxage=60, …` on notificado.co).
+    // pinned the miss after the file appeared (it was `public, s-maxage=60, …` on one adopter).
     expect(response.headers.get('cache-control')).toContain('no-store');
     const body = (await response.json()) as { error?: { code?: string; fix?: string } };
     expect(body.error?.code).toBe('X_ROUTE_NOT_FOUND');

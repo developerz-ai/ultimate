@@ -4,9 +4,9 @@
 // before — a correct helper called with the wrong argument passes every assertion about itself.
 
 import { describe, expect, test } from 'bun:test';
+import { one, type RenderNode, renderNodes, withAttr } from '@ultimat3/core/render-nodes';
 import { Field, type FieldControl } from '../components/Field';
 import { Form } from '../components/Form';
-import { one, type ProbeNode, renderNodes, withAttr } from '../jsx-probe-fixture';
 import type { FormIssue } from './form-issue';
 import { useForm } from './use-form';
 
@@ -25,7 +25,7 @@ const rejected = async (
   return form;
 };
 
-const fieldNodes = (error: string | undefined, into: { control?: FieldControl }): ProbeNode[] =>
+const fieldNodes = (error: string | undefined, into: { control?: FieldControl }): RenderNode[] =>
   renderNodes(Field, {
     label: 'Title',
     error,

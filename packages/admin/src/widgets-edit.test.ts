@@ -3,9 +3,9 @@
 // assertion is on the VALUE the admin would save, not on the string that was typed.
 
 import { describe, expect, test } from 'bun:test';
+import { byComponent, byTag, fire, nodesOf, one, withAttr } from '@ultimat3/core/render-nodes';
 import { registerCatalog, registeredLocales } from '@ultimat3/i18n';
 import type { AdminField } from './fields';
-import { byComponent, byTag, fire, nodesOf, one, withAttr } from './inert-jsx-fixture';
 import type { WidgetContext } from './widget-value';
 
 // `widgets.tsx` is JSX: loaded after `@ultimat3/render/server` installs its `.tsx` loader, never
@@ -58,6 +58,7 @@ function edit(
       ...(control === undefined ? {} : { control: control as never }),
       onInput: (name, next) => emitted.push([name, next]),
     }),
+    { components: 'keep' },
   );
   return { control: nodes, emitted };
 }
@@ -345,7 +346,9 @@ describe('the default branch', () => {
       relation: { entity: 'customers' },
     };
     const picking = (over: Partial<WidgetContext>, value: unknown = 'c_9') =>
-      nodesOf(Widget({ field: field(customer), value, ctx: { ...ctx, ...over }, mode: 'edit' }));
+      nodesOf(Widget({ field: field(customer), value, ctx: { ...ctx, ...over }, mode: 'edit' }), {
+        components: 'keep',
+      });
 
     test('a small target is a <select> of its rows by label, with an empty first option', () => {
       const nodes = picking({

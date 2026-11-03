@@ -2,6 +2,13 @@
 
 The `x` binary. One char during dev, one command per job, `--json` on every one of them.
 
+`bun add @ultimat3/cli` · guide: [CLI Reference](https://github.com/developerz-ai/ultimate/wiki/CLI-Reference)
+
+```sh
+bunx create-ultimate myapp && cd myapp && bun run setup
+bun run verify   # x verify, the gate: green means shippable
+```
+
 ## What it owns
 
 Commands and the `x verify` step count, `As of 2026-08`:
@@ -10,28 +17,29 @@ Commands and the `x verify` step count, `As of 2026-08`:
 |---|---|---|
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
+| `x stop` | ends this checkout's `x dev`: the pid `.x/dev.lock` names, nothing else | returns once the next `x dev` can boot; `X_DEV_STOP_TIMEOUT` past `--timeout` |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
 | `x build --target prebuilt` | the store a container boots from: island chunks, compiled stylesheets | a `RUN` line in the image build, never run by hand |
-| `x verify` | **the gate** | 20 named steps, each with pass/fail + duration |
+| `x verify` | **the gate** | 20 named steps, each with pass/fail + duration; `budgets` runs `x build --target static` first when its stats are missing or older than the source |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
 | `x mcp serve` | `@ultimat3/mcp`'s 18 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x upgrade` | one major per run: exact pins, the Bun floor, `bun install`, the gate | the `--json` report names the wiki section, the guards that differ and what the gate still says ([fields](../../wiki/CLI-Reference.md#x-upgrade)); `bunx @ultimat3/cli@latest upgrade` in an app that predates it; pins with no `app.config.ts` still hop, and `data.proof` says what checked them |
 | `x doctor` | environment, ports, drift, PWA prerequisites, `APP_URL` | every finding carries a fix command; probes the port `x dev` binds ([which one](../../wiki/CLI-Reference.md#x-doctor)); the framework's deploy secrets only where the machine names `staging`/`production` |
-| `x deploy` | container deploy plan | compose or helm; zero platform primitives. Helm carries `drain.*`, `drain.workerRetireMs` as `roles.worker.retireSeconds`, and `jobs.maxInFlight` as the worker's `targetAverageValue` |
+| `x deploy` | container deploy plan | compose or helm; zero platform primitives. Compose reads `.env.production` first (`X_DEPLOY_ENV_MISSING`). Helm carries `drain.*`, `drain.workerRetireMs` as `roles.worker.retireSeconds`, and `jobs.maxInFlight` as the worker's `targetAverageValue` |
 | `x deploy verify` | production serves this build, holds it, and a worker of it claims every queue | samples `/readyz` through the load balancer, grades `x_job_workers` when `DATABASE_URL` is set; no platform API |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
 | `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `show <name>`, straight off the registries |
 | `x tasks list\|show` | cron tasks | timezone and next run, off `registeredTasks()` |
 | `x jobs list\|show\|retry\|cancel\|delete\|promote\|pause\|resume` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`; `list --json` pages as `rows`/`nextCursor`/`hasMore`; `drain` is planned (`X_NOT_IMPLEMENTED`) |
 | `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
-| `x env check\|example` | the typed environment `envSchema` declares | and the `.env.example` rendered from it, plus the framework's deploy-required secrets (`ULTIMATE_CURSOR_SECRET`, `STORAGE_SIGNING_SECRET` unless `S3_ENDPOINT` is set), which `check` asks for wherever the boot refuses them — outside `development`/`test`, or with no environment named |
+| `x env check\|example\|init` | the typed environment `envSchema` declares; `init --production` writes `.env.production` for a compose deploy, secrets generated, never printed | and the `.env.example` rendered from it, plus the framework's deploy-required secrets (`ULTIMATE_CURSOR_SECRET`, `STORAGE_SIGNING_SECRET` unless `S3_ENDPOINT` is set), which `check` asks for wherever the boot refuses them — outside `development`/`test`, or with no environment named |
 | `x auth seal-mfa` | one-shot auth maintenance | seals every `x_users.mfa_secret` still in the clear; idempotent, `{ sealed, alreadySealed, skipped }` |
 | `x secrets show\|init\|edit\|set\|rotate` | the committed encrypted secrets | decrypted into the `envSchema` variables of the same names |
 | `x policy list\|explain <subject>` | which clause decided a permission, and why | five packages print `x policy explain` as a denial's `fix:` |
 | `x i18n check\|add\|sync` | catalogs: gaps, a new locale, key sync | all three of i18n's own error fixes name it |
 | `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one |
-| `x docs "<question>"` | the framework docs, offline | answered from the installed packages, never the network |
+| `x docs "<question>"` | the framework docs and the wiki, offline | answered from the installed packages and the `wiki/` this tarball ships (`prepack`: `scripts/pack-cli-wiki.ts`), never the network; `x docs Upgrading#<anchor>` prints one whole section |
 | `x fix boundary <file>` | the minimal cut for a crossed surface boundary | prints the plan and the `git mv`; never rewrites a file |
 
 Everything in [CLI reference](../../wiki/CLI-Reference.md)'s planned table is also in the registry
@@ -145,7 +153,7 @@ walked and read once however many guards ask, and `compiled(path)` is a styleshe
 compiles it. Nothing registers a guard — the directory is the registration — and what a guard returns
 is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUARD_FAILED`,
 `X_GUARD_FINDING_INVALID`). `x g guard <name>` scaffolds one with its test — the shipped guard of
-that name where there is one (`x new` writes all seventeen), the blank template otherwise — and
+that name where there is one (`x new` writes all nineteen), the blank template otherwise — and
 `x doctor` lists the shipped ones an app does not hold.
 
 ## Layout
@@ -190,6 +198,8 @@ that name where there is one (`x new` writes all seventeen), the blank template 
 | `verify-tests.ts` | one `bun test` invocation per test type |
 | `workspace-checks.ts` | file-size ceiling and package contract files |
 | `drift.ts` `budgets.ts` | the checks `x verify` composes |
+| `budgets-freshness.ts` `verify-budgets-build.ts` | whether `budgets` may read the stats on disk, and the build it runs when not |
+| `cmd-stop.ts` | `x stop`: SIGTERM to the lock's pid, the wait, the Windows lock clear |
 
 The CLI describes an app by **loading** it, never by parsing it: `action()`, `entity()`,
 `job()` and `defineRoute()` register themselves, and `x manifest`, `x routes` and `x verify`

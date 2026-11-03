@@ -40,6 +40,8 @@ services:
 function appRoot(config: string, compose?: string): string {
   const dir = made(mkdtempSync(join(tmpdir(), 'x-deploy-rollout-')));
   writeFileSync(join(dir, 'app.config.ts'), `export const config = ${config};\n`);
+  // The env file the deploy's pre-flight reads first (`cmd-deploy-preflight.ts`).
+  writeFileSync(join(dir, '.env.production'), 'ULTIMATE_ENV=production\n');
   if (compose !== undefined) {
     mkdirSync(join(dir, 'docker'), { recursive: true });
     writeFileSync(join(dir, 'docker', 'docker-compose.prod.yml'), compose);
@@ -192,7 +194,9 @@ describe('unit · recipe-enabled replicator deployment stays singleton-safe', ()
     expect(result.findings?.[0]?.cause).toBe('role "replicator" step exited 17');
     expect(result.findings?.[0]?.fix).toContain('IMAGE=repo/app:2 docker compose');
     expect(result.findings?.[0]?.fix).toContain('up -d replicator');
-    expect(ran.at(-1)?.slice(-3)).toEqual(['up', '-d', 'replicator']);
+    // The failed step, then the read of its log for the finding.
+    expect(ran.at(-2)?.slice(-3)).toEqual(['up', '-d', 'replicator']);
+    expect(ran.at(-1)?.slice(-2)).toEqual(['50', 'replicator']);
     expect(ran.some((command) => command.at(-1) === 'backfill')).toBe(false);
   });
 });

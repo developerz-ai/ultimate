@@ -60,7 +60,7 @@ export const TIER_4_ERROR_STATUS = {
   // unclassified failure, and `toProblem` blanks the cause of one of those outside dev
   // (`isUnclassifiedFailure`): a 34-row catalog over the cap took a page down with a problem
   // document that said "the details are in this process's logs" about an error whose whole
-  // value is the sentence naming the prop and its bytes. Measured on ai-maxxing, 2026-09-05.
+  // value is the sentence naming the prop and its bytes. Measured on one adopter's app, 2026-09-05.
   X_ISLAND_PROPS_INVALID: 500,
   // A loader answered `withStatus` with a 3xx, or a status outside 200–599. Raised INSIDE the
   // request that ran the loader, so it needs a row for the same reason the line above does: an

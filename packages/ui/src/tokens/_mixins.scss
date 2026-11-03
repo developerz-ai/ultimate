@@ -38,7 +38,7 @@
 /// and only takes it out of flow. After a long run of inline text the static position is already
 /// past the viewport edge; the box then escapes the truncating ancestor's `overflow: hidden`,
 /// because that ancestor is not positioned and so is not its containing block, and its right edge
-/// extends the scrollable area. Measured in ai-maxxing: `Link`'s `.hint` ("opens in a new tab")
+/// extends the scrollable area. Measured in one adopter: `Link`'s `.hint` ("opens in a new tab")
 /// after truncated titles put seven boxes at right edges of 753–1119px, making the document 1119px
 /// wide in a 390px viewport and 1480px wide in a 1440px one — a whole page scrolling sideways for
 /// text no sighted user sees.

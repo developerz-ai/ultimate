@@ -8,8 +8,8 @@ infer from the code.
 entry's `expectedRed` in [`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts) is the
 authoritative pin inventory; read it rather than keeping a second list here. An empty table means
 every step must stay green. Any unpinned failure is a regression, not a reason to add a pin.
-`bun run ../../scripts/reference-app-gate.ts` re-derives the verdict (it builds first, as
-`bun run check` does).
+`bun run ../../scripts/reference-app-gate.ts` re-derives the verdict (it builds first, so
+`budgets` reads fresh stats).
 
 Pins are per-app: `examples/dummy` has its own table, and neither app's pins excuse the other's
 red step. If an existing pinned step turns green, remove its pin in the same change
@@ -62,9 +62,9 @@ or a line in `docs/gotchas.md` — **never a bare `TODO`**.
 |---|---|---|
 | fast | `bunx x test unit --filter <text>` | after each edit |
 | scoped | `bunx x test <type>` | before you believe a slice works |
-| **the gate** | `bun run check` (= `x verify`, 20 steps) | once, before push, in the background |
+| **the gate** | `bun run verify` (= `x verify`, 20 steps) | once, before push, in the background |
 
-**Do NOT reflexively run `bun run check`.** It is the pre-push gate, not the edit loop.
+**Do NOT reflexively run `bun run verify`.** It is the pre-push gate, not the edit loop.
 
 ## Commands
 
@@ -92,8 +92,8 @@ if the verb is missing, add `scripts/<resource>/<verb>.ts` rather than improvisi
   primitive**, never a ninth kind of thing.
 - `site/` is 0kb JS, anonymous, and **may not import `app/`**. `shared/` is a leaf.
 - Only `repo.ts` touches the database. A route importing `db` is a build error.
-- Never `throw new Error` — subclass `UltimateError` with a stable `X_*` code, a cause, and a
-  **runnable** `fix:`. "Check your configuration" is not a fix.
+- Never `throw new Error` — declare the code with `defineError` (`@ultimat3/core`): a stable `X_*`
+  code, a status, a cause, and a **runnable** `fix:`. "Check your configuration" is not a fix.
 - No `any`. No default exports. No raw colours. No hardcoded user-facing strings.
 - Money is `{ minor, currency }`. Never a float, never a bare number.
 - No date formatted without an explicit IANA `timeZone`. There is no ambient default.

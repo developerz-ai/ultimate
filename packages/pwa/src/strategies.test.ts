@@ -38,7 +38,7 @@ function fakeEnv(seed: Map<string, Response>, network: () => Promise<Response>):
 
 describe('a page rendered for someone', () => {
   // A per-member page kept for offline answered the PREVIOUS member's data on a shared device after
-  // sign-out (notificado.co, /casos under networkFirst). Personal means never cached.
+  // sign-out (one adopter, /casos under networkFirst). Personal means never cached.
   test.each<RenderMode>(['static', 'isr', 'ssr', 'stream'])(
     'is network-only whatever its %s render mode says',
     (mode) => {
@@ -60,7 +60,7 @@ describe('render mode → strategy', () => {
   // Every rule is a DOCUMENT, and a document online is the network's. `static` was `cache-first`
   // and `isr`/`stream` `stale-while-revalidate`, so an online navigation got the HTML the old
   // worker held — the previous deploy, linking the previous deploy's hashed assets — until the
-  // visitor pressed Shift+F5 (22.3.1, notificado.co).
+  // visitor pressed Shift+F5 (22.3.1, one adopter).
   test.each<[RenderMode, StrategyName]>([
     ['static', 'network-first'],
     ['isr', 'network-first'],

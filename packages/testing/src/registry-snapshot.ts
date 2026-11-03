@@ -139,7 +139,7 @@ function restoreCatalogs(snapshot: readonly (readonly [Locale, Catalog])[]): voi
  * declared, plus what this file inherited. Since 22.7 a worker runs many files in one module
  * registry, so a module a file imports evaluates ONCE — a later file that resets the permission
  * set at module scope would otherwise hand every file after it a registry missing declarations no
- * cached module will ever make again (measured on notificado.co: "admin:read is not in the
+ * cached module will ever make again (measured on one adopter's app: "admin:read is not in the
  * permission set (8 known)"). Newer wins on a conflict, so a file's own redefinition still stands
  * for that file.
  */

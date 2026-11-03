@@ -2,6 +2,8 @@
 
 Four tiers. **One invalidation graph, not three.**
 
+`bun add @ultimat3/cache` · guide: [Caching And Invalidation](https://github.com/developerz-ai/ultimate/wiki/Caching-And-Invalidation)
+
 ```ts
 cache: { invalidates: [tag.post, tag.feed] }
 ```

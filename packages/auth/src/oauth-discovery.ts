@@ -9,6 +9,7 @@ import {
   renderFixShellArg,
   renderThrowable,
 } from '@ultimat3/core';
+import { outboundResponse } from '@ultimat3/core/outbound';
 import { isRecord } from './json';
 import type { OAuthProvider, TokenEndpointAuth } from './oauth';
 import { oauthExchangeFailed } from './oauth-errors';
@@ -71,7 +72,9 @@ export async function discoverOAuthProvider(
   // `renderFixLiteral` is the wrong tool for a command, because its double quotes leave `$(…)`
   // live.
   const target = renderFixShellArg(url, '<issuer>/.well-known/openid-configuration');
-  const doFetch: OAuthFetch = input.fetch ?? ((target, init) => globalThis.fetch(target, init));
+  const doFetch: OAuthFetch =
+    input.fetch ??
+    ((target, init) => globalThis.fetch(target, { ...init, signal: init.signal ?? null }));
   // Screened OUTSIDE the try below, deliberately: `AbortSignal.timeout(NaN)` throws, and the
   // catch around this fetch renders every throw as a provider failure — so a typo in the app's
   // own config read as the identity provider being unreachable.
@@ -84,11 +87,19 @@ export async function discoverOAuthProvider(
 
   let response: Response;
   try {
-    response = await doFetch(url, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    // Through core's `outbound()`: `timeoutMs` bounds the whole call, the ambient request's signal
+    // ends it, a GET's 5xx is retried inside that bound (a POST never is), a 3xx is never followed.
+    response = await outboundResponse(
+      {
+        url: url,
+        vendor: input.id,
+        dial: 'named',
+        deadlineMs: timeoutMs,
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      },
+      { fetch: doFetch },
+    );
   } catch (error) {
     throw oauthExchangeFailed({
       provider: input.id,

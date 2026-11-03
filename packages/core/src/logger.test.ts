@@ -360,7 +360,7 @@ describe('logger · the default writer', () => {
  * `logger` at the foot of `logger.ts` is `structuredLogger()` at MODULE INIT, and `envLevel()` read a
  * bare `process.env['LOG_LEVEL']`. `@ultimat3/core`'s barrel is what every other package imports,
  * `@ultimat3/realtime`'s `channel.ts` calls `logger.warn`, and so the shaker keeps `logger` in the
- * chunk of any island that reaches a live subscription. Measured on ai-maxxing's session console
+ * chunk of any island that reaches a live subscription. Measured on one adopter's session console
  * island: the chunk threw `ReferenceError: process is not defined` at evaluation, the wrapper
  * rendered `data-x-failed="process is not defined"`, and the island never mounted.
  *

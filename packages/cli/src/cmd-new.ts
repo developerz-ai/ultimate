@@ -102,6 +102,21 @@ export async function initRepository(runner: Runner, dir: string): Promise<Repos
   return { initialized: true, committed: true, problem: null };
 }
 
+/** git's refusal of a commit on a box with no `user.name` / `user.email` configured. */
+const NO_IDENTITY = /Author identity unknown|Please tell me who you are|empty ident/i;
+
+/**
+ * The commands that finish what `initRepository` could not: no `git init` once `.git` exists, and
+ * the identity first when that is what refused, or the pasted commit fails the same way.
+ */
+export function repositoryFix(git: RepositoryInit): string {
+  const commit = "git add -A && git commit -m 'x new'";
+  if (!git.initialized) return `git init && ${commit}`;
+  return NO_IDENTITY.test(git.problem ?? '')
+    ? `git config user.name '<your name>' && git config user.email '<you@example.com>' && ${commit}`
+    : commit;
+}
+
 /** `path` relative to `cwd` when it lies under it, else absolute — never a `../../` walk. */
 const displayPath = (cwd: string, path: string): string => {
   const rel = relative(cwd, path);
@@ -281,12 +296,14 @@ export const newCommand: CliCommand = {
           : await initRepository(ctx.runner, target);
     const lines = [msg('cli.new.wrote', { count: written.files.length, dir: target })];
     if (git.problem !== null && git.problem !== SKIPPED && git !== PRE_EXISTING) {
-      lines.push(msg('cli.new.noRepository', { problem: git.problem }));
+      lines.push(
+        msg(git.initialized ? 'cli.new.uncommitted' : 'cli.new.noRepository', {
+          problem: git.problem,
+        }),
+      );
       // Raw, unlike the two prose lines around it: this one is an instruction to run verbatim, and
       // a translated command is a broken one (`packages/cli/CLAUDE.md`).
-      lines.push(
-        `  run: cd ${quoteArg(target)} && git init && git add -A && git commit -m 'x new'`,
-      );
+      lines.push(`  run: cd ${quoteArg(target)} && ${repositoryFix(git)}`);
     }
     return {
       ok: true,

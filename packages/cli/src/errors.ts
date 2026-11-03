@@ -146,7 +146,7 @@ export class NotInAppError extends UltimateError {
           ? `cd ${quoteArg(first)} && x ${quoteArg(input.command)} --json`
           : input.adopter === true
             ? `x new scratch-app --dry-run --json   # its file list carries app.config.ts; write one at the app root, then re-run: x ${quoteArg(input.command)} --json`
-            : 'x new myapp && cd myapp',
+            : 'bunx create-ultimate myapp && cd myapp',
     });
   }
 }

@@ -18,6 +18,7 @@
 // a fix line pastes, which is what `fix-shell-arg` asks for.
 import { quoteArg } from '../packages/cli/src/shell-quote';
 import { parseScriptArgs } from './lib/args';
+import { servingTag } from './lib/dist-tag';
 import type { Finding, ScriptResult } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
@@ -55,6 +56,14 @@ export interface PublishState extends AuditTarget {
   readonly kind: PublishStateKind;
   /** `dist-tags.latest`, when the registry answered. */
   readonly latest?: string;
+  /**
+   * The dist-tag that must name the stamped version, when it is not `latest`: `maint-<major>` for
+   * a tree on an older major (wiki/Stability.md), `next` for a prerelease. `served` is what it names.
+   */
+  readonly tag?: string;
+  readonly served?: string;
+  /** Every `maint-*` tag the packument carries, and whether its version is attested. */
+  readonly maint?: readonly MaintTag[];
   /** `_npmUser` on the stamped version — `GitHub Actions` for a workflow publish. */
   readonly publishedBy?: string;
   /** Only for `unreachable`: how the request failed, in words a reader can act on. */
@@ -123,13 +132,19 @@ export function ordinalLabel(n: number): string {
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 }
 
+export interface MaintTag {
+  readonly tag: string;
+  readonly version: string;
+  readonly attested: boolean;
+}
+
 interface VersionRecord {
   readonly dist?: { readonly attestations?: unknown };
   readonly _npmUser?: { readonly name?: unknown } | string;
 }
 
 interface Packument {
-  readonly 'dist-tags'?: { readonly latest?: unknown };
+  readonly 'dist-tags'?: Readonly<Record<string, unknown>>;
   readonly versions?: Readonly<Record<string, VersionRecord>>;
 }
 
@@ -186,21 +201,36 @@ export function classify(
   const base = { name: target.name, version: target.version, ...seat };
   if (found.kind === 'absent') return { ...base, kind: 'absent' };
   if (found.kind === 'unreachable') return { ...base, kind: 'unreachable', detail: found.detail };
-  const tag = found.packument['dist-tags']?.latest;
+  const tags = found.packument['dist-tags'] ?? {};
+  const tag = tags['latest'];
   const latest = typeof tag === 'string' ? tag : 'none';
   const record = found.packument.versions?.[target.version];
   if (record === undefined) return { ...base, kind: 'behind', latest };
   const publishedBy = publisherOf(record);
-  const attested = record.dist?.attestations !== undefined && record.dist.attestations !== null;
+  const expected = servingTag(target.version, latest);
+  const served = tags[expected];
+  const maint = Object.entries(tags).flatMap(([name, version]) =>
+    /^maint-\d+$/.test(name) && typeof version === 'string'
+      ? [{ tag: name, version, attested: isAttested(found.packument.versions?.[version]) }]
+      : [],
+  );
   return {
     ...base,
-    kind: attested ? 'ok' : 'unattested',
+    kind: isAttested(record) ? 'ok' : 'unattested',
     latest,
+    ...(expected === 'latest'
+      ? {}
+      : { tag: expected, ...(typeof served === 'string' ? { served } : {}) }),
+    ...(maint.length === 0 ? {} : { maint }),
     ...(publishedBy === undefined ? {} : { publishedBy }),
   };
 }
 
-const defaultFetch: RegistryFetch = (url, init) => fetch(url, init);
+const isAttested = (record: VersionRecord | undefined): boolean =>
+  record?.dist?.attestations !== undefined && record.dist.attestations !== null;
+
+/** The one real fetch every registry reader defaults to; tests inject their own. */
+export const defaultFetch: RegistryFetch = (url, init) => fetch(url, init);
 
 /** Sequential on purpose: 30 small GETs, and a burst is what npm rate-limits. */
 export async function auditRegistry(
@@ -270,14 +300,58 @@ const unreachableFinding = (state: PublishState): Finding => ({
  * `Finding | undefined`, so nothing downstream changes shape.
  */
 const latestSplitFinding = (state: PublishState): Finding | undefined =>
-  state.latest === state.version
+  state.tag !== undefined
+    ? servingTagFinding(state, state.tag)
+    : state.latest === state.version
+      ? undefined
+      : {
+          code: 'X_REGISTRY_LATEST_DRIFT',
+          at: state.name,
+          cause: `${state.name}@${state.version} is on the registry and attested, but npm's default latest tag is ${state.latest ?? 'none'} — so npm install and bunx create-ultimate resolve ${state.latest ?? 'none'}, not the version this tree stamps`,
+          fix: `npm dist-tag add ${quoteArg(state.name)}@${quoteArg(state.version)} latest   # when ${state.latest ?? 'none'} is the real release instead, bump the tree: bun run scripts/release.ts --bump patch`,
+        };
+
+/** Whether the audited tag names the stamped version — two public version strings, no secret. */
+const servedStamped = ({ served, version }: PublishState): boolean => served === version;
+
+/** The tree is on an older major (or a prerelease): the tag that must name it is not `latest`. */
+const servingTagFinding = (state: PublishState, tag: string): Finding | undefined =>
+  servedStamped(state)
     ? undefined
     : {
         code: 'X_REGISTRY_LATEST_DRIFT',
         at: state.name,
-        cause: `${state.name}@${state.version} is on the registry and attested, but npm's default latest tag is ${state.latest ?? 'none'} — so npm install and bunx create-ultimate resolve ${state.latest ?? 'none'}, not the version this tree stamps`,
-        fix: `npm dist-tag add ${quoteArg(state.name)}@${quoteArg(state.version)} latest   # when ${state.latest ?? 'none'} is the real release instead, bump the tree: bun run scripts/release.ts --bump patch`,
+        cause: `${state.name}@${state.version} is on the registry and attested, but its dist-tag ${tag} names ${state.served ?? 'nothing'} — so npm install ${state.name}@${tag} resolves something other than the version this tree stamps`,
+        fix: `npm dist-tag add ${quoteArg(state.name)}@${quoteArg(state.version)} ${quoteArg(tag)}   # wiki/Stability.md: a release of an older major publishes under maint-MAJOR, never latest`,
       };
+
+/**
+ * Each `maint-<major>` tag beside the stamped version: it names a release of that major, and one
+ * the workflow published. A maintenance line is a promise to the users still on it.
+ */
+const maintFindings = (state: PublishState): readonly Finding[] =>
+  (state.maint ?? []).flatMap((one): readonly Finding[] => {
+    const major = one.tag.slice('maint-'.length);
+    if (one.version.split('.')[0] !== major) {
+      return [
+        {
+          code: 'X_REGISTRY_LATEST_DRIFT',
+          at: state.name,
+          cause: `${state.name}'s dist-tag ${one.tag} names ${one.version}, which is not a ${major}.x release`,
+          fix: `npm view ${quoteArg(`${state.name}@${major}`)} version --json   # the newest ${major}.x is the last entry: npm dist-tag add it as ${one.tag}`,
+        },
+      ];
+    }
+    if (one.attested) return [];
+    return [
+      {
+        code: 'X_REGISTRY_UNATTESTED',
+        at: state.name,
+        cause: `${state.name}@${one.version}, which ${one.tag} names, has no dist.attestations — the maintenance line's users install a tarball nothing proves was built from this repo`,
+        fix: `bun run scripts/trust-publishers.ts --json   # then release the next ${major}.x patch through the workflow from release/${major}.x`,
+      },
+    ];
+  });
 
 /** One builder per kind; its `undefined` IS the verdict that the shape is clean, not a hole. */
 type FindingBuilder = (state: PublishState) => Finding | undefined;
@@ -294,7 +368,10 @@ export const findingFor = (state: PublishState): Finding | undefined =>
   FINDINGS[state.kind]?.(state);
 
 export const registryFindings = (states: readonly PublishState[]): readonly Finding[] =>
-  states.map(findingFor).filter((finding): finding is Finding => finding !== undefined);
+  states.flatMap((state) => {
+    const finding = findingFor(state);
+    return [...(finding === undefined ? [] : [finding]), ...maintFindings(state)];
+  });
 
 /**
  * Every state told whether its stamped version's tag exists. One probe per DISTINCT version: the

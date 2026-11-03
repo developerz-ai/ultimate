@@ -3,6 +3,15 @@
 The MCP surface. An agent that can reach this package needs no framework documentation — it
 asks instead of guessing.
 
+`bun add @ultimat3/mcp` · guide: [MCP And AI](https://github.com/developerz-ai/ultimate/wiki/MCP-And-AI)
+
+```ts
+import { defineAppMcp } from '@ultimat3/mcp';
+
+// every action declaring `mcp: { expose: true }` becomes a tool, under its own policy
+defineAppMcp({ include: 'exposed' });
+```
+
 ## The dev server: `x mcp serve`
 
 | Tool | Scope | Answers |
@@ -135,7 +144,9 @@ in its summary). The http pipeline does not pre-judge the route (`auth: 'public'
 and decides per tool through the policy every other surface evaluates. `expose: true` with nothing
 to mount — no file exports `mcp`, or the export was built without `resolveToken` and so carries no
 `route` — logs `X_MCP_APP_UNMOUNTED` once, with the file to write; `expose: false` mounts nothing
-and says nothing.
+and says nothing. `x new` writes that file, so a new app boots `app mcp mounted`: `apps/web/mcp.ts`
+over its `@<app>/mcp` catalog, with `resolveToken` taking an `@ultimat3/auth` API key everywhere and
+`dev-agent.<role>` under `x dev` alone — and a 401 for anything else.
 
 **Several endpoints, one per population (Unreleased).** `mcp` may be a non-empty array of
 `defineAppMcp` values: every endpoint mounts at its own `defineAppMcp({ path })`; endpoint #0 owns

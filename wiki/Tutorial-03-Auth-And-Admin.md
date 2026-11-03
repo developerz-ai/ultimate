@@ -2,7 +2,7 @@
 
 Authentication produces one thing: an `Actor`. Nothing downstream authorizes on a session row, a user row or an api key — HTTP, the typed client, jobs, live queries and MCP all read the same actor and hand it to the same `policy`. One authz system, never two.
 
-`As of 2026-08`. Every output on this page was executed against a `create-ultimate@1.1.0` app with the [tutorial 2](Tutorial-02-First-Feature) `todo` slice in place.
+`As of 2026-11-03`. Every command and every output on this page was re-run in the app tutorials 1 and 2 leave — the example `post` slice and the `todo` slice — built from this tree's packages (`scripts/scaffold-smoke-overrides.ts`). The session flow ran against a real Postgres; the admin routes were requested from `x dev`. The reference app excerpt under [Detail pages](#detail-pages-actions-batches) is quoted from `examples/dummy`, not run.
 
 Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutorial-02-First-Feature) · **3** · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 
@@ -14,43 +14,66 @@ Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutori
 | authorization | `@ultimat3/policy` | permissions, roles, `can()` predicates — the only evaluator |
 | operations UI | `@ultimat3/admin` | the admin app's screens, the `/_x` dev panels |
 
-`@ultimat3/auth` and `@ultimat3/admin` are **not** scaffold dependencies. Add them when you need them:
-
-```bash
-bun add @ultimat3/auth@1.1.0 @ultimat3/admin@1.1.0
-```
-
-Pin the exact version. Every `@ultimat3/*` package releases in lockstep and a mixed-version install is a combination nobody tested.
+`@ultimat3/auth` and `@ultimat3/admin` are scaffold dependencies: `x new` lists both in the root `package.json` at the version it was released with, beside every other `@ultimat3/*` package. Nothing to add. Every `@ultimat3/*` package releases in lockstep, and a mixed-version install is a combination nobody tested.
 
 ## Roles first — they cost one file
 
-`x new` writes no role map, so `x policy list` reports `0 role(s)` and every actor in the matrix holds nothing. One leaf module both surfaces already import fixes it:
+`x new` writes the role map, `apps/web/shared/roles.ts`: `member` and `admin`, with `admin` inheriting `member`. Each `x g resource` adds its grants there — after tutorial 2, beside the example `post` slice's:
 
 ```ts
-// apps/web/shared/roles.ts
+// apps/web/shared/roles.ts — the roles, after `x g resource todo`
 import { defineRoles } from '@ultimat3/policy';
 
 export const roles = defineRoles({
-  reader: { description: 'Reads the org’s todos.', grants: ['todo:read', 'dashboard:read'] },
-  member: { description: 'Writes todos.',          grants: ['todo:write'], inherits: ['reader'] },
-  admin:  { description: 'Runs the workspace.',    grants: ['admin:read'], inherits: ['member'] },
+  member: {
+    description: 'Signed in. Reads the app surface.',
+    grants: ['dashboard:read', 'post:read', 'todo:read'],
+  },
+  admin: {
+    description: 'Runs the app: the /admin surface, plus everything a member may do.',
+    grants: ['admin:read', 'admin:write', 'admin:destroy', 'job:read', 'audit:read',
+      'post:write', 'posts:read', 'posts:write', 'posts:delete',
+      'todo:write', 'todos:read', 'todos:write', 'todos:delete'],
+    inherits: ['member'],
+  },
 });
 ```
 
-Roles are sugar. Everything expands to a flat permission set before any policy runs, so a rule never reasons about the hierarchy, and a cycle is caught once at expansion. `defineRoles()` replaces the map wholesale — app state, called exactly once.
+Roles are sugar. Everything expands to a flat permission set before any policy runs, so a rule never reasons about the hierarchy, and a cycle is caught once at expansion. `defineRoles()` merges into one map and refuses a role two modules define differently (`X_ROLE_REDEFINED`) — keep every role in this one file. `todo:*` is the policy's permission; `todos:*` is the table's, which the [admin](#the-admin-surface) asks beside its own `admin:*`.
 
 ```bash
 bunx x policy list
 ```
 
 ```text
-  permission  roles                actions                 queries
-  todo:read   admin,member,reader  -                       todoList
-  todo:write  admin,member         archiveTodo,createTodo  -
-✓ 2 permission(s), 3 role(s), 2 enforced by a declaration
+  permission         roles         actions                 queries
+  admin:destroy      admin         -                       -
+  admin:impersonate  -             -                       -
+  admin:read         admin         -                       -
+  admin:write        admin         -                       -
+  audit:read         admin         -                       -
+  dashboard:read     admin,member  -                       -
+  job:delete         -             -                       -
+  job:manage         -             -                       -
+  job:read           admin         -                       -
+  job:write          -             -                       -
+  post:read          admin,member  -                       postList
+  post:write         admin         archivePost,createPost  -
+  posts:delete       admin         -                       -
+  posts:read         admin         -                       -
+  posts:write        admin         -                       -
+  todo:read          admin,member  -                       todoList
+  todo:write         admin         archiveTodo,createTodo  -
+  todos:delete       admin         -                       -
+  todos:read         admin         -                       -
+  todos:write        admin         -                       -
+  16 permission(s) no action or query enforces:
+    admin:destroy
+    …
+✓ 20 permission(s), 2 role(s), 4 enforced by a declaration
 ```
 
-The `actions` and `queries` columns are the reason to run this: a permission enforced by **nothing** is a grant that does nothing, and the table says so.
+The `actions` and `queries` columns are the reason to run this: a permission enforced by **no action or query** is listed under the table. Here those are the admin's and the jobs dashboard's, which their own screens enforce — for a permission of your own, the list is a grant that does nothing.
 
 ## The denial matrix, before you ship
 
@@ -63,12 +86,11 @@ bunx x policy explain todo:write
   actor      verdict  deciding    reason
   anonymous  deny     todo:write  no actor for todo:write
   admin      deny     todo:write  todo:write predicate returned false
-  member     deny     todo:write  todo:write predicate returned false
-  reader     deny     todo:write  actor lacks todo:write
+  member     deny     todo:write  actor lacks todo:write
     evaluated with no request input and no row — a rule reading either decides again on the real request
   action createTodo — policy todo:write
   …
-✓ todo:write — allowed for 0 of 8 actor evaluation(s)
+✓ todo:write — allowed for 0 of 6 actor evaluation(s)
 ```
 
 Read the `reason` column, not the verdict:
@@ -83,40 +105,45 @@ Read the `reason` column, not the verdict:
 
 ## Sessions
 
-```ts
-// apps/web/shared/auth.ts
-import { defineAuth, postgresAuthAdapter } from '@ultimat3/auth';
+`x new` writes the app's one `Auth`, built on first use because `defineAuth` reads the database and the lockout limiter the boot installs:
 
-export const auth = defineAuth({
-  adapter: postgresAuthAdapter(),      // Postgres via @ultimat3/db; memoryAuthAdapter() for tests
-  session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
-  password: { minLength: 12 },
-});
+```ts
+// apps/web/app/auth/auth.ts, as `x new` writes it
+import { type Auth, defineAuth, postgresAuthAdapter } from '@ultimat3/auth';
+
+let built: Auth | undefined;
+
+export const appAuth = (): Auth => {
+  built ??= defineAuth({ adapter: postgresAuthAdapter() });
+  return built;
+};
 ```
 
-Register, log in, resolve — the real flow, real output:
+The defaults: a 30-day absolute and a 7-day idle session, cookie `__Host-x_session`, rotated on a privilege change. `authenticator.ts` beside it resolves that cookie on every request. What the scaffold does **not** write is a sign-in page — see [Known gaps](Known-Gaps).
+
+Register, log in, resolve — the real flow, against Postgres, with `const auth = appAuth()` and `org` the seeded demo org (`DEMO_ORG_ID` from `apps/web/shared/demo-org.ts`):
 
 ```ts
 await register(auth, { email, password, orgId: org, roles: ['member'] });
-const { actor, cookie } = await login(auth, { email, password });
+const { actor, token, cookie } = await login(auth, { email, password, ip });
 ```
 
 ```json
-{"actor":{"kind":"user","id":"019ff1d3-…","orgId":"00000000-…-000000000002",
-  "roles":["member"],"scopes":[],"permissions":[]},
- "cookiePrefix":"__Host-x_session=9zh6XI_"}
+{"actor":{"kind":"user","id":"01a1a22f-…","orgId":"9c7ca12f-7aa0-57c4-a1cf-79b3afc8d1dd",
+  "roles":["member"],"scopes":[],"permissions":[],"facts":{}},
+ "cookie":"__Host-x_session=<token>; Max-Age=2592000; Path=/; HttpOnly; Secure; SameSite=Lax"}
 ```
 
-`permissions: []` is correct — direct grants are for service tokens and break-glass accounts. The role is what carries the set, and `actorHas()` expands it:
+`authenticate(auth, token)` answers the same actor. `permissions: []` is correct — direct grants are for service tokens and break-glass accounts. The role is what carries the set, and `actorHas()` expands it against `roles.ts`:
 
 ```json
-{"todo:write":true,"admin:read":false}
+{"todo:read":true,"todo:write":false,"admin:read":false}
 ```
 
-A `member` writes todos and does not reach the admin. Anonymous holds nothing:
+A `member` reads todos; the scaffold grants `todo:write` to `admin` only, so writing is an edit to `roles.ts`. Anonymous (`anonymousActor()`) holds nothing:
 
 ```json
-{"anon":"anonymous","hasWrite":false}
+{"anon":"anonymous","hasRead":false}
 ```
 
 ### Signing out clears the browser too
@@ -126,8 +153,9 @@ A `member` writes todos and does not reach the admin. Anonymous holds nothing:
 
 ```ts
 import { logout, signOutHeaders } from '@ultimat3/auth';
-import { auth } from './auth';
+import { appAuth } from './auth';
 
+const auth = appAuth();
 declare const token: string;
 declare const headers: Headers; // the action's ctx.headers
 
@@ -136,6 +164,15 @@ for (const [name, value] of signOutHeaders({ session: auth.sessions.policy })) {
   headers.append(name, value);
 }
 ```
+
+What it appends, verbatim:
+
+```json
+[["set-cookie","__Host-x_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax"],
+ ["clear-site-data","\"cache\", \"storage\""]]
+```
+
+After `logout`, `authenticate(auth, token)` refuses the token: `X_UNAUTHENTICATED`.
 
 | Header | Effect |
 |---|---|
@@ -150,7 +187,7 @@ boot, which wipes every stored scope but the current principal's
 
 ### Failures say one thing
 
-Wrong password, unknown address and disabled account are indistinguishable in message **and** duration:
+Wrong password, unknown address and disabled account are indistinguishable in message **and** duration — the first two below were each run, and print the same `code` and `cause`:
 
 ```json
 {"code":"X_UNAUTHENTICATED",
@@ -196,8 +233,8 @@ Two different things share the word.
 
 | Surface | Is | Gated by | Available |
 |---|---|---|---|
-| `/_x` | the **dev** dashboard from `@ultimat3/admin/dev` — routes, timeline, live, jobs, db, mail, cache, policy, manifest (`DEV_PANELS`) | dev-only, never mounted in production | in `x dev`, immediately |
-| `apps/admin/` | the app's own admin, served by `defineAdmin()` under `ROLE=web` | the app's role map (`roleAuthz()`), permission by permission | in `x dev`, immediately: a list, a detail and a form per entity, the audit log, and the jobs dashboard at `/admin/jobs` |
+| `/_x` | the **dev** dashboard from `@ultimat3/admin/dev` — routes, timeline, live, jobs, db, mail, cache, policy, manifest, services, boundaries (`DEV_PANELS`; `x dev` prints the 11) | dev-only, never mounted in production | in `x dev`, immediately |
+| `apps/admin/` | the app's own admin, served by `defineAdmin()` under `ROLE=web` | the app's role map (`roleAuthz()`), permission by permission | in `x dev`, immediately: a list, a detail and a form per entity, the audit log, and the jobs dashboard at `/admin/jobs`. Measured: `/admin`, `/admin/todos` and `/admin/jobs` answer 200 to the development viewer (`admin`) and 403 with the `myapp_dev_role=member` cookie |
 
 The scaffold writes a declaration, not a page, `As of 2026-10`:
 
@@ -207,7 +244,8 @@ import { db } from '@myapp/db';
 import { adminEntitiesOf, defineAdmin } from '@ultimat3/admin';
 
 export const admin = defineAdmin({
-  // Every entity on the typed handle is a screen; `entities: [post]` names them one by one instead.
+  // Every entity the handle serves: `x g entity` adds one there, and it is an admin screen on
+  // the next boot. Name them one by one instead — `entities: [post]` — to leave a table out.
   entities: adminEntitiesOf(db),
   db,
 });
@@ -229,12 +267,19 @@ bunx x g resource note --admin
 ```
 
 `--admin` adds two files to the slice — `apps/web/app/note/admin/resource.ts` and its test — and
-lists the override under `resources:` in `apps/admin/app/admin/admin.ts` in the same run. The
+lists the override under `resources:` in `apps/admin/app/admin/admin.ts` in the same run
+(`resources: { notes: noteAdminResource }`, with its import). In this app, which already holds the
+`todo` slice and its wiring:
+
+```text
+✓ wrote 41 file(s) for resource note — next: …
+``` The
 override is the only hand-written part; fields, operations, filters and forms derive from the entity.
 
 ```ts
 export const noteAdminResource: AdminResourceOptions<AdminRow> = {
-  // Columns of the entity, in its own order — read off the entity this run wrote.
+  // Columns of the entity, in its own order. A name that is not one is X_ADMIN_FIELD_UNSUPPORTED
+  // at boot — delete the line to let the admin pick them.
   listFields: ['title', 'price', 'createdAt'],
   pageSize: 25,
 };

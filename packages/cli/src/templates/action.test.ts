@@ -1,5 +1,5 @@
 // The one fact `x g action` reads from the app's disk: whether the slice's `errors.ts` declares the
-// `<Feature>NotFoundError` the handler would throw. Measured in ai-maxxing's `fleet` slice, whose
+// `<Feature>NotFoundError` the handler would throw. Measured in one adopter's `fleet` slice, whose
 // `errors.ts` declares `HostNotFoundError` and `SessionNotFoundError` and no `FleetNotFoundError`:
 // the generated action failed at import, and because `x db gen` and `x manifest` load every
 // module, one generated-and-not-yet-edited file made both refuse to run.
@@ -22,7 +22,7 @@ const target = {
   sliceEntity: "export const fleet = entity('fleets', { tenant: 'orgId', columns: {} });\n",
 } as const;
 
-/** ai-maxxing's `fleet/errors.ts`, reduced to the shape that matters: two classes, neither ours. */
+/** One adopter's `fleet/errors.ts`, cut to the shape that matters: two classes, neither ours. */
 const FLEET_ERRORS = `import { UltimateError } from '@ultimat3/core';
 
 // TODO: a FleetNotFoundError would go here — a comment, and not an export.

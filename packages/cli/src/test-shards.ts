@@ -87,7 +87,7 @@ export function testArgs(input: {
    * A fresh global per FILE. Off by default since 22.7 — `--parallel` implies it, so the default
    * run says `--no-isolate` — and on for a repository whose `x.verify.json` says `"isolate": true`
    * or a caller's `--isolate`. Measured, 4 workers: the framework's unit corpus 168s isolated,
-   * 77s not; a notificado.co third 85-107s isolated, 20s not (`test-workers.ts`).
+   * 77s not; a third of one adopter's corpus 85-107s isolated, 20s not (`test-workers.ts`).
    */
   readonly isolate?: boolean;
   /**

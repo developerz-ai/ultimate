@@ -79,4 +79,15 @@ describe('issuesFromWire', () => {
     expect(() => issuesFromWire([hostile])).not.toThrow();
     expect(issuesFromWire([hostile])).toBeUndefined();
   });
+
+  test('carries a string rule and scalar params; drops a non-string rule', () => {
+    const [kept, dropped] =
+      issuesFromWire([
+        { path: 'title', message: 'too short', rule: 'string.min', params: { min: 3 } },
+        { path: 'body', message: 'bad', rule: { evil: true }, params: { min: 3 } },
+      ]) ?? [];
+    expect(kept).toMatchObject({ rule: 'string.min', params: { min: 3 } });
+    expect(dropped).not.toHaveProperty('rule');
+    expect(dropped).not.toHaveProperty('params');
+  });
 });

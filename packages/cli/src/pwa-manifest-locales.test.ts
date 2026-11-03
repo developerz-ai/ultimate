@@ -46,7 +46,7 @@ const load = async (locales: Locales, pwa = ''): Promise<PwaArtifacts> => {
   );
   await Bun.write(
     join(root, 'app.config.ts'),
-    `export const config = { name: 'probe', pwa: { enabled: true, name: 'Notificado', ` +
+    `export const config = { name: 'probe', pwa: { enabled: true, name: 'Acme', ` +
       `offline: { fallback: '/offline' }, colors: ${COLORS}${pwa} } };\n`,
   );
   const artifacts = await loadPwaArtifacts(root);

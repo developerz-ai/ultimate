@@ -59,6 +59,8 @@ export interface JsonSchema {
   readonly anyOf?: readonly JsonSchema[];
   readonly discriminator?: JsonSchemaDiscriminator;
   readonly title?: string;
+  /** `.sensitive()`: a value the caller sends and the server never returns. */
+  readonly writeOnly?: true;
   /**
    * The refinements a consumer can act on mechanically. The prose copy also lands in
    * `description`, because that is the only field an LLM reading an MCP tool schema is
@@ -185,6 +187,7 @@ function convert(node: SchemaNode): JsonSchema {
   const annotations: JsonSchema = {
     ...(described === undefined ? {} : { description: described }),
     ...(node.hasDefault === true ? { default: node.default } : {}),
+    ...(node.sensitive === true ? { writeOnly: true as const } : {}),
     ...(refinements.length === 0 ? {} : { 'x-ultimate-refinements': refinements }),
   };
 
